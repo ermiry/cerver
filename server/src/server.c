@@ -53,6 +53,17 @@ u32 initServer (Config *cfg, u8 type) {
 
 }
 
+// TODO: handle ipv6 configuration
+void listenForConnections (void) {
+
+	listen (server, 5);
+
+	socklen_t sockLen = sizeof (struct sockaddr_in);
+	struct sockaddr_in clientAddress;
+	i32 clientSocket;
+
+}
+
 // wrap things up and exit
 u8 teardown (void) {
 

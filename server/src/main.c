@@ -44,6 +44,10 @@ int main (void) {
         }
     } 
 
+    // at this point we are ready to listen for connections...
+    fprintf (stdout, "Waiting for connections...\n");
+    listenForConnections ();
+
     return teardown ();
 
 }
