@@ -21,6 +21,8 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
+#define CLIENT_REQ_TYPE_SIZE     8
+
 extern i32 server;
 
 /*** SERVER FUNCS ***/
@@ -28,6 +30,7 @@ extern i32 server;
 #include "utils/config.h"
 
 extern u32 initServer (Config *, u8);
+extern void listenForConnections (void);
 extern u8 teardown (void);
 
 #endif

@@ -14,6 +14,8 @@
 
 i32 server;
 
+const char welcome[256] = "You have reached the Multiplayer Server!";
+
 u32 initServer (Config *cfg, u8 type) {
 
 	// 28/09/2018 --- we only have one server cfg option
@@ -28,7 +30,7 @@ u32 initServer (Config *cfg, u8 type) {
         die ("\n[ERROR]: Failed to set server socket to non-blocking mode!\n");
 
     struct sockaddr_storage address;
-	memset(&address, 0, sizeof (address));
+	memset(&address, 0, sizeof (struct sockaddr_storage));
 
 	u32 port = atoi (getEntityValue (cfgEntity, "port"));
 	if (use_ipv6) {
@@ -53,14 +55,48 @@ u32 initServer (Config *cfg, u8 type) {
 
 }
 
+void connectionHandler (i32 client) {
+
+	// send welcome message
+	send (client, welcome, sizeof (welcome), 0);
+
+	// handle client request type
+	u16 readSize;
+	char clientReq[CLIENT_REQ_TYPE_SIZE];
+
+	// FIXME: 29/09/2018 -- we can only hanlde a ONE each connection
+	if (readSize = recv (client, clientReq, CLIENT_REQ_TYPE_SIZE, 0) > 0) {
+		u8 request = atoi (clientReq);
+
+		switch (request) {
+			case 1: fprintf (stdout, "Request type: %i.\n", request); break;
+			case 2: fprintf (stdout, "Request type: %i.\n", request); break;
+			case 3: fprintf (stdout, "Request type: %i.\n", request); break;
+
+			// TODO: send an error to the client
+			default: fprintf (stderr, "[WARNING]: Invalid request type: %i", request); break;
+		}
+	}
+
+}
+
 // TODO: handle ipv6 configuration
+// TODO: do we need to hanlde time here?
 void listenForConnections (void) {
 
 	listen (server, 5);
 
 	socklen_t sockLen = sizeof (struct sockaddr_in);
 	struct sockaddr_in clientAddress;
+	memset(&clientAddress, 0, sizeof (struct sockaddr_in));
 	i32 clientSocket;
+
+	// FIXME: 29/09/2018 -- 10:40 -- we only hanlde one client connected at a time
+	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
+		fprintf (stdout, "Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr));
+
+		connectionHandler (clientSocket);
+	}
 
 }
 
