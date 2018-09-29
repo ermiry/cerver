@@ -15,6 +15,8 @@
 #include "server.h"
 #include "network.h"
 
+#include "utils/config.h"
+
 void die (char *msg) {
 
     fprintf (stderr, "%s", msg);
@@ -28,11 +30,19 @@ void die (char *msg) {
 
 int main (void) {
 
-    // TODO: load config settings
+    Config *serverConfig = parseConfigFile ("./config/server.cfg");
+    if (!serverConfig) die ("\n[ERROR]: Problems loading server config!\n");
+    else {
+        // use the first configuration
+        u32 port = initServer (serverConfig, 1);
+        if (port != 0) {
+            fprintf (stdout, "\n\nServer has started!\n");
+            fprintf (stdout, "Listening on port %i\n\n", port);
 
-    initServer ();
-
-    fprintf (stdout, "\n\nServer has started!\n\n");
+            // we don't need the server config anymor I guess...
+            clearConfig (serverConfig);
+        }
+    } 
 
     return teardown ();
 

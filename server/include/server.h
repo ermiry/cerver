@@ -21,13 +21,13 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
-#define PORT    9001
-
 extern i32 server;
 
 /*** SERVER FUNCS ***/
 
-extern u8 initServer (void);
+#include "utils/config.h"
+
+extern u32 initServer (Config *, u8);
 extern u8 teardown (void);
 
 #endif
