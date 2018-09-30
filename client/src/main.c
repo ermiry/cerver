@@ -1,144 +1,97 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "game.h"
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include <netinet/in.h>
-
-#include <errno.h>
-
-#define PORT    9001
+#include "console.h"
 
 // FIXME:
-// #define SERVER_ADDRESS  "192.168.1.7
+global Player player;
 
-int clientSocket;
+/*** SCREEN ***/
 
-const char filepath[64] = "foo.txt";
+// TODO: are we cleanning up the console and the screen??
+// do we want that to happen?
+void renderScreen (SDL_Renderer *renderer, SDL_Texture *screen, Console *console) {
 
-void error (const char *msg) {
+    clearConsole (console);
 
-    perror (msg);
+    // test
+    putCharAt (console, '@', player.xPos, player.yPos, 0xFFFFFFFF, 0x000000FF);
 
-    close (clientSocket);
+    // u32 *pixels = (u32 *) calloc (SCREEN_WIDTH * SCREEN_HEIGHT, sizeof (u32));
 
-    exit (1);
-
-}
-
-int initClient () {
-
-    // create client socket
-    int client = socket (AF_INET, SOCK_STREAM, 0);
-    if (client < 0) error ("Error creating client socket!\n");
-
-    return client;
+    SDL_UpdateTexture (screen, NULL, console->pixels, SCREEN_WIDTH * sizeof (u32));
+    SDL_RenderClear (renderer);
+    SDL_RenderCopy (renderer, screen, NULL, NULL);
+    SDL_RenderPresent (renderer);
 
 }
 
-int recieveFile (char *request) {
 
-    // FIXME: make sure that we create a new file if it does not exists
-    // prepare the file where we are copying to
-    FILE *file = fopen (filepath, "w");
-    if (file == NULL) {
-        fprintf (stderr, "%s\n", strerror (errno));
-        return 1;
-    }
-
-    if (write (clientSocket, request, strlen (request)) < 0) {
-        fprintf (stderr, "Error on writing!\n\n");
-        return 1; 
-    }
-
-    size_t len;
-    char buffer[BUFSIZ];
-    int fileSize;
-    int remainData = 0;
-
-    //fprintf(stdout, "\nFile size : %d\n", file_size);
-    recv (clientSocket, buffer, BUFSIZ, 0);
-    fileSize = atoi (buffer);
-    fprintf (stdout, "\nRecieved file size : %d\n", fileSize);
-
-    remainData = fileSize;
-
-    // get the file data
-    while (((len = recv (clientSocket, buffer, BUFSIZ, 0)) > 0) && (remainData > 0)) {
-            fwrite (buffer, sizeof (char), len, file);
-            remainData -= len;
-            fprintf (stdout, "Received %ld bytes and we hope %d more bytes\n", len, remainData);
-    }
-
-    fprintf (stdout, "Done!");
-
-    fclose (file);
-    return 0;
-
-}
+/*** THREAD ***/
 
 int main (void) {
 
-    clientSocket = initClient ();
-    struct sockaddr_in serverAddress;
+    // SDL SETUP
+    SDL_Init (SDL_INIT_VIDEO);
+    SDL_Window *window = SDL_CreateWindow ("Blackrock Dungeons",
+         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
 
-    memset (&serverAddress, 0, sizeof (struct sockaddr_in));
+    SDL_Renderer *renderer = SDL_CreateRenderer (window, 0, SDL_RENDERER_SOFTWARE);
 
-    serverAddress.sin_family = AF_INET;
-    // FIXME:
-    // inet_pton(AF_INET, SERVER_ADDRESS, &(remote_addr.sin_addr));
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
-    serverAddress.sin_port = htons (PORT);
+    SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    SDL_RenderSetLogicalSize (renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    // try to connect to the server
-    // FIXME: add the ability to try multiple times
+    SDL_Texture *screen = SDL_CreateTexture (renderer, SDL_PIXELFORMAT_RGBA8888,
+        SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-    if (connect (clientSocket, (struct sockaddr *) &serverAddress, sizeof (struct sockaddr)) < 0) {
-        fprintf (stderr, "%s\n", strerror (errno));
-        error ("Error connecting to server!\n");
+    // Create our console emulator graphics
+    Console *console = initConsole (SCREEN_WIDTH, SCREEN_HEIGHT, NUM_ROWS, NUM_COLS);
+
+    // set up the console font
+    setConsoleBitmapFont (console, "./resources/terminal-art.png", 0, 16, 16);
+
+    // FIXME: better player init
+    player.xPos = 10;
+    player.yPos = 10;
+
+    // Main loop
+    // TODO: maybe we want to refactor this
+    bool done = false;
+    while (!done) {
+        SDL_Event event;
+        while (SDL_PollEvent (&event) != 0) {
+            if (event.type == SDL_QUIT) {
+                done = true;
+                break;
+            }
+
+            // Basic Input
+            // Movement with wsad   03/08/2018
+            if (event.type == SDL_KEYDOWN) {
+                SDL_Keycode key = event.key.keysym.sym;
+                switch (key) {
+                    case SDLK_w:
+                        if (player.yPos > 0) player.yPos -= 1; break;
+                    case SDLK_s:
+                        if (player.yPos < NUM_ROWS - 1) player.yPos += 1; break;
+                    case SDLK_a:
+                        if (player.xPos > 0) player.xPos -= 1; break;
+                    case SDLK_d:
+                        if (player.xPos < NUM_COLS - 1) player.xPos += 1; break;
+                    default: break;
+                }
+            }
+
+        }
+
+        renderScreen (renderer, screen, console);
     }
 
-    // recieve data from server
-    char serverResponse [256];
-    recv (clientSocket, &serverResponse, sizeof (serverResponse), 0);
 
-    // handle the server response
-    printf ("\n\nThe server sent the data:\n\n%s\n\n", serverResponse);
+    // SDL CLEANUP
+    SDL_DestroyRenderer (renderer);
+    SDL_DestroyWindow (window);
 
-    int request; 
-    // select a request type
-    char buffer[8];
-    bzero (buffer, sizeof (buffer));
-    fprintf (stdout, "Request type: ");
-    fflush (stdin);
-    fgets (buffer, sizeof (buffer), stdin);
-
-    // request = atoi (buffer);
-
-    if (write (clientSocket, buffer, strlen (buffer)) < 0) {
-        fprintf (stderr, "Error on writing!\n\n");
-        return 1; 
-    }
-
-    /* switch (request) {
-        // case 1: 
-        //     if (recieveFile (buffer) == 0) fprintf (stdout, "Got the file!\n");
-        //     else  fprintf (stderr, "Error recieving file!\n");
-        //     break;
-        case 1: break;
-        case 2: break;
-        case 3: break;
-        default: fprintf (stderr, "Invalid request!\n"); break;
-    } */
-
-    // do {
-        // FIXME:
-    // } while (request != 0);
-
-    close (clientSocket);
+    SDL_Quit ();
 
     return 0;
 

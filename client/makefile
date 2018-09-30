@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -I $(IDIR)
+CFLAGS = -I $(IDIR) `sdl2-config --cflags --libs` -lm
 
 IDIR = ./include/
 SRCDIR = ./src/

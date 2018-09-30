@@ -21,6 +21,11 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
+#include <sys/time.h>
+#include <time.h>
+
+typedef struct timespec Cptime;
+
 typedef enum RequestType {
 
     REQ_GET_FILE = 1,
