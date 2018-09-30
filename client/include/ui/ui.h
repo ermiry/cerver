@@ -9,6 +9,25 @@
 
 #include "utils/list.h"
 
+/*** COMMON COLORS ***/
+
+#define NO_COLOR        0x00000000
+#define WHITE           0xFFFFFFFF
+#define BLACK           0x000000FF
+
+#define FULL_GREEN      0x00FF00FF
+#define FULL_RED        0xFF0000FF
+
+#define YELLOW          0xFFD32AFF
+#define SAPPHIRE        0x1E3799FF
+
+/*** FULL SCREEN ***/
+
+#define FULL_SCREEN_LEFT		0
+#define FULL_SCREEN_TOP		    0
+#define FULL_SCREEN_WIDTH		80
+#define FULL_SCREEN_HEIGHT	    45
+
 typedef SDL_Rect UIRect;
 
 struct UIScreen;
@@ -26,7 +45,8 @@ typedef struct UIView {
 
 typedef enum GameView {
 
-    MAP_VIEW = 1
+    MAIN_MENU_VIEW = 1,
+    MAP_VIEW = 2
 
 } GameView;
 

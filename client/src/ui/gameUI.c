@@ -119,12 +119,13 @@ UIScreen *inGameScreen = NULL;
 
 UIView *mapView = NULL;
 
+// FIXME: map values
 List *initGameViews (void) {
 
     List *views = initList (free);
 
-    UIRect mapRect = { 0, 0, (16 * MAP_WIDTH), (16 * MAP_HEIGHT) };
-    mapView = newView (mapRect, MAP_WIDTH, MAP_HEIGHT, tileset, 0, BLACK, true, renderMap);
+    UIRect mapRect = { 0, 0, (16 * FULL_SCREEN_WIDTH), (16 * FULL_SCREEN_HEIGHT) };
+    mapView = newView (mapRect, FULL_SCREEN_WIDTH, FULL_SCREEN_HEIGHT, tileset, 0, BLACK, true, renderMap);
     insertAfter (views, NULL, mapView);
 
     return views;
@@ -158,8 +159,8 @@ void destroyGameUI (void) {
     if (inGameScreen != NULL) {
         fprintf (stdout, "Cleaning in game UI...\n");
 
-        while (LIST_SIZE (inGameScreen->views) > 0)
-            destroyView ((UIView *) removeElement (inGameScreen->views, LIST_END (inGameScreen->views)));
+        // while (LIST_SIZE (inGameScreen->views) > 0)
+            // destroyView ((UIView *) removeElement (inGameScreen->views, LIST_END (inGameScreen->views)));
         
         free (inGameScreen->views);
         free (inGameScreen);

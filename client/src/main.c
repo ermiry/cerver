@@ -98,8 +98,7 @@ int main (void) {
     u32 frameStart;
     i32 sleepTime;
     UIScreen *screenForInput;
-
-    initWorld ();
+    
     setActiveScene (menuScene ());
 
     pthread_t gameThread;
@@ -114,7 +113,6 @@ int main (void) {
 
             if (event.type == SDL_QUIT) running = false;
 
-            // TODO: how can we have a more eficient event handler?
             // handle the event in the correct screen
             screenForInput = activeScene;
             screenForInput->handleEvent (screenForInput, event);
