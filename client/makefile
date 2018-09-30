@@ -5,6 +5,7 @@ IDIR = ./include/
 SRCDIR = ./src/
 
 SOURCES = $(SRCDIR)*.c \
+		  $(SRCDIR)/network/*.c \
 		  $(SRCDIR)/ui/*.c \
 		  $(SRCDIR)/utils/*.c 
 

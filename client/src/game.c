@@ -3,6 +3,8 @@
 #include "game.h"
 #include "player.h"
 
+#include "network/network.h"
+
 #include "ui/ui.h"
 #include "ui/menu.h"
 #include "ui/gameUI.h"
@@ -42,10 +44,18 @@ void cleanUpGame (void) {
 
 /*** MULTIPLAYER ***/
 
+// TODO: add feedback in the message log!
+
 // create a new game lobby
 void createGame (void) {
 
     fprintf (stdout, "\nCreating a new game lobby..\n");
+
+    if (!connected) connectToServer ();
+    else fprintf (stdout, "We are already connected to the server.\n");
+
+    // request server for a game lobby
+    makeRequest (REQ_CREATE_LOBBY);
 
 }
 

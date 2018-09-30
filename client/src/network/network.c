@@ -10,10 +10,20 @@
 
 #include <errno.h>
 
+#include "network/network.h"
+
+#include "utils/myUtils.h"
+
 #define PORT    9001
 
 // FIXME:
 // #define SERVER_ADDRESS  "192.168.1.7
+
+// TODO: add the ability to read from a config file
+
+// FIXME: hanlde errors in a message log in the main menu!!!
+
+bool connected = false;
 
 int clientSocket;
 
@@ -21,23 +31,15 @@ const char filepath[64] = "foo.txt";
 
 void error (const char *msg) {
 
-    perror (msg);
+    // perror (msg);
 
-    close (clientSocket);
+    // close (clientSocket);
 
-    exit (1);
-
-}
-
-int initClient () {
-
-    // create client socket
-    int client = socket (AF_INET, SOCK_STREAM, 0);
-    if (client < 0) error ("Error creating client socket!\n");
-
-    return client;
+    // exit (1);
 
 }
+
+/*** REQUESTS ***/
 
 int recieveFile (char *request) {
 
@@ -80,13 +82,54 @@ int recieveFile (char *request) {
 
 }
 
-/* int main (void) {
+int makeRequest (RequestType requestType) {
+
+    char buffer[CLIENT_REQ_TYPE_SIZE];
+    bzero (buffer, sizeof (buffer));
+
+    char *request = itoa (requestType, buffer);
+
+    fprintf (stdout, "Request: %s\n", request);
+    if (write (clientSocket, request, strlen (request)) < 0) {
+        fprintf (stderr, "Error on writing!\n\n");
+        return 1; 
+    }
+
+    switch (requestType) {
+        case REQ_GET_FILE: break;
+        case POST_SEND_FILE: break;
+
+        case REQ_CREATE_LOBBY: break;
+
+        default: fprintf (stderr, "Invalid request!\n"); break;
+    }
+
+    return 0;   // success
+
+}
+
+/*** CONNECTION ***/
+
+int initClient (void) {
+
+    // create client socket
+    int client = socket (AF_INET, SOCK_STREAM, 0);
+    if (client < 0) error ("Error creating client socket!\n");
+
+    return client;
+
+}
+
+// TODO: log the process to the message log...
+int connectToServer (void) {
 
     clientSocket = initClient ();
-    struct sockaddr_in serverAddress;
 
+    struct sockaddr_in serverAddress;
     memset (&serverAddress, 0, sizeof (struct sockaddr_in));
 
+    // TODO: add ipv6 config option
+    // TODO: add config options
     serverAddress.sin_family = AF_INET;
     // FIXME:
     // inet_pton(AF_INET, SERVER_ADDRESS, &(remote_addr.sin_addr));
@@ -101,45 +144,21 @@ int recieveFile (char *request) {
         error ("Error connecting to server!\n");
     }
 
-    // recieve data from server
+    // we expect a welcome message from the server...
     char serverResponse [256];
     recv (clientSocket, &serverResponse, sizeof (serverResponse), 0);
+    printf ("\n%s\n", serverResponse);
 
-    // handle the server response
-    printf ("\n\nThe server sent the data:\n\n%s\n\n", serverResponse);
+    connected = true;
 
-    int request; 
-    // select a request type
-    char buffer[8];
-    bzero (buffer, sizeof (buffer));
-    fprintf (stdout, "Request type: ");
-    fflush (stdin);
-    fgets (buffer, sizeof (buffer), stdin);
+    // return 0 on success
+    return 0;
 
-    // request = atoi (buffer);
+}
 
-    if (write (clientSocket, buffer, strlen (buffer)) < 0) {
-        fprintf (stderr, "Error on writing!\n\n");
-        return 1; 
-    }
-
-    /* switch (request) {
-        // case 1: 
-        //     if (recieveFile (buffer) == 0) fprintf (stdout, "Got the file!\n");
-        //     else  fprintf (stderr, "Error recieving file!\n");
-        //     break;
-        case 1: break;
-        case 2: break;
-        case 3: break;
-        default: fprintf (stderr, "Invalid request!\n"); break;
-    }
-
-    // do {
-        // FIXME:
-    // } while (request != 0);
+// TODO: wrap all necessary things before clossing connection
+void disconnectFromServer (void) {
 
     close (clientSocket);
 
-    return 0;
-
-} */
+}

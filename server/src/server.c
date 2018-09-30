@@ -69,10 +69,10 @@ void connectionHandler (i32 client) {
 		u8 request = atoi (clientReq);
 
 		switch (request) {
-			case REQ_GET_FILE: break;
-			case POST_SEND_FILE: break;
+			case REQ_GET_FILE: fprintf (stdout, "[REQ]: Get File.\n"); break;
+			case POST_SEND_FILE: fprintf (stdout, "[POST]: Send File.\n"); break;
 
-			case REQ_CREATE_LOBBY: break;
+			case REQ_CREATE_LOBBY: fprintf (stdout, "[REQ]: Create new game lobby.\n"); break;
 
 			// TODO: send an error to the client
 			default: fprintf (stderr, "[WARNING]: Invalid request type: %i", request); break;

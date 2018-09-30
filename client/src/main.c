@@ -4,6 +4,8 @@
 
 #include "game.h"
 
+#include "network/network.h"
+
 #include "ui/ui.h"
 #include "ui/menu.h"
 #include "ui/console.h"
@@ -47,6 +49,8 @@ void renderScreen (SDL_Renderer *renderer, SDL_Texture *screen, UIScreen *scene)
 extern void cleanUpMenuScene (void);
 
 void cleanUp (SDL_Window *window, SDL_Renderer *renderer) {
+
+    if (connected) disconnectFromServer ();
 
     if (wasInGame) cleanUpGame ();
 

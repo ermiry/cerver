@@ -5,7 +5,7 @@
 #include "server.h"
 #include "game.h"
 
-#include "vector.h"
+#include "utils/vector.h"
 
 Vector players;
 
