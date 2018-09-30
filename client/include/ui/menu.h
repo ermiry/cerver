@@ -6,4 +6,6 @@
 extern UIScreen *menuScene (void);
 extern void cleanUpMenuScene (void);
 
+extern void toggleMultiplayerMenu (void);
+
 #endif

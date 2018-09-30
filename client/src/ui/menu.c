@@ -6,9 +6,46 @@
 
 #include "input.h"
 
-#define MAIN_MENU_COLOR     0x4B6584FF
+#define MAIN_MENU_COLOR         0x4B6584FF
+
+#define MULTI_MENU_COLOR        0x34495EFF
+#define MULTI_MENU_WIDTH        60
+#define MULTI_MENU_HEIGHT       35
+#define MULTI_MENU_TOP          5
+#define MULTI_MENU_LEFT         10
 
 UIScreen *menuScreen = NULL;
+
+UIView *multiMenu = NULL;
+
+static void renderMultiplayerMenu (Console *console) {
+
+    putStringAtCenter (console, "Multiplayer Menu", 3, WHITE, NO_COLOR);
+
+    putStringAt (console, "[c]reate new game", 10, 10, WHITE, NO_COLOR);
+    putStringAt (console, "[j]oin game in progress", 10, 12, WHITE, NO_COLOR);
+
+    putReverseString (console, "kca]b[", 55, 32, WHITE, NO_COLOR);
+
+}
+
+void toggleMultiplayerMenu (void) {
+
+    if (multiMenu == NULL) {
+        UIRect menu = { (16 * MULTI_MENU_LEFT), (16 * MULTI_MENU_TOP), (16 * MULTI_MENU_WIDTH), (16 * MULTI_MENU_HEIGHT) };
+        multiMenu = newView (menu, MULTI_MENU_WIDTH, MULTI_MENU_HEIGHT, tileset, 0, MULTI_MENU_COLOR, true, renderMultiplayerMenu);
+        insertAfter (menuScreen->views, LIST_END (menuScreen->views), multiMenu);
+
+        menuScreen->activeView = MULTI_MENU_VIEW;
+    }
+
+    else {
+        ListElement *multi = getListElement (activeScene->views, multiMenu);
+        destroyView ((UIView *) removeElement (activeScene->views, multi));
+        multiMenu = NULL;
+    }
+
+}
 
 static void renderMainMenu (Console *console) {
 

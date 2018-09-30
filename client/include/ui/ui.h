@@ -46,7 +46,8 @@ typedef struct UIView {
 typedef enum GameView {
 
     MAIN_MENU_VIEW = 1,
-    MAP_VIEW = 2
+    MULTI_MENU_VIEW = 2,
+    MAP_VIEW = 3
 
 } GameView;
 

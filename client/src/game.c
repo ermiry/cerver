@@ -39,3 +39,19 @@ void cleanUpGame (void) {
     fprintf (stdout, "Done cleaning up game!\n");
 
 }
+
+/*** MULTIPLAYER ***/
+
+// create a new game lobby
+void createGame (void) {
+
+    fprintf (stdout, "\nCreating a new game lobby..\n");
+
+}
+
+// join an existing game lobby
+void joinGame (void) {
+
+    fprintf (stdout, "\nSearching for a game..\n");
+
+}

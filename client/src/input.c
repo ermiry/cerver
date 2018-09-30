@@ -4,6 +4,7 @@
 #include "player.h"
 
 #include "ui/ui.h"
+#include "ui/menu.h"
 #include "ui/gameUI.h"
 
 #include "utils/list.h"
@@ -19,6 +20,11 @@ void hanldeMenuEvent (UIScreen *activeScreen, SDL_Event event) {
 
         switch (key) {
             case SDLK_s: startGame (); break;
+            case SDLK_m: if (activeScene->activeView != MULTI_MENU_VIEW) toggleMultiplayerMenu (); break;
+            case SDLK_b: if (activeScene->activeView == MULTI_MENU_VIEW) toggleMultiplayerMenu (); break;
+            case SDLK_c: if (activeScene->activeView == MULTI_MENU_VIEW) createGame (); break;
+            case SDLK_j: if (activeScene->activeView == MULTI_MENU_VIEW) joinGame (); break;
+            default: break;
         }
 
     }

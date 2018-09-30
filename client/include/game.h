@@ -78,4 +78,9 @@ extern void startGame (void);
 extern void initWorld (void);
 extern void cleanUpGame (void);
 
+/*** MULTIPLAYER ***/
+
+extern void createGame (void);
+extern void joinGame (void);
+
 #endif
