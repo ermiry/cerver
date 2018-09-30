@@ -22,7 +22,7 @@ void destroyUIScreen (UIScreen *screen) {
     if (screen != NULL) {
         if (screen->views != NULL) {
             if (LIST_SIZE (screen->views) > 0) {
-                screen->activeView = NULL;
+                screen->activeView = 0;
 
                 // destroy screen views
                 while (LIST_SIZE (screen->views) > 0) 

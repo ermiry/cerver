@@ -5,7 +5,7 @@
 #include "game.h"
 
 #include "ui/ui.h"
-#include "ui/gameUI.h"
+#include "ui/menu.h"
 #include "ui/console.h"
 
 bool running = false;
@@ -48,7 +48,7 @@ extern void cleanUpMenuScene (void);
 
 void cleanUp (SDL_Window *window, SDL_Renderer *renderer) {
 
-    // if (wasInGame) cleanUpGame ();
+    if (wasInGame) cleanUpGame ();
 
     // clean the UI
     destroyCurrentScreen ();
@@ -100,7 +100,7 @@ int main (void) {
     UIScreen *screenForInput;
 
     initWorld ();
-    setActiveScene (gameScene ());
+    setActiveScene (menuScene ());
 
     pthread_t gameThread;
 

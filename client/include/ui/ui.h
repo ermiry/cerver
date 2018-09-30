@@ -24,10 +24,16 @@ typedef struct UIView {
 
 } UIView;
 
+typedef enum GameView {
+
+    MAP_VIEW = 1
+
+} GameView;
+
 typedef struct UIScreen {
 
     List *views;
-    UIView *activeView;
+    GameView activeView;
     UIEventHandler handleEvent;
 
 } UIScreen;

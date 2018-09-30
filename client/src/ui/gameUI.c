@@ -20,15 +20,55 @@ u32 wallsBgColor = BLACK;
 u32 wallsFadedColor;
 asciiChar wallGlyph = '#';
 
-// we are only rendering the player...
-static void renderMap (Console *console) {
+void renderItems (Console *console) {
 
-    // setup the layer rendering    
-    for (u32 x = 0; x < MAP_WIDTH; x++)
-        for (u32 y = 0; y < MAP_HEIGHT; y ++)   
-            layerRendered[x][y] = UNSET_LAYER;
+    // FIXME: i dont like this!!
+    /* Item *item = NULL;
+    Position *itemPos = NULL;
+    Graphics *itemGra = NULL;
+    for (ListElement *e = LIST_START (items); e != NULL; e = e->next) {
+        item = (Item *) e->data;
+        itemPos = getGameComponent (item, POSITION);
+        if (itemPos != NULL) {
+            itemGra = getGameComponent (item, GRAPHICS);
 
-    // render the gos with graphics
+            if (fovMap[itemPos->x][itemPos->y] > 0) {
+                itemGra->hasBeenSeen = true;
+                putCharAt (console, itemGra->glyph, itemPos->x, itemPos->y, itemGra->fgColor, itemGra->bgColor);
+                layerRendered[itemPos->x][itemPos->y] = itemPos->layer;
+            }
+
+            else if (itemGra->visibleOutsideFov && itemGra->hasBeenSeen) {
+                fullColor = itemGra->fgColor;
+                fadedColor = COLOR_FROM_RGBA (RED (fullColor), GREEN (fullColor), BLUE (fullColor), 0x77);
+                putCharAt (console, g->glyph, itemPos->x, itemPos->y, fadedColor, 0x000000FF);
+                layerRendered[itemPos->x][itemPos->y] = itemPos->layer;
+            }
+        }
+    } */
+
+}
+
+// render things like walls
+void renderMapElements (Console *console) {
+
+    // 19/08/2018 -- 17:53 -- we are assuming all walls are visible outside fov
+    /* for (u32 i = 0; i < wallCount; i++) {
+        if (fovMap[walls[i].x][walls[i].y] > 0) {
+            walls[i].hasBeenSeen = true;
+            putCharAt (console, wallGlyph, walls[i].x, walls[i].y, wallsFgColor, wallsBgColor);
+        }
+
+        else if (walls[i].hasBeenSeen) 
+            putCharAt (console, wallGlyph, walls[i].x, walls[i].y, wallsFadedColor, wallsBgColor);
+        
+    } */
+
+}
+
+// render the gos with a graphics component
+void renderGameObjects (Console *console) {
+
     /* GameObject *go = NULL;
     Position *p = NULL;
     Graphics *g = NULL;
@@ -55,44 +95,17 @@ static void renderMap (Console *console) {
             }
             
         }
-    }    
+    } */    
 
-    // 19/08/2018 -- 17:53 -- we are assuming all walls are visible outside fov
-    for (u32 i = 0; i < wallCount; i++) {
-        if (fovMap[walls[i].x][walls[i].y] > 0) {
-            walls[i].hasBeenSeen = true;
-            putCharAt (console, wallGlyph, walls[i].x, walls[i].y, wallsFgColor, wallsBgColor);
-        }
+}
 
-        else if (walls[i].hasBeenSeen) 
-            putCharAt (console, wallGlyph, walls[i].x, walls[i].y, wallsFadedColor, wallsBgColor);
-        
-    }
+// we are only rendering the player...
+static void renderMap (Console *console) {
 
-    // FIXME: i dont like this!!
-    Item *item = NULL;
-    Position *itemPos = NULL;
-    Graphics *itemGra = NULL;
-    for (ListElement *e = LIST_START (items); e != NULL; e = e->next) {
-        item = (Item *) e->data;
-        itemPos = getGameComponent (item, POSITION);
-        if (itemPos != NULL) {
-            itemGra = getGameComponent (item, GRAPHICS);
-
-            if (fovMap[itemPos->x][itemPos->y] > 0) {
-                itemGra->hasBeenSeen = true;
-                putCharAt (console, itemGra->glyph, itemPos->x, itemPos->y, itemGra->fgColor, itemGra->bgColor);
-                layerRendered[itemPos->x][itemPos->y] = itemPos->layer;
-            }
-
-            else if (itemGra->visibleOutsideFov && itemGra->hasBeenSeen) {
-                fullColor = itemGra->fgColor;
-                fadedColor = COLOR_FROM_RGBA (RED (fullColor), GREEN (fullColor), BLUE (fullColor), 0x77);
-                putCharAt (console, g->glyph, itemPos->x, itemPos->y, fadedColor, 0x000000FF);
-                layerRendered[itemPos->x][itemPos->y] = itemPos->layer;
-            }
-        }
-    } */
+    // setup the layer rendering    
+    for (u32 x = 0; x < MAP_WIDTH; x++)
+        for (u32 y = 0; y < MAP_HEIGHT; y ++)   
+            layerRendered[x][y] = UNSET_LAYER;
         
     // render the player
     putCharAt (console, player->graphics->glyph, player->pos->x, player->pos->y, 
@@ -127,7 +140,7 @@ UIScreen *gameScene (void) {
     if (inGameScreen == NULL) inGameScreen = (UIScreen *) malloc (sizeof (UIScreen));
     
     inGameScreen->views = igViews;
-    inGameScreen->activeView = mapView;
+    inGameScreen->activeView = MAP_VIEW;
     inGameScreen->handleEvent = hanldeGameEvent;
 
     wallsFadedColor = COLOR_FROM_RGBA (RED (wallsFgColor), GREEN (wallsFgColor), BLUE (wallsFgColor), 0x77);
@@ -144,8 +157,6 @@ void destroyGameUI (void) {
 
     if (inGameScreen != NULL) {
         fprintf (stdout, "Cleaning in game UI...\n");
-
-        fprintf (stdout, "Cleaning in game views...\n");
 
         while (LIST_SIZE (inGameScreen->views) > 0)
             destroyView ((UIView *) removeElement (inGameScreen->views, LIST_END (inGameScreen->views)));

@@ -83,12 +83,14 @@ void resetPlayer (Player *p) {
 
 void destroyPlayer (void) {
 
-    free (player->name);
-        
-    free (player->pos);
-    free (player->graphics);
-    free (player->physics);
+    if (player) {
+        if (player->name) free (player->name);
 
-    free (player);
+        if (player->pos) free (player->pos);
+        if (player->graphics) free (player->graphics);
+        if (player->physics) free (player->physics);
+
+        free (player);
+    }
 
 }

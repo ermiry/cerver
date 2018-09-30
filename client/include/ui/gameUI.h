@@ -26,9 +26,6 @@
 
 extern UIScreen *gameScene (void);
 
-/*** MAP ***/
-
-extern UIView *mapView;
 
 /*** CLEAN UP GAME UI ***/
 

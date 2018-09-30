@@ -31,6 +31,8 @@ typedef int64_t i64;
 
 typedef unsigned char asciiChar;
 
+extern bool inGame;
+extern bool wasInGame;
 
 /*** IN-GAME DATA ***/
 
@@ -72,6 +74,8 @@ typedef struct Physics {
 
 /*** GAME FUNCTIONS ***/
 
+extern void startGame (void);
 extern void initWorld (void);
+extern void cleanUpGame (void);
 
 #endif
