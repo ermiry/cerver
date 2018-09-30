@@ -21,6 +21,15 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
+typedef enum RequestType {
+
+    REQ_GET_FILE = 1,
+    POST_SEND_FILE,
+    
+    REQ_CREATE_LOBBY = 3
+
+} RequestType;
+
 #define CLIENT_REQ_TYPE_SIZE     8
 
 extern i32 server;
