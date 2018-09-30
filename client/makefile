@@ -4,7 +4,9 @@ CFLAGS = -I $(IDIR) `sdl2-config --cflags --libs` -lm
 IDIR = ./include/
 SRCDIR = ./src/
 
-SOURCES = $(SRCDIR)*.c 
+SOURCES = $(SRCDIR)*.c \
+		  $(SRCDIR)/ui/*.c \
+		  $(SRCDIR)/utils/*.c 
 
 all: client #run #clean
 

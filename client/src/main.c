@@ -1,24 +1,40 @@
+#include <time.h>
+#include <stdio.h>
+#include <pthread.h>
+
 #include "game.h"
 
-#include "console.h"
+#include "ui/ui.h"
+#include "ui/gameUI.h"
+#include "ui/console.h"
 
-// FIXME:
-global Player player;
+bool running = false;
+bool inGame = false;
+bool wasInGame = false;
+
+void die (char *error) {
+
+    perror (error);
+    running = false;
+
+};
+
 
 /*** SCREEN ***/
 
 // TODO: are we cleanning up the console and the screen??
 // do we want that to happen?
-void renderScreen (SDL_Renderer *renderer, SDL_Texture *screen, Console *console) {
+void renderScreen (SDL_Renderer *renderer, SDL_Texture *screen, UIScreen *scene) {
 
-    clearConsole (console);
+    // render the views from back to front for the current screen
+    UIView *v = NULL;
+    for (ListElement *e = LIST_START (scene->views); e != NULL; e = e->next) {
+        v = (UIView *) LIST_DATA (e);
+        clearConsole (v->console);
+        v->render (v->console);
+        SDL_UpdateTexture (screen, v->pixelRect, v->console->pixels, v->pixelRect->w * sizeof (u32));
+    }
 
-    // test
-    putCharAt (console, '@', player.xPos, player.yPos, 0xFFFFFFFF, 0x000000FF);
-
-    // u32 *pixels = (u32 *) calloc (SCREEN_WIDTH * SCREEN_HEIGHT, sizeof (u32));
-
-    SDL_UpdateTexture (screen, NULL, console->pixels, SCREEN_WIDTH * sizeof (u32));
     SDL_RenderClear (renderer);
     SDL_RenderCopy (renderer, screen, NULL, NULL);
     SDL_RenderPresent (renderer);
@@ -26,72 +42,102 @@ void renderScreen (SDL_Renderer *renderer, SDL_Texture *screen, Console *console
 }
 
 
-/*** THREAD ***/
+/*** CLEAN UP ***/
 
-int main (void) {
+extern void cleanUpMenuScene (void);
 
-    // SDL SETUP
-    SDL_Init (SDL_INIT_VIDEO);
-    SDL_Window *window = SDL_CreateWindow ("Blackrock Dungeons",
-         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+void cleanUp (SDL_Window *window, SDL_Renderer *renderer) {
 
-    SDL_Renderer *renderer = SDL_CreateRenderer (window, 0, SDL_RENDERER_SOFTWARE);
+    // if (wasInGame) cleanUpGame ();
 
-    SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    SDL_RenderSetLogicalSize (renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    SDL_Texture *screen = SDL_CreateTexture (renderer, SDL_PIXELFORMAT_RGBA8888,
-        SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    // Create our console emulator graphics
-    Console *console = initConsole (SCREEN_WIDTH, SCREEN_HEIGHT, NUM_ROWS, NUM_COLS);
-
-    // set up the console font
-    setConsoleBitmapFont (console, "./resources/terminal-art.png", 0, 16, 16);
-
-    // FIXME: better player init
-    player.xPos = 10;
-    player.yPos = 10;
-
-    // Main loop
-    // TODO: maybe we want to refactor this
-    bool done = false;
-    while (!done) {
-        SDL_Event event;
-        while (SDL_PollEvent (&event) != 0) {
-            if (event.type == SDL_QUIT) {
-                done = true;
-                break;
-            }
-
-            // Basic Input
-            // Movement with wsad   03/08/2018
-            if (event.type == SDL_KEYDOWN) {
-                SDL_Keycode key = event.key.keysym.sym;
-                switch (key) {
-                    case SDLK_w:
-                        if (player.yPos > 0) player.yPos -= 1; break;
-                    case SDLK_s:
-                        if (player.yPos < NUM_ROWS - 1) player.yPos += 1; break;
-                    case SDLK_a:
-                        if (player.xPos > 0) player.xPos -= 1; break;
-                    case SDLK_d:
-                        if (player.xPos < NUM_COLS - 1) player.xPos += 1; break;
-                    default: break;
-                }
-            }
-
-        }
-
-        renderScreen (renderer, screen, console);
-    }
-
-
+    // clean the UI
+    destroyCurrentScreen ();
+    
     // SDL CLEANUP
     SDL_DestroyRenderer (renderer);
     SDL_DestroyWindow (window);
 
     SDL_Quit ();
+
+}
+
+/*** SET UP ***/
+
+void setUpSDL (SDL_Window **window, SDL_Renderer **renderer, SDL_Texture **screen) {
+
+    SDL_Init (SDL_INIT_VIDEO);
+    *window = SDL_CreateWindow ("Blackrock Dungeons",
+         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, 0);
+
+    *renderer = SDL_CreateRenderer (*window, 0, SDL_RENDERER_SOFTWARE);
+
+    SDL_SetHint (SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+    SDL_RenderSetLogicalSize (*renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    *screen = SDL_CreateTexture (*renderer, SDL_PIXELFORMAT_RGBA8888, 
+        SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+}
+
+
+/*** MAIN THREAD ***/
+
+int main (void) {
+
+    srand ((unsigned) time (NULL));
+
+    SDL_Window *window = NULL;
+    SDL_Renderer *renderer = NULL;
+    SDL_Texture *screen = NULL;
+    setUpSDL (&window, &renderer, &screen);
+
+    running = true;
+    SDL_Event event;
+    // TODO: display an fps counter if we give a debug option
+    u32 timePerFrame;
+    u32 frameStart;
+    i32 sleepTime;
+    UIScreen *screenForInput;
+
+    initWorld ();
+    setActiveScene (gameScene ());
+
+    pthread_t gameThread;
+
+    while (running) {
+        timePerFrame = 1000 / FPS_LIMIT;
+        frameStart = 0;
+        
+        while (SDL_PollEvent (&event) != 0) {
+
+            frameStart = SDL_GetTicks ();
+
+            if (event.type == SDL_QUIT) running = false;
+
+            // TODO: how can we have a more eficient event handler?
+            // handle the event in the correct screen
+            screenForInput = activeScene;
+            screenForInput->handleEvent (screenForInput, event);
+        }
+
+        // if (inGame) {
+        //     if (pthread_create (&gameThread, NULL, updateGame, NULL) != THREAD_OK)
+        //         fprintf (stderr, "Error creating game thread!\n");
+        // } 
+
+        // render the correct screen
+        renderScreen (renderer, screen, activeScene);
+
+        // if (inGame)
+        //     if (pthread_join (gameThread, NULL) != THREAD_OK) fprintf (stderr, "Error joinning game thread!\n");
+
+        // Limit the FPS
+        sleepTime = timePerFrame - (SDL_GetTicks () - frameStart);
+        if (sleepTime > 0) SDL_Delay (sleepTime);
+
+    }
+
+    cleanUp (window, renderer);
 
     return 0;
 
