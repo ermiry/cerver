@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #define VECTOR_INITIAL_N_ALLOCATED  1
+#define VECTOR_STRETCH_FACTOR 		2
 
 typedef struct Vector {
 
@@ -14,7 +15,8 @@ typedef struct Vector {
 
 } Vector;
 
-
 extern void vector_init (Vector *vector, size_t elementSize);
+extern void *vector_get (Vector *vector, size_t i_elem);
+extern void vector_push (Vector *vector, const void *elem);
 
 #endif

@@ -1,6 +1,8 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "utils/myTime.h"
+
 #define FPS		20
 
 // FIXME: CHANGE ALL THE FOLLOWING UNTIL MINE!!!
@@ -73,21 +75,30 @@ typedef struct SSimulationTickPacket {
 
 
 // FIXME: MINE!!
-/* typedef struct Player {
+typedef struct Player {
 
 	u16 id;
 	struct sockaddr_storage address;
 
-	PlayerInput input;
-	u32 input_sequence_num;
-	Cptime last_input_time;
+	// PlayerInput input;
+	u32 inputSequenceNum;
+	TimeSpec lastInputTime;
 
 	// bool alive;
 
 	// int score;
 	// Color color;
 
-} Player; */
+} Player;
 
+/*** IN GAME DATA STRUCTURES ***/
+
+#include "utils/vector.h"
+
+extern Vector players;
+
+/*** GAME FUNCTIONS ***/
+
+extern void spawnPlayer (Player *);
 
 #endif

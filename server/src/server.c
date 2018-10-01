@@ -137,15 +137,54 @@ u8 teardown (void) {
 #pragma region MULTIPLAYER LOGIC
 
 #include "game.h"
+#include "utils/vector.h"
 
-// TODO:
+// TODO: better id handling and management
+u16 nextPlayerId = 0;
+
+// FIXME: handle a limit of players!!
+void addPlayer (struct sockaddr_storage address) {
+
+    // TODO: handle ipv6 ips
+    char addrStr[IP_TO_STR_LEN];
+    sock_ip_to_string ((struct sockaddr *) &address, addrStr, sizeof (addrStr));
+    fprintf (stdout, "[PLAYER]: New player connected from ip: %s @ port: %d.\n", addrStr,
+        sock_ip_port ((struct sockaddr *) &address));
+
+    // TODO: init other necessarry game values
+    // add the new player to the game
+    Player newPlayer;
+    newPlayer.id = nextPlayerId;
+    newPlayer.address = address;
+
+    vector_push (&players, &newPlayer);
+
+    // FIXME: this is temporary
+    spawnPlayer (&newPlayer);
+
+}
+
+// FIXME:
 void handlePlayerInputPacket (struct sockaddr_storage from, PlayerInputPacket *playerInput) {
 
-    // TODO: add players only from the game lobby before the game inits!!
+    // TODO: maybe we can have a better way for searching players??
     // check if we have the player already registerd
+    Player *player = NULL;
+    for (size_t p = 0; p < players.elements; p++) {
+        player = vector_get (&players, p);
+        if (player != NULL) {
+            if (sock_ip_equal ((struct sockaddr *) &player->address, ((struct sockaddr *) &from)))
+                break;  // we found a match!
+        }
+    }
+    
+    // TODO: add players only from the game lobby before the game inits!!
     // if not, add it to the game
 
     // handle the player input
+    // player->input = packet->input;   // FIXME:
+    // player->inputSequenceNum = packet->sequenceNum;
+    player->lastInputTime = getTimeSpec ();
 
 }
 

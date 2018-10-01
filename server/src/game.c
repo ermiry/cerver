@@ -80,6 +80,10 @@ u8 createLobby (void) {
 
 /*** THE ACTUAL GAME ***/
 
+void spawnPlayer (Player *player) {
+    
+}
+
 void updateGame (void) {
 
 }
