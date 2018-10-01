@@ -3,6 +3,8 @@
 
 #include "network.h"
 
+#define FPS		20
+
 typedef int8_t SPlayerRotation;
 enum SPlayerRotation {
 	S_PR_NONE,

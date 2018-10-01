@@ -28,6 +28,9 @@ void die (char *msg) {
 
 }
 
+// TODO: have the idea of creating many virtual servers in different sockets?
+// TODO: if we want to send a file, maybe create a new TCP socket in a new port?
+
 int main (void) {
 
     Config *serverConfig = parseConfigFile ("./config/server.cfg");
