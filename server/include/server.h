@@ -21,10 +21,7 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
-#include <sys/time.h>
-#include <time.h>
-
-typedef struct timespec Cptime;
+#define MAX_UDP_PACKET_SIZE     65515
 
 typedef enum RequestType {
 
