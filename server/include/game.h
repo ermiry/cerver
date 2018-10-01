@@ -1,8 +1,6 @@
 #ifndef GAME_H
 #define GAME_H
 
-#include "network.h"
-
 #define FPS		20
 
 // FIXME: CHANGE ALL THE FOLLOWING UNTIL MINE!!!
@@ -31,20 +29,20 @@ typedef struct SPlayerInput {
 
 typedef struct SPlayer {
 	SPlayerId id;
-	SBool alive;
-	SVectorFloat position;
+	// SBool alive;
+	// SVectorFloat position;
 	float heading;
 	uint32_t score;
-	SColor color;
+	// SColor color;
 } SPlayer;
 
 typedef struct SExplosion {
-	SVectorFloat position;
+	// SVectorFloat position;
 	uint16_t n_ticks_since_creation;
 } SExplosion;
 
 typedef struct SProjectile {
-	SVectorFloat position;
+	// SVectorFloat position;
 	float heading;
 	uint16_t n_ticks_since_creation;
 } SProjectile;
@@ -58,7 +56,7 @@ typedef struct PlayerInputPacket {
 
 typedef struct SGameSettings {
 	float player_timeout; // Seconds.
-	SVectorInt level_size;
+	// SVectorInt level_size;
 	uint16_t fps;
 	uint16_t projectile_lifetime;
 } SGameSettings;
@@ -68,13 +66,13 @@ typedef struct SSimulationTickPacket {
 	SSequenceNum ack_input_sequence_num;
 	SGameSettings game_settings;
 	SPlayerId your_player_id;
-	SArray players; // Array of SPlayer.
-	SArray explosions; // Array of SExplosion.
-	SArray projectiles; // Array of SProjectile.
-} SSimulationTickPacket;
+	// SArray players; // Array of SPlayer.
+	// SArray explosions; // Array of SExplosion.
+	// SArray projectiles; // Array of SProjectile.
+} SSimulationTickPacket; 
 
 
-// FIXME: MINE!!1
+// FIXME: MINE!!
 /* typedef struct Player {
 
 	u16 id;
@@ -91,36 +89,5 @@ typedef struct SSimulationTickPacket {
 
 } Player; */
 
-// TODO: maybe we can move this form here?
-/*** PACKETS ***/
-
-typedef u32 ProtocolId;
-
-typedef struct Version {
-
-	u16 major;
-	u16 minor;
-	
-} Version;
-
-// FIXME: choose wisely...
-const ProtocolId PROTOCOL_ID = 0xEC3B5FA9; // Randomly chosen.
-const Version PROTOCOL_VERSION = {7, 0};
-
-// FIXME: NAMES!!
-typedef Packet_Type {
-
-	S_PT_SIMULATION_TICK,
-	S_PT_PLAYER_INPUT,
-
-}
-
-typedef struct PacketHeader {
-
-	ProtocolId protocolID;
-	Version protocolVersion;
-	PacketType packetType;
-
-} PacketHeader;
 
 #endif

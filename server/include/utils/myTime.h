@@ -1,11 +1,10 @@
 #ifndef MY_TIME_H
 #define MY_TIME_H
 
-#if !defined(_POSIX_C_SOURCE)
-    #define _POSIX_C_SOURCE 199309L
+#ifndef __USE_POSIX199309
+    #define __USE_POSIX199309
 #endif
 
-#include <sys/time.h>
 #include <time.h>
 #include <errno.h>
 

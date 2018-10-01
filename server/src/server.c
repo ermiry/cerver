@@ -8,6 +8,18 @@
 
 #include "utils/config.h"
 
+/*** VALUES ***/
+
+// TODO: maybe move these to the config file??
+// FIXME: choose wisely...
+// these 2 are used to manage the packets
+ProtocolId PROTOCOL_ID = 0xEC3B5FA9; // Randomly chosen.
+Version PROTOCOL_VERSION = {7, 0};
+
+/*** SERVER ***/
+
+#pragma region SERVER LOGIC
+
 // FIXME: add the option to restart the server to load a new cfg file
 // FIXME: add a cfg value to set the protocol
 // FIXME: fix ip address
@@ -117,3 +129,99 @@ u8 teardown (void) {
     return 0;   // teardown was successfull
 
 }
+
+#pragma endregion
+
+/*** MULTIPLAYER ***/
+
+#pragma region MULTIPLAYER LOGIC
+
+#include "game.h"
+
+// TODO:
+void handlePlayerInputPacket (struct sockaddr_storage from, PlayerInputPacket *playerInput) {
+
+    // TODO: add players only from the game lobby before the game inits!!
+    // check if we have the player already registerd
+    // if not, add it to the game
+
+    // handle the player input
+
+}
+
+// check for packets with bad size, protocol, version, etc
+u8 checkPacket (ssize_t packetSize, unsigned char packetData[MAX_UDP_PACKET_SIZE]) {
+
+    if ((unsigned) packetSize < sizeof (PacketHeader)) return 1;
+
+    PacketHeader *header = (PacketHeader *) packetData;
+
+    if (header->protocolID != PROTOCOL_ID) return 1;
+
+    Version version = header->protocolVersion;
+    if (version.major != PROTOCOL_VERSION.major) {
+        fprintf(stderr,
+                "[WARNING]: Received a packet with incompatible version: "
+                "%d.%d (mine is %d.%d).\n",
+                version.major, version.minor,
+                PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor);
+        return 1;
+    }
+
+    if (header->packetType != S_PT_PLAYER_INPUT) {
+        printf("[WARNING]: Ignoring a packet of unexpected type.\n");
+        return 1;
+    }
+
+    if ((unsigned) packetSize < sizeof (PacketHeader) + sizeof (PlayerInputPacket)) {
+        fprintf(stderr, "[WARNING]: Received a too small player input packet.\n");
+        return 1;
+    }
+
+    return 0;   // packet is fine
+
+}
+
+void recievePackets (void) {
+
+    unsigned char packetData[MAX_UDP_PACKET_SIZE];
+
+    struct sockaddr_storage from;
+    socklen_t fromSize = sizeof (struct sockaddr_storage);
+    ssize_t packetSize;
+
+    bool recieve = true;
+
+    while (recieve) {
+        packetSize = recvfrom (server, (char *) packetData, MAX_UDP_PACKET_SIZE, 
+            0, (struct sockaddr *) &from, &fromSize);
+
+        // no more packets to process
+        if (packetSize < 0) recieve = false;
+
+        // process packets
+        else {
+            // just continue to the next packet if we have a bad one...
+            if (checkPacket (packetSize, packetData)) continue;
+
+            // if the packet passes all the checks, we can use it safely
+            else {
+                PlayerInputPacket *playerInput = (PlayerInputPacket *) (packetData + sizeof (PacketHeader));
+                handlePlayerInputPacket (from, playerInput);
+            }
+
+        }        
+    }   
+
+}
+
+// this is used to clean disconnected players
+void checkTimeouts (void) {
+
+}
+
+void sendGamePackets (int destPlayer) {
+
+}
+
+#pragma endregion

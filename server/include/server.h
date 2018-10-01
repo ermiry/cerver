@@ -44,4 +44,40 @@ extern u32 initServer (Config *, u8);
 extern void listenForConnections (void);
 extern u8 teardown (void);
 
+/*** PACKETS ***/
+
+typedef u32 ProtocolId;
+
+typedef struct Version {
+
+	u16 major;
+	u16 minor;
+	
+} Version;
+
+extern ProtocolId PROTOCOL_ID;
+extern Version PROTOCOL_VERSION;
+
+// FIXME: NAMES!!
+typedef enum PacketType {
+
+	S_PT_SIMULATION_TICK,
+	S_PT_PLAYER_INPUT,
+
+} PacketType;
+
+typedef struct PacketHeader {
+
+	ProtocolId protocolID;
+	Version protocolVersion;
+	PacketType packetType;
+
+} PacketHeader;
+
+/*** MULTIPLAYER ***/
+
+extern void recievePackets (void);
+extern void checkTimeouts (void);
+extern void sendGamePackets (int destPlayer);
+
 #endif
