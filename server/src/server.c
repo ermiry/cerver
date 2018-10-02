@@ -98,6 +98,7 @@ u32 initServer (Config *cfg, u8 type) {
 
 }
 
+// TODO: how can we handle other parameters for requests?
 void connectionHandler (i32 client) {
 
 	// send welcome message
@@ -115,7 +116,12 @@ void connectionHandler (i32 client) {
 			case REQ_GET_FILE: fprintf (stdout, "[REQ]: Get File.\n"); break;
 			case POST_SEND_FILE: fprintf (stdout, "[POST]: Send File.\n"); break;
 
-			case REQ_CREATE_LOBBY: fprintf (stdout, "[REQ]: Create new game lobby.\n"); break;
+			case REQ_CREATE_LOBBY: 
+                fprintf (stdout, "[REQ]: Create new game lobby.\n"); 
+                // FIXME: we need to pass the owner of the lobby and the type of game
+                // to read the game settings from a cfg file
+                createLobby ();
+                break;
 
 			// TODO: send an error to the client
 			default: fprintf (stderr, "[WARNING]: Invalid request type: %i", request); break;
@@ -246,7 +252,7 @@ u8 checkPacket (ssize_t packetSize, unsigned char packetData[MAX_UDP_PACKET_SIZE
         return 1;
     }
 
-    if (header->packetType != S_PT_PLAYER_INPUT) {
+    if (header->packetType != PLAYER_INPUT_TYPE) {
         printf("[WARNING]: Ignoring a packet of unexpected type.\n");
         return 1;
     }

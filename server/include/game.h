@@ -81,6 +81,16 @@ typedef struct Player {
 
 } Player;
 
+// 02/10/2018 -- 9:38 -- lets try this...
+typedef struct Lobby {
+
+	GameSettings settings;
+
+	Player *owner;		// the client that created the lobby -> he has higher privileges
+	Vector players;		// the client connected to the lobby
+
+} Lobby;
+
 /*** IN GAME DATA STRUCTURES ***/
 
 #include "utils/vector.h"
@@ -88,6 +98,8 @@ typedef struct Player {
 extern Vector players;
 
 /*** GAME FUNCTIONS ***/
+
+extern u8 createLobby (void);
 
 extern void spawnPlayer (Player *);
 

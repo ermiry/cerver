@@ -51,10 +51,12 @@ void createGame (void) {
 
     fprintf (stdout, "\nCreating a new game lobby..\n");
 
+    // FIXME: handle connection success or error
     if (!connected) connectToServer ();
     else fprintf (stdout, "We are already connected to the server.\n");
 
     // request server for a game lobby
+    // TODO: how can we send the server the type of game to create??
     makeRequest (REQ_CREATE_LOBBY);
 
 }

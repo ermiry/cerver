@@ -82,6 +82,7 @@ int recieveFile (char *request) {
 
 }
 
+// TODO: how can we handle other parameters for requests?
 int makeRequest (RequestType requestType) {
 
     char buffer[CLIENT_REQ_TYPE_SIZE];
@@ -99,7 +100,9 @@ int makeRequest (RequestType requestType) {
         case REQ_GET_FILE: break;
         case POST_SEND_FILE: break;
 
-        case REQ_CREATE_LOBBY: break;
+        case REQ_CREATE_LOBBY: 
+            // we expect a response from the server with our new lobby
+            break;
 
         default: fprintf (stderr, "Invalid request!\n"); break;
     }
@@ -120,6 +123,9 @@ int initClient (void) {
 
 }
 
+// FIXME: do we need to set the socket to no blocking??
+// TODO: maybe e can also load some settings from a cfg file
+// the same way as we do it on the server
 // TODO: log the process to the message log...
 int connectToServer (void) {
 
