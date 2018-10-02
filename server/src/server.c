@@ -47,6 +47,32 @@ void s_array_init (void *array, void *begin, size_t n_elems) {
 
 #pragma endregion
 
+/*** REQUESTS ***/
+
+#pragma region REQUESTS
+
+// TODO: get the owner and the type of lobby
+void createLobby (void) {
+
+    Lobby *lobby = newLobby ();
+    if (lobby != NULL) {
+        fprintf (stdout, "[GAME]: New lobby created!\n");
+
+        // FIXME: send the lobby info to the owner
+
+        // TODO: we can now wait for more players to join the lobby...
+    }
+
+    else {
+        fprintf (stderr, "[ERROR]: Failed to create a new game lobby!");
+
+        // FIXME: send an error to the player to hanlde it
+    } 
+
+}
+
+#pragma endregion
+
 /*** SERVER ***/
 
 #pragma region SERVER LOGIC
@@ -124,7 +150,7 @@ void connectionHandler (i32 client) {
                 break;
 
 			// TODO: send an error to the client
-			default: fprintf (stderr, "[WARNING]: Invalid request type: %i", request); break;
+			default: fprintf (stderr, "[WARNING]: Invalid request type: %i.", request); break;
 		}
 	}
 

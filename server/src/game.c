@@ -74,7 +74,7 @@ void startGame (void) {
     // --> maybe create a different socket for each lobby?
 
 // we create the lobby, and we wait until the owner of the lobby tell us to start the game
-u8 createLobby (void) {
+Lobby *newLobby (void) {
 
     fprintf (stdout, "Creatting a new lobby...\n");
 
@@ -82,23 +82,24 @@ u8 createLobby (void) {
 
     // TODO: set the server socket to no blocking and make sure we have a udp connection
     // make sure that we have the correct config for the server in other func
-    sock_setNonBlocking (server);
+    // FIXME: where do we want to call this?? sock_setNonBlocking (server);
+
+    // TODO: create the lobby and player owner data structures
 
     // TODO: better manage who created the game lobby --> better players/clients management
 
-    // TODO: maybe we want to get some game settings first??
-
-    // TODO: don't forget that for creating many lobbys, we need individual game structs 
-    // for each one!!!
-    // init the necessary game structures
+    // TODO: init the clients/players structures inside the lobby
     // vector_init (&players, sizeof (Player));
+
+    // TODO: maybe we want to get some game settings first??
 
     // TODO: make sure that all the players have the same game settings, 
     // so send to them that info first!!
 
-    // FIXME: return the new lobby to the client on success
+    // FIXME: return the new lobby on success to send its info to the client
 
     // TODO: error handling when creating the server, and send the error to the client(s)
+    // on error just return a NULL;
 
 }
 

@@ -10,10 +10,10 @@
 
 void die (char *msg) {
 
-    fprintf (stderr, "%s", msg);
+    fprintf (stderr, "\n%s\n", msg);
 
     // try to wrap things up before exit!
-    close (server);
+    teardown ();
 
     exit (EXIT_FAILURE);
 

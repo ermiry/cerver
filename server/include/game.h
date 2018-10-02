@@ -99,7 +99,7 @@ extern Vector players;
 
 /*** GAME FUNCTIONS ***/
 
-extern u8 createLobby (void);
+extern Lobby *newLobby (void);
 
 extern void spawnPlayer (Player *);
 
