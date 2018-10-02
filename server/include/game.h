@@ -1,93 +1,83 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include "network.h"
 #include "utils/myTime.h"
 
 #define FPS		20
 
-// FIXME: CHANGE ALL THE FOLLOWING UNTIL MINE!!!
+// TODO: maybe load this from a cfg file?
+// TODO: what other settings do we need?? map? enemies? loot?
+typedef struct GameSettings {
 
-typedef uint16_t SPlayerId;
+	float playerTimeout; 	// in seconds.
+	u8 fps;
 
-typedef int8_t SPlayerRotation;
-enum SPlayerRotation {
-	S_PR_NONE,
-	S_PR_LEFT,
-	S_PR_RIGHT,
-};
+} GameSettings;
 
-typedef int8_t SPlayerAcceleration;
-enum SPlayerAcceleration {
-	S_PA_NONE,
-	S_PA_FORWARD,
-	S_PA_REVERSE,
-};
+// in the game we move square by square
+typedef struct Position {
 
-typedef struct SPlayerInput {
-	SPlayerAcceleration accelerate;
-	SPlayerRotation rotate;
-	bool shoot;
-} SPlayerInput;
+    u8 x, y;
+    // u8 layer;   
 
-typedef struct SPlayer {
+} Position;
+
+typedef struct PlayerInput {
+
+	Position pos;
+
+} PlayerInput;
+
+/* typedef struct SPlayer {
 	SPlayerId id;
 	// SBool alive;
 	// SVectorFloat position;
 	float heading;
 	uint32_t score;
 	// SColor color;
-} SPlayer;
+} SPlayer; */
 
-typedef struct SExplosion {
-	// SVectorFloat position;
-	uint16_t n_ticks_since_creation;
-} SExplosion;
-
-typedef struct SProjectile {
-	// SVectorFloat position;
-	float heading;
-	uint16_t n_ticks_since_creation;
-} SProjectile;
-
-typedef uint64_t SSequenceNum;
+typedef uint64_t SequenceNum;
 
 typedef struct PlayerInputPacket {
-	SSequenceNum sequence_num;
-	SPlayerInput input;
+
+	SequenceNum sequenceNum;
+	PlayerInput input;
+	
 } PlayerInputPacket;
 
-typedef struct SGameSettings {
-	float player_timeout; // Seconds.
-	// SVectorInt level_size;
-	uint16_t fps;
-	uint16_t projectile_lifetime;
-} SGameSettings;
+typedef uint16_t PlayerId;
 
-typedef struct SSimulationTickPacket {
-	SSequenceNum sequence_num;
-	SSequenceNum ack_input_sequence_num;
-	SGameSettings game_settings;
-	SPlayerId your_player_id;
+typedef struct UpdatedGamePacket {
+
+	GameSettings gameSettings;
+
+	PlayerId playerId;
+
+	SequenceNum sequenceNum;
+	SequenceNum ack_input_sequence_num;
+
 	// SArray players; // Array of SPlayer.
 	// SArray explosions; // Array of SExplosion.
 	// SArray projectiles; // Array of SProjectile.
-} SSimulationTickPacket; 
 
+} UpdatedGamePacket; 
 
-// FIXME: MINE!!
+// TODO: maybe add the game components here? as in the client?
 typedef struct Player {
 
-	u16 id;
+	PlayerId id;
 	struct sockaddr_storage address;
 
-	// PlayerInput input;
+	PlayerInput input;
 	u32 inputSequenceNum;
 	TimeSpec lastInputTime;
 
-	// bool alive;
+	bool alive;
 
-	// int score;
-	// Color color;
+	// Components
+	Position pos;
 
 } Player;
 

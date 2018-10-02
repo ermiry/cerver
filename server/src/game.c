@@ -73,6 +73,9 @@ u8 createLobby (void) {
 
     // TODO: maybe we want to get some game settings first??
 
+    // TODO: make sure that all the players have the same game settings, 
+    // so send to them that info first!!
+
     // start the game
     gameLoop ();
 
@@ -80,10 +83,38 @@ u8 createLobby (void) {
 
 /*** THE ACTUAL GAME ***/
 
+// TODO:
+void playerDead (Player *player) {
+
+}
+
 void spawnPlayer (Player *player) {
     
 }
 
+// TODO: how do we handle collisions with other players?
 void updateGame (void) {
+
+    // update the players
+    Player *player = NULL;
+    for (size_t p = 0; p < players.elements; p++) {
+        player = vector_get (&players, p);
+
+        // FIXME: handle resspawn
+        if (!player->alive) {
+			// player->ticks_until_respawn--;
+			// if (player->ticks_until_respawn <= 0)
+			// 	player_spawn(player);
+			continue;
+		} 
+
+        // FIXME:
+        // handle player movement
+        else {
+            player->pos.x = player->input.pos.x;
+            player->pos.y = player->input.pos.y;
+        }
+
+    }
 
 }

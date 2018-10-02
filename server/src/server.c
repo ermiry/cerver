@@ -16,6 +16,37 @@
 ProtocolId PROTOCOL_ID = 0xEC3B5FA9; // Randomly chosen.
 Version PROTOCOL_VERSION = {7, 0};
 
+/*** SERIALIZATION ***/
+
+#pragma region SERIALIZATION 
+
+typedef int32_t RelativePtr;
+
+typedef struct SArray {
+
+	u32 n_elems;
+	RelativePtr begin;
+
+} SArray;
+
+void s_ptr_to_relative (void *relativePtr, void *ptr) {
+
+	RelativePtr result = (char *) ptr - (char *) relativePtr;
+	memcpy (relativePtr, &result, sizeof (RelativePtr));
+
+}
+
+void s_array_init (void *array, void *begin, size_t n_elems) {
+
+	SArray result;
+	result.n_elems = n_elems;
+	memcpy (array, &result, sizeof (SArray));
+	s_ptr_to_relative ((char *) array + offsetof (result, begin), begin);
+
+}
+
+#pragma endregion
+
 /*** SERVER ***/
 
 #pragma region SERVER LOGIC
@@ -142,6 +173,14 @@ u8 teardown (void) {
 // TODO: better id handling and management
 u16 nextPlayerId = 0;
 
+// TODO: maybe we can get this value form a cfg?
+const float PLAYER_TIMEOUT = 30;    // in seconds
+
+// this is used to clean disconnected players
+void checkTimeouts (void) {
+
+}
+
 // FIXME: handle a limit of players!!
 void addPlayer (struct sockaddr_storage address) {
 
@@ -254,12 +293,103 @@ void recievePackets (void) {
 
 }
 
-// this is used to clean disconnected players
-void checkTimeouts (void) {
+// TODO: maybe this can open many possibilities in the future?
+// can we use this for request types?
+void initPacketHeader (void *header, PacketType type) {
+
+    PacketHeader h;
+    h.protocolID = PROTOCOL_ID;
+    h.protocolVersion = PROTOCOL_VERSION;
+    h.packetType = type;
+
+    memcpy (header, &h, sizeof (PacketHeader));
 
 }
 
-void sendGamePackets (int destPlayer) {
+// TODO: can we use this to send any kind of packet?
+// if we are handling different servers, don't forget to add the correct sokcet...
+void sendPacket (void *begin, size_t packetSize, struct sockaddr_storage address) {
+
+    ssize_t sentBytes = sendto (server, (const char *) begin, packetSize, 0,
+		       (struct sockaddr *) &address, sizeof (struct sockaddr_storage));
+
+	if (sentBytes < 0 || (unsigned) sentBytes != packetSize) 
+        fprintf (stderr, "[ERROR]: Failed to send packet!\n");
+
+}
+
+// FIXME:
+// TODO: maybe we can clean and refactor this?
+// creates and sends game packets
+void sendGamePackets (int to) {
+
+    Player *destPlayer = vector_get (&players, to);
+
+    // first we need to prepare the packet...
+
+    // TODO: clean this a little, but don't forget this can be dynamic!!
+	size_t packetSize = sizeof (PacketHeader) + sizeof (UpdatedGamePacket) +
+		players.elements * sizeof (Player);
+
+	// buffer for packets, extend if necessary...
+	static void *packetBuffer = NULL;
+	static size_t packetBufferSize = 0;
+	if (packetSize > packetBufferSize) {
+		packetBufferSize = packetSize;
+		free (packetBuffer);
+		packetBuffer = malloc (packetBufferSize);
+	}
+
+	void *begin = packetBuffer;
+	char *end = begin; 
+
+	// packet header
+	PacketHeader *header = (PacketHeader *) end;
+    end += sizeof (PacketHeader);
+    initPacketHeader (header, GAME_UPDATE_TYPE);
+
+    // TODO: do we need to send the game settings each time?
+	// game settings and other non-array data
+    UpdatedGamePacket *gameUpdate = (UpdatedGamePacket *) end;
+    end += sizeof (UpdatedGamePacket);
+    // gameUpdate->sequenceNum = currentTick;  // FIXME:
+	// tick_packet->ack_input_sequence_num = dest_player->input_sequence_num;  // FIXME:
+    gameUpdate->playerId = destPlayer->id;
+    gameUpdate->gameSettings.playerTimeout = PLAYER_TIMEOUT;
+    gameUpdate->gameSettings.fps = FPS;
+
+    // TODO: maybe add here some map elements, dropped items and enemies??
+    // such as the players or explosions?
+	// arrays headers --- 01/10/2018 -- we only have the players array
+    // void *playersArray = (char *) gameUpdate + offsetof (UpdatedGamePacket, players);
+	void *playersArray = (char *) gameUpdate + offsetof (gameUpdate, players);
+
+	// send player info ---> TODO: what player do we want to send?
+    s_array_init (playersArray, end, players.elements);
+
+    Player *player = NULL;
+    for (size_t p = 0; p < players.elements; p++) {
+        player = vector_get (&players, p);
+
+        // FIXME: do we really need to serialize the packets??
+        // FIXME: do we really need to have serializable data structs?
+
+		// SPlayer *s_player = (SPlayer *) packet_end;
+		// packet_end += sizeof(*s_player);
+		// s_player->id = player->id;
+		// s_player->alive = !!player->alive;
+		// s_player->position = player->position;
+		// s_player->heading = player->heading;
+		// s_player->score = player->score;
+		// s_player->color.red = player->color.red;
+		// s_player->color.green = player->color.green;
+		// s_player->color.blue = player->color.blue;
+    }
+
+    assert (end == (char *) begin + packetSize);
+
+    // after the pakcet has been prepare, send it to the dest player...
+    sendPacket (begin, packetSize, destPlayer->address);
 
 }
 

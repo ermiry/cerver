@@ -58,11 +58,12 @@ typedef struct Version {
 extern ProtocolId PROTOCOL_ID;
 extern Version PROTOCOL_VERSION;
 
-// FIXME: NAMES!!
+// TODO: I think we can use this for manu more applications?
+// maybe something like our request type?
 typedef enum PacketType {
 
-	S_PT_SIMULATION_TICK,
-	S_PT_PLAYER_INPUT,
+	GAME_UPDATE_TYPE = 1,
+	PLAYER_INPUT_TYPE,
 
 } PacketType;
 
