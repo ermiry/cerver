@@ -4,6 +4,8 @@
 #include "network.h"
 #include "utils/myTime.h"
 
+#include "utils/vector.h"
+
 #define FPS		20
 
 // TODO: what other settings do we need?? map? enemies? loot?

@@ -28,9 +28,17 @@ typedef enum RequestType {
     REQ_GET_FILE = 1,
     POST_SEND_FILE,
     
-    REQ_CREATE_LOBBY = 3
+    REQ_CREATE_LOBBY = 3,
+
+    REQ_TEST = 100,
 
 } RequestType;
+
+typedef struct RequestData {
+
+    RequestType type;
+
+} RequestData;
 
 #define CLIENT_REQ_TYPE_SIZE     8
 
