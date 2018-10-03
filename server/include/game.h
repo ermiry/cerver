@@ -6,12 +6,16 @@
 
 #define FPS		20
 
-// TODO: maybe load this from a cfg file?
 // TODO: what other settings do we need?? map? enemies? loot?
 typedef struct GameSettings {
 
-	float playerTimeout; 	// in seconds.
+	u8 playerTimeout; 	// in seconds.
 	u8 fps;
+
+	u8 minPlayers;
+	u8 maxPlayers;
+
+	// duration?
 
 } GameSettings;
 
@@ -84,7 +88,7 @@ typedef struct Player {
 // 02/10/2018 -- 9:38 -- lets try this...
 typedef struct Lobby {
 
-	GameSettings settings;
+	GameSettings *settings;
 
 	Player *owner;		// the client that created the lobby -> he has higher privileges
 	Vector players;		// the client connected to the lobby

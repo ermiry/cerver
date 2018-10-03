@@ -61,6 +61,9 @@ void createLobby (void) {
         // FIXME: send the lobby info to the owner
 
         // TODO: we can now wait for more players to join the lobby...
+
+        // TODO: make sure that all the players have the same game settings, 
+        // so send to them that info when they connect!!
     }
 
     else {

@@ -2,14 +2,14 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "utils/myTime.h"
-
 #include "server.h"
 #include "network.h"    // TODO: refactor our code --> we dont want the game to 
 // know about the network functions, only the server --> we are using set the socket to
 // no blocking the create lobby function!!
 #include "game.h"
 
+#include "utils/myTime.h"
+#include "utils/config.h"
 #include "utils/vector.h"
 
 /*** DATA STRUCTURES ***/
@@ -70,13 +70,41 @@ void startGame (void) {
 
 }
 
-// TODO: add support for multiple lobbys at the smae time
+// TODO: handle different game types
+GameSettings *getGameSettings (u8 gameType) {
+
+    Config *gameConfig = parseConfigFile ("./config/gameSettings.cfg");
+    if (!gameConfig) {
+        fprintf (stderr, "[ERROR]: Problems loading game settings config!\n");
+        return NULL;
+    } 
+
+    ConfigEntity *cfgEntity = getEntityWithId (gameConfig, gameType);
+	if (!cfgEntity) {
+        fprintf (stderr, "[ERROR]: Problems with game settings config!\n");
+        return NULL;
+    } 
+
+    GameSettings *settings = (GameSettings *) malloc (sizeof (GameSettings));
+
+    // TODO: better error handling here
+    settings->playerTimeout = atoi (getEntityValue (cfgEntity, "playerTimeout"));
+    settings->fps = atoi (getEntityValue (cfgEntity, "fps"));
+    settings->minPlayers = atoi (getEntityValue (cfgEntity, "minPlayers"));
+    settings->maxPlayers = atoi (getEntityValue (cfgEntity, "maxPlayers"));
+
+    return settings;
+
+}
+
+// TODO: add support for multiple lobbys at the same time
     // --> maybe create a different socket for each lobby?
 
+// FIXME: pass the owner of the lobby and the game type!!
 // we create the lobby, and we wait until the owner of the lobby tell us to start the game
 Lobby *newLobby (void) {
 
-    fprintf (stdout, "Creatting a new lobby...\n");
+    fprintf (stdout, "[GAME]: Creatting a new lobby...\n");
 
     // TODO: what about a new connection in a new socket??
 
@@ -84,22 +112,21 @@ Lobby *newLobby (void) {
     // make sure that we have the correct config for the server in other func
     // FIXME: where do we want to call this?? sock_setNonBlocking (server);
 
-    // TODO: create the lobby and player owner data structures
-
     // TODO: better manage who created the game lobby --> better players/clients management
+    // TODO: create the lobby and player owner data structures
+    Lobby *newLobby = (Lobby *) malloc (sizeof (Lobby));
+    // FIXME: newLobby->owner = NULL;
+    // as of 02/10/2018 -- we only have one possible game type...
+    newLobby->settings = getGameSettings (1);
+    if (newLobby->settings == NULL) {
+        free (newLobby);
+        return NULL;
+    } 
 
-    // TODO: init the clients/players structures inside the lobby
-    // vector_init (&players, sizeof (Player));
+    // init the clients/players structures inside the lobby
+    vector_init (&newLobby->players, sizeof (Player));
 
-    // TODO: maybe we want to get some game settings first??
-
-    // TODO: make sure that all the players have the same game settings, 
-    // so send to them that info first!!
-
-    // FIXME: return the new lobby on success to send its info to the client
-
-    // TODO: error handling when creating the server, and send the error to the client(s)
-    // on error just return a NULL;
+    return newLobby;
 
 }
 
