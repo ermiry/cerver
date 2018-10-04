@@ -1,7 +1,10 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <stdio.h>
 #include <stdint.h>
+
+#include "utils/myUtils.h"
 
 #define EXIT_FAILURE    1
 
@@ -70,7 +73,8 @@ extern Version PROTOCOL_VERSION;
 // maybe something like our request type?
 typedef enum PacketType {
 
-	GAME_UPDATE_TYPE = 1,
+	REQUEST = 1,
+	GAME_UPDATE_TYPE,
 	PLAYER_INPUT_TYPE,
 
 } PacketType;
@@ -88,5 +92,26 @@ typedef struct PacketHeader {
 extern void recievePackets (void);
 extern void checkTimeouts (void);
 extern void sendGamePackets (int destPlayer);
+
+/*** LOG ***/
+
+// TODO: add more types here...
+typedef enum LogMsgType {
+
+	NO_TYPE = 0,
+
+    ERROR = 1,
+    WARNING,
+    DEBUG,
+    TEST,
+
+    REQ = 10,
+    PACKET,
+    PLAYER
+
+} LogMsgType;
+
+void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
+    const char *msg);
 
 #endif

@@ -58,6 +58,11 @@ void s_array_init (void *array, void *begin, size_t n_elems) {
 
 #pragma region PACKETS
 
+ssize_t packetHeaderSize;
+ssize_t requestPacketSize;
+ssize_t updatedGamePacketSize;
+ssize_t playerInputPacketSize;
+
 // FIXME:
 void handlePlayerInputPacket (struct sockaddr_storage from, PlayerInputPacket *playerInput) {
 
@@ -82,9 +87,8 @@ void handlePlayerInputPacket (struct sockaddr_storage from, PlayerInputPacket *p
 
 }
 
-// FIXME:
 // check for packets with bad size, protocol, version, etc
-u8 checkPacket (ssize_t packetSize, unsigned char packetData[MAX_UDP_PACKET_SIZE]) {
+u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) {
 
     if ((unsigned) packetSize < sizeof (PacketHeader)) {
         fprintf (stderr, "[PACKET][ERROR]: Recieved a to small packet!\n");
@@ -108,18 +112,23 @@ u8 checkPacket (ssize_t packetSize, unsigned char packetData[MAX_UDP_PACKET_SIZE
         return 1;
     }
 
-    // FIXME: make the appropiated checks here
-    // if (header->packetType != PLAYER_INPUT_TYPE) {
-    //     printf("[WARNING]: Ignoring a packet of unexpected type.\n");
-    //     return 1;
-    // }
+    switch (type) {
+        case REQUEST: 
+            if (packetSize < requestPacketSize)
+                fprintf(stderr, "[WARNING]: Received a too small request packet.\n");
+            break;
+        case GAME_UPDATE_TYPE: 
+            if (packetSize < updatedGamePacketSize)
+                fprintf(stderr, "[WARNING]: Received a too small game update packet.\n");
+            break;
+        case PLAYER_INPUT_TYPE: 
+            if (packetSize < playerInputPacketSize)
+                fprintf(stderr, "[WARNING]: Received a too small player input packet.\n");
+            break;
+        default: fprintf (stderr, "[PACKET][WARNING]: Got a pakcet of incompatible type.\n"); break;
+    }
 
-    // if ((unsigned) packetSize < sizeof (PacketHeader) + sizeof (PlayerInputPacket)) {
-    //     fprintf(stderr, "[WARNING]: Received a too small player input packet.\n");
-    //     return 1;
-    // }
-
-    return 0;   // packet is fine
+    return 0;   // packet is fine or packet gets ignored for its size
 
 }
 
@@ -147,7 +156,7 @@ void recievePackets (void) {
         // process packets
         else {
             // just continue to the next packet if we have a bad one...
-            if (checkPacket (packetSize, packetData)) continue;
+            if (checkPacket (packetSize, packetData, PLAYER_INPUT_TYPE)) continue;
 
             // if the packet passes all the checks, we can use it safely
             else {
@@ -309,6 +318,15 @@ i32 server;
 
 const char welcome[256] = "You have reached the Multiplayer Server!";
 
+void initServerValues (void) {
+
+    packetHeaderSize = sizeof (PacketHeader);
+    requestPacketSize = packetHeaderSize + sizeof (RequestData);
+    updatedGamePacketSize = packetHeaderSize + sizeof (UpdatedGamePacket);
+    playerInputPacketSize = packetHeaderSize + sizeof (PlayerInputPacket) ;
+
+}
+
 u32 initServer (Config *cfg, u8 type) {
 
 	ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
@@ -339,6 +357,8 @@ u32 initServer (Config *cfg, u8 type) {
     if (bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr)) < 0) 
         die ("\n[ERROR]: Failed to bind server socket!");
 
+    initServerValues ();
+
 	// return the port we are listening to upon success
 	return port;
 
@@ -354,63 +374,14 @@ void connectionHandler (i32 client) {
 	// send welcome message
 	send (client, welcome, sizeof (welcome), 0);
 
-    // OLD WAY FOR HANDLING CLIENT REQUESTS
-    {
-        // handle client request type
-        /* i16 readSize = 0;
-        char clientReq[CLIENT_REQ_TYPE_SIZE];
-
-        // FIXME: 29/09/2018 -- we can only hanlde ONE request each connection
-        if (readSize = recv (client, clientReq, CLIENT_REQ_TYPE_SIZE, 0) > 0) {
-            u8 request = atoi (clientReq);
-
-            switch (request) {
-                case REQ_GET_FILE: fprintf (stdout, "[REQ]: Get File.\n"); break;
-                case POST_SEND_FILE: fprintf (stdout, "[POST]: Send File.\n"); break;
-
-                case REQ_CREATE_LOBBY: 
-                    fprintf (stdout, "[REQ]: Create new game lobby.\n"); 
-                    // FIXME: we need to pass the owner of the lobby and the type of game
-                    // to read the game settings from a cfg file
-                    createLobby ();
-                    break;
-
-                // TODO: send an error to the client
-                default: fprintf (stderr, "[WARNING]: Invalid request type: %i.", request); break;
-            }
-        }
-
-        else fprintf (stdout, "No client request.\n");
-
-        close (client); */
-    }	
-
-    // NEW WAY!!
-
-    // if the packet passes all the checks, we can use it safely
-    // else {
-    //     PlayerInputPacket *playerInput = (PlayerInputPacket *) (packetData + sizeof (PacketHeader));
-    //     handlePlayerInputPacket (from, playerInput);
-    // }
-
     // recieving packets from a client
     unsigned char packetData[MAX_UDP_PACKET_SIZE];
-    // ssize_t packetSize;
-
-    // bool recieve = true;
-    // while (recieve) {
-        
-    // }
-
-    struct sockaddr_storage from;
-    socklen_t from_size = sizeof (from);
     ssize_t packetSize;
         
     if ((packetSize = recv (client, packetData, sizeof (packetData), 0)) > 0) {
-        fprintf (stdout, "[PACKET]: Recieved request pakcet size: %ld\n", packetSize);
+        logMsg (stdout, TEST, PACKET, createString ("Recieved request pakcet size: %ld.", packetSize));
         // check the packet
-        // TODO: check the correct packet type
-        if (!checkPacket (packetSize, packetData)) {
+        if (!checkPacket (packetSize, packetData, REQUEST)) {
             // handle the request
             RequestData *reqData = (RequestData *) (packetData + sizeof (PacketHeader));
             switch (reqData->type) {
