@@ -107,6 +107,7 @@ typedef enum LogMsgType {
 
     REQ = 10,
     PACKET,
+    FILE_REQ,
     GAME,
     PLAYER,
 

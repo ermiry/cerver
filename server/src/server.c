@@ -384,9 +384,11 @@ void connectionHandler (i32 client) {
             // handle the request
             RequestData *reqData = (RequestData *) (packetData + sizeof (PacketHeader));
             switch (reqData->type) {
-                case REQ_TEST: 
-                    logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!");
-                    break;
+                case REQ_GET_FILE: logMsg (stdout, REQ, FILE_REQ, "Requested a file."); break;
+                case POST_SEND_FILE: logMsg (stdout, REQ, FILE_REQ, "Client wants to send a file."); break;
+
+
+                case REQ_TEST:  logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!"); break;
 
                 default: logMsg (stderr, ERROR, REQ, "Invalid request type!");
             }

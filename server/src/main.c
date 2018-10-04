@@ -31,8 +31,10 @@ char *getMsgType (LogMsgType type) {
         case TEST: strcpy (temp, "[TEST]"); break;
 
         case REQ: strcpy (temp, "[REQ]"); break;
+        case FILE_REQ: strcpy (temp, "[FILE]"); break;
         case PACKET: strcpy (temp, "[PACKET]"); break;
         case PLAYER: strcpy (temp, "[PLAYER]"); break;
+        case GAME: strcpy (temp, "[GAME]"); break;
 
         default: break;
     }
