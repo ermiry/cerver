@@ -7,7 +7,7 @@ SRCDIR = ./src/
 SOURCES = $(SRCDIR)*.c \
 		  $(SRCDIR)utils/*.c 
 
-all: server #run #clean
+all: server run #clean
 
 server: $(SOURCES)
 	$(CC) $(SOURCES) $(CFLAGS) -o ./bin/server

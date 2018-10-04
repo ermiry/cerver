@@ -395,11 +395,19 @@ void connectionHandler (i32 client) {
 
     // recieving packets from a client
     unsigned char packetData[MAX_UDP_PACKET_SIZE];
-    ssize_t packetSize;
+    // ssize_t packetSize;
 
-    bool recieve = true;
-    while (recieve) {
-        if (packetSize = recv (client, packetData, sizeof (packetData), 0) > 0) {
+    // bool recieve = true;
+    // while (recieve) {
+        
+    // }
+
+    struct sockaddr_storage from;
+    socklen_t from_size = sizeof (from);
+    ssize_t packetSize;
+        
+    if ((packetSize = recv (client, packetData, sizeof (packetData), 0)) > 0) {
+        fprintf (stdout, "[PACKET]: Recieved request pakcet size: %ld\n", packetSize);
         // check the packet
         // TODO: check the correct packet type
         if (!checkPacket (packetSize, packetData)) {
@@ -415,11 +423,10 @@ void connectionHandler (i32 client) {
         }
             
         else fprintf (stderr, "[REQ][ERROR]: Recieved an invalid request packet from the client!\n");
-        }
-
-        // FIXME: better error handling I guess...
-        else fprintf (stderr, "[REQ][ERROR]: No client request!\n");
     }
+
+    // FIXME: better error handling I guess...
+    else fprintf (stderr, "[REQ][ERROR]: No client request!\n");
 
 }
 
