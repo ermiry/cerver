@@ -91,44 +91,43 @@ void handlePlayerInputPacket (struct sockaddr_storage from, PlayerInputPacket *p
 u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) {
 
     if ((unsigned) packetSize < sizeof (PacketHeader)) {
-        fprintf (stderr, "[PACKET][ERROR]: Recieved a to small packet!\n");
+        logMsg (stderr, WARNING, PACKET, "Recieved a to small packet!");
         return 1;
     } 
 
     PacketHeader *header = (PacketHeader *) packetData;
 
     if (header->protocolID != PROTOCOL_ID) {
-        fprintf (stderr, "[PACKET][ERROR]: Wrong protocol ID!\n");
+        logMsg (stderr, WARNING, PACKET, "Packet with unknown protocol ID.");
         return 1;
     }
 
     Version version = header->protocolVersion;
     if (version.major != PROTOCOL_VERSION.major) {
-        fprintf(stderr,
-                "[PACKET][ERROR]: Received a packet with incompatible version: "
-                "%d.%d (mine is %d.%d).\n",
-                version.major, version.minor,
-                PROTOCOL_VERSION.major, PROTOCOL_VERSION.minor);
+        logMsg (stderr, WARNING, PACKET, "Packet with incompatible version.");
         return 1;
     }
 
     switch (type) {
         case REQUEST: 
-            if (packetSize < requestPacketSize)
-                fprintf(stderr, "[WARNING]: Received a too small request packet.\n");
-            break;
+            if (packetSize < requestPacketSize) {
+                logMsg (stderr, WARNING, PACKET, "Received a too small request packet.");
+                return 1;
+            }
         case GAME_UPDATE_TYPE: 
-            if (packetSize < updatedGamePacketSize)
-                fprintf(stderr, "[WARNING]: Received a too small game update packet.\n");
-            break;
+            if (packetSize < updatedGamePacketSize) {
+                logMsg (stderr, WARNING, PACKET, "Received a too small game update packet.");
+                return 1;
+            }
         case PLAYER_INPUT_TYPE: 
-            if (packetSize < playerInputPacketSize)
-                fprintf(stderr, "[WARNING]: Received a too small player input packet.\n");
-            break;
-        default: fprintf (stderr, "[PACKET][WARNING]: Got a pakcet of incompatible type.\n"); break;
+            if (packetSize < playerInputPacketSize) {
+                logMsg (stderr, WARNING, PACKET, "Received a too small player input packet.");
+                return 1;
+            }
+        default: logMsg (stderr, WARNING, PACKET, "Got a pakcet of incompatible type."); return 1;
     }
 
-    return 0;   // packet is fine or packet gets ignored for its size
+    return 0;   // packet is fine
 
 }
 
@@ -189,8 +188,8 @@ void sendPacket (void *begin, size_t packetSize, struct sockaddr_storage address
     ssize_t sentBytes = sendto (server, (const char *) begin, packetSize, 0,
 		       (struct sockaddr *) &address, sizeof (struct sockaddr_storage));
 
-	if (sentBytes < 0 || (unsigned) sentBytes != packetSize) 
-        fprintf (stderr, "[ERROR]: Failed to send packet!\n");
+	if (sentBytes < 0 || (unsigned) sentBytes != packetSize)
+        logMsg (stderr, ERROR, NO_TYPE, "Failed to send packet!") ;
 
 }
 
@@ -282,18 +281,18 @@ void createLobby (void) {
 
     Lobby *lobby = newLobby ();
     if (lobby != NULL) {
-        fprintf (stdout, "[GAME]: New lobby created!\n");
+        logMsg (stdout, GAME, NO_TYPE, "New lobby created.");
 
         // FIXME: send the lobby info to the owner
 
         // TODO: we can now wait for more players to join the lobby...
 
         // TODO: make sure that all the players have the same game settings, 
-        // so send to them that info when they connect!!
+        // so send to them that infofprintf (stdout, "[GAME]: !\n"); when they connect!!
     }
 
     else {
-        fprintf (stderr, "[ERROR]: Failed to create a new game lobby!");
+        logMsg (stderr, ERROR, GAME, "Failed to create a new game lobby.");
 
         // FIXME: send an error to the player to hanlde it
     } 
@@ -386,18 +385,18 @@ void connectionHandler (i32 client) {
             RequestData *reqData = (RequestData *) (packetData + sizeof (PacketHeader));
             switch (reqData->type) {
                 case REQ_TEST: 
-                    fprintf (stdout, "[TEST]: Packet recieved correctly!!\n");
+                    logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!");
                     break;
 
-                default: fprintf (stderr, "[REQ][ERROR]: Invalid request type!\n");
+                default: logMsg (stderr, ERROR, REQ, "Invalid request type!");
             }
         }
             
-        else fprintf (stderr, "[REQ][ERROR]: Recieved an invalid request packet from the client!\n");
+        else logMsg (stderr, ERROR, REQ, "Recieved an invalid request packet from the client!");
     }
 
     // FIXME: better error handling I guess...
-    else fprintf (stderr, "[REQ][ERROR]: No client request!\n");
+    else logMsg (stderr, ERROR, REQ, "No client request!");
 
 }
 
@@ -416,18 +415,18 @@ void listenForConnections (void) {
 
 	// FIXME: 29/09/2018 -- 10:40 -- we only hanlde one client connected at a time
 	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
-		fprintf (stdout, "Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr));
+        logMsg (stdout, SERVER, NO_TYPE,
+            createString ("Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr)));
 
 		connectionHandler (clientSocket);
 	}
 
 }
 
-// TODO:
-// wrap things up and exit
+// TODO: wrap things up and exit
 u8 teardown (void) {
 
-    fprintf (stdout, "\nClosing server...\n");
+    logMsg (stdout, SERVER, NO_TYPE, "Closing server...");
 
 	// TODO: disconnect any remainning clients
 
@@ -461,8 +460,8 @@ void addPlayer (struct sockaddr_storage address) {
     // TODO: handle ipv6 ips
     char addrStr[IP_TO_STR_LEN];
     sock_ip_to_string ((struct sockaddr *) &address, addrStr, sizeof (addrStr));
-    fprintf (stdout, "[PLAYER]: New player connected from ip: %s @ port: %d.\n", addrStr,
-        sock_ip_port ((struct sockaddr *) &address));
+    logMsg (stdout, SERVER, PLAYER, createString ("New player connected from ip: %s @ port: %d.\n", 
+        addrStr, sock_ip_port ((struct sockaddr *) &address)));
 
     // TODO: init other necessarry game values
     // add the new player to the game

@@ -75,13 +75,13 @@ GameSettings *getGameSettings (u8 gameType) {
 
     Config *gameConfig = parseConfigFile ("./config/gameSettings.cfg");
     if (!gameConfig) {
-        fprintf (stderr, "[ERROR]: Problems loading game settings config!\n");
+        logMsg (stderr, ERROR, GAME, "Problems loading game settings config!");
         return NULL;
     } 
 
     ConfigEntity *cfgEntity = getEntityWithId (gameConfig, gameType);
 	if (!cfgEntity) {
-        fprintf (stderr, "[ERROR]: Problems with game settings config!\n");
+        logMsg (stderr, ERROR, GAME, "Problems with game settings config!");
         return NULL;
     } 
 
@@ -104,7 +104,7 @@ GameSettings *getGameSettings (u8 gameType) {
 // we create the lobby, and we wait until the owner of the lobby tell us to start the game
 Lobby *newLobby (void) {
 
-    fprintf (stdout, "[GAME]: Creatting a new lobby...\n");
+    logMsg (stdout, GAME, NO_TYPE, "Creatting a new lobby...");
 
     // TODO: what about a new connection in a new socket??
 

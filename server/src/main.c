@@ -71,7 +71,7 @@ int main (void) {
         u32 port = initServer (serverConfig, 1);
         if (port != 0) {
             fprintf (stdout, "\n\nServer has started!\n");
-            fprintf (stdout, "Listening on port %i.\n\n", port);
+            logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.\n\n", port));
 
             // we don't need the server config anymor I guess...
             clearConfig (serverConfig);
@@ -79,7 +79,7 @@ int main (void) {
     } 
 
     // at this point we are ready to listen for connections...
-    fprintf (stdout, "Waiting for connections...\n");
+    logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
     listenForConnections ();
 
     return teardown ();
