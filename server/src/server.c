@@ -16,7 +16,7 @@
 // TODO: maybe move these to the config file??
 // FIXME: choose wisely...
 // these 2 are used to manage the packets
-ProtocolId PROTOCOL_ID = 0xEC3B5FA9; // Randomly chosen.
+ProtocolId PROTOCOL_ID = 0x4CA140FF; // Randomly chosen.
 Version PROTOCOL_VERSION = { 1, 1 };
 
 /*** SERIALIZATION ***/

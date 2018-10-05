@@ -20,6 +20,16 @@ void die (char *msg) {
 
 }
 
+/*** LOG ***/
+
+#define COLOR_RED       "\x1b[31m"
+#define COLOR_GREEN     "\x1b[32m"
+#define COLOR_YELLOW    "\x1b[33m"
+#define COLOR_BLUE      "\x1b[34m"
+#define COLOR_MAGENTA   "\x1b[35m"
+#define COLOR_CYAN      "\x1b[36m"
+#define COLOR_RESET     "\x1b[0m"
+
 char *getMsgType (LogMsgType type) {
 
     char temp[10];
@@ -36,6 +46,8 @@ char *getMsgType (LogMsgType type) {
         case PLAYER: strcpy (temp, "[PLAYER]"); break;
         case GAME: strcpy (temp, "[GAME]"); break;
 
+        case SERVER: strcpy (temp, "[SERVER]"); break;
+
         default: break;
     }
 
@@ -46,20 +58,38 @@ char *getMsgType (LogMsgType type) {
 
 }
 
-// TODO: handle different types at once
 // TODO: maybe add some colors?
 void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
     char *first = getMsgType (firstType);
+    char *second = NULL;
+
+    char *message = NULL;
+
     if (secondType != 0) {
-        char *second = getMsgType (secondType);
-        fprintf (__stream, "%s", createString ("%s%s: %s\n", first, second, msg));
+        second = getMsgType (secondType);
+        message = createString ("%s%s: %s\n", first, second, msg);
     }
 
-    else fprintf (__stream, "%s", createString ("%s: %s\n", first, msg));
+    else message = createString ("%s: %s\n", first, msg);
+
+    // log messages with color
+    switch (firstType) {
+        case ERROR: fprintf (__stream, COLOR_RED "%s" COLOR_RESET, message); break;
+        case WARNING: fprintf (__stream, COLOR_YELLOW "%s" COLOR_RESET, message); break;
+
+        case SERVER: fprintf (__stream, COLOR_BLUE "%s" COLOR_RESET, message); break;
+
+        default: fprintf (__stream, "%s", message); break;
+    }
+
+    if (!first) free (first);
+    if (!second) free (second);
 
 }
+
+/*** THREAD ***/
 
 // TODO: have the idea of creating many virtual servers in different sockets?
 // TODO: if we want to send a file, maybe create a new TCP socket in a new port?
@@ -72,8 +102,8 @@ int main (void) {
         // use the first configuration
         u32 port = initServer (serverConfig, 1);
         if (port != 0) {
-            fprintf (stdout, "\n\nServer has started!\n");
-            logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.\n\n", port));
+            fprintf (stdout, COLOR_GREEN "\n\nServer has started!\n" COLOR_RESET);
+            logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.", port));
 
             // we don't need the server config anymor I guess...
             clearConfig (serverConfig);
