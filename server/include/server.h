@@ -10,6 +10,8 @@
 
 #define EXIT_FAILURE    1
 
+#define THREAD_OK       0
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -73,7 +75,10 @@ typedef struct Server {
 /*** SERVER FUNCS ***/
 
 extern u32 initServer (Server *, Config *, ServerType);
+
+extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
+
 extern u8 teardown (Server *);
 
 /*** REQUESTS ***/

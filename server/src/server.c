@@ -145,7 +145,7 @@ u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) 
 // this is used to recieve packets when in a lobby/game
 void recievePackets (void) {
 
-    unsigned char packetData[MAX_UDP_PACKET_SIZE];
+    /* unsigned char packetData[MAX_UDP_PACKET_SIZE];
 
     struct sockaddr_storage from;
     socklen_t fromSize = sizeof (struct sockaddr_storage);
@@ -172,7 +172,7 @@ void recievePackets (void) {
             }
 
         }        
-    }   
+    } */ 
 
 }
 
@@ -191,9 +191,9 @@ void initPacketHeader (void *header, PacketType type) {
 
 // TODO: can we use this to send any kind of packet?
 // if we are handling different servers, don't forget to add the correct sokcet...
-void sendPacket (void *begin, size_t packetSize, struct sockaddr_storage address) {
+void sendPacket (Server *server, void *begin, size_t packetSize, struct sockaddr_storage address) {
 
-    ssize_t sentBytes = sendto (server, (const char *) begin, packetSize, 0,
+    ssize_t sentBytes = sendto (server->serverSock, (const char *) begin, packetSize, 0,
 		       (struct sockaddr *) &address, sizeof (struct sockaddr_storage));
 
 	if (sentBytes < 0 || (unsigned) sentBytes != packetSize)
@@ -204,7 +204,7 @@ void sendPacket (void *begin, size_t packetSize, struct sockaddr_storage address
 // FIXME:
 // TODO: maybe we can clean and refactor this?
 // creates and sends game packets
-void sendGamePackets (int to) {
+void sendGamePackets (Server *server, int to) {
 
     Player *destPlayer = vector_get (&players, to);
 
@@ -274,7 +274,7 @@ void sendGamePackets (int to) {
     // assert (end == (char *) begin + packetSize); */
 
     // after the pakcet has been prepare, send it to the dest player...
-    sendPacket (begin, packetSize, destPlayer->address);
+    sendPacket (server, begin, packetSize, destPlayer->address);
 
 }
 
@@ -293,7 +293,7 @@ void sendGamePackets (int to) {
 // somethings like that
 
 // TODO: get the owner and the type of lobby
-void createLobby (i32 client, struct sockaddr_storage clientAddres) {
+void createLobby (Server *server, i32 client, struct sockaddr_storage clientAddres) {
 
     // TODO:
     // we need to check if we are available to create a new lobby, to prevent 
@@ -335,7 +335,7 @@ void createLobby (i32 client, struct sockaddr_storage clientAddres) {
         lobbyData->owner = NULL;
 
         // after the pakcet has been prepare, send it to the dest player...
-        sendPacket (begin, packetSize, lobby->owner->address);
+        sendPacket (server, begin, packetSize, lobby->owner->address);
 
         // TODO: do we want to do this using a request?
         // FIXME: we need to wait for an ack of the ownwer and then we can do this...
@@ -353,6 +353,35 @@ void createLobby (i32 client, struct sockaddr_storage clientAddres) {
 
         // FIXME: send an error to the player to hanlde it
     } 
+
+}
+
+#pragma endregion
+
+/*** CLIENTS ***/
+
+#pragma region CLIENTS
+
+// FIXME: we can't have infinite ids!!
+u32 nextClientID = 0;
+
+Client *newClient (i32 sock, struct sockaddr_storage address) {
+
+    Client *new = (Client *) malloc (sizeof (Client));
+    
+    new->clientID = nextClientID;
+    new->clientSock = sock;
+    new->address = address;
+
+    return new;
+
+}
+
+// TODO: hanlde a max number of clients connected to a server at the same time?
+// maybe this can be handled before this call by the load balancer
+void registerClient (Server *server, Client *client) {
+
+    vector_push (&server->clients, client);
 
 }
 
@@ -459,7 +488,7 @@ u32 initServer (Server *server, Config *cfg, ServerType type) {
 
 // FIXME: don't forget to check that tha packet type is a request!!!
 // TODO: how can we handle other parameters for requests?
-void connectionHandler (i32 client, struct sockaddr_storage clientAddres) {
+/* void connectionHandler (Server *server, i32 client, struct sockaddr_storage clientAddres) {
 
 	// send welcome message
 	send (client, welcome, sizeof (welcome), 0);
@@ -478,7 +507,7 @@ void connectionHandler (i32 client, struct sockaddr_storage clientAddres) {
                 case REQ_GET_FILE: logMsg (stdout, REQ, FILE_REQ, "Requested a file."); break;
                 case POST_SEND_FILE: logMsg (stdout, REQ, FILE_REQ, "Client wants to send a file."); break;
 
-                case REQ_CREATE_LOBBY: createLobby (client, clientAddres); break;
+                case REQ_CREATE_LOBBY: createLobby (server, client, clientAddres); break;
 
                 case REQ_TEST:  logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!"); break;
 
@@ -491,6 +520,26 @@ void connectionHandler (i32 client, struct sockaddr_storage clientAddres) {
 
     // FIXME: better error handling I guess...
     else logMsg (stderr, ERROR, REQ, "No client request!");
+
+}*/
+
+void *connectionHandler (void *data) {
+
+    Server *server = (Server *) data;
+
+    if (server->clients.elements != 0) {
+        // TODO: handle client requests
+
+        switch (server->type) {
+            case FILE_SERVER: break;
+            case WEB_SERVER: break;
+            case GAME_SERVER: 
+                // TODO: update each game lobby
+                break;
+
+            default: break;
+        }
+    } 
 
 }
 
@@ -508,23 +557,20 @@ void listenForConnections (Server *server) {
 
 	listen (server->serverSock, server->connectionQueue);
 
-	socklen_t sockLen = sizeof (struct sockaddr_storage);
+    Client *client = NULL;
+    i32 clientSocket;
 	struct sockaddr_storage clientAddress;
 	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
-	int clientSocket;
+    socklen_t sockLen = sizeof (struct sockaddr_storage);
 
 	// FIXME: 29/09/2018 -- 10:40 -- we only hanlde one client connected at a time
 	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
-        // FIXME:
-        // logMsg (stdout, SERVER, NO_TYPE,
-        //     createString ("Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr)));
+        // register the client to correct server
+        client = newClient (clientSocket, clientAddress);
+        registerClient (server, client);
 
+        // TODO: log to which server it connects and maybe from where
         logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
-
-        // FIXME: register the client to the server
-
-        // TODO: maybe later we may want a client struct
-		connectionHandler (clientSocket, clientAddress);
 	}
 
 }
@@ -567,9 +613,9 @@ u8 teardown (Server *server) {
 
 #pragma endregion
 
-/*** MULTIPLAYER ***/
+/*** GAME SERVER ***/
 
-#pragma region MULTIPLAYER LOGIC
+#pragma region GAME SERVER
 
 // TODO: maybe we can get this value form a cfg?
 const float PLAYER_TIMEOUT = 30;    // in seconds

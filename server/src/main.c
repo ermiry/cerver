@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <pthread.h>
+
 #include "server.h"
 #include "network.h"
 
@@ -80,12 +82,13 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 
 /*** THREAD ***/
 
+// FIXME:
 void die (char *msg) {
 
     fprintf (stderr, COLOR_RED "\n%s\n" COLOR_RESET, msg);
 
     // try to wrap things up before exit!
-    teardown ();
+    // teardown ();
 
     exit (EXIT_FAILURE);
 
@@ -116,10 +119,16 @@ int main (void) {
         }
     } 
 
+    pthread_t handlerThread;
+    if (pthread_create (&handlerThread, NULL, connectionHandler, server) != THREAD_OK)
+        die ("Error creating handler thread!");
+
+    listenForConnections (server);
+
     // at this point we are ready to listen for connections...
     logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
     // TODO: we need to tell our game server to listen for connections
-    listenForConnections ();
+    listenForConnections (server);
 
     return teardown (server);
 
