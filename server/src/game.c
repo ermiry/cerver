@@ -102,7 +102,7 @@ GameSettings *getGameSettings (u8 gameType) {
 
 // FIXME: pass the owner of the lobby and the game type!!
 // we create the lobby, and we wait until the owner of the lobby tell us to start the game
-Lobby *newLobby (void) {
+Lobby *newLobby (Player *owner) {
 
     logMsg (stdout, GAME, NO_TYPE, "Creatting a new lobby...");
 
@@ -115,7 +115,7 @@ Lobby *newLobby (void) {
     // TODO: better manage who created the game lobby --> better players/clients management
     // TODO: create the lobby and player owner data structures
     Lobby *newLobby = (Lobby *) malloc (sizeof (Lobby));
-    // FIXME: newLobby->owner = NULL;
+    newLobby->owner = owner;
     // as of 02/10/2018 -- we only have one possible game type...
     newLobby->settings = getGameSettings (1);
     if (newLobby->settings == NULL) {
@@ -125,6 +125,7 @@ Lobby *newLobby (void) {
 
     // init the clients/players structures inside the lobby
     vector_init (&newLobby->players, sizeof (Player));
+    vector_push (&newLobby->players, owner);
 
     return newLobby;
 

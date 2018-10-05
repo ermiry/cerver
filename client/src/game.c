@@ -57,7 +57,7 @@ void createGame (void) {
 
     // request server for a game lobby
     // TODO: how can we send the server the type of game to create??
-    makeRequest (REQ_TEST);
+    makeRequest (REQ_CREATE_LOBBY);
 
 }
 

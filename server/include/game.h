@@ -74,6 +74,7 @@ typedef struct UpdatedGamePacket {
 typedef struct Player {
 
 	PlayerId id;
+	
 	struct sockaddr_storage address;
 
 	PlayerInput input;
@@ -87,13 +88,12 @@ typedef struct Player {
 
 } Player;
 
-// 02/10/2018 -- 9:38 -- lets try this...
 typedef struct Lobby {
 
 	GameSettings *settings;
 
-	Player *owner;		// the client that created the lobby -> he has higher privileges
-	Vector players;		// the client connected to the lobby
+	Player *owner;			// the client that created the lobby -> he has higher privileges
+	Vector players;			// the clients connected to the lobby
 
 } Lobby;
 
@@ -105,7 +105,7 @@ extern Vector players;
 
 /*** GAME FUNCTIONS ***/
 
-extern Lobby *newLobby (void);
+extern Lobby *newLobby (Player *);
 
 extern void spawnPlayer (Player *);
 

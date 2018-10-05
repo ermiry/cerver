@@ -9,17 +9,6 @@
 #include "utils/myUtils.h"
 #include "utils/config.h"
 
-void die (char *msg) {
-
-    fprintf (stderr, "\n%s\n", msg);
-
-    // try to wrap things up before exit!
-    teardown ();
-
-    exit (EXIT_FAILURE);
-
-}
-
 /*** LOG ***/
 
 #define COLOR_RED       "\x1b[31m"
@@ -58,7 +47,6 @@ char *getMsgType (LogMsgType type) {
 
 }
 
-// TODO: maybe add some colors?
 void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
@@ -91,11 +79,23 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 
 /*** THREAD ***/
 
+void die (char *msg) {
+
+    fprintf (stderr, COLOR_RED "\n%s\n" COLOR_RESET, msg);
+
+    // try to wrap things up before exit!
+    teardown ();
+
+    exit (EXIT_FAILURE);
+
+}
+
 // TODO: have the idea of creating many virtual servers in different sockets?
 // TODO: if we want to send a file, maybe create a new TCP socket in a new port?
 
 int main (void) {
 
+    // TODO: maybe we can parse this config into a server struct?
     Config *serverConfig = parseConfigFile ("./config/server.cfg");
     if (!serverConfig) die ("\n[ERROR]: Problems loading server config!\n");
     else {

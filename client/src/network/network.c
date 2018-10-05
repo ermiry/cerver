@@ -158,6 +158,7 @@ int recieveFile (char *request) {
 
 }
 
+// FIXME: take a request data as an arg
 // TODO: how can we handle other parameters for requests?
 int makeRequest (RequestType requestType) {
 

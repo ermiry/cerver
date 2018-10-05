@@ -24,6 +24,9 @@ extern void die (char *msg);
 
 /*** SEVER VALUES ***/
 
+// TODO: maybe load this from a cfg file, it can be different for each type of server?
+#define CONNECTION_QUEUE        7
+
 #define MAX_UDP_PACKET_SIZE     65515
 
 typedef enum RequestType {
@@ -37,6 +40,7 @@ typedef enum RequestType {
 
 } RequestType;
 
+// here we can add things like file names or game types
 typedef struct RequestData {
 
     RequestType type;
@@ -74,8 +78,11 @@ extern Version PROTOCOL_VERSION;
 typedef enum PacketType {
 
 	REQUEST = 1,
+    CREATE_GAME,
 	GAME_UPDATE_TYPE,
 	PLAYER_INPUT_TYPE,
+
+    TEST_PACKET_TYPE = 100
 
 } PacketType;
 

@@ -19,6 +19,9 @@
 ProtocolId PROTOCOL_ID = 0x4CA140FF; // Randomly chosen.
 Version PROTOCOL_VERSION = { 1, 1 };
 
+// TODO: better id handling and management
+u16 nextPlayerId = 0;
+
 /*** SERIALIZATION ***/
 
 #include <stddef.h>
@@ -60,6 +63,7 @@ void s_array_init (void *array, void *begin, size_t n_elems) {
 
 ssize_t packetHeaderSize;
 ssize_t requestPacketSize;
+ssize_t lobbyPacketSize;
 ssize_t updatedGamePacketSize;
 ssize_t playerInputPacketSize;
 
@@ -113,17 +117,21 @@ u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) 
             if (packetSize < requestPacketSize) {
                 logMsg (stderr, WARNING, PACKET, "Received a too small request packet.");
                 return 1;
-            }
+            } break;
         case GAME_UPDATE_TYPE: 
             if (packetSize < updatedGamePacketSize) {
                 logMsg (stderr, WARNING, PACKET, "Received a too small game update packet.");
                 return 1;
-            }
+            } break;
         case PLAYER_INPUT_TYPE: 
             if (packetSize < playerInputPacketSize) {
                 logMsg (stderr, WARNING, PACKET, "Received a too small player input packet.");
                 return 1;
-            }
+            } break;
+
+        // TODO:
+        case TEST_PACKET_TYPE: break;
+        
         default: logMsg (stderr, WARNING, PACKET, "Got a pakcet of incompatible type."); return 1;
     }
 
@@ -203,7 +211,7 @@ void sendGamePackets (int to) {
     // first we need to prepare the packet...
 
     // TODO: clean this a little, but don't forget this can be dynamic!!
-	size_t packetSize = sizeof (PacketHeader) + sizeof (UpdatedGamePacket) +
+	size_t packetSize = packetHeaderSize + updatedGamePacketSize +
 		players.elements * sizeof (Player);
 
 	// buffer for packets, extend if necessary...
@@ -226,7 +234,7 @@ void sendGamePackets (int to) {
     // TODO: do we need to send the game settings each time?
 	// game settings and other non-array data
     UpdatedGamePacket *gameUpdate = (UpdatedGamePacket *) end;
-    end += sizeof (UpdatedGamePacket);
+    end += updatedGamePacketSize;
     // gameUpdate->sequenceNum = currentTick;  // FIXME:
 	// tick_packet->ack_input_sequence_num = dest_player->input_sequence_num;  // FIXME:
     gameUpdate->playerId = destPlayer->id;
@@ -274,16 +282,65 @@ void sendGamePackets (int to) {
 
 /*** REQUESTS ***/
 
+// All clients can make any request, but if they make a game request, 
+// they are now treated as players...
+
 #pragma region REQUESTS
 
-// TODO: get the owner and the type of lobby
-void createLobby (void) {
+// TODO: maybe each server has its warray of lobbys and it uses it to handle new lobby requests and
+// to manage lobby data
+// we need to be sure that a player is not the owner of more than one lobby at the time and 
+// somethings like that
 
-    Lobby *lobby = newLobby ();
+// TODO: get the owner and the type of lobby
+void createLobby (i32 client, struct sockaddr_storage clientAddres) {
+
+    // TODO:
+    // we need to check if we are available to create a new lobby, to prevent 
+    // a million requests to create a lobby and we get destroyed
+
+    // TODO: if the client is not registered yet as an active player, 
+    // create a new player struct
+
+    Player *owner = (Player *) malloc (sizeof (Player));
+    owner->id = nextPlayerId;
+    nextPlayerId++;
+    owner->address = clientAddres;
+
+    Lobby *lobby = newLobby (owner);
     if (lobby != NULL) {
         logMsg (stdout, GAME, NO_TYPE, "New lobby created.");
 
-        // FIXME: send the lobby info to the owner
+        // send the lobby info to the owner
+        size_t packetSize = packetHeaderSize + lobbyPacketSize;
+        
+        void *packetBuffer = malloc (packetSize);
+        void *begin = packetBuffer;
+        char *end = begin; 
+
+        // packet header
+        PacketHeader *header = (PacketHeader *) end;
+        end += sizeof (PacketHeader);
+        initPacketHeader (header, CREATE_GAME);
+
+        // 04/10/2018 -- 22:28
+        // TODO: do we need to serialize this data?
+        // TODO: does ptrs work? or do we have to send data without ptrs??
+        // lobby data
+        Lobby *lobbyData = (Lobby *) end;
+        end += lobbyPacketSize;
+
+        lobbyData->settings = lobby->settings;
+        // FIXME: how do we get this owner?
+        lobbyData->owner = NULL;
+
+        // after the pakcet has been prepare, send it to the dest player...
+        sendPacket (begin, packetSize, lobby->owner->address);
+
+        // TODO: do we want to do this using a request?
+        // FIXME: we need to wait for an ack of the ownwer and then we can do this...
+        // the ack is when the player is ready in its lobby screen, and only then we can
+        // handle requests from other players to join
 
         // TODO: we can now wait for more players to join the lobby...
 
@@ -320,9 +377,12 @@ const char welcome[256] = "You have reached the Multiplayer Server!";
 void initServerValues (void) {
 
     packetHeaderSize = sizeof (PacketHeader);
-    requestPacketSize = packetHeaderSize + sizeof (RequestData);
-    updatedGamePacketSize = packetHeaderSize + sizeof (UpdatedGamePacket);
-    playerInputPacketSize = packetHeaderSize + sizeof (PlayerInputPacket) ;
+    requestPacketSize = sizeof (RequestData);
+
+    lobbyPacketSize = sizeof (lobbyPacketSize);
+    updatedGamePacketSize = sizeof (UpdatedGamePacket);
+
+    playerInputPacketSize = sizeof (PlayerInputPacket);
 
 }
 
@@ -368,7 +428,7 @@ u32 initServer (Config *cfg, u8 type) {
 
 // FIXME: don't forget to check that tha packet type is a request!!!
 // TODO: how can we handle other parameters for requests?
-void connectionHandler (i32 client) {
+void connectionHandler (i32 client, struct sockaddr_storage clientAddres) {
 
 	// send welcome message
 	send (client, welcome, sizeof (welcome), 0);
@@ -387,6 +447,7 @@ void connectionHandler (i32 client) {
                 case REQ_GET_FILE: logMsg (stdout, REQ, FILE_REQ, "Requested a file."); break;
                 case POST_SEND_FILE: logMsg (stdout, REQ, FILE_REQ, "Client wants to send a file."); break;
 
+                case REQ_CREATE_LOBBY: createLobby (client, clientAddres); break;
 
                 case REQ_TEST:  logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!"); break;
 
@@ -402,25 +463,35 @@ void connectionHandler (i32 client) {
 
 }
 
+// 04/10/2018 -- 22:56
+// TODO: maybe a way to handle multiple clients, is having an array of clients, and each time
+// we get a new connection we add the client to the struct and assign a new connection handler to it
+// NOTE: not all clients are players, so we can handle anyone that connects as a client, 
+// and if they make a game request, we can now treat them as players...
+
 // FIXME: try a similar like in the recieve packets function --> maybe with that,
 // we can handle different client requests at the same time
 // TODO: handle ipv6 configuration
 // TODO: do we need to hanlde time here?
 void listenForConnections (void) {
 
-	listen (server, 5);
+	listen (server, CONNECTION_QUEUE);
 
-	socklen_t sockLen = sizeof (struct sockaddr_in);
-	struct sockaddr_in clientAddress;
-	memset (&clientAddress, 0, sizeof (struct sockaddr_in));
+	socklen_t sockLen = sizeof (struct sockaddr_storage);
+	struct sockaddr_storage clientAddress;
+	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
 	int clientSocket;
 
 	// FIXME: 29/09/2018 -- 10:40 -- we only hanlde one client connected at a time
 	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
-        logMsg (stdout, SERVER, NO_TYPE,
-            createString ("Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr)));
+        // FIXME:
+        // logMsg (stdout, SERVER, NO_TYPE,
+        //     createString ("Client connected: %s.\n", inet_ntoa (clientAddress.sin_addr)));
 
-		connectionHandler (clientSocket);
+        logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
+
+        // TODO: maybe later we may want a client struct
+		connectionHandler (clientSocket, clientAddress);
 	}
 
 }
@@ -444,9 +515,6 @@ u8 teardown (void) {
 
 #pragma region MULTIPLAYER LOGIC
 
-// TODO: better id handling and management
-u16 nextPlayerId = 0;
-
 // TODO: maybe we can get this value form a cfg?
 const float PLAYER_TIMEOUT = 30;    // in seconds
 
@@ -467,14 +535,14 @@ void addPlayer (struct sockaddr_storage address) {
 
     // TODO: init other necessarry game values
     // add the new player to the game
-    Player newPlayer;
-    newPlayer.id = nextPlayerId;
-    newPlayer.address = address;
+    // Player newPlayer;
+    // newPlayer.id = nextPlayerId;
+    // newPlayer.address = address;
 
-    vector_push (&players, &newPlayer);
+    // vector_push (&players, &newPlayer);
 
     // FIXME: this is temporary
-    spawnPlayer (&newPlayer);
+    // spawnPlayer (&newPlayer);
 
 }
 
