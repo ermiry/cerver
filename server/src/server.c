@@ -370,56 +370,87 @@ void createLobby (i32 client, struct sockaddr_storage clientAddres) {
 // if (!sock_setNonBlocking (server))
     // die ("\n[ERROR]: Failed to set server socket to non-blocking mode!\n");
 
-i32 server;
-
 const char welcome[256] = "You have reached the Multiplayer Server!";
 
-void initServerValues (void) {
+// init server type independent data structs
+void initServerDS (Server *server, ServerType type) {
 
-    packetHeaderSize = sizeof (PacketHeader);
-    requestPacketSize = sizeof (RequestData);
+    switch (type) {
+        case FILE_SERVER: break;
+        case WEB_SERVER: break;
+        case GAME_SERVER: 
+            vector_init (&server->clients, sizeof (Client));
 
-    lobbyPacketSize = sizeof (lobbyPacketSize);
-    updatedGamePacketSize = sizeof (UpdatedGamePacket);
-
-    playerInputPacketSize = sizeof (PlayerInputPacket);
+            vector_init (&server->players, sizeof (Player));
+            vector_init (&server->lobbys, sizeof (Lobby));
+            break;
+        default: break;
+    }
 
 }
 
-u32 initServer (Config *cfg, u8 type) {
+// FIXME: do we want to have this values inside the server struct?
+// depending on the type of server, we need to init some const values
+void initServerValues (ServerType type) {
+
+    // this are used in all the types
+    packetHeaderSize = sizeof (PacketHeader);
+    requestPacketSize = sizeof (RequestData);
+
+    switch (type) {
+        case FILE_SERVER: break;
+        case WEB_SERVER: break;
+        case GAME_SERVER: 
+            lobbyPacketSize = sizeof (lobbyPacketSize);
+            updatedGamePacketSize = sizeof (UpdatedGamePacket);
+            playerInputPacketSize = sizeof (PlayerInputPacket);
+            break;
+        default: break;
+    }
+
+}
+
+// FIXME: change the die functions to a common error,
+// because we might have othe server running
+u32 initServer (Server *server, Config *cfg, ServerType type) {
 
 	ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
 	if (!cfgEntity) die ("\n[ERROR]: Problems with server config!\n");
 
-	u8 use_ipv6 = atoi (getEntityValue (cfgEntity, "ipv6"));
-    server = socket ((use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-    if (server < 0) die ("\n[ERROR]: Failed to create server socket!\n");
+	server->useIpv6 = atoi (getEntityValue (cfgEntity, "ipv6"));
+    server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
+    if (server->serverSock < 0) die ("\n[ERROR]: Failed to create server socket!\n");
 
     struct sockaddr_storage address;
 	memset(&address, 0, sizeof (struct sockaddr_storage));
 
-	u32 port = atoi (getEntityValue (cfgEntity, "port"));
-	if (use_ipv6) {
+	server->port = atoi (getEntityValue (cfgEntity, "port"));
+	if (server->useIpv6) {
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &address;
 		addr->sin6_family = AF_INET6;
 		addr->sin6_addr = in6addr_any;
-		addr->sin6_port = htons (port);
+		addr->sin6_port = htons (server->port);
 	} 
 
     else {
 		struct sockaddr_in *addr = (struct sockaddr_in *) &address;
 		addr->sin_family = AF_INET;
 		addr->sin_addr.s_addr = INADDR_ANY;
-		addr->sin_port = htons (port);
+		addr->sin_port = htons (server->port);
 	}
 
     if (bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr)) < 0) 
         die ("\n[ERROR]: Failed to bind server socket!");
 
-    initServerValues ();
+    server->connectionQueue = atoi (getEntityValue (cfgEntity, "queue"));
+
+    initServerDS (server, type);
+    initServerValues (type);
+
+    server->type = type;
 
 	// return the port we are listening to upon success
-	return port;
+	return server->port;
 
 }
 
@@ -473,9 +504,9 @@ void connectionHandler (i32 client, struct sockaddr_storage clientAddres) {
 // we can handle different client requests at the same time
 // TODO: handle ipv6 configuration
 // TODO: do we need to hanlde time here?
-void listenForConnections (void) {
+void listenForConnections (Server *server) {
 
-	listen (server, CONNECTION_QUEUE);
+	listen (server->serverSock, server->connectionQueue);
 
 	socklen_t sockLen = sizeof (struct sockaddr_storage);
 	struct sockaddr_storage clientAddress;
@@ -490,20 +521,45 @@ void listenForConnections (void) {
 
         logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
 
+        // FIXME: register the client to the server
+
         // TODO: maybe later we may want a client struct
 		connectionHandler (clientSocket, clientAddress);
 	}
 
 }
 
-// TODO: wrap things up and exit
-u8 teardown (void) {
+// FIXME:
+// clean up all the game structs
+void destroyGameServer (Server *server) {
+}
+
+// close the server
+u8 teardown (Server *server) {
+
+    if (!server) {
+        logMsg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
+        return 1;
+    }
 
     logMsg (stdout, SERVER, NO_TYPE, "Closing server...");
 
-	// TODO: disconnect any remainning clients
+    // clean up the server, it depends on its type
+    switch (server->type) {
+        case FILE_SERVER: break;
+        case WEB_SERVER: break;
+        case GAME_SERVER: destroyGameServer (server); break;
+        default: break;
+    }
 
-    close (server);
+    // close the connection
+    if (close (server->serverSock) < 0) {
+        logMsg (stdout, ERROR, SERVER, "Failed to close server socket!");
+        free (server);
+        return 1;
+    }
+
+    free (server);
 
     return 0;   // teardown was successfull
 

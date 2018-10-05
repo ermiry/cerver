@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#include "utils/vector.h"
+#include "utils/config.h"
 #include "utils/myUtils.h"
 
 #define EXIT_FAILURE    1
@@ -22,12 +24,59 @@ typedef unsigned char asciiChar;
 
 extern void die (char *msg);
 
-/*** SEVER VALUES ***/
+/*** SEVER ***/
 
 // TODO: maybe load this from a cfg file, it can be different for each type of server?
 #define CONNECTION_QUEUE        7
 
 #define MAX_UDP_PACKET_SIZE     65515
+
+typedef enum ServerType {
+
+    FILE_SERVER = 1,
+    WEB_SERVER, 
+    GAME_SERVER
+
+} ServerType;
+
+// TODO: what other info do we need to store?
+// anyone that connects to the server
+typedef struct Client {
+
+    u32 clientID;
+    i32 clientSock;
+    struct sockaddr_storage address;
+
+} Client;
+
+// TODO: create different server types, like for a game or a web server
+typedef struct Server {
+
+    i32 serverSock;         // server socket
+    u16 port;
+    u8 useIpv6;   
+    u16 connectionQueue;    // each server can handle connection differently
+    // TODO: handle upd or tcp connection
+
+    ServerType type;
+
+    // does web servers need this?
+    Vector clients;     // connected clients
+
+    // TODO: 05/10/2018 -- this should be temporary
+    // these will only be if we are a game server
+    Vector lobbys;
+    Vector players;
+
+} Server;
+
+/*** SERVER FUNCS ***/
+
+extern u32 initServer (Server *, Config *, ServerType);
+extern void listenForConnections (Server *);
+extern u8 teardown (Server *);
+
+/*** REQUESTS ***/
 
 typedef enum RequestType {
 
@@ -46,18 +95,6 @@ typedef struct RequestData {
     RequestType type;
 
 } RequestData;
-
-#define CLIENT_REQ_TYPE_SIZE     8
-
-extern i32 server;
-
-/*** SERVER FUNCS ***/
-
-#include "utils/config.h"
-
-extern u32 initServer (Config *, u8);
-extern void listenForConnections (void);
-extern u8 teardown (void);
 
 /*** PACKETS ***/
 

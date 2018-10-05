@@ -47,6 +47,7 @@ char *getMsgType (LogMsgType type) {
 
 }
 
+// TODO: maybe log from which server the msg is comming?
 void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
@@ -93,27 +94,33 @@ void die (char *msg) {
 // TODO: have the idea of creating many virtual servers in different sockets?
 // TODO: if we want to send a file, maybe create a new TCP socket in a new port?
 
+// TODO: as of 05/10/2018 -- 00:40 -- we only have one server, but we need to make all our functions
+// take as a parameter a server to use
+
 int main (void) {
 
-    // TODO: maybe we can parse this config into a server struct?
+    // create a new server
+    Server *server = (Server *) malloc (sizeof (Server));
+
     Config *serverConfig = parseConfigFile ("./config/server.cfg");
     if (!serverConfig) die ("\n[ERROR]: Problems loading server config!\n");
     else {
-        // use the first configuration
-        u32 port = initServer (serverConfig, 1);
+        // init our server as a game server
+        u32 port = initServer (server, serverConfig, GAME_SERVER);
         if (port != 0) {
             fprintf (stdout, COLOR_GREEN "\n\nServer has started!\n" COLOR_RESET);
             logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.", port));
 
-            // we don't need the server config anymor I guess...
+            // we don't need the server config anymore
             clearConfig (serverConfig);
         }
     } 
 
     // at this point we are ready to listen for connections...
     logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
+    // TODO: we need to tell our game server to listen for connections
     listenForConnections ();
 
-    return teardown ();
+    return teardown (server);
 
 }
