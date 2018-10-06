@@ -94,7 +94,7 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 int main (void) {
 
     // create a new server
-    Server *server = createServer (GAME_SERVER);
+    Server *server = createServer (NULL, GAME_SERVER);
     if (server) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients

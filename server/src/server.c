@@ -66,6 +66,7 @@ ssize_t lobbyPacketSize;
 ssize_t updatedGamePacketSize;
 ssize_t playerInputPacketSize;
 
+// FIXME:
 // check for packets with bad size, protocol, version, etc
 u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) {
 
@@ -151,8 +152,6 @@ void recievePackets (void) {
 
 }
 
-// TODO: maybe this can open many possibilities in the future?
-// can we use this for request types?
 void initPacketHeader (void *header, PacketType type) {
 
     PacketHeader h;
@@ -164,8 +163,7 @@ void initPacketHeader (void *header, PacketType type) {
 
 }
 
-// TODO: can we use this to send any kind of packet?
-// if we are handling different servers, don't forget to add the correct sokcet...
+// sends a packet from a server to the client address
 void sendPacket (Server *server, void *begin, size_t packetSize, struct sockaddr_storage address) {
 
     ssize_t sentBytes = sendto (server->serverSock, (const char *) begin, packetSize, 0,
@@ -214,6 +212,13 @@ void registerClient (Server *server, Client *client) {
     vector_push (&server->clients, client);
 
 }
+
+// sync disconnection
+// when a clients wants to disconnect, it should send us a request to disconnect
+// so that we can clean the correct structures
+
+// if there is an async disconnection from the client, we need to have a time out
+// that automatically clean up the clients if we do not get any request or input from them
 
 // FIXME: where do we want to disconnect the client?
 // TODO: removes a client from the server 
@@ -336,7 +341,17 @@ Server *newServer (void) {
 
 // TODO: maybe we can pass other parameters and if we don't have any, use the default
 // configuration from the cfg file
-Server *createServer (ServerType type) {
+Server *createServer (Server *server, ServerType type) {
+
+    // TODO: create a server with the request parameters
+    // if (server) {
+
+    // }
+
+    // // create the server from the default config file
+    // else {
+
+    // }
 
     Server *s = newServer ();
 
@@ -363,6 +378,15 @@ Server *createServer (ServerType type) {
 void destroyGameServer (Server *server) {
 }
 
+// FIXME:
+void disconnectAllClients (Server *server) {
+
+    if (server->clients.elements > 0) {
+
+    }
+
+}
+
 // FIXME: disconnect any remainning client from the server
 // FIXME: delete the common struct between servers
 // close the server
@@ -375,7 +399,10 @@ u8 teardown (Server *server) {
 
     logMsg (stdout, SERVER, NO_TYPE, "Closing server...");
 
-    // clean up the server, it depends on its type
+    // clean common server structs
+    disconnectAllClients (server);
+
+    // clean independent server type structs
     switch (server->type) {
         case FILE_SERVER: break;
         case WEB_SERVER: break;

@@ -81,7 +81,7 @@ typedef struct Server {
 
 /*** SERVER FUNCS ***/
 
-extern Server *createServer (ServerType);
+extern Server *createServer (Server *, ServerType);
 
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
