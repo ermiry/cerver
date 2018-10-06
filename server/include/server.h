@@ -24,8 +24,6 @@ typedef int64_t i64;
 
 typedef unsigned char asciiChar;
 
-extern void die (char *msg);
-
 /*** SEVER ***/
 
 // TODO: maybe load this from a cfg file, it can be different for each type of server?
@@ -83,14 +81,13 @@ typedef struct Server {
 
 /*** SERVER FUNCS ***/
 
-extern Server *newServer (void);
-
-extern u32 initServer (Server *, Config *, ServerType);
+extern Server *createServer (ServerType);
 
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
 
 extern u8 teardown (Server *);
+extern Server *restartServer (Server *);
 
 /*** REQUESTS ***/
 
@@ -162,6 +159,7 @@ typedef enum LogMsgType {
 
     ERROR = 1,
     WARNING,
+    SUCCESS,
     DEBUG,
     TEST,
 

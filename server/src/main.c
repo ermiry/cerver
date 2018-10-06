@@ -28,6 +28,7 @@ char *getMsgType (LogMsgType type) {
     switch (type) {
         case ERROR: strcpy (temp, "[ERROR]"); break;
         case WARNING: strcpy (temp, "[WARNING]"); break;
+        case SUCCESS: strcpy (temp, "[SUCCESS]"); break;
         case DEBUG: strcpy (temp, "[DEBUG]"); break;
         case TEST: strcpy (temp, "[TEST]"); break;
 
@@ -69,6 +70,7 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
     switch (firstType) {
         case ERROR: fprintf (__stream, COLOR_RED "%s" COLOR_RESET, message); break;
         case WARNING: fprintf (__stream, COLOR_YELLOW "%s" COLOR_RESET, message); break;
+        case SUCCESS: fprintf (__stream, COLOR_GREEN "%s" COLOR_RESET, message); break;
 
         case SERVER: fprintf (__stream, COLOR_BLUE "%s" COLOR_RESET, message); break;
 
@@ -82,54 +84,33 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 
 /*** THREAD ***/
 
-// FIXME:
-void die (char *msg) {
-
-    fprintf (stderr, COLOR_RED "\n%s\n" COLOR_RESET, msg);
-
-    // try to wrap things up before exit!
-    // teardown ();
-
-    exit (EXIT_FAILURE);
-
-}
-
 // TODO: have the idea of creating many virtual servers in different sockets?
+// or maybe we can create many servers and handle the requests via a load balancer,
+// that is only listening on one port?
 // TODO: if we want to send a file, maybe create a new TCP socket in a new port?
 
-// TODO: as of 05/10/2018 -- 00:40 -- we only have one server, but we need to make all our functions
-// take as a parameter a server to use
 
+// FIXME: how can we signal the process to end?
 int main (void) {
 
     // create a new server
-    Server *server = newServer ();
+    Server *server = createServer (GAME_SERVER);
+    if (server) {
+        // FIXME: if we have got a valid server, we are now ready to listen for connections
+        // and we can handle requests of the connected clients
 
-    Config *serverConfig = parseConfigFile ("./config/server.cfg");
-    if (!serverConfig) die ("\n[ERROR]: Problems loading server config!\n");
-    else {
-        // init our server as a game server
-        u32 port = initServer (server, serverConfig, GAME_SERVER);
-        if (port > 0) {
-            fprintf (stdout, COLOR_GREEN "\n\nServer has started!\n" COLOR_RESET);
-            logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.", port));
+        // pthread_t handlerThread;
+        // if (pthread_create (&handlerThread, NULL, connectionHandler, server) != THREAD_OK)
+        //     die ("Error creating handler thread!");
 
-            // we don't need the server config anymore
-            clearConfig (serverConfig);
-        }
-    } 
+        // listenForConnections (server);
 
-    pthread_t handlerThread;
-    if (pthread_create (&handlerThread, NULL, connectionHandler, server) != THREAD_OK)
-        die ("Error creating handler thread!");
-
-    listenForConnections (server);
-
-    // at this point we are ready to listen for connections...
-    logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
-    // TODO: we need to tell our game server to listen for connections
-    listenForConnections (server);
-
-    return teardown (server);
+        // // at this point we are ready to listen for connections...
+        // logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
+        // // TODO: we need to tell our game server to listen for connections
+        // listenForConnections (server);
+    }
+    
+    return 0;
 
 }
