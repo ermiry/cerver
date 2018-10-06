@@ -145,7 +145,7 @@ u8 checkPacket (ssize_t packetSize, unsigned char *packetData, PacketType type) 
 // this is used to recieve packets when in a lobby/game
 void recievePackets (void) {
 
-    /* unsigned char packetData[MAX_UDP_PACKET_SIZE];
+    /*unsigned char packetData[MAX_UDP_PACKET_SIZE];
 
     struct sockaddr_storage from;
     socklen_t fromSize = sizeof (struct sockaddr_storage);
@@ -407,20 +407,20 @@ void initServerDS (Server *server, ServerType type) {
     switch (type) {
         case FILE_SERVER: break;
         case WEB_SERVER: break;
-        case GAME_SERVER: 
+        case GAME_SERVER: {
             vector_init (&server->clients, sizeof (Client));
 
-            vector_init (&server->players, sizeof (Player));
-            vector_init (&server->lobbys, sizeof (Lobby));
-            break;
+            GameServerData *data = (GameServerData *) server->serverData;
+            vector_init (&data->players, sizeof (Player));
+            vector_init (&data->lobbys, sizeof (Lobby));
+        } break;
         default: break;
     }
 
 }
 
-// FIXME: do we want to have this values inside the server struct?
 // depending on the type of server, we need to init some const values
-void initServerValues (ServerType type) {
+void initServerValues (Server *server, ServerType type) {
 
     // this are used in all the types
     packetHeaderSize = sizeof (PacketHeader);
@@ -429,26 +429,33 @@ void initServerValues (ServerType type) {
     switch (type) {
         case FILE_SERVER: break;
         case WEB_SERVER: break;
-        case GAME_SERVER: 
-            lobbyPacketSize = sizeof (lobbyPacketSize);
-            updatedGamePacketSize = sizeof (UpdatedGamePacket);
-            playerInputPacketSize = sizeof (PlayerInputPacket);
-            break;
+        case GAME_SERVER: {
+            GameServerData *data = (GameServerData *) server->serverData;
+
+            data->lobbyPacketSize = sizeof (lobbyPacketSize);
+            data->updatedGamePacketSize = sizeof (UpdatedGamePacket);
+            data->playerInputPacketSize = sizeof (PlayerInputPacket);
+        } break;
         default: break;
     }
 
 }
 
-// FIXME: change the die functions to a common error,
-// because we might have othe server running
+// init a server of a given type
 u32 initServer (Server *server, Config *cfg, ServerType type) {
 
 	ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
-	if (!cfgEntity) die ("\n[ERROR]: Problems with server config!\n");
+	if (!cfgEntity) {
+        logMsg (stderr, ERROR, SERVER, "Problems with server config!");
+        return -1;
+    } 
 
 	server->useIpv6 = atoi (getEntityValue (cfgEntity, "ipv6"));
     server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-    if (server->serverSock < 0) die ("\n[ERROR]: Failed to create server socket!\n");
+    if (server->serverSock < 0) {
+        logMsg (stderr, ERROR, SERVER, "Failed to create server socket!");
+        return -1;
+    }
 
     struct sockaddr_storage address;
 	memset(&address, 0, sizeof (struct sockaddr_storage));
@@ -468,18 +475,29 @@ u32 initServer (Server *server, Config *cfg, ServerType type) {
 		addr->sin_port = htons (server->port);
 	}
 
-    if (bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr)) < 0) 
-        die ("\n[ERROR]: Failed to bind server socket!");
+    if (bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr)) < 0) {
+        logMsg (stderr, ERROR, SERVER, "Failed to bind server socket!");
+        return -1;
+    }   
 
     server->connectionQueue = atoi (getEntityValue (cfgEntity, "queue"));
 
     initServerDS (server, type);
-    initServerValues (type);
+    initServerValues (server, type);
 
     server->type = type;
 
 	// return the port we are listening to upon success
 	return server->port;
+
+}
+
+
+
+Server *newServer (void) {
+
+    Server *new = (Server *) malloc (sizeof (Server));
+    return new;
 
 }
 
@@ -523,19 +541,25 @@ u32 initServer (Server *server, Config *cfg, ServerType type) {
 
 }*/
 
+// this a multiplexor to handle data transmissios to clients
 void *connectionHandler (void *data) {
 
     Server *server = (Server *) data;
 
-    if (server->clients.elements != 0) {
+    if (server->clients.elements > 0) {
         // TODO: handle client requests
 
         switch (server->type) {
             case FILE_SERVER: break;
             case WEB_SERVER: break;
-            case GAME_SERVER: 
+            case GAME_SERVER: {
+                GameServerData *data = (GameServerData *) server->serverData;
+
                 // TODO: update each game lobby
-                break;
+                if (data->lobbys.elements > 0) {
+
+                }
+            } break;
 
             default: break;
         }
@@ -563,7 +587,6 @@ void listenForConnections (Server *server) {
 	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
     socklen_t sockLen = sizeof (struct sockaddr_storage);
 
-	// FIXME: 29/09/2018 -- 10:40 -- we only hanlde one client connected at a time
 	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
         // register the client to correct server
         client = newClient (clientSocket, clientAddress);

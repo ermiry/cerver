@@ -41,6 +41,19 @@ typedef enum ServerType {
 
 } ServerType;
 
+// game server data
+typedef struct GameServerData {
+
+    // const packet sizes
+    size_t lobbyPacketSize;
+    size_t updatedGamePacketSize;
+    size_t playerInputPacketSize;
+
+    Vector lobbys;
+    Vector players;
+
+} GameServerData;
+
 // TODO: what other info do we need to store?
 // anyone that connects to the server
 typedef struct Client {
@@ -61,18 +74,16 @@ typedef struct Server {
     // TODO: handle upd or tcp connection
 
     ServerType type;
+    void *serverData;
 
     // does web servers need this?
     Vector clients;     // connected clients
 
-    // TODO: 05/10/2018 -- this should be temporary
-    // these will only be if we are a game server
-    Vector lobbys;
-    Vector players;
-
 } Server;
 
 /*** SERVER FUNCS ***/
+
+extern Server *newServer (void);
 
 extern u32 initServer (Server *, Config *, ServerType);
 

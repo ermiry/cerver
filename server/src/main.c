@@ -103,14 +103,14 @@ void die (char *msg) {
 int main (void) {
 
     // create a new server
-    Server *server = (Server *) malloc (sizeof (Server));
+    Server *server = newServer ();
 
     Config *serverConfig = parseConfigFile ("./config/server.cfg");
     if (!serverConfig) die ("\n[ERROR]: Problems loading server config!\n");
     else {
         // init our server as a game server
         u32 port = initServer (server, serverConfig, GAME_SERVER);
-        if (port != 0) {
+        if (port > 0) {
             fprintf (stdout, COLOR_GREEN "\n\nServer has started!\n" COLOR_RESET);
             logMsg (stdout, SERVER, NO_TYPE, createString ("Listening on port %i.", port));
 
