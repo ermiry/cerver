@@ -199,7 +199,7 @@ Client *newClient (i32 sock, struct sockaddr_storage address) {
     
     new->clientID = nextClientID;
     new->clientSock = sock;
-    new->address = address;
+    // new->address = address;
 
     return new;
 
@@ -233,7 +233,6 @@ void unregisterClient (Server *server, Client *client) {
 // Here we manage the creation and destruction of servers 
 #pragma region SERVER LOGIC
 
-// FIXME: add a cfg value to set the protocol
 // FIXME: fix ip address
 
 // TODO: set to non blocking mode for handling the game???
@@ -288,20 +287,73 @@ i8 initServer (Server *server, Config *cfg, ServerType type) {
 	ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
 	if (!cfgEntity) {
         logMsg (stderr, ERROR, SERVER, "Problems with server config!");
-        return -1;
+        return 1;
     } 
 
-	server->useIpv6 = atoi (getEntityValue (cfgEntity, "ipv6"));
-    server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-    if (server->serverSock < 0) {
-        logMsg (stderr, ERROR, SERVER, "Failed to create server socket!");
-        return -1;
+    char *ipv6 = getEntityValue (cfgEntity, "ipv6");
+    if (ipv6) {
+        server->useIpv6 = atoi (ipv6);
+        // if we have got an invalid value, the default is not to use ipv6
+        if (server->useIpv6 != 0 || server->useIpv6 != 1) server->useIpv6 = 0;
+    } 
+    // if we do not have a value, use the default
+    else server->useIpv6 = 0;
+
+    char *tcp = getEntityValue (cfgEntity, "tcp");
+    if (tcp) {
+        u8 usetcp = atoi (tcp);
+        if (usetcp != 0 || usetcp != 1) {
+            logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
+            usetcp = 1;
+        }
+
+        if (usetcp) server->protocol = IPPROTO_TCP;
+        else server->protocol = IPPROTO_UDP;
+
+    }
+    // set to default (tcp) if we don't found a value
+    else {
+        logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
+        server->protocol = IPPROTO_TCP;
     }
 
-    struct sockaddr_storage address;
-	memset(&address, 0, sizeof (struct sockaddr_storage));
+    switch (server->protocol) {
+        case IPPROTO_TCP: 
+            server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
+            break;
+        case IPPROTO_UDP:
+            server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
+            break;
 
-	server->port = atoi (getEntityValue (cfgEntity, "port"));
+        default:
+            logMsg (stderr, ERROR, SERVER, "Unkonw protocol type!"); return 1;
+    }
+    
+    if (server->serverSock < 0) {
+        logMsg (stderr, ERROR, SERVER, "Failed to create server socket!");
+        return 1;
+    }
+
+    char *port = getEntityValue (cfgEntity, "port");
+    if (port) {
+        server->port = atoi (port);
+        // check that we have a valid range, if not, set to default port
+        if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
+            logMsg (stdout, WARNING, SERVER, 
+                createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
+            server->port = DEFAULT_PORT;
+        }
+    }
+    // set to default port
+    else {
+        logMsg (stdout, WARNING, SERVER, 
+            createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
+        server->port = DEFAULT_PORT;
+    } 
+
+    struct sockaddr_storage address;
+	memset (&address, 0, sizeof (struct sockaddr_storage));
+
 	if (server->useIpv6) {
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &address;
 		addr->sin6_family = AF_INET6;
@@ -316,13 +368,19 @@ i8 initServer (Server *server, Config *cfg, ServerType type) {
 		addr->sin_port = htons (server->port);
 	}
 
-    if (bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr)) < 0) {
+    if ((bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr))) < 0) {
         logMsg (stderr, ERROR, SERVER, "Failed to bind server socket!");
-        return -1;
+        return 1;
     }   
 
-    server->connectionQueue = atoi (getEntityValue (cfgEntity, "queue"));
-
+    char *queue = getEntityValue (cfgEntity, "queue");
+    if (queue) server->connectionQueue = atoi (queue);
+    else {
+        logMsg (stdout, WARNING, SERVER, 
+            createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
+        server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
+    }
+    
     initServerDS (server, type);
     initServerValues (server, type);
 

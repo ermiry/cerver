@@ -26,9 +26,11 @@ typedef unsigned char asciiChar;
 
 /*** SEVER ***/
 
-// TODO: maybe load this from a cfg file, it can be different for each type of server?
-#define CONNECTION_QUEUE        7
+#define DEFAULT_PROTOCOL                IPPROTO_TCP
+#define DEFAULT_PORT                    7001
+#define DEFAULT_CONNECTION_QUEUE        7
 
+#define MAX_PORT_NUM            65535
 #define MAX_UDP_PACKET_SIZE     65515
 
 typedef enum ServerType {
@@ -62,14 +64,14 @@ typedef struct Client {
 
 } Client;
 
-// TODO: create different server types, like for a game or a web server
+// this is the generic server struct, used to create different server types
 typedef struct Server {
 
     i32 serverSock;         // server socket
-    u16 port;
-    u8 useIpv6;   
+    u8 useIpv6;  
+    u8 protocol;            // 12/10/2018 - we only support either tcp or udp
+    u16 port; 
     u16 connectionQueue;    // each server can handle connection differently
-    // TODO: handle upd or tcp connection
 
     ServerType type;
     void *serverData;
