@@ -472,6 +472,9 @@ void disconnectAllClients (Server *server) {
 
 }
 
+// TODO: 13/10/2018 -- maybe add the ability to shutdown the server --> don't destroy it but just 
+// block all the connections --> just some server logic is running...
+
 // FIXME: disconnect any remainning client from the server
 // FIXME: delete the common struct between servers
 // close the server
@@ -508,35 +511,33 @@ u8 teardown (Server *server) {
 
 }
 
-// TODO: add the ability to restart the server with the exactly the same parameters as the old one...
-// destroys the server and creates a new one of the same type
+// teardowns the server and creates a fresh new one with the same parameters
 Server *restartServer (Server *server) {
 
-    if (server != NULL) {
-        ServerType type = server->type;
+    if (server) {
+        Server temp = { 
+            .useIpv6 = server->useIpv6, .protocol = server->protocol, .port = server->port,
+            .connectionQueue = server->connectionQueue, .type = server->type };
 
-        if (!teardown (server)) {
-            Config *serverConfig = parseConfigFile ("./config/server.cfg");
-            if (!serverConfig) logMsg (stderr, ERROR, SERVER, "Problems loading server config!");
-            else {
-                Server *retServer = newServer (NULL);
+        if (!teardown (server)) logMsg (stdout, SUCCESS, SERVER, "Done with server teardown");
+        else logMsg (stderr, ERROR, SERVER, "Failed to teardown the server!");
 
-                // init our server as a game server
-                if (!initServer (retServer, serverConfig, type)) {
-                    logMsg (stdout, SUCCESS, SERVER, "\nServer has restarted!\n");
-
-                    // we don't need the server config anymore
-                    clearConfig (serverConfig);
-
-                    return retServer;
-                }
-
-                else return NULL;
-            }
+        // what ever the output, create a new server --> restart
+        Server *retServer = newServer (&temp);
+        if (!initServer (retServer, NULL, temp.type)) {
+            logMsg (stdout, SUCCESS, SERVER, "\nServer has restarted!\n");
+            return retServer;
+        }
+        else {
+            logMsg (stderr, ERROR, SERVER, "Unable to retstart the server!");
+            return NULL;
         }
     }
 
-    return NULL;
+    else {
+        logMsg (stdout, WARNING, SERVER, "Can't restart a NULL server!");
+        return NULL;
+    }
 
 }
 
