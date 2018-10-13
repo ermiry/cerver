@@ -205,6 +205,8 @@ Client *newClient (i32 sock, struct sockaddr_storage address) {
 
 }
 
+// 13/10/2018 - I think register a client only works for tcp? but i might be wrong...
+
 // TODO: hanlde a max number of clients connected to a server at the same time?
 // maybe this can be handled before this call by the load balancer
 void registerClient (Server *server, Client *client) {
@@ -282,41 +284,69 @@ void initServerValues (Server *server, ServerType type) {
 }
 
 // init a server of a given type
-i8 initServer (Server *server, Config *cfg, ServerType type) {
+u8 initServer (Server *server, Config *cfg, ServerType type) {
 
-	ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
-	if (!cfgEntity) {
-        logMsg (stderr, ERROR, SERVER, "Problems with server config!");
-        return 1;
-    } 
+    if (cfg) {
+        ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
+        if (!cfgEntity) {
+            logMsg (stderr, ERROR, SERVER, "Problems with server config!");
+            return 1;
+        } 
 
-    char *ipv6 = getEntityValue (cfgEntity, "ipv6");
-    if (ipv6) {
-        server->useIpv6 = atoi (ipv6);
-        // if we have got an invalid value, the default is not to use ipv6
-        if (server->useIpv6 != 0 || server->useIpv6 != 1) server->useIpv6 = 0;
-    } 
-    // if we do not have a value, use the default
-    else server->useIpv6 = 0;
+        char *ipv6 = getEntityValue (cfgEntity, "ipv6");
+        if (ipv6) {
+            server->useIpv6 = atoi (ipv6);
+            // if we have got an invalid value, the default is not to use ipv6
+            if (server->useIpv6 != 0 || server->useIpv6 != 1) server->useIpv6 = 0;
+        } 
+        // if we do not have a value, use the default
+        else server->useIpv6 = 0;
 
-    char *tcp = getEntityValue (cfgEntity, "tcp");
-    if (tcp) {
-        u8 usetcp = atoi (tcp);
-        if (usetcp != 0 || usetcp != 1) {
-            logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
-            usetcp = 1;
+        char *tcp = getEntityValue (cfgEntity, "tcp");
+        if (tcp) {
+            u8 usetcp = atoi (tcp);
+            if (usetcp != 0 || usetcp != 1) {
+                logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
+                usetcp = 1;
+            }
+
+            if (usetcp) server->protocol = IPPROTO_TCP;
+            else server->protocol = IPPROTO_UDP;
+
+        }
+        // set to default (tcp) if we don't found a value
+        else {
+            logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
+            server->protocol = IPPROTO_TCP;
         }
 
-        if (usetcp) server->protocol = IPPROTO_TCP;
-        else server->protocol = IPPROTO_UDP;
+        char *port = getEntityValue (cfgEntity, "port");
+        if (port) {
+            server->port = atoi (port);
+            // check that we have a valid range, if not, set to default port
+            if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
+                logMsg (stdout, WARNING, SERVER, 
+                    createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
+                server->port = DEFAULT_PORT;
+            }
+        }
+        // set to default port
+        else {
+            logMsg (stdout, WARNING, SERVER, 
+                createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
+            server->port = DEFAULT_PORT;
+        } 
 
-    }
-    // set to default (tcp) if we don't found a value
-    else {
-        logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
-        server->protocol = IPPROTO_TCP;
+        char *queue = getEntityValue (cfgEntity, "queue");
+        if (queue) server->connectionQueue = atoi (queue);
+        else {
+            logMsg (stdout, WARNING, SERVER, 
+                createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
+            server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
+        }
     }
 
+    // init the server
     switch (server->protocol) {
         case IPPROTO_TCP: 
             server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
@@ -333,23 +363,6 @@ i8 initServer (Server *server, Config *cfg, ServerType type) {
         logMsg (stderr, ERROR, SERVER, "Failed to create server socket!");
         return 1;
     }
-
-    char *port = getEntityValue (cfgEntity, "port");
-    if (port) {
-        server->port = atoi (port);
-        // check that we have a valid range, if not, set to default port
-        if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
-            logMsg (stdout, WARNING, SERVER, 
-                createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
-            server->port = DEFAULT_PORT;
-        }
-    }
-    // set to default port
-    else {
-        logMsg (stdout, WARNING, SERVER, 
-            createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
-        server->port = DEFAULT_PORT;
-    } 
 
     struct sockaddr_storage address;
 	memset (&address, 0, sizeof (struct sockaddr_storage));
@@ -372,14 +385,6 @@ i8 initServer (Server *server, Config *cfg, ServerType type) {
         logMsg (stderr, ERROR, SERVER, "Failed to bind server socket!");
         return 1;
     }   
-
-    char *queue = getEntityValue (cfgEntity, "queue");
-    if (queue) server->connectionQueue = atoi (queue);
-    else {
-        logMsg (stdout, WARNING, SERVER, 
-            createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
-        server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
-    }
     
     initServerDS (server, type);
     initServerValues (server, type);
@@ -390,43 +395,65 @@ i8 initServer (Server *server, Config *cfg, ServerType type) {
 
 }
 
-Server *newServer (void) {
+// this is like a constructor
+Server *newServer (Server *server) {
 
     Server *new = (Server *) malloc (sizeof (Server));
+
+    // init with some values
+    if (server) {
+        new->useIpv6 = server->useIpv6;
+        new->protocol = server->protocol;
+        new->port = server->port;
+        new->connectionQueue = server->connectionQueue;
+    }
+    
     return new;
 
 }
 
-// TODO: maybe we can pass other parameters and if we don't have any, use the default
-// configuration from the cfg file
+// create a server using the constructor, or load a configuration based on the type
 Server *createServer (Server *server, ServerType type) {
 
-    // TODO: create a server with the request parameters
-    // if (server) {
+    Server *s = NULL;
 
-    // }
-
-    // // create the server from the default config file
-    // else {
-
-    // }
-
-    Server *s = newServer ();
-
-    Config *serverConfig = parseConfigFile ("./config/server.cfg");
-    if (!serverConfig) {
-        logMsg (stderr, ERROR, NO_TYPE, "Problems loading server config!\n");
-        return NULL;
-    } 
-
-    else {
-        if (!initServer (s, serverConfig, type)) {
+    // create a server with the request parameters
+    if (server) {
+        s = newServer (server);
+        if (!initServer (s, NULL, type)) {
             logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
-
-            // we don't need the server config anymore
-            clearConfig (serverConfig);
-
             return s;
+        }
+
+        else {
+            logMsg (stderr, ERROR, SERVER, "Failed to init the server!");
+            free (s);   // delete the failed server...
+            return NULL;
+        }
+    }
+
+    // create the server from the default config file
+    else {
+        Config *serverConfig = parseConfigFile ("./config/server.cfg");
+        if (!serverConfig) {
+            logMsg (stderr, ERROR, NO_TYPE, "Problems loading server config!\n");
+            return NULL;
+        } 
+
+        else {
+            if (!initServer (s, serverConfig, type)) {
+                logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
+                // we don't need the server config anymore
+                clearConfig (serverConfig);
+                return s;
+            }
+
+            else {
+                logMsg (stderr, ERROR, SERVER, "Failed to init the server!");
+                clearConfig (serverConfig);
+                free (s);   // delete the failed server...
+                return NULL;
+            }
         }
     }
 
@@ -481,7 +508,8 @@ u8 teardown (Server *server) {
 
 }
 
-// destroys the server and create a new one of the same type
+// TODO: add the ability to restart the server with the exactly the same parameters as the old one...
+// destroys the server and creates a new one of the same type
 Server *restartServer (Server *server) {
 
     if (server != NULL) {
@@ -491,7 +519,7 @@ Server *restartServer (Server *server) {
             Config *serverConfig = parseConfigFile ("./config/server.cfg");
             if (!serverConfig) logMsg (stderr, ERROR, SERVER, "Problems loading server config!");
             else {
-                Server *retServer = newServer ();
+                Server *retServer = newServer (NULL);
 
                 // init our server as a game server
                 if (!initServer (retServer, serverConfig, type)) {

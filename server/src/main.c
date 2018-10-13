@@ -89,13 +89,18 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 // that is only listening on one port?
 // TODO: if we want to send a file, maybe create a new TCP socket in a new port?
 
+// 13/10/2018 -- the idea here is to have multiple servers that serve different purposses, for example:
+// we can have the game servers that handle the in game multiplayer logic,
+// but we can also have a server that can handle other types of requests such as getting files
+// maybe all the requests can arrive to the load balancer and depending on the request type and 
+// any other paramater that we give it, it can redirect the request to the correct server
 
 // FIXME: how can we signal the process to end?
 int main (void) {
 
     // create a new server
-    Server *server = createServer (NULL, GAME_SERVER);
-    if (server) {
+    Server *gameServer = createServer (NULL, GAME_SERVER);
+    if (gameServer) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients
 
