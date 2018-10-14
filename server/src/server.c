@@ -8,6 +8,7 @@
 
 #include "game.h"
 
+#include <utils/log.h>
 #include "utils/vector.h"
 #include "utils/config.h"
 

@@ -161,30 +161,4 @@ extern void sendGamePackets (int destPlayer);
 
 extern void destroyGameServer (void *data);
 
-/*** LOG ***/
-
-// TODO: add more types here...
-typedef enum LogMsgType {
-
-	NO_TYPE = 0,
-
-    ERROR = 1,
-    WARNING,
-    SUCCESS,
-    DEBUG,
-    TEST,
-
-    REQ = 10,
-    PACKET,
-    FILE_REQ,
-    GAME,
-    PLAYER,
-
-    SERVER = 100
-
-} LogMsgType;
-
-void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
-    const char *msg);
-
 #endif

@@ -8,6 +8,7 @@
 // no blocking the create lobby function!!
 #include "game.h"
 
+#include <utils/log.h>
 #include "utils/myTime.h"
 #include "utils/config.h"
 #include "utils/vector.h"
