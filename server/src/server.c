@@ -230,6 +230,109 @@ void unregisterClient (Server *server, Client *client) {
 
 #pragma endregion
 
+// Here goes the logic for handling new connections and manage client requests
+// also here we manage some server logic and server responses
+#pragma region CONNECTION HANDLER
+
+// TODO: check again the recieve packets function --> do we need also to pass
+    // the sockaddr? or hanlde just the socket?
+
+// FIXME: don't forget to check that tha packet type is a request!!!
+// TODO: how can we handle other parameters for requests?
+/* void connectionHandler (Server *server, i32 client, struct sockaddr_storage clientAddres) {
+
+	// send welcome message
+	send (client, welcome, sizeof (welcome), 0);
+
+    // recieving packets from a client
+    unsigned char packetData[MAX_UDP_PACKET_SIZE];
+    ssize_t packetSize;
+        
+    if ((packetSize = recv (client, packetData, sizeof (packetData), 0)) > 0) {
+        logMsg (stdout, TEST, PACKET, createString ("Recieved request pakcet size: %ld.", packetSize));
+        // check the packet
+        if (!checkPacket (packetSize, packetData, REQUEST)) {
+            // handle the request
+            RequestData *reqData = (RequestData *) (packetData + sizeof (PacketHeader));
+            switch (reqData->type) {
+                case REQ_GET_FILE: logMsg (stdout, REQ, FILE_REQ, "Requested a file."); break;
+                case POST_SEND_FILE: logMsg (stdout, REQ, FILE_REQ, "Client wants to send a file."); break;
+
+                case REQ_CREATE_LOBBY: createLobby (server, client, clientAddres); break;
+
+                case REQ_TEST:  logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!"); break;
+
+                default: logMsg (stderr, ERROR, REQ, "Invalid request type!");
+            }
+        }
+            
+        else logMsg (stderr, ERROR, REQ, "Recieved an invalid request packet from the client!");
+    }
+
+    // FIXME: better error handling I guess...
+    else logMsg (stderr, ERROR, REQ, "No client request!");
+
+}*/
+
+// this a multiplexor to handle data transmissios to clients
+void *connectionHandler (void *data) {
+
+    Server *server = (Server *) data;
+
+    if (server->clients.elements > 0) {
+        // TODO: handle client requests
+
+        switch (server->type) {
+            case FILE_SERVER: break;
+            case WEB_SERVER: break;
+            case GAME_SERVER: {
+                GameServerData *data = (GameServerData *) server->serverData;
+
+                // TODO: update each game lobby
+                if (data->lobbys.elements > 0) {
+
+                }
+            } break;
+
+            default: break;
+        }
+    } 
+
+}
+
+// 04/10/2018 -- 22:56
+// TODO: maybe a way to handle multiple clients, is having an array of clients, and each time
+// we get a new connection we add the client to the struct and assign a new connection handler to it
+// NOTE: not all clients are players, so we can handle anyone that connects as a client, 
+// and if they make a game request, we can now treat them as players...
+
+// FIXME: try a similar like in the recieve packets function --> maybe with that,
+// we can handle different client requests at the same time
+// TODO: handle ipv6 configuration
+// TODO: do we need to hanlde time here?
+void listenForConnections (Server *server) {
+
+	listen (server->serverSock, server->connectionQueue);
+
+    Client *client = NULL;
+    i32 clientSocket;
+	struct sockaddr_storage clientAddress;
+	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
+    socklen_t sockLen = sizeof (struct sockaddr_storage);
+
+	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
+        // register the client to correct server
+        client = newClient (clientSocket, clientAddress);
+        registerClient (server, client);
+
+        // TODO: log to which server it connects and maybe from where
+        logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
+	}
+
+}
+
+#pragma endregion
+
 /*** SERVER ***/
 
 // Here we manage the creation and destruction of servers 
@@ -412,8 +515,7 @@ Server *newServer (Server *server) {
 
 }
 
-// create a server using the constructor, or load a configuration based on the type
-Server *createServer (Server *server, ServerType type) {
+Server *createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data)) {
 
     Server *s = NULL;
 
@@ -421,6 +523,7 @@ Server *createServer (Server *server, ServerType type) {
     if (server) {
         s = newServer (server);
         if (!initServer (s, NULL, type)) {
+            s->destroyServerdata = destroyServerdata;
             logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
             return s;
         }
@@ -442,6 +545,7 @@ Server *createServer (Server *server, ServerType type) {
 
         else {
             if (!initServer (s, serverConfig, type)) {
+                s->destroyServerdata = destroyServerdata;
                 logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
                 // we don't need the server config anymore
                 clearConfig (serverConfig);
@@ -456,58 +560,6 @@ Server *createServer (Server *server, ServerType type) {
             }
         }
     }
-
-}
-
-// FIXME: clean up all the game structs
-void destroyGameServer (Server *server) {
-}
-
-// FIXME:
-void disconnectAllClients (Server *server) {
-
-    if (server->clients.elements > 0) {
-
-    }
-
-}
-
-// TODO: 13/10/2018 -- maybe add the ability to shutdown the server --> don't destroy it but just 
-// block all the connections --> just some server logic is running...
-
-// FIXME: disconnect any remainning client from the server
-// FIXME: delete the common struct between servers
-// close the server
-u8 teardown (Server *server) {
-
-    if (!server) {
-        logMsg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
-        return 1;
-    }
-
-    logMsg (stdout, SERVER, NO_TYPE, "Closing server...");
-
-    // clean common server structs
-    disconnectAllClients (server);
-
-    // clean independent server type structs
-    switch (server->type) {
-        case FILE_SERVER: break;
-        case WEB_SERVER: break;
-        case GAME_SERVER: destroyGameServer (server); break;
-        default: break;
-    }
-
-    // close the connection
-    if (close (server->serverSock) < 0) {
-        logMsg (stdout, ERROR, SERVER, "Failed to close server socket!");
-        free (server);
-        return 1;
-    }
-
-    free (server);
-
-    return 0;   // teardown was successfull
 
 }
 
@@ -541,106 +593,118 @@ Server *restartServer (Server *server) {
 
 }
 
-#pragma endregion
+// TODO: 13/10/2018 -- we can only handle a tcp server
+// depending on the protocol, the logic of each server might change...
+void startServer (Server *server) {
 
-// Here goes the logic for handling new connections and manage client requests
-// also here we manage some server logic and server responses
-#pragma region CONNECTION HANDLER
+    switch (server->protocol) {
+        case IPPROTO_TCP: 
+            // create a thread to listen for connections
+            // the main thread will handle the in server logic, it depends on the server type
+            break;
+        case IPPROTO_UDP: break;
 
-// TODO: check again the recieve packets function --> do we need also to pass
-    // the sockaddr? or hanlde just the socket?
-
-// FIXME: don't forget to check that tha packet type is a request!!!
-// TODO: how can we handle other parameters for requests?
-/* void connectionHandler (Server *server, i32 client, struct sockaddr_storage clientAddres) {
-
-	// send welcome message
-	send (client, welcome, sizeof (welcome), 0);
-
-    // recieving packets from a client
-    unsigned char packetData[MAX_UDP_PACKET_SIZE];
-    ssize_t packetSize;
-        
-    if ((packetSize = recv (client, packetData, sizeof (packetData), 0)) > 0) {
-        logMsg (stdout, TEST, PACKET, createString ("Recieved request pakcet size: %ld.", packetSize));
-        // check the packet
-        if (!checkPacket (packetSize, packetData, REQUEST)) {
-            // handle the request
-            RequestData *reqData = (RequestData *) (packetData + sizeof (PacketHeader));
-            switch (reqData->type) {
-                case REQ_GET_FILE: logMsg (stdout, REQ, FILE_REQ, "Requested a file."); break;
-                case POST_SEND_FILE: logMsg (stdout, REQ, FILE_REQ, "Client wants to send a file."); break;
-
-                case REQ_CREATE_LOBBY: createLobby (server, client, clientAddres); break;
-
-                case REQ_TEST:  logMsg (stdout, TEST, NO_TYPE, "Packet recieved correctly!!"); break;
-
-                default: logMsg (stderr, ERROR, REQ, "Invalid request type!");
-            }
-        }
-            
-        else logMsg (stderr, ERROR, REQ, "Recieved an invalid request packet from the client!");
+        default: break;
     }
-
-    // FIXME: better error handling I guess...
-    else logMsg (stderr, ERROR, REQ, "No client request!");
-
-}*/
-
-// this a multiplexor to handle data transmissios to clients
-void *connectionHandler (void *data) {
-
-    Server *server = (Server *) data;
-
-    if (server->clients.elements > 0) {
-        // TODO: handle client requests
-
-        switch (server->type) {
-            case FILE_SERVER: break;
-            case WEB_SERVER: break;
-            case GAME_SERVER: {
-                GameServerData *data = (GameServerData *) server->serverData;
-
-                // TODO: update each game lobby
-                if (data->lobbys.elements > 0) {
-
-                }
-            } break;
-
-            default: break;
-        }
-    } 
 
 }
 
-// 04/10/2018 -- 22:56
-// TODO: maybe a way to handle multiple clients, is having an array of clients, and each time
-// we get a new connection we add the client to the struct and assign a new connection handler to it
-// NOTE: not all clients are players, so we can handle anyone that connects as a client, 
-// and if they make a game request, we can now treat them as players...
+// TODO: 13/10/2018 -- maybe add the ability to shutdown the server --> don't destroy it but just 
+// block all the connections --> just some server logic is running...
+void shutdownServer () {}
 
-// FIXME: try a similar like in the recieve packets function --> maybe with that,
-// we can handle different client requests at the same time
-// TODO: handle ipv6 configuration
-// TODO: do we need to hanlde time here?
-void listenForConnections (Server *server) {
+// FIXME: 
+// cleans up all the game structs like lobbys and in game structures like maps
+// if there are players connected, it sends a req to disconnect 
+void destroyGameServer (void *data) {
 
-	listen (server->serverSock, server->connectionQueue);
+    GameServerData *gameData = (GameServerData *) data;
 
-    Client *client = NULL;
-    i32 clientSocket;
-	struct sockaddr_storage clientAddress;
-	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
-    socklen_t sockLen = sizeof (struct sockaddr_storage);
+    // clean any on going games...
+    if (gameData->lobbys.elements > 0) {
+        Lobby *lobby = NULL;
+        for (size_t i_lobby = 0; i_lobby < gameData->lobbys.elements; i_lobby++) {
+            lobby = vector_get (&gameData->lobbys, i_lobby);
+            // TODO: check if we have players inside the lobby
+            // if so... send them a msg to disconnect so that they can handle the disconnect
+            // logic on their side, and disconnect each client
+            for (size_t i_player = 0; i_player < lobby->players.elements; i_player++) {
 
-	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
-        // register the client to correct server
-        client = newClient (clientSocket, clientAddress);
-        registerClient (server, client);
+            }
 
-        // TODO: log to which server it connects and maybe from where
-        logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
-	}
+            // the clients are disconnected, so delete each client struct
+            while (lobby->players.elements > 0) {
+
+            }
+
+            // TODO: for each lobby check if we have an in game going
+            // if so... clean up the necessary data structures
+            if (lobby->inGame) {
+
+            }
+        }
+
+        // we can now safely delete each lobby structure
+        while (gameData->lobbys.elements > 0) {
+
+        }
+    }
+
+}
+
+// FIXME:
+// cleans up the client's structure in the current server
+// if ther are clients connected, it sends a req to disconnect
+void cleanUpClients (Server *server) {
+
+    if (server->clients.elements > 0) {
+        Client *client = NULL;
+        
+        for (size_t i_client = 0; i_client < server->clients.elements; i_client++) {
+            // TODO: correctly disconnect every client
+        }
+
+        // TODO: delete the client structs
+        while (server->clients.elements > 0) {
+            
+        }
+    }
+
+    // TODO: make sure destroy the client vector
+
+}
+
+// FIXME: we also need to be sure to stop all the communications that are in progress
+// and stop any outgoing packages...
+// close the server
+u8 teardown (Server *server) {
+
+    if (!server) {
+        logMsg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
+        return 1;
+    }
+
+    logMsg (stdout, SERVER, NO_TYPE, "Init server teardown...");
+
+    // TODO: probably we might need to shutdown the server socket to stop any package from being
+    // send and/or recieve...
+
+    // clean common server structs
+    cleanUpClients (server);
+
+    // clean independent server type structs
+    if (server->destroyServerdata) server->destroyServerdata (server->serverData);
+
+    // close the server socket
+    if (close (server->serverSock) < 0) {
+        logMsg (stdout, ERROR, SERVER, "Failed to close server socket!");
+        free (server);
+        return 1;
+    }
+
+    free (server);
+
+    return 0;   // teardown was successfull
 
 }
 

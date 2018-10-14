@@ -75,6 +75,12 @@ typedef struct Server {
 
     ServerType type;
     void *serverData;
+    void (*destroyServerdata) (void *data);
+    // TODO: maybe we can add more delegates here such as how packets need to be send, or what packets does the
+    // server expect, how to hanlde player input... all of that to make a more dynamic framework in the end...
+
+    // TODO: 14/10/2018 - maybe we can have listen and handle connections as generir functions, also a generic function
+    // to recieve packets and specific functions to cast the packet to the type that we need?
 
     // does web servers need this?
     Vector clients;     // connected clients
@@ -83,7 +89,7 @@ typedef struct Server {
 
 /*** SERVER FUNCS ***/
 
-extern Server *createServer (Server *, ServerType);
+extern Server *createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data));
 
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
@@ -146,11 +152,14 @@ typedef struct PacketHeader {
 
 } PacketHeader;
 
-/*** MULTIPLAYER ***/
+/*** GAME SERVER ***/
 
-extern void recievePackets (void);
+extern void recievePackets (void);  // FIXME: is this a game server specific?
+
 extern void checkTimeouts (void);
 extern void sendGamePackets (int destPlayer);
+
+extern void destroyGameServer (void *data);
 
 /*** LOG ***/
 

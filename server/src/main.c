@@ -98,8 +98,19 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 // FIXME: how can we signal the process to end?
 int main (void) {
 
+    // TODO: if the server uses tcp, we need to listen and accept connections
+    // but if the server uses udp, we just need to recieve packets
+
+    /* expected workflow: 
+    - crete server(s) with the desired type
+    - start the servers
+        - tcp servers need to accept connections and handle logic
+            - but what if we can make the game server handle different protocols?
+        - udp servers just need to handle packets
+    */
+
     // create a new server
-    Server *gameServer = createServer (NULL, GAME_SERVER);
+    Server *gameServer = createServer (NULL, GAME_SERVER, destroyGameServer);
     if (gameServer) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients
@@ -114,6 +125,8 @@ int main (void) {
         // logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
         // // TODO: we need to tell our game server to listen for connections
         // listenForConnections (server);
+
+        startServer (gameServer);
     }
     
     return 0;

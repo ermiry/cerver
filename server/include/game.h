@@ -91,6 +91,7 @@ typedef struct Player {
 typedef struct Lobby {
 
 	GameSettings *settings;
+	bool inGame;
 
 	Player *owner;			// the client that created the lobby -> he has higher privileges
 	Vector players;			// the clients connected to the lobby
