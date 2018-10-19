@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <signal.h>
 #include <pthread.h>
 
 #include "server.h"
@@ -25,6 +26,17 @@
 // maybe all the requests can arrive to the load balancer and depending on the request type and 
 // any other paramater that we give it, it can redirect the request to the correct server
 
+// TODO: maybe handle this in a separate list by a name?
+Server *gameServer = NULL;
+
+// correctly closes any on-going server and process when quitting the appplication
+void closeProgram (int dummy) {
+
+    if (gameServer) teardown (gameServer);
+    else logMsg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
+
+}
+
 // FIXME: how can we signal the process to end?
 int main (void) {
 
@@ -39,8 +51,11 @@ int main (void) {
         - udp servers just need to handle packets
     */
 
+   // init other program's values...
+   signal (SIGINT, closeProgram);
+
     // create a new server
-    Server *gameServer = createServer (NULL, GAME_SERVER, destroyGameServer);
+    gameServer = createServer (NULL, GAME_SERVER, destroyGameServer);
     if (gameServer) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients
@@ -56,8 +71,11 @@ int main (void) {
         // // TODO: we need to tell our game server to listen for connections
         // listenForConnections (server);
 
-        startServer (gameServer);
+        // startServer (gameServer);
     }
+
+    // if we reach this point, be sure to correctly clean all of our data...
+    closeProgram (0);
     
     return 0;
 

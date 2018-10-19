@@ -23,6 +23,7 @@ bool inGame = false;
 
 void updateGame (void);
 
+// FIXME: where do we want to send the packets to the players?
 void gameLoop (void) {
 
     double tickInterval = 1.0 / FPS;
@@ -40,7 +41,7 @@ void gameLoop (void) {
 		updateGame ();
 
         // send packets to connected players
-		for (size_t p = 0; p < players.elements; p++) sendGamePackets (p);
+		// for (size_t p = 0; p < players.elements; p++) sendGamePackets (p);
 
 		// self-adjusting sleep that makes the loop contents execute every TICK_INTERVAL seconds
 		TimeSpec thisIterTime = getTimeSpec ();

@@ -321,7 +321,7 @@ void listenForConnections (Server *server) {
 	memset (&clientAddress, 0, sizeof (struct sockaddr_storage));
     socklen_t sockLen = sizeof (struct sockaddr_storage);
 
-	while ((clientSocket = accept (server, (struct sockaddr *) &clientAddress, &sockLen))) {
+	while ((clientSocket = accept (server->serverSock, (struct sockaddr *) &clientAddress, &sockLen))) {
         // register the client to correct server
         client = newClient (clientSocket, clientAddress);
         registerClient (server, client);
@@ -350,24 +350,29 @@ const char welcome[64] = "Welcome to cerver!";
 // init server type independent data structs
 void initServerDS (Server *server, ServerType type) {
 
+    // all the server types have a client's vector
+    vector_init (&server->clients, sizeof (Client));
+
     switch (type) {
         case FILE_SERVER: break;
         case WEB_SERVER: break;
         case GAME_SERVER: {
-            vector_init (&server->clients, sizeof (Client));
-
-            GameServerData *data = (GameServerData *) server->serverData;
+            GameServerData *data = (GameServerData *) malloc (sizeof (GameServerData));
             vector_init (&data->players, sizeof (Player));
             vector_init (&data->lobbys, sizeof (Lobby));
+
+            server->serverData = data;
         } break;
         default: break;
     }
 
 }
 
+// TODO: 19/10/2018 -- do we need to have the expected size of each server type
+// inside the server structure?
 // depending on the type of server, we need to init some const values
 void initServerValues (Server *server, ServerType type) {
-
+    
     // this are used in all the types
     packetHeaderSize = sizeof (PacketHeader);
     requestPacketSize = sizeof (RequestData);
@@ -387,8 +392,16 @@ void initServerValues (Server *server, ServerType type) {
 
 }
 
+// TODO: option to toggle debug information...
 // init a server of a given type
 u8 initServer (Server *server, Config *cfg, ServerType type) {
+
+    if (!server) {
+        logMsg (stderr, ERROR, SERVER, "Can't init a NULL server!");
+        return 1;
+    }
+
+    logMsg (stdout, DEBUG, SERVER, "Init server...");
 
     if (cfg) {
         ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
@@ -396,6 +409,8 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
             logMsg (stderr, ERROR, SERVER, "Problems with server config!");
             return 1;
         } 
+
+        logMsg (stdout, DEBUG, SERVER, "Using config entity to set server values...");
 
         char *ipv6 = getEntityValue (cfgEntity, "ipv6");
         if (ipv6) {
@@ -405,6 +420,8 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         } 
         // if we do not have a value, use the default
         else server->useIpv6 = 0;
+
+        logMsg (stdout, DEBUG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
 
         char *tcp = getEntityValue (cfgEntity, "tcp");
         if (tcp) {
@@ -433,6 +450,8 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
                     createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
                 server->port = DEFAULT_PORT;
             }
+
+            logMsg (stdout, DEBUG, SERVER, createString ("Listening on port: %i", server->port));
         }
         // set to default port
         else {
@@ -442,13 +461,18 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         } 
 
         char *queue = getEntityValue (cfgEntity, "queue");
-        if (queue) server->connectionQueue = atoi (queue);
+        if (queue) {
+            server->connectionQueue = atoi (queue);
+            logMsg (stdout, DEBUG, SERVER, createString ("Connection queue: %i", server->connectionQueue));
+        } 
         else {
             logMsg (stdout, WARNING, SERVER, 
                 createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
             server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
         }
     }
+
+    // logMsg (stdout, DEBUG, SERVER, "Done loading server values. Creating socket...");
 
     // init the server
     switch (server->protocol) {
@@ -468,6 +492,8 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         return 1;
     }
 
+    logMsg (stdout, DEBUG, SERVER, "Created server socket");
+
     struct sockaddr_storage address;
 	memset (&address, 0, sizeof (struct sockaddr_storage));
 
@@ -485,13 +511,14 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
 		addr->sin_port = htons (server->port);
 	}
 
-    if ((bind (server, (const struct sockaddr *) &address, sizeof (struct sockaddr))) < 0) {
+    if ((bind (server->serverSock, (const struct sockaddr *) &address, sizeof (struct sockaddr_storage))) < 0) {
         logMsg (stderr, ERROR, SERVER, "Failed to bind server socket!");
         return 1;
     }   
-    
+
     initServerDS (server, type);
     initServerValues (server, type);
+    logMsg (stdout, DEBUG, SERVER, "Done creating server data structures...");
 
     server->type = type;
 
@@ -518,11 +545,9 @@ Server *newServer (Server *server) {
 
 Server *createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data)) {
 
-    Server *s = NULL;
-
     // create a server with the request parameters
     if (server) {
-        s = newServer (server);
+        Server *s = newServer (server);
         if (!initServer (s, NULL, type)) {
             s->destroyServerdata = destroyServerdata;
             logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
@@ -545,9 +570,10 @@ Server *createServer (Server *server, ServerType type, void (*destroyServerdata)
         } 
 
         else {
+            Server *s = newServer (NULL);
             if (!initServer (s, serverConfig, type)) {
                 s->destroyServerdata = destroyServerdata;
-                logMsg (stdout, SUCCESS, SERVER, "\nCreated a new server!\n");
+                logMsg (stdout, SUCCESS, SERVER, "Created a new server!\n");
                 // we don't need the server config anymore
                 clearConfig (serverConfig);
                 return s;
@@ -594,6 +620,7 @@ Server *restartServer (Server *server) {
 
 }
 
+// TODO: dont forget to put server->running = true;
 // TODO: 13/10/2018 -- we can only handle a tcp server
 // depending on the protocol, the logic of each server might change...
 void startServer (Server *server) {
@@ -610,9 +637,19 @@ void startServer (Server *server) {
 
 }
 
-// TODO: 13/10/2018 -- maybe add the ability to shutdown the server --> don't destroy it but just 
-// block all the connections --> just some server logic is running...
-void shutdownServer () {}
+// TODO: what other logic will we need to handle? -> how to handle players / clients timeouts?
+// what happens with the current lobbys or on going games??
+// disable socket I/O in both ways
+void shutdownServer (Server *server ) {
+
+    if (server->running) {
+        if (shutdown (server->serverSock, SHUT_RDWR) < 0) 
+            logMsg (stderr, ERROR, SERVER, "Failed to shutdown the server!");
+
+        else server->running = false;
+    }
+
+}
 
 // FIXME: 
 // cleans up all the game structs like lobbys and in game structures like maps
@@ -675,9 +712,8 @@ void cleanUpClients (Server *server) {
 
 }
 
-// FIXME: we also need to be sure to stop all the communications that are in progress
-// and stop any outgoing packages...
-// close the server
+// FIXME: we need to join the ongoing threads... 
+// teardown a server
 u8 teardown (Server *server) {
 
     if (!server) {
@@ -687,8 +723,10 @@ u8 teardown (Server *server) {
 
     logMsg (stdout, SERVER, NO_TYPE, "Init server teardown...");
 
-    // TODO: probably we might need to shutdown the server socket to stop any package from being
-    // send and/or recieve...
+    // disable socket I/O in both ways
+    shutdownServer (server);
+
+    // TODO: join the on going threads?? -> just the listen ones?? or also the ones handling the lobby?
 
     // clean common server structs
     cleanUpClients (server);
@@ -704,6 +742,8 @@ u8 teardown (Server *server) {
     }
 
     free (server);
+
+    logMsg (stdout, SUCCESS, NO_TYPE, "Server teardown was successfull!");
 
     return 0;   // teardown was successfull
 

@@ -62,7 +62,7 @@ typedef struct Client {
 
     u32 clientID;
     i32 clientSock;
-    struct sockaddr_storage address;
+    // struct sockaddr_storage address;
 
 } Client;
 
@@ -74,6 +74,8 @@ typedef struct Server {
     u8 protocol;            // 12/10/2018 - we only support either tcp or udp
     u16 port; 
     u16 connectionQueue;    // each server can handle connection differently
+
+    bool running;           // 19/10/2018 - the server is recieving and/or sending packetss
 
     ServerType type;
     void *serverData;
@@ -91,7 +93,9 @@ typedef struct Server {
 
 /*** SERVER FUNCS ***/
 
-extern Server *createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data));
+extern Server *createServer (Server *, ServerType, void (*destroyServerdata) (void *data));
+
+extern void startServer (Server *);
 
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
@@ -159,7 +163,7 @@ typedef struct PacketHeader {
 extern void recievePackets (void);  // FIXME: is this a game server specific?
 
 extern void checkTimeouts (void);
-extern void sendGamePackets (int destPlayer);
+extern void sendGamePackets (Server *server, int to) ;
 
 extern void destroyGameServer (void *data);
 

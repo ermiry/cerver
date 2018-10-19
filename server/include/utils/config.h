@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "server.h"
+#include <stdint.h>
 
 #include "utils/list.h"
 
@@ -30,7 +30,7 @@ typedef struct Config {
 
 extern Config *parseConfigFile (const char *filename);
 extern char *getEntityValue (ConfigEntity *entity, char *key);
-extern ConfigEntity *getEntityWithId (Config *cfg, u8 id);
+extern ConfigEntity *getEntityWithId (Config *cfg, uint16_t id);
 
 extern void setEntityValue (ConfigEntity *entity, char *key, char *value);
 extern void writeConfigFile (const char *filename, Config *config);

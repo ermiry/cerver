@@ -1,24 +1,11 @@
-/*** This file is used to read .cfg files to retrive data for our items, monsters, etc. 
- * 
- * As of 15/08/2018 -- 23:02 -- we will be reading from hardcoded internal files to retriev some
- * information of our various entities. Maybe later we will want to have a more advanced system
- * and even have the server with this type of data.
- * 
- * We also have to think of a better way for adding new stuff in our game in an easier way.
- * We will also want to have more values to tweak by config files.
- * 
- * ***/
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "server.h"
+#include <stdint.h>
 
 #include "utils/list.h"
 #include "utils/config.h"
-
 
 /*** PARSE THE FILE ***/
 
@@ -104,12 +91,12 @@ char *getEntityValue (ConfigEntity *entity, char *key) {
 
 }
 
-ConfigEntity *getEntityWithId (Config *cfg, u8 id) {
+ConfigEntity *getEntityWithId (Config *cfg, uint16_t id) {
 
     ConfigEntity *entity = NULL;
     for (ListElement *e = LIST_START (cfg->entities); e != NULL; e = e->next) {
         entity = (ConfigEntity *) e->data;
-        u8 eId = atoi (getEntityValue (entity, "id"));
+        uint16_t eId = atoi (getEntityValue (entity, "id"));
         if (eId == id) return entity;
     }
 
