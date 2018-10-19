@@ -24,6 +24,8 @@ typedef int64_t i64;
 
 typedef unsigned char asciiChar;
 
+typedef void (*Func)(void *);   // 18/10/2018 -- testing a type of func like in c#
+
 /*** SEVER ***/
 
 #define DEFAULT_PROTOCOL                IPPROTO_TCP
