@@ -13,7 +13,7 @@ char *getMsgType (LogMsgType type) {
         case ERROR: strcpy (temp, "[ERROR]"); break;
         case WARNING: strcpy (temp, "[WARNING]"); break;
         case SUCCESS: strcpy (temp, "[SUCCESS]"); break;
-        case DEBUG: strcpy (temp, "[DEBUG]"); break;
+        case DEBUG_MSG: strcpy (temp, "[DEBUG]"); break;
         case TEST: strcpy (temp, "[TEST]"); break;
 
         case REQ: strcpy (temp, "[REQ]"); break;

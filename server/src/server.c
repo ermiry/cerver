@@ -392,7 +392,77 @@ void initServerValues (Server *server, ServerType type) {
 
 }
 
-// TODO: option to toggle debug information...
+u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
+
+    char *ipv6 = getEntityValue (cfgEntity, "ipv6");
+    if (ipv6) {
+        server->useIpv6 = atoi (ipv6);
+        // if we have got an invalid value, the default is not to use ipv6
+        if (server->useIpv6 != 0 || server->useIpv6 != 1) server->useIpv6 = 0;
+    } 
+    // if we do not have a value, use the default
+    else server->useIpv6 = 0;
+
+    #ifdef DEBUG
+    logMsg (stdout, DEBUG_MSG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
+    #endif
+
+    char *tcp = getEntityValue (cfgEntity, "tcp");
+    if (tcp) {
+        u8 usetcp = atoi (tcp);
+        if (usetcp < 0 || usetcp > 1) {
+            logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
+            usetcp = 1;
+        }
+
+        if (usetcp) server->protocol = IPPROTO_TCP;
+        else server->protocol = IPPROTO_UDP;
+
+    }
+    // set to default (tcp) if we don't found a value
+    else {
+        logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
+        server->protocol = IPPROTO_TCP;
+    }
+
+    char *port = getEntityValue (cfgEntity, "port");
+    if (port) {
+        server->port = atoi (port);
+        // check that we have a valid range, if not, set to default port
+        if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
+            logMsg (stdout, WARNING, SERVER, 
+                createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
+            server->port = DEFAULT_PORT;
+        }
+
+        #ifdef DEBUG
+        logMsg (stdout, DEBUG_MSG, SERVER, createString ("Listening on port: %i", server->port));
+        #endif
+    }
+    // set to default port
+    else {
+        logMsg (stdout, WARNING, SERVER, 
+            createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
+        server->port = DEFAULT_PORT;
+    } 
+
+    char *queue = getEntityValue (cfgEntity, "queue");
+    if (queue) {
+        server->connectionQueue = atoi (queue);
+        #ifdef DEBUG
+        logMsg (stdout, DEBUG_MSG, SERVER, createString ("Connection queue: %i", server->connectionQueue));
+        #endif
+    } 
+    else {
+        logMsg (stdout, WARNING, SERVER, 
+            createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
+        server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
+    }
+
+    return 0;
+
+}
+
 // init a server of a given type
 u8 initServer (Server *server, Config *cfg, ServerType type) {
 
@@ -401,7 +471,9 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         return 1;
     }
 
-    logMsg (stdout, DEBUG, SERVER, "Init server...");
+    #ifdef DEBUG
+    logMsg (stdout, DEBUG_MSG, SERVER, "Initializing server...");
+    #endif
 
     if (cfg) {
         ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
@@ -410,69 +482,13 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
             return 1;
         } 
 
-        logMsg (stdout, DEBUG, SERVER, "Using config entity to set server values...");
+        #ifdef DEBUG
+        logMsg (stdout, DEBUG_MSG, SERVER, "Using config entity to set server values...");
+        #endif
 
-        char *ipv6 = getEntityValue (cfgEntity, "ipv6");
-        if (ipv6) {
-            server->useIpv6 = atoi (ipv6);
-            // if we have got an invalid value, the default is not to use ipv6
-            if (server->useIpv6 != 0 || server->useIpv6 != 1) server->useIpv6 = 0;
-        } 
-        // if we do not have a value, use the default
-        else server->useIpv6 = 0;
-
-        logMsg (stdout, DEBUG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
-
-        char *tcp = getEntityValue (cfgEntity, "tcp");
-        if (tcp) {
-            u8 usetcp = atoi (tcp);
-            if (usetcp != 0 || usetcp != 1) {
-                logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
-                usetcp = 1;
-            }
-
-            if (usetcp) server->protocol = IPPROTO_TCP;
-            else server->protocol = IPPROTO_UDP;
-
-        }
-        // set to default (tcp) if we don't found a value
-        else {
-            logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
-            server->protocol = IPPROTO_TCP;
-        }
-
-        char *port = getEntityValue (cfgEntity, "port");
-        if (port) {
-            server->port = atoi (port);
-            // check that we have a valid range, if not, set to default port
-            if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
-                logMsg (stdout, WARNING, SERVER, 
-                    createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
-                server->port = DEFAULT_PORT;
-            }
-
-            logMsg (stdout, DEBUG, SERVER, createString ("Listening on port: %i", server->port));
-        }
-        // set to default port
-        else {
-            logMsg (stdout, WARNING, SERVER, 
-                createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
-            server->port = DEFAULT_PORT;
-        } 
-
-        char *queue = getEntityValue (cfgEntity, "queue");
-        if (queue) {
-            server->connectionQueue = atoi (queue);
-            logMsg (stdout, DEBUG, SERVER, createString ("Connection queue: %i", server->connectionQueue));
-        } 
-        else {
-            logMsg (stdout, WARNING, SERVER, 
-                createString ("Connection queue no specified. Setting it to default: %i", DEFAULT_CONNECTION_QUEUE));
-            server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
-        }
+        if (!getServerCfgValues (server, cfgEntity)) 
+            logMsg (stdout, SUCCESS, SERVER, "Done getting cfg server values");
     }
-
-    // logMsg (stdout, DEBUG, SERVER, "Done loading server values. Creating socket...");
 
     // init the server
     switch (server->protocol) {
@@ -492,7 +508,9 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         return 1;
     }
 
-    logMsg (stdout, DEBUG, SERVER, "Created server socket");
+    #ifdef DEBUG
+    logMsg (stdout, DEBUG_MSG, SERVER, "Created server socket");
+    #endif
 
     struct sockaddr_storage address;
 	memset (&address, 0, sizeof (struct sockaddr_storage));
@@ -518,7 +536,9 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
 
     initServerDS (server, type);
     initServerValues (server, type);
-    logMsg (stdout, DEBUG, SERVER, "Done creating server data structures...");
+    #ifdef DEBUG
+    logMsg (stdout, DEBUG_MSG, SERVER, "Done creating server data structures...");
+    #endif
 
     server->type = type;
 
@@ -526,7 +546,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
 
 }
 
-// this is like a constructor
+// the server constructor
 Server *newServer (Server *server) {
 
     Server *new = (Server *) malloc (sizeof (Server));
@@ -604,7 +624,7 @@ Server *restartServer (Server *server) {
         // what ever the output, create a new server --> restart
         Server *retServer = newServer (&temp);
         if (!initServer (retServer, NULL, temp.type)) {
-            logMsg (stdout, SUCCESS, SERVER, "\nServer has restarted!\n");
+            logMsg (stdout, SUCCESS, SERVER, "Server has restarted!");
             return retServer;
         }
         else {
@@ -640,7 +660,7 @@ void startServer (Server *server) {
 // TODO: what other logic will we need to handle? -> how to handle players / clients timeouts?
 // what happens with the current lobbys or on going games??
 // disable socket I/O in both ways
-void shutdownServer (Server *server ) {
+void shutdownServer (Server *server) {
 
     if (server->running) {
         if (shutdown (server->serverSock, SHUT_RDWR) < 0) 

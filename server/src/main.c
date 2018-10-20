@@ -38,6 +38,7 @@ void closeProgram (int dummy) {
 }
 
 // FIXME: how can we signal the process to end?
+// TODO: recieve signals to init, retsart or teardown a server -> like a control panel
 int main (void) {
 
     // TODO: if the server uses tcp, we need to listen and accept connections
@@ -51,8 +52,8 @@ int main (void) {
         - udp servers just need to handle packets
     */
 
-   // init other program's values...
-   signal (SIGINT, closeProgram);
+    // init other program's values...
+    signal (SIGINT, closeProgram);
 
     // create a new server
     gameServer = createServer (NULL, GAME_SERVER, destroyGameServer);

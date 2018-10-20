@@ -18,7 +18,7 @@ typedef enum LogMsgType {
     ERROR = 1,
     WARNING,
     SUCCESS,
-    DEBUG,
+    DEBUG_MSG,
     TEST,
 
     REQ = 10,
