@@ -86,8 +86,11 @@ typedef struct Server {
     // TODO: 14/10/2018 - maybe we can have listen and handle connections as generir functions, also a generic function
     // to recieve packets and specific functions to cast the packet to the type that we need?
 
-    // does web servers need this?
+    // do web servers need this?
     Vector clients;     // connected clients
+
+    // 20/10/2018 -- i dont like this...
+    Vector holdClients;     // hold on the clients until they authenticate
 
 } Server;
 
@@ -95,7 +98,7 @@ typedef struct Server {
 
 extern Server *createServer (Server *, ServerType, void (*destroyServerdata) (void *data));
 
-extern void startServer (Server *);
+extern u8 startServer (Server *);
 
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);

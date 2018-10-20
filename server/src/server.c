@@ -3,12 +3,14 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <pthread.h>
+
 #include "server.h"
 #include "network.h"
 
 #include "game.h"
 
-#include <utils/log.h>
+#include "utils/log.h"
 #include "utils/vector.h"
 #include "utils/config.h"
 
@@ -194,13 +196,12 @@ void sendPacket (Server *server, void *begin, size_t packetSize, struct sockaddr
 // FIXME: we can't have infinite ids!!
 u32 nextClientID = 0;
 
-Client *newClient (i32 sock, struct sockaddr_storage address) {
+Client *newClient (i32 sock) {
 
     Client *new = (Client *) malloc (sizeof (Client));
     
     new->clientID = nextClientID;
     new->clientSock = sock;
-    // new->address = address;
 
     return new;
 
@@ -311,9 +312,56 @@ void *connectionHandler (void *data) {
 // we can handle different client requests at the same time
 // TODO: handle ipv6 configuration
 // TODO: do we need to hanlde time here?
-void listenForConnections (Server *server) {
 
-	listen (server->serverSock, server->connectionQueue);
+// FIXME:
+/*** AUTHENTICATE THE CLIENT CONNECTION ***/
+
+#pragma region AUTHENTICATE CLIENT
+
+void handleOnHoldClients () {
+
+    // if (onHoldClients > 0) {
+    //     foreach client in onholdclients
+    //     // for each client being on hold, send an authentication request
+    //     // and handle the authentication    
+    // }
+
+    // check for the correct version and protocol id and any securtity stuff we need
+    // if it is correct, pass the client to the server
+    // if not, reject the connection to the client and disconnect it
+
+    // register the client to correct server
+    // registerClient (server, client);
+
+    // TODO: log to which server it connects and maybe from where
+    #ifdef CERVER_DEBUG
+    logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
+    #endif
+
+}
+
+// 20/10/2018 -- we are managing only one server... so each one has his on hold clients
+// hold the client until he authenticates 
+void onHoldClient (Server *server, Client *client) {
+
+    // adds a client to the on hold structure
+
+}
+
+#pragma endregion
+
+// tcp needs to accept a connection to communicate with it
+// this is called from a separate thread for each server     20/10/2018
+void tcpListenForConnections (void *data) {
+
+    if (!data) {
+        logMsg (stderr, ERROR, SERVER, "Can't listen for tcp connections on a NULL server!");
+        return;
+    }
+
+    Server *server = (Server *) data;
+
+    listen (server->serverSock, server->connectionQueue);
 
     Client *client = NULL;
     i32 clientSocket;
@@ -322,12 +370,15 @@ void listenForConnections (Server *server) {
     socklen_t sockLen = sizeof (struct sockaddr_storage);
 
 	while ((clientSocket = accept (server->serverSock, (struct sockaddr *) &clientAddress, &sockLen))) {
-        // register the client to correct server
-        client = newClient (clientSocket, clientAddress);
-        registerClient (server, client);
+        // first we need to check that we have got a valid client
+        // so, we first add the client to a temp client list, and we ask him to authenticate
+        client = newClient (clientSocket);
 
-        // TODO: log to which server it connects and maybe from where
-        logMsg (stdout, SERVER, NO_TYPE, "New client connected.");
+        // FIXME: send the client to the on hold structure for authentication....
+        // onHoldClient (server, client);
+
+        // 20/10/2018 -- for now we just register the client to the correct server they reach
+        registerClient (server, client);
 	}
 
 }
@@ -347,6 +398,7 @@ void listenForConnections (Server *server) {
 
 const char welcome[64] = "Welcome to cerver!";
 
+// TODO:
 // init server type independent data structs
 void initServerDS (Server *server, ServerType type) {
 
@@ -403,7 +455,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     // if we do not have a value, use the default
     else server->useIpv6 = 0;
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     logMsg (stdout, DEBUG_MSG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
     #endif
 
@@ -435,7 +487,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
             server->port = DEFAULT_PORT;
         }
 
-        #ifdef DEBUG
+        #ifdef CERVER_DEBUG
         logMsg (stdout, DEBUG_MSG, SERVER, createString ("Listening on port: %i", server->port));
         #endif
     }
@@ -449,7 +501,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     char *queue = getEntityValue (cfgEntity, "queue");
     if (queue) {
         server->connectionQueue = atoi (queue);
-        #ifdef DEBUG
+        #ifdef CERVER_DEBUG
         logMsg (stdout, DEBUG_MSG, SERVER, createString ("Connection queue: %i", server->connectionQueue));
         #endif
     } 
@@ -471,7 +523,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         return 1;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     logMsg (stdout, DEBUG_MSG, SERVER, "Initializing server...");
     #endif
 
@@ -482,7 +534,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
             return 1;
         } 
 
-        #ifdef DEBUG
+        #ifdef CERVER_DEBUG
         logMsg (stdout, DEBUG_MSG, SERVER, "Using config entity to set server values...");
         #endif
 
@@ -508,7 +560,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
         return 1;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     logMsg (stdout, DEBUG_MSG, SERVER, "Created server socket");
     #endif
 
@@ -536,7 +588,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
 
     initServerDS (server, type);
     initServerValues (server, type);
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     logMsg (stdout, DEBUG_MSG, SERVER, "Done creating server data structures...");
     #endif
 
@@ -640,20 +692,37 @@ Server *restartServer (Server *server) {
 
 }
 
-// TODO: dont forget to put server->running = true;
+// TODO: handle logic when we have a load balancer --> that will be the one in charge to listen for
+// connections and accept them -> then it will send them to the correct server
 // TODO: 13/10/2018 -- we can only handle a tcp server
 // depending on the protocol, the logic of each server might change...
-void startServer (Server *server) {
+u8 startServer (Server *server) {
+
+    // 20/10/2018 -- 12:03 -- we are managing only one server at the time, so this is just for testing!!
+
+    // TODO: threads must be managed from a pool thread, so that we can close them independently from where
+    // we are, specially if we are closing the application we won't have a direct reference to the 
+    // thread we are using
 
     switch (server->protocol) {
-        case IPPROTO_TCP: 
-            // create a thread to listen for connections
-            // the main thread will handle the in server logic, it depends on the server type
-            break;
+        case IPPROTO_TCP: {
+            // tcp needs a thread to accept separte connections
+            pthread_t listenThread;
+            if (pthread_create (&listenThread, NULL, tcpListenForConnections, &server)) {
+                logMsg (stderr, ERROR, SERVER, "Failed to create tcp listen thread!");
+                return 1;
+            }
+
+            // TODO: the main thread will handle the in server logic, it depends on the server type
+
+            server->running = true;
+        } break;
         case IPPROTO_UDP: break;
 
         default: break;
     }
+
+    return 0;
 
 }
 
