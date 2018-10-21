@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 
-#include "server.h"
+#include "cerver.h"
 
 #define IP_TO_STR_LEN       16
 #define IPV6_TO_STR_LEN     46

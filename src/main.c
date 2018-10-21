@@ -6,7 +6,7 @@
 #include <signal.h>
 #include <pthread.h>
 
-#include "server.h"
+#include "cerver.h"
 #include "network.h"
 
 #include <utils/log.h>

@@ -75,7 +75,7 @@ typedef struct Server {
     u16 port; 
     u16 connectionQueue;    // each server can handle connection differently
 
-    bool running;           // 19/10/2018 - the server is recieving and/or sending packetss
+    bool isRunning;           // 19/10/2018 - the server is recieving and/or sending packetss
 
     ServerType type;
     void *serverData;

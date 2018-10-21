@@ -5,7 +5,7 @@
 
 #include <pthread.h>
 
-#include "server.h"
+#include "cerver.h"
 #include "network.h"
 
 #include "game.h"
@@ -698,6 +698,11 @@ Server *cerver_restartServer (Server *server) {
 // depending on the protocol, the logic of each server might change...
 u8 cerver_startServer (Server *server) {
 
+    if (server->isRunning) {
+        logMsg (stdout, WARNING, SERVER, "The server is already running.");
+        return 1;
+    }
+
     // 20/10/2018 -- 12:03 -- we are managing only one server at the time, so this is just for testing!!
 
     // TODO: threads must be managed from a pool thread, so that we can close them independently from where
@@ -715,7 +720,7 @@ u8 cerver_startServer (Server *server) {
 
             // TODO: the main thread will handle the in server logic, it depends on the server type
 
-            server->running = true;
+            server->isRunning = true;
         } break;
         case IPPROTO_UDP: break;
 
@@ -731,11 +736,11 @@ u8 cerver_startServer (Server *server) {
 // disable socket I/O in both ways
 void cerver_shutdownServer (Server *server) {
 
-    if (server->running) {
+    if (server->isRunning) {
         if (shutdown (server->serverSock, SHUT_RDWR) < 0) 
             logMsg (stderr, ERROR, SERVER, "Failed to shutdown the server!");
 
-        else server->running = false;
+        else server->isRunning = false;
     }
 
 }
