@@ -32,7 +32,7 @@ Server *gameServer = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void closeProgram (int dummy) {
 
-    if (gameServer) teardown (gameServer);
+    if (gameServer) cerver_teardown (gameServer);
     else logMsg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
 
 }
@@ -56,7 +56,7 @@ int main (void) {
     signal (SIGINT, closeProgram);
 
     // create a new server
-    gameServer = createServer (NULL, GAME_SERVER, destroyGameServer);
+    gameServer = cerver_createServer (NULL, GAME_SERVER, destroyGameServer);
     if (gameServer) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients

@@ -96,15 +96,17 @@ typedef struct Server {
 
 /*** SERVER FUNCS ***/
 
-extern Server *createServer (Server *, ServerType, void (*destroyServerdata) (void *data));
+extern Server *cerver_createServer (Server *, ServerType, void (*destroyServerdata) (void *data));
 
-extern u8 startServer (Server *);
+extern u8 cerver_startServer (Server *);
 
+// TODO: do we need this to be public?
 extern void *connectionHandler (void *);
 extern void listenForConnections (Server *);
 
-extern u8 teardown (Server *);
-extern Server *restartServer (Server *);
+extern void cerver_shutdownServer (Server *);
+extern u8 cerver_teardown (Server *);
+extern Server *cerver_restartServer (Server *);
 
 /*** REQUESTS ***/
 

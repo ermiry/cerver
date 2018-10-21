@@ -352,11 +352,11 @@ void onHoldClient (Server *server, Client *client) {
 
 // tcp needs to accept a connection to communicate with it
 // this is called from a separate thread for each server     20/10/2018
-void tcpListenForConnections (void *data) {
+void *tcpListenForConnections (void *data) {
 
     if (!data) {
         logMsg (stderr, ERROR, SERVER, "Can't listen for tcp connections on a NULL server!");
-        return;
+        return NULL;
     }
 
     Server *server = (Server *) data;
@@ -615,7 +615,7 @@ Server *newServer (Server *server) {
 
 }
 
-Server *createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data)) {
+Server *cerver_createServer (Server *server, ServerType type, void (*destroyServerdata) (void *data)) {
 
     // create a server with the request parameters
     if (server) {
@@ -663,14 +663,14 @@ Server *createServer (Server *server, ServerType type, void (*destroyServerdata)
 }
 
 // teardowns the server and creates a fresh new one with the same parameters
-Server *restartServer (Server *server) {
+Server *cerver_restartServer (Server *server) {
 
     if (server) {
         Server temp = { 
             .useIpv6 = server->useIpv6, .protocol = server->protocol, .port = server->port,
             .connectionQueue = server->connectionQueue, .type = server->type };
 
-        if (!teardown (server)) logMsg (stdout, SUCCESS, SERVER, "Done with server teardown");
+        if (!cerver_teardown (server)) logMsg (stdout, SUCCESS, SERVER, "Done with server teardown");
         else logMsg (stderr, ERROR, SERVER, "Failed to teardown the server!");
 
         // what ever the output, create a new server --> restart
@@ -696,7 +696,7 @@ Server *restartServer (Server *server) {
 // connections and accept them -> then it will send them to the correct server
 // TODO: 13/10/2018 -- we can only handle a tcp server
 // depending on the protocol, the logic of each server might change...
-u8 startServer (Server *server) {
+u8 cerver_startServer (Server *server) {
 
     // 20/10/2018 -- 12:03 -- we are managing only one server at the time, so this is just for testing!!
 
@@ -729,7 +729,7 @@ u8 startServer (Server *server) {
 // TODO: what other logic will we need to handle? -> how to handle players / clients timeouts?
 // what happens with the current lobbys or on going games??
 // disable socket I/O in both ways
-void shutdownServer (Server *server) {
+void cerver_shutdownServer (Server *server) {
 
     if (server->running) {
         if (shutdown (server->serverSock, SHUT_RDWR) < 0) 
@@ -803,7 +803,7 @@ void cleanUpClients (Server *server) {
 
 // FIXME: we need to join the ongoing threads... 
 // teardown a server
-u8 teardown (Server *server) {
+u8 cerver_teardown (Server *server) {
 
     if (!server) {
         logMsg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
@@ -813,7 +813,7 @@ u8 teardown (Server *server) {
     logMsg (stdout, SERVER, NO_TYPE, "Init server teardown...");
 
     // disable socket I/O in both ways
-    shutdownServer (server);
+    cerver_shutdownServer (server);
 
     // TODO: join the on going threads?? -> just the listen ones?? or also the ones handling the lobby?
 
