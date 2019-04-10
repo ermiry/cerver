@@ -1,5 +1,5 @@
-#ifndef NETWORK_H
-#define NETWORK_H
+#ifndef _NETWORK_H_
+#define _NETWORK_H_
 
 #include <stdbool.h>
 
