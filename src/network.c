@@ -1,33 +1,46 @@
+#include <stdlib.h>
 #include <string.h>
 
-#include "network.h"
+#include <fcntl.h>
 
-/*** SOCKETS ***/   
+#include "cerver/network.h"
 
-bool sock_setNonBlocking (i32 server) {
+/*** SOCKETS ***/  
 
-    int non_blocking = 1;
-	return fcntl (server, F_SETFL, O_NONBLOCK, non_blocking) != -1;
+#pragma region SOCKETS
+
+// enable/disable blocking on a socket
+// true on success, false if there was an eroror
+bool sock_setBlocking (int32_t fd, bool isBlocking) {
+
+    if (fd < 0) return false;
+
+    int flags = fcntl (fd, F_GETFL, 0);
+    if (flags == -1) return false;
+    // flags = isBlocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);   // original
+    flags = isBlocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+    return (fcntl (fd, F_SETFL, flags) == 0) ? true : false;
 
 }
 
-const char *sock_ip_to_string (const struct sockaddr *address, char *string, size_t string_size) {
+char *sock_ip_to_string ( const struct sockaddr *address) {
 
-	switch(address->sa_family) {
+    char *ipstr = (char *) calloc (INET6_ADDRSTRLEN, sizeof (char));
+
+	switch (address->sa_family) {
         case AF_INET:
-            return inet_ntop(AF_INET,
-                            &((struct sockaddr_in *) address)->sin_addr,
-                            string, string_size);
+            inet_ntop (AF_INET, &((struct sockaddr_in *) address)->sin_addr,
+                        ipstr, INET6_ADDRSTRLEN);
             break;
         case AF_INET6:
-            return inet_ntop(AF_INET6,
-                            &((struct sockaddr_in6 *) address)->sin6_addr,
-                            string, string_size);
+            inet_ntop(AF_INET6, &((struct sockaddr_in6 *) address)->sin6_addr,
+                        ipstr, INET6_ADDRSTRLEN);
             break;
-        default:
-            strncpy(string, "[Unknown AF!]", string_size);
-            return NULL;
+
+        default: return NULL;
 	}
+
+    return ipstr;
 
 }
 
@@ -67,3 +80,5 @@ in_port_t sock_ip_port (const struct sockaddr *address) {
 	}
 
 }
+
+#pragma endregion
