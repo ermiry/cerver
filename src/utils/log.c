@@ -5,6 +5,8 @@
 #include "utils/myUtils.h"
 #include "utils/log.h"
 
+#include "cerver.h"
+
 char *getMsgType (LogMsgType type) {
 
     char temp[10];
@@ -23,6 +25,7 @@ char *getMsgType (LogMsgType type) {
         case GAME: strcpy (temp, "[GAME]"); break;
 
         case SERVER: strcpy (temp, "[SERVER]"); break;
+        case CLIENT: strcpy (temp, "[CLIENT]"); break;
 
         default: break;
     }
@@ -34,24 +37,30 @@ char *getMsgType (LogMsgType type) {
 
 }
 
-// TODO: maybe log from which server the msg is comming?
 void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
     char *first = getMsgType (firstType);
     char *second = NULL;
-
     char *message = NULL;
 
     if (secondType != 0) {
         second = getMsgType (secondType);
-        message = createString ("%s%s: %s\n", first, second, msg);
+
+        if (firstType == DEBUG_MSG)
+            message = createString ("%s: %s\n", second, msg);
+        
+        else message = createString ("%s%s: %s\n", first, second, msg);
     }
 
-    else message = createString ("%s: %s\n", first, msg);
+    else if (firstType != DEBUG_MSG)
+        message = createString ("%s: %s\n", first, msg);
 
     // log messages with color
     switch (firstType) {
+        case DEBUG_MSG: 
+            fprintf (__stream, COLOR_MAGENTA "%s: " COLOR_RESET "%s\n", first, msg); break;
+
         case ERROR: fprintf (__stream, COLOR_RED "%s" COLOR_RESET, message); break;
         case WARNING: fprintf (__stream, COLOR_YELLOW "%s" COLOR_RESET, message); break;
         case SUCCESS: fprintf (__stream, COLOR_GREEN "%s" COLOR_RESET, message); break;
@@ -61,7 +70,19 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
         default: fprintf (__stream, "%s", message); break;
     }
 
-    if (!first) free (first);
-    if (!second) free (second);
+    if (message) free (message);
+
+}
+
+void log_newServer (Server *server) {
+
+    if (server) {
+        switch (server->type) {
+            case FILE_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a new file server!"); break;
+            case WEB_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a web server!"); break;
+            case GAME_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a game server!"); break;
+            default: break;
+        }
+    }
 
 }

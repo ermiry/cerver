@@ -12,15 +12,14 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "cerver/network.h"
-#include "cerver/cerver.h"
-#include "cerver/game.h"
+#include "network.h"
+#include "cerver.h"
+#include "game.h"
 
-#include "utils/thpool.h"
+#include "collections/avl.h" 
 
 #include "utils/vector.h"
-#include "utils/avl.h" 
-
+#include "utils/thpool.h"
 #include "utils/log.h"
 #include "utils/config.h"
 #include "utils/myUtils.h"
@@ -1450,7 +1449,7 @@ void initServerValues (Server *server, ServerType type) {
             GameServerData *data = (GameServerData *) server->serverData;
 
             // get game modes info from a config file
-            data->gameSettingsConfig = parseConfigFile (GS_GAME_SETTINGS_CFG);
+            data->gameSettingsConfig = config_parse_file (GS_GAME_SETTINGS_CFG);
             if (!data->gameSettingsConfig) 
                 logMsg (stderr, ERROR, GAME, "Problems loading game settings config!");
 
@@ -1467,7 +1466,7 @@ void initServerValues (Server *server, ServerType type) {
 
 u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
 
-    char *ipv6 = getEntityValue (cfgEntity, "ipv6");
+    char *ipv6 = config_get_entity_value (cfgEntity, "ipv6");
     if (ipv6) {
         server->useIpv6 = atoi (ipv6);
         // if we have got an invalid value, the default is not to use ipv6
@@ -1482,7 +1481,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     logMsg (stdout, DEBUG_MSG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
     #endif
 
-    char *tcp = getEntityValue (cfgEntity, "tcp");
+    char *tcp = config_get_entity_value (cfgEntity, "tcp");
     if (tcp) {
         u8 usetcp = atoi (tcp);
         if (usetcp < 0 || usetcp > 1) {
@@ -1502,7 +1501,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
         logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
     }
 
-    char *port = getEntityValue (cfgEntity, "port");
+    char *port = config_get_entity_value (cfgEntity, "port");
     if (port) {
         server->port = atoi (port);
         // check that we have a valid range, if not, set to default port
@@ -1524,7 +1523,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
             createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
     } 
 
-    char *queue = getEntityValue (cfgEntity, "queue");
+    char *queue = config_get_entity_value (cfgEntity, "queue");
     if (queue) {
         server->connectionQueue = atoi (queue);
         #ifdef CERVER_DEBUG
@@ -1540,7 +1539,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
                 DEFAULT_CONNECTION_QUEUE));
     }
 
-    char *timeout = getEntityValue (cfgEntity, "timeout");
+    char *timeout = config_get_entity_value (cfgEntity, "timeout");
     if (timeout) {
         server->pollTimeout = atoi (timeout);
         #ifdef CERVER_DEBUG
@@ -1556,7 +1555,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
                 DEFAULT_POLL_TIMEOUT));
     }
 
-    char *auth = getEntityValue (cfgEntity, "authentication");
+    char *auth = config_get_entity_value (cfgEntity, "authentication");
     if (auth) {
         server->authRequired = atoi (auth);
         #ifdef CERVER_DEBUG
@@ -1572,7 +1571,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     }
 
     if (server->authRequired) {
-        char *tries = getEntityValue (cfgEntity, "authTries");
+        char *tries = config_get_entity_value (cfgEntity, "authTries");
         if (tries) {
             server->auth.maxAuthTries = atoi (tries);
             #ifdef CERVER_DEBUG
@@ -1588,7 +1587,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
         }
     }
 
-    char *sessions = getEntityValue (cfgEntity, "sessions");
+    char *sessions = config_get_entity_value (cfgEntity, "sessions");
     if (sessions) {
         server->useSessions = atoi (sessions);
         #ifdef CERVER_DEBUG
@@ -1621,7 +1620,7 @@ u8 initServer (Server *server, Config *cfg, ServerType type) {
     #endif
 
     if (cfg) {
-        ConfigEntity *cfgEntity = getEntityWithId (cfg, type);
+        ConfigEntity *cfgEntity = config_get_entity_with_id (cfg, type);
         if (!cfgEntity) {
             logMsg (stderr, ERROR, SERVER, "Problems with server config!");
             return 1;
@@ -1774,7 +1773,7 @@ Server *cerver_createServer (Server *server, ServerType type, char *name) {
 
     // create the server from the default config file
     else {
-        Config *serverConfig = parseConfigFile (SERVER_CFG);
+        Config *serverConfig = config_parse_file (SERVER_CFG);
         if (!serverConfig) {
             logMsg (stderr, ERROR, NO_TYPE, "Problems loading server config!\n");
             return NULL;
@@ -1785,13 +1784,13 @@ Server *cerver_createServer (Server *server, ServerType type, char *name) {
             if (!initServer (s, serverConfig, type)) {
                 if (name) s->name = createString ("%s", name);
                 log_newServer (server);
-                clearConfig (serverConfig);
+                config_destroy (serverConfig);
                 return s;
             }
 
             else {
                 logMsg (stderr, ERROR, SERVER, "Failed to init the server!");
-                clearConfig (serverConfig);
+                config_destroy (serverConfig);
                 free (s); 
                 return NULL;
             }

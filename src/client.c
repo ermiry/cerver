@@ -1,10 +1,10 @@
 #include "myTypes.h"
 
-#include "cerver/network.h"
-#include "cerver/cerver.h"
-#include "cerver/client.h"
+#include "network.h"
+#include "cerver.h"
+#include "client.h"
 
-#include "utils/avl.h"
+#include "collections/avl.h"
 
 #include "utils/log.h"
 #include "utils/myUtils.h"

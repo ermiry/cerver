@@ -13,12 +13,11 @@
 #include "client.h"
 #include "game.h"
 
-#include "utils/list.h"
+#include "collections/dllist.h"
+#include "collections/avl.h"
+
 #include "utils/objectPool.h"
-#include "utils/avl.h"
-
 #include "utils/config.h"
-
 #include "utils/thpool.h"
 
 #define DEFAULT_USE_IPV6                0
@@ -159,7 +158,7 @@ typedef struct LoadBalancer {
 
     bool isRunning;         // 22/10/2018 - the lb is handling the traffic
 
-    List *servers;          // list of servers managed by the load balancer
+    DoubleList *servers;          // list of servers managed by the load balancer
 
     Pool *clientPool;       // does the load balancer handles clients directly??
 

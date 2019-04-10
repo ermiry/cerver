@@ -56,8 +56,8 @@ int main (void) {
     signal (SIGINT, closeProgram);
 
     // create a new server
-    gameServer = cerver_createServer (NULL, GAME_SERVER, destroyGameServer);
-    if (gameServer) {
+    // gameServer = cerver_createServer (NULL, GAME_SERVER, destroyGameServer);
+    // if (gameServer) {
         // FIXME: if we have got a valid server, we are now ready to listen for connections
         // and we can handle requests of the connected clients
 
@@ -73,10 +73,10 @@ int main (void) {
         // listenForConnections (server);
 
         // startServer (gameServer);
-    }
+    // }
 
     // if we reach this point, be sure to correctly clean all of our data...
-    closeProgram (0);
+    // closeProgram (0);
     
     return 0;
 

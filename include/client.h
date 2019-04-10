@@ -7,7 +7,7 @@
 #include "cerver.h"
 #include "client.h"
 
-#include "utils/avl.h"
+#include "collections/avl.h"
 
 struct _Server;
 

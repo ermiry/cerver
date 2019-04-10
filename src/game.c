@@ -14,12 +14,13 @@
 
 #include "myTypes.h"
 
-#include "cerver/game.h"
+#include "game.h"
+
+#include "collections/dllist.h"
+#include "collections/avl.h"
+#include "collections/htab.h"
 
 #include "utils/objectPool.h"
-#include "utils/list.h"
-#include "utils/avl.h"
-#include "utils/htab.h"
 
 #include "utils/myUtils.h"
 #include "utils/config.h"
@@ -152,7 +153,7 @@ u8 destroyGameServer (Server *server) {
                 destroyLobby (server, (Lobby *) (LIST_START (gameData->currentLobbys)));
 
             // destroy all lobbys
-            cleanUpList (gameData->currentLobbys);
+            dlist_clean (gameData->currentLobbys);
             pool_clear (gameData->lobbyPool);
 
             #ifdef DEBUG
@@ -198,7 +199,7 @@ u8 destroyGameServer (Server *server) {
 
             // remove any other data or values in the game server...
             if (gameData->gameSettingsConfig) 
-                clearConfig (gameData->gameSettingsConfig);
+                config_destroy (gameData->gameSettingsConfig);
             gameData->loadGameData = NULL;
             gameData->deleteGameData = NULL;
 
@@ -790,7 +791,7 @@ u8 game_initLobbys (GameServerData *gameData, u8 n_lobbys) {
     if (gameData->currentLobbys) 
         logMsg (stdout, WARNING, SERVER, "The server has already a list of lobbys.");
     else {
-        gameData->currentLobbys = initList (deleteLobby);
+        gameData->currentLobbys = dlist_init (deleteLobby, NULL);
         if (!gameData->currentLobbys) {
             logMsg (stderr, ERROR, NO_TYPE, "Failed to init server's lobby list!");
             return 1;
@@ -820,7 +821,7 @@ u8 game_initLobbys (GameServerData *gameData, u8 n_lobbys) {
 // loads the settings for the selected game type from the game server data
 GameSettings *getGameSettings (Config *gameConfig, GameType gameType) {
 
-    ConfigEntity *cfgEntity = getEntityWithId (gameConfig, gameType);
+    ConfigEntity *cfgEntity = config_get_entity_with_id (gameConfig, gameType);
 	if (!cfgEntity) {
         logMsg (stderr, ERROR, GAME, "Problems with game settings config!");
         return NULL;
@@ -828,7 +829,7 @@ GameSettings *getGameSettings (Config *gameConfig, GameType gameType) {
 
     GameSettings *settings = (GameSettings *) malloc (sizeof (GameSettings));
 
-    char *playerTimeout = getEntityValue (cfgEntity, "playerTimeout");
+    char *playerTimeout = config_get_entity_value (cfgEntity, "playerTimeout");
     if (playerTimeout) {
         settings->playerTimeout = atoi (playerTimeout);
         free (playerTimeout);
@@ -842,7 +843,7 @@ GameSettings *getGameSettings (Config *gameConfig, GameType gameType) {
     logMsg (stdout, DEBUG_MSG, GAME, createString ("Player timeout: %i", settings->playerTimeout));
     #endif
 
-    char *fps = getEntityValue (cfgEntity, "fps");
+    char *fps = config_get_entity_value (cfgEntity, "fps");
     if (fps) {
         settings->fps = atoi (fps);
         free (fps);
@@ -856,7 +857,7 @@ GameSettings *getGameSettings (Config *gameConfig, GameType gameType) {
     logMsg (stdout, DEBUG_MSG, GAME, createString ("FPS: %i", settings->fps));
     #endif
 
-    char *minPlayers = getEntityValue (cfgEntity, "minPlayers");
+    char *minPlayers = config_get_entity_value (cfgEntity, "minPlayers");
     if (minPlayers) {
         settings->minPlayers = atoi (minPlayers);
         free (minPlayers);
@@ -870,7 +871,7 @@ GameSettings *getGameSettings (Config *gameConfig, GameType gameType) {
     logMsg (stdout, DEBUG_MSG, GAME, createString ("Min players: %i", settings->minPlayers));
     #endif
 
-    char *maxPlayers = getEntityValue (cfgEntity, "maxPlayers");
+    char *maxPlayers = config_get_entity_value (cfgEntity, "maxPlayers");
     if (maxPlayers) {
         settings->maxPlayers = atoi (maxPlayers);
         free (maxPlayers);
@@ -943,7 +944,7 @@ Lobby *createLobby (Server *server, Player *owner, GameType gameType) {
         lobby->isRunning = true;
 
         // add the lobby the server active ones
-        insertAfter (data->currentLobbys, LIST_END (data->currentLobbys), lobby);
+        dlist_insert_after (data->currentLobbys, LIST_END (data->currentLobbys), lobby);
 
         // create a unique thread to handle this lobby
         ServerLobby *sl = (ServerLobby *) malloc (sizeof (ServerLobby));
@@ -1015,9 +1016,9 @@ u8 destroyLobby (Server *server, Lobby *lobby) {
 
                 // we are safe to clear the lobby structure
                 // first remove the lobby from the active ones, then send it to the inactive ones
-                ListElement *le = getListElement (gameData->currentLobbys, lobby);
+                ListElement *le = dlist_get_ListElement (gameData->currentLobbys, lobby);
                 if (le) {
-                    void *temp = removeElement (gameData->currentLobbys, le);
+                    void *temp = dlist_remove_element (gameData->currentLobbys, le);
                     if (temp) pool_push (gameData->lobbyPool, temp);
                 }
 

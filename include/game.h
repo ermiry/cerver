@@ -7,8 +7,9 @@
 
 #include "cerver.h"
 
-#include "utils/list.h"
-#include "utils/avl.h"
+#include "collections/dllist.h"
+#include "collections/avl.h"
+
 #include "utils/config.h"
 #include "utils/objectPool.h"
 
@@ -42,7 +43,7 @@ struct _GameServerData {
     Config *gameSettingsConfig;     // stores game modes info
 
     Pool *lobbyPool;        // 21/10/2018 -- 22:04 -- each game server has its own pool
-    List *currentLobbys;    // a list of the current lobbys
+    DoubleList *currentLobbys;    // a list of the current lobbys
 
     Pool *playersPool;          // 22/10/2018 -- each server has its own player's pool
     AVLTree *players;
@@ -178,7 +179,7 @@ extern void gs_handlePacket (struct _PacketInfo *packet);
 
 #pragma region SCORES 
 
-#include "utils/htab.h"
+#include "collections/htab.h"
 
 #define DEFAULT_SCORE_SIZE      5   // default players inside the scoreboard
 

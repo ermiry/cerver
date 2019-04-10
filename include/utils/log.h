@@ -1,7 +1,9 @@
-#ifndef LOG_H
-#define LOG_H
+#ifndef _LOG_H_
+#define _LOG_H_
 
 #include <stdio.h>
+
+#include "cerver.h"
 
 #define COLOR_RED       "\x1b[31m"
 #define COLOR_GREEN     "\x1b[32m"
@@ -27,11 +29,14 @@ typedef enum LogMsgType {
     GAME,
     PLAYER,
 
-    SERVER = 100
+    SERVER = 100,
+    CLIENT,
 
 } LogMsgType;
 
 extern void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg);
+
+extern void log_newServer (Server *server);
 
 #endif
