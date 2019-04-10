@@ -1,9 +1,9 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef _CONFIG_H_
+#define _CONFIG_H_
 
 #include <stdint.h>
 
-#include "utils/list.h"
+#include "collections/dllist.h"
 
 #define CONFIG_MAX_LINE_LEN     128
 
@@ -17,25 +17,29 @@ typedef struct ConfigKeyValuePair {
 typedef struct ConfigEntity {
 
     char *name;
-    List *keyValuePairs;
+    DoubleList *keyValuePairs;
 
 } ConfigEntity;
 
 typedef struct Config {
 
-    List *entities;
+    DoubleList *entities;
 
 } Config;
 
+// parse the given file to memory
+extern Config *config_parse_file (const char *filename);
+// get a value for a given key in an entity
+extern char *config_get_entity_value (ConfigEntity *entity, const char *key);
+// get the config entity associated with an id
+extern ConfigEntity *config_get_entity_with_id (Config *cfg, uint32_t id);
 
-extern Config *parseConfigFile (const char *filename);
-extern char *getEntityValue (ConfigEntity *entity, char *key);
-extern ConfigEntity *getEntityWithId (Config *cfg, uint16_t id);
+// add a new key-value pair to the entity
+extern void config_set_entity_value (ConfigEntity *entity, const char *key, const char *value);
+// create a file with config values
+extern void config_write_file (const char *filename, Config *config);
 
-extern void setEntityValue (ConfigEntity *entity, char *key, char *value);
-extern void writeConfigFile (const char *filename, Config *config);
-
-extern void clearConfig (Config *);
-
+// destroy a config structure
+extern void config_destroy (Config *cfg);
 
 #endif

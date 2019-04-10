@@ -1,15 +1,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include <stdint.h>
 
-#include "utils/list.h"
+#include "collections/dllist.h"
 #include "utils/config.h"
 
-/*** PARSE THE FILE ***/
+static void ConfigKeyValuePair_destroy (void *ptr) {
 
-ConfigEntity *newEntity (char *buffer, Config *cfg) {
+    if (ptr) {
+        ConfigKeyValuePair *ckvp = (ConfigKeyValuePair *) ptr;
+        if (ckvp->key) free (ckvp->key);
+        if (ckvp->value) free (ckvp->value);
+
+        free (ckvp);
+    }
+
+}
+
+static void ConfigEntity_destroy (void *ptr) {
+
+    if (ptr) {
+        ConfigEntity *ce = (ConfigEntity *) ptr;
+        if (ce->name) free (ce->name);
+        dlist_destroy (ce->keyValuePairs);
+        free (ptr);
+    }
+
+}
+
+static ConfigEntity *config_new_entity (char *buffer, Config *cfg) {
 
     // so grab the name
     char *name = strtok (buffer, "[]");
@@ -18,14 +38,14 @@ ConfigEntity *newEntity (char *buffer, Config *cfg) {
     char *copy = (char *) calloc (strlen (name) + 1, sizeof (char));
     strcpy (copy, name);
     entity->name = copy;
-    entity->keyValuePairs = initList (free);
-    insertAfter (cfg->entities, LIST_END (cfg->entities), entity);
-    
+    entity->keyValuePairs = dlist_init (ConfigKeyValuePair_destroy, NULL);
+    dlist_insert_after (cfg->entities, LIST_END (cfg->entities), entity);
+
     return entity;
 
 }
 
-void getData (char *buffer, ConfigEntity *currentEntity) {
+static void config_get_data (char *buffer, ConfigEntity *currentEntity) {
 
     buffer[CONFIG_MAX_LINE_LEN - 1] = '\0';
     char *key = strtok (buffer, "=");
@@ -39,64 +59,68 @@ void getData (char *buffer, ConfigEntity *currentEntity) {
         strcpy (copyValue, value);
         kvp->value = copyValue;
 
-        insertAfter (currentEntity->keyValuePairs, LIST_END (currentEntity->keyValuePairs), kvp);
+        dlist_insert_after (currentEntity->keyValuePairs, LIST_END (currentEntity->keyValuePairs), kvp);
     }
 
 }
 
-// Parse the given file to memory
-Config *parseConfigFile (const char *filename) {
-
-    if (filename == NULL) return NULL;
+// parse the given file to memory
+Config *config_parse_file (const char *filename) {
 
     Config *cfg = NULL;
 
-    FILE *configFile = fopen (filename, "r");
-    if (configFile == NULL) return NULL;
+    if (filename) {
+        FILE *configFile = fopen (filename, "r");
+        if (configFile == NULL) return NULL;
 
-    cfg = (Config *) malloc (sizeof (Config));
-    cfg->entities = initList (free);
+        cfg = (Config *) malloc (sizeof (Config));
+        cfg->entities = dlist_init (ConfigEntity_destroy, NULL);
 
-    char buffer[CONFIG_MAX_LINE_LEN];
+        char buffer[CONFIG_MAX_LINE_LEN];
 
-    ConfigEntity *currentEntity = NULL;
+        ConfigEntity *currentEntity = NULL;
 
-    while (fgets (buffer, CONFIG_MAX_LINE_LEN, configFile) != NULL) {
-        // we have a new entity
-        if (buffer[0] == '[') currentEntity = newEntity (buffer, cfg);
+        while (fgets (buffer, CONFIG_MAX_LINE_LEN, configFile) != NULL) {
+            // we have a new entity
+            if (buffer[0] == '[') currentEntity = config_new_entity (buffer, cfg);
 
-        // we have a key/value data, so parse it into its various parts 
-        else if ((buffer[0] != '\n') && (buffer[0] != ' ')) 
-            getData (buffer, currentEntity);
-        
+                // we have a key/value data, so parse it into its various parts
+            else if ((buffer[0] != '\n') && (buffer[0] != ' '))
+                config_get_data (buffer, currentEntity);
+        }
     }
 
     return cfg;
 
 }
 
-
 /*** RETURN DATA ***/
 
 // get a value for a given key in an entity
-char *getEntityValue (ConfigEntity *entity, char *key) {
+// returns a newly allocated string with the key value
+char *config_get_entity_value (ConfigEntity *entity, const char *key) {
 
-    ConfigKeyValuePair *kvp = NULL;
+    char *retval = NULL;
     for (ListElement *e = LIST_START (entity->keyValuePairs); e != NULL; e = e->next) {
-        kvp = (ConfigKeyValuePair *) e->data;
-        if (strcmp (key, kvp->key) == 0) return kvp->value;
+        ConfigKeyValuePair *kvp = (ConfigKeyValuePair *) e->data;
+        if (!strcmp (key, kvp->key)) {
+            retval = (char *) calloc (strlen (kvp->value), sizeof (char));
+            strcpy (retval, kvp->value);
+            return retval;
+        }
     }
 
-    return NULL;
+    return retval;
 
 }
 
-ConfigEntity *getEntityWithId (Config *cfg, uint16_t id) {
+// get the config entity associated with an id
+ConfigEntity *config_get_entity_with_id (Config *cfg, uint32_t id) {
 
     ConfigEntity *entity = NULL;
     for (ListElement *e = LIST_START (cfg->entities); e != NULL; e = e->next) {
         entity = (ConfigEntity *) e->data;
-        uint16_t eId = atoi (getEntityValue (entity, "id"));
+        uint32_t eId = atoi (config_get_entity_value (entity, "id"));
         if (eId == id) return entity;
     }
 
@@ -107,19 +131,20 @@ ConfigEntity *getEntityWithId (Config *cfg, uint16_t id) {
 /*** Add DATA ***/
 
 // add a new key-value pair to the entity
-void setEntityValue (ConfigEntity *entity, char *key, char *value) {
+void config_set_entity_value (ConfigEntity *entity, const char *key, const char *value) {
 
-    if (entity->keyValuePairs == NULL) entity->keyValuePairs = initList (free);
+    if (!entity->keyValuePairs) entity->keyValuePairs = dlist_init (ConfigKeyValuePair_destroy, NULL);
 
     ConfigKeyValuePair *kv = (ConfigKeyValuePair *) malloc (sizeof (ConfigKeyValuePair));
     kv->key = strdup (key);
     kv->value = strdup (value);
 
-    insertAfter (entity->keyValuePairs, LIST_END (entity->keyValuePairs), kv);
+    dlist_insert_after (entity->keyValuePairs, LIST_END (entity->keyValuePairs), kv);
 
 }
 
-void writeConfigFile (const char *filename, Config *config) {
+// create a file with config values
+void config_write_file (const char *filename, Config *config) {
 
     FILE *configFile = fopen (filename, "w+");
     if (configFile == NULL) return;
@@ -132,22 +157,18 @@ void writeConfigFile (const char *filename, Config *config) {
             ConfigKeyValuePair *kv = (ConfigKeyValuePair *) le->data;
             fprintf (configFile, "%s=%s\n", kv->key, kv->value);
         }
-    } 
+    }
 
     fclose (configFile);
 
 }
 
-/*** CLEAN UP ***/
+// destroy a config structure
+void config_destroy (Config *cfg) {
 
-void clearConfig (Config *cfg) {
+    if (cfg) {
+        dlist_destroy (cfg->entities);
 
-    if (cfg != NULL) {
-        // clear each entity values
-        for (ListElement *e = LIST_START (cfg->entities); e != NULL; e = e->next) 
-            destroyList (((ConfigEntity *) e->data)->keyValuePairs);
-        
-        destroyList (cfg->entities);
         free (cfg);
     }
 
