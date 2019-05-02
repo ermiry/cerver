@@ -26,4 +26,13 @@ typedef void (*Action)(void *);
 // takes an argument and returns a value (int)
 typedef u8 (*delegate)(void *);
 
+// TODO: handle different data lengths
+typedef enum ValueType {
+
+    VALUE_TYPE_INT,
+    VALUE_TYPE_DOUBLE,
+    VALUE_TYPE_STRING,
+
+} ValueType;
+
 #endif
