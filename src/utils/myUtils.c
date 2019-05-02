@@ -34,3 +34,25 @@ char *createString (const char *stringWithFormat, ...) {
     return str;
 
 }
+
+// init psuedo random generator based on our seed
+void random_set_seed (unsigned int seed) { srand (seed); }
+
+// gets a random int in a range of values
+int random_int_in_range (int min, int max) {
+
+    int low = 0, high = 0;
+
+    if (min < max) {
+        low = min;
+        high = max + 1;
+    }
+
+    else {
+        low = max + 1;
+        high = min;
+    }
+
+    return (rand () % (high - low)) + low;
+
+}

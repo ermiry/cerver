@@ -5,7 +5,7 @@
 #include "utils/myUtils.h"
 #include "utils/log.h"
 
-#include "cerver.h"
+#include "cerver/cerver.h"
 
 char *getMsgType (LogMsgType type) {
 
