@@ -7,11 +7,12 @@
 
 #include <poll.h>
 
-#include "myTypes.h"
+#include "types/myTypes.h"
+#include "types/myString.h"
 
 #include "network.h"
 #include "client.h"
-#include "game.h"
+#include "game/game.h"
 
 #include "collections/dllist.h"
 #include "collections/avl.h"
@@ -111,16 +112,21 @@ struct _Server {
 
     threadpool thpool;
 
-    void *serverInfo;           // useful info that we can send to clients                      
+    void *serverInfo;           // useful info that we can send to clients 
+    Action sendServerInfo;      // method to send server into to the client              
 
     // allow the clients to use sessions (have multiple connections)
     bool useSessions;  
     // admin defined function to generate session ids bassed on usernames, etc             
     Action generateSessionID; 
 
+    // the admin can define a function to handle the recieve buffer if they are using a custom protocol
+    // otherwise, it will be set to the default one
+    Action handle_recieved_buffer;
+
     // server info/stats
     // TODO: use this in the thpool names
-    char *name;
+    String *name;
     u32 connectedClients;
     u32 n_hold_clients;
 
@@ -128,18 +134,50 @@ struct _Server {
 
 typedef struct _Server Server;
 
-extern Server *cerver_createServer (Server *, ServerType, char *name);
-
-extern u8 cerver_startServer (Server *);
-
-extern u8 cerver_shutdownServer (Server *);
-extern u8 cerver_teardown (Server *);
-extern Server *cerver_restartServer (Server *);
+/*** Cerver Configuration ***/
 
 extern void cerver_set_auth_method (Server *server, delegate authMethod);
 
-extern void session_setIDGenerator (Server *server, Action idGenerator);
+extern void cerver_set_handler_received_buffer (Server *server, Action handler);
+
+extern void session_set_id_generator (Server *server, Action idGenerator);
 extern char *session_default_generate_id (i32 fd, const struct sockaddr_storage address);
+
+/*** Cerver Methods ***/
+
+// cerver constructor, with option to init with some values
+extern Server *cerver_new (Server *cerver);
+extern void cerver_delete (Server *cerver);
+
+// creates a new cerver of the specified type and with option for a custom name
+// also has the option to take another cerver as a paramater
+// if no cerver is passed, configuration will be read from config/server.cfg
+extern Server *cerver_create (ServerType type, const char *name, Server *cerver);
+
+// teardowns the cerver and creates a fresh new one with the same parameters
+extern Server *cerver_restart (Server *server);
+
+// starts the cerver
+extern u8 cerver_start (Server *server);
+
+// disable socket I/O in both ways and stop any ongoing job
+extern u8 cerver_shutdown (Server *server);
+
+// teardown a server -> stop the server and clean all of its data
+extern u8 cerver_teardown (Server *server);
+
+// auxiliary struct for handle_recieved_buffer Action
+typedef struct RecvdBufferData {
+
+    Server *server; 
+    i32 sock_fd;
+    char *buffer; 
+    size_t total_size; 
+    bool onHold;
+
+} RecvdBufferData;
+
+extern void rcvd_buffer_data_delete (RecvdBufferData *data);
 
 #pragma endregion
 
