@@ -1,17 +1,18 @@
-#include "myTypes.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
 
-#include "network.h"
-#include "cerver.h"
-#include "client.h"
+#include "types/myTypes.h"
+
+#include "cerver/network.h"
+#include "cerver/cerver.h"
+#include "cerver/client.h"
 
 #include "collections/avl.h"
 
 #include "utils/log.h"
 #include "utils/myUtils.h"
-
-/*** CLIENTS ***/
-
-#pragma region CLIENTS
 
 // get from where the client is connecting
 char *client_getConnectionValues (i32 fd, const struct sockaddr_storage address) {
@@ -363,7 +364,32 @@ void client_closeConnection (Server *server, Client *client) {
 
 }
 
+// disconnect the client from the server by a socket -- usefull for http servers
+int client_disconnect_by_socket (Server *server, const int sock_fd) {
+    
+    int retval = 1;
+
+    if (server) {
+        Client *c = getClientBySocket (server->clients->root, sock_fd);
+        if (c) {
+            if (c->n_active_cons <= 1) 
+                client_closeConnection (server, c);
+
+            // FIXME: check for client_CloseConnection retval to be sure!!
+            retval  = 0;
+        }
+            
+        else {
+            #ifdef CERVER_DEBUG
+            logMsg (stderr, ERROR, CLIENT, 
+                "Couldn't find an active client with the requested socket!");
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
 // TODO: used to check for client timeouts in any type of server
 void client_checkTimeouts (Server *server) {}
-
-#pragma endregion

@@ -1,5 +1,5 @@
-#ifndef SERVER_H
-#define SERVER_H
+#ifndef _CERVER_H_
+#define _CERVER_H_
 
 #ifndef _GNU_SOURCE
     #define _GNU_SOURCE

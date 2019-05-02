@@ -1,7 +1,7 @@
-#ifndef _CLIENT_H_   
+#ifndef _CLIENT_H_
 #define _CLIENT_H_
 
-#include "myTypes.h"
+#include "types/myTypes.h"
 
 #include "network.h"
 #include "cerver.h"
@@ -46,8 +46,6 @@ extern u8 client_unregisterConnection (Client *client, i32 socket_fd);
 
 extern char *client_getConnectionValues (i32 fd, const struct sockaddr_storage address);
 
-extern void client_closeConnection (struct _Server *server, Client *client);
-
 extern void client_set_sessionID (Client *client, const char *sessionID);
 
 extern Client *getClientBySocket (AVLNode *node, i32 socket_fd);
@@ -55,6 +53,11 @@ extern Client *getClientBySession (AVLTree *clients, char *sessionID);
 
 extern void client_registerToServer (struct _Server *server, Client *client, i32);
 extern Client *client_unregisterFromServer (struct _Server *server, Client *client);
+
+extern void client_closeConnection (struct _Server *server, Client *client);
+
+// disconnect the client from the server by a socket -- usefull for http servers
+extern int client_disconnect_by_socket (struct _Server *server, const int sock_fd);
 
 extern void client_checkTimeouts (struct _Server *server);
 
