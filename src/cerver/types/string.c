@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#include "types/string.h"
+#include "cerver/types/string.h"
 
 static inline void char_copy (char *to, char *from) {
 
@@ -152,7 +152,7 @@ char **str_split (String *string, const char delim, int *n_tokens) {
 
 }
 
-void str_remove_char (String *string, char *garbage) {
+void str_remove_char (String *string, char garbage) {
 
     char *src, *dst;
     for (src = dst = string->str; *src != '\0'; src++) {

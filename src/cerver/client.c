@@ -3,16 +3,16 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 
-#include "collections/avl.h"
+#include "cerver/collections/avl.h"
 
-#include "utils/log.h"
-#include "utils/myUtils.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 // get from where the client is connecting
 char *client_getConnectionValues (i32 fd, const struct sockaddr_storage address) {
@@ -192,7 +192,7 @@ Client *getClientBySession (AVLTree *clients, char *sessionID) {
         Client temp;
         temp.sessionID = createString ("%s", sessionID);
         
-        void *data = avl_getNodeData (clients, &temp);
+        void *data = avl_get_node_data (clients, &temp);
         if (data) return (Client *) data;
         else 
             logMsg (stderr, WARNING, SERVER, 
@@ -281,7 +281,7 @@ void client_registerToServer (Server *server, Client *client, i32 newfd) {
             printf ("client_registerToServer () - idx: %i\n", idx);
 
             // insert the new client into the server's clients
-            avl_insertNode (server->clients, client);
+            avl_insert_node (server->clients, client);
 
             server->connectedClients++;
 
@@ -310,7 +310,7 @@ void client_registerToServer (Server *server, Client *client, i32 newfd) {
 Client *client_unregisterFromServer (Server *server, Client *client) {
 
     if (server && client) {
-        Client *c = avl_removeNode (server->clients, client);
+        Client *c = avl_remove_node (server->clients, client);
         if (c) {
             if (client->active_connections) {
                 for (u8 i = 0; i < client->n_active_cons; i++) {

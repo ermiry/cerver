@@ -1,7 +1,7 @@
-#ifndef _HTTP_PARSER_H_
-#define _HTTP_PARSER_H_
+#ifndef _CERVER_HTTP_PARSER_H_
+#define _CERVER_HTTP_PARSER_H_
 
-#include "collections/dllist.h"
+#include "cerver/collections/dllist.h"
 
 /*** Request ***/
 

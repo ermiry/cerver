@@ -1,5 +1,5 @@
-#ifndef MY_UTILS_H
-#define MY_UTILS_H
+#ifndef _CERVER_UTILS_H_
+#define _CERVER_UTILS_H_
 
 extern char *createString (const char *stringWithFormat, ...);
 

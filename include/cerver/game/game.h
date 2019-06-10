@@ -1,5 +1,5 @@
-#ifndef GAME_SERVER_H
-#define GAME_SERVER_H
+#ifndef _CERVER_GAME_H_
+#define _CERVER_GAME_H_
 
 #include <poll.h>
 

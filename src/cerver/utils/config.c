@@ -3,8 +3,8 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "collections/dllist.h"
-#include "utils/config.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/utils/config.h"
 
 static void ConfigKeyValuePair_destroy (void *ptr) {
 

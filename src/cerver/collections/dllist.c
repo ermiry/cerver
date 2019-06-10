@@ -2,10 +2,13 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include "collections/dllist.h"
+#include "cerver/collections/dllist.h"
 
-DoubleList *dlist_init (void (*destroy)(void *data), 
-    int (*compare)(void *one, void *two)) {
+void dlist_set_compare (DoubleList *list, int (*compare)(void *one, void *two)) { if (list) list->compare = compare; }
+
+void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data)) { if (list) list->destroy = destroy; }
+
+DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(void *one, void *two)) {
 
     DoubleList *list = (DoubleList *) malloc (sizeof (DoubleList));
 
@@ -22,9 +25,9 @@ DoubleList *dlist_init (void (*destroy)(void *data),
 void dlist_reset (DoubleList *list) {
 
     if (list) {
-        if (LIST_SIZE (list) > 0) {
+        if (dlist_size (list) > 0) {
             void *data = NULL;
-            while (LIST_SIZE (list) > 0) {
+            while (dlist_size (list) > 0) {
                 data = dlist_remove_element (list, NULL);
                 if (data != NULL && list->destroy != NULL) list->destroy (data);
             }
@@ -43,7 +46,7 @@ void dlist_clean (DoubleList *list) {
 
     if (list) {
         void *data = NULL;
-        while (LIST_SIZE (list) > 0) 
+        while (dlist_size (list) > 0) 
             data = dlist_remove_element (list, NULL);
 
         free (list);
@@ -57,7 +60,7 @@ void dlist_destroy (DoubleList *list) {
         if (list->size > 0) {
             void *data = NULL;
 
-            while (LIST_SIZE (list) > 0) {
+            while (dlist_size (list) > 0) {
                 data = dlist_remove_element (list, NULL);
                 if (data) {
                     if (list->destroy) list->destroy (data);
@@ -83,12 +86,12 @@ bool dlist_insert_after (DoubleList *list, ListElement *element, void *data) {
         new->data = (void *) data;
 
         if (element == NULL) {
-            if (LIST_SIZE (list) == 0) list->end = new;
+            if (dlist_size (list) == 0) list->end = new;
             else list->start->prev = new;
         
-        new->next = list->start;
-        new->prev = NULL;
-        list->start = new;
+            new->next = list->start;
+            new->prev = NULL;
+            list->start = new;
         }
 
         else {
@@ -115,7 +118,7 @@ void *dlist_remove_element (DoubleList *list, ListElement *element) {
         ListElement *old;
         void *data = NULL;
 
-        if (LIST_SIZE (list) == 0) return NULL;
+        if (dlist_size (list) == 0) return NULL;
 
         if (element == NULL) {
             data = list->start->data;
@@ -166,10 +169,20 @@ void *dlist_remove_element (DoubleList *list, ListElement *element) {
 void *dlist_search (DoubleList *list, void *data) {
 
     if (list && data) {
-        ListElement *ptr = LIST_START (list);
-        while (ptr != NULL) {
-            if (ptr->data == data) return ptr->data;
-            ptr = ptr->next;
+        ListElement *ptr = dlist_start (list);
+
+        if (list->compare) {
+            while (ptr != NULL) {
+                if (!list->compare (ptr->data, data))  return ptr->data;
+                ptr = ptr->next;
+            }
+        }
+
+        else {
+            while (ptr != NULL) {
+                if (ptr->data == data) return ptr->data;
+                ptr = ptr->next;
+            }
         }
 
         return NULL;    // not found
@@ -182,27 +195,48 @@ void *dlist_search (DoubleList *list, void *data) {
 bool dlist_is_in_list (DoubleList *list, void *data) {
 
     if (list && data) {
-        ListElement *ptr = LIST_START (list);
-        while (ptr != NULL) {
-            if (ptr->data == data) return true;
-            ptr = ptr->next;
+        ListElement *ptr = dlist_start (list);
+
+        if (list->compare) {
+            while (ptr != NULL) {
+                if (!list->compare (ptr->data, data)) return true;
+                ptr = ptr->next;
+            }
+        }
+
+        else {
+            while (ptr != NULL) {
+                if (ptr->data == data) return true;
+                ptr = ptr->next;
+            }
         }
 
         return false;   // not found
     }
 
-    return NULL;
+    return false;
 
 }
 
 // searches the list and returns the list element associated with the data
-ListElement *dlist_get_ListElement (DoubleList *list, void *data) {
+// can use a compartor set in the list
+ListElement *dlist_get_element (DoubleList *list, void *data) {
 
     if (list && data) {
-        ListElement *ptr = LIST_START (list);
-        while (ptr != NULL) {
-            if (ptr->data == data) return ptr;
-            ptr = ptr->next;
+        ListElement *ptr = dlist_start (list);
+
+        if (list->compare) {
+            while (ptr != NULL) {
+                if (!list->compare (ptr->data, data)) return ptr;
+                ptr = ptr->next;
+            }
+        }
+
+        else {  
+            while (ptr != NULL) {
+                if (ptr->data == data) return ptr;
+                ptr = ptr->next;
+            }
         }
 
         return NULL;    // not found
@@ -242,7 +276,7 @@ static ListElement *dllist_merge (int (*compare)(void *one, void *two),
     if (!second) return first; 
 
     // Pick the smallest value 
-    if (!compare (first->data, second->data)) {
+    if (compare (first->data, second->data) <= 0) {
         first->next = dllist_merge (compare, first->next, second); 
         first->next->prev = first; 
         first->prev = NULL; 
@@ -259,7 +293,7 @@ static ListElement *dllist_merge (int (*compare)(void *one, void *two),
 } 
 
 // merge sort
-ListElement *dlist_merge_sort (ListElement *head, int (*compare)(void *one, void *two)) {
+static ListElement *dlist_merge_sort (ListElement *head, int (*compare)(void *one, void *two)) {
 
     if (!head || !head->next) return head;
 

@@ -2,10 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "utils/myUtils.h"
-#include "utils/log.h"
-
 #include "cerver/cerver.h"
+
+#include "cerver/utils/utils.h"
+#include "cerver/utils/log.h"
 
 char *getMsgType (LogMsgType type) {
 

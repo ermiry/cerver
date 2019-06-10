@@ -1,12 +1,12 @@
-#ifndef _CERVER_JSON_H_
-#define _CERVER_JSON_H_
+#ifndef _CERVER_HTTP_JSON_H_
+#define _CERVER_HTTP_JSON_H_
 
 #include <stdlib.h>
 
-#include "types/types.h"
-#include "types/string.h"
+#include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
-#include "collections/dllist.h"
+#include "cerver/collections/dllist.h"
 
 typedef struct JsonKeyValue {
 

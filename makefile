@@ -1,9 +1,10 @@
 TARGET      := cerver
 
 PTHREAD 	:= -l pthread
+CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
-DEFINES = -D CERVER_DEBUG -D DEBUG -D CERVER_STATS
+DEFINES = -D CERVER_DEBUG -D CERVER_STATS
 
 # run from parent folder
 RUN_BIN = -D RUN_FROM_BIN
@@ -22,7 +23,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) $(RUN_MAKE)
-LIB         := $(PTHREAD)
+LIB         := $(PTHREAD) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include $(LIB)
 INCDEP      := -I $(INCDIR)
 

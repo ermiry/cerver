@@ -22,7 +22,7 @@ extern int str_compare (const String *s1, const String *s2);
 
 extern char **str_split (String *string, const char delim, int *n_tokens);
 
-extern void str_remove_char (String *string, char *garbage);
+extern void str_remove_char (String *string, char garbage);
 
 // check if a string (to_find) is inside string
 // returns 0 on exact match

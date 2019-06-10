@@ -1,5 +1,5 @@
-#ifndef MY_TIME_H
-#define MY_TIME_H
+#ifndef _CERVER_TIME_H_
+#define _CERVER_TIME_H_
 
 #ifndef __USE_POSIX199309
     #define __USE_POSIX199309

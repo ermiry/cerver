@@ -1,9 +1,9 @@
-#ifndef _CONFIG_H_
-#define _CONFIG_H_
+#ifndef _CERVER_CONFIG_H_
+#define _CERVER_CONFIG_H_
 
 #include <stdint.h>
 
-#include "collections/dllist.h"
+#include "cerver/collections/dllist.h"
 
 #define CONFIG_MAX_LINE_LEN     128
 

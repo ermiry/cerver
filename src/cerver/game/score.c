@@ -4,17 +4,17 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
 #include "cerver/game/score.h"
 
-#include "collections/avl.h"
-#include "collections/htab.h"
+#include "cerver/collections/avl.h"
+#include "cerver/collections/htab.h"
 
-#include "utils/myUtils.h"
-#include "utils/log.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/log.h"
 
-// 15/11/2018 - starting to implement a easy to use score manager for any popouse game
+// 15/11/2018 - starting to implement an easy to use score manager for any porpouse game
 // implementing a C# Dictionary <string, Dictionary <string, int>> using hastables
 
 // FIXME: 17/11/2018 -- we need a way of retrieving the scores in order!!

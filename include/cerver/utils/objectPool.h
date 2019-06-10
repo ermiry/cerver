@@ -1,5 +1,5 @@
-#ifndef _POOL_H_
-#define _POOL_H_
+#ifndef _CERVER_POOL_H_
+#define _CERVER_POOL_H_
 
 #include <stdint.h>
 

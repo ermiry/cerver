@@ -1,13 +1,13 @@
-#ifndef _CERVER_PLAYER_H_
-#define _CERVER_PLAYER_H_
+#ifndef _CERVER_GAME_PLAYER_H_
+#define _CERVER_GAME_PLAYER_H_
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
 #include "cerver/cerver.h"
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "collections/avl.h"
+#include "cerver/collections/avl.h"
 
 struct _Server;
 struct _GameServerData;

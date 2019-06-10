@@ -6,8 +6,8 @@
 #include "cerver/game/game.h"
 #include "cerver/game/player.h"
 
-#include "utils/myUtils.h"
-#include "utils/log.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/log.h"
 
 // TODO: better id handling and management
 u16 nextPlayerId = 0;
@@ -87,7 +87,7 @@ void player_register_to_server (Server *server, Player *player) {
     if (server && player) {
         if (server->type == GAME_SERVER) {
             GameServerData *gameData = (GameServerData *) server->serverData;
-            if (gameData->players) avl_insertNode (gameData->players, player);
+            if (gameData->players) avl_insert_node (gameData->players, player);
 
             #ifdef CERVER_DEBUG
                 logMsg (stdout, DEBUG_MSG, GAME, "Registered a player to the server.");
@@ -118,7 +118,7 @@ void player_unregister_to_server (Server *server, Player *player) {
     //             if (c) client_unregisterFromServer (server, player->client);
 
     //             // remove the player from the servers players
-    //             avl_removeNode (gameData->players, player);
+    //             avl_remove_node (gameData->players, player);
     //         }
     //     }
     // }

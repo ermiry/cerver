@@ -1,10 +1,10 @@
-#ifndef _CERVER_SCORE_H_
-#define _CERVER_SCORE_H_
+#ifndef _CERVER_GAME_SCORE_H_
+#define _CERVER_GAME_SCORE_H_
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
-#include "collections/avl.h"
-#include "collections/htab.h"
+#include "cerver/collections/avl.h"
+#include "cerver/collections/htab.h"
 
 #define DEFAULT_SCORE_SIZE      5   // default players inside the scoreboard
 

@@ -1,5 +1,5 @@
-#ifndef SHA_256_H
-#define SHA_256_H
+#ifndef _CERVER_SHA_256_H_
+#define _CERVER_SHA_256_H_
 
 #include <stdlib.h>
 #include <stdint.h>

@@ -8,21 +8,20 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/player.h"
 #include "cerver/game/lobby.h"
 
-#include "collections/dllist.h"
-#include "collections/avl.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/avl.h"
 
-#include "utils/objectPool.h"
-
-#include "utils/myUtils.h"
-#include "utils/config.h"
-#include "utils/log.h"
-#include "utils/sha-256.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/objectPool.h"
+#include "cerver/utils/config.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/sha-256.h"
 
 static void lobby_default_handler (void *data);
 
@@ -127,7 +126,7 @@ void lobby_delete (void *ptr) {
         }
 
         if (lobby->players) {
-            avl_clearTree (&lobby->players->root, lobby->players->destroy);
+            avl_clear_tree (&lobby->players->root, lobby->players->destroy);
             free (lobby->players);
         }   
 
@@ -241,11 +240,11 @@ u8 player_add_to_lobby (Server *server, Lobby *lobby, Player *player) {
             GameServerData *gameData = (GameServerData *) server->serverData;
             if (gameData) {
                 if (!player_is_in_lobby (player, lobby)) {
-                    Player *p = avl_removeNode (gameData->players, player);
+                    Player *p = avl_remove_node (gameData->players, player);
                     if (p) {
                         i32 client_sock_fd = player->client->active_connections[0];
 
-                        avl_insertNode (lobby->players, p);
+                        avl_insert_node (lobby->players, p);
 
                         // for (u32 i = 0; i < poll_n_fds; i++) {
                         //     if (server->fds[i].fd == client_sock_fd) {
@@ -297,7 +296,7 @@ u8 player_remove_from_lobby (Server *server, Lobby *lobby, Player *player) {
     //                 }
 
     //                 // delete the player from the lobby
-    //                 avl_removeNode (lobby->players, player);
+    //                 avl_remove_node (lobby->players, player);
 
     //                 // p->inLobby = false;
 

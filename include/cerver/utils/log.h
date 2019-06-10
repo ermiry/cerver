@@ -1,5 +1,5 @@
-#ifndef _LOG_H_
-#define _LOG_H_
+#ifndef _CERVER_LOG_H_
+#define _CERVER_LOG_H_
 
 #include <stdio.h>
 

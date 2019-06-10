@@ -4,8 +4,8 @@
  *
  **********************************/
 
-#ifndef _THPOOL_
-#define _THPOOL_
+#ifndef _CERVER_THPOOL_H_
+#define _CERVER_THPOOL_H_
 
 #ifdef __cplusplus
 extern "C" {

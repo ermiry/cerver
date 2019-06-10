@@ -3,7 +3,7 @@
 #include <string.h>
 #include <assert.h>
 
-#include "utils/vector.h"
+#include "cerver/collections/vector.h"
 
 void vector_allocate (Vector *vector, size_t n_allocated) {
 

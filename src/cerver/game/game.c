@@ -6,21 +6,20 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
-#include "game/game.h"
-#include "game/player.h"
-#include "game/lobby.h"
+#include "cerver/game/game.h"
+#include "cerver/game/player.h"
+#include "cerver/game/lobby.h"
 
-#include "collections/dllist.h"
-#include "collections/avl.h"
-#include "collections/htab.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/avl.h"
+#include "cerver/collections/htab.h"
 
-#include "utils/objectPool.h"
-
-#include "utils/myUtils.h"
-#include "utils/config.h"
-#include "utils/log.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/objectPool.h"
+#include "cerver/utils/config.h"
+#include "cerver/utils/log.h"
 
 GamePacketInfo *newGamePacketInfo (Server *server, Lobby *lobby, Player *player, 
     char *packetData, size_t packetSize);
@@ -96,7 +95,7 @@ void game_server_data_delete (GameServerData *game_server_data) {
         dlist_destroy (game_server_data->currentLobbys);
 
         // destroy game players
-        avl_clearTree (&game_server_data->players->root, game_server_data->players->destroy);
+        avl_clear_tree (&game_server_data->players->root, game_server_data->players->destroy);
 
         // delete game server game data
         if (game_server_data->delete_game_data) game_server_data->delete_game_data (game_server_data->game_data);

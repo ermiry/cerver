@@ -6,12 +6,12 @@
 #include <signal.h>
 #include <pthread.h>
 
-#include "cerver.h"
-#include "network.h"
+#include "cerver/cerver.h"
+#include "cerver/network.h"
 
-#include <utils/log.h>
-#include "utils/myUtils.h"
-#include "utils/config.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/config.h"
 
 /*** THREAD ***/
 

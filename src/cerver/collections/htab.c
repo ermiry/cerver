@@ -1,6 +1,6 @@
 #include <stdbool.h>
 
-#include "collections/htab.h"
+#include "cerver/collections/htab.h"
 
 size_t htab_generic_hash (const void *key, size_t key_size, size_t table_size) {
 

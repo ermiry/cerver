@@ -19,15 +19,15 @@
 #include "cerver/cerver.h"
 #include "cerver/game/game.h"
 
-#include "utils/thpool.h"
 
-#include "collections/avl.h" 
-#include "utils/vector.h"
+#include "cerver/collections/avl.h" 
+#include "cerver/collections/vector.h"
 
-#include "utils/log.h"
-#include "utils/config.h"
-#include "utils/myUtils.h"
-#include "utils/sha-256.h"
+#include "cerver/utils/thpool.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/config.h"
+#include "cerver/utils/utils.h"
+#include "cerver/utils/sha-256.h"
 
 /*** VALUES ***/
 
@@ -626,7 +626,7 @@ void onHoldClient (Server *server, Client *client, i32 fd) {
 
                 server->n_hold_clients++;
 
-                avl_insertNode (server->onHoldClients, client);
+                avl_insert_node (server->onHoldClients, client);
 
                 if (server->holdingClients == false) {
                     thpool_add_work (server->thpool, (void *) handleOnHoldClients, server);
@@ -663,7 +663,7 @@ void dropClient (Server *server, Client *client) {
     if (server && client) {
         // destroy client should unregister the socket from the client
         // and from the on hold poll structure
-        avl_removeNode (server->onHoldClients, client);
+        avl_remove_node (server->onHoldClients, client);
 
         // server->compress_hold_clients = true;
 
@@ -689,7 +689,7 @@ Client *removeOnHoldClient (Server *server, Client *client, i32 socket_fd) {
                 }
             }
 
-            retval = avl_removeNode (server->onHoldClients, client);
+            retval = avl_remove_node (server->onHoldClients, client);
 
             server->n_hold_clients--;
         }
@@ -2021,13 +2021,15 @@ static void cerver_destroy_clients (Server *server) {
     memset (server->fds, 0, sizeof (server->fds));
 
     // destroy the active clients tree
-    avl_clearTree (&server->clients->root, server->clients->destroy);
+    // avl_clear_tree (&server->clients->root, server->clients->destroy);
+    avl_delete (server->clients);
 
     if (server->authRequired) {
         // send a packet to on hold clients
         broadcastToAllClients (server->onHoldClients->root, server, packet, packetSize);
         // destroy the tree
-        avl_clearTree (&server->onHoldClients->root, server->onHoldClients->destroy);
+        // avl_clear_tree (&server->onHoldClients->root, server->onHoldClients->destroy);
+        avl_delete (server->onHoldClients);
 
         // clear the on hold client's poll
         // this may change to a for if we have a dynamic poll structure

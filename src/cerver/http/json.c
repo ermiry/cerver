@@ -5,7 +5,7 @@
 
 #include "cerver/http/json.h"
 
-#include "collections/dllist.h"
+#include "cerver/collections/dllist.h"
 
 // uses the reference to a value, do not free the value, it will be free when the list gets destroy
 JsonKeyValue *json_key_value_new (void) {

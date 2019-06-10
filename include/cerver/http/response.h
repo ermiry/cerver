@@ -1,5 +1,5 @@
-#ifndef _CERVER_RESPONSE_H_
-#define _CERVER_RESPONSE_H_
+#ifndef _CERVER_HTTP_RESPONSE_H_
+#define _CERVER_HTTP_RESPONSE_H_
 
 #include <stdlib.h>
 

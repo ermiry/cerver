@@ -1,16 +1,16 @@
-#ifndef _CERVER_LOBBY_H_
-#define _CERVER_LOBBY_H_
+#ifndef _CERVER_GAME_LOBBY_H_
+#define _CERVER_GAME_LOBBY_H_
 
 #include <time.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
-#include "game.h"
-#include "player.h"
+#include "cerver/game/game.h"
+#include "cerver/game/player.h"
 
-#include "collections/avl.h"
+#include "cerver/collections/avl.h"
 
-#include "utils/objectPool.h"
+#include "cerver/utils/objectPool.h"
 
 struct _Server;
 struct _Player;
