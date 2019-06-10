@@ -37,7 +37,7 @@ static char *log_get_msg_type (LogMsgType type) {
 
 }
 
-void log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
+void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
     char *first = log_get_msg_type (firstType);
@@ -78,9 +78,9 @@ void log_server (Server *server) {
 
     if (server) {
         switch (server->type) {
-            case FILE_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a new file server!"); break;
-            case WEB_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a web server!"); break;
-            case GAME_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a game server!"); break;
+            case FILE_SERVER: cerver_log_msg (stdout, SUCCESS, SERVER, "Created a new file server!"); break;
+            case WEB_SERVER: cerver_log_msg (stdout, SUCCESS, SERVER, "Created a web server!"); break;
+            case GAME_SERVER: cerver_log_msg (stdout, SUCCESS, SERVER, "Created a game server!"); break;
             default: break;
         }
     }
