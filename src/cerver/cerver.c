@@ -154,7 +154,7 @@ u8 checkPacket (size_t packetSize, char *packetData, PacketType expectedType) {
 
     if (packetSize < sizeof (PacketHeader)) {
         #ifdef CERVER_DEBUG
-        logMsg (stderr, WARNING, PACKET, "Recieved a to small packet!");
+        log_msg (stderr, WARNING, PACKET, "Recieved a to small packet!");
         #endif
         return 1;
     } 
@@ -164,7 +164,7 @@ u8 checkPacket (size_t packetSize, char *packetData, PacketType expectedType) {
 
     if (header->protocolID != PROTOCOL_ID) {
         #ifdef CERVER_DEBUG
-        logMsg (stdout, WARNING, PACKET, "Packet with unknown protocol ID.");
+        log_msg (stdout, WARNING, PACKET, "Packet with unknown protocol ID.");
         #endif
         return 1;
     }
@@ -173,7 +173,7 @@ u8 checkPacket (size_t packetSize, char *packetData, PacketType expectedType) {
     // Version version = header->protocolVersion;
     // if (version.major != PROTOCOL_VERSION.major) {
     //     #ifdef CERVER_DEBUG
-    //     logMsg (stdout, WARNING, PACKET, "Packet with incompatible version.");
+    //     log_msg (stdout, WARNING, PACKET, "Packet with incompatible version.");
     //     #endif
     //     return 1;
     // }
@@ -182,9 +182,9 @@ u8 checkPacket (size_t packetSize, char *packetData, PacketType expectedType) {
     // that the client created 
     if ((u32) packetSize != header->packetSize) {
         #ifdef CERVER_DEBUG
-        logMsg (stdout, WARNING, PACKET, "Recv packet size doesn't match header size.");
-        logMsg (stdout, DEBUG_MSG, PACKET, 
-            createString ("Recieved size: %i - Expected size %i", packetSize, header->packetSize));
+        log_msg (stdout, WARNING, PACKET, "Recv packet size doesn't match header size.");
+        log_msg (stdout, DEBUG_MSG, PACKET, 
+            string_create ("Recieved size: %i - Expected size %i", packetSize, header->packetSize));
         #endif
         return 1;
     } 
@@ -193,7 +193,7 @@ u8 checkPacket (size_t packetSize, char *packetData, PacketType expectedType) {
         // check if the packet is of the expected type
         if (header->packetType != expectedType) {
             #ifdef CERVER_DEBUG
-            logMsg (stdout, WARNING, PACKET, "Packet doesn't match expected type.");
+            log_msg (stdout, WARNING, PACKET, "Packet doesn't match expected type.");
             #endif
             return 1;
         }
@@ -456,14 +456,14 @@ void sendServerInfo (Server *server, i32 sock_fd, struct sockaddr_storage addres
 
             if (!server_sendPacket (server, sock_fd, address, server->serverInfo, packetSize)) {
                 #ifdef CERVER_DEBUG
-                    logMsg (stdout, DEBUG_MSG, SERVER, "Sent server info packet.");
+                    log_msg (stdout, DEBUG_MSG, SERVER, "Sent server info packet.");
                 #endif
             }
         }
 
         else {
             #ifdef CERVER_DEBUG
-            logMsg (stdout, ERROR, SERVER, "No server info to send to client!");
+            log_msg (stdout, ERROR, SERVER, "No server info to send to client!");
             #endif
         } 
     }
@@ -489,13 +489,13 @@ char *session_default_generate_id (i32 fd, const struct sockaddr_storage address
 
     if (ipstr && (port > 0)) {
         #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, CLIENT,
-                createString ("Client connected form IP address: %s -- Port: %i", 
+            log_msg (stdout, DEBUG_MSG, CLIENT,
+                string_create ("Client connected form IP address: %s -- Port: %i", 
                 ipstr, port));
         #endif
 
         // 24/11/2018 -- 22:14 -- testing a simple id - just ip + port
-        char *connection_values = createString ("%s-%i", ipstr, port);
+        char *connection_values = string_create ("%s-%i", ipstr, port);
 
         uint8_t hash[32];
         char hash_string[65];
@@ -503,7 +503,7 @@ char *session_default_generate_id (i32 fd, const struct sockaddr_storage address
         sha_256_calc (hash, connection_values, strlen (connection_values));
         sha_256_hash_to_string (hash_string, hash);
 
-        char *retval = createString ("%s", hash_string);
+        char *retval = string_create ("%s", hash_string);
 
         return retval;
     }
@@ -519,7 +519,7 @@ void session_set_id_generator (Server *server, Action idGenerator) {
         if (server->useSessions) 
             server->generateSessionID = idGenerator;
 
-        else logMsg (stderr, ERROR, SERVER, "Server is not set to use sessions!");
+        else log_msg (stderr, ERROR, SERVER, "Server is not set to use sessions!");
     }
 
 }
@@ -565,14 +565,14 @@ static void server_recieve (Server *server, i32 fd, bool onHold);
 u8 handleOnHoldClients (void *data) {
 
     if (!data) {
-        logMsg (stderr, ERROR, SERVER, "Can't handle on hold clients on a NULL server!");
+        log_msg (stderr, ERROR, SERVER, "Can't handle on hold clients on a NULL server!");
         return 1;
     }
 
     Server *server = (Server *) data;
 
     #ifdef CERVER_DEBUG
-        logMsg (stdout, SUCCESS, SERVER, "On hold client poll has started!");
+        log_msg (stdout, SUCCESS, SERVER, "On hold client poll has started!");
     #endif
 
     int poll_retval;
@@ -581,7 +581,7 @@ u8 handleOnHoldClients (void *data) {
         
         // poll failed
         if (poll_retval < 0) {
-            logMsg (stderr, ERROR, SERVER, "On hold poll failed!");
+            log_msg (stderr, ERROR, SERVER, "On hold poll failed!");
             server->holdingClients = false;
             break;
         }
@@ -589,7 +589,7 @@ u8 handleOnHoldClients (void *data) {
         // if poll has timed out, just continue to the next loop... 
         if (poll_retval == 0) {
             // #ifdef CERVER_DEBUG
-            // logMsg (stdout, DEBUG_MSG, SERVER, "On hold poll timeout.");
+            // log_msg (stdout, DEBUG_MSG, SERVER, "On hold poll timeout.");
             // #endif
             continue;
         }
@@ -605,7 +605,7 @@ u8 handleOnHoldClients (void *data) {
     } 
 
     #ifdef CERVER_DEBUG
-        logMsg (stdout, SERVER, NO_TYPE, "Server on hold poll has stopped!");
+        log_msg (stdout, SERVER, NO_TYPE, "Server on hold poll has stopped!");
     #endif
 
 }
@@ -634,20 +634,20 @@ void onHoldClient (Server *server, Client *client, i32 fd) {
                 }          
 
                 #ifdef CERVER_DEBUG
-                    logMsg (stdout, DEBUG_MSG, SERVER, 
+                    log_msg (stdout, DEBUG_MSG, SERVER, 
                         "Added a new client to the on hold structures.");
                 #endif
 
                 #ifdef CERVER_STATS
-                    logMsg (stdout, SERVER, NO_TYPE, 
-                        createString ("Current on hold clients: %i.", server->n_hold_clients));
+                    log_msg (stdout, SERVER, NO_TYPE, 
+                        string_create ("Current on hold clients: %i.", server->n_hold_clients));
                 #endif
             }
 
             // FIXME: better handle this error!
             else {
                 #ifdef CERVER_DEBUG
-                logMsg (stderr, ERROR, SERVER, "New on hold idx = -1. Is the server full?");
+                log_msg (stderr, ERROR, SERVER, "New on hold idx = -1. Is the server full?");
                 #endif
             }
         }
@@ -668,7 +668,7 @@ void dropClient (Server *server, Client *client) {
         // server->compress_hold_clients = true;
 
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, 
+        log_msg (stdout, DEBUG_MSG, SERVER, 
             "Client removed from on hold structure. Failed to authenticate");
         #endif
     }   
@@ -696,7 +696,7 @@ Client *removeOnHoldClient (Server *server, Client *client, i32 socket_fd) {
 
         else {
             #ifdef CERVER_DEBUG
-                logMsg (stderr, ERROR, CLIENT, "Could not find client associated with socket!");
+                log_msg (stderr, ERROR, CLIENT, "Could not find client associated with socket!");
             #endif
 
             // this migth be an unusual error
@@ -707,8 +707,8 @@ Client *removeOnHoldClient (Server *server, Client *client, i32 socket_fd) {
         if (server->n_hold_clients <= 0) server->holdingClients = false;
 
         #ifdef CERVER_STATS
-            logMsg (stdout, SERVER, NO_TYPE, 
-            createString ("On hold clients: %i.", server->n_hold_clients));
+            log_msg (stdout, SERVER, NO_TYPE, 
+            string_create ("On hold clients: %i.", server->n_hold_clients));
         #endif
 
         return retval;
@@ -746,7 +746,7 @@ u8 defaultAuthMethod (void *data) {
 
                 else {
                     #ifdef CERVER_DEBUG
-                    logMsg (stderr, ERROR, CLIENT, "Wrong session id provided by client!");
+                    log_msg (stderr, ERROR, CLIENT, "Wrong session id provided by client!");
                     #endif
                     return 1;      // the session id is wrong -> error!
                 } 
@@ -761,8 +761,8 @@ u8 defaultAuthMethod (void *data) {
                 // credentials are good
                 if (authData->code == DEFAULT_AUTH_CODE) {
                     #ifdef CERVER_DEBUG
-                    logMsg (stdout, DEBUG_MSG, NO_TYPE, 
-                        createString ("Default auth: client provided code: %i.", authData->code));
+                    log_msg (stdout, DEBUG_MSG, NO_TYPE, 
+                        string_create ("Default auth: client provided code: %i.", authData->code));
                     #endif
 
                     // FIXME: 19/april/2019 -- 19:08 -- dont we need to use server->generateSessionID?
@@ -771,8 +771,8 @@ u8 defaultAuthMethod (void *data) {
 
                     if (sessionID) {
                         #ifdef CERVER_DEBUG
-                        logMsg (stdout, DEBUG_MSG, CLIENT, 
-                            createString ("Generated client session id: %s", sessionID));
+                        log_msg (stdout, DEBUG_MSG, CLIENT, 
+                            string_create ("Generated client session id: %s", sessionID));
                         #endif
 
                         client_set_sessionID (pack_info->client, sessionID);
@@ -780,13 +780,13 @@ u8 defaultAuthMethod (void *data) {
                         return 0;
                     }
                     
-                    else logMsg (stderr, ERROR, CLIENT, "Failed to generate session id!");
+                    else log_msg (stderr, ERROR, CLIENT, "Failed to generate session id!");
                 } 
                 // wrong credentials
                 else {
                     #ifdef CERVER_DEBUG
-                    logMsg (stderr, ERROR, NO_TYPE, 
-                        createString ("Default auth: %i is a wrong autentication code!", 
+                    log_msg (stderr, ERROR, NO_TYPE, 
+                        string_create ("Default auth: %i is a wrong autentication code!", 
                         authData->code));
                     #endif
                     return 1;
@@ -802,16 +802,16 @@ u8 defaultAuthMethod (void *data) {
             // credentials are good
             if (authData->code == DEFAULT_AUTH_CODE) {
                 #ifdef CERVER_DEBUG
-                logMsg (stdout, DEBUG_MSG, NO_TYPE, 
-                    createString ("Default auth: client provided code: %i.", authData->code));
+                log_msg (stdout, DEBUG_MSG, NO_TYPE, 
+                    string_create ("Default auth: client provided code: %i.", authData->code));
                 #endif
                 return 0;
             } 
             // wrong credentials
             else {
                 #ifdef CERVER_DEBUG
-                logMsg (stderr, ERROR, NO_TYPE, 
-                    createString ("Default auth: %i is a wrong autentication code!", 
+                log_msg (stderr, ERROR, NO_TYPE, 
+                    string_create ("Default auth: %i is a wrong autentication code!", 
                     authData->code));
                 #endif
             }     
@@ -832,7 +832,7 @@ void authenticateClient (void *data) {
         if (pack_info->server->auth.authenticate) {
             // we expect the function to return us a 0 on success
             if (!pack_info->server->auth.authenticate (pack_info)) {
-                logMsg (stdout, SUCCESS, CLIENT, "Client authenticated successfully!");
+                log_msg (stdout, SUCCESS, CLIENT, "Client authenticated successfully!");
 
                 if (pack_info->server->useSessions) {
                     // search for a client with a session id generated by the new credentials
@@ -842,7 +842,7 @@ void authenticateClient (void *data) {
                     // if we found one, register the new connection to him
                     if (found_client) {
                         if (client_registerNewConnection (found_client, pack_info->clientSock))
-                            logMsg (stderr, ERROR, CLIENT, "Failed to register new connection to client!");
+                            log_msg (stderr, ERROR, CLIENT, "Failed to register new connection to client!");
 
                         i32 idx = getFreePollSpot (pack_info->server);
                         if (idx > 0) {
@@ -852,14 +852,14 @@ void authenticateClient (void *data) {
                         }
                         
                         // FIXME: how to better handle this error?
-                        else logMsg (stderr, ERROR, NO_TYPE, "Failed to get new main poll idx!");
+                        else log_msg (stderr, ERROR, NO_TYPE, "Failed to get new main poll idx!");
 
                         client_delete_data (removeOnHoldClient (pack_info->server, 
                             pack_info->client, pack_info->clientSock));
 
                         #ifdef CERVER_DEBUG
-                        logMsg (stdout, DEBUG_MSG, CLIENT, 
-                            createString ("Registered a new connection to client with session id: %s",
+                        log_msg (stdout, DEBUG_MSG, CLIENT, 
+                            string_create ("Registered a new connection to client with session id: %s",
                             pack_info->client->sessionID));
                         printf ("sessionId: %s\n", pack_info->client->sessionID);
                         #endif
@@ -872,13 +872,13 @@ void authenticateClient (void *data) {
 
                         // FIXME: better handle this error!
                         if (!got_client) {
-                            logMsg (stderr, ERROR, SERVER, "Failed to get client avl node data!");
+                            log_msg (stderr, ERROR, SERVER, "Failed to get client avl node data!");
                             return;
                         }
 
                         else {
                             #ifdef CERVER_DEBUG
-                            logMsg (stdout, DEBUG_MSG, SERVER, 
+                            log_msg (stdout, DEBUG_MSG, SERVER, 
                                 "Got client data when removing an on hold avl node!");
                             #endif
                         }
@@ -899,7 +899,7 @@ void authenticateClient (void *data) {
                             if (server_sendPacket (pack_info->server, 
                                 pack_info->clientSock, pack_info->client->address,
                                 session_packet, packet_size))
-                                    logMsg (stderr, ERROR, PACKET, "Failed to send session token!");
+                                    log_msg (stderr, ERROR, PACKET, "Failed to send session token!");
 
                             free (session_packet);
                         }
@@ -931,7 +931,7 @@ void authenticateClient (void *data) {
             // failed to authenticate
             else {
                 #ifdef CERVER_DEBUG
-                logMsg (stderr, ERROR, CLIENT, "Client failed to authenticate!");
+                log_msg (stderr, ERROR, CLIENT, "Client failed to authenticate!");
                 #endif
 
                 // FIXME: this should only be used when using default authentication
@@ -947,8 +947,8 @@ void authenticateClient (void *data) {
 
         // no authentication method -- clients are not able to interact to the server!
         else {
-            logMsg (stderr, ERROR, SERVER, "Server doesn't have an authenticate method!");
-            logMsg (stderr, ERROR, SERVER, "Clients are unable to interact with the server!");
+            log_msg (stderr, ERROR, SERVER, "Server doesn't have an authenticate method!");
+            log_msg (stderr, ERROR, SERVER, "Clients are unable to interact with the server!");
 
             // FIXME: correctly drop client and send error packet to the client!
             dropClient (pack_info->server, pack_info->client);
@@ -981,15 +981,15 @@ void handleOnHoldPacket (void *data) {
                 } break;
 
                 case TEST_PACKET: 
-                    logMsg (stdout, TEST, NO_TYPE, "Got a successful test packet!"); 
+                    log_msg (stdout, TEST, NO_TYPE, "Got a successful test packet!"); 
                     if (!sendTestPacket (pack_info->server, pack_info->clientSock, pack_info->client->address))
-                        logMsg (stdout, TEST, PACKET, "Success answering the test packet.");
+                        log_msg (stdout, TEST, PACKET, "Success answering the test packet.");
 
-                    else logMsg (stderr, ERROR, PACKET, "Failed to answer test packet!");
+                    else log_msg (stderr, ERROR, PACKET, "Failed to answer test packet!");
                     break;
 
                 default: 
-                    logMsg (stderr, WARNING, PACKET, "Got a packet of incompatible type."); 
+                    log_msg (stderr, WARNING, PACKET, "Got a packet of incompatible type."); 
                     break;
             }
         }
@@ -1083,7 +1083,7 @@ void handlePacket (void *data) {
                     
                     switch (reqdata->type) {
                         /* case CLIENT_DISCONNET: 
-                            logMsg (stdout, DEBUG_MSG, CLIENT, "Ending client connection - client_disconnect ()");
+                            log_msg (stdout, DEBUG_MSG, CLIENT, "Ending client connection - client_disconnect ()");
                             client_closeConnection (packet->server, packet->client); 
                             break; */
                         default: break;
@@ -1104,16 +1104,16 @@ void handlePacket (void *data) {
                 // case GAME_PACKET: gs_handlePacket (packet); break;
 
                 case TEST_PACKET: 
-                    logMsg (stdout, TEST, NO_TYPE, "Got a successful test packet!"); 
+                    log_msg (stdout, TEST, NO_TYPE, "Got a successful test packet!"); 
                     // send a test packet back to the client
                     if (!sendTestPacket (packet->server, packet->clientSock, packet->client->address))
-                        logMsg (stdout, DEBUG_MSG, PACKET, "Success answering the test packet.");
+                        log_msg (stdout, DEBUG_MSG, PACKET, "Success answering the test packet.");
 
-                    else logMsg (stderr, ERROR, PACKET, "Failed to answer test packet!");
+                    else log_msg (stderr, ERROR, PACKET, "Failed to answer test packet!");
                     break;
 
                 default: 
-                    logMsg (stderr, WARNING, PACKET, "Got a packet of incompatible type."); 
+                    log_msg (stderr, WARNING, PACKET, "Got a packet of incompatible type."); 
                     break;
             }
         }
@@ -1165,7 +1165,7 @@ void default_handle_recieved_buffer (void *rcvd_buffer_data) {
                         getClientBySocket (data->server->clients->root, data->sock_fd);
 
                     if (!c) {
-                        logMsg (stderr, ERROR, CLIENT, "Failed to get client by socket!");
+                        log_msg (stderr, ERROR, CLIENT, "Failed to get client by socket!");
                         return;
                     }
 
@@ -1177,7 +1177,7 @@ void default_handle_recieved_buffer (void *rcvd_buffer_data) {
 
                     else {
                         #ifdef CERVER_DEBUG
-                        logMsg (stderr, ERROR, PACKET, "Failed to create packet info!");
+                        log_msg (stderr, ERROR, PACKET, "Failed to create packet info!");
                         #endif
                     }
 
@@ -1196,8 +1196,8 @@ void default_handle_recieved_buffer (void *rcvd_buffer_data) {
 // recive all incoming data from the socket
 static void server_recieve (Server *server, i32 socket_fd, bool onHold) {
 
-    // if (onHold) logMsg (stdout, SUCCESS, PACKET, "server_recieve () - on hold client!");
-    // else logMsg (stdout, SUCCESS, PACKET, "server_recieve () - normal client!");
+    // if (onHold) log_msg (stdout, SUCCESS, PACKET, "server_recieve () - on hold client!");
+    // else log_msg (stdout, SUCCESS, PACKET, "server_recieve () - normal client!");
 
     ssize_t rc;
     char packetBuffer[MAX_UDP_PACKET_SIZE];
@@ -1211,7 +1211,7 @@ static void server_recieve (Server *server, i32 socket_fd, bool onHold) {
                 // as of 02/11/2018 -- we juts close the socket and if the client is hanging
                 // it will be removed with the client timeout function 
                 // this is to prevent an extra client_count -= 1
-                logMsg (stdout, DEBUG_MSG, CLIENT, "server_recieve () - rc < 0");
+                log_msg (stdout, DEBUG_MSG, CLIENT, "server_recieve () - rc < 0");
 
                 close (socket_fd);  // close the client socket
             }
@@ -1223,7 +1223,7 @@ static void server_recieve (Server *server, i32 socket_fd, bool onHold) {
             // man recv -> steam socket perfomed an orderly shutdown
             // but in dgram it might mean something?
             perror ("Error:");
-            logMsg (stdout, DEBUG_MSG, CLIENT, 
+            log_msg (stdout, DEBUG_MSG, CLIENT, 
                     "Ending client connection - server_recieve () - rc == 0");
 
             close (socket_fd);  // close the client socket
@@ -1248,7 +1248,7 @@ static void server_recieve (Server *server, i32 socket_fd, bool onHold) {
 
                 else {
                     #ifdef CERVER_DEBUG
-                    logMsg (stderr, ERROR, CLIENT, 
+                    log_msg (stderr, ERROR, CLIENT, 
                         "Couldn't find an active client with the requested socket!");
                     #endif
                 }
@@ -1280,26 +1280,26 @@ static i32 server_accept (Server *server) {
 
     if (newfd < 0) {
         // if we get EWOULDBLOCK, we have accepted all connections
-        if (errno != EWOULDBLOCK) logMsg (stderr, ERROR, SERVER, "Accept failed!");
+        if (errno != EWOULDBLOCK) log_msg (stderr, ERROR, SERVER, "Accept failed!");
         return -1;
     }
 
     #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, CLIENT, "Accepted a new client connection.");
+        log_msg (stdout, DEBUG_MSG, CLIENT, "Accepted a new client connection.");
     #endif
 
     // get client values to use as default id in avls
     char *connection_values = client_getConnectionValues (newfd, clientAddress);
     if (!connection_values) {
-        logMsg (stderr, ERROR, CLIENT, "Failed to get client connection values.");
+        log_msg (stderr, ERROR, CLIENT, "Failed to get client connection values.");
         close (newfd);
         return -1;
     }
 
     else {
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, CLIENT,
-            createString ("Connection values: %s", connection_values));
+        log_msg (stdout, DEBUG_MSG, CLIENT,
+            string_create ("Connection values: %s", connection_values));
         #endif
     } 
 
@@ -1316,14 +1316,14 @@ static i32 server_accept (Server *server) {
             char *session_id = session_default_generate_id (newfd, clientAddress);
             if (session_id) {
                 #ifdef CERVER_DEBUG
-                logMsg (stdout, DEBUG_MSG, CLIENT, 
-                    createString ("Generated client session id: %s", session_id));
+                log_msg (stdout, DEBUG_MSG, CLIENT, 
+                    string_create ("Generated client session id: %s", session_id));
                 #endif
 
                 client_set_sessionID (client, session_id);
             }
             
-            else logMsg (stderr, ERROR, CLIENT, "Failed to generate session id!");
+            else log_msg (stderr, ERROR, CLIENT, "Failed to generate session id!");
         }
 
         client_registerToServer (server, client, newfd);
@@ -1333,7 +1333,7 @@ static i32 server_accept (Server *server) {
     // if (server->type != WEB_SERVER) sendServerInfo (server, newfd, clientAddress);
    
     #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "A new client connected to the server!");
+        log_msg (stdout, DEBUG_MSG, SERVER, "A new client connected to the server!");
     #endif
 
     return newfd;
@@ -1344,21 +1344,21 @@ static i32 server_accept (Server *server) {
 static u8 server_poll (Server *server) {
 
     if (!server) {
-        logMsg (stderr, ERROR, SERVER, "Can't listen for connections on a NULL server!");
+        log_msg (stderr, ERROR, SERVER, "Can't listen for connections on a NULL server!");
         return 1;
     }
 
     int poll_retval;
 
-    logMsg (stdout, SUCCESS, SERVER, "Server has started!");
-    logMsg (stdout, DEBUG_MSG, SERVER, "Waiting for connections...");
+    log_msg (stdout, SUCCESS, SERVER, "Server has started!");
+    log_msg (stdout, DEBUG_MSG, SERVER, "Waiting for connections...");
 
     while (server->isRunning) {
         poll_retval = poll (server->fds, poll_n_fds, server->pollTimeout);
 
         // poll failed
         if (poll_retval < 0) {
-            logMsg (stderr, ERROR, SERVER, "Main server poll failed!");
+            log_msg (stderr, ERROR, SERVER, "Main server poll failed!");
             perror ("Error");
             server->isRunning = false;
             break;
@@ -1367,7 +1367,7 @@ static u8 server_poll (Server *server) {
         // if poll has timed out, just continue to the next loop... 
         if (poll_retval == 0) {
             // #ifdef DEBUG
-            // logMsg (stdout, DEBUG_MSG, SERVER, "Poll timeout.");
+            // log_msg (stdout, DEBUG_MSG, SERVER, "Poll timeout.");
             // #endif
             continue;
         }
@@ -1381,12 +1381,12 @@ static u8 server_poll (Server *server) {
             if (server->fds[i].fd == server->serverSock) {
                 if (server_accept (server)) {
                     #ifdef CERVER_DEBUG
-                    logMsg (stdout, SUCCESS, CLIENT, "Success accepting a new client!");
+                    log_msg (stdout, SUCCESS, CLIENT, "Success accepting a new client!");
                     #endif
                 }
                 else {
                     #ifdef CERVER_DEBUG
-                    logMsg (stderr, ERROR, CLIENT, "Failed to accept a new client!");
+                    log_msg (stderr, ERROR, CLIENT, "Failed to accept a new client!");
                     #endif
                 } 
             }
@@ -1400,7 +1400,7 @@ static u8 server_poll (Server *server) {
     }
 
     #ifdef CERVER_DEBUG
-        logMsg (stdout, SERVER, NO_TYPE, "Server main poll has stopped!");
+        log_msg (stdout, SERVER, NO_TYPE, "Server main poll has stopped!");
     #endif
 
 }
@@ -1458,7 +1458,7 @@ u8 initServerDS (Server *server, ServerType type) {
     // initialize server's own thread pool
     server->thpool = thpool_init (DEFAULT_TH_POOL_INIT);
     if (!server->thpool) {
-        logMsg (stderr, ERROR, SERVER, "Failed to init server's thread pool!");
+        log_msg (stderr, ERROR, SERVER, "Failed to init server's thread pool!");
         return 1;
     } 
 
@@ -1471,13 +1471,13 @@ u8 initServerDS (Server *server, ServerType type) {
 
             // // init the lobbys with n inactive in the pool
             // if (game_init_lobbys (gameData, GS_LOBBY_POOL_INIT)) {
-            //     logMsg (stderr, ERROR, NO_TYPE, "Failed to init server lobbys!");
+            //     log_msg (stderr, ERROR, NO_TYPE, "Failed to init server lobbys!");
             //     return 1;
             // }
 
             // // init the players with n inactive in the pool
             // if (game_init_players (gameData, GS_PLAYER_POOL_INT)) {
-            //     logMsg (stderr, ERROR, NO_TYPE, "Failed to init server players!");
+            //     log_msg (stderr, ERROR, NO_TYPE, "Failed to init server players!");
             //     return 1;
             // }
 
@@ -1522,7 +1522,7 @@ void initServerValues (Server *server, ServerType type) {
             // get game modes info from a config file
             // data->gameSettingsConfig = config_parse_file (GS_GAME_SETTINGS_CFG);
             // if (!data->gameSettingsConfig) 
-            //     logMsg (stderr, ERROR, GAME, "Problems loading game settings config!");
+            //     log_msg (stderr, ERROR, GAME, "Problems loading game settings config!");
 
             // data->n_gameInits = 0;
             // data->gameInitFuncs = NULL;
@@ -1549,14 +1549,14 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     else server->useIpv6 = DEFAULT_USE_IPV6;
 
     #ifdef CERVER_DEBUG
-    logMsg (stdout, DEBUG_MSG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
+    log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Use IPv6: %i", server->useIpv6));
     #endif
 
     char *tcp = config_get_entity_value (cfgEntity, "tcp");
     if (tcp) {
         u8 usetcp = atoi (tcp);
         if (usetcp < 0 || usetcp > 1) {
-            logMsg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
+            log_msg (stdout, WARNING, SERVER, "Unknown protocol. Using default: tcp protocol");
             usetcp = 1;
         }
 
@@ -1569,7 +1569,7 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     // set to default (tcp) if we don't found a value
     else {
         server->protocol = IPPROTO_TCP;
-        logMsg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
+        log_msg (stdout, WARNING, SERVER, "No protocol found. Using default: tcp protocol");
     }
 
     char *port = config_get_entity_value (cfgEntity, "port");
@@ -1577,36 +1577,36 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
         server->port = atoi (port);
         // check that we have a valid range, if not, set to default port
         if (server->port <= 0 || server->port >= MAX_PORT_NUM) {
-            logMsg (stdout, WARNING, SERVER, 
-                createString ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
+            log_msg (stdout, WARNING, SERVER, 
+                string_create ("Invalid port number. Setting port to default value: %i", DEFAULT_PORT));
             server->port = DEFAULT_PORT;
         }
 
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, createString ("Listening on port: %i", server->port));
+        log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Listening on port: %i", server->port));
         #endif
         free (port);
     }
     // set to default port
     else {
         server->port = DEFAULT_PORT;
-        logMsg (stdout, WARNING, SERVER, 
-            createString ("No port found. Setting port to default value: %i", DEFAULT_PORT));
+        log_msg (stdout, WARNING, SERVER, 
+            string_create ("No port found. Setting port to default value: %i", DEFAULT_PORT));
     } 
 
     char *queue = config_get_entity_value (cfgEntity, "queue");
     if (queue) {
         server->connectionQueue = atoi (queue);
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, 
-            createString ("Connection queue: %i", server->connectionQueue));
+        log_msg (stdout, DEBUG_MSG, SERVER, 
+            string_create ("Connection queue: %i", server->connectionQueue));
         #endif
         free (queue);
     } 
     else {
         server->connectionQueue = DEFAULT_CONNECTION_QUEUE;
-        logMsg (stdout, WARNING, SERVER, 
-            createString ("Connection queue no specified. Setting it to default: %i", 
+        log_msg (stdout, WARNING, SERVER, 
+            string_create ("Connection queue no specified. Setting it to default: %i", 
                 DEFAULT_CONNECTION_QUEUE));
     }
 
@@ -1614,15 +1614,15 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     if (timeout) {
         server->pollTimeout = atoi (timeout);
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, 
-            createString ("Server poll timeout: %i", server->pollTimeout));
+        log_msg (stdout, DEBUG_MSG, SERVER, 
+            string_create ("Server poll timeout: %i", server->pollTimeout));
         #endif
         free (timeout);
     }
     else {
         server->pollTimeout = DEFAULT_POLL_TIMEOUT;
-        logMsg (stdout, WARNING, SERVER, 
-            createString ("Poll timeout no specified. Setting it to default: %i", 
+        log_msg (stdout, WARNING, SERVER, 
+            string_create ("Poll timeout no specified. Setting it to default: %i", 
                 DEFAULT_POLL_TIMEOUT));
     }
 
@@ -1630,14 +1630,14 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     if (auth) {
         server->authRequired = atoi (auth);
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, server->authRequired == 1 ? 
+        log_msg (stdout, DEBUG_MSG, SERVER, server->authRequired == 1 ? 
             "Server requires client authentication" : "Server does not requires client authentication");
         #endif
         free (auth);
     }
     else {
         server->authRequired = DEFAULT_REQUIRE_AUTH;
-        logMsg (stdout, WARNING, SERVER, 
+        log_msg (stdout, WARNING, SERVER, 
             "No auth option found. No authentication required by default.");
     }
 
@@ -1646,15 +1646,15 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
         if (tries) {
             server->auth.maxAuthTries = atoi (tries);
             #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, SERVER, 
-                createString ("Max auth tries set to: %i.", server->auth.maxAuthTries));
+            log_msg (stdout, DEBUG_MSG, SERVER, 
+                string_create ("Max auth tries set to: %i.", server->auth.maxAuthTries));
             #endif
             free (tries);
         }
         else {
             server->auth.maxAuthTries = DEFAULT_AUTH_TRIES;
-            logMsg (stdout, WARNING, SERVER, 
-                createString ("Max auth tries set to default: %i.", DEFAULT_AUTH_TRIES));
+            log_msg (stdout, WARNING, SERVER, 
+                string_create ("Max auth tries set to default: %i.", DEFAULT_AUTH_TRIES));
         }
     }
 
@@ -1662,14 +1662,14 @@ u8 getServerCfgValues (Server *server, ConfigEntity *cfgEntity) {
     if (sessions) {
         server->useSessions = atoi (sessions);
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, server->useSessions == 1 ? 
+        log_msg (stdout, DEBUG_MSG, SERVER, server->useSessions == 1 ? 
             "Server supports client sessions." : "Server does not support client sessions.");
         #endif
         free (sessions);
     }
     else {
         server->useSessions = DEFAULT_USE_SESSIONS;
-        logMsg (stdout, WARNING, SERVER, 
+        log_msg (stdout, WARNING, SERVER, 
             "No sessions option found. No support for client sessions by default.");
     }
 
@@ -1684,37 +1684,37 @@ static u8 cerver_init (Server *server, Config *cfg, ServerType type) {
 
     if (server) {
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "Initializing server...");
+        log_msg (stdout, DEBUG_MSG, SERVER, "Initializing server...");
         #endif
 
         if (cfg) {
             ConfigEntity *cfgEntity = config_get_entity_with_id (cfg, type);
             if (!cfgEntity) {
-                logMsg (stderr, ERROR, SERVER, "Problems with server config!");
+                log_msg (stderr, ERROR, SERVER, "Problems with server config!");
                 return 1;
             } 
 
             #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, SERVER, "Using config entity to set server values...");
+            log_msg (stdout, DEBUG_MSG, SERVER, "Using config entity to set server values...");
             #endif
 
             if (!getServerCfgValues (server, cfgEntity)) 
-                logMsg (stdout, SUCCESS, SERVER, "Done getting cfg server values");
+                log_msg (stdout, SUCCESS, SERVER, "Done getting cfg server values");
         }
 
         // log server values
         else {
             #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, SERVER, createString ("Use IPv6: %i", server->useIpv6));
-            logMsg (stdout, DEBUG_MSG, SERVER, createString ("Listening on port: %i", server->port));
-            logMsg (stdout, DEBUG_MSG, SERVER, createString ("Connection queue: %i", server->connectionQueue));
-            logMsg (stdout, DEBUG_MSG, SERVER, createString ("Server poll timeout: %i", server->pollTimeout));
-            logMsg (stdout, DEBUG_MSG, SERVER, server->authRequired == 1 ? 
+            log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Use IPv6: %i", server->useIpv6));
+            log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Listening on port: %i", server->port));
+            log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Connection queue: %i", server->connectionQueue));
+            log_msg (stdout, DEBUG_MSG, SERVER, string_create ("Server poll timeout: %i", server->pollTimeout));
+            log_msg (stdout, DEBUG_MSG, SERVER, server->authRequired == 1 ? 
                 "Server requires client authentication" : "Server does not requires client authentication");
             if (server->authRequired) 
-                logMsg (stdout, DEBUG_MSG, SERVER, 
-                createString ("Max auth tries set to: %i.", server->auth.maxAuthTries));
-            logMsg (stdout, DEBUG_MSG, SERVER, server->useSessions == 1 ? 
+                log_msg (stdout, DEBUG_MSG, SERVER, 
+                string_create ("Max auth tries set to: %i.", server->auth.maxAuthTries));
+            log_msg (stdout, DEBUG_MSG, SERVER, server->useSessions == 1 ? 
                 "Server supports client sessions." : "Server does not support client sessions.");
             #endif
         }
@@ -1728,21 +1728,21 @@ static u8 cerver_init (Server *server, Config *cfg, ServerType type) {
                 server->serverSock = socket ((server->useIpv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                 break;
 
-            default: logMsg (stderr, ERROR, SERVER, "Unkonw protocol type!"); return 1;
+            default: log_msg (stderr, ERROR, SERVER, "Unkonw protocol type!"); return 1;
         }
         
         if (server->serverSock < 0) {
-            logMsg (stderr, ERROR, SERVER, "Failed to create server socket!");
+            log_msg (stderr, ERROR, SERVER, "Failed to create server socket!");
             return 1;
         }
 
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "Created server socket");
+        log_msg (stdout, DEBUG_MSG, SERVER, "Created server socket");
         #endif
 
         // set the socket to non blocking mode
         if (!sock_setBlocking (server->serverSock, server->blocking)) {
-            logMsg (stderr, ERROR, SERVER, "Failed to set server socket to non blocking mode!");
+            log_msg (stderr, ERROR, SERVER, "Failed to set server socket to non blocking mode!");
             close (server->serverSock);
             return 1;
         }
@@ -1750,7 +1750,7 @@ static u8 cerver_init (Server *server, Config *cfg, ServerType type) {
         else {
             server->blocking = false;
             #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, SERVER, "Server socket set to non blocking mode.");
+            log_msg (stdout, DEBUG_MSG, SERVER, "Server socket set to non blocking mode.");
             #endif
         }
 
@@ -1772,19 +1772,19 @@ static u8 cerver_init (Server *server, Config *cfg, ServerType type) {
         }
 
         if ((bind (server->serverSock, (const struct sockaddr *) &address, sizeof (struct sockaddr_storage))) < 0) {
-            logMsg (stderr, ERROR, SERVER, "Failed to bind server socket!");
+            log_msg (stderr, ERROR, SERVER, "Failed to bind server socket!");
             return 1;
         }   
 
         if (initServerDS (server, type))  {
-            logMsg (stderr, ERROR, NO_TYPE, "Failed to init server data structures!");
+            log_msg (stderr, ERROR, NO_TYPE, "Failed to init server data structures!");
             return 1;
         }
 
         server->type = type;
         initServerValues (server, server->type);
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "Done creating server data structures...");
+        log_msg (stdout, DEBUG_MSG, SERVER, "Done creating server data structures...");
         #endif
     }
 
@@ -1849,11 +1849,11 @@ Server *cerver_create (ServerType type, const char *name, Server *cerver) {
         c = cerver_new (cerver);
         if (!cerver_init (c, NULL, type)) {
             if (name) c->name = str_new (name);
-            log_newServer (c);
+            log_server (c);
         }
 
         else {
-            logMsg (stderr, ERROR, SERVER, "Failed to init the server!");
+            log_msg (stderr, ERROR, SERVER, "Failed to init the server!");
             cerver_delete (c);   // delete the failed server...
         }
     }
@@ -1865,18 +1865,18 @@ Server *cerver_create (ServerType type, const char *name, Server *cerver) {
             c = cerver_new (NULL);
             if (!cerver_init (c, serverConfig, type)) {
                 if (name) c->name = str_new (name);
-                log_newServer (c);
+                log_server (c);
                 config_destroy (serverConfig);
             }
 
             else {
-                logMsg (stderr, ERROR, SERVER, "Failed to init the server!");
+                log_msg (stderr, ERROR, SERVER, "Failed to init the server!");
                 config_destroy (serverConfig);
                 cerver_delete (c); 
             }
         } 
 
-        else logMsg (stderr, ERROR, NO_TYPE, "Problems loading server config!\n");
+        else log_msg (stderr, ERROR, NO_TYPE, "Problems loading server config!\n");
     }
 
     return c;
@@ -1887,7 +1887,7 @@ Server *cerver_create (ServerType type, const char *name, Server *cerver) {
 Server *cerver_restart (Server *server) {
 
     if (server) {
-        logMsg (stdout, SERVER, NO_TYPE, "Restarting the server...");
+        log_msg (stdout, SERVER, NO_TYPE, "Restarting the server...");
 
         Server temp = { 
             .useIpv6 = server->useIpv6, .protocol = server->protocol, .port = server->port,
@@ -1897,20 +1897,20 @@ Server *cerver_restart (Server *server) {
 
         temp.name = str_new (server->name->str);
 
-        if (!cerver_teardown (server)) logMsg (stdout, SUCCESS, SERVER, "Done with server teardown");
-        else logMsg (stderr, ERROR, SERVER, "Failed to teardown the server!");
+        if (!cerver_teardown (server)) log_msg (stdout, SUCCESS, SERVER, "Done with server teardown");
+        else log_msg (stderr, ERROR, SERVER, "Failed to teardown the server!");
 
         // what ever the output, create a new server --> restart
         Server *retServer = cerver_new (&temp);
         if (!cerver_init (retServer, NULL, temp.type)) {
-            logMsg (stdout, SUCCESS, SERVER, "Server has restarted!");
+            log_msg (stdout, SUCCESS, SERVER, "Server has restarted!");
             return retServer;
         }
 
-        else logMsg (stderr, ERROR, SERVER, "Unable to retstart the server!");
+        else log_msg (stderr, ERROR, SERVER, "Unable to retstart the server!");
     }
 
-    else logMsg (stdout, WARNING, SERVER, "Can't restart a NULL server!");
+    else log_msg (stdout, WARNING, SERVER, "Can't restart a NULL server!");
     
     return NULL;
 
@@ -1923,7 +1923,7 @@ Server *cerver_restart (Server *server) {
 u8 cerver_start (Server *server) {
 
     if (server->isRunning) {
-        logMsg (stdout, WARNING, SERVER, "The server is already running!");
+        log_msg (stdout, WARNING, SERVER, "The server is already running!");
         return 1;
     }
 
@@ -1935,7 +1935,7 @@ u8 cerver_start (Server *server) {
             game_data->load_game_data (NULL);
         }
 
-        else logMsg (stdout, WARNING, GAME, "Game server doesn't have a reference to a game data!");
+        else log_msg (stdout, WARNING, GAME, "Game server doesn't have a reference to a game data!");
     }
 
     u8 retval = 1;
@@ -1958,14 +1958,14 @@ u8 cerver_start (Server *server) {
                 }
 
                 else {
-                    logMsg (stderr, ERROR, SERVER, "Failed to listen in server socket!");
+                    log_msg (stderr, ERROR, SERVER, "Failed to listen in server socket!");
                     close (server->serverSock);
                     retval = 1;
                 }
             }
 
             else {
-                logMsg (stderr, ERROR, SERVER, "Server socket is not set to non blocking!");
+                log_msg (stderr, ERROR, SERVER, "Server socket is not set to non blocking!");
                 retval = 1;
             }
             
@@ -1974,7 +1974,7 @@ u8 cerver_start (Server *server) {
         case IPPROTO_UDP: /* TODO: */ break;
 
         default: 
-            logMsg (stderr, ERROR, SERVER, "Cant't start server! Unknown protocol!");
+            log_msg (stderr, ERROR, SERVER, "Cant't start server! Unknown protocol!");
             retval = 1;
             break;
     }
@@ -1992,13 +1992,13 @@ u8 cerver_shutdown (Server *server) {
         // close the server socket
         if (!close (server->serverSock)) {
             #ifdef CERVER_DEBUG
-                logMsg (stdout, DEBUG_MSG, SERVER, "The server socket has been closed.");
+                log_msg (stdout, DEBUG_MSG, SERVER, "The server socket has been closed.");
             #endif
 
             return 0;
         }
 
-        else logMsg (stdout, ERROR, SERVER, "Failed to close server socket!");
+        else log_msg (stdout, ERROR, SERVER, "Failed to close server socket!");
     } 
 
     return 1;
@@ -2047,12 +2047,12 @@ static void cerver_destroy_clients (Server *server) {
 u8 cerver_teardown (Server *server) {
 
     if (!server) {
-        logMsg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
+        log_msg (stdout, ERROR, SERVER, "Can't destroy a NULL server!");
         return 1;
     }
 
     #ifdef CERVER_DEBUG
-        logMsg (stdout, SERVER, NO_TYPE, "Init server teardown...");
+        log_msg (stdout, SERVER, NO_TYPE, "Init server teardown...");
     #endif
 
     // TODO: what happens if we have a custom auth method?
@@ -2069,7 +2069,7 @@ u8 cerver_teardown (Server *server) {
         // switch (server->type) {
         //     case GAME_SERVER: 
         //         if (!destroyGameServer (server))
-        //             logMsg (stdout, SUCCESS, SERVER, "Done clearing game server data!"); 
+        //             log_msg (stdout, SUCCESS, SERVER, "Done clearing game server data!"); 
         //         break;
         //     case FILE_SERVER: break;
         //     case WEB_SERVER: break;
@@ -2080,19 +2080,19 @@ u8 cerver_teardown (Server *server) {
     // clean common server structs
     cerver_destroy_clients (server);
     #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "Done cleaning up clients.");
+        log_msg (stdout, DEBUG_MSG, SERVER, "Done cleaning up clients.");
     #endif
 
     // disable socket I/O in both ways and stop any ongoing job
     if (!cerver_shutdown (server))
-        logMsg (stdout, SUCCESS, SERVER, "Server has been shutted down.");
+        log_msg (stdout, SUCCESS, SERVER, "Server has been shutted down.");
 
-    else logMsg (stderr, ERROR, SERVER, "Failed to shutdown server!");
+    else log_msg (stderr, ERROR, SERVER, "Failed to shutdown server!");
     
     if (server->thpool) {
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, 
-            createString ("Server active thpool threads: %i", 
+        log_msg (stdout, DEBUG_MSG, SERVER, 
+            string_create ("Server active thpool threads: %i", 
             thpool_num_threads_working (server->thpool)));
         #endif
 
@@ -2100,7 +2100,7 @@ u8 cerver_teardown (Server *server) {
         thpool_destroy (server->thpool);
 
         #ifdef CERVER_DEBUG
-        logMsg (stdout, DEBUG_MSG, SERVER, "Destroyed server thpool!");
+        log_msg (stdout, DEBUG_MSG, SERVER, "Destroyed server thpool!");
         #endif
     } 
 
@@ -2112,7 +2112,7 @@ u8 cerver_teardown (Server *server) {
 
     free (server);
 
-    logMsg (stdout, SUCCESS, NO_TYPE, "Server teardown was successfull!");
+    log_msg (stdout, SUCCESS, NO_TYPE, "Server teardown was successfull!");
 
     return 0;
 

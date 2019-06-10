@@ -65,7 +65,7 @@ void lobby_default_generate_id (char *lobby_id) {
     sha_256_calc (hash, temp, len);
     sha_256_hash_to_string (hash_string, hash);
 
-    lobby_id = createString ("%s", hash_string);
+    lobby_id = string_create ("%s", hash_string);
 
 }
 
@@ -193,11 +193,11 @@ u8 game_init_lobbys (GameServerData *game_data, u8 n_lobbys) {
     u8 retval = 1;
 
     if (game_data) {
-        if (game_data->currentLobbys) logMsg (stdout, WARNING, SERVER, "The server has already a list of lobbys.");
+        if (game_data->currentLobbys) log_msg (stdout, WARNING, SERVER, "The server has already a list of lobbys.");
         else {
             game_data->currentLobbys = dlist_init (lobby_delete, lobby_comparator);
             if (game_data->currentLobbys) retval = 0;
-            else logMsg (stderr, ERROR, NO_TYPE, "Failed to init server's lobby list!");
+            else log_msg (stderr, ERROR, NO_TYPE, "Failed to init server's lobby list!");
         }
     }
 
@@ -262,7 +262,7 @@ u8 player_add_to_lobby (Server *server, Lobby *lobby, Player *player) {
                         return 0;
                     }
 
-                    else logMsg (stderr, ERROR, GAME, "Failed to get player from avl!");
+                    else log_msg (stderr, ERROR, GAME, "Failed to get player from avl!");
                 }
             }
         }
@@ -323,11 +323,11 @@ u8 lobby_start (Server *server, Lobby *lobby) {
             sl->server = server;
             sl->lobby = lobby;
             if (thpool_add_work (server->thpool, (void *) lobby->handler, sl) < 0)
-                logMsg (stderr, ERROR, GAME, "Failed to start lobby - failed to add to thpool!");
+                log_msg (stderr, ERROR, GAME, "Failed to start lobby - failed to add to thpool!");
             else retval = 0;        // success
         } 
 
-        else logMsg (stderr, ERROR, GAME, "Failed to start lobby - no reference to lobby handler.");
+        else log_msg (stderr, ERROR, GAME, "Failed to start lobby - no reference to lobby handler.");
     }
 
     return retval;
@@ -354,7 +354,7 @@ Lobby *lobby_create (Server *server, Player *owner, unsigned int max_players) {
             }
 
             else {
-                logMsg (stderr, ERROR, GAME, "Failed to add owner to lobby!");
+                log_msg (stderr, ERROR, GAME, "Failed to add owner to lobby!");
                 lobby_delete (lobby);
                 lobby = NULL;
             }
@@ -385,13 +385,13 @@ u8 lobby_join (GameServerData *game_data, Lobby *lobby, Player *player) {
                     }
                 }
 
-                else logMsg (stdout, DEBUG_MSG, GAME, "A player tried to join a full lobby.");
+                else log_msg (stdout, DEBUG_MSG, GAME, "A player tried to join a full lobby.");
             }
 
-            else logMsg (stdout, DEBUG_MSG, GAME, "A player tried to join a lobby that is in game.");
+            else log_msg (stdout, DEBUG_MSG, GAME, "A player tried to join a lobby that is in game.");
         }
 
-        else logMsg (stderr, ERROR, GAME, "A player tries to join the same lobby he is in.");
+        else log_msg (stderr, ERROR, GAME, "A player tries to join the same lobby he is in.");
     }
 
     return retval;
@@ -461,7 +461,7 @@ u8 destroyLobby (Server *server, Lobby *lobby) {
                     }
 
                     else 
-                        logMsg (stderr, ERROR, PACKET, "Failed to create lobby destroy packet!");
+                        log_msg (stderr, ERROR, PACKET, "Failed to create lobby destroy packet!");
 
                     // this should stop the lobby poll thread
                     lobby->isRunning = false;
@@ -486,14 +486,14 @@ u8 destroyLobby (Server *server, Lobby *lobby) {
                 }
 
                 else {
-                    logMsg (stdout, WARNING, GAME, "A lobby wasn't found in the current lobby list.");
+                    log_msg (stdout, WARNING, GAME, "A lobby wasn't found in the current lobby list.");
                     deleteLobby (lobby);   // destroy the lobby forever
                 } 
                 
                 return 0;   // success
             }
 
-            else logMsg (stderr, ERROR, SERVER, "No game data found in the server!");
+            else log_msg (stderr, ERROR, SERVER, "No game data found in the server!");
         }
     }
 
@@ -545,7 +545,7 @@ u8 leaveLobby (Server *server, Lobby *lobby, Player *player) {
 
     //                     // we got a NULL player in the structures -> we don't expect this to happen!
     //                     else {
-    //                         logMsg (stdout, WARNING, GAME, 
+    //                         log_msg (stdout, WARNING, GAME, 
     //                             "Got a NULL player when searching for new owner!");
     //                         lobby->players_fds[i].fd = -1;
     //                         lobby->compress_players = true; 
@@ -568,7 +568,7 @@ u8 leaveLobby (Server *server, Lobby *lobby, Player *player) {
 
     // else {
     //     #ifdef DEBUG
-    //         logMsg (stderr, ERROR, GAME, "The player doesn't belong to the lobby!");
+    //         log_msg (stderr, ERROR, GAME, "The player doesn't belong to the lobby!");
     //     #endif
     // }
 
@@ -589,13 +589,13 @@ u8 leaveLobby (Server *server, Lobby *lobby, Player *player) {
     // perform some check here...
     if (!server) return NULL;
     if (server->type != GAME_SERVER) {
-        logMsg (stderr, ERROR, SERVER, "Can't search for lobbys in non game server.");
+        log_msg (stderr, ERROR, SERVER, "Can't search for lobbys in non game server.");
         return NULL;
     }
     
     GameServerData *gameData = (GameServerData *) server->serverData;
     if (!gameData) {
-        logMsg (stderr, ERROR, SERVER, "NULL reference to game data in game server!");
+        log_msg (stderr, ERROR, SERVER, "NULL reference to game data in game server!");
         return NULL;
     }
 
@@ -640,7 +640,7 @@ static void lobby_default_handler (void *data) {
         GamePacketInfo *info = NULL;
 
         #ifdef CERVER_DEBUG
-        logMsg (stdout, SUCCESS, SERVER, "New lobby has started!");
+        log_msg (stdout, SUCCESS, SERVER, "New lobby has started!");
         #endif
 
         int poll_retval;    // ret val from poll function
@@ -650,7 +650,7 @@ static void lobby_default_handler (void *data) {
 
             // poll failed
             if (poll_retval < 0) {
-                logMsg (stderr, ERROR, SERVER, "Lobby poll failed!");
+                log_msg (stderr, ERROR, SERVER, "Lobby poll failed!");
                 perror ("Error");
                 lobby->isRunning = false;
                 break;
@@ -659,7 +659,7 @@ static void lobby_default_handler (void *data) {
             // if poll has timed out, just continue to the next loop... 
             if (poll_retval == 0) {
                 #ifdef DEBUG
-                logMsg (stdout, DEBUG_MSG, SERVER, "Lobby poll timeout.");
+                log_msg (stdout, DEBUG_MSG, SERVER, "Lobby poll timeout.");
                 #endif
                 continue;
             }
@@ -672,14 +672,14 @@ static void lobby_default_handler (void *data) {
                 if (lobby->players_fds[i].revents == 0) continue;
 
                 if (lobby->players_fds[i].revents != POLLIN) 
-                    logMsg (stderr, ERROR, GAME, "Lobby poll - Unexpected poll result!");
+                    log_msg (stderr, ERROR, GAME, "Lobby poll - Unexpected poll result!");
 
                 do {
                     rc = recv (lobby->players_fds[i].fd, packetBuffer, sizeof (packetBuffer), 0);
                     
                     if (rc < 0) {
                         if (errno != EWOULDBLOCK) {
-                            logMsg (stderr, ERROR, SERVER, "On hold recv failed!");
+                            log_msg (stderr, ERROR, SERVER, "On hold recv failed!");
                             perror ("Error:");
                         }
 
@@ -710,7 +710,7 @@ static void lobby_default_handler (void *data) {
 
     ConfigEntity *cfgEntity = config_get_entity_with_id (gameConfig, gameType);
 	if (!cfgEntity) {
-        logMsg (stderr, ERROR, GAME, "Problems with game settings config!");
+        log_msg (stderr, ERROR, GAME, "Problems with game settings config!");
         return NULL;
     } 
 
@@ -722,12 +722,12 @@ static void lobby_default_handler (void *data) {
         free (playerTimeout);
     } 
     else {
-        logMsg (stdout, WARNING, GAME, "No player timeout found in cfg. Using default.");        
+        log_msg (stdout, WARNING, GAME, "No player timeout found in cfg. Using default.");        
         settings->playerTimeout = DEFAULT_PLAYER_TIMEOUT;
     }
 
     #ifdef DEBUG
-    logMsg (stdout, DEBUG_MSG, GAME, createString ("Player timeout: %i", settings->playerTimeout));
+    log_msg (stdout, DEBUG_MSG, GAME, string_create ("Player timeout: %i", settings->playerTimeout));
     #endif
 
     char *fps = config_get_entity_value (cfgEntity, "fps");
@@ -736,12 +736,12 @@ static void lobby_default_handler (void *data) {
         free (fps);
     } 
     else {
-        logMsg (stdout, WARNING, GAME, "No fps found in cfg. Using default.");        
+        log_msg (stdout, WARNING, GAME, "No fps found in cfg. Using default.");        
         settings->fps = DEFAULT_FPS;
     }
 
     #ifdef DEBUG
-    logMsg (stdout, DEBUG_MSG, GAME, createString ("FPS: %i", settings->fps));
+    log_msg (stdout, DEBUG_MSG, GAME, string_create ("FPS: %i", settings->fps));
     #endif
 
     char *minPlayers = config_get_entity_value (cfgEntity, "minPlayers");
@@ -750,12 +750,12 @@ static void lobby_default_handler (void *data) {
         free (minPlayers);
     } 
     else {
-        logMsg (stdout, WARNING, GAME, "No min players found in cfg. Using default.");        
+        log_msg (stdout, WARNING, GAME, "No min players found in cfg. Using default.");        
         settings->minPlayers = DEFAULT_MIN_PLAYERS;
     }
 
     #ifdef DEBUG
-    logMsg (stdout, DEBUG_MSG, GAME, createString ("Min players: %i", settings->minPlayers));
+    log_msg (stdout, DEBUG_MSG, GAME, string_create ("Min players: %i", settings->minPlayers));
     #endif
 
     char *maxPlayers = config_get_entity_value (cfgEntity, "maxPlayers");
@@ -764,12 +764,12 @@ static void lobby_default_handler (void *data) {
         free (maxPlayers);
     } 
     else {
-        logMsg (stdout, WARNING, GAME, "No max players found in cfg. Using default.");        
+        log_msg (stdout, WARNING, GAME, "No max players found in cfg. Using default.");        
         settings->maxPlayers = DEFAULT_MIN_PLAYERS;
     }
 
     #ifdef DEBUG
-    logMsg (stdout, DEBUG_MSG, GAME, createString ("Max players: %i", settings->maxPlayers));
+    log_msg (stdout, DEBUG_MSG, GAME, string_create ("Max players: %i", settings->maxPlayers));
     #endif
 
     return settings;

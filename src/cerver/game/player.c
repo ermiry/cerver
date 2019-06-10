@@ -90,13 +90,13 @@ void player_register_to_server (Server *server, Player *player) {
             if (gameData->players) avl_insert_node (gameData->players, player);
 
             #ifdef CERVER_DEBUG
-                logMsg (stdout, DEBUG_MSG, GAME, "Registered a player to the server.");
+                log_msg (stdout, DEBUG_MSG, GAME, "Registered a player to the server.");
             #endif
         }
 
         else {
             #ifdef DEBUG
-                logMsg (stdout, WARNING, SERVER, 
+                log_msg (stdout, WARNING, SERVER, 
                     "Trying to add a player to a server of incompatible type!");
             #endif
         }
@@ -226,22 +226,22 @@ void player_traverse (AVLNode *node, Action action, void *data) {
 u8 game_init_players (GameServerData *gameData, Comparator player_comparator) {
 
     if (!gameData) {
-        logMsg (stderr, ERROR, SERVER, "Can't init players in a NULL game data!");
+        log_msg (stderr, ERROR, SERVER, "Can't init players in a NULL game data!");
         return 1;
     }
 
     if (gameData->players)
-        logMsg (stdout, WARNING, SERVER, "The server already has an avl of players!");
+        log_msg (stdout, WARNING, SERVER, "The server already has an avl of players!");
     else {
         gameData->players = avl_init (player_comparator, player_delete);
         if (!gameData->players) {
-            logMsg (stderr, ERROR, NO_TYPE, "Failed to init server's players avl!");
+            log_msg (stderr, ERROR, NO_TYPE, "Failed to init server's players avl!");
             return 1;
         }
     } 
 
     #ifdef DEBUG
-        logMsg (stdout, DEBUG_MSG, GAME, "Players have been init in the game server.");
+        log_msg (stdout, DEBUG_MSG, GAME, "Players have been init in the game server.");
     #endif
 
     return 0;
@@ -271,7 +271,7 @@ void addPlayer (struct sockaddr_storage address) {
     // TODO: handle ipv6 ips
     /* char addrStr[IP_TO_STR_LEN];
     sock_ip_to_string ((struct sockaddr *) &address, addrStr, sizeof (addrStr));
-    logMsg (stdout, SERVER, PLAYER, createString ("New player connected from ip: %s @ port: %d.\n", 
+    log_msg (stdout, SERVER, PLAYER, string_create ("New player connected from ip: %s @ port: %d.\n", 
         addrStr, sock_ip_port ((struct sockaddr *) &address))); */
 
     // TODO: init other necessarry game values

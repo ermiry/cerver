@@ -1,7 +1,7 @@
 #ifndef _CERVER_UTILS_H_
 #define _CERVER_UTILS_H_
 
-extern char *createString (const char *stringWithFormat, ...);
+extern char *string_create (const char *stringWithFormat, ...);
 
 // init psuedo random generator based on our seed
 extern void random_set_seed (unsigned int seed);

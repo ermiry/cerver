@@ -23,7 +23,7 @@ char *client_getConnectionValues (i32 fd, const struct sockaddr_storage address)
     u16 port = sock_ip_port ((const struct sockaddr *) &address);
 
     if (ipstr && (port > 0)) 
-        connectionValues = createString ("%s-%i", ipstr, port);
+        connectionValues = string_create ("%s-%i", ipstr, port);
 
     return connectionValues;
 
@@ -33,7 +33,7 @@ void client_set_sessionID (Client *client, const char *sessionID) {
 
     if (client && sessionID) {
         if (client->sessionID) free (client->sessionID);
-        client->sessionID = createString ("%s", sessionID);
+        client->sessionID = string_create ("%s", sessionID);
     }
 
 }
@@ -64,7 +64,7 @@ Client *newClient (Server *server, i32 clientSock, struct sockaddr_storage addre
     if (connection_values) {
         if (client->clientID) free (client->clientID);
 
-        client->clientID = createString ("%s", connection_values);
+        client->clientID = string_create ("%s", connection_values);
         free (connection_values);
     }
 
@@ -190,13 +190,13 @@ Client *getClientBySession (AVLTree *clients, char *sessionID) {
 
     if (clients && sessionID) {
         Client temp;
-        temp.sessionID = createString ("%s", sessionID);
+        temp.sessionID = string_create ("%s", sessionID);
         
         void *data = avl_get_node_data (clients, &temp);
         if (data) return (Client *) data;
         else 
-            logMsg (stderr, WARNING, SERVER, 
-                createString ("Couldn't find a client associated with the session ID: %s.", 
+            log_msg (stderr, WARNING, SERVER, 
+                string_create ("Couldn't find a client associated with the session ID: %s.", 
                 sessionID));
     }
 
@@ -286,15 +286,15 @@ void client_registerToServer (Server *server, Client *client, i32 newfd) {
             server->connectedClients++;
 
             #ifdef CERVER_STATS
-                logMsg (stdout, SERVER, NO_TYPE, 
-                createString ("New client registered to server. Connected clients: %i.", 
+                log_msg (stdout, SERVER, NO_TYPE, 
+                string_create ("New client registered to server. Connected clients: %i.", 
                 server->connectedClients));
             #endif
         }
 
         // TODO: how to better handle this error?
         else {
-            logMsg (stderr, ERROR, SERVER, 
+            log_msg (stderr, ERROR, SERVER, 
                 "Failed to get a free main poll idx. Is the server full?");
             // just drop the client connection
             close (newfd);
@@ -324,7 +324,7 @@ Client *client_unregisterFromServer (Server *server, Client *client) {
             }
 
             #ifdef CERVER_DEBUG
-                logMsg (stdout, DEBUG_MSG, SERVER, "Unregistered a client from the sever");
+                log_msg (stdout, DEBUG_MSG, SERVER, "Unregistered a client from the sever");
             #endif
 
             server->connectedClients--;
@@ -332,7 +332,7 @@ Client *client_unregisterFromServer (Server *server, Client *client) {
             return c;
         }
 
-        else logMsg (stdout, WARNING, CLIENT, "The client wasn't registered in the server.");
+        else log_msg (stdout, WARNING, CLIENT, "The client wasn't registered in the server.");
     }
 
     return NULL;
@@ -356,8 +356,8 @@ void client_closeConnection (Server *server, Client *client) {
         client_unregisterFromServer (server, client);
 
         #ifdef CERVER_DEBUG
-            logMsg (stdout, DEBUG_MSG, CLIENT, 
-                createString ("Disconnected a client from the server.\
+            log_msg (stdout, DEBUG_MSG, CLIENT, 
+                string_create ("Disconnected a client from the server.\
                 \nConnected clients remainning: %i.", server->connectedClients));
         #endif
     }
@@ -381,7 +381,7 @@ int client_disconnect_by_socket (Server *server, const int sock_fd) {
             
         else {
             #ifdef CERVER_DEBUG
-            logMsg (stderr, ERROR, CLIENT, 
+            log_msg (stderr, ERROR, CLIENT, 
                 "Couldn't find an active client with the requested socket!");
             #endif
         }

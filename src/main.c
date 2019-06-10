@@ -33,7 +33,7 @@ Server *gameServer = NULL;
 void closeProgram (int dummy) {
 
     if (gameServer) cerver_teardown (gameServer);
-    else logMsg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
+    else log_msg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
 
 }
 
@@ -68,7 +68,7 @@ int main (void) {
         // listenForConnections (server);
 
         // // at this point we are ready to listen for connections...
-        // logMsg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
+        // log_msg (stdout, SERVER, NO_TYPE, "Waiting for connections...");
         // // TODO: we need to tell our game server to listen for connections
         // listenForConnections (server);
 

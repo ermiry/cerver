@@ -7,7 +7,7 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-char *getMsgType (LogMsgType type) {
+static char *log_get_msg_type (LogMsgType type) {
 
     char temp[10];
 
@@ -37,24 +37,24 @@ char *getMsgType (LogMsgType type) {
 
 }
 
-void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
+void log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg) {
 
-    char *first = getMsgType (firstType);
+    char *first = log_get_msg_type (firstType);
     char *second = NULL;
     char *message = NULL;
 
     if (secondType != 0) {
-        second = getMsgType (secondType);
+        second = log_get_msg_type (secondType);
 
         if (firstType == DEBUG_MSG)
-            message = createString ("%s: %s\n", second, msg);
+            message = string_create ("%s: %s\n", second, msg);
         
-        else message = createString ("%s%s: %s\n", first, second, msg);
+        else message = string_create ("%s%s: %s\n", first, second, msg);
     }
 
     else if (firstType != DEBUG_MSG)
-        message = createString ("%s: %s\n", first, msg);
+        message = string_create ("%s: %s\n", first, msg);
 
     // log messages with color
     switch (firstType) {
@@ -74,13 +74,13 @@ void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondT
 
 }
 
-void log_newServer (Server *server) {
+void log_server (Server *server) {
 
     if (server) {
         switch (server->type) {
-            case FILE_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a new file server!"); break;
-            case WEB_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a web server!"); break;
-            case GAME_SERVER: logMsg (stdout, SUCCESS, SERVER, "Created a game server!"); break;
+            case FILE_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a new file server!"); break;
+            case WEB_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a web server!"); break;
+            case GAME_SERVER: log_msg (stdout, SUCCESS, SERVER, "Created a game server!"); break;
             default: break;
         }
     }

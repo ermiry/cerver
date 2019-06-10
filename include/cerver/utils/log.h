@@ -34,9 +34,9 @@ typedef enum LogMsgType {
 
 } LogMsgType;
 
-extern void logMsg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
+extern void log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg);
 
-extern void log_newServer (Server *server);
+extern void log_server (Server *server);
 
 #endif

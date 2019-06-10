@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-char *createString (const char *stringWithFormat, ...) {
+char *string_create (const char *stringWithFormat, ...) {
 
     char *fmt;
 
