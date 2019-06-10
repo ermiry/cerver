@@ -1,7 +1,7 @@
 #ifndef _CERVER_SCORE_H_
 #define _CERVER_SCORE_H_
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "collections/avl.h"
 #include "collections/htab.h"

@@ -1,7 +1,7 @@
 #ifndef _CERVER_PLAYER_H_
 #define _CERVER_PLAYER_H_
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "cerver/cerver.h"
 #include "cerver/game/game.h"

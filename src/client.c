@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"

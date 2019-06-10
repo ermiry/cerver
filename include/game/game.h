@@ -3,7 +3,7 @@
 
 #include <poll.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "cerver/cerver.h"
 #include "player.h"

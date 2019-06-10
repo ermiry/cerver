@@ -8,7 +8,7 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/player.h"

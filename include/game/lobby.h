@@ -3,7 +3,7 @@
 
 #include <time.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "game.h"
 #include "player.h"

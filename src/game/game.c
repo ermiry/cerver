@@ -6,7 +6,7 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "game/game.h"
 #include "game/player.h"

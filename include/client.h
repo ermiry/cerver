@@ -1,7 +1,7 @@
 #ifndef _CLIENT_H_
 #define _CLIENT_H_
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "network.h"
 #include "cerver.h"

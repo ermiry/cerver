@@ -1,5 +1,5 @@
-#ifndef MY_TYPES_H  
-#define MY_TYPES_H  
+#ifndef _TYPES_H_
+#define _TYPES_H_
 
 #define EXIT_FAILURE    1
 

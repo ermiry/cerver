@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-#include "types/myTypes.h"
+#include "types/types.h"
 
 #include "cerver/game/score.h"
 

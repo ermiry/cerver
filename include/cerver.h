@@ -7,8 +7,8 @@
 
 #include <poll.h>
 
-#include "types/myTypes.h"
-#include "types/myString.h"
+#include "types/types.h"
+#include "types/string.h"
 
 #include "network.h"
 #include "client.h"
