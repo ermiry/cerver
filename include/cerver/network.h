@@ -1,5 +1,5 @@
-#ifndef _NETWORK_H_
-#define _NETWORK_H_
+#ifndef _CERVER_NETWORK_H_
+#define _CERVER_NETWORK_H_
 
 #include <stdbool.h>
 

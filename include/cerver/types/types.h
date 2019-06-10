@@ -1,5 +1,5 @@
-#ifndef _TYPES_H_
-#define _TYPES_H_
+#ifndef _CERVER_TYPES_H_
+#define _CERVER_TYPES_H_
 
 #define EXIT_FAILURE    1
 

@@ -1,5 +1,5 @@
-#ifndef VECTOR_H
-#define VECTOR_H
+#ifndef _COLLECTIONS_VECTOR_H_
+#define _COLLECTIONS_VECTOR_H_
 
 #include <stdlib.h>
 

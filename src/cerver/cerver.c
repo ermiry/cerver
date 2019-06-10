@@ -12,8 +12,8 @@
 #include <poll.h>
 #include <errno.h>
 
-#include "types/types.h"
-#include "types/string.h"
+#include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -21,8 +21,8 @@
 
 #include "utils/thpool.h"
 
-#include "utils/vector.h"
 #include "collections/avl.h" 
+#include "utils/vector.h"
 
 #include "utils/log.h"
 #include "utils/config.h"

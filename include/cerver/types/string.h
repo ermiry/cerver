@@ -1,5 +1,5 @@
-#ifndef _TYPES_STRING_H_
-#define _TYPES_STRING_H_
+#ifndef _CERVER_STRING_H_
+#define _CERVER_STRING_H_
 
 typedef struct String {
 

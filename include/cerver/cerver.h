@@ -1,5 +1,5 @@
-#ifndef _CERVER_H_
-#define _CERVER_H_
+#ifndef _CERVER_CERVER_H_
+#define _CERVER_CERVER_H_
 
 #ifndef _GNU_SOURCE
     #define _GNU_SOURCE
@@ -7,19 +7,20 @@
 
 #include <poll.h>
 
-#include "types/types.h"
-#include "types/string.h"
+#include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
-#include "network.h"
-#include "client.h"
-#include "game/game.h"
+#include "cerver/network.h"
+#include "cerver/client.h"
 
-#include "collections/dllist.h"
-#include "collections/avl.h"
+#include "cerver/game/game.h"
 
-#include "utils/objectPool.h"
-#include "utils/config.h"
-#include "utils/thpool.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/avl.h"
+
+#include "cerver/utils/objectPool.h"
+#include "cerver/utils/config.h"
+#include "cerver/utils/thpool.h"
 
 #define DEFAULT_USE_IPV6                0
 #define DEFAULT_PORT                    7001

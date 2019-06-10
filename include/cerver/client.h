@@ -1,5 +1,5 @@
-#ifndef _CLIENT_H_
-#define _CLIENT_H_
+#ifndef _CERVER_CLIENT_H_
+#define _CERVER_CLIENT_H_
 
 #include "types/types.h"
 

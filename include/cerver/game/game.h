@@ -3,16 +3,18 @@
 
 #include <poll.h>
 
-#include "types/types.h"
+#include "cerver/types/types.h"
 
 #include "cerver/cerver.h"
-#include "player.h"
-#include "lobby.h"
 
-#include "collections/dllist.h"
-#include "collections/avl.h"
-#include "utils/config.h"
-#include "utils/objectPool.h"
+#include "cerver/game/player.h"
+#include "cerver/game/lobby.h"
+
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/avl.h"
+
+#include "cerver/utils/config.h"
+#include "cerver/utils/objectPool.h"
 
 struct _Server;
 struct _GameServerData;
