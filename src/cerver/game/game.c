@@ -152,7 +152,7 @@ void blackrock_game_server_final_action () {
 
     // else log_msg (stderr, ERROR, PACKET, "Failed to create server teardown packet!");
 
-    // #ifdef DEBUG
+    // #ifdef CERVER_DEBUG
     //     log_msg (stdout, DEBUG_MSG, SERVER, "Done sending server teardown packet to players.");
     // #endif
 
@@ -219,21 +219,21 @@ u8 gs_startGame (Server *server, Lobby *lobby) {
             sl->server = server;
             sl->lobby = lobby;
 
-            #ifdef DEBUG
+            #ifdef CERVER_DEBUG
                 log_msg (stdout, DEBUG_MSG, GAME, "Starting the game...");
             #endif
 
             // we expect the game function to sync players and send game packets directly 
             // using the framework
             if (!temp (sl)) {
-                #ifdef DEBUG
+                #ifdef CERVER_DEBUG
                     log_msg (stdout, SUCCESS, GAME, "A new game has started!");
                 #endif
                 return 0;
             }
 
             else {
-                #ifdef DEBUG
+                #ifdef CERVER_DEBUG
                     log_msg (stderr, ERROR, GAME, "Failed to start a new game!");
                 #endif
                 return 1;
@@ -478,12 +478,12 @@ void gs_createLobby (Server *server, Client *client, i32 sock_fd, GameType gameT
 
     //     // check that the owner isn't already in a lobby or game
     //     if (owner->inLobby) {
-    //         #ifdef DEBUG
+    //         #ifdef CERVER_DEBUG
     //         log_msg (stdout, DEBUG_MSG, GAME, "A player inside a lobby wanted to create a new lobby.");
     //         #endif
     //         if (sendErrorPacket (server, sock_fd, client->address, 
     //             ERR_CREATE_LOBBY, "Player is already in a lobby!")) {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //             #endif
     //         }
@@ -492,7 +492,7 @@ void gs_createLobby (Server *server, Client *client, i32 sock_fd, GameType gameT
 
     //     Lobby *lobby = createLobby (server, owner, gameType);
     //     if (lobby) {
-    //         #ifdef DEBUG
+    //         #ifdef CERVER_DEBUG
     //             log_msg (stdout, SUCCESS, GAME, "New lobby created!");
     //         #endif 
 
@@ -543,12 +543,12 @@ void gs_joinLobby (Server *server, Client *client, GameType gameType) {
 
     //     // check that the owner isn't already in a lobby or game
     //     if (player->inLobby) {
-    //         #ifdef DEBUG
+    //         #ifdef CERVER_DEBUG
     //         log_msg (stdout, DEBUG_MSG, GAME, "A player inside a lobby wanted to join a new lobby.");
     //         #endif
     //         // FIXME:
     //         /* if (sendErrorPacket (server, player->client, ERR_CREATE_LOBBY, "Player is already in a lobby!")) {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //             #endif
     //         } */
@@ -561,7 +561,7 @@ void gs_joinLobby (Server *server, Client *client, GameType gameType) {
     //         // add the player to the lobby
     //         if (!joinLobby (server, lobby, player)) {
     //             // the player joined successfully
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //                 log_msg (stdout, DEBUG_MSG, GAME, "A new player has joined the lobby");
     //             #endif
     //         }
@@ -585,18 +585,18 @@ void gs_leaveLobby (Server *server, Player *player, Lobby *lobby) {
 
     //     if (player->inLobby) {
     //         if (!leaveLobby (server, lobby, player)) {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //                 log_msg (stdout, DEBUG_MSG, GAME, "PLayer left the lobby successfully!");
     //             #endif
     //         }
 
     //         else {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stdout, DEBUG_MSG, GAME, "There was a problem with a player leaving a lobby!");
     //             #endif
     //             // FIXME:
     //             /* if (sendErrorPacket (server, player->client, ERR_LEAVE_LOBBY, "Problem with player leaving the lobby!")) {
-    //                 #ifdef DEBUG
+    //                 #ifdef CERVER_DEBUG
     //                 log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //                 #endif
     //             } */
@@ -604,12 +604,12 @@ void gs_leaveLobby (Server *server, Player *player, Lobby *lobby) {
     //     }
 
     //     else {
-    //         #ifdef DEBUG
+    //         #ifdef CERVER_DEBUG
     //         log_msg (stdout, DEBUG_MSG, GAME, "A player tries to leave a lobby but he is not inside one!");
     //         #endif
     //         // FIXME:
     //         /* if (sendErrorPacket (server, player->client, ERR_LEAVE_LOBBY, "Player is not inside a lobby!")) {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //             #endif
     //         } */
@@ -638,7 +638,7 @@ void gs_initGame (Server *server, Player *player, Lobby *lobby) {
     //                     }
 
     //                     else {
-    //                         #ifdef DEBUG
+    //                         #ifdef CERVER_DEBUG
     //                         log_msg (stderr, ERROR, PACKET, 
     //                             "Failed to create & send error packet to client!");
     //                         #endif
@@ -650,13 +650,13 @@ void gs_initGame (Server *server, Player *player, Lobby *lobby) {
     //             }
 
     //             else {
-    //                 #ifdef DEBUG
+    //                 #ifdef CERVER_DEBUG
     //                 log_msg (stdout, WARNING, GAME, "Need more players to start the game.");
     //                 #endif
     //                 // FIXME: select client socket!!
     //                 /* if (sendErrorPacket (server, player->client, ERR_GAME_INIT, 
     //                     "We need more players to start the game!")) {
-    //                     #ifdef DEBUG
+    //                     #ifdef CERVER_DEBUG
     //                     log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //                     #endif
     //                 } */
@@ -664,13 +664,13 @@ void gs_initGame (Server *server, Player *player, Lobby *lobby) {
     //         }
 
     //         else {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stdout, WARNING, GAME, "Player is not the lobby owner.");
     //             #endif
     //             // FIXME:
     //             /* if (sendErrorPacket (server, player->client, ERR_GAME_INIT, 
     //                 "Player is not the lobby owner!")) {
-    //                 #ifdef DEBUG
+    //                 #ifdef CERVER_DEBUG
     //                 log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //                 #endif
     //             } */
@@ -678,13 +678,13 @@ void gs_initGame (Server *server, Player *player, Lobby *lobby) {
     //     }
 
     //     else {
-    //         #ifdef DEBUG
+    //         #ifdef CERVER_DEBUG
     //         log_msg (stdout, WARNING, GAME, "Player must be inside a lobby and be the owner to start a game.");
     //         #endif
     //         // FIXME:
     //         /* if (sendErrorPacket (server, player->client, ERR_GAME_INIT, 
     //             "The player is not inside a lobby!")) {
-    //             #ifdef DEBUG
+    //             #ifdef CERVER_DEBUG
     //             log_msg (stderr, ERROR, PACKET, "Failed to create & send error packet to client!");
     //             #endif
     //         } */

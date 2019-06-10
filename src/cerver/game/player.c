@@ -95,7 +95,7 @@ void player_register_to_server (Server *server, Player *player) {
         }
 
         else {
-            #ifdef DEBUG
+            #ifdef CERVER_DEBUG
                 log_msg (stdout, WARNING, SERVER, 
                     "Trying to add a player to a server of incompatible type!");
             #endif
@@ -240,7 +240,7 @@ u8 game_init_players (GameServerData *gameData, Comparator player_comparator) {
         }
     } 
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
         log_msg (stdout, DEBUG_MSG, GAME, "Players have been init in the game server.");
     #endif
 

@@ -1366,7 +1366,7 @@ static u8 server_poll (Server *server) {
 
         // if poll has timed out, just continue to the next loop... 
         if (poll_retval == 0) {
-            // #ifdef DEBUG
+            // #ifdef CERVER_DEBUG
             // log_msg (stdout, DEBUG_MSG, SERVER, "Poll timeout.");
             // #endif
             continue;

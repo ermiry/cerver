@@ -567,7 +567,7 @@ u8 leaveLobby (Server *server, Lobby *lobby, Player *player) {
     // }
 
     // else {
-    //     #ifdef DEBUG
+    //     #ifdef CERVER_DEBUG
     //         log_msg (stderr, ERROR, GAME, "The player doesn't belong to the lobby!");
     //     #endif
     // }
@@ -658,7 +658,7 @@ static void lobby_default_handler (void *data) {
 
             // if poll has timed out, just continue to the next loop... 
             if (poll_retval == 0) {
-                #ifdef DEBUG
+                #ifdef CERVER_DEBUG
                 log_msg (stdout, DEBUG_MSG, SERVER, "Lobby poll timeout.");
                 #endif
                 continue;
@@ -726,7 +726,7 @@ static void lobby_default_handler (void *data) {
         settings->playerTimeout = DEFAULT_PLAYER_TIMEOUT;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     log_msg (stdout, DEBUG_MSG, GAME, string_create ("Player timeout: %i", settings->playerTimeout));
     #endif
 
@@ -740,7 +740,7 @@ static void lobby_default_handler (void *data) {
         settings->fps = DEFAULT_FPS;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     log_msg (stdout, DEBUG_MSG, GAME, string_create ("FPS: %i", settings->fps));
     #endif
 
@@ -754,7 +754,7 @@ static void lobby_default_handler (void *data) {
         settings->minPlayers = DEFAULT_MIN_PLAYERS;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     log_msg (stdout, DEBUG_MSG, GAME, string_create ("Min players: %i", settings->minPlayers));
     #endif
 
@@ -768,7 +768,7 @@ static void lobby_default_handler (void *data) {
         settings->maxPlayers = DEFAULT_MIN_PLAYERS;
     }
 
-    #ifdef DEBUG
+    #ifdef CERVER_DEBUG
     log_msg (stdout, DEBUG_MSG, GAME, string_create ("Max players: %i", settings->maxPlayers));
     #endif
 
