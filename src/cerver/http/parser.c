@@ -104,7 +104,7 @@ static const char *findchar_fast(const char *buf, const char *buf_end, const cha
         } while (likely(left != 0));
     }
 #else
-    /* suppress unused parameter warning */
+    /* suppress unused parameter LOG_WARNING */
     (void)buf_end;
     (void)ranges;
     (void)ranges_size;

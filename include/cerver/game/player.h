@@ -2,75 +2,64 @@
 #define _CERVER_GAME_PLAYER_H_
 
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
+#include "cerver/packets.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
 
-struct _Server;
-struct _GameServerData;
+struct _Cerver;
 struct _Client;
-
-typedef uint16_t PlayerId;
+struct _Packet;
+struct _Lobby;
 
 struct _Player {
 
-    // we may select one of these
+	String *id;
+
 	struct _Client *client;		// client network data associated to this player
-    const char *session_id;     // unique session id associated with the client
 
-	PlayerId id;
-	bool inLobby;
-	bool alive;
-
-	// 15/11/2018 -- we spec the player to be ecs based
-	// the server admin can add its own components
-	void *components;
-
-    // 20/04/2019 -- app specific data, eg a profile from a db
     void *data;     
-    Action destroy_player_data;
+    Action data_delete;
 
 };
 
 typedef struct _Player Player;
 
-// inits the players server's structures
-extern u8 game_init_players (struct _GameServerData *gameData, Comparator player_comparator);
+extern Player *player_new (void);
 
-extern void player_set_delete_player_data (Player *player, Action destroy);
+extern void player_delete (void *player_ptr);
 
-// constructor for a new player, option to directly pass player data
-extern Player *player_new (Client *client, const char *session_id, void *player_data);
-// deletes a player struct for ever
-extern void player_delete (void *data);
+// sets the player id
+extern void player_set_id (Player *player, const char *id);
 
-// comparator for players's avl tree
+// sets player data and a way to delete it
+extern void player_set_data (Player *player, void *data, Action data_delete);
+
+// compares two players by their ids
+extern int player_comparator_by_id (const void *a, const void *b);
+
+// compares two players by their clients ids
 extern int player_comparator_client_id (const void *a, const void *b);
-// compare two players' session id
-extern int player_comparator_by_session_id (const void *a, const void *b);
 
-// adds a player to the game server data main structures
-extern void player_register_to_server (struct _Server *server, Player *player);
-// removes a player from the server's players struct (avl) and also removes the player
-// client from the main server poll
-extern void player_unregister_to_server (struct _Server *server, Player *player);
+// registers a player to the lobby --> add him to lobby's structures
+extern u8 player_register_to_lobby (struct _Lobby *lobby, Player *player);
 
-// get a player from an avl tree using a comparator and a query
-extern Player *player_get (AVLNode *node, Comparator comparator, void *query);
+// unregisters a player from a lobby --> removes him from lobby's structures
+extern u8 player_unregister_from_lobby (struct _Lobby *lobby, Player *player);
 
-// recursively get the player associated with the socket
-extern Player *player_get_by_socket (AVLNode *node, i32 socket_fd);
+// gets a player from the lobby using the query
+extern Player *player_get_from_lobby (struct _Lobby *lobby, Player *query);
 
-// check if a player is inside a lobby using a comparator and a query
-extern bool player_is_in_lobby (Lobby *lobby, Comparator comparator, void *query);
+// get sthe list element associated with the player
+extern ListElement *player_get_le_from_lobby (struct _Lobby *lobby, Player *player);
 
-// broadcast a packet/msg to all clients/players inside an avl structure
-extern void player_broadcast_to_all (AVLNode *node, struct _Server *server, void *packet, size_t packetSize);
-
-// performs an action on every player in an avl tree 
-extern void player_traverse (AVLNode *node, Action action, void *data);
+// broadcasts a packet to all the players in the lobby
+extern void player_broadcast_to_all (const struct _Lobby *lobby, struct _Packet *packet, 
+    Protocol protocol, int flags);
 
 #endif

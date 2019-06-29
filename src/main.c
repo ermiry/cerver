@@ -27,13 +27,13 @@
 // any other paramater that we give it, it can redirect the request to the correct server
 
 // TODO: maybe handle this in a separate list by a name?
-Server *gameServer = NULL;
+Cerver *gameServer = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 void closeProgram (int dummy) {
 
-    if (gameServer) cerver_teardown (gameServer);
-    else cerver_log_msg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
+    // if (gameServer) cerver_teardown (gameServer);
+    // else cerver_log_msg (stdout, NO_TYPE, NO_TYPE, "There isn't any server to teardown. Quitting application.");
 
 }
 

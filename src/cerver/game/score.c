@@ -52,7 +52,7 @@ ScoreBoard *game_score_create (u8 playersNum, u8 scoresNum, ...) {
 
         sb->registeredPlayers = 0;
         sb->scores = htab_init (playersNum > 0 ? playersNum : DEFAULT_SCORE_SIZE,
-             NULL, NULL, NULL, NULL);
+            NULL, NULL, NULL, false, NULL, NULL);
 
         va_end (valist);
     }
@@ -104,7 +104,7 @@ void game_score_add_scoreType (ScoreBoard *sb, char *newScore) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
                 "Can't add score type! It already exists in the scoreboard.");
             #endif
         }
@@ -152,8 +152,8 @@ u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Can't remove %s scoretype, doesn't exist in the scoreboard!"));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Can't remove %s scoretype, doesn't exist in the scoreboard!"));
             #endif
             return 1;
         }
@@ -167,15 +167,15 @@ u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
     if (sb && playerName) {
         if (htab_contains_key (sb->scores, playerName, sizeof (playerName))) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Scores table already contains player: %s", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Scores table already contains player: %s", playerName));
             #endif
             return 1;
         }
 
         // associate the player with his own scores dictionary
         else {
-            Htab *newHt = htab_init (sb->scoresNum, NULL, NULL, NULL, NULL);
+            Htab *newHt = htab_init (sb->scoresNum, NULL, NULL, NULL, false, NULL, NULL);
             if (newHt) {
                 if (!htab_insert (sb->scores, playerName, sizeof (playerName), newHt, sizeof (Htab))) {
                     // insert each score type in the player's dictionary
@@ -186,7 +186,7 @@ u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
 
                     sb->registeredPlayers++;
 
-                    return 0;   // success adding new player and its scores
+                    return 0;   // LOG_SUCCESS adding new player and its scores
                 }
             }
         }
@@ -217,7 +217,7 @@ u8 game_score_remove_player (ScoreBoard *sb, char *playerName) {
     if (sb && playerName) {
         if (htab_contains_key (sb->scores, playerName, sizeof (playerName))) {
             size_t htab_size = sizeof (Htab);
-            void *htab = htab_getData (sb->scores, playerName, sizeof (playerName), &htab_size);
+            void *htab = htab_get_data (sb->scores, playerName, sizeof (playerName));
             
             // destroy player's scores htab
             if (htab) htab_destroy ((Htab *) htab);
@@ -230,8 +230,8 @@ u8 game_score_remove_player (ScoreBoard *sb, char *playerName) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Scores table doesn't contains player: %s", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Scores table doesn't contains player: %s", playerName));
             #endif
         }
     }
@@ -245,11 +245,11 @@ void game_score_set (ScoreBoard *sb, char *playerName, char *scoreType, i32 valu
 
     if (sb && playerName && scoreType) {
         size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_getData (sb->scores, playerName, sizeof (playerName), &htab_size);
+        void *playerScores = htab_get_data (sb->scores, playerName, sizeof (playerName));
         if (playerScores) {
             size_t int_size = sizeof (unsigned int);
-            void *currValue = htab_getData ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType), &int_size);
+            void *currValue = htab_get_data ((Htab *) playerScores, 
+                scoreType, sizeof (scoreType));
 
             // replace the old value with the new one
             if (currValue) {
@@ -261,8 +261,8 @@ void game_score_set (ScoreBoard *sb, char *playerName, char *scoreType, i32 valu
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Player: %s has not scores in the table!", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Player: %s has not scores in the table!", playerName));
             #endif
         }
     }
@@ -274,11 +274,11 @@ i32 game_score_get (ScoreBoard *sb, char *playerName, char *scoreType) {
 
     if (sb && playerName && scoreType) {
         size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_getData (sb->scores, playerName, sizeof (playerName), &htab_size);
+        void *playerScores = htab_get_data (sb->scores, playerName, sizeof (playerName));
         if (playerScores) {
             size_t int_size = sizeof (unsigned int);
-            void *value = htab_getData ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType), &int_size);
+            void *value = htab_get_data ((Htab *) playerScores, 
+                scoreType, sizeof (scoreType));
 
             if (value) {
                 u32 *retval = (u32 *) value;
@@ -288,8 +288,8 @@ i32 game_score_get (ScoreBoard *sb, char *playerName, char *scoreType) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Player: %s has not scores in the table!", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Player: %s has not scores in the table!", playerName));
             #endif
         }
     }
@@ -303,11 +303,11 @@ void game_score_update (ScoreBoard *sb, char *playerName, char *scoreType, i32 v
 
     if (sb && playerName && scoreType) {
         size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_getData (sb->scores, playerName, sizeof (playerName), &htab_size);
+        void *playerScores = htab_get_data (sb->scores, playerName, sizeof (playerName));
         if (playerScores) {
             size_t int_size = sizeof (unsigned int);
-            void *currValue = htab_getData ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType), &int_size);
+            void *currValue = htab_get_data ((Htab *) playerScores, 
+                scoreType, sizeof (scoreType));
             
             // directly update the score value adding the new value
             if (value) {
@@ -319,8 +319,8 @@ void game_score_update (ScoreBoard *sb, char *playerName, char *scoreType, i32 v
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Player: %s has not scores in the table!", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Player: %s has not scores in the table!", playerName));
             #endif
         }
     }
@@ -332,14 +332,14 @@ void game_score_reset (ScoreBoard *sb, char *playerName) {
 
     if (sb && playerName) {
         size_t htab_size = sizeof (Htab);
-        void *data = htab_getData (sb->scores, playerName, sizeof (playerName), &htab_size);
+        void *data = htab_get_data (sb->scores, playerName, sizeof (playerName));
         if (data) {
             Htab *playerScores = (Htab *) data;
             void *scoreData = NULL;
             size_t score_size = sizeof (u32);
             for (int i = 0; i < sb->scoresNum; i++) {
-                scoreData = htab_getData (playerScores, 
-                    sb->scoreTypes[i], sizeof (sb->scoreTypes[i]), &score_size);
+                scoreData = htab_get_data (playerScores, 
+                    sb->scoreTypes[i], sizeof (sb->scoreTypes[i]));
 
                 if (scoreData) {
                     u32 *current = (u32 *) scoreData;
@@ -350,8 +350,8 @@ void game_score_reset (ScoreBoard *sb, char *playerName) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, GAME, 
-                string_create ("Scores table already contains player: %s", playerName));
+            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+                c_string_create ("Scores table already contains player: %s", playerName));
             #endif
         }
     }

@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define HTAB_INIT_SIZE      7
 
@@ -25,22 +26,43 @@ typedef struct Htab {
     HtabNode **table;
     size_t size;
     size_t count;
+
     Hash hash_f;
     Compare compare_f;
     Copy kcopy_f;
+
+    bool allow_copy;
     Copy vcopy_f;
+    void (*destroy)(void *data);
 
 } Htab;
 
-extern Htab *htab_init (int size, Hash hash_f, Compare compare_f, Copy kcopy_f, Copy vcopy_f);
-extern int htab_cleanup (Htab *ht);
-extern void htab_destroy (Htab *ht);
+// creates a new htab
+// size --> initial htab nodes size
+// hash_f --> ptr to a custom hash function
+// compare_f -> ptr to a custom value compare function
+// kcopy_f --> ptr to a custom function to copy keys into the htab (generate a new copy)
+// allow_copy --> select if you want to create a new copy of the values
+// vcopy_f --> ptr to a custom function to copy values into the htab (generate a new copy)
+// destroy --> custom function to destroy copied values
+extern Htab *htab_init (unsigned int size, Hash hash_f, Compare compare_f, Copy kcopy_f, 
+    bool allow_copy, Copy vcopy_f, void (*destroy)(void *data));
 
-extern int htab_insert (Htab *ht, const void *key, size_t ksz, const void *val, size_t vsz);
-extern int htab_get (Htab *ht, const void *key, size_t ksz, void **val, size_t *vsz);
-extern bool htab_contains_key (Htab *ht, const void *key, size_t key_size);
+// inserts a new value to the htab associated with its key
+extern int htab_insert (Htab *ht, const void *key, size_t key_size, 
+    void *val, size_t val_size);
+
+// returns a ptr to the data associated with the key
+extern void *htab_get_data (Htab *ht, const void *key, size_t key_size);
+
+// removes the data associated with the key from the htab
 extern int htab_remove (Htab *ht, const void *key, size_t key_size);
 
-extern void *htab_getData (Htab *ht, const void *key, size_t key_size, size_t *val_size);
+extern bool htab_contains_key (Htab *ht, const void *key, size_t key_size);
+
+// destroys the htb and all of its data
+extern void htab_destroy (Htab *ht);
+
+// extern int htab_get (Htab *ht, const void *key, size_t ksz, void **val, size_t *vsz);
 
 #endif

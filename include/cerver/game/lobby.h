@@ -4,31 +4,36 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/game/game.h"
+#include "cerver/game/gameType.h"
 #include "cerver/game/player.h"
 
-#include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/htab.h"
 
 #include "cerver/utils/objectPool.h"
 
-struct _Server;
+#define LOBBY_DEFAULT_POLL_TIMEOUT			2000
+#define DEFAULT_MAX_LOBBY_PLAYERS			4
+
+struct _Cerver;
+struct _Connection;
+struct _GameCerver;
 struct _Player;
-struct _GameServerData;
-// enum _GameType;
 
 struct _GameSettings {
 
-    // FIXME: set init function for diffrent game types
-	// enum _GameType gameType;
-
-	u8 playerTimeout; 	// in seconds.
+	// config
+	GameType *game_type;
+	u8 player_timeout;		// secons until we drop the player 
 	u8 fps;
 
-	u8 minPlayers;
-	u8 maxPlayers;
-
-	// duration?
+	// rules
+	u8 min_players;
+	u8 max_players;
+	int duration;			// in secconds, -1 for inifinite duration
 
 };
 
@@ -36,81 +41,107 @@ typedef struct _GameSettings GameSettings;
 
 struct _Lobby {
 
-	const char *id;						// lobby unique id - generated using the creation timestamp
+	String *id;							// lobby unique id - generated using the creation timestamp
 	time_t creation_time_stamp;
 
-	bool isRunning;						// lobby is listening for player packets
-	bool inGame;						// lobby is inside a game
+	Htab *sock_fd_player_map;           // maps a socket fd to a player
+    struct pollfd *players_fds;     			
+	u16 max_players_fds;
+	u16 current_players_fds;            // n of active fds in the pollfd array
+    u32 poll_timeout;    
+
+	bool running;						// lobby is listening for player packets
+	bool in_game;						// lobby is inside a game
+
+	DoubleList *players;				// players insside the lobby
+	struct _Player *owner;				// the client that created the lobby -> he has higher privileges
+	unsigned int max_players;
+	unsigned int n_current_players;
+
+	Action handler;						// lobby handler (lobby poll)
+	Action packet_handler;				// lobby packet handler
 
 	void *game_settings;
-	Action delete_lobby_game_settings;
-
-	struct _Player *owner;				// the client that created the lobby -> he has higher privileges
-	AVLTree *players;					// players inside the lobby -> reference to the main player avl
-	unsigned int max_players;
-	unsigned int current_players;
-
-    struct pollfd *players_fds;     			
-    u16 players_nfds;                           // n of active fds in the pollfd array
-    bool compress_players;              		// compress the fds array?
-    u32 poll_timeout;    
+	Action game_settings_delete;
 
 	// the server admin can add its server specific data types
 	void *game_data;
-	Action delete_lobby_game_data;
+	Action game_data_delete;
 
-	Action handler;						// lobby player handler
-
-	// 21/11/2018 - we put this here to avoid race conditions if we put it on
-	// the server game data
-	// Pool *gamePacketsPool;
+	Action update;						// lobby update function to be executed every fps
 
 };
 
 typedef struct _Lobby Lobby;
 
-typedef struct ServerLobby {
+// lobby constructor
+extern Lobby *lobby_new (void);
 
-    struct _Server *server;
-    Lobby *lobby;
+extern void lobby_delete (void *lobby_ptr);
 
-} ServerLobby;
+//compares two lobbys based on their ids
+extern int lobby_comparator (const void *one, const void *two);
 
-// sets the lobby settings and a function to delete it
-extern void lobby_set_game_settings (Lobby *lobby, void *game_settings, Action delete_game_settings);
-// sets the lobby game data and a function to delete it
-extern void lobby_set_game_data (Lobby *lobby, void *game_data, Action delete_lobby_game_data);
-// set the lobby player handler
+// inits the lobby poll structures
+// returns 0 on success, 1 on error
+extern u8 lobby_poll_init (Lobby *lobby, unsigned int max_players_fds);
+
+// set lobby poll function timeout in mili secs
+// how often we are checking for new packages
+extern void lobby_set_poll_time_out (Lobby *lobby, unsigned int timeout);
+
+// set the lobby hanlder
 extern void lobby_set_handler (Lobby *lobby, Action handler);
 
-// the default lobby id generator
-extern void lobby_default_generate_id (char *lobby_id);
+// set the lobby packet handler
+extern void lobby_set_packet_handler (Lobby *lobby, Action packet_handler);
 
-// lobby constructor, it also initializes basic lobby data
-extern Lobby *lobby_new (struct _GameServerData *game_data, unsigned int max_players);
-// deletes a lobby for ever -- called when we teardown the server
-// we do not need to give any feedback to the players if there is any inside
-extern void lobby_delete (void *ptr);
-extern int lobby_comparator (void *one, void *two);
+// sets the lobby settings and a function to delete it
+extern void lobby_set_game_settings (Lobby *lobby, 
+	void *game_settings, Action game_settings_delete);
 
-// searchs a lobby in the game data and returns a reference to it
-extern Lobby *lobby_get (struct _GameServerData *game_data, Lobby *query);
+// sets the lobby game data and a function to delete it
+extern void lobby_set_game_data (Lobby *lobby, void *game_data, Action game_data_delete);
 
-// create a list to manage the server lobbys
-// called when we init the game server
-extern u8 game_init_lobbys (struct _GameServerData *game_data, u8 n_lobbys);
+// sets the lobby update action, the lobby will we passed as the args
+extern void lobby_set_update (Lobby *lobby, Action update);
 
-/*** Player interaction ***/
+// registers a player's client connection to the lobby poll
+// and maps the sock fd to the player
+extern u8 lobby_poll_register_connection (Lobby *lobby, 
+	struct _Player *player, struct _Connection *connection);
 
-// starts the lobby in a separte thread using its hanlder
-extern u8 lobby_start (struct _Server *server, Lobby *lobby);
+// unregisters a player's client connection from the lobby poll structure
+// and removes the map from the sock fd to the player
+// returns 0 on success, 1 on error
+extern u8 lobby_poll_unregister_connection (Lobby *lobby, 
+	struct _Player *player, struct _Connection *connection);
 
-// creates a new lobby and inits his values with an owner
-extern Lobby *lobby_create (struct _Server *server, struct _Player *owner, unsigned int max_players);
-// called by a registered player that wants to join a lobby on progress
-// the lobby model gets updated with new values
-extern u8 lobby_join (struct _GameServerData *game_data, Lobby *lobby, struct _Player *player);
+// searches a lobby in the game cerver and returns a reference to it
+extern Lobby *lobby_get (struct _GameCerver *game_cerver, Lobby *query);
+
+/*** Public lobby functions ***/
+
+// starts the lobby's handler and/or update method in the cervers thpool
+extern u8 lobby_start (struct _Cerver *cerver, Lobby *lobby);
+
+// creates and inits a new lobby
+// creates a new user associated with the client and makes him the owner
+extern Lobby *lobby_create (struct _Cerver *cerver, struct _Client *client);
+
+// a client wants to join a game, so we create a new player and register him to the lobby
+// returns 0 on success, 1 on error
+extern u8 lobby_join (struct _Cerver *cerver, struct _Client *client, Lobby *lobby);
+
 // called when a player requests to leave the lobby
-extern u8 lobby_leave (struct _GameServerData *game_data, Lobby *lobby, struct _Player *player);
+// returns 0 on success, 1 on error
+extern u8 lobby_leave (struct _Cerver *cerver, Lobby *lobby, struct _Player *player);
+
+typedef struct CerverLobby {
+
+    struct _Cerver *cerver;
+    Lobby *lobby;
+
+} CerverLobby;
 
 #endif

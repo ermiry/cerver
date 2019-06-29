@@ -3,386 +3,367 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <time.h>
+
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
+#include "cerver/auth.h"
+#include "cerver/handler.h"
 #include "cerver/client.h"
 
 #include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+void client_connection_set_time (Connection *connection);
+void client_connection_get_values (Connection *connection);
+
+Connection *client_connection_new (void) {
+
+    Connection *connection = (Connection *) malloc (sizeof (Connection));
+    if (connection) {
+        memset (connection, 0, sizeof (Connection));
+        connection->ip = NULL;
+        connection->active = false;
+        connection->auth_tries = DEFAULT_AUTH_TRIES;
+        connection->time_info = NULL;
+    }
+
+    return connection;
+
+}
+
+Connection *client_connection_create (const i32 sock_fd, const struct sockaddr_storage address) {
+
+    Connection *connection = client_connection_new ();
+    if (connection) {
+        client_connection_set_time (connection);
+        memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
+        client_connection_get_values (connection);
+    }
+
+}
+
+void client_connection_delete (void *ptr) {
+
+    if (ptr) {
+        Connection *connection = (Connection *) ptr;
+        str_delete (connection->ip);
+        if (connection->time_info) free (connection->time_info);
+        free (connection);
+    }
+
+}
+
+// compare two connections by their socket fds
+int client_connection_comparator (const void *a, const void *b) {
+
+    if (a && b) {
+        Connection *con_a = (Connection *) a;
+        Connection *con_b = (Connection *) b;
+
+        if (con_a->sock_fd < con_b->sock_fd) return -1;
+        else if (con_a->sock_fd == con_b->sock_fd) return 0;
+        else return 1; 
+    }
+
+}
+
+// sets the connection time stamp
+void client_connection_set_time (Connection *connection) {
+
+    if (connection) {
+        time (&connection->raw_time);
+        connection->time_info = localtime (&connection->raw_time);
+    }
+
+}
+
+// returns connection time stamp in a string that should be deleted
+const String *client_connection_get_time (const Connection *connection) {
+
+    if (connection) return str_new (asctime (connection->time_info));
+    else return NULL;
+
+}
+
 // get from where the client is connecting
-char *client_getConnectionValues (i32 fd, const struct sockaddr_storage address) {
+void client_connection_get_values (Connection *connection) {
 
-    char *connectionValues = NULL;
-
-    char *ipstr = sock_ip_to_string ((const struct sockaddr *) &address);
-    u16 port = sock_ip_port ((const struct sockaddr *) &address);
-
-    if (ipstr && (port > 0)) 
-        connectionValues = string_create ("%s-%i", ipstr, port);
-
-    return connectionValues;
-
-}
-
-void client_set_sessionID (Client *client, const char *sessionID) {
-
-    if (client && sessionID) {
-        if (client->sessionID) free (client->sessionID);
-        client->sessionID = string_create ("%s", sessionID);
+    if (connection) {
+        connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
+        connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
     }
 
 }
 
-Client *newClient (Server *server, i32 clientSock, struct sockaddr_storage address,
-    char *connection_values) {
+// ends a client connection
+void client_connection_end (Connection *connection) {
 
-    Client *client = NULL;
-
-    client = (Client *) malloc (sizeof (Client));
-    client->clientID = NULL;
-    client->sessionID = NULL;
-    // client->active_connections = NULL;
-
-    // if (server->clientsPool) client = pool_pop (server->clientsPool);
-
-    // if (!client) {
-    //     client = (Client *) malloc (sizeof (Client));
-    //     client->sessionID = NULL;
-    //     client->active_connections = NULL;
-    // } 
-
-    memcpy (&client->address, &address, sizeof (struct sockaddr_storage));
-
-    // printf ("address ip: %s\n", sock_ip_to_string ((const struct sockaddr *) &address));
-    // printf ("client address ip: %s\n", sock_ip_to_string ((const struct sockaddr *) & client->address));
-
-    if (connection_values) {
-        if (client->clientID) free (client->clientID);
-
-        client->clientID = string_create ("%s", connection_values);
-        free (connection_values);
+    if (connection) {
+        close (connection->sock_fd);
+        connection->sock_fd = -1;
+        connection->active = false;
     }
 
-    client->sessionID = NULL;
+}
 
-    if (server->authRequired) {
-        client->authTries = server->auth.maxAuthTries;
-        client->dropClient = false;
-    } 
+// registers a new connection to a client
+// returns 0 on success, 1 on error
+u8 client_connection_register (Cerver *cerver, Client *client, Connection *connection) {
 
-    client->n_active_cons = 0;
-    if (client->active_connections) 
-        for (u8 i = 0; i < DEFAULT_CLIENT_MAX_CONNECTS; i++)
-            client->active_connections[i] = -1;
+    u8 retval = 1;
 
-    else {
-        client->active_connections = (i32 *) calloc (DEFAULT_CLIENT_MAX_CONNECTS, sizeof (i32));
-        for (u8 i = 0; i < DEFAULT_CLIENT_MAX_CONNECTS; i++)
-            client->active_connections[i] = -1;
+    if (client && connection) {
+        if (dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
+            // regsiter the connection to the cerver poll
+            if (!cerver_poll_register_connection (cerver, client, connection)) {
+                #ifdef CERVER_DEBUG
+                if (client->session_id) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
+                        c_string_create ("Registered a new connection to client with session id: %s",
+                        client->session_id->str));
+                }
+                #endif
+
+                connection->active = true;
+                retval = 0;
+            }
+        }
+
+        // failed to register connection
+        else {
+            client_connection_end (connection);
+            client_connection_delete (connection);
+        }
     }
 
-    client->curr_max_cons = DEFAULT_CLIENT_MAX_CONNECTS;
-    
-    // add the fd to the active connections
-    if (client->active_connections) {
-        client->active_connections[client->n_active_cons] = clientSock;
-        printf ("client->active_connections[%i] = %i\n", client->n_active_cons, clientSock);
-        client->n_active_cons++;
-    } 
+    return retval;
+
+}
+
+// unregisters a connection from a client and stops and deletes it
+// returns 0 on success, 1 on error
+u8 client_connection_unregister (Cerver *cerver, Client *client, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (client && connection) {
+        Connection *con = NULL;
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            con = (Connection *) le->data;
+            if (connection->sock_fd == con->sock_fd) {
+                // unmap the client connection from the cerver poll
+                cerver_poll_register_connection (cerver, client, connection);
+
+                client_connection_end (connection);
+                client_connection_delete (dlist_remove_element (client->connections, le));
+
+                retval = 0;
+                break;
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+Client *client_new (void) {
+
+    Client *client = (Client *) malloc (sizeof (Client));
+    if (client) {
+        memset (client, 0, sizeof (Client));
+
+        client->client_id = NULL;
+        client->session_id = NULL;
+
+        client->connections = dlist_init (client_connection_delete, client_connection_comparator);
+
+        client->drop_client = false;
+
+        client->data = NULL;
+        client->delete_data = NULL;
+    }
 
     return client;
 
 }
 
-// FIXME: what happens with the idx in the poll structure?
-// deletes a client forever
-void destroyClient (void *data) {
+void client_delete (void *ptr) {
 
-    if (data) {
-        Client *client = (Client *) data;
+    if (ptr) {
+        Client *client = (Client *) ptr;
 
-        if (client->active_connections) {
-            // close all the client's active connections
-            // for (u8 i = 0; i < client->n_active_cons; i++)
-            //     close (client->active_connections[i]);
+        str_delete (client->client_id);
+        str_delete (client->session_id);
 
-            free (client->active_connections);
+        dlist_destroy (client->connections);
+
+        if (client->data) {
+            if (client->delete_data) client->delete_data (client->data);
+            else free (client->data);
         }
-
-        if (client->clientID) free (client->clientID);
-        if (client->sessionID) free (client->sessionID);
 
         free (client);
     }
 
 }
 
-// destroy client without closing his connections
-void client_delete_data (Client *client) {
+// TODO: create connected time stamp
+// creates a new client and registers a new connection
+Client *client_create (Cerver *cerver, const i32 sock_fd, const struct sockaddr_storage address) {
+
+    Client *client = client_new ();
+    if (client) {
+        Connection *connection = client_connection_create (sock_fd, address);
+        if (connection) client_connection_register (cerver, client, connection);
+        else {
+            // failed to create a new connection
+            client_delete (client);
+            client = NULL;
+        }
+    }
+
+    return client;
+
+}
+
+// sets the client's session id
+void client_set_session_id (Client *client, const char *session_id) {
 
     if (client) {
-        if (client->clientID) free (client->clientID);
-        if (client->sessionID) free (client->sessionID);
-        if (client->active_connections) free (client->active_connections);
+        if (client->session_id) str_delete (client->session_id);
+        client->session_id = str_new (session_id);
+    }
+
+}
+
+// sets client's data and a way to destroy it
+void client_set_data (Client *client, void *data, Action delete_data) {
+
+    if (client) {
+        client->data = data;
+        client->delete_data = delete_data;
     }
 
 }
 
 // compare clients based on their client ids
-int client_comparator_clientID (const void *a, const void *b) {
+int client_comparator_client_id (const void *a, const void *b) {
 
-    if (a && b) {
-        Client *client_a = (Client *) a;
-        Client *client_b = (Client *) b;
-
-        return strcmp (client_a->clientID, client_b->clientID);
-    }
+    if (a && b) 
+        return str_compare (((Client *) a)->client_id, ((Client *) b)->client_id);
 
 }
 
 // compare clients based on their session ids
-int client_comparator_sessionID (const void *a, const void *b) {
+int client_comparator_session_id (const void *a, const void *b) {
 
-    if (a && b) {
-        Client *client_a = (Client *) a;
-        Client *client_b = (Client *) b;
-
-        return strcmp (client_a->sessionID, client_b->sessionID);
-    }
+    if (a && b) 
+        return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
 
 }
 
-// recursively get the client associated with the socket
-Client *getClientBySocket (AVLNode *node, i32 socket_fd) {
-
-    if (node) {
-        Client *client = NULL;
-
-        client = getClientBySocket (node->right, socket_fd);
-
-        if (!client) {
-            if (node->id) {
-                client = (Client *) node->id;
-                
-                // search the socket fd in the clients active connections
-                for (int i = 0; i < client->n_active_cons; i++)
-                    if (socket_fd == client->active_connections[i])
-                        return client;
-
-            }
-        }
-
-        if (!client) client = getClientBySocket (node->left, socket_fd);
-
-        return client;
-    }
-
-    return NULL;
-
-}
-
-Client *getClientBySession (AVLTree *clients, char *sessionID) {
-
-    if (clients && sessionID) {
-        Client temp;
-        temp.sessionID = string_create ("%s", sessionID);
-        
-        void *data = avl_get_node_data (clients, &temp);
-        if (data) return (Client *) data;
-        else 
-            cerver_log_msg (stderr, WARNING, SERVER, 
-                string_create ("Couldn't find a client associated with the session ID: %s.", 
-                sessionID));
-    }
-
-    return NULL;
-
-}
-
-// the client made a new connection to the server
-u8 client_registerNewConnection (Client *client, i32 socket_fd) {
+// closes all client connections
+u8 client_disconnect (Client *client) {
 
     if (client) {
-        if (client->active_connections) {
-            u8 new_active_cons = client->n_active_cons + 1;
-
-            if (new_active_cons <= client->curr_max_cons) {
-                // search for a free spot
-                for (int i = 0; i < client->curr_max_cons; i++) {
-                    if (client->active_connections[i] == -1) {
-                        client->active_connections[i] = socket_fd;
-                        printf ("client->active_connections[%i] = %i\n", client->n_active_cons, socket_fd);
-                        client->n_active_cons++;
-                        printf ("client->n_active_cons: %i\n", client->n_active_cons);
-                        return 0;
-                    }
-                }
-            }
-
-            // we need to add more space
-            else {
-                client->active_connections = (i32 *) realloc (client->active_connections, 
-                    client->n_active_cons * sizeof (i32));
-
-                // add the connection at the end
-                client->active_connections[new_active_cons] = socket_fd;
-                client->n_active_cons++;
-
-                client->curr_max_cons++;
-                
-                return 0;
-            }
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            connection = le->data;
+            client_connection_end (connection);
         }
+
+        return 0;
     }
 
     return 1;
 
 }
 
-// removes an active connection from a client
-u8 client_unregisterConnection (Client *client, i32 socket_fd) {
+// TODO: maybe we dont want to fully remove the client from the avl,
+// maybe create another function???
+// registers a client to the cerver --> add it to cerver's structures
+u8 client_register_to_cerver (Cerver *cerver, Client *client) {
 
-    if (client) {
-        if (client->active_connections) {
-            if (client->active_connections > 0) {
-                // search the socket fd
-                for (u8 i = 0; i < client->n_active_cons; i++) {
-                    if (client->active_connections[i] == socket_fd) {
-                        client->active_connections[i] = -1;
-                        client->n_active_cons--;
-                        return 0;
-                    }
-                }
-            }
-        }
-    }
+    u8 retval = 1;
 
-    return 1;
+    if (cerver && client) {
+        bool failed = false;
 
-}
-
-// FIXME: what is the max number of clients that a server can handle?
-// registers a NEW client to the server
-void client_registerToServer (Server *server, Client *client, i32 newfd) {
-
-    if (server && client) {
-        // add the new sock fd to the server main poll
-        i32 idx = getFreePollSpot (server);
-        if (idx > 0) {
-            server->fds[idx].fd = newfd;
-            server->fds[idx].events = POLLIN;
-            server->nfds++;
-
-            printf ("client_registerToServer () - idx: %i\n", idx);
-
-            // insert the new client into the server's clients
-            avl_insert_node (server->clients, client);
-
-            server->connectedClients++;
-
-            #ifdef CERVER_STATS
-                cerver_log_msg (stdout, SERVER, NO_TYPE, 
-                string_create ("New client registered to server. Connected clients: %i.", 
-                server->connectedClients));
-            #endif
+        // register all the client connections to the cerver poll
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            connection = (Connection *) le->data;
+            failed = cerver_poll_register_connection (cerver, client, connection);
         }
 
-        // TODO: how to better handle this error?
-        else {
-            cerver_log_msg (stderr, ERROR, SERVER, 
-                "Failed to get a free main poll idx. Is the server full?");
-            // just drop the client connection
-            close (newfd);
-
-            // if it was the only client connection, drop it
-            if (client->n_active_cons <= 1) client_closeConnection (server, client);
-        } 
-    }
-
-}
-
-// removes a client form a server's main poll structures
-Client *client_unregisterFromServer (Server *server, Client *client) {
-
-    if (server && client) {
-        Client *c = avl_remove_node (server->clients, client);
-        if (c) {
-            if (client->active_connections) {
-                for (u8 i = 0; i < client->n_active_cons; i++) {
-                    for (u8 j = 0; j < poll_n_fds; j++) {
-                        if (server->fds[j].fd == client->active_connections[i]) {
-                            server->fds[j].fd = -1;
-                            server->fds[j].events = -1;
-                        }
-                    }
-                }
-            }
+        if (!failed) {
+            // register the client to the cerver client's
+            avl_insert_node (cerver->clients, client);
 
             #ifdef CERVER_DEBUG
-                cerver_log_msg (stdout, DEBUG_MSG, SERVER, "Unregistered a client from the sever");
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
+                c_string_create ("Registered a new client to cerver %s.", cerver->name->str));
             #endif
-
-            server->connectedClients--;
-
-            return c;
-        }
-
-        else cerver_log_msg (stdout, WARNING, CLIENT, "The client wasn't registered in the server.");
-    }
-
-    return NULL;
-
-}
-
-// disconnect a client from the server and take it out from the server's clients and 
-void client_closeConnection (Server *server, Client *client) {
-
-    if (server && client) {
-        if (client->active_connections) {
-            // close all the client's active connections
-            for (u8 i = 0; i < client->n_active_cons; i++)
-                close (client->active_connections[i]);
-
-            free (client->active_connections);
-            client->active_connections = NULL;
-        }
-
-        // remove it from the server structures
-        client_unregisterFromServer (server, client);
-
-        #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, DEBUG_MSG, CLIENT, 
-                string_create ("Disconnected a client from the server.\
-                \nConnected clients remainning: %i.", server->connectedClients));
-        #endif
-    }
-
-}
-
-// disconnect the client from the server by a socket -- usefull for http servers
-int client_disconnect_by_socket (Server *server, const int sock_fd) {
-    
-    int retval = 1;
-
-    if (server) {
-        Client *c = getClientBySocket (server->clients->root, sock_fd);
-        if (c) {
-            if (c->n_active_cons <= 1) 
-                client_closeConnection (server, c);
-
-            // FIXME: check for client_CloseConnection retval to be sure!!
-            retval  = 0;
-        }
             
+            cerver->n_connected_clients++;
+            #ifdef CERVER_STATS
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
+                c_string_create ("Connected clients to cerver %s: %i.", 
+                cerver->name->str, cerver->n_connected_clients));
+            #endif
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
+// unregisters a client from a cerver -- removes it from cerver's structures
+Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
+
+    Client *retval = NULL;
+
+    if (cerver && client) {
+        // unregister all the client connections from the cerver
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            connection = (Connection *) le->data;
+            cerver_poll_unregister_connection (cerver, client, connection);
+        }
+
+        // remove the client from the cerver's clients
+        void *client_data = avl_remove_node (cerver->clients, client);
+        if (client_data) {
+            retval = (Client *) client_data;
+
+            #ifdef CERVER_DEBUG
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
+                c_string_create ("Unregistered a new client from cerver %s.", cerver->name->str));
+            #endif
+
+            cerver->n_connected_clients--;
+            #ifdef CERVER_STATS
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
+                c_string_create ("Connected clients to cerver %s: %i.", 
+                cerver->name->str, cerver->n_connected_clients));
+            #endif
+        }
+
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, ERROR, CLIENT, 
-                "Couldn't find an active client with the requested socket!");
+            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER,
+                c_string_create ("Received NULL ptr when attempting to remove a client from cerver's %s client tree.", 
+                cerver->name->str));
             #endif
         }
     }
@@ -391,5 +372,42 @@ int client_disconnect_by_socket (Server *server, const int sock_fd) {
 
 }
 
-// TODO: used to check for client timeouts in any type of server
-void client_checkTimeouts (Server *server) {}
+// gets the client associated with a sock fd using the client-sock fd map
+Client *client_get_by_sock_fd (Cerver *cerver, i32 sock_fd) {
+
+    Client *client = NULL;
+
+    if (cerver) {
+        const i32 *key = &sock_fd;
+        size_t client_size = sizeof (Client);
+        void *client_data = htab_get_data (cerver->client_sock_fd_map, 
+            key, sizeof (i32));
+        if (client_data) client = (Client *) client_data;
+    }
+
+    return client;
+
+}
+
+// searches the avl tree to get the client associated with the session id
+// the cerver must support sessions
+Client *client_get_by_session_id (Cerver *cerver, char *session_id) {
+
+    Client *client = NULL;
+
+    if (session_id) {
+        // create our search query
+        Client *client_query = client_new ();
+        if (client_query) {
+            client_set_session_id (client_query, session_id);
+
+            void *data = avl_get_node_data (cerver->clients, client_query);
+            if (data) client = (Client *) data;     // found
+
+            client_delete (client_query);
+        }
+    }
+
+    return client;
+
+}

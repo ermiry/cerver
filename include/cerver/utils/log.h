@@ -15,28 +15,26 @@
 
 typedef enum LogMsgType {
 
-	NO_TYPE = 0,
+	LOG_NO_TYPE = 0,
 
-    ERROR = 1,
-    WARNING,
-    SUCCESS,
-    DEBUG_MSG,
-    TEST,
+    LOG_ERROR = 1,
+    LOG_WARNING,
+    LOG_SUCCESS,
+    LOG_DEBUG,
+    LOG_TEST,
 
-    REQ = 10,
-    PACKET,
-    FILE_REQ,
-    GAME,
-    PLAYER,
+    LOG_CERVER,
+    LOG_CLIENT,
 
-    SERVER = 100,
-    CLIENT,
+    LOG_REQ,
+    LOG_PACKET,
+    LOG_FILE,
+    LOG_GAME,
+    LOG_PLAYER,
 
 } LogMsgType;
 
 extern void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
     const char *msg);
-
-extern void log_server (Server *server);
 
 #endif

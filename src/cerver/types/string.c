@@ -189,3 +189,57 @@ int str_contains (String *string, char *to_find) {
     else return -1;
 
 }
+
+/*** serialization ***/
+
+// returns a ptr to a serialized string
+void *str_selialize (String *string, SStringSize size) {
+
+    void *retval = NULL;
+
+    if (string) {
+        switch (size) {
+            case SS_SMALL: {
+                SStringS *s_small = (SStringS *) malloc (sizeof (SStringS));
+                if (s_small) {
+                    memset (s_small, 0, sizeof (SStringS));
+                    strncpy (s_small->string, string->str, 64);
+                    s_small->len = string->len > 64 ? 64 : string->len;
+                    retval = s_small;
+                }
+            } break;
+            case SS_MEDIUM: {
+                SStringM *s_medium = (SStringM *) malloc (sizeof (SStringM));
+                if (s_medium) {
+                    memset (s_medium, 0, sizeof (SStringM));
+                    strncpy (s_medium->string, string->str, 128);
+                    s_medium->len = string->len > 128 ? 128 : string->len;
+                    retval = s_medium;
+                }
+            } break;
+            case SS_LARGE: {
+                SStringL *s_large = (SStringL *) malloc (sizeof (SStringL));
+                if (s_large) {
+                    memset (s_large, 0, sizeof (SStringL));
+                    strncpy (s_large->string, string->str, 256);
+                    s_large->len = string->len > 256 ? 256 : string->len;
+                    retval = s_large;
+                }
+            } break;
+            case SS_EXTRA_LARGE: {
+                SStringXL *s_xlarge = (SStringXL *) malloc (sizeof (SStringXL));
+                if (s_xlarge) {
+                    memset (s_xlarge, 0, sizeof (SStringXL));
+                    strncpy (s_xlarge->string, string->str, 512);
+                    s_xlarge->len = string->len > 512 ? 512 : string->len;
+                    retval = s_xlarge;
+                }
+            } break;
+
+            default: break;
+        }
+    }
+
+    return retval;
+
+}

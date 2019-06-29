@@ -5,13 +5,9 @@
 
 #include "cerver/network.h"
 
-/*** SOCKETS ***/  
-
-#pragma region SOCKETS
-
 // enable/disable blocking on a socket
-// true on success, false if there was an eroror
-bool sock_setBlocking (int32_t fd, bool isBlocking) {
+// true on LOG_SUCCESS, false if there was an eroror
+bool sock_set_blocking (int32_t fd, bool isBlocking) {
 
     if (fd < 0) return false;
 
@@ -80,5 +76,3 @@ in_port_t sock_ip_port (const struct sockaddr *address) {
 	}
 
 }
-
-#pragma endregion

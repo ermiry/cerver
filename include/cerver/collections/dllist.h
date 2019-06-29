@@ -20,7 +20,7 @@ typedef struct List {
     ListElement *end;
 
     void (*destroy)(void *data);
-    int (*compare)(void *one, void *two);
+    int (*compare)(const void *one, const void *two);
 
 } DoubleList;
 
@@ -34,14 +34,14 @@ typedef struct List {
 
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
-extern void dlist_set_compare (DoubleList *list, int (*compare)(void *one, void *two));
+extern void dlist_set_compare (DoubleList *list, int (*compare)(const void *one, const void *two));
 
 // sets list destroy function
 extern void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data));
 
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern DoubleList *dlist_init (void (*destroy)(void *data),
-    int (*compare)(void *one, void *two));
+    int (*compare)(const void *one, const void *two));
 extern void dlist_reset (DoubleList *);
 // only gets rid of the List elemenst, but the data is kept
 extern void dlist_clean (DoubleList *);

@@ -2,7 +2,7 @@
 
 #include "cerver/collections/htab.h"
 
-size_t htab_generic_hash (const void *key, size_t key_size, size_t table_size) {
+static size_t htab_generic_hash (const void *key, size_t key_size, size_t table_size) {
 
     size_t i;
     size_t sum = 0;
@@ -13,7 +13,7 @@ size_t htab_generic_hash (const void *key, size_t key_size, size_t table_size) {
     return sum;
 }
 
-int htab_generic_compare (const void *k1, size_t s1, const void *k2, size_t s2) {
+static int htab_generic_compare (const void *k1, size_t s1, const void *k2, size_t s2) {
 
     if (!k1 || !s1 || !k2 || !s2) return -1;
 
@@ -22,7 +22,7 @@ int htab_generic_compare (const void *k1, size_t s1, const void *k2, size_t s2) 
     return memcmp (k1, k2, s1);
 }
 
-int htab_generic_copy (void **dst, const void *src, size_t sz) {
+static int htab_generic_copy (void **dst, const void *src, size_t sz) {
 
     if (!dst || !src || !sz) return -1;
 
@@ -35,8 +35,11 @@ int htab_generic_copy (void **dst, const void *src, size_t sz) {
     return 0;
 }
 
-void htab_node_init (HtabNode *node) {
+/*** htab nodes ***/
 
+static HtabNode *htab_node_new (void) {
+
+    HtabNode *node = (HtabNode *) malloc (sizeof (HtabNode));
     if (node) {
         node->key = NULL;
         node->val = NULL;
@@ -47,45 +50,89 @@ void htab_node_init (HtabNode *node) {
 
 }
 
-void htab_node_cleanup (HtabNode *node) {
+static void htab_node_delete (HtabNode *node, bool allow_copy, void (*destroy)(void *data)) {
 
     if (node) {
-        free(node->key);
-        free(node->val);
-        node->key = NULL;
-        node->val = NULL;
-        node->next = NULL;
-        node->key_size = 0;
-        node->val_size = 0;
+        if (allow_copy) {
+            if (node->val) {
+                if (destroy) destroy (node->val);
+                else free (node->val);
+            }
+        }
+
+        if (node->key) free (node->key);
+
+        free (node);
     }
 
 }
 
-// TODO: pass destroy function
-Htab *htab_init (int table_size, Hash hash_f, Compare compare_f, Copy kcopy_f, 
-    Copy vcopy_f) {
+/*** Htab ***/
 
-    Htab *ht = (Htab *) malloc (sizeof (Htab));
+static void htab_delete (Htab *htab) {
+
+    if (htab) {
+        if (htab->table) free (htab->table);
+        free (htab);
+    }
+
+}
+
+static Htab *htab_new (unsigned int size) {
+
+    Htab *htab = (Htab *) malloc (sizeof (Htab));
+    if (htab) {
+        memset (htab, 0, sizeof (Htab));
+        htab->table = NULL;
+        htab->hash_f = NULL;
+        htab->compare_f = NULL;
+        htab->kcopy_f = NULL;
+        htab->vcopy_f = NULL;
+
+        htab->table = (HtabNode **) calloc (htab->size, sizeof (HtabNode *));
+        if (htab->table) {
+            for (size_t i = 0; i < htab->size; ++i) htab->table[i] = NULL;
+        }
+
+        else {
+            htab_delete (htab);
+            htab = NULL;
+        }
+    }
+
+}
+
+// creates a new htab
+// size --> initial htab nodes size
+// hash_f --> ptr to a custom hash function
+// compare_f -> ptr to a custom value compare function
+// kcopy_f --> ptr to a custom function to copy keys into the htab (generate a new copy)
+// allow_copy --> select if you want to create a new copy of the values
+// vcopy_f --> ptr to a custom function to copy values into the htab (generate a new copy)
+// destroy --> custom function to destroy copied values
+Htab *htab_init (unsigned int size, Hash hash_f, Compare compare_f, Copy kcopy_f, 
+    bool allow_copy, Copy vcopy_f, void (*destroy)(void *data)) {
+
+    Htab *ht = htab_new (size);
 
     if (ht) {
         ht->hash_f = hash_f ? hash_f : htab_generic_hash;
         ht->compare_f = compare_f ? compare_f : htab_generic_compare;
         ht->kcopy_f = kcopy_f ? kcopy_f : htab_generic_copy;
+
+        ht->allow_copy = allow_copy;
         ht->vcopy_f = vcopy_f ? vcopy_f : htab_generic_copy;
+        ht->destroy = destroy;
+
         ht->count = 0;
-
-        ht->size = table_size <= 0 ? HTAB_INIT_SIZE : table_size;
-        ht->table = (HtabNode **) calloc (ht->size, sizeof (HtabNode *));
-
-        for (size_t i = 0; i < ht->size; ++i) ht->table[i] = NULL;
     }
     
     return ht;
     
 }
 
-int htab_insert (Htab *ht, const void *key, size_t key_size, const void *val, 
-    size_t val_size) {
+// inserts a new value to the htab associated with its key
+int htab_insert (Htab *ht, const void *key, size_t key_size, void *val, size_t val_size) {
 
     size_t index;
     HtabNode *node = NULL;
@@ -93,43 +140,50 @@ int htab_insert (Htab *ht, const void *key, size_t key_size, const void *val,
     if (!ht || !ht->hash_f || !key || !key_size || !val || !val_size || !ht->compare_f)
         return 1;
 
-    index = ht->hash_f(key, key_size, ht->size);
+    index = ht->hash_f (key, key_size, ht->size);
     node = ht->table[index];
 
     if (node) {
-        while (node->next && ht->compare_f(key, key_size, node->key, node->key_size))
+        while (node->next && ht->compare_f (key, key_size, node->key, node->key_size))
             node = node->next;
 
-        if (ht->compare_f(key, key_size, node->key, node->key_size)) {
-            node->next = (HtabNode *) malloc (sizeof(HtabNode));
+        if (ht->compare_f (key, key_size, node->key, node->key_size)) {
+            node->next = htab_node_new ();
+            if (!node->next) return 1;
             node = node->next;
-            htab_node_init(node);
         }
     }
 
     else {
-        node = (HtabNode *) malloc (sizeof(HtabNode));
+        node = htab_node_new ();
         if (!node) return 1;
-        htab_node_init(node);
         ht->table[index] = node;
     }
     
     node->key_size = key_size;
     node->val_size = val_size;
-    node->key = malloc(node->key_size);
-    node->val = malloc(node->val_size);
+    node->key = malloc (node->key_size);
+    if (!node->key) return 1;
+    ht->kcopy_f (&node->key, key, node->key_size);
 
-    if (!node->key || !node->val) return 1;
+    if (ht->allow_copy) {
+        node->val = malloc (node->val_size);
+        ht->vcopy_f (&node->val, val, node->val_size);
+    }
 
-    ht->kcopy_f(&node->key, key, node->key_size);
-    ht->vcopy_f(&node->val, val, node->val_size);
+    // jsut point to the data
+    else {
+        node->val = val;
+    }
+    
     ++ht->count;
 
     return 0;
 
 }
 
-void *htab_getData (Htab *ht, const void *key, size_t key_size, size_t *val_size) {
+// returns a ptr to the data associated with the key
+void *htab_get_data (Htab *ht, const void *key, size_t key_size) {
 
     size_t index;
     HtabNode *node = NULL;  
@@ -213,23 +267,23 @@ bool htab_contains_key (Htab *ht, const void *key, size_t key_size) {
 
 }
 
+// removes the data associated with the key from the htab
 int htab_remove (Htab *ht, const void *key, size_t key_size) {
 
     size_t index;
     HtabNode *node = NULL, *prev = NULL;
 
-    if (!ht || !key || !ht->compare_f) return -1;
+    if (!ht || !key || !ht->compare_f) return 1;
 
-    index = ht->hash_f(key, key_size, ht->size);
+    index = ht->hash_f (key, key_size, ht->size);
     node = ht->table[index];
     prev = NULL;
     while (node) {
-        if (!ht->compare_f(key, key_size, node->key, node->key_size)) {
+        if (!ht->compare_f (key, key_size, node->key, node->key_size)) {
             if (!prev) ht->table[index] = ht->table[index]->next;
             else prev->next = node->next;
 
-            htab_node_cleanup(node);
-            free(node);
+            htab_node_delete (node, ht->allow_copy, ht->destroy);
             --ht->count;
 
             return 0;
@@ -238,7 +292,7 @@ int htab_remove (Htab *ht, const void *key, size_t key_size) {
         node = node->next;
     }
 
-    return -1;
+    return 1;
 
 }
 
@@ -271,22 +325,33 @@ int htab_cleanup (Htab *ht) {
 void htab_destroy (Htab *ht) {
 
     if (ht) {
-        HtabNode *node = NULL;
-        for (size_t i = 0; i < ht->size; i++) {
-            if (ht->table[i]) {
-                node = ht->table[i];
-                while (node) {
-                    if (node->key) free (node->key);
-                    if (node->val) free (node->val);
+        if (ht->table) {
+            HtabNode *node = NULL;
+            for (size_t i = 0; i < ht->size; i++) {
+                if (ht->table[i]) {
+                    node = ht->table[i];
+                    while (node) {
+                        if (ht->allow_copy) {
+                            if (node->val) {
+                                if (ht->destroy) ht->destroy (node->val);
+                                else free (node->val);
+                            }
+                        }
 
-                    node = node->next;
+                        if (node->key) free (node->key);
+
+                        node->key = NULL;
+                        node->val = NULL;
+
+                        node = node->next;
+                    }
+
+                    free (node);
                 }
-
-                free (node);
             }
         }
-
-        free (ht);
+        
+        htab_delete (ht);
     }
 
 }
