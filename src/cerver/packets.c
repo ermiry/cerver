@@ -281,7 +281,7 @@ u8 packet_check (Packet *packet) {
 
     /*if (packetSize < sizeof (PacketHeader)) {
         #ifdef CLIENT_DEBUG
-        cengine_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Recieved a to small packet!");
+        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Recieved a to small packet!");
         #endif
         return 1;
     } 

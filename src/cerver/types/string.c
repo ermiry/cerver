@@ -59,9 +59,11 @@ String *str_create (const char *format, ...) {
 
 }
 
-void str_delete (String *string) {
+void str_delete (void *str_ptr) {
 
-    if (string) {
+    if (str_ptr) {
+        String *string = (String *) str_ptr;
+
         if (string->str) free (string->str);
         free (string);
     }
@@ -105,7 +107,17 @@ void str_to_lower (String *string) {
 
 }
 
-int str_compare (const String *s1, const String *s2) { return strcmp (s1->str, s2->str); }
+int str_compare (const String *s1, const String *s2) { 
+
+    if (s1 && s2) return strcmp (s1->str, s2->str); 
+    
+}
+
+int str_comparator (const void *a, const void *b) {
+
+    if (a && b) return strcmp (((String *) a)->str, ((String *) b)->str);
+
+}
 
 char **str_split (String *string, const char delim, int *n_tokens) {
 

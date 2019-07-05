@@ -28,7 +28,7 @@
 #define DEFAULT_CONNECTION_QUEUE        7
 #define DEFAULT_POLL_TIMEOUT            180000      // 3 min in mili secs
 
-#define DEFAULT_TH_POOL_INIT            8
+#define DEFAULT_TH_POOL_INIT            4
 
 #define MAX_PORT_NUM            65535
 #define MAX_UDP_PACKET_SIZE     65515
@@ -60,6 +60,7 @@ struct _Cerver {
     void *cerver_data;
     Action delete_cerver_data;
 
+    u16 n_thpool_threads;
     threadpool *thpool;
 
     AVLTree *clients;                   // connected clients 
@@ -130,6 +131,9 @@ extern void cerver_set_network_values (Cerver *cerver, const u16 port, const Pro
 // sets the cerver's data and a way to free it
 extern void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data);
 
+// sets the cerver's thpool number of threads
+extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
+
 // sets an action to be performed by the cerver when a new client connects
 extern u8 cerver_set_on_client_connected  (Cerver *cerver, 
     Action on_client_connected, void *data, Action delete_data);
@@ -164,7 +168,8 @@ extern Cerver *cerver_create (const CerverType type, const char *name,
     u16 connection_queue, u32 poll_timeout);
 
 // teardowns the cerver and creates a fresh new one with the same parameters
-extern Cerver *cerver_restart (Cerver *cerver);
+// returns 0 on success, 1 on error
+extern u8 cerver_restart (Cerver *cerver);
 
 // starts the cerver
 extern u8 cerver_start (Cerver *cerver);

@@ -20,6 +20,7 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+void client_connection_end (Connection *connection);
 void client_connection_set_time (Connection *connection);
 void client_connection_get_values (Connection *connection);
 
@@ -53,6 +54,9 @@ void client_connection_delete (void *ptr) {
 
     if (ptr) {
         Connection *connection = (Connection *) ptr;
+
+        client_connection_end (connection);
+
         str_delete (connection->ip);
         if (connection->time_info) free (connection->time_info);
         free (connection);
@@ -159,7 +163,7 @@ u8 client_connection_unregister (Cerver *cerver, Client *client, Connection *con
             con = (Connection *) le->data;
             if (connection->sock_fd == con->sock_fd) {
                 // unmap the client connection from the cerver poll
-                cerver_poll_register_connection (cerver, client, connection);
+                cerver_poll_unregister_connection (cerver, client, connection);
 
                 client_connection_end (connection);
                 client_connection_delete (dlist_remove_element (client->connections, le));
