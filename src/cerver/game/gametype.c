@@ -3,10 +3,10 @@
 #include <stdbool.h>
 
 #include "cerver/types/string.h"
-#include "cerver/game/gameType.h"
+#include "cerver/game/gametype.h"
 #include "cerver/collections/dllist.h"
 
-static DoubleList *game_types = NULL;       // registered game types
+GameType *game_type_get_by_name (DoubleList *game_types, const char *name);
 
 GameType *game_type_new (void) {
 
@@ -39,6 +39,10 @@ GameType *game_type_create (const char *name, void *data, void (*delete_data)(vo
             type->delete_data = delete_data;
             type->start = start;
             type->end = end;
+
+            type->use_default_handler = true;
+            type->custom_handler = NULL;
+            type->max_players = 0;
         }
     }
 
@@ -52,15 +56,48 @@ void game_type_delete (void *ptr) {
         GameType *type = (GameType *) ptr;
         str_delete (type->name);
         if (type->delete_data) type->delete_data (type->data);
-        else free (type->delete_data);
+        else free (type->data);
 
         free (type);
     }
 
 }
 
+// add the required configuration that is needed to create a new lobby for the game type when requested
+// returns 0 on success, 1 on error
+int game_type_add_lobby_config (GameType *game_type,
+    bool use_default_handler, Action custom_handler, u32 max_players) {
+
+    int retval = 0;
+
+    if (game_type) {
+        game_type->use_default_handler = use_default_handler;
+        game_type->custom_handler = custom_handler;
+        game_type->max_players = max_players;
+    }
+
+    return retval;
+
+}
+
+// sets an action to be called when a player joins the lobby (game)
+// a reference to the player and lobby is passed as an argument
+void game_type_set_on_lobby_join (GameType *game_type, Action on_lobby_join) {
+
+    if (game_type) game_type->on_lobby_join = on_lobby_join;
+
+}
+
+// sets an action to be called when a player leaves the lobby (game)
+// a reference to the player and lobby is passed as an argument
+void game_type_set_on_lobby_leave (GameType *game_type, Action on_lobby_leave) {
+    
+    if (game_type) game_type->on_lobby_leave = on_lobby_leave;
+
+}
+
 // registers a new game type, returns 0 on LOG_SUCCESS, 1 on error
-int game_type_register (GameType *game_type) {
+int game_type_register (DoubleList *game_types, GameType *game_type) {
 
     int retval = 1;
 
@@ -74,7 +111,7 @@ int game_type_register (GameType *game_type) {
 }
 
 // unregister a game type, returns 0 on LOG_SUCCESS, 1 on error
-int game_type_unregister (const char *name) {
+int game_type_unregister (DoubleList *game_types, const char *name) {
 
     int retval = 1;
 
@@ -84,7 +121,7 @@ int game_type_unregister (const char *name) {
             game_type = (GameType *) le->data;
             if (!strcmp (name, game_type->name->str)) {
                 game_type_delete (dlist_remove_element (game_types, le));
-                retval =0;
+                retval = 0;
             }
         }
     }
@@ -94,7 +131,7 @@ int game_type_unregister (const char *name) {
 }
 
 // gets a registered game type by its name
-GameType *game_type_get_by_name (const char *name) {
+GameType *game_type_get_by_name (DoubleList *game_types, const char *name) {
 
     GameType *game_type = NULL;
 

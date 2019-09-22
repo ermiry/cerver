@@ -49,7 +49,7 @@ static inline uint32_t right_rot(uint32_t value, unsigned int count)
 
 static void init_buf_state(struct buffer_state * state, const void * input, size_t len)
 {
-	state->p = input;
+	state->p = (uint8_t *) input;
 	state->len = len;
 	state->total_len = len;
 	state->single_one_delivered = 0;

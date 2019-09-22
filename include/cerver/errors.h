@@ -6,16 +6,18 @@
 
 typedef enum ErrorType {
 
-    ERR_SERVER_ERROR = 0,   // internal server error, like no memory
+    // internal server error, like no memory
+    ERR_SERVER_ERROR            = 0,   
 
-    ERR_CREATE_LOBBY = 1,
-    ERR_JOIN_LOBBY,
-    ERR_LEAVE_LOBBY,
-    ERR_FIND_LOBBY,
+    ERR_CREATE_LOBBY            = 1,
+    ERR_JOIN_LOBBY              = 2,
+    ERR_LEAVE_LOBBY             = 3,
+    ERR_FIND_LOBBY              = 4,
 
-    ERR_GAME_INIT,
+    ERR_GAME_INIT               = 5,
+    ERR_GAME_START              = 6,
 
-    ERR_FAILED_AUTH,
+    ERR_FAILED_AUTH             = 7,
 
 } ErrorType;
 
@@ -29,11 +31,11 @@ typedef struct Error {
 
 } Error;
 
-extern Error *error_new (ErrorType error_type, const char *msg);
+extern Error *error_new (u32 error_type, const char *msg);
 extern void error_delete (void *ptr);
 
 // creates an error packet ready to be sent
-extern Packet *error_packet_generate (ErrorType error_type, const char *msg);
+extern Packet *error_packet_generate (u32 error_type, const char *msg);
 
 // serialized error data
 typedef struct SError {

@@ -15,24 +15,24 @@ static inline void char_copy (char *to, char *from) {
 
 String *str_new (const char *str) {
 
-    String *string = (String *) malloc (sizeof (String));
-    if (string) {
-        memset (string, 0, sizeof (String));
+    String *s = (String *) malloc (sizeof (String));
+    if (str) {
+        memset (s, 0, sizeof (String));
 
         if (str) {
-            string->len = strlen (str);
-            string->str = (char *) calloc (string->len + 1, sizeof (char));
-            char_copy (string->str, (char *) str);
+            s->len = strlen (str);
+            s->str = (char *) calloc (s->len + 1, sizeof (char));
+            char_copy (s->str, (char *) str);
         }
     }
 
-    return string;
+    return s;
 
 }
 
 String *str_create (const char *format, ...) {
 
-    String *string = NULL;
+    String *s = NULL;
 
     if (format) {
         char *fmt = strdup (format);
@@ -49,23 +49,23 @@ String *str_create (const char *format, ...) {
         vsnprintf (str, len + 1, fmt, argp);
         va_end (argp);
 
-        string = str_new (str);
+        s = str_new (str);
 
         free (str);
         free (fmt);
     }
 
-    return string;
+    return s;
 
 }
 
 void str_delete (void *str_ptr) {
 
     if (str_ptr) {
-        String *string = (String *) str_ptr;
+        String *str = (String *) str_ptr;
 
-        if (string->str) free (string->str);
-        free (string);
+        if (str->str) free (str->str);
+        free (str);
     }
 
 }
@@ -82,9 +82,12 @@ void str_copy (String *to, String *from) {
 
 }
 
-void str_concat (String *des, String *s1, String *s2) {
+String *str_concat (String *s1, String *s2) {
 
-    if (des && s1 && s2) {
+    if (s1 && s2) {
+        String *des = str_new (NULL);
+        des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
+
         while (*s1->str) *des->str++ = *s1->str++;
         while (*s2->str) *des->str++ = *s2->str++;
 
@@ -93,37 +96,45 @@ void str_concat (String *des, String *s1, String *s2) {
         des->len = s1->len + s2->len;
     }
 
-}
-
-void str_to_upper (String *string) {
-
-    if (string) for (int i = 0; i < string->len; i++) string->str[i] = toupper (string->str[i]);
+    return NULL;
 
 }
 
-void str_to_lower (String *string) {
+void str_to_upper (String *str) {
 
-    if (string) for (int i = 0; i < string->len; i++) string->str[i] = tolower (string->str[i]);
+    if (str) for (int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
+
+}
+
+void str_to_lower (String *str) {
+
+    if (str) for (int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
 
 }
 
 int str_compare (const String *s1, const String *s2) { 
 
     if (s1 && s2) return strcmp (s1->str, s2->str); 
+    else if (s1 && !s2) return -1;
+    else if (!s1 && s2) return 1;
+    return 0;
     
 }
 
 int str_comparator (const void *a, const void *b) {
 
     if (a && b) return strcmp (((String *) a)->str, ((String *) b)->str);
+    else if (a && !b) return -1;
+    else if (!a && b) return 1;
+    return 0;
 
 }
 
-char **str_split (String *string, const char delim, int *n_tokens) {
+char **str_split (String *str, const char delim, int *n_tokens) {
 
     char **result = 0;
     size_t count = 0;
-    char *temp = string->str;
+    char *temp = str->str;
     char *last = 0;
     char dlm[2];
     dlm[0] = delim;
@@ -139,7 +150,7 @@ char **str_split (String *string, const char delim, int *n_tokens) {
         temp++;
     }
 
-    count += last < (string->str + strlen (string->str) - 1);
+    count += last < (str->str + strlen (str->str) - 1);
 
     count++;
 
@@ -148,7 +159,7 @@ char **str_split (String *string, const char delim, int *n_tokens) {
 
     if (result) {
         size_t idx = 0;
-        char *token = strtok (string->str, dlm);
+        char *token = strtok (str->str, dlm);
 
         while (token) {
             // assert (idx < count);
@@ -164,10 +175,10 @@ char **str_split (String *string, const char delim, int *n_tokens) {
 
 }
 
-void str_remove_char (String *string, char garbage) {
+void str_remove_char (String *str, char garbage) {
 
     char *src, *dst;
-    for (src = dst = string->str; *src != '\0'; src++) {
+    for (src = dst = str->str; *src != '\0'; src++) {
         *dst = *src;
         if (*dst != garbage) dst++;
     }
@@ -175,9 +186,9 @@ void str_remove_char (String *string, char garbage) {
 
 }
 
-int str_contains (String *string, char *to_find) {
+int str_contains (String *str, char *to_find) {
 
-    int slen = string->len;
+    int slen = str->len;
     int tFlen = strlen (to_find);
     int found = 0;
 
@@ -185,7 +196,7 @@ int str_contains (String *string, char *to_find) {
     {
         for (unsigned int s = 0, t = 0; s < slen; s++) {
             do {
-                if (string->str[s] == to_find[t] ) {
+                if (str->str[s] == to_find[t] ) {
                     if (++found == tFlen) return 0;
                     s++;
                     t++;
@@ -204,19 +215,19 @@ int str_contains (String *string, char *to_find) {
 
 /*** serialization ***/
 
-// returns a ptr to a serialized string
-void *str_selialize (String *string, SStringSize size) {
+// returns a ptr to a serialized str
+void *str_selialize (String *str, SStringSize size) {
 
     void *retval = NULL;
 
-    if (string) {
+    if (str) {
         switch (size) {
             case SS_SMALL: {
                 SStringS *s_small = (SStringS *) malloc (sizeof (SStringS));
                 if (s_small) {
                     memset (s_small, 0, sizeof (SStringS));
-                    strncpy (s_small->string, string->str, 64);
-                    s_small->len = string->len > 64 ? 64 : string->len;
+                    strncpy (s_small->str, str->str, 64);
+                    s_small->len = str->len > 64 ? 64 : str->len;
                     retval = s_small;
                 }
             } break;
@@ -224,8 +235,8 @@ void *str_selialize (String *string, SStringSize size) {
                 SStringM *s_medium = (SStringM *) malloc (sizeof (SStringM));
                 if (s_medium) {
                     memset (s_medium, 0, sizeof (SStringM));
-                    strncpy (s_medium->string, string->str, 128);
-                    s_medium->len = string->len > 128 ? 128 : string->len;
+                    strncpy (s_medium->str, str->str, 128);
+                    s_medium->len = str->len > 128 ? 128 : str->len;
                     retval = s_medium;
                 }
             } break;
@@ -233,8 +244,8 @@ void *str_selialize (String *string, SStringSize size) {
                 SStringL *s_large = (SStringL *) malloc (sizeof (SStringL));
                 if (s_large) {
                     memset (s_large, 0, sizeof (SStringL));
-                    strncpy (s_large->string, string->str, 256);
-                    s_large->len = string->len > 256 ? 256 : string->len;
+                    strncpy (s_large->str, str->str, 256);
+                    s_large->len = str->len > 256 ? 256 : str->len;
                     retval = s_large;
                 }
             } break;
@@ -242,8 +253,8 @@ void *str_selialize (String *string, SStringSize size) {
                 SStringXL *s_xlarge = (SStringXL *) malloc (sizeof (SStringXL));
                 if (s_xlarge) {
                     memset (s_xlarge, 0, sizeof (SStringXL));
-                    strncpy (s_xlarge->string, string->str, 512);
-                    s_xlarge->len = string->len > 512 ? 512 : string->len;
+                    strncpy (s_xlarge->str, str->str, 512);
+                    s_xlarge->len = str->len > 512 ? 512 : str->len;
                     retval = s_xlarge;
                 }
             } break;

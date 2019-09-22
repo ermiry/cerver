@@ -4,22 +4,41 @@
 #include <stdlib.h>
 
 #include "cerver/types/types.h"
+
 #include "cerver/cerver.h"
+#include "cerver/client.h"
+
+#include "cerver/game/lobby.h"
+
+#define RECEIVE_PACKET_BUFFER_SIZE      8192
 
 struct _Cerver;
 struct _Client;
 struct _Connection;
+struct _Lobby;
+
+typedef struct SockReceive {
+
+    Packet *spare_packet;
+    size_t missing_packet;
+
+} SockReceive;
+
+extern SockReceive *sock_receive_new (void);
+
+extern void sock_receive_delete (void *sock_receive_ptr);
 
 typedef struct CerverReceive {
 
-    Cerver *cerver;
+    struct _Cerver *cerver;
     i32 sock_fd;
     bool on_hold;
+    struct _Lobby *lobby;
 
 } CerverReceive;
 
 extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, 
-    i32 sock_fd, bool on_hold);
+    i32 sock_fd, bool on_hold, struct _Lobby *lobby);
 
 extern void cerver_receive_delete (void *ptr);
 

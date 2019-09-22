@@ -1,5 +1,5 @@
-#ifndef LLIST_H
-#define LLIST_H
+#ifndef _COLLECTIONS_LLIST_H_
+#define _COLLECTIONS_LLIST_H_
 
 #include <stdlib.h>
 

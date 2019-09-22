@@ -12,20 +12,20 @@ static char *log_get_msg_type (LogMsgType type) {
     char temp[15];
 
     switch (type) {
-        case LOG_ERROR: strcpy (temp, "[LOG_ERROR]"); break;
-        case LOG_WARNING: strcpy (temp, "[LOG_WARNING]"); break;
-        case LOG_SUCCESS: strcpy (temp, "[LOG_SUCCESS]"); break;
+        case LOG_ERROR: strcpy (temp, "[ERROR]"); break;
+        case LOG_WARNING: strcpy (temp, "[WARNING]"); break;
+        case LOG_SUCCESS: strcpy (temp, "[SUCCESS]"); break;
         case LOG_DEBUG: strcpy (temp, "[DEBUG]"); break;
-        case LOG_TEST: strcpy (temp, "[LOG_TEST]"); break;
+        case LOG_TEST: strcpy (temp, "[TEST]"); break;
 
-        case LOG_REQ: strcpy (temp, "[LOG_REQ]"); break;
+        case LOG_REQ: strcpy (temp, "[REQ]"); break;
         case LOG_FILE: strcpy (temp, "[FILE]"); break;
-        case LOG_PACKET: strcpy (temp, "[LOG_PACKET]"); break;
-        case LOG_PLAYER: strcpy (temp, "[LOG_PLAYER]"); break;
-        case LOG_GAME: strcpy (temp, "[LOG_GAME]"); break;
+        case LOG_PACKET: strcpy (temp, "[PACKET]"); break;
+        case LOG_PLAYER: strcpy (temp, "[PLAYER]"); break;
+        case LOG_GAME: strcpy (temp, "[GAME]"); break;
 
-        case LOG_CERVER: strcpy (temp, "[LOG_CERVER]"); break;
-        case LOG_CLIENT: strcpy (temp, "[LOG_CLIENT]"); break;
+        case LOG_CERVER: strcpy (temp, "[CERVER]"); break;
+        case LOG_CLIENT: strcpy (temp, "[CLIENT]"); break;
 
         default: break;
     }
@@ -60,6 +60,9 @@ void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType
     switch (firstType) {
         case LOG_DEBUG: 
             fprintf (__stream, COLOR_MAGENTA "%s: " COLOR_RESET "%s\n", first, msg); break;
+        
+        case LOG_TEST:
+            fprintf (__stream, COLOR_CYAN "%s: " COLOR_RESET "%s\n", first, msg); break;
 
         case LOG_ERROR: fprintf (__stream, COLOR_RED "%s" COLOR_RESET, message); break;
         case LOG_WARNING: fprintf (__stream, COLOR_YELLOW "%s" COLOR_RESET, message); break;

@@ -116,6 +116,8 @@ void game_score_add_scoreType (ScoreBoard *sb, char *newScore) {
 // remove a score type from all current players
 u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
 
+    u8 retval = 1;
+
     if (sb && oldScore) {
         // first check if we have that score type
         int found = -1;
@@ -147,7 +149,7 @@ u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
 
             sb->scoresNum--;
 
-            return 0;
+            retval = 0;
         }
 
         else {
@@ -155,9 +157,10 @@ u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
             cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
                 c_string_create ("Can't remove %s scoretype, doesn't exist in the scoreboard!"));
             #endif
-            return 1;
         }
     }
+
+    return retval;
 
 }
 

@@ -401,6 +401,8 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
         }
     }
 
+    return NULL;
+
 }
 
 #pragma endregion

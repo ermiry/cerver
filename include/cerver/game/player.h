@@ -46,8 +46,14 @@ extern int player_comparator_by_id (const void *a, const void *b);
 // compares two players by their clients ids
 extern int player_comparator_client_id (const void *a, const void *b);
 
+// registers each of the player's client connections to the lobby poll structures
+extern u8 player_register_to_lobby_poll (struct _Lobby *lobby, Player *player);
+
 // registers a player to the lobby --> add him to lobby's structures
 extern u8 player_register_to_lobby (struct _Lobby *lobby, Player *player);
+
+// unregisters each of the player's client connections from the lobby poll structures
+extern u8 player_unregister_from_lobby_poll (struct _Lobby *lobby, Player *player);
 
 // unregisters a player from a lobby --> removes him from lobby's structures
 extern u8 player_unregister_from_lobby (struct _Lobby *lobby, Player *player);
@@ -58,8 +64,11 @@ extern Player *player_get_from_lobby (struct _Lobby *lobby, Player *query);
 // get sthe list element associated with the player
 extern ListElement *player_get_le_from_lobby (struct _Lobby *lobby, Player *player);
 
+// gets a player from the lobby player's list suing the sock fd
+extern Player *player_get_by_sock_fd_list (struct _Lobby *lobby, i32 sock_fd);
+
 // broadcasts a packet to all the players in the lobby
-extern void player_broadcast_to_all (const struct _Lobby *lobby, struct _Packet *packet, 
+extern void player_broadcast_to_all (struct _Cerver *cerver, const struct _Lobby *lobby, struct _Packet *packet, 
     Protocol protocol, int flags);
 
 #endif

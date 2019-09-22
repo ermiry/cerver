@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "cerver/utils/objectPool.h"
+#include "cerver/collections/pool.h"
 
 Pool *pool_init (void (*destroy)(void *data)) {
 
@@ -22,14 +22,14 @@ Pool *pool_init (void (*destroy)(void *data)) {
 void pool_push (Pool *pool, void *data) {
 
     if (pool && data) {
-        PoolMember *new = (PoolMember *) malloc (sizeof (PoolMember));
-        if (new) {
-            new->data = data;
+        PoolMember *new_member = (PoolMember *) malloc (sizeof (PoolMember));
+        if (new_member) {
+            new_member->data = data;
 
-            if (POOL_SIZE (pool) == 0) new->next = NULL;
-            else new->next = pool->top;
+            if (POOL_SIZE (pool) == 0) new_member->next = NULL;
+            else new_member->next = pool->top;
 
-            pool->top = new;
+            pool->top = new_member;
             pool->size++;
         }
 
@@ -44,17 +44,19 @@ void pool_push (Pool *pool, void *data) {
 
 void *pool_pop (Pool *pool) {
 
-    if (pool && (pool->size > 0)) {
+    if (pool) {
         PoolMember *top = POOL_TOP (pool);
 
-        void *data = top->data;
+        if (top) {
+            void *data = top->data;
 
-        pool->top = top->next;
-        pool->size--;
+            pool->top = top->next;
+            pool->size--;
 
-        free (top);
+            free (top);
 
-        return data;
+            return data;
+        }
     }
 
     return NULL;

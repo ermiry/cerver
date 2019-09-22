@@ -21,19 +21,18 @@
 #include "cerver/collections/avl.h"
 #include "cerver/collections/htab.h"
 
-#include "cerver/utils/config.h"
-
-#define DEFAULT_USE_IPV6                0
-#define DEFAULT_PORT                    7001
 #define DEFAULT_CONNECTION_QUEUE        7
-#define DEFAULT_POLL_TIMEOUT            180000      // 3 min in mili secs
 
 #define DEFAULT_TH_POOL_INIT            4
 
-#define MAX_PORT_NUM            65535
-#define MAX_UDP_PACKET_SIZE     65515
+#define MAX_PORT_NUM                    65535
+#define MAX_UDP_PACKET_SIZE             65515
 
-#define poll_n_fds              100           // n of fds for the pollfd array
+#define poll_n_fds                      100         // n of fds for the pollfd array
+
+struct _Cerver;
+struct _Packet;
+struct _PacketsPerType;
 
 typedef enum CerverType {
 
@@ -44,7 +43,58 @@ typedef enum CerverType {
 
 } CerverType;
 
-// this is the generic server struct, used to create different server types
+typedef struct CerverInfo {
+
+    String *name;
+    String *welcome_msg;                            // this msg is sent to the client when it first connects
+    struct _Packet *cerver_info_packet;             // useful info that we can send to clients
+
+    time_t time_started;                            // the actual time the cerver was started
+    u64 uptime;                                     // the seconds the cerver has been up
+
+} CerverInfo;
+
+// sets the cerver msg to be sent when a client connects
+// retuns 0 on success, 1 on error
+extern u8 cerver_set_welcome_msg (struct _Cerver *cerver, const char *msg);
+
+typedef struct CerverStats {
+
+    time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
+    
+    u64 client_n_packets_received;                  // packets received from clients
+    u64 client_receives_done;                       // receives done to clients
+    u64 client_bytes_received;                      // bytes received from clients
+
+    u64 on_hold_n_packets_received;                 // packets received from on hold connections
+    u64 on_hold_receives_done;                      // received done to on hold connections
+    u64 on_hold_bytes_received;                     // bytes received from on hold connections
+
+    u64 total_n_packets_received;                   // total number of cerver packets received (packet header + data)
+    u64 total_n_receives_done;                      // total amount of actual calls to recv ()
+    u64 total_bytes_received;                       // total amount of bytes received in the cerver
+    
+    u64 n_packets_sent;                             // total number of packets that were sent
+    u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
+
+    u64 current_active_client_connections;          // all of the current active connections for all current clients
+    u64 current_n_connected_clients;                // the current number of clients connected 
+    u64 current_n_hold_connections;                 // current numbers of on hold connections (only if the cerver requires authentication)
+    u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
+    u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
+    u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
+
+    struct _PacketsPerType *received_packets;
+    struct _PacketsPerType *sent_packets;
+
+} CerverStats;
+
+// sets the cerver stats threshold time (how often the stats get reset)
+extern void cerver_stats_set_threshold_time (struct _Cerver *cerver, time_t threshold_time);
+
+extern void cerver_stats_print (struct _Cerver *cerver);
+
+// this is the generic cerver struct, used to create different server types
 struct _Cerver {
 
     i32 sock;                           // server socket
@@ -52,6 +102,7 @@ struct _Cerver {
     Protocol protocol;                  // we only support either tcp or udp
     bool use_ipv6;  
     u16 connection_queue;               // each server can handle connection differently
+    u32 receive_buffer_size;
 
     bool isRunning;                     // the server is recieving and/or sending packetss
     bool blocking;                      // sokcet fd is blocking?
@@ -61,14 +112,13 @@ struct _Cerver {
     Action delete_cerver_data;
 
     u16 n_thpool_threads;
-    threadpool *thpool;
+    // threadpool *thpool;
+    threadpool thpool;
 
     AVLTree *clients;                   // connected clients 
     Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
     // action to be performed when a new client connects
     Action on_client_connected;   
-    void *on_client_connected_data;
-    Action delete_on_client_connected_data;
 
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
@@ -76,11 +126,14 @@ struct _Cerver {
     bool compress_clients;              // compress the fds array?
     u32 poll_timeout;           
 
+    Htab *sock_buffer_map;
+
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?
     Auth *auth;                         // server auth info
      
     AVLTree *on_hold_connections;       // hold on the connections until they authenticate
+    Htab *on_hold_connection_sock_fd_map;
     struct pollfd *hold_fds;
     u32 max_on_hold_connections;
     u16 current_on_hold_nfds;
@@ -101,19 +154,11 @@ struct _Cerver {
     Action app_error_packet_handler;
     Action custom_packet_handler;
 
-    /*** server info/stats ***/
-    String *name;
-    String *welcome_msg;                 // this msg is sent to the client when it first connects
-    struct _Packet *cerver_info_packet;          // useful info that we can send to clients 
-    // TODO: 26/06/2019 -- we are not doing nothing with these!!
-    u32 n_connected_clients;
-    u32 n_hold_clients;
+    Action cerver_update;                           // function to be executed every tick
+    u8 ticks;                                       // like fps
 
-    struct tm *time_started;
-    u64 uptime;
-
-    Action cerver_update;                  
-    u8 ticks;                              // like fps
+    CerverInfo *info;
+    CerverStats *stats;
 
 };
 
@@ -128,6 +173,12 @@ extern void cerver_delete (void *ptr);
 extern void cerver_set_network_values (Cerver *cerver, const u16 port, const Protocol protocol,
     bool use_ipv6, const u16 connection_queue);
 
+// sets the cerver connection queue (how many connections to queue for accept)
+extern void cerver_set_connection_queue (Cerver *cerver, const u16 connection_queue);
+
+// sets the cerver's receive buffer size used in recv method
+extern void cerver_set_receive_buffer_size (Cerver *cerver, const u32 size);
+
 // sets the cerver's data and a way to free it
 extern void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data);
 
@@ -135,8 +186,7 @@ extern void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_da
 extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
 
 // sets an action to be performed by the cerver when a new client connects
-extern u8 cerver_set_on_client_connected  (Cerver *cerver, 
-    Action on_client_connected, void *data, Action delete_data);
+extern void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected);
 
 // sets the cerver poll timeout
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
@@ -154,10 +204,6 @@ extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action 
 
 // sets a custom packet handler
 extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
-
-// sets the cerver msg to be sent when a client connects
-// retuns 0 on success, 1 on error
-extern u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg);
 
 // sets a custom cerver update function to be executed every n ticks
 extern void cerver_set_update (Cerver *cerver, Action update, const u8 ticks);

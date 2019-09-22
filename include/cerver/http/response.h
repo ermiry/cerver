@@ -16,7 +16,7 @@ typedef struct HttpResponse {
 
 } HttpResponse;
 
-extern char *default_header;
+extern const char *default_header;
 
 extern HttpResponse *http_response_new (void);
 extern HttpResponse *http_response_create (unsigned int status, const char *header, size_t header_len, 

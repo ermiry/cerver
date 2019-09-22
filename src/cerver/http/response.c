@@ -8,7 +8,7 @@
 #include "cerver/http/json.h"
 
 // TODO: get the size fo this when we start the server!!
-char *default_header = "HTTP/1.1 200 OK\r\n\n";
+const char *default_header = "HTTP/1.1 200 OK\r\n\n";
 
 HttpResponse *http_response_new (void) {
 

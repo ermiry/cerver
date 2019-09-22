@@ -1,183 +1,248 @@
 #include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
 
 #include "cerver/collections/dllist.h"
 
-void dlist_set_compare (DoubleList *list, int (*compare)(const void *one, const void *two)) { 
-    
-    if (list) list->compare = compare; 
-    
-}
+void *dlist_remove_element (DoubleList *dlist, ListElement *element);
 
-void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data)) { if (list) list->destroy = destroy; }
+static ListElement *list_element_new (void) {
 
-DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *one, const void *two)) {
-
-    DoubleList *list = (DoubleList *) malloc (sizeof (DoubleList));
-
-    if (list) {
-        memset (list, 0, sizeof (DoubleList));
-        list->destroy = destroy;
-        list->compare = compare; 
+    ListElement *le = (ListElement *) malloc (sizeof (ListElement));
+    if (le) {
+        le->next = le->prev = NULL;
+        le->data = NULL;
     }
 
-    return list;
+    return le;
 
 }
 
-void dlist_reset (DoubleList *list) {
+static inline void list_element_delete (ListElement *le) { if (le) free (le); }
 
-    if (list) {
-        if (dlist_size (list) > 0) {
-            void *data = NULL;
-            while (dlist_size (list) > 0) {
-                data = dlist_remove_element (list, NULL);
-                if (data != NULL && list->destroy != NULL) list->destroy (data);
-            }
-        }
+static DoubleList *dlist_new (void) {
 
-        list->start = NULL;
-        list->end = NULL;
-        list->size = 0;
+    DoubleList *dlist = (DoubleList *) malloc (sizeof (DoubleList));
+    if (dlist) {
+        dlist->size = 0;
+        dlist->start = NULL;
+        dlist->end = NULL;
+        dlist->destroy = NULL;
+        dlist->compare = NULL;
     }
 
-}
-
-// only gets rid of the List elemenst, but the data is kept
-// this is used if another list or structure points to the same data
-void dlist_clean (DoubleList *list) {
-
-    if (list) {
-        void *data = NULL;
-        while (dlist_size (list) > 0) 
-            data = dlist_remove_element (list, NULL);
-
-        free (list);
-    }
+    return dlist;
 
 }
 
-void dlist_destroy (DoubleList *list) {
+void dlist_delete (void *dlist_ptr) {
 
-    if (list) {
-        if (list->size > 0) {
+    if (dlist_ptr) {
+        DoubleList *dlist = (DoubleList *) dlist_ptr;
+
+        if (dlist->size > 0) {
             void *data = NULL;
 
-            while (dlist_size (list) > 0) {
-                data = dlist_remove_element (list, NULL);
+            while (dlist_size (dlist) > 0) {
+                data = dlist_remove_element (dlist, NULL);
                 if (data) {
-                    if (list->destroy) list->destroy (data);
+                    if (dlist->destroy) dlist->destroy (data);
                     else free (data);
                 }
             }
         }
 
-        free (list);
+        free (dlist);
     }
 
 }
 
-/*** ELEMENTS ***/
+void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const void *two)) { if (dlist) dlist->compare = compare; }
 
-bool dlist_insert_after (DoubleList *list, ListElement *element, void *data) {
+void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
 
-    if (list && data) {
-        ListElement *new;
-        if ((new = (ListElement *) malloc (sizeof (ListElement))) == NULL) 
-            return false;
+DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *one, const void *two)) {
 
-        new->data = (void *) data;
+    DoubleList *dlist = dlist_new ();
 
-        if (element == NULL) {
-            if (dlist_size (list) == 0) list->end = new;
-            else list->start->prev = new;
-        
-            new->next = list->start;
-            new->prev = NULL;
-            list->start = new;
+    if (dlist) {
+        dlist->destroy = destroy;
+        dlist->compare = compare; 
+    }
+
+    return dlist;
+
+}
+
+// destroys all of the dlist's elements and their data but keeps the dlist
+void dlist_reset (DoubleList *dlist) {
+
+    if (dlist) {
+        if (dlist_size (dlist) > 0) {
+            void *data = NULL;
+            while (dlist_size (dlist) > 0) {
+                data = dlist_remove_element (dlist, NULL);
+                if (data != NULL && dlist->destroy != NULL) dlist->destroy (data);
+            }
         }
 
-        else {
-            if (element->next == NULL) list->end = new;
+        dlist->start = NULL;
+        dlist->end = NULL;
+        dlist->size = 0;
+    }
 
-            new->next = element->next;
-            new->prev = element;
-            element->next = new;
+}
+
+// only gets rid of the list elements, but the data is kept
+// this is usefull if another dlist or structure points to the same data
+void dlist_clean (DoubleList *dlist) {
+
+    if (dlist) {
+        void *data = NULL;
+        while (dlist_size (dlist) > 0) 
+            data = dlist_remove_element (dlist, NULL);
+    }
+
+}
+
+/*** Elements ***/
+
+// inserts the data in the double list after the specified element
+// returns true on success, false on error or not found
+bool dlist_insert_after (DoubleList *dlist, ListElement *element, void *data) {
+
+    if (dlist && data) {
+        ListElement *le = list_element_new ();
+        if (le) {
+            le->data = (void *) data;
+
+            if (element == NULL) {
+                if (dlist_size (dlist) == 0) dlist->end = le;
+                else dlist->start->prev = le;
+            
+                le->next = dlist->start;
+                le->prev = NULL;
+                dlist->start = le;
+            }
+
+            else {
+                if (element->next == NULL) dlist->end = le;
+
+                le->next = element->next;
+                le->prev = element;
+                element->next = le;
+            }
+
+            dlist->size++;
+
+            return true;
         }
-
-        list->size++;
-
-        return true;
     }
 
     return false;
 
 }
 
-// removes the list element from the list and returns the data
-void *dlist_remove_element (DoubleList *list, ListElement *element) {
+// finds the data using the query and the list comparator and the removes it from the list
+// and deletes it using the list destroy method
+// returns 0 on success, 1 on error or not found
+int dlist_remove (DoubleList *dlist, void *query) {
 
-    if (list) {
-        ListElement *old;
-        void *data = NULL;
+    int retval = 1;
 
-        if (dlist_size (list) == 0) return NULL;
+    if (dlist && query) {
+        ListElement *ptr = dlist_start (dlist);
 
-        if (element == NULL) {
-            data = list->start->data;
-            old = list->start;
-            list->start = list->start->next;
-            if (list->start != NULL) list->start->prev = NULL;
+        if (dlist->compare) {
+            bool first = true;
+            while (ptr != NULL) {
+                if (!dlist->compare (ptr->data, query)) {
+                    // remove the list element
+                    void *data = NULL;
+                    if (first) data = dlist_remove_element (dlist, NULL);
+                    else data = dlist_remove_element (dlist, ptr);
+                    if (data) {
+                        if (dlist->destroy) dlist->destroy (data);
+                        else free (data);
+
+                        retval = 0;
+                    }
+                }
+
+                ptr = ptr->next;
+                first = false;
+            }
         }
+    }
 
-        else {
-            data = element->data;
-            old = element;
+    return retval;
 
-            ListElement *prevElement = element->prev;
-            ListElement *nextElement = element->next;
+}
 
-            if (prevElement != NULL && nextElement != NULL) {
-                prevElement->next = nextElement;
-                nextElement->prev = prevElement;
+// removes the dlist element from the dlist and returns the data
+// NULL for the start of the list
+void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
+
+    if (dlist) {
+        if (dlist_size (dlist) > 0) {
+            ListElement *old;
+            void *data = NULL;
+
+            if (element == NULL) {
+                data = dlist->start->data;
+                old = dlist->start;
+                dlist->start = dlist->start->next;
+                if (dlist->start != NULL) dlist->start->prev = NULL;
             }
 
             else {
-                // we are at the start of the list
-                if (prevElement == NULL) {
-                    if (nextElement != NULL) nextElement->prev = NULL;
-                    list->start = nextElement;
+                data = element->data;
+                old = element;
+
+                ListElement *prevElement = element->prev;
+                ListElement *nextElement = element->next;
+
+                if (prevElement != NULL && nextElement != NULL) {
+                    prevElement->next = nextElement;
+                    nextElement->prev = prevElement;
                 }
 
-                // we are at the end of the list
-                if (nextElement == NULL) {
-                    if (prevElement != NULL) prevElement->next = NULL;
-                    list->end = prevElement;
+                else {
+                    // we are at the start of the dlist
+                    if (prevElement == NULL) {
+                        if (nextElement != NULL) nextElement->prev = NULL;
+                        dlist->start = nextElement;
+                    }
+
+                    // we are at the end of the dlist
+                    if (nextElement == NULL) {
+                        if (prevElement != NULL) prevElement->next = NULL;
+                        dlist->end = prevElement;
+                    }
                 }
             }
+
+            list_element_delete (old);
+            dlist->size--;
+
+            return data;
         }
-
-        free (old);
-        list->size--;
-
-        return data;
     }
 
     return NULL;
 
 }
 
-/*** TRAVERSING --- SEARCHING ***/
+/*** Traversing --- Searching ***/
 
-void *dlist_search (DoubleList *list, void *data) {
+// uses the list comparator to search using the data as the query
+// returns the double list's element data
+void *dlist_search (DoubleList *dlist, void *data) {
 
-    if (list && data) {
-        ListElement *ptr = dlist_start (list);
+    if (dlist && data) {
+        ListElement *ptr = dlist_start (dlist);
 
-        if (list->compare) {
+        if (dlist->compare) {
             while (ptr != NULL) {
-                if (!list->compare (ptr->data, data))  return ptr->data;
+                if (!dlist->compare (ptr->data, data)) return ptr->data;
                 ptr = ptr->next;
             }
         }
@@ -188,50 +253,22 @@ void *dlist_search (DoubleList *list, void *data) {
                 ptr = ptr->next;
             }
         }
-
-        return NULL;    // not found
     }
 
     return NULL;    
 
 }
 
-bool dlist_is_in_list (DoubleList *list, void *data) {
+// searches the dlist and returns the dlist element associated with the data
+// can use a compartor set in the dlist
+ListElement *dlist_get_element (DoubleList *dlist, void *data) {
 
-    if (list && data) {
-        ListElement *ptr = dlist_start (list);
+    if (dlist && data) {
+        ListElement *ptr = dlist_start (dlist);
 
-        if (list->compare) {
+        if (dlist->compare) {
             while (ptr != NULL) {
-                if (!list->compare (ptr->data, data)) return true;
-                ptr = ptr->next;
-            }
-        }
-
-        else {
-            while (ptr != NULL) {
-                if (ptr->data == data) return true;
-                ptr = ptr->next;
-            }
-        }
-
-        return false;   // not found
-    }
-
-    return false;
-
-}
-
-// searches the list and returns the list element associated with the data
-// can use a compartor set in the list
-ListElement *dlist_get_element (DoubleList *list, void *data) {
-
-    if (list && data) {
-        ListElement *ptr = dlist_start (list);
-
-        if (list->compare) {
-            while (ptr != NULL) {
-                if (!list->compare (ptr->data, data)) return ptr;
+                if (!dlist->compare (ptr->data, data)) return ptr;
                 ptr = ptr->next;
             }
         }
@@ -250,9 +287,9 @@ ListElement *dlist_get_element (DoubleList *list, void *data) {
 
 }
 
-/*** SORTING ***/
+/*** Sorting ***/
 
-// Split a doubly linked list (DLL) into 2 DLLs of half sizes 
+// Split a doubly linked dlist (DLL) into 2 DLLs of half sizes 
 static ListElement *dllist_split (ListElement *head) { 
 
     ListElement *fast = head, *slow = head; 
@@ -273,10 +310,10 @@ static ListElement *dllist_split (ListElement *head) {
 static ListElement *dllist_merge (int (*compare)(const void *one, const void *two), 
     ListElement *first, ListElement *second)  { 
 
-    // If first linked list is empty 
+    // If first linked dlist is empty 
     if (!first) return second; 
   
-    // If second linked list is empty 
+    // If second linked dlist is empty 
     if (!second) return first; 
 
     // Pick the smallest value 
@@ -297,7 +334,8 @@ static ListElement *dllist_merge (int (*compare)(const void *one, const void *tw
 } 
 
 // merge sort
-static ListElement *dlist_merge_sort (ListElement *head, int (*compare)(const void *one, const void *two)) {
+static ListElement *dlist_merge_sort (ListElement *head, 
+    int (*compare)(const void *one, const void *two)) {
 
     if (!head || !head->next) return head;
 
@@ -312,12 +350,12 @@ static ListElement *dlist_merge_sort (ListElement *head, int (*compare)(const vo
 
 }
 
-int dlist_sort (DoubleList *list) {
+int dlist_sort (DoubleList *dlist) {
 
     int retval = 1;
 
-    if (list && list->compare) {
-        list->start = dlist_merge_sort (list->start, list->compare);
+    if (dlist && dlist->compare) {
+        dlist->start = dlist_merge_sort (dlist->start, dlist->compare);
         retval = 0;
     }
 
