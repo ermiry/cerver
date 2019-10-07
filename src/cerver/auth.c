@@ -3,7 +3,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -35,7 +35,7 @@ static AuthData *auth_data_new (const char *token, void *data, size_t auth_data_
         auth_data->data = NULL;
         auth_data->delete_data = NULL;
 
-        auth_data->token = token ? str_new (token) : NULL;
+        auth_data->token = token ? estring_new (token) : NULL;
         if (data) {
             auth_data->auth_data = malloc (sizeof (auth_data_size));
             if (auth_data->auth_data) {
@@ -62,7 +62,7 @@ static AuthData *auth_data_new (const char *token, void *data, size_t auth_data_
 static void auth_data_delete (AuthData *auth_data) {
 
     if (auth_data) {
-        str_delete (auth_data->token);
+        estring_delete (auth_data->token);
         if (auth_data->auth_data) free (auth_data->auth_data);
         free (auth_data);
     }
@@ -135,7 +135,7 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                     if (packet->cerver->use_sessions) {
                         // FIXME: generate the new session id - token
                         SessionData *session_data = session_data_new (packet, auth_data, c);
-                        String *session_id = (String *) packet->cerver->session_id_generator (session_data);
+                        estring *session_id = (estring *) packet->cerver->session_id_generator (session_data);
                         session_data_delete (session_data);
                     }
 

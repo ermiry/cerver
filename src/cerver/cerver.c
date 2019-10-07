@@ -13,7 +13,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/threads/thpool.h"
 
@@ -56,8 +56,8 @@ static CerverInfo *cerver_info_new (void) {
 static void cerver_info_delete (CerverInfo *cerver_info) {
 
     if (cerver_info) {
-        str_delete (cerver_info->name);
-        str_delete (cerver_info->welcome_msg);
+        estring_delete (cerver_info->name);
+        estring_delete (cerver_info->welcome_msg);
         packet_delete (cerver_info->cerver_info_packet);
 
         free (cerver_info);
@@ -71,8 +71,8 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
     if (cerver) {
         if (cerver->info) {
-            str_delete (cerver->info->welcome_msg);
-            cerver->info->welcome_msg = msg ? str_new (msg) : NULL;
+            estring_delete (cerver->info->welcome_msg);
+            cerver->info->welcome_msg = msg ? estring_new (msg) : NULL;
             return 0;
         }
     }
@@ -209,6 +209,8 @@ Cerver *cerver_new (void) {
 
         c->use_sessions = false;
         c->session_id_generator = NULL;
+
+        c->handle_received_buffer = NULL;
 
         c->app_packet_handler = NULL;
         c->app_error_packet_handler = NULL;
@@ -384,6 +386,13 @@ u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const voi
     }
 
     return retval;
+
+}
+
+// sets a custom method to handle the raw received buffer from the socker
+void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer) {
+
+    if (cerver) cerver->handle_received_buffer = handle_received_buffer;
 
 }
 
@@ -580,6 +589,9 @@ static u8 cerver_init (Cerver *cerver) {
 
         if (!cerver_network_init (cerver)) {
             if (!cerver_init_data_structures (cerver)) {
+                // set the default receive handler
+                cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
+
                 #ifdef CERVER_DEBUG
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
                     "Done initializing cerver data structures and values!");
@@ -617,7 +629,7 @@ Cerver *cerver_create (const CerverType type, const char *name,
         if (cerver) {
             cerver->type = type;
             cerver->info = cerver_info_new ();
-            cerver->info->name = str_new (name);
+            cerver->info->name = estring_new (name);
             cerver->stats = cerver_stats_new ();
 
             cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);

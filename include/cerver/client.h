@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -45,7 +45,7 @@ struct _Client {
     DoubleList *connections;
 
     // multiple connections can be associated with the same client using the same session id
-    String *session_id;
+    estring *session_id;
 
     bool drop_client;        // client failed to authenticate
 

@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <stdarg.h>
 
+#include "cerver/utils/utils.h"
+
 /*** misc ***/
 
 bool system_is_little_endian (void) {
@@ -174,6 +176,18 @@ char **c_string_split (char *string, const char delim, int *n_tokens) {
 
     return result;
 
+}
+
+// removes all the matchings chars from a given string
+void c_string_remove_char (char *str, char garbage) {
+
+    char *src, *dst;
+    for (src = dst = str; *src != '\0'; src++) {
+        *dst = *src;
+        if (*dst != garbage) dst++;
+    }
+    *dst = '\0';
+    
 }
 
 // copies a c string into another one previuosly allocated

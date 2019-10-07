@@ -37,6 +37,9 @@ extern char *c_string_create (const char *format, ...);
 // splits a c string into tokens based on a delimiter
 extern char **c_string_split (char *string, const char delim, int *n_tokens);
 
+// removes all the matchings chars from a given string
+extern void c_string_remove_char (char *str, char garbage);
+
 // copies a c string into another one previuosly allocated
 extern void c_string_copy (char *to, const char *from);
 

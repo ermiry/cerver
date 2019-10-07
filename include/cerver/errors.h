@@ -1,7 +1,7 @@
 #ifndef _CERVER_ERRORS_H_
 #define _CERVER_ERRORS_H_
 
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 #include "cerver/packets.h"
 
 typedef enum ErrorType {
@@ -27,7 +27,7 @@ typedef struct Error {
 
     // TODO: maybe add time?
     u32 error_type;
-    String *msg;
+    estring *msg;
 
 } Error;
 

@@ -3,12 +3,12 @@
 
 #include <stdbool.h>
 
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 #include "cerver/collections/dllist.h"
 
 struct _GameType {
 
-    String *name;
+    estring *name;
 
     void *data;
     void (*delete_data)(void *);

@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -137,7 +137,7 @@ void packet_delete (void *ptr) {
         packet->connection = NULL;
         packet->lobby = NULL;
 
-        str_delete (packet->custom_type);
+        estring_delete (packet->custom_type);
         if (packet->data) free (packet->data);
         packet_header_delete (packet->header);
         if (packet->packet) free (packet->packet);

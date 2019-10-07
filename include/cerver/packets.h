@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -147,7 +147,7 @@ struct _Packet {
     struct _Lobby *lobby;
 
     PacketType packet_type;
-    String *custom_type;
+    estring *custom_type;
 
     // serilized data
     size_t data_size;

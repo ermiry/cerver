@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 static inline void char_copy (char *to, char *from) {
 
@@ -13,11 +13,11 @@ static inline void char_copy (char *to, char *from) {
 
 }
 
-String *str_new (const char *str) {
+estring *estring_new (const char *str) {
 
-    String *s = (String *) malloc (sizeof (String));
+    estring *s = (estring *) malloc (sizeof (estring));
     if (str) {
-        memset (s, 0, sizeof (String));
+        memset (s, 0, sizeof (estring));
 
         if (str) {
             s->len = strlen (str);
@@ -30,9 +30,9 @@ String *str_new (const char *str) {
 
 }
 
-String *str_create (const char *format, ...) {
+estring *estring_create (const char *format, ...) {
 
-    String *s = NULL;
+    estring *s = NULL;
 
     if (format) {
         char *fmt = strdup (format);
@@ -49,7 +49,7 @@ String *str_create (const char *format, ...) {
         vsnprintf (str, len + 1, fmt, argp);
         va_end (argp);
 
-        s = str_new (str);
+        s = estring_new (str);
 
         free (str);
         free (fmt);
@@ -59,10 +59,10 @@ String *str_create (const char *format, ...) {
 
 }
 
-void str_delete (void *str_ptr) {
+void estring_delete (void *str_ptr) {
 
     if (str_ptr) {
-        String *str = (String *) str_ptr;
+        estring *str = (estring *) str_ptr;
 
         if (str->str) free (str->str);
         free (str);
@@ -70,7 +70,7 @@ void str_delete (void *str_ptr) {
 
 }
 
-void str_copy (String *to, String *from) {
+void estring_copy (estring *to, estring *from) {
 
     if (to && from) {
         while (*from->str)
@@ -82,10 +82,10 @@ void str_copy (String *to, String *from) {
 
 }
 
-String *str_concat (String *s1, String *s2) {
+estring *estring_concat (estring *s1, estring *s2) {
 
     if (s1 && s2) {
-        String *des = str_new (NULL);
+        estring *des = estring_new (NULL);
         des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
 
         while (*s1->str) *des->str++ = *s1->str++;
@@ -100,19 +100,19 @@ String *str_concat (String *s1, String *s2) {
 
 }
 
-void str_to_upper (String *str) {
+void estring_to_upper (estring *str) {
 
     if (str) for (int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
 
 }
 
-void str_to_lower (String *str) {
+void estring_to_lower (estring *str) {
 
     if (str) for (int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
 
 }
 
-int str_compare (const String *s1, const String *s2) { 
+int estring_compare (const estring *s1, const estring *s2) { 
 
     if (s1 && s2) return strcmp (s1->str, s2->str); 
     else if (s1 && !s2) return -1;
@@ -121,16 +121,16 @@ int str_compare (const String *s1, const String *s2) {
     
 }
 
-int str_comparator (const void *a, const void *b) {
+int estring_comparator (const void *a, const void *b) {
 
-    if (a && b) return strcmp (((String *) a)->str, ((String *) b)->str);
+    if (a && b) return strcmp (((estring *) a)->str, ((estring *) b)->str);
     else if (a && !b) return -1;
     else if (!a && b) return 1;
     return 0;
 
 }
 
-char **str_split (String *str, const char delim, int *n_tokens) {
+char **estring_split (estring *str, const char delim, int *n_tokens) {
 
     char **result = 0;
     size_t count = 0;
@@ -175,7 +175,7 @@ char **str_split (String *str, const char delim, int *n_tokens) {
 
 }
 
-void str_remove_char (String *str, char garbage) {
+void estring_remove_char (estring *str, char garbage) {
 
     char *src, *dst;
     for (src = dst = str->str; *src != '\0'; src++) {
@@ -186,14 +186,13 @@ void str_remove_char (String *str, char garbage) {
 
 }
 
-int str_contains (String *str, char *to_find) {
+int estring_contains (estring *str, char *to_find) {
 
     int slen = str->len;
     int tFlen = strlen (to_find);
     int found = 0;
 
-    if( slen >= tFlen )
-    {
+    if (slen >= tFlen) {
         for (unsigned int s = 0, t = 0; s < slen; s++) {
             do {
                 if (str->str[s] == to_find[t] ) {
@@ -201,9 +200,9 @@ int str_contains (String *str, char *to_find) {
                     s++;
                     t++;
                 }
-                else { s -= found; found = 0; t = 0; }
 
-              } while(found);
+                else { s -= found; found = 0; t = 0; }
+            } while(found);
         }
 
         return 1;
@@ -216,7 +215,7 @@ int str_contains (String *str, char *to_find) {
 /*** serialization ***/
 
 // returns a ptr to a serialized str
-void *str_selialize (String *str, SStringSize size) {
+void *estring_selialize (estring *str, SStringSize size) {
 
     void *retval = NULL;
 

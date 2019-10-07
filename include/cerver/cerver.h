@@ -8,7 +8,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -45,8 +45,8 @@ typedef enum CerverType {
 
 typedef struct CerverInfo {
 
-    String *name;
-    String *welcome_msg;                            // this msg is sent to the client when it first connects
+    estring *name;
+    estring *welcome_msg;                            // this msg is sent to the client when it first connects
     struct _Packet *cerver_info_packet;             // useful info that we can send to clients
 
     time_t time_started;                            // the actual time the cerver was started
@@ -147,7 +147,7 @@ struct _Cerver {
 
     // the admin can define a function to handle the recieve buffer if they are using a custom protocol
     // otherwise, it will be set to the default one
-    // Action handle_recieved_buffer;
+    Action handle_received_buffer;
 
     // custom packet hanlders
     Action app_packet_handler;
@@ -198,6 +198,9 @@ extern u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authentic
 // configures the cerver to use client sessions
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const void *));
+
+// sets a custom method to handle the raw received buffer from the socker
+extern void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer);
 
 // sets a cutom app packet hanlder and a custom app error packet handler
 extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler);

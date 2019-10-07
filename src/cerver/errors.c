@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cerver/types/estring.h"
+
 #include "cerver/errors.h"
 #include "cerver/packets.h"
 
@@ -10,7 +12,7 @@ Error *error_new (u32 error_type, const char *msg) {
     if (error) {
         memset (error, 0, sizeof (Error));
         error->error_type = error_type;
-        error->msg = msg ? str_new (msg) : NULL;
+        error->msg = msg ? estring_new (msg) : NULL;
     }
 
     return error;
@@ -21,7 +23,7 @@ void error_delete (void *ptr) {
 
     if (ptr) {
         Error *error = (Error *) ptr;
-        str_delete (error->msg);
+        estring_delete (error->msg);
         free (error);
     }
 

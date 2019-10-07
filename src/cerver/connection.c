@@ -6,7 +6,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -70,7 +70,7 @@ void connection_delete (void *ptr) {
 
         if (connection->active) connection_end (connection);
 
-        str_delete (connection->ip);
+        estring_delete (connection->ip);
         connection_stats_delete (connection->stats);
 
         free (connection);
@@ -115,7 +115,7 @@ int connection_comparator (const void *a, const void *b) {
 void connection_get_values (Connection *connection) {
 
     if (connection) {
-        connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
+        connection->ip = estring_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
         connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
     }
 
@@ -126,8 +126,8 @@ void connection_set_values (Connection *connection,
     const char *ip_address, u16 port, Protocol protocol, bool use_ipv6) {
 
     if (connection) {
-        if (connection->ip) str_delete (connection->ip);
-        connection->ip = ip_address ? str_new (ip_address) : NULL;
+        if (connection->ip) estring_delete (connection->ip);
+        connection->ip = ip_address ? estring_new (ip_address) : NULL;
         connection->port = port;
         connection->protocol = protocol;
         connection->use_ipv6 = use_ipv6;

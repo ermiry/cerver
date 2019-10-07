@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/client.h"
 #include "cerver/packets.h"
@@ -35,7 +35,7 @@ void player_delete (void *player_ptr) {
     if (player_ptr) {
         Player *player = (Player *) player_ptr;
 
-        str_delete (player->id);
+        estring_delete (player->id);
 
         player->client = NULL;
 
@@ -53,7 +53,7 @@ void player_delete (void *player_ptr) {
 // sets the player id
 void player_set_id (Player *player, const char *id) {
 
-    if (player) player->id = str_new (id);
+    if (player) player->id = estring_new (id);
 
 }
 
@@ -69,7 +69,7 @@ void player_set_data (Player *player, void *data, Action data_delete) {
 
 int player_comparator_by_id (const void *a, const void *b) {
 
-    return str_compare (((Player *) a)->id, ((Player *) b)->id);
+    return estring_compare (((Player *) a)->id, ((Player *) b)->id);
 
 }
 

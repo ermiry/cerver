@@ -6,7 +6,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -79,7 +79,7 @@ void client_delete (void *ptr) {
     if (ptr) {
         Client *client = (Client *) ptr;
 
-        str_delete (client->session_id);
+        estring_delete (client->session_id);
 
         dlist_delete (client->connections);
 
@@ -137,8 +137,8 @@ Client *client_create_with_connection (Cerver *cerver,
 void client_set_session_id (Client *client, const char *session_id) {
 
     if (client) {
-        if (client->session_id) str_delete (client->session_id);
-        client->session_id = session_id ? str_new (session_id) : NULL;
+        if (client->session_id) estring_delete (client->session_id);
+        client->session_id = session_id ? estring_new (session_id) : NULL;
     }
 
 }
@@ -181,7 +181,7 @@ int client_comparator_client_id (const void *a, const void *b) {
 // compare clients based on their session ids
 int client_comparator_session_id (const void *a, const void *b) {
 
-    if (a && b) return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
     return 0;
 
 }

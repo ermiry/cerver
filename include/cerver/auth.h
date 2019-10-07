@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/packets.h"
 #include "cerver/cerver.h"
@@ -17,7 +18,7 @@ struct _Connection;
 // the auth data stripped from the packet
 typedef struct AuthData {
 
-    String *token;
+    estring *token;
 
     void *auth_data;
     size_t auth_data_size;

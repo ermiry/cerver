@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -41,7 +41,7 @@ struct _Connection {
     Protocol protocol;
     u16 port;
 
-    String *ip;
+    estring *ip;
     struct sockaddr_storage address;
 
     time_t timestamp;                       // connected timestamp

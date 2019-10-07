@@ -16,10 +16,27 @@ struct _Cerver;
 struct _Client;
 struct _Connection;
 struct _Lobby;
+struct _Packet;
+
+typedef struct ReceiveHandle {
+
+    struct _Cerver *cerver;
+    i32 sock_fd;
+    char *buffer;
+    size_t buffer_size;
+    bool on_hold;
+    struct _Lobby *lobby;
+
+} ReceiveHandle;
+
+extern void receive_handle_delete (void *receive_ptr);
+
+// default cerver receive handler
+extern void cerver_receive_handle_buffer (void *receive_ptr);
 
 typedef struct SockReceive {
 
-    Packet *spare_packet;
+    struct _Packet *spare_packet;
     size_t missing_packet;
 
 } SockReceive;

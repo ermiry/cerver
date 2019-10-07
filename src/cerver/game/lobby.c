@@ -9,7 +9,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
@@ -47,7 +47,7 @@ void *lobby_default_id_generator (const void *data_ptr) {
     sha_256_calc (hash, temp, len);
     sha_256_hash_to_string (hash_string, hash);
 
-    return str_new (hash_string);
+    return estring_new (hash_string);
 
 }
 
@@ -189,7 +189,7 @@ void lobby_delete (void *lobby_ptr) {
     if (lobby_ptr) {
         Lobby *lobby = (Lobby *) lobby_ptr;
 
-        str_delete (lobby->id);
+        estring_delete (lobby->id);
 
         dlist_delete (lobby->players);
         htab_destroy (lobby->sock_fd_player_map);
@@ -226,7 +226,7 @@ u8 lobby_init (GameCerver *game_cerver, Lobby *lobby) {
         lobby->creation_time_stamp = time (NULL);
         void *id = game_cerver->lobby_id_generator (lobby);
         if (id) {
-            lobby->id = (String *) id;
+            lobby->id = (estring *) id;
             #ifdef CERVER_DEBUG
             cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, 
                 c_string_create ("Lobby id: %s", lobby->id->str));
@@ -248,7 +248,7 @@ u8 lobby_init (GameCerver *game_cerver, Lobby *lobby) {
 //compares two lobbys based on their ids
 int lobby_comparator (const void *one, const void *two) {
 
-    if (one && two) return str_compare (((Lobby *) one)->id, ((Lobby *) two)->id);
+    if (one && two) return estring_compare (((Lobby *) one)->id, ((Lobby *) two)->id);
     else if (!one && two) return -1;
     else if (one && ! two) return 1;
     return 0;
@@ -333,7 +333,7 @@ int lobby_teardown (GameCerver *game_cerver, Lobby *lobby) {
 
     if (lobby) {
         #ifdef CERVER_DEBUG
-        String *name = str_new (lobby->id->str);
+        estring *name = estring_new (lobby->id->str);
         #endif
 
         // stop the lobby threads
@@ -359,7 +359,7 @@ int lobby_teardown (GameCerver *game_cerver, Lobby *lobby) {
         if (name) {
             cerver_log_msg (stdout, LOG_SUCCESS, LOG_GAME, 
                 c_string_create ("Lobby %s teardown was successfull!", name->str));
-            str_delete (name);
+            estring_delete (name);
         }
         #endif
     }
@@ -768,7 +768,7 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
             }
 
             // check if the player was the owner
-            else if (!str_compare (lobby->owner->id, player->id)) {
+            else if (!estring_compare (lobby->owner->id, player->id)) {
                 // get a new owner
                 Player *new_owner = (Player *) (dlist_start (lobby->players))->data;
                 if (new_owner) {
