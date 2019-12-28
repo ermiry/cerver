@@ -414,11 +414,11 @@ void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
 }
 
 // sets a custom cerver update function to be executed every n ticks
-void cerver_set_update (Cerver *cerver, Action update, const u8 ticks) {
+void cerver_set_update (Cerver *cerver, Action update, const u8 fps) {
 
     if (cerver) {
         cerver->cerver_update = update;
-        cerver->ticks = ticks;
+        cerver->ticks = fps;
     }
 
 }

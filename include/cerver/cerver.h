@@ -92,6 +92,7 @@ typedef struct CerverStats {
 // sets the cerver stats threshold time (how often the stats get reset)
 extern void cerver_stats_set_threshold_time (struct _Cerver *cerver, time_t threshold_time);
 
+// prints the cerver stats
 extern void cerver_stats_print (struct _Cerver *cerver);
 
 // this is the generic cerver struct, used to create different server types
@@ -196,10 +197,12 @@ extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 extern u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate);
 
 // configures the cerver to use client sessions
+// This will allow for multiple connections from the same client, 
+// or you can use it to allow different connections from different devices using a token
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const void *));
 
-// sets a custom method to handle the raw received buffer from the socker
+// sets a custom method to handle the raw received buffer from the socket
 extern void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer);
 
 // sets a cutom app packet hanlder and a custom app error packet handler
@@ -208,8 +211,8 @@ extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action 
 // sets a custom packet handler
 extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
 
-// sets a custom cerver update function to be executed every n ticks
-extern void cerver_set_update (Cerver *cerver, Action update, const u8 ticks);
+// sets a custom cerver update function to be executed in a fixed time, like a frame rate (fps)
+extern void cerver_set_update (Cerver *cerver, Action update, const u8 fps);
 
 // returns a new cerver with the specified parameters
 extern Cerver *cerver_create (const CerverType type, const char *name, 

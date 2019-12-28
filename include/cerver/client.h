@@ -65,10 +65,10 @@ typedef struct _Client Client;
 
 extern Client *client_new (void);
 
-// complete deletes a client and all of its data
+// completely deletes a client and all of its data
 extern void client_delete (void *ptr);
 
-// used in dta structures that require a delete function, but the client need to stay alive
+// used in data structures that require a delete function, but the client needs to stay alive
 extern void client_delete_dummy (void *ptr);
 
 // creates a new client and inits its values
