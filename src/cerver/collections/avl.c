@@ -55,7 +55,7 @@ void avl_clear_tree (AVLNode **node, void (*destroy)(void *data)) {
         avl_clear_tree (&(ptr->left), destroy);
 
         if (destroy) destroy (ptr->id);
-        else free (ptr->id);
+        // else free (ptr->id);
 
         free (ptr);
         *node = NULL;
