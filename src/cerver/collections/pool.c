@@ -22,14 +22,14 @@ Pool *pool_init (void (*destroy)(void *data)) {
 void pool_push (Pool *pool, void *data) {
 
     if (pool && data) {
-        PoolMember *new_member = (PoolMember *) malloc (sizeof (PoolMember));
-        if (new_member) {
-            new_member->data = data;
+        PoolMember *new = (PoolMember *) malloc (sizeof (PoolMember));
+        if (new) {
+            new->data = data;
 
-            if (POOL_SIZE (pool) == 0) new_member->next = NULL;
-            else new_member->next = pool->top;
+            if (POOL_SIZE (pool) == 0) new->next = NULL;
+            else new->next = pool->top;
 
-            pool->top = new_member;
+            pool->top = new;
             pool->size++;
         }
 
@@ -63,7 +63,7 @@ void *pool_pop (Pool *pool) {
 
 }
 
-void pool_clear (Pool *pool) {
+void pool_delete (Pool *pool) {
 
     if (pool) {
         if (POOL_SIZE (pool) > 0) {

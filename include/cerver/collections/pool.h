@@ -1,7 +1,7 @@
 #ifndef _COLLECTIONS_POOL_H_
 #define _COLLECTIONS_POOL_H_
 
-#include <stdint.h>
+#include <stdlib.h>
 
 typedef struct PoolMember {
 
@@ -10,15 +10,13 @@ typedef struct PoolMember {
 
 } PoolMember;
 
-// The pool is just a custom stack implementation
 typedef struct Pool {
 
-    uint32_t size;
+    size_t size;
     PoolMember *top;
     void (*destroy)(void *data);
 
 } Pool;
-
 
 #define POOL_SIZE(pool) ((pool)->size)
 
@@ -26,10 +24,16 @@ typedef struct Pool {
 
 #define POOL_DATA(member) ((member)->data)
 
-
+// Creates a new pool
 extern Pool *pool_init (void (*destroy)(void *data));
-extern void pool_push (Pool *, void *data);
-extern void *pool_pop (Pool *);
-extern void pool_clear (Pool *);
+
+// Inserts a the data as a new pool element at the top of the pool
+extern void pool_push (Pool *pool, void *data);
+
+// Returns the data of the pool element at the top of the pool
+extern void *pool_pop (Pool *pool);
+
+// Deletes the pool and all of its memebers using the destroy method
+extern void pool_delete (Pool *pool);
 
 #endif
