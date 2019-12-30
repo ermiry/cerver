@@ -23,8 +23,8 @@ struct _Player {
 
 	struct _Client *client;		// client network data associated to this player
 
-    void *data;     
-    Action data_delete;
+	void *data;     
+	Action data_delete;
 
 };
 
@@ -61,7 +61,7 @@ extern u8 player_unregister_from_lobby (struct _Lobby *lobby, Player *player);
 // gets a player from the lobby using the query
 extern Player *player_get_from_lobby (struct _Lobby *lobby, Player *query);
 
-// get sthe list element associated with the player
+// gets the list element associated with the player
 extern ListElement *player_get_le_from_lobby (struct _Lobby *lobby, Player *player);
 
 // gets a player from the lobby player's list suing the sock fd
@@ -69,6 +69,6 @@ extern Player *player_get_by_sock_fd_list (struct _Lobby *lobby, i32 sock_fd);
 
 // broadcasts a packet to all the players in the lobby
 extern void player_broadcast_to_all (struct _Cerver *cerver, const struct _Lobby *lobby, struct _Packet *packet, 
-    Protocol protocol, int flags);
+	Protocol protocol, int flags);
 
 #endif

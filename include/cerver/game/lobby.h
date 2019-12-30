@@ -46,17 +46,17 @@ typedef struct _GameSettings GameSettings;
 
 typedef struct LobbyStats {
 
-    time_t threshold_time;                          // every time we want to reset lobby stats (like packets), defaults 24hrs
-    
-    u64 n_packets_received;                   		// total number of cerver packets received (packet header + data)
-    u64 n_receives_done;                      		// total amount of actual calls to recv ()
-    u64 bytes_received;                       		// total amount of bytes received in the cerver
-    
-    u64 n_packets_sent;                             // total number of packets that were sent
-    u64 bytes_sent;                           		// total amount of bytes sent by the cerver
+	time_t threshold_time;                          // every time we want to reset lobby stats (like packets), defaults 24hrs
+	
+	u64 n_packets_received;                   		// total number of cerver packets received (packet header + data)
+	u64 n_receives_done;                      		// total amount of actual calls to recv ()
+	u64 bytes_received;                       		// total amount of bytes received in the cerver
+	
+	u64 n_packets_sent;                             // total number of packets that were sent
+	u64 bytes_sent;                           		// total amount of bytes sent by the cerver
 
-    struct _PacketsPerType *received_packets;
-    struct _PacketsPerType *sent_packets;
+	struct _PacketsPerType *received_packets;
+	struct _PacketsPerType *sent_packets;
 
 } LobbyStats;
 
@@ -73,10 +73,10 @@ struct _Lobby {
 	time_t creation_time_stamp;
 
 	Htab *sock_fd_player_map;           // maps a socket fd to a player
-    struct pollfd *players_fds;     			
+	struct pollfd *players_fds;     			
 	u16 max_players_fds;
 	u16 current_players_fds;            // n of active fds in the pollfd array
-    u32 poll_timeout;    
+	u32 poll_timeout;    
 
 	bool running;						// lobby is listening for player packets
 	bool in_game;						// lobby is inside a game
@@ -169,7 +169,7 @@ extern void lobby_poll (void *ptr);
 // creates and inits a new lobby
 // creates a new user associated with the client and makes him the owner
 extern Lobby *lobby_create (struct _Cerver *cerver, struct _Client *client,
-    bool use_default_handler, Action custom_handler, u32 max_players);
+	bool use_default_handler, Action custom_handler, u32 max_players);
 
 // a client wants to join a game, so we create a new player and register him to the lobby
 // returns 0 on success, 1 on error
@@ -184,8 +184,8 @@ extern u8 lobby_start (struct _Cerver *cerver, Lobby *lobby);
 
 typedef struct CerverLobby {
 
-    struct _Cerver *cerver;
-    Lobby *lobby;
+	struct _Cerver *cerver;
+	Lobby *lobby;
 
 } CerverLobby;
 
@@ -227,12 +227,12 @@ extern SLobby *lobby_serialize (Lobby *lobby);
 // sends a lobby and all of its data to the client
 // created: if the lobby was just created
 extern void lobby_send (Lobby *lobby, bool created,
-    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection);
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection);
 
 typedef struct LobbyJoin {
 
-    SStringS lobby_id;
-    SStringS game_type;
+	SStringS lobby_id;
+	SStringS game_type;
 
 } LobbyJoin;
 
