@@ -13,12 +13,12 @@
 static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
-static void game_end (int dummy) {
+static void my_game_end (int dummy) {
 	
 	if (my_cerver) {
 		cerver_stats_print (my_cerver);
 		printf ("\nGame Stats:\n");
-		my_cerver_stats_print (my_cerver);
+		game_cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
 	} 
 
@@ -26,40 +26,40 @@ static void game_end (int dummy) {
 
 }
 
-static int game_init (void) {
+static int my_game_init (void) {
 
 	// method where you will init global values for your game / app
 	// like connecting to a database or loading some resources
 
 }
 
-static void game_packet_handler (void) {
+static void my_game_packet_handler (void *data) {
 
 	// method to handle APP_PACKET type packets that are specific for your application 
 
 }
 
-static void game_on_client_connected (void) {
+static void my_game_on_client_connected (void *data) {
 
 	// an action to be executed every time a new client connects to the cerver
 
 }
 
-static void arcade_game_start (void) {
+static void *arcade_game_start (void *data) {
 
 	// method to start the arcade game
 	// here you can init some data or load additional resources
 
 }
 
-static void arcade_game_end (void) {
+static void *arcade_game_end (void *data) {
 
 	// method to end the arcade game
 	// here you can destroy all the data that you created for the game
 
 }
 
-static void arcade_game_join (void) {
+static void arcade_game_join (void *data) {
 
 	// this method gets executed every time a new player joins the lobby
 	// here you can create a new player for example
@@ -71,16 +71,16 @@ int main (void) {
 	srand (time (NULL));
 
 	// register to the quit signal
-	signal (SIGINT, game_end);
+	signal (SIGINT, my_game_end);
 
-	if (!game_init ()) {
-		my_cerver = cerver_create (my_cerver, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
+	if (!my_game_init ()) {
+		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 		if (my_cerver) {
 			/*** cerver configuration ***/
 			cerver_set_receive_buffer_size (my_cerver, 16384);
 			cerver_set_thpool_n_threads (my_cerver, 4);
-			cerver_set_app_handlers (my_cerver, game_packet_handler, NULL);
-			cerver_set_on_client_connected (my_cerver, game_on_client_connected);
+			cerver_set_app_handlers (my_cerver, my_game_packet_handler, NULL);
+			cerver_set_on_client_connected (my_cerver, my_game_on_client_connected);
 
 			/*** game configuration ***/
 			GameCerver *game_cerver = (GameCerver *) my_cerver->cerver_data;
@@ -100,15 +100,15 @@ int main (void) {
 
 		else {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-				"Failed to create magic cerver!");
+				"Failed to create game cerver!");
 		}
 
-		magic_end ();
+		my_game_end (0);
 	}
 
 	else {
 		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-			"Failed to init magic!");
+			"Failed to init my game!");
 	}
 
 	return 0;
