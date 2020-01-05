@@ -50,6 +50,10 @@ The are three basic commands for the Makefile:
 | make run       | Run the compilled binary                                         |
 | make clean     | Clean created objects (.o files) and binaries                    |
 
-You should see the following ouput in your terminal:
+You should see the following ouput in your terminal inidicating that the cerver has initialized successfully and is ready to listen for connections:
 
 ![Welcome Example](./img/cerver-welcome-example.png)
+
+But you need to add your own configuration and your own application code to correctly handle your custom packets. So for now, we can quit the cerver by typing Ctrl + c to send the cerver a SIGINT signal, and as we have registered a method to handle that, this is the output that you should see:
+
+![Exit Output Example](./img/cerver-exit-example.png)
