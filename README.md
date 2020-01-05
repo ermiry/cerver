@@ -20,7 +20,7 @@ We use **Cerver** to power many of our core operations in Ermiry, so, it is in c
 
 **Cerver** is now in stable release 1.0 and you can get it right now. It is totally open source and the code is well documented, but you can also check our official documentation page to help you get started. 
 
-## Created with cerver:
+### Created with cerver:
 
 - Blackrock Server: The game server responsible for multiplayer features for the game Blackrock.
 - Ermiry Manager Server: An administartion tool used to manage Ermiry operations.
