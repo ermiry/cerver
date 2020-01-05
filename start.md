@@ -38,6 +38,8 @@ Let's start with a little explanation on the source code layout. You need to foc
 - src -> this is where all the .c source files are located. They are divided into different categories (modules)
 - include -> this is where the .h header files are located. They are divided in the same categories with matching names as the ones located in the src directory
 
+Finally there is the examples directory, where you will find some examples to get you started.
+
 We will focus on compiling the welcome example (welcome.c). To do this, in the cerver code that you downloaded, copy the welcome.c file form the examples directory into the src directory. Now you can compile it using the included Makefile.
 
 The are three basic commands for the Makefile:

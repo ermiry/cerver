@@ -1,6 +1,7 @@
 TARGET      := cerver
 
 PTHREAD 	:= -l pthread
+MATH		:= -lm
 CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
@@ -17,7 +18,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) $(RUN_MAKE)
-LIB         := $(PTHREAD) $(CMONGO)
+LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include $(LIB)
 INCDEP      := -I $(INCDIR)
 
