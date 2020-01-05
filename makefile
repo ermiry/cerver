@@ -6,12 +6,6 @@ CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS
 
-# run from parent folder
-RUN_BIN = -D RUN_FROM_BIN
-
-# run from bin folder
-RUN_MAKE = -D RUN_FROM_MAKE
-
 CC          := gcc
 
 SRCDIR      := src
