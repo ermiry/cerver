@@ -68,6 +68,17 @@ static PacketHeader *packet_header_new (PacketType packet_type, size_t packet_si
 
 }
 
+void packet_header_print (PacketHeader *header) {
+
+    if (header) {
+        printf ("protocol id: %d\n", header->protocol_id);
+        printf ("protocol version: { %d - %d }\n", header->protocol_version.major, header->protocol_version.minor);
+        printf ("packet type: %d\n", header->packet_type);
+        printf ("packet size: %ld\n", header->packet_size);
+    }
+
+}
+
 // allocates space for the dest packet header and copies the data from source
 // returns 0 on success, 1 on error
 u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {

@@ -86,6 +86,8 @@ struct _PacketHeader {
 
 typedef struct _PacketHeader PacketHeader;
 
+extern void packet_header_print (PacketHeader *header);
+
 // allocates space for the dest packet header and copies the data from source
 // returns 0 on success, 1 on error
 extern u8 packet_header_copy (PacketHeader **dest, PacketHeader *source);

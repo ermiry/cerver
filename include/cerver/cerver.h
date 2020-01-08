@@ -252,4 +252,45 @@ typedef struct SCerver {
 // creates a cerver info packet ready to be sent
 extern struct _Packet *cerver_packet_generate (Cerver *cerver);
 
+/*** Handler ***/
+
+// information that we get from another cerver when connecting to it
+struct _CerverReport {
+    
+    bool use_ipv6;  
+    Protocol protocol;
+    u16 port; 
+    estring *ip;
+
+    estring *name;
+    CerverType type;
+    bool auth_required;
+
+    bool uses_sessions;
+    struct _Token *token;
+
+};
+
+typedef struct _CerverReport CerverReport;
+
+extern void cerver_report_delete (void *ptr);
+
+// serialized cerver report structure
+typedef struct SCerverReport {
+
+    bool use_ipv6;  
+    Protocol protocol;
+    u16 port; 
+
+    char name[32];
+    CerverType type;
+    bool auth_required;
+
+    bool uses_sessions;
+
+} SCerverReport;
+
+// handles cerver type packets
+extern void client_cerver_packet_handler (struct _Packet *packet);
+
 #endif

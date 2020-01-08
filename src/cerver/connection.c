@@ -49,6 +49,7 @@ Connection *connection_new (void) {
     Connection *connection = (Connection *) malloc (sizeof (Connection));
     if (connection) {
         memset (connection, 0, sizeof (Connection));
+
         connection->use_ipv6 = false;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
         connection->ip = NULL;
@@ -56,7 +57,16 @@ Connection *connection_new (void) {
         connection->connected_to_cerver = false;
         connection->active = false;
         connection->auth_tries = DEFAULT_AUTH_TRIES;
-        connection->stats = connection_stats_new ();   
+
+        connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
+
+        connection->cerver_report = NULL;
+        connection->sock_receive = NULL;
+
+        connection->received_data = NULL;
+        connection->received_data_delete = NULL;
+        
+        connection->stats = connection_stats_new ();
     }
 
     return connection;
@@ -71,6 +81,13 @@ void connection_delete (void *ptr) {
         if (connection->active) connection_end (connection);
 
         estring_delete (connection->ip);
+
+        cerver_report_delete (connection->cerver_report);
+        sock_receive_delete (connection->sock_receive);
+
+        if (connection->received_data && connection->received_data_delete)
+            connection->received_data_delete (connection->received_data);
+
         connection_stats_delete (connection->stats);
 
         free (connection);
@@ -88,6 +105,7 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
         connection_get_values (connection);
         connection->protocol = protocol;
+
         // connection->stats = connection_stats_new ();
     }
 
@@ -149,6 +167,26 @@ void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 void connection_set_receive (Connection *connection, bool receive) {
 
     if (connection) connection->receive_packets = receive;
+
+}
+
+// read packets into a buffer of this size in client_receive ()
+// by default the value RECEIVE_PACKET_BUFFER_SIZE is used
+void connection_set_receive_buffer_size (Connection *connection, u32 size) {
+
+    if (connection) connection->receive_packet_buffer_size = size;
+
+}
+
+// sets the connection received data
+// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete) {
+
+    if (connection) {
+        connection->received_data = data;
+        connection->received_data_size = data_size;
+        connection->received_data_delete = data_delete;
+    }
 
 }
 
@@ -263,7 +301,7 @@ void connection_end (Connection *connection) {
 
     if (connection) {
         close (connection->sock_fd);
-        connection->sock_fd = -1;
+        // connection->sock_fd = -1;
         connection->active = false;
     }
 

@@ -9,10 +9,13 @@
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/packets.h"
+#include "cerver/handler.h"
 
 struct _Cerver;
+struct _CerverReport;
 struct _Client;
 struct _PacketsPerType;
+struct _SockReceive;
 
 struct _ConnectionStats {
     
@@ -53,6 +56,15 @@ struct _Connection {
 
     bool active;
 
+    u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
+    struct _CerverReport *cerver_report;    // 01/01/2020 - info about the cerver we are connecting to
+    struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
+
+    // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+    void *received_data;                    
+    size_t received_data_size;
+    Action received_data_delete;
+
     bool receive_packets;                   // set if the connection will receive packets or not (default true)
     Action custom_receive;                  // custom receive method to handle incomming packets in the connection
     void *custom_receive_args;              // arguments to be passed to the custom receive method
@@ -64,6 +76,7 @@ struct _Connection {
 typedef struct _Connection Connection;
 
 extern Connection *connection_new (void);
+
 extern void connection_delete (void *ptr);
 
 // creates a new lcient connection with the specified values
@@ -86,6 +99,14 @@ extern void connection_set_max_sleep (Connection *connection, u32 max_sleep);
 // sets if the connection will receive packets or not (default true)
 // if true, a new thread is created that handled incoming packets
 extern void connection_set_receive (Connection *connection, bool receive);
+
+// read packets into a buffer of this size in client_receive ()
+// by default the value RECEIVE_PACKET_BUFFER_SIZE is used
+extern void connection_set_receive_buffer_size (Connection *connection, u32 size);
+
+// sets the connection received data
+// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+extern void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
 
 typedef struct ConnectionCustomReceiveData {
 

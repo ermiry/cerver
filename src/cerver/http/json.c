@@ -77,10 +77,12 @@ char *json_create_with_one_pair (JsonKeyValue *jkvp, size_t *len) {
     if (jkvp) {
         bson_t *doc = bson_new ();
 
-        if (doc) json_append_value (doc, jkvp);
-
-        // TODO: do we need to free the doc after this?
-        retval = bson_as_json (doc, len);
+        if (doc) {
+            json_append_value (doc, jkvp);
+            retval = bson_as_json (doc, len);
+            bson_destroy (doc);
+        } 
+        
     }
 
     return retval;
@@ -102,8 +104,8 @@ char *json_create_with_pairs (DoubleList *pairs, size_t *len) {
                 json_append_value (doc, jkvp);
             }
 
-            // TODO: do we need to free the doc after this?
             retval = bson_as_json (doc, len);
+            bson_destroy (doc);
         }
     }
 

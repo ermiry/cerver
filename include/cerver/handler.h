@@ -7,6 +7,7 @@
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
+#include "cerver/packets.h"
 
 #include "cerver/game/lobby.h"
 
@@ -34,12 +35,20 @@ extern void receive_handle_delete (void *receive_ptr);
 // default cerver receive handler
 extern void cerver_receive_handle_buffer (void *receive_ptr);
 
-typedef struct SockReceive {
+struct _SockReceive {
 
     struct _Packet *spare_packet;
     size_t missing_packet;
 
-} SockReceive;
+    void *header;
+    char *header_end;
+    // unsigned int curr_header_pos;
+    unsigned int remaining_header;
+    bool complete_header;
+
+};
+
+typedef struct _SockReceive SockReceive;
 
 extern SockReceive *sock_receive_new (void);
 
@@ -63,7 +72,7 @@ extern void cerver_receive_delete (void *ptr);
 extern void cerver_receive (void *ptr);
 
 // sends back a test packet to the client!
-extern void cerver_test_packet_handler (Packet *packet);
+extern void cerver_test_packet_handler (struct _Packet *packet);
 
 // reallocs main cerver poll fds
 // returns 0 on success, 1 on error

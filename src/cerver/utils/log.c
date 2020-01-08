@@ -76,3 +76,31 @@ void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType
     if (message) free (message);
 
 }
+
+// prints a red error message to stderr
+void cerver_log_error (const char *msg) {
+
+    if (msg) fprintf (stderr, COLOR_RED "%s\n" COLOR_RESET, msg);
+
+}
+
+// prints a yellow warning message to stderr
+void cerver_log_warning (const char *msg) {
+
+    if (msg) fprintf (stderr, COLOR_YELLOW "%s\n" COLOR_RESET, msg);
+
+}
+
+// prints a green success message to stdout
+void cerver_log_success (const char *msg) {
+
+    if (msg) fprintf (stdout, COLOR_GREEN "%s\n" COLOR_RESET, msg);
+
+}
+
+// prints a debug message to stdout
+void cerver_log_debug (const char *msg) {
+
+    if (msg) fprintf (stdout, COLOR_MAGENTA "[DEBUG]: " COLOR_RESET "%s\n", msg);
+
+}

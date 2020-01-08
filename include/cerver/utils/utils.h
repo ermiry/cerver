@@ -22,6 +22,9 @@ extern void random_set_seed (unsigned int seed);
 
 extern int random_int_in_range (int min, int max);
 
+// abds = 5 for random float values between 0.0001 and 4.9999
+extern float random_float (float abs);
+
 /*** converters ***/
 
 // convert a string representing a hex to a string

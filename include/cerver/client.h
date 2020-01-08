@@ -57,6 +57,11 @@ struct _Client {
     time_t time_started;
     u64 uptime;
 
+    // custom packet hanlders
+    Action app_packet_handler;
+    Action app_error_packet_handler;
+    Action custom_packet_handler;
+
     ClientStats *stats;
 
 };
@@ -87,6 +92,10 @@ extern void *client_get_data (Client *client);
 // sets client's data and a way to destroy it
 // deletes the previous data of the client
 extern void client_set_data (Client *client, void *data, Action delete_data);
+
+// sets the client packet handlers
+extern void client_set_handlers (Client *client, 
+    Action app_handler, Action app_error_handler, Action custom_handler);
 
 // compare clients based on their client ids
 extern int client_comparator_client_id (const void *a, const void *b);
@@ -161,6 +170,13 @@ extern void client_connection_aux_delete (ClientConnection *cc);
 extern struct _Connection *client_connection_create (Client *client,
     const char *ip_address, u16 port, Protocol protocol, bool use_ipv6);
 
+// this is a blocking method and ONLY works for cerver packets
+// connects the client connection and makes a first request to the cerver
+// then listen for packets until the target one is received, 
+// then it returns the packet data as it is
+// returns 0 on success, 1 on error
+extern int client_connection_request_to_cerver (Client *client, struct _Connection *connection, struct _Packet *request_packet);
+
 // starts a client connection -- used to connect a client to another server
 // returns only after a success or failed connection
 // returns 0 on success, 1 on error
@@ -176,5 +192,8 @@ extern int client_connection_end (Client *client, struct _Connection *connection
 
 // stop any on going connection and process then, destroys the client
 extern u8 client_teardown (Client *client);
+
+// receives incoming data from the socket and handles cerver packets
+extern void client_receive (Client *client, Connection *connection);
 
 #endif

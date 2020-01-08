@@ -57,6 +57,12 @@ int random_int_in_range (int min, int max) {
 
 }
 
+float random_float (float abs) {
+
+    return ((float) rand () / (float)(RAND_MAX)) * abs;
+
+}
+
 /*** converters ***/
 
 // convert a string representing a hex to a string
