@@ -47,7 +47,7 @@ struct _Connection {
     estring *ip;
     struct sockaddr_storage address;
 
-    time_t timestamp;                       // connected timestamp
+    time_t connected_timestamp;         // when the connection started
 
     u32 max_sleep;
     bool connected_to_cerver;

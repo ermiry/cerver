@@ -20,6 +20,8 @@ struct _Lobby;
 
 typedef u32 ProtocolID;
 
+extern ProtocolID packets_get_protocol_id (void);
+
 extern void packets_set_protocol_id (ProtocolID protocol_id);
 
 typedef struct ProtocolVersion {
@@ -28,6 +30,8 @@ typedef struct ProtocolVersion {
 	u16 minor;
 	
 } ProtocolVersion;
+
+extern ProtocolVersion packets_get_protocol_version (void);
 
 extern void packets_set_protocol_version (ProtocolVersion version);
 
@@ -155,11 +159,13 @@ struct _Packet {
 	size_t data_size;
 	void *data;
 	char *data_end;
+	bool data_ref;
 
 	// the actual packet to be sent
 	PacketHeader *header;
 	size_t packet_size;
 	void *packet;
+	bool packet_ref;
 
 };
 
@@ -185,14 +191,27 @@ extern u8 packet_set_data (Packet *packet, void *data, size_t data_size);
 // appends the data to the end if the packet already has data
 // if the packet is empty, creates a new buffer
 // it creates a new copy of the data and the original can be safely freed
+// this does not work if the data has been set using a reference
 extern u8 packet_append_data (Packet *packet, void *data, size_t data_size);
+
+// sets a reference to a data buffer to send
+// data will not be copied into the packet and will not be freed after use
+// this method is usefull for example if you just want to send a raw json packet to a non-cerver
+// use this method with packet_send () with the raw flag on
+extern u8 packet_set_data_ref (Packet *packet, void *data, size_t data_size);
 
 // sets a the packet's packet using by copying the passed data
 // deletes the previuos packet's packet
 // returns 0 on succes, 1 on error
 extern u8 packet_set_packet (Packet *packet, void *data, size_t data_size);
 
+// sets a reference to a data buffer to send as the packet
+// data will not be copied into the packet and will not be freed after use
+// usefull when you need to generate your own cerver type packet by hand
+extern u8 packet_set_packet_ref (Packet *packet, void *data, size_t packet_size);
+
 // prepares the packet to be ready to be sent
+// WARNING: dont call this method if you have set the packet directly
 extern u8 packet_generate (Packet *packet);
 
 // generates a simple request packet of the requested type reday to be sent, 
@@ -200,20 +219,12 @@ extern u8 packet_generate (Packet *packet);
 extern Packet *packet_generate_request (PacketType packet_type, u32 req_type, 
 	void *data, size_t data_size);
 
-// sends a packet using the tcp protocol and the packet sock fd
-// returns 0 on success, 1 on error
-extern u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, bool raw);
-
-// sends a packet using the udp protocol
-// returns 0 on success, 1 on error
-extern u8 packet_send_udp (const void *packet, size_t packet_size);
-
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
 extern u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
 
-// check for packets with bad size, protocol, version, etc
+// check if packet has a compatible protocol id and a version
 extern u8 packet_check (Packet *packet);
 
 #endif

@@ -538,7 +538,6 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
                             // printf ("second buffer pos: %ld\n", buffer_pos);
 
                             if (!sock_receive->spare_packet) {
-                                // printf ("magic_receive_handle_buffer ()\n");
                                 cerver_packet_select_handler (cerver, sock_fd, packet, on_hold);
                             }
                                 

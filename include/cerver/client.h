@@ -57,7 +57,7 @@ struct _Client {
     time_t time_started;
     u64 uptime;
 
-    // custom packet hanlders
+    // custom packet handlers
     Action app_packet_handler;
     Action app_error_packet_handler;
     Action custom_packet_handler;
@@ -175,7 +175,8 @@ extern struct _Connection *client_connection_create (Client *client,
 // then listen for packets until the target one is received, 
 // then it returns the packet data as it is
 // returns 0 on success, 1 on error
-extern int client_connection_request_to_cerver (Client *client, struct _Connection *connection, struct _Packet *request_packet);
+extern int client_connection_request_to_cerver (Client *client, struct _Connection *connection, 
+    struct _Packet *request_packet);
 
 // starts a client connection -- used to connect a client to another server
 // returns only after a success or failed connection

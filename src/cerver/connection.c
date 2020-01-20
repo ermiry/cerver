@@ -52,19 +52,26 @@ Connection *connection_new (void) {
 
         connection->use_ipv6 = false;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
+
         connection->ip = NULL;
+
         connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
         connection->connected_to_cerver = false;
+
         connection->active = false;
+
         connection->auth_tries = DEFAULT_AUTH_TRIES;
 
         connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
-
         connection->cerver_report = NULL;
         connection->sock_receive = NULL;
 
         connection->received_data = NULL;
         connection->received_data_delete = NULL;
+
+        connection->receive_packets = true;
+        connection->custom_receive = NULL;
+        connection->custom_receive_args = NULL;
         
         connection->stats = connection_stats_new ();
     }
@@ -101,7 +108,7 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
     Connection *connection = connection_new ();
     if (connection) {
         connection->sock_fd = sock_fd;
-        time (&connection->timestamp);
+        // time (&connection->timestamp);
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
         connection_get_values (connection);
         connection->protocol = protocol;
@@ -296,7 +303,7 @@ int connection_connect (Connection *connection) {
 
 }
 
-// ends a client connection
+// ends a connection
 void connection_end (Connection *connection) {
 
     if (connection) {
@@ -544,14 +551,21 @@ void connection_update (void *ptr) {
         ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (cc->client, cc->connection, 
             cc->connection->custom_receive_args);
 
-        if (cc->connection->receive_packets) {
+        cc->connection->sock_receive = sock_receive_new ();
+
+        // if (cc->connection->receive_packets) {
             while (cc->client->running && cc->connection->active) {
-                // TODO: do we want to use the same logic as in cerver receive and add up to that stats?
-                if (cc->connection->custom_receive) cc->connection->custom_receive (custom_data);
-                // FIXME: add client receive
-                // else client_receive (cc->client, cc->connection);
+                if (cc->connection->custom_receive) {
+                    // if a custom receive method is set, use that one directly
+                    cc->connection->custom_receive (custom_data);
+                } 
+
+                else {
+                    // use the default receive method that expects cerver type packages
+                    client_receive (cc->client, cc->connection);
+                }
             }
-        }
+        // }
 
         connection_custom_receive_data_delete (custom_data);
         client_connection_aux_delete (cc);
