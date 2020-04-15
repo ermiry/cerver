@@ -367,8 +367,11 @@ u8 packet_generate (Packet *packet) {
         if (packet->packet) {
             char *end = (char *) packet->packet;
             memcpy (end, packet->header, sizeof (PacketHeader));
-            end += sizeof (PacketHeader);
-            memcpy (end, packet->data, packet->data_size);
+
+            if (packet->data_size > 0) {
+                end += sizeof (PacketHeader);
+                memcpy (end, packet->data, packet->data_size);
+            }
 
             retval = 0;
         }
@@ -574,6 +577,33 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
     }
 
     return retval;
+
+}
+
+// sends a packet directly to the socket
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd, 
+    int flags, size_t *total_sent, bool raw) {
+
+    if (packet) {
+        ssize_t sent;
+        const char *p = raw ? (char *) packet->data : (char *) packet->packet;
+        size_t packet_size = raw ? packet->data_size : packet->packet_size;
+
+        while (packet_size > 0) {
+            sent = send (sock_fd, p, packet_size, flags);
+            if (sent < 0) return 1;
+            p += sent;
+            packet_size -= sent;
+        }
+
+        if (total_sent) *total_sent = sent;
+
+        return 0;
+    }
+
+    return 1;
 
 }
 

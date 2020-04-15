@@ -103,7 +103,7 @@ int game_type_register (DoubleList *game_types, GameType *game_type) {
 
     if (game_type) {
         retval = dlist_insert_after (game_types, 
-            dlist_end (game_types), game_type) == true ? 0 : 1;
+            dlist_end (game_types), game_type);
     }
 
     return retval;

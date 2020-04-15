@@ -15,20 +15,22 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/threads/thpool.h"
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/avl.h" 
 
-#include "cerver/network.h"
-#include "cerver/packets.h"
+#include "cerver/admin.h"
 #include "cerver/auth.h"
-#include "cerver/handler.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
+#include "cerver/handler.h"
+#include "cerver/network.h"
+#include "cerver/packets.h"
+
+#include "cerver/threads/thread.h"
+#include "cerver/threads/thpool.h"
 
 #include "cerver/game/game.h"
-
-#include "cerver/collections/dllist.h"
-#include "cerver/collections/avl.h" 
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -216,7 +218,13 @@ Cerver *cerver_new (void) {
         c->app_error_packet_handler = NULL;
         c->custom_packet_handler = NULL;
 
-        c->cerver_update = NULL;
+        c->update = NULL;
+        c->update_args = NULL;
+
+        c->update_interval = NULL;
+        c->update_interval_args = NULL;
+
+        c->admin = NULL;
 
         c->info = NULL;
         c->stats = NULL;
@@ -247,6 +255,8 @@ void cerver_delete (void *ptr) {
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
         if (cerver->hold_fds) free (cerver->hold_fds);
+
+        admin_cerver_delete (cerver->admin);
 
         cerver_info_delete (cerver->info);
         cerver_stats_delete (cerver->stats);
@@ -414,12 +424,45 @@ void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
 }
 
 // sets a custom cerver update function to be executed every n ticks
-void cerver_set_update (Cerver *cerver, Action update, const u8 fps) {
+// a new thread will be created that will call your method each tick
+void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps) {
 
     if (cerver) {
-        cerver->cerver_update = update;
-        cerver->ticks = fps;
+        cerver->update = update;
+        cerver->update_args = update_args;
+        cerver->update_ticks = fps;
     }
+
+}
+
+// sets a custom cerver update method to be executed every x seconds (in intervals)
+// a new thread will be created that will call your method every x seconds
+void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, u32 interval) {
+
+    if (cerver) {
+        cerver->update_interval = update;
+        cerver->update_interval_args = update_args;
+        cerver->update_interval_secs = interval;
+    }
+
+}
+
+// enables admin connections to cerver
+// admin connections are handled in a different port and using a dedicated handler
+// returns 0 on success, 1 on error
+u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        cerver->admin = admin_cerver_create (port, use_ipv6);
+        if (cerver->admin) {
+            cerver->admin->cerver = cerver;
+            retval = 0;
+        }
+    }
+
+    return retval;
 
 }
 
@@ -466,24 +509,23 @@ static u8 cerver_network_init (Cerver *cerver) {
             #endif
         }
 
-        struct sockaddr_storage address;
-        memset (&address, 0, sizeof (struct sockaddr_storage));
+        memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
 
         if (cerver->use_ipv6) {
-            struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &address;
+            struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &cerver->address;
             addr->sin6_family = AF_INET6;
             addr->sin6_addr = in6addr_any;
             addr->sin6_port = htons (cerver->port);
         } 
 
         else {
-            struct sockaddr_in *addr = (struct sockaddr_in *) &address;
+            struct sockaddr_in *addr = (struct sockaddr_in *) &cerver->address;
             addr->sin_family = AF_INET;
             addr->sin_addr.s_addr = INADDR_ANY;
             addr->sin_port = htons (cerver->port);
         }
 
-        if ((bind (cerver->sock, (const struct sockaddr *) &address, sizeof (struct sockaddr_storage))) < 0) {
+        if ((bind (cerver->sock, (const struct sockaddr *) &cerver->address, sizeof (struct sockaddr_storage))) < 0) {
             cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
                 c_string_create ("Failed to bind cerver %s socket!", cerver->info->name->str));
             close (cerver->sock);
@@ -759,10 +801,11 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                 cerver->fds[cerver->current_n_fds].events = POLLIN;
                 cerver->current_n_fds++;
 
-                cerver->isRunning = true;
-
                 // cerver is not holding clients if there is not new connections
                 if (cerver->auth_required) cerver->holding_connections = false;
+
+                // 21/01/2020 -- start the admin cerver
+                if (cerver->admin) thread_create_detachable (admin_cerver_start, cerver->admin, "admin-main");
 
                 cerver_poll (cerver);
 
@@ -790,13 +833,120 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
 
+static CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
+
+    CerverUpdate *cu = (CerverUpdate *) malloc (sizeof (CerverUpdate));
+    if (cu) {
+        cu->cerver = cerver;
+        cu->args = args;
+    }
+
+    return cu;
+
+}
+
+static inline void cerver_update_delete (void *cerver_update_ptr) {
+
+    if (cerver_update_ptr) free (cerver_update_ptr);
+
+}
+
+// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// executes methods every tick
+static void cerver_update (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+        
+        #ifdef CERVER_DEBUG
+        cerver_log_success ("cerver_update () has started!");
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+
+        u32 time_per_frame = 1000000 / 15;
+        // printf ("time per frame: %d\n", time_per_frame);
+        u32 temp = 0;
+        i32 sleep_time = 0;
+        u64 delta_time = 0;
+
+        u64 delta_ticks = 0;
+        u32 fps = 0;
+        struct timespec start, middle, end;
+
+        while (cerver->isRunning) {
+            clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+
+            // do stuff
+            if (cerver->update) cerver->update (cu);
+
+            // limit the fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+            temp = (middle.tv_nsec - start.tv_nsec) / 1000;
+            // printf ("temp: %d\n", temp);
+            sleep_time = time_per_frame - temp;
+            // printf ("sleep time: %d\n", sleep_time);
+            if (sleep_time > 0) {
+                usleep (sleep_time);
+            } 
+
+            // count fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+            delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
+            delta_ticks += delta_time;
+            fps++;
+            // printf ("delta ticks: %ld\n", delta_ticks);
+            if (delta_ticks >= 1000) {
+                printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+                delta_ticks = 0;
+                fps = 0;
+            }
+        }
+
+        cerver_update_delete (cu);
+    }
+
+}
+
+// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// executes methods every x seconds
+static void cerver_update_interval (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+        
+        #ifdef CERVER_DEBUG
+        cerver_log_success ("cerver_update_interval () has started!");
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+
+        while (cerver->isRunning) {
+            if (cerver->update_interval) cerver->update_interval (cu);
+
+            sleep (cerver->update_interval_secs);
+        }
+
+        cerver_update_delete (cu);
+    }
+
+}
+
 // tell the cerver to start listening for connections and packets
 u8 cerver_start (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (!cerver->isRunning) {
+        cerver->isRunning = true;
+
         if (!cerver_one_time_init (cerver)) {
+            if (cerver->update)
+                thread_create_detachable ((void *(*) (void *)) cerver_update, cerver, NULL);
+
+            if (cerver->update_interval) 
+                thread_create_detachable ((void *(*) (void *)) cerver_update_interval, cerver, NULL);
+
             switch (cerver->protocol) {
                 case PROTOCOL_TCP: {
                     retval = cerver_start_tcp (cerver);
@@ -991,6 +1141,9 @@ u8 cerver_teardown (Cerver *cerver) {
         #endif
 
         cerver_clean (cerver);
+
+        // 22/01/2020 -- 10:05 -- correctly end admin connections
+        admin_cerver_teardown (cerver->admin);
 
         cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, 
             c_string_create ("Cerver %s teardown was successfull!", 

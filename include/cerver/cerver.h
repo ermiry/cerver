@@ -10,16 +10,17 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/avl.h"
+#include "cerver/collections/htab.h"
+
+#include "cerver/admin.h"
+#include "cerver/auth.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
-#include "cerver/auth.h"
 
 #include "cerver/threads/thpool.h"
 
 #include "cerver/game/game.h"
-
-#include "cerver/collections/avl.h"
-#include "cerver/collections/htab.h"
 
 #define DEFAULT_CONNECTION_QUEUE        7
 
@@ -28,8 +29,11 @@
 #define MAX_PORT_NUM                    65535
 #define MAX_UDP_PACKET_SIZE             65515
 
+#define DEFAULT_POLL_TIMEOUT            2000
 #define poll_n_fds                      100         // n of fds for the pollfd array
 
+struct _AdminCerver;
+struct _Auth;
 struct _Cerver;
 struct _Packet;
 struct _PacketsPerType;
@@ -99,6 +103,8 @@ extern void cerver_stats_print (struct _Cerver *cerver);
 struct _Cerver {
 
     i32 sock;                           // server socket
+    struct sockaddr_storage address;
+
     u16 port; 
     Protocol protocol;                  // we only support either tcp or udp
     bool use_ipv6;  
@@ -131,7 +137,7 @@ struct _Cerver {
 
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?
-    Auth *auth;                         // server auth info
+    struct _Auth *auth;                         // server auth info
      
     AVLTree *on_hold_connections;       // hold on the connections until they authenticate
     Htab *on_hold_connection_sock_fd_map;
@@ -155,8 +161,15 @@ struct _Cerver {
     Action app_error_packet_handler;
     Action custom_packet_handler;
 
-    Action cerver_update;                           // function to be executed every tick
-    u8 ticks;                                       // like fps
+    Action update;                          // method to be executed every tick
+    void *update_args;                      // args to pass to custom update method
+    u8 update_ticks;                        // like fps
+
+    Action update_interval;                 // the actual method to execute every x seconds
+    void *update_interval_args;             // args to pass to the update method
+    u32 update_interval_secs;               // the interval in seconds          
+
+    struct _AdminCerver *admin;
 
     CerverInfo *info;
     CerverStats *stats;
@@ -168,6 +181,7 @@ typedef struct _Cerver Cerver;
 /*** Cerver Methods ***/
 
 extern Cerver *cerver_new (void);
+
 extern void cerver_delete (void *ptr);
 
 // sets the cerver main network values
@@ -189,7 +203,7 @@ extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
 // sets an action to be performed by the cerver when a new client connects
 extern void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected);
 
-// sets the cerver poll timeout
+// sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 
 // configures the cerver to require client authentication upon new client connections
@@ -214,6 +228,15 @@ extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
 // sets a custom cerver update function to be executed in a fixed time, like a frame rate (fps)
 extern void cerver_set_update (Cerver *cerver, Action update, const u8 fps);
 
+// sets a custom cerver update method to be executed every x seconds (in intervals)
+// a new thread will be created that will call your method every x seconds
+extern void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, u32 interval);
+
+// enables admin connections to cerver
+// admin connections are handled in a different port and using a dedicated handler
+// returns 0 on success, 1 on error
+extern u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6);
+
 // returns a new cerver with the specified parameters
 extern Cerver *cerver_create (const CerverType type, const char *name, 
     const u16 port, const Protocol protocol, bool use_ipv6,
@@ -231,6 +254,16 @@ extern u8 cerver_shutdown (Cerver *cerver);
 
 // teardown a server -> stop the server and clean all of its data
 extern u8 cerver_teardown (Cerver *cerver);
+
+// 31/01/2020 -- 11:15 -- aux structure for cerver update methods
+struct _CerverUpdate {
+
+    Cerver *cerver;
+    void *args;
+
+};
+
+typedef struct _CerverUpdate CerverUpdate;
 
 /*** Serialization ***/
 

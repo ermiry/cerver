@@ -233,6 +233,21 @@ void client_drop (Cerver *cerver, Client *client) {
 
 }
 
+// adds a new connection to the end of the client to the client's connection list
+// without adding it to any other structure
+// returns 0 on success, 1 on error
+u8 client_add_connection (Client *client, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (client && connection) {
+        retval = dlist_insert_after (client->connections, dlist_end (client->connections), connection);
+    }
+
+    return retval;
+
+}
+
 // removes the connection from the client
 // and also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
@@ -547,7 +562,7 @@ Client *client_get_by_session_id (Cerver *cerver, char *session_id) {
         if (client_query) {
             client_set_session_id (client_query, session_id);
 
-            void *data = avl_get_node_data (cerver->clients, client_query);
+            void *data = avl_get_node_data (cerver->clients, client_query, NULL);
             if (data) client = (Client *) data;     // found
 
             client_delete (client_query);
@@ -642,7 +657,7 @@ int client_connection_request_to_cerver (Client *client, Connection *connection,
     int retval = 1;
 
     if (client && connection) {
-        connection->sock_receive = sock_receive_new ();
+        // connection->sock_receive = sock_receive_new ();
         if (!connection_connect (connection)) {
             client_start (client);
             connection->active = true;
@@ -738,7 +753,7 @@ int client_connection_end (Client *client, Connection *connection) {
         client_connection_terminate (client, connection);
 
         connection_delete (dlist_remove_element (client->connections, 
-            dlist_get_element (client->connections, connection)));
+            dlist_get_element (client->connections, connection, NULL)));
 
         retval = 0;
     }

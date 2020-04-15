@@ -33,14 +33,16 @@ typedef struct AuthData {
 } AuthData;
 
 // info for the server to perfom a correct client authentication
-typedef struct Auth {
+struct _Auth {
 
     struct _Packet *auth_packet;              // requests client authentication
 
     u8 max_auth_tries;                // client's chances of auth before being dropped
     delegate authenticate;            // authentication function
 
-} Auth;
+};
+
+typedef struct _Auth Auth;
 
 extern Auth *auth_new (void);
 extern void auth_delete (Auth *auth);

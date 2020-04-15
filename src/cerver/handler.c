@@ -193,6 +193,7 @@ void cerver_test_packet_handler (Packet *packet) {
         if (test_packet) {
             packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
             test_packet->packet_type = TEST_PACKET;
+            packet_generate (test_packet);
             if (packet_send (test_packet, 0, NULL, false)) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
                     c_string_create ("Failed to send error packet from cerver %s.", 

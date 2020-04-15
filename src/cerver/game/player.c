@@ -168,7 +168,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 player_unregister_from_lobby_poll (lobby, player);
             }
 
-            if (!dlist_remove (lobby->players, player)) {
+            if (!dlist_remove (lobby->players, player, NULL)) {
                 lobby->n_current_players--;
 
                 #ifdef CERVER_DEBUG
@@ -210,14 +210,14 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
 // gets a player from the lobby using the query
 Player *player_get_from_lobby (Lobby *lobby, Player *query) {
 
-    return (lobby ? (Player *) dlist_search (lobby->players, query) : NULL);
+    return (lobby ? (Player *) dlist_search (lobby->players, query, NULL) : NULL);
 
 }
 
 // get sthe list element associated with the player
 ListElement *player_get_le_from_lobby (Lobby *lobby, Player *player) {
 
-    return (lobby ? dlist_get_element (lobby->players, player) : NULL);
+    return (lobby ? dlist_get_element (lobby->players, player, NULL) : NULL);
 
 }
 

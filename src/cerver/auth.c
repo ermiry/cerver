@@ -159,7 +159,7 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                             packet->cerver->info->name->str));
                         #endif
 
-                        Packet *error_packet = error_packet_generate (ERR_SERVER_ERROR, "Internal cerver error!");
+                        Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
                         if (error_packet) {
                             packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                             packet_send (error_packet, 0, NULL, false);
@@ -179,7 +179,7 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                         packet->cerver->info->name->str));
                     #endif
 
-                    Packet *error_packet = error_packet_generate (ERR_SERVER_ERROR, "Internal cerver error!");
+                    Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
                     if (error_packet) {
                         packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                         packet_send (error_packet, 0, NULL, false);
@@ -199,7 +199,7 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                     packet->cerver->info->name->str));
                 #endif
                 
-                Packet *error_packet = error_packet_generate (ERR_SERVER_ERROR, "Internal cerver error!");
+                Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
                 if (error_packet) {
                     packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                     packet_send (error_packet, 0, NULL, false);
@@ -219,7 +219,7 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                 packet->cerver->info->name->str));
             #endif
             
-            Packet *error_packet = error_packet_generate (ERR_SERVER_ERROR, "Internal cerver error!");
+            Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
             if (error_packet) {
                 packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                 packet_send (error_packet, 0, NULL, false);
@@ -755,7 +755,7 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
         Connection *query = connection_new ();
         if (query) {
             query->sock_fd = sock_fd;
-            void *connection_data = avl_get_node_data (cerver->on_hold_connections, query);
+            void *connection_data = avl_get_node_data (cerver->on_hold_connections, query, NULL);
             if (connection_data) {
                 connection = (Connection *) connection_data;
             }

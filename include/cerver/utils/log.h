@@ -3,8 +3,6 @@
 
 #include <stdio.h>
 
-#include "cerver/cerver.h"
-
 #define COLOR_RED       "\x1b[31m"
 #define COLOR_GREEN     "\x1b[32m"
 #define COLOR_YELLOW    "\x1b[33m"
@@ -15,27 +13,27 @@
 
 typedef enum LogMsgType {
 
-	LOG_NO_TYPE = 0,
+	LOG_NO_TYPE             = 0,
 
-    LOG_ERROR = 1,
-    LOG_WARNING,
-    LOG_SUCCESS,
-    LOG_DEBUG,
-    LOG_TEST,
+	LOG_ERROR               = 1,
+	LOG_WARNING             = 2,
+	LOG_SUCCESS             = 3,
+	LOG_DEBUG               = 4,
+	LOG_TEST                = 5,
 
-    LOG_CERVER,
-    LOG_CLIENT,
+	LOG_CERVER,
+	LOG_CLIENT,
 
-    LOG_REQ,
-    LOG_PACKET,
-    LOG_FILE,
-    LOG_GAME,
-    LOG_PLAYER,
+	LOG_REQ,
+	LOG_PACKET,
+	LOG_FILE,
+	LOG_GAME,
+	LOG_PLAYER,
 
 } LogMsgType;
 
 extern void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
-    const char *msg);
+	const char *msg);
 
 // prints a red error message to stderr
 extern void cerver_log_error (const char *msg);

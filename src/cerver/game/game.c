@@ -164,7 +164,7 @@ void game_cerver_register_lobby (GameCerver *game_cerver, Lobby *lobby) {
 
     if (game_cerver && lobby) {
         // check if the lobby is already registered to the game cerver
-        if (!dlist_search (game_cerver->current_lobbys, lobby)) {
+        if (!dlist_search (game_cerver->current_lobbys, lobby, NULL)) {
             dlist_insert_after (game_cerver->current_lobbys, dlist_end (game_cerver->current_lobbys), lobby);
             game_cerver->stats->current_active_lobbys += 1;
 
@@ -195,7 +195,7 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 
     if (game_cerver && lobby) {
         void *lobby_data = dlist_remove_element (game_cerver->current_lobbys, 
-                dlist_get_element (game_cerver->current_lobbys, lobby));
+                dlist_get_element (game_cerver->current_lobbys, lobby, NULL));
 
         if (lobby_data) {
             Lobby *l = (Lobby *) lobby_data;

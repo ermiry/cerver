@@ -113,6 +113,8 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
         connection_get_values (connection);
         connection->protocol = protocol;
 
+        connection->sock_receive = sock_receive_new ();
+
         // connection->stats = connection_stats_new ();
     }
 
@@ -307,9 +309,11 @@ int connection_connect (Connection *connection) {
 void connection_end (Connection *connection) {
 
     if (connection) {
-        close (connection->sock_fd);
-        // connection->sock_fd = -1;
-        connection->active = false;
+        if (connection->active) {
+            close (connection->sock_fd);
+            // connection->sock_fd = -1;
+            connection->active = false;
+        }
     }
 
 }
@@ -337,7 +341,7 @@ Connection *connection_get_by_sock_fd_from_client (Client *client, i32 sock_fd) 
         Connection *query = connection_new ();
         if (query) {
             query->sock_fd = sock_fd;
-            void *connection_data = dlist_search (client->connections, query);
+            void *connection_data = dlist_search (client->connections, query, NULL);
             connection_delete (query);
             return (connection_data ? (Connection *) connection_data : NULL);
         }
@@ -367,7 +371,7 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
     u8 retval = 1;
 
     if (client && connection) {
-        if (dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
+        if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
             #ifdef CERVER_DEBUG
             if (client->session_id) {
                 cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
@@ -551,7 +555,7 @@ void connection_update (void *ptr) {
         ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (cc->client, cc->connection, 
             cc->connection->custom_receive_args);
 
-        cc->connection->sock_receive = sock_receive_new ();
+        // cc->connection->sock_receive = sock_receive_new ();
 
         // if (cc->connection->receive_packets) {
             while (cc->client->running && cc->connection->active) {

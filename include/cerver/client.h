@@ -111,6 +111,11 @@ extern u8 client_disconnect (Client *client);
 // unregisters the client from the cerver and the deletes him
 extern void client_drop (struct _Cerver *cerver, Client *client);
 
+// adds a new connection to the end of the client to the client's connection list
+// without adding it to any other structure
+// returns 0 on success, 1 on error
+extern u8 client_add_connection (Client *client, Connection *connection);
+
 // removes the connection from the client
 // and also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error

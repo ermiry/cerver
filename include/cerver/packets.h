@@ -38,20 +38,22 @@ extern void packets_set_protocol_version (ProtocolVersion version);
 // these indicate what type of packet we are sending/recieving
 typedef enum PacketType {
 
-	CERVER_PACKET       = 0,
-	CLIENT_PACKET       = 1,
-	ERROR_PACKET        = 2,
+    CERVER_PACKET       = 0,
+    CLIENT_PACKET       = 1,
+
+    ERROR_PACKET        = 2,
+
 	REQUEST_PACKET      = 3,
-	AUTH_PACKET         = 4,
-	GAME_PACKET         = 5,
+    AUTH_PACKET         = 4,
+    GAME_PACKET         = 5,
 
-	APP_PACKET          = 6,
-	APP_ERROR_PACKET    = 7,
+    APP_PACKET          = 6,
+    APP_ERROR_PACKET    = 7,
 
-	CUSTOM_PACKET       = 70,
+    CUSTOM_PACKET       = 70,
 
-	TEST_PACKET         = 100,
-	DONT_CHECK_TYPE     = 101,
+    TEST_PACKET         = 100,
+    DONT_CHECK_TYPE     = 101,
 
 } PacketType;
 
@@ -96,22 +98,14 @@ extern void packet_header_print (PacketHeader *header);
 // returns 0 on success, 1 on error
 extern u8 packet_header_copy (PacketHeader **dest, PacketHeader *source);
 
-// these indicate the data and more info about the packet type
 typedef enum RequestType {
 
-	CLIENT_CLOSE_CONNECTION     = 2,
-	CLIENT_DISCONNET            = 3,
-
-	REQ_GET_FILE                = 4,
-	POST_SEND_FILE              = 5,
-	
-	REQ_AUTH_CLIENT             = 6,
-	CLIENT_AUTH_DATA            = 7,
-	SUCCESS_AUTH                = 8,
-
+    REQ_GET_FILE                = 1,
+    POST_SEND_FILE              = 2,
+    
 } RequestType;
 
-typedef enum CerverPacket {
+typedef enum CerverPacketType {
 
 	CERVER_INFO                 = 0,
 	CERVER_TEARDOWN             = 1,
@@ -119,9 +113,25 @@ typedef enum CerverPacket {
 	CERVER_INFO_STATS           = 2,
 	CERVER_GAME_STATS           = 3
 
-} CerverPacket;
+} CerverPacketType;
 
-typedef enum GamePacket {
+typedef enum ClientPacketType {
+
+	CLIENT_CLOSE_CONNECTION     = 1,
+	CLIENT_DISCONNET            = 2,
+
+} ClientPacketType;
+
+typedef enum AuthPacketType {
+
+    REQ_AUTH_CLIENT             = 1,
+
+    CLIENT_AUTH_DATA            = 2,
+    SUCCESS_AUTH                = 3,
+
+} AuthPacketType;
+
+typedef enum GamePacketType {
 
 	GAME_LOBBY_CREATE           = 0,
 	GAME_LOBBY_JOIN             = 1,
@@ -134,7 +144,7 @@ typedef enum GamePacket {
 	GAME_INPUT_UPDATE           = 7,
 	GAME_SEND_MSG               = 8,
 
-} GamePacket;
+} GamePacketType;
 
 struct _RequestData {
 
@@ -223,6 +233,12 @@ extern Packet *packet_generate_request (PacketType packet_type, u32 req_type,
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
 extern u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
+
+// sends a packet directly to the socket
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+extern u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd, 
+    int flags, size_t *total_sent, bool raw);
 
 // check if packet has a compatible protocol id and a version
 extern u8 packet_check (Packet *packet);

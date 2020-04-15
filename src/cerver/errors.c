@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+
 #include "cerver/types/estring.h"
 
 #include "cerver/errors.h"
@@ -11,6 +13,8 @@ Error *error_new (u32 error_type, const char *msg) {
     Error *error = (Error *) malloc (sizeof (Error));
     if (error) {
         memset (error, 0, sizeof (Error));
+
+        time (&error->timestamp);
         error->error_type = error_type;
         error->msg = msg ? estring_new (msg) : NULL;
     }
@@ -43,6 +47,8 @@ static SError *error_serialize (Error *error) {
 
     if (error) {
         SError *serror = serror_new ();
+
+        serror->timestamp = error->timestamp;
         serror->error_type = error->error_type;
         memset (serror->msg, 0, 64);
         strncpy (serror->msg, error->msg->str, 64);

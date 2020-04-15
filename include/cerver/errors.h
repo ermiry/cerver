@@ -1,13 +1,16 @@
 #ifndef _CERVER_ERRORS_H_
 #define _CERVER_ERRORS_H_
 
+#include <time.h>
+
 #include "cerver/types/estring.h"
+
 #include "cerver/packets.h"
 
 typedef enum ErrorType {
 
     // internal server error, like no memory
-    ERR_SERVER_ERROR            = 0,   
+    ERR_CERVER_ERROR            = 0,   
 
     ERR_CREATE_LOBBY            = 1,
     ERR_JOIN_LOBBY              = 2,
@@ -25,13 +28,14 @@ typedef enum ErrorType {
 // and an event is triggered
 typedef struct Error {
 
-    // TODO: maybe add time?
+    time_t timestamp;
     u32 error_type;
     estring *msg;
 
 } Error;
 
 extern Error *error_new (u32 error_type, const char *msg);
+
 extern void error_delete (void *ptr);
 
 // creates an error packet ready to be sent
@@ -40,6 +44,7 @@ extern Packet *error_packet_generate (u32 error_type, const char *msg);
 // serialized error data
 typedef struct SError {
 
+    time_t timestamp;
     u32 error_type;
     char msg[64];
 
