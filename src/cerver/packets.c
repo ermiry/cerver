@@ -562,9 +562,9 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
                 }
 
                 else {
-                    packet->cerver->stats->sent_packets->n_bad_packets += 1;
+                    if (packet->connection) packet->cerver->stats->sent_packets->n_bad_packets += 1;
                     if (packet->client) packet->client->stats->sent_packets->n_bad_packets += 1;
-                    packet->connection->stats->sent_packets->n_bad_packets += 1;
+                    if (packet->connection) packet->connection->stats->sent_packets->n_bad_packets += 1;
 
                     if (total_sent) *total_sent = 0;
                 }

@@ -555,7 +555,7 @@ void connection_update (void *ptr) {
         ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (cc->client, cc->connection, 
             cc->connection->custom_receive_args);
 
-        // cc->connection->sock_receive = sock_receive_new ();
+        if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
         // if (cc->connection->receive_packets) {
             while (cc->client->running && cc->connection->active) {
