@@ -225,8 +225,9 @@ extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action 
 // sets a custom packet handler
 extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
 
-// sets a custom cerver update function to be executed in a fixed time, like a frame rate (fps)
-extern void cerver_set_update (Cerver *cerver, Action update, const u8 fps);
+// sets a custom cerver update function to be executed every n ticks
+// a new thread will be created that will call your method each tick
+extern void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps);
 
 // sets a custom cerver update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
