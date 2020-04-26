@@ -2,6 +2,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef CERVER_DEBUG
+#include <errno.h>
+#endif
+
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -562,6 +566,12 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
                 }
 
                 else {
+                    #ifdef CERVER_DEBUG
+                    printf ("\n");
+                    perror ("Error");
+                    printf ("\n");
+                    #endif
+
                     if (packet->connection) packet->cerver->stats->sent_packets->n_bad_packets += 1;
                     if (packet->client) packet->client->stats->sent_packets->n_bad_packets += 1;
                     if (packet->connection) packet->connection->stats->sent_packets->n_bad_packets += 1;

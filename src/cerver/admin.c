@@ -1213,6 +1213,10 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
 static void admin_cerver_receive_handle_failed (AdminCerver *admin_cerver, i32 sock_fd) {
 
 	if (admin_cerver) {
+		#ifdef CERVER_DEBUG
+		printf ("\nadmin_cerver_receive_handle_failed ()\n");
+		#endif
+
 		Admin *admin = admin_get_by_sock_fd (admin_cerver, sock_fd);
 		if (admin) {
 			Connection *connection = connection_get_by_sock_fd_from_client (admin->client, sock_fd);
@@ -1283,6 +1287,12 @@ static void amdin_cerver_receive (AdminCerver *admin_cerver, i32 sock_fd) {
 			// ssize_t rc = read (sock_fd, buffer, admin_cerver->receive_buffer_size);
 
 			if (rc < 0) {
+				#ifdef CERVER_DEBUG
+				printf ("\n");
+				perror ("Error");
+				printf ("\n");
+				#endif
+
 				if (errno != EWOULDBLOCK) {     // no more data to read 
 					#ifdef CERVER_DEBUG 
 					char *status = c_string_create ("amdin_cerver_receive () - rc < 0 - sock fd: %d", sock_fd);
@@ -1307,7 +1317,9 @@ static void amdin_cerver_receive (AdminCerver *admin_cerver, i32 sock_fd) {
 				// 	free (status);
 				// }
 				
-				// perror ("Error ");
+				// printf ("\n");
+				// perror ("Error");
+				// printf ("\n");
 				// #endif
 
 				admin_cerver_receive_handle_failed (admin_cerver, sock_fd);
