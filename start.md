@@ -45,15 +45,18 @@ Let's start with a little explanation on the source code layout. You need to foc
 
 Finally there is the examples directory, where you will find some examples to get you started.
 
-We will focus on compiling the welcome example (welcome.c). To do this, in the **cerver** code that you downloaded, copy the welcome.c file form the examples directory into the src directory. Now you can compile it using the included Makefile.
-
-The are three basic commands for the Makefile:
+We will focus on compiling the welcome example (welcome.c). To do this, first we need to compile the cerver library into a shared object (.so). The are three basic commands for the Makefile:
 
 | Command        | Description   |
 | -------------  |:-------------:|
-| make           | Compile your source code and tell you if there are some errors   |
-| make run       | Run the compilled binary                                         |
+| make           | Compile cerver's source code into a shared object (.so)          |
+| make examples  | Compile the examples using the newly created cerver.so           |
 | make clean     | Clean created objects (.o files) and binaries                    |
+
+
+After a success compilation you can run any of the examples running the following command:
+
+`LD_PRELOAD=./bin/cerver.so ./examples/bin/welcome`
 
 You should see the following ouput in your terminal inidicating that the **cerver** has initialized successfully and is ready to listen for connections:
 
