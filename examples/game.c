@@ -31,6 +31,8 @@ static int my_game_init (void) {
 	// method where you will init global values for your game / app
 	// like connecting to a database or loading some resources
 
+	return 0;
+
 }
 
 static void my_game_packet_handler (void *data) {
@@ -50,12 +52,16 @@ static void *arcade_game_start (void *data) {
 	// method to start the arcade game
 	// here you can init some data or load additional resources
 
+	return NULL;
+
 }
 
 static void *arcade_game_end (void *data) {
 
 	// method to end the arcade game
 	// here you can destroy all the data that you created for the game
+
+	return NULL;
 
 }
 

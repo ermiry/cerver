@@ -5,8 +5,8 @@
 #include <time.h>
 #include <signal.h>
 
-#include "cerver/cerver.h"
-#include "cerver/utils/log.h"
+#include <cerver/cerver.h>
+#include <cerver/utils/log.h>
 
 static Cerver *my_cerver = NULL;
 
