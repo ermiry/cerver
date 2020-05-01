@@ -9,11 +9,84 @@
 
 #include <unistd.h>
 
+#include "cerver/types/types.h"
+#include "cerver/types/estring.h"
+
+#include "cerver/collections/dllist.h"
+
 #include "cerver/network.h"
 #include "cerver/packets.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/json.h"
+
+// returns an allocated string with the file extensio
+// NULL if no file extension
+char *files_get_file_extension (const char *filename) {
+
+    char *retval = NULL;
+
+    if (filename) {
+        char *ptr = strrchr ((char *) filename, '.');
+        if (ptr) {
+            *ptr++;
+            size_t ext_len = 0;
+            char *p = ptr;
+            while (*p++) ext_len++;
+
+            char *ext = (char *) calloc (ext_len + 1, sizeof (char));
+            if (ext) {
+                memcpy (ext, ptr, ext_len);
+                ext[ext_len] = '\0';
+
+                retval = ext;
+            }
+        }
+        
+    }
+
+    return retval;
+
+}
+
+// returns a list of strings containg the names of all the files in the directory
+DoubleList *files_get_from_dir (const char *dir) {
+
+    DoubleList *images = NULL;
+
+    if (dir) {
+        DIR *dp;
+        struct dirent *ep;
+
+		images = dlist_init (estring_delete, estring_comparator);
+
+        dp = opendir (dir);
+        if (dp) {
+            estring *file = NULL;
+            while ((ep = readdir (dp)) != NULL) {
+                if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
+                    file = estring_create ("%s/%s", dir, ep->d_name);
+
+                    dlist_insert_after (images, dlist_end (images), file);
+                }
+            }
+
+            (void) closedir (dp);
+        }
+
+        else {
+			char *status = c_string_create ("Failed to open dir %s", dir);
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+        }
+    }
+
+    return images;
+
+}
 
 // opens a file and returns it as a FILE
 FILE *file_open_as_file (const char *filename, const char *modes, struct stat *filestatus) {
@@ -121,4 +194,21 @@ int file_send (const char *filename, int sock_fd) {
 
     return retval;
 
+}
+
+json_value *file_json_parse (const char *filename) {
+
+    json_value *value = NULL;
+
+    if (filename) {
+        int file_size;
+        char *file_contents = file_read (filename, &file_size);
+        json_char *json = (json_char *) file_contents;
+        value = json_parse (json, file_size);
+
+        free (file_contents);
+    }
+
+    return value;
+    
 }
