@@ -5,10 +5,12 @@
 #include <time.h>
 #include <signal.h>
 
-#include "cerver/cerver.h"
-#include "cerver/game/game.h"
-#include "cerver/game/gametype.h"
-#include "cerver/utils/log.h"
+#include <cerver/version.h>
+
+#include <cerver/cerver.h>
+#include <cerver/game/game.h>
+#include <cerver/game/gametype.h>
+#include <cerver/utils/log.h>
 
 static Cerver *my_cerver = NULL;
 
@@ -78,6 +80,10 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, my_game_end);
+
+	printf ("\n");
+	cerver_version_print_full ();
+	printf ("\n");
 
 	if (!my_game_init ()) {
 		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);

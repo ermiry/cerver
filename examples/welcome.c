@@ -5,6 +5,8 @@
 #include <time.h>
 #include <signal.h>
 
+#include <cerver/version.h>
+
 #include <cerver/cerver.h>
 #include <cerver/utils/log.h>
 
@@ -28,6 +30,10 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	printf ("\n");
+	cerver_version_print_full ();
+	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {

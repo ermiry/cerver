@@ -7,19 +7,19 @@
 
 #include <bson/bson.h>
 
-#include "cerver/types/types.h"
-#include "cerver/types/estring.h"
-#include "cerver/collections/dllist.h"
+#include <cerver/types/types.h>
+#include <cerver/types/estring.h>
+#include <cerver/collections/dllist.h>
 
-#include "cerver/cerver.h"
-#include "cerver/handler.h"
+#include <cerver/cerver.h>
+#include <cerver/handler.h>
 
-#include "cerver/http/parser.h"
-#include "cerver/http/json.h"
-#include "cerver/http/response.h"
+#include <cerver/http/parser.h>
+#include <cerver/http/json.h>
+#include <cerver/http/response.h>
 
-#include "cerver/utils/utils.h"
-#include "cerver/utils/log.h"
+#include <cerver/utils/utils.h>
+#include <cerver/utils/log.h>
 
 Cerver *web_cerver = NULL;
 
@@ -134,6 +134,10 @@ int main (int argc, char **argv) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	printf ("\n");
+	cerver_version_print_full ();
+	printf ("\n");
 
 	web_cerver = cerver_create (WEB_CERVER, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 2000);
 	if (web_cerver) {
