@@ -118,4 +118,8 @@ extern void *dlist_get_at (DoubleList *dlist, unsigned int idx);
 // return 0 on succes 1 on error
 extern int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *two));
 
+/*** Other ***/
+
+extern void **dlist_to_array (DoubleList *dlist, size_t *count);
+
 #endif

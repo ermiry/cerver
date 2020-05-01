@@ -597,3 +597,29 @@ int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *t
 	return retval;
 
 }
+
+/*** Other ***/
+
+void **dlist_to_array (DoubleList *dlist, size_t *count) {
+
+	void **array = NULL;
+
+	if (dlist) {
+		array = (void **) calloc (dlist->size, sizeof (void *));
+		if (array) {
+			unsigned int idx = 0;
+			ListElement *ptr = dlist_start (dlist);
+			while (ptr != NULL) {
+				array[idx] = ptr->data;
+
+				ptr = ptr->next;
+				idx++;
+			}
+
+			if (count) *count = dlist->size;
+		}
+	}
+
+	return array;
+
+}
