@@ -19,7 +19,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := -g $(DEFINES) $(RUN_MAKE) -fPIC
+CFLAGS      := -g $(DEFINES) -fPIC
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include $(LIB)
 INCDEP      := -I $(INCDIR)
