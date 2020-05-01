@@ -1,5 +1,5 @@
 # TARGET      := cerver
-SLIB		:= cerver.so
+SLIB		:= libcerver.so
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
@@ -19,7 +19,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := -g $(DEFINES) $(RUN_MAKE)
+CFLAGS      := -g $(DEFINES) $(RUN_MAKE) -fPIC
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include $(LIB)
 INCDEP      := -I $(INCDIR)
@@ -32,6 +32,10 @@ all: directories $(SLIB)
 
 # run: 
 # 	./$(TARGETDIR)/$(TARGET)
+
+install: $(SLIB)
+	install -m 644 ./bin/libcerver.so /usr/local/lib/
+	cp -R ./include/cerver /usr/local/include
 
 remake: cleaner all
 
@@ -61,7 +65,7 @@ $(SLIB): $(OBJECTS)
 # compile
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(INC) -c -fpic -o $@ $<
+	$(CC) $(CFLAGS) $(INC) $(LIB) -c -o $@ $<
 	@$(CC) $(CFLAGS) $(INCDEP) -MM $(SRCDIR)/$*.$(SRCEXT) > $(BUILDDIR)/$*.$(DEPEXT)
 	@cp -f $(BUILDDIR)/$*.$(DEPEXT) $(BUILDDIR)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(BUILDDIR)/$*.$(OBJEXT):|' < $(BUILDDIR)/$*.$(DEPEXT).tmp > $(BUILDDIR)/$*.$(DEPEXT)
@@ -70,8 +74,8 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 
 examples: ./examples/welcome.c ./examples/game.c
 	@mkdir -p ./examples/bin
-	gcc -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l:./bin/cerver.so
-	gcc -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l:./bin/cerver.so
+	$(CC) -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
+	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 
 # non-file Targets
 .PHONY: all remake clean cleaner resources examples
