@@ -21,7 +21,7 @@ OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) -fPIC
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
-INC         := -I $(INCDIR) -I /usr/local/include $(LIB)
+INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
