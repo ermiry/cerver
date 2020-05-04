@@ -131,6 +131,10 @@ void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const
 
 void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
 
+bool dlist_is_empty (DoubleList *dlist) { return dlist ? (dlist->size == 0) : false; }
+
+bool dlist_is_not_empty (DoubleList *dlist) { return dlist ? (dlist->size > 0) : false; }
+
 DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *one, const void *two)) {
 
 	DoubleList *dlist = dlist_new ();
@@ -582,15 +586,21 @@ int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *t
 	int retval = 1;
 
 	if (dlist && dlist->compare) {
-		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
+		if (dlist->size > 1) {
+			int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
-		if (comp) {
-			pthread_mutex_lock (dlist->mutex);
+			if (comp) {
+				pthread_mutex_lock (dlist->mutex);
 
-			dlist->start = dlist_merge_sort (dlist->start, comp);
+				dlist->start = dlist_merge_sort (dlist->start, comp);
+				retval = 0;
+
+				pthread_mutex_unlock (dlist->mutex);
+			}
+		}
+
+		else {
 			retval = 0;
-
-			pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 

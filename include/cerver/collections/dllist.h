@@ -1,6 +1,8 @@
 #ifndef _COLLECTIONS_DLIST_H_
 #define _COLLECTIONS_DLIST_H_
 
+#include <stdbool.h>
+
 #include <pthread.h>
 
 typedef struct ListElement {
@@ -41,6 +43,10 @@ extern void dlist_set_compare (DoubleList *list, int (*compare)(const void *one,
 
 // sets list destroy function
 extern void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data));
+
+extern bool dlist_is_empty (DoubleList *dlist);
+
+extern bool dlist_is_not_empty (DoubleList *dlist);
 
 // creates a new double list (double linked list)
 // destroy is the method used to free up the data, NULL to use the default free
