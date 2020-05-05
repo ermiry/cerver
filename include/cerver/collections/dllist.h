@@ -55,11 +55,15 @@ extern DoubleList *dlist_init (void (*destroy)(void *data),
 	int (*compare)(const void *one, const void *two));
 
 // destroys all of the dlist's elements and their data but keeps the dlist
-extern void dlist_reset (DoubleList *);
+extern void dlist_reset (DoubleList *dlist);
 
 // only gets rid of the list elements, but the data is kept
 // this is usefull if another dlist or structure points to the same data
-extern void dlist_clean (DoubleList *);
+extern void dlist_clear (DoubleList *dlist);
+
+// clears the dlist - only gets rid of the list elements, but the data is kept
+// and then deletes the dlist
+extern void dlist_clear_and_delete (void *dlist_ptr);
 
 /*** insert ***/
 

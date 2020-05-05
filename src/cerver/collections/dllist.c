@@ -176,7 +176,7 @@ void dlist_reset (DoubleList *dlist) {
 
 // only gets rid of the list elements, but the data is kept
 // this is usefull if another dlist or structure points to the same data
-void dlist_clean (DoubleList *dlist) {
+void dlist_clear (DoubleList *dlist) {
 
 	if (dlist) {
 		pthread_mutex_lock (dlist->mutex);
@@ -186,6 +186,19 @@ void dlist_clean (DoubleList *dlist) {
 			data = dlist_internal_remove_element (dlist, NULL);
 
 		pthread_mutex_unlock (dlist->mutex);
+	}
+
+}
+
+// clears the dlist - only gets rid of the list elements, but the data is kept
+// and then deletes the dlist
+void dlist_clear_and_delete (void *dlist_ptr) {
+
+	if (dlist_ptr) {
+		DoubleList *dlist = (DoubleList *) dlist_ptr;
+
+		dlist_clear (dlist);
+		dlist_delete (dlist);
 	}
 
 }
