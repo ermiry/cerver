@@ -37,6 +37,10 @@ install: $(SLIB)
 	install -m 644 ./bin/libcerver.so /usr/local/lib/
 	cp -R ./include/cerver /usr/local/include
 
+uninstall:
+	rm /usr/local/lib/libcerver.so
+	rm -r /usr/local/include/cerver
+
 remake: cleaner all
 
 directories:
