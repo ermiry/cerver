@@ -147,7 +147,7 @@ extern void **dlist_to_array (DoubleList *dlist, size_t *count);
 // returns a exact copy of the dlist
 // creates the dlist's elements using the same data pointers as in the original dlist
 // be carefull which dlist you delete first, as the other should use dlist_clear first before delete
-// the dlist's delete and comparator methods are set from the original
+// the new dlist's delete and comparator methods are set from the original
 extern DoubleList *dlist_copy (DoubleList *dlist);
 
 // returns a exact cloen of the dlist
@@ -155,7 +155,13 @@ extern DoubleList *dlist_copy (DoubleList *dlist);
 	// which takes as the original each element's data of the dlist
 	// and should return the same structure type as the original method that can be safely deleted
 	// with the dlist's delete method
-// the dlist's delete and comparator methods are set from the original
+// the new dlist's delete and comparator methods are set from the original
 extern DoubleList *dlist_clone (DoubleList *dlist, void *(*clone) (const void *original));
+
+// splits the original dlist into two halfs
+// if dlist->size is odd, extra element will be left in the first half (dlist)
+// both lists can be safely deleted
+// the new dlist's delete and comparator methods are set from the original
+extern DoubleList *dlist_split_half (DoubleList *dlist);
 
 #endif
