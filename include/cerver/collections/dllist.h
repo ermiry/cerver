@@ -37,6 +37,12 @@ typedef struct DoubleList {
 
 extern void dlist_delete (void *dlist_ptr);
 
+// only deletes the list if its empty (size == 0)
+extern void dlist_delete_if_empty (void *dlist_ptr);
+
+// only deletes the list if its NOT empty (size > 0)
+extern void dlist_delete_if_not_empty (void *dlist_ptr);
+
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern void dlist_set_compare (DoubleList *list, int (*compare)(const void *one, const void *two));
@@ -59,11 +65,15 @@ extern void dlist_reset (DoubleList *dlist);
 
 // only gets rid of the list elements, but the data is kept
 // this is usefull if another dlist or structure points to the same data
-extern void dlist_clear (DoubleList *dlist);
+extern void dlist_clear (void *dlist_ptr);
 
 // clears the dlist - only gets rid of the list elements, but the data is kept
 // and then deletes the dlist
 extern void dlist_clear_and_delete (void *dlist_ptr);
+
+// clears the dlist if it is NOT empty
+// deletes the dlist if it is EMPTY
+extern void dlist_clear_or_delete (void *dlist_ptr);
 
 /*** insert ***/
 
@@ -130,6 +140,22 @@ extern int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const 
 
 /*** Other ***/
 
+// returns a newly allocated array with the list elements inside it
+// data will not be copied, only the pointers, so the list will keep the original elements
 extern void **dlist_to_array (DoubleList *dlist, size_t *count);
+
+// returns a exact copy of the dlist
+// creates the dlist's elements using the same data pointers as in the original dlist
+// be carefull which dlist you delete first, as the other should use dlist_clear first before delete
+// the dlist's delete and comparator methods are set from the original
+extern DoubleList *dlist_copy (DoubleList *dlist);
+
+// returns a exact cloen of the dlist
+// the element's data are created using your clone method
+	// which takes as the original each element's data of the dlist
+	// and should return the same structure type as the original method that can be safely deleted
+	// with the dlist's delete method
+// the dlist's delete and comparator methods are set from the original
+extern DoubleList *dlist_clone (DoubleList *dlist, void *(*clone) (const void *original));
 
 #endif

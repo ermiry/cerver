@@ -127,6 +127,24 @@ void dlist_delete (void *dlist_ptr) {
 
 }
 
+// only deletes the list if its empty (size == 0)
+void dlist_delete_if_empty (void *dlist_ptr) {
+
+	if (dlist_ptr) {
+		if (((DoubleList *) dlist_ptr)->size == 0) dlist_delete (dlist_ptr);
+	}
+
+}
+
+// only deletes the list if its NOT empty (size > 0)
+void dlist_delete_if_not_empty (void *dlist_ptr) {
+
+	if (dlist_ptr) {
+		if (((DoubleList *) dlist_ptr)->size > 0) dlist_delete (dlist_ptr);
+	}
+
+}
+
 void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const void *two)) { if (dlist) dlist->compare = compare; }
 
 void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
@@ -176,9 +194,11 @@ void dlist_reset (DoubleList *dlist) {
 
 // only gets rid of the list elements, but the data is kept
 // this is usefull if another dlist or structure points to the same data
-void dlist_clear (DoubleList *dlist) {
+void dlist_clear (void *dlist_ptr) {
 
-	if (dlist) {
+	if (dlist_ptr) {
+		DoubleList *dlist = (DoubleList *) dlist_ptr;
+
 		pthread_mutex_lock (dlist->mutex);
 
 		void *data = NULL;
@@ -195,10 +215,19 @@ void dlist_clear (DoubleList *dlist) {
 void dlist_clear_and_delete (void *dlist_ptr) {
 
 	if (dlist_ptr) {
-		DoubleList *dlist = (DoubleList *) dlist_ptr;
+		dlist_clear (dlist_ptr);
+		dlist_delete (dlist_ptr);
+	}
 
-		dlist_clear (dlist);
-		dlist_delete (dlist);
+}
+
+// clears the dlist if it is NOT empty
+// deletes the dlist if it is EMPTY
+void dlist_clear_or_delete (void *dlist_ptr) {
+
+	if (dlist_ptr) {
+		if (((DoubleList *) dlist_ptr)->size > 0) dlist_clear (dlist_ptr);
+		else dlist_delete (dlist_ptr);
 	}
 
 }
@@ -623,6 +652,8 @@ int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *t
 
 /*** Other ***/
 
+// returns a newly allocated array with the list elements inside it
+// data will not be copied, only the pointers, so the list will keep the original elements
 void **dlist_to_array (DoubleList *dlist, size_t *count) {
 
 	void **array = NULL;
@@ -644,5 +675,55 @@ void **dlist_to_array (DoubleList *dlist, size_t *count) {
 	}
 
 	return array;
+
+}
+
+// returns a exact copy of the dlist
+// creates the dlist's elements using the same data pointers as in the original dlist
+// be carefull which dlist you delete first, as the other should use dlist_clear first before delete
+// the dlist's delete and comparator methods are set from the original
+DoubleList *dlist_copy (DoubleList *dlist) {
+
+	DoubleList *copy = NULL;
+
+	if (dlist) {
+		copy = dlist_init (dlist->destroy, dlist->compare);
+
+		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+			dlist_insert_after (
+				copy,
+				dlist_end (copy),
+				le->data
+			);
+		}
+	}
+
+	return copy;
+
+}
+
+// returns a exact clone of the dlist
+// the element's data are created using your clone method
+	// which takes as the original each element's data of the dlist
+	// and should return the same structure type as the original method that can be safely deleted
+	// with the dlist's delete method
+// the dlist's delete and comparator methods are set from the original
+DoubleList *dlist_clone (DoubleList *dlist, void *(*clone) (const void *original)) {
+
+	DoubleList *dlist_clone = NULL;
+
+	if (dlist && clone) {
+		dlist_clone = dlist_init (dlist->destroy, dlist->compare);
+
+		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+			dlist_insert_after (
+				dlist_clone,
+				dlist_end (dlist_clone),
+				clone (le->data)
+			);
+		}
+	}
+
+	return dlist_clone;
 
 }
