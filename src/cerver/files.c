@@ -88,6 +88,57 @@ DoubleList *files_get_from_dir (const char *dir) {
 
 }
 
+static estring *file_get_line (FILE *file) {
+
+    estring *str = NULL;
+
+    if (file) {
+        if (!feof (file)) {
+            char line[1024];
+            if (fgets (line, 1024, file)) {
+                size_t curr = strlen(line);
+                if(line[curr - 1] == '\n') line[curr - 1] = '\0';
+
+                str = estring_new (line);
+            }
+        }
+    }
+
+    return str;
+
+}
+
+// reads eachone of the file's lines into a newly created string and returns them inside a dlist
+DoubleList *file_get_lines (const char *filename) {
+
+    DoubleList *lines = NULL;
+
+    if (filename) {
+        FILE *file = fopen (filename, "r");
+        if (file) {
+            lines = dlist_init (estring_delete, estring_comparator);
+            
+            estring *line = NULL;
+            while ((line = file_get_line (file))) {
+                dlist_insert_after (lines, dlist_end (lines), line);
+            }
+
+            fclose (file);
+        }
+
+        else {
+            char *status = c_string_create ("Failed to open file: %s", filename);
+            if (status) {
+                cerver_log_error (status);
+                free (status);
+            }
+        }
+    }
+
+    return lines;
+
+}
+
 // opens a file and returns it as a FILE
 FILE *file_open_as_file (const char *filename, const char *modes, struct stat *filestatus) {
 

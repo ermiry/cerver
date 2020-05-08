@@ -150,7 +150,7 @@ extern void **dlist_to_array (DoubleList *dlist, size_t *count);
 // the new dlist's delete and comparator methods are set from the original
 extern DoubleList *dlist_copy (DoubleList *dlist);
 
-// returns a exact cloen of the dlist
+// returns a exact clone of the dlist
 // the element's data are created using your clone method
 	// which takes as the original each element's data of the dlist
 	// and should return the same structure type as the original method that can be safely deleted
