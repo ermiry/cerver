@@ -47,14 +47,9 @@ directories:
 	@mkdir -p $(TARGETDIR)
 	@mkdir -p $(BUILDDIR)
 
-# clean only Objecst
 clean:
 	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf ./examples/bin
-
-# full Clean, Objects and Binaries
-cleaner: clean
-	@$(RM) -rf $(TARGETDIR)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -82,4 +77,4 @@ examples: ./examples/welcome.c ./examples/game.c
 	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 
 # non-file Targets
-.PHONY: all remake clean cleaner resources examples
+.PHONY: all remake clean examples
