@@ -19,6 +19,8 @@ extern Job *job_new (void);
 
 extern void job_delete (void *job_ptr);
 
+extern Job *job_create (void (*method) (void *args), void *args);
+
 typedef struct JobQueue {
 
 	// Job *front;
@@ -41,7 +43,7 @@ extern JobQueue *job_queue_create (void);
 
 // add a new job to the queue
 // returns 0 on success, 1 on error
-extern int jobqueue_push (JobQueue *job_queue, Job *job);
+extern int job_queue_push (JobQueue *job_queue, Job *job);
 
 // get the job at the start of the queue
 extern Job *job_queue_pull (JobQueue *job_queue);

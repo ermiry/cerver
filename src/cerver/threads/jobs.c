@@ -26,6 +26,18 @@ void job_delete (void *job_ptr) {
 
 }
 
+Job *job_create (void (*method) (void *args), void *args) {
+
+	Job *job = job_new ();
+	if (job) {
+		job->method = method;
+		job->args = args;
+	}
+
+	return job;
+
+}
+
 JobQueue *job_queue_new (void) {
 
 	JobQueue *job_queue = (JobQueue *) malloc (sizeof (JobQueue));
@@ -80,7 +92,7 @@ JobQueue *job_queue_create (void) {
 
 // add a new job to the queue
 // returns 0 on success, 1 on error
-int jobqueue_push (JobQueue *job_queue, Job *job) {
+int job_queue_push (JobQueue *job_queue, Job *job) {
 
 	int retval = 1;
 
