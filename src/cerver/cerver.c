@@ -453,6 +453,9 @@ int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
             for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
                 cerver->handlers[idx] = NULL;
 
+            cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            pthread_mutex_init (cerver->handlers_lock, NULL);
+
             retval = 0;
         }
     }

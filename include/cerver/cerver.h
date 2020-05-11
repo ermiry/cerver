@@ -38,6 +38,7 @@ struct _Auth;
 struct _Cerver;
 struct _Packet;
 struct _PacketsPerType;
+struct _Handler;
 
 typedef enum CerverType {
 
@@ -165,7 +166,7 @@ struct _Cerver {
     // 10/05/2020
     bool multiple_handlers;
     // DoubleList *handlers;
-    Handler **handlers;
+    struct _Handler **handlers;
     unsigned int n_handlers;
     volatile unsigned int num_handlers_alive;       // handlers currently alive
     volatile unsigned int num_handlers_working;     // handlers currently working

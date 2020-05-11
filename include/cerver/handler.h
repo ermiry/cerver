@@ -21,7 +21,7 @@ struct _Connection;
 struct _Lobby;
 struct _Packet;
 
-typedef struct Handler {
+struct _Handler {
 
     int id;
     pthread_t thread_id;
@@ -45,7 +45,11 @@ typedef struct Handler {
     // the jobs (packets) that are waiting to be handled - passed as args to the handler method
     JobQueue *job_queue;
 
-} Handler;
+    struct _Cerver *cerver;      // the cerver this handler belongs to
+
+};
+
+typedef struct _Handler Handler;
 
 extern void handler_delete (void *handler_ptr);
 
