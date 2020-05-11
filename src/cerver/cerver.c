@@ -1160,18 +1160,24 @@ u8 cerver_shutdown (Cerver *cerver) {
         // close the cerver socket
         if (!close (cerver->sock)) {
             #ifdef CERVER_DEBUG
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                    c_string_create ("The cerver %s socket has been closed.",
-                    cerver->info->name->str));
+            char *status = c_string_create ("The cerver %s socket has been closed.",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             return 0;
         }
 
         else {
-            cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to close cerver %s socket!",
-                cerver->info->name->str));
+            char *status = c_string_create ("Failed to close cerver %s socket!",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
         } 
     } 
 
@@ -1271,15 +1277,21 @@ static void cerver_clean (Cerver *cerver) {
         // disable socket I/O in both ways and stop any ongoing job
         if (!cerver_shutdown (cerver)) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, 
-                c_string_create ("Cerver %s has been shutted down.", cerver->info->name->str));
+            char *status = c_string_create ("Cerver %s has been shutted down.", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+                free (status);
+            }
             #endif
         }
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str));
+            char *status = c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
             #endif
         } 
 
@@ -1308,18 +1320,26 @@ static void cerver_clean (Cerver *cerver) {
         }
         
         if (cerver->thpool) {
+            char *status = NULL;
+
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                c_string_create ("Cerver %s active thpool threads: %i", 
+            status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
-                thpool_num_threads_working (cerver->thpool)));
+                thpool_num_threads_working (cerver->thpool));
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             thpool_destroy (cerver->thpool);
 
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                c_string_create ("Destroyed cerver %s thpool!", cerver->info->name->str));
+            status = c_string_create ("Destroyed cerver %s thpool!", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             cerver->thpool = NULL;
@@ -1334,9 +1354,14 @@ u8 cerver_teardown (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
+        char *status = NULL;
+
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-                c_string_create ("Starting cerver %s teardown...", cerver->info->name->str));
+        status = c_string_create ("Starting cerver %s teardown...", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
         #endif
 
         cerver_clean (cerver);
@@ -1344,9 +1369,12 @@ u8 cerver_teardown (Cerver *cerver) {
         // 22/01/2020 -- 10:05 -- correctly end admin connections
         admin_cerver_teardown (cerver->admin);
 
-        cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, 
-            c_string_create ("Cerver %s teardown was successfull!", 
-                cerver->info->name->str));
+        status = c_string_create ("Cerver %s teardown was successfull!", 
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, status);
+            free (status);
+        }
 
         cerver_delete (cerver);
 
