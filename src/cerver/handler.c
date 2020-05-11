@@ -148,12 +148,14 @@ static void *handler_do (void *handler_ptr) {
                 // read job from queue
                 Job *job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, (Packet *) job->args);
+                    Packet *packet = (Packet *) job->args;
+                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
 
                     handler->handler (handler_data);
 
                     handler_data_delete (handler_data);
                     job_delete (job);
+                    packet_delete (packet);
                 }
 
                 pthread_mutex_lock (handler->cerver->handlers_lock);
@@ -430,8 +432,28 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
-                    if (packet->cerver->app_packet_handler)
-                        packet->cerver->app_packet_handler (packet);
+
+                    // 11/05/2020
+                    if (packet->cerver->multiple_handlers) {
+                        // select which handler to use
+                        if (packet->header->handler_id < packet->cerver->n_handlers) {
+                            if (packet->cerver->handlers[packet->header->handler_id]) {
+                                // add the packet to the handler's job queueu to be handled
+                                // as soon as the handler is available
+                                if (job_queue_push (
+                                    packet->cerver->handlers[packet->header->handler_id]->job_queue,
+                                    job_create (NULL, packet)
+                                )) {
+                                    // printf ("failed!\n");
+                                }
+                            }
+                        }
+                    }
+
+                    else {
+                        if (packet->cerver->app_packet_handler)
+                            packet->cerver->app_packet_handler (packet);
+                    }
                     break;
 
                 // user set handler to handle app specific errors
@@ -477,7 +499,17 @@ static void cerver_packet_handler (void *ptr) {
             }
         // }
 
-        packet_delete (packet);
+        switch (packet->header->packet_type) {
+            case APP_PACKET: {
+                if (packet->cerver->multiple_handlers) {
+                    // do nothing - packet gets deleted in handler method
+                }
+            } break;
+
+            default:
+                packet_delete (packet);
+                break;
+        }
     }
 
 }
