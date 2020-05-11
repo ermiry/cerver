@@ -2,9 +2,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+
 #include <errno.h>
 
+#include <sys/prctl.h>
+
 #include "cerver/types/types.h"
+
+#include "cerver/collections/htab.h"
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
@@ -13,13 +18,187 @@
 #include "cerver/handler.h"
 #include "cerver/auth.h"
 
+#include "cerver/threads/jobs.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/collections/htab.h"
-
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+
+#pragma region handler
+
+static HandlerData *handler_data_new (int handler_id, void *data, Packet *packet) {
+
+    HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
+    if (handler_data) {
+        handler_data->handler_id = handler_id;
+
+        handler_data->data = data;
+        handler_data->packet = packet;
+    }
+
+    return handler_data;
+
+}
+
+static inline void handler_data_delete (HandlerData *handler_data) { 
+
+    if (handler_data) free (handler_data);
+    
+}
+
+static Handler *handler_new (void) {
+
+    Handler *handler = (Handler *) malloc (sizeof (Handler));
+    if (handler) {
+        handler->id = -1;
+        handler->thread_id = 0;
+
+        handler->data = NULL;
+        handler->data_create = NULL;
+        handler->data_create_args = NULL;
+        handler->data_delete = NULL;
+
+        handler->handler = NULL;
+
+        handler->job_queue = NULL;
+
+        handler->cerver = NULL;
+    }
+
+    return handler;
+
+}
+
+void handler_delete (void *handler_ptr) {
+
+    if (handler_ptr) {
+        Handler *handler = (Handler *) handler_ptr;
+
+        job_queue_delete (handler->job_queue);
+
+        free (handler_ptr);
+    }
+
+}
+
+Handler *handler_create (int id, Action handler_method) {
+
+    Handler *handler = handler_new ();
+    if (handler) {
+        handler->id = id;
+        handler->handler = handler_method;
+
+        handler->job_queue = job_queue_create ();
+    }
+
+    return handler;
+
+}
+
+void handler_set_data (Handler *handler, void *data) {
+
+    if (handler) handler->data = data;
+
+}
+
+void handler_set_data_create (Handler *handler, 
+    void *(*data_create) (void *args), void *data_create_args) {
+
+    if (handler) {
+        handler->data_create = data_create;
+        handler->data_create_args = data_create_args;
+    }
+
+}
+
+void handler_set_data_delete (Handler *handler, Action data_delete) {
+
+    if (handler) handler->data_delete = data_delete;
+
+}
+
+static void *handler_do (void *handler_ptr) {
+
+    if (handler_ptr) {
+        Handler *handler = (Handler *) handler_ptr;
+
+        // set the thread name
+        char thread_name[128] = { 0 };
+        snprintf (thread_name, 128, "handler-%d", handler->id);
+        prctl (PR_SET_NAME, thread_name);
+
+        // TODO: register to signals to handle multiple actions
+
+        if (handler->data_create) 
+            handler->data = handler->data_create (handler->data_create_args);
+
+        // mark the handler as alive and ready
+        pthread_mutex_lock (handler->cerver->handlers_lock);
+        handler->cerver->num_handlers_alive += 1;
+        pthread_mutex_unlock (handler->cerver->handlers_lock);
+
+        // while cerver is running, check for new jobs and handle them
+        while (handler->cerver->isRunning) {
+            bsem_wait (handler->job_queue->has_jobs);
+
+            if (handler->cerver->isRunning) {
+                pthread_mutex_lock (handler->cerver->handlers_lock);
+                handler->cerver->num_handlers_working += 1;
+                pthread_mutex_unlock (handler->cerver->handlers_lock);
+
+                // read job from queue
+                Job *job = job_queue_pull (handler->job_queue);
+                if (job) {
+                    Packet *packet = (Packet *) job->args;
+                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+
+                    handler->handler (handler_data);
+
+                    handler_data_delete (handler_data);
+                    job_delete (job);
+                    packet_delete (packet);
+                }
+
+                pthread_mutex_lock (handler->cerver->handlers_lock);
+                handler->cerver->num_handlers_working -= 1;
+                pthread_mutex_unlock (handler->cerver->handlers_lock);
+            }
+        }
+
+        if (handler->data_delete)
+            handler_data_delete (handler->data);
+
+        pthread_mutex_lock (handler->cerver->handlers_lock);
+        handler->cerver->num_handlers_alive -= 1;
+        pthread_mutex_unlock (handler->cerver->handlers_lock);
+    }
+
+    return NULL;
+
+}
+
+// starts the new handler by creating a dedicated thread for it
+// called by internal cerver methods
+int handler_start (Handler *handler) {
+
+    int retval = 1;
+
+    if (handler) {
+        retval = pthread_create (
+            &handler->thread_id,
+            NULL,
+            (void *(*)(void *)) handler_do,
+            (void *) handler
+        );
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
 
 #pragma region auxiliary structures
 
@@ -259,8 +438,28 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
-                    if (packet->cerver->app_packet_handler)
-                        packet->cerver->app_packet_handler (packet);
+
+                    // 11/05/2020
+                    if (packet->cerver->multiple_handlers) {
+                        // select which handler to use
+                        if (packet->header->handler_id < packet->cerver->n_handlers) {
+                            if (packet->cerver->handlers[packet->header->handler_id]) {
+                                // add the packet to the handler's job queueu to be handled
+                                // as soon as the handler is available
+                                if (job_queue_push (
+                                    packet->cerver->handlers[packet->header->handler_id]->job_queue,
+                                    job_create (NULL, packet)
+                                )) {
+                                    // printf ("failed!\n");
+                                }
+                            }
+                        }
+                    }
+
+                    else {
+                        if (packet->cerver->app_packet_handler)
+                            packet->cerver->app_packet_handler (packet);
+                    }
                     break;
 
                 // user set handler to handle app specific errors
@@ -306,7 +505,17 @@ static void cerver_packet_handler (void *ptr) {
             }
         // }
 
-        packet_delete (packet);
+        switch (packet->header->packet_type) {
+            case APP_PACKET: {
+                if (packet->cerver->multiple_handlers) {
+                    // do nothing - packet gets deleted in handler method
+                }
+            } break;
+
+            default:
+                packet_delete (packet);
+                break;
+        }
     }
 
 }

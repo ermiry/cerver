@@ -1,5 +1,4 @@
-# TARGET      := cerver
-SLIB		:= libcerver.so
+TARGET      := cerver
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
@@ -19,8 +18,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-# CFLAGS      := -g $(DEFINES)
-CFLAGS      := -g $(DEFINES) -fPIC
+CFLAGS      := -g $(DEFINES)
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
@@ -28,19 +26,10 @@ INCDEP      := -I $(INCDIR)
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
-# all: directories $(TARGET)
-all: directories $(SLIB)
+all: directories $(TARGET)
 
 run: 
 	./$(TARGETDIR)/$(TARGET)
-
-install: $(SLIB)
-	install -m 644 ./bin/libcerver.so /usr/local/lib/
-	cp -R ./include/cerver /usr/local/include
-
-uninstall:
-	rm /usr/local/lib/libcerver.so
-	rm -r /usr/local/include/cerver
 
 directories:
 	@mkdir -p $(TARGETDIR)
@@ -48,17 +37,13 @@ directories:
 
 clean:
 	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
-	@$(RM) -rf ./examples/bin
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
 # link
-# $(TARGET): $(OBJECTS)
-# 	$(CC) $^ $(LIB) -o $(TARGETDIR)/$(TARGET)
-
-$(SLIB): $(OBJECTS)
-	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
+$(TARGET): $(OBJECTS)
+	$(CC) $^ $(LIB) -o $(TARGETDIR)/$(TARGET)
 
 # compile
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
@@ -70,12 +55,5 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-examples: ./examples/welcome.c ./examples/game.c
-	@mkdir -p ./examples/bin
-	$(CC) -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
-	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
-	$(CC) -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
-	$(CC) -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
-	$(CC) -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
 
 .PHONY: all clean examples

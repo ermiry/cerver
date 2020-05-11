@@ -149,13 +149,13 @@ int main (int argc, char **argv) {
 
 		if (!cerver_start (web_cerver)) {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start magic io cerver!");
+				"Failed to start cerver!");
 		}
 	}
 
 	else {
 		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create magic io cerver!");
+			"Failed to create cerver!");
 	}
 
 	return 0;

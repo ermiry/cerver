@@ -218,6 +218,10 @@ Cerver *cerver_new (void) {
         c->app_error_packet_handler = NULL;
         c->custom_packet_handler = NULL;
 
+        // 10/05/2020
+        c->handlers = NULL;
+        c->handlers_lock = NULL;
+
         c->update = NULL;
         c->update_args = NULL;
 
@@ -255,6 +259,17 @@ void cerver_delete (void *ptr) {
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
         if (cerver->hold_fds) free (cerver->hold_fds);
+
+        // 10/05/2020
+        if (cerver->handlers) {
+            for (unsigned int idx = 0; idx < cerver->n_handlers; idx++) {
+                handler_delete (cerver->handlers[idx]);
+            }
+
+            free (cerver->handlers);
+        }
+
+        if (cerver->handlers_lock) pthread_mutex_destroy (cerver->handlers_lock);
 
         admin_cerver_delete (cerver->admin);
 
@@ -423,6 +438,32 @@ void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
 
 }
 
+// enables the ability of the cerver to have multiple app handlers
+// returns 0 on success, 1 on error
+int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
+
+    int retval = 1;
+
+    if (cerver) {
+        cerver->multiple_handlers = true;
+        cerver->n_handlers = n_handlers;
+
+        cerver->handlers = (Handler **) calloc (cerver->n_handlers, sizeof (Handler *));
+        if (cerver->handlers) {
+            for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
+                cerver->handlers[idx] = NULL;
+
+            cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            pthread_mutex_init (cerver->handlers_lock, NULL);
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
 void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps) {
@@ -465,6 +506,102 @@ u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
     return retval;
 
 }
+
+#pragma region handlers
+
+// prints info about current handlers
+void cerver_handlers_print_info (Cerver *cerver) {
+
+    if (cerver) {
+        char *status = NULL;
+
+        status = c_string_create ("%d - current ACTIVE handlers in cerver %s",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+
+        status = c_string_create ("%d - current WORKING handlers in cerver %s",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+    }
+
+}
+
+// adds a new handler to the cerver handlers array
+// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// returns 0 on success, 1 on error
+int cerver_handlers_add (Cerver *cerver, Handler *handler) {
+
+    int retval = 1;
+
+    if (cerver && handler) {
+        if (cerver->handlers) {
+            cerver->handlers[handler->id] = handler;
+
+            handler->cerver = cerver;
+        }
+    }
+
+    return retval;
+
+}
+
+static int cerver_handlers_destroy (Cerver *cerver) {
+
+    int retval = 1;
+
+    if (cerver) {
+        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+            char *status = NULL;
+
+            #ifdef CERVER_DEBUG
+            status = c_string_create ("Stopping handlers in cerver %s...",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_debug (status);
+                free (status);
+            }
+            #endif
+
+            #ifdef CERVER_DEBUG
+            cerver_handlers_print_info (cerver);
+            #endif
+
+            // give x timeout to kill idle handlers
+            double timeout = 1.0;
+            time_t start = 0, end = 0;
+            double time_passed = 0.0;
+            time (&start);
+            while (time_passed < timeout && cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    time (&end);
+                    time_passed = difftime (end, start);
+                }
+            }
+
+            // poll remaining handlers
+            while (cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    sleep (1);
+                }
+            }
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
 
 // inits the cerver networking capabilities
 static u8 cerver_network_init (Cerver *cerver) {
@@ -932,6 +1069,41 @@ static void cerver_update_interval (void *args) {
 
 }
 
+// 11/05/2020 -- start cerver's multiple handlers
+static int cerver_handlers_start (Cerver *cerver) {
+
+    int errors = 0;
+
+    if (cerver) {
+        cerver->num_handlers_alive = 0;
+        cerver->num_handlers_working = 0;
+
+        #ifdef CERVER_DEBUG
+        cerver_log_debug ("Initializing handlers...");
+        #endif
+
+        for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+            errors |= handler_start (cerver->handlers[i]);
+        }
+
+        if (!errors) {
+            // wait for all handlers to be initialized
+            while (cerver->num_handlers_alive != cerver->n_handlers) {}
+
+            #ifdef CERVER_DEBUG
+            cerver_log_success ("Handlers are ready!");
+            #endif
+        }
+
+        else {
+            cerver_log_error ("Failed to init ALL handlers!");
+        }
+    }
+
+    return errors;
+
+}
+
 // tell the cerver to start listening for connections and packets
 u8 cerver_start (Cerver *cerver) {
 
@@ -946,6 +1118,9 @@ u8 cerver_start (Cerver *cerver) {
 
             if (cerver->update_interval) 
                 thread_create_detachable ((void *(*) (void *)) cerver_update_interval, cerver, NULL);
+
+            if (cerver->multiple_handlers)
+                cerver_handlers_start (cerver);
 
             switch (cerver->protocol) {
                 case PROTOCOL_TCP: {
@@ -985,18 +1160,24 @@ u8 cerver_shutdown (Cerver *cerver) {
         // close the cerver socket
         if (!close (cerver->sock)) {
             #ifdef CERVER_DEBUG
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                    c_string_create ("The cerver %s socket has been closed.",
-                    cerver->info->name->str));
+            char *status = c_string_create ("The cerver %s socket has been closed.",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             return 0;
         }
 
         else {
-            cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to close cerver %s socket!",
-                cerver->info->name->str));
+            char *status = c_string_create ("Failed to close cerver %s socket!",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
         } 
     } 
 
@@ -1096,31 +1277,69 @@ static void cerver_clean (Cerver *cerver) {
         // disable socket I/O in both ways and stop any ongoing job
         if (!cerver_shutdown (cerver)) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, 
-                c_string_create ("Cerver %s has been shutted down.", cerver->info->name->str));
+            char *status = c_string_create ("Cerver %s has been shutted down.", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+                free (status);
+            }
             #endif
         }
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str));
+            char *status = c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
             #endif
         } 
+
+        // 11/05/2020
+        // end handlers
+        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+            if (!cerver_handlers_destroy (cerver)) {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Done destroying handlers in cerver %s!",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_success (status);
+                    free (status);
+                }
+                #endif
+            }
+
+            else {
+                char *status = c_string_create ("Failed to destroy handlers in cerver %s!",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_error (status);
+                    free (status);
+                }
+            }
+        }
         
         if (cerver->thpool) {
+            char *status = NULL;
+
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                c_string_create ("Cerver %s active thpool threads: %i", 
+            status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
-                thpool_num_threads_working (cerver->thpool)));
+                thpool_num_threads_working (cerver->thpool));
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             thpool_destroy (cerver->thpool);
 
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                c_string_create ("Destroyed cerver %s thpool!", cerver->info->name->str));
+            status = c_string_create ("Destroyed cerver %s thpool!", cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
+            }
             #endif
 
             cerver->thpool = NULL;
@@ -1135,9 +1354,14 @@ u8 cerver_teardown (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
+        char *status = NULL;
+
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-                c_string_create ("Starting cerver %s teardown...", cerver->info->name->str));
+        status = c_string_create ("Starting cerver %s teardown...", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
         #endif
 
         cerver_clean (cerver);
@@ -1145,9 +1369,12 @@ u8 cerver_teardown (Cerver *cerver) {
         // 22/01/2020 -- 10:05 -- correctly end admin connections
         admin_cerver_teardown (cerver->admin);
 
-        cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, 
-            c_string_create ("Cerver %s teardown was successfull!", 
-                cerver->info->name->str));
+        status = c_string_create ("Cerver %s teardown was successfull!", 
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, status);
+            free (status);
+        }
 
         cerver_delete (cerver);
 

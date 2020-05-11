@@ -44,7 +44,7 @@ int main (void) {
 
 		if (!cerver_start (my_cerver)) {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start magic cerver!");
+				"Failed to start cerver!");
 		}
 	}
 

@@ -548,6 +548,7 @@
 #endif
 
 #include "cerver/threads/thpool.h"
+#include "cerver/threads/common.h"
 
 #ifdef THPOOL_DEBUG
 #define THPOOL_DEBUG 1
@@ -568,13 +569,13 @@ static volatile int threads_on_hold;
 
 /* ========================== STRUCTURES ============================ */
 
-
+// 10/05/2020 -- moved to threads common
 /* Binary semaphore */
-typedef struct bsem {
-	pthread_mutex_t mutex;
-	pthread_cond_t   cond;
-	int v;
-} bsem;
+// typedef struct bsem {
+// 	pthread_mutex_t mutex;
+// 	pthread_cond_t   cond;
+// 	int v;
+// } bsem;
 
 
 /* Job */
@@ -631,11 +632,12 @@ static void  jobqueue_push(struct jobqueue* jobqueue_p, struct job* newjob_p);
 static struct job* jobqueue_pull(struct jobqueue* jobqueue_p);
 static void  jobqueue_destroy(struct jobqueue* jobqueue_p);
 
-static void  bsem_init(struct bsem *bsem_p, int value);
-static void  bsem_reset(struct bsem *bsem_p);
-static void  bsem_post(struct bsem *bsem_p);
-static void  bsem_post_all(struct bsem *bsem_p);
-static void  bsem_wait(struct bsem *bsem_p);
+// 10/05/2020 -- moved to threads/common
+// static void  bsem_init(struct bsem *bsem_p, int value);
+// static void  bsem_reset(struct bsem *bsem_p);
+// static void  bsem_post(struct bsem *bsem_p);
+// static void  bsem_post_all(struct bsem *bsem_p);
+// static void  bsem_wait(struct bsem *bsem_p);
 
 
 
@@ -1027,49 +1029,49 @@ static void jobqueue_destroy(struct jobqueue* jobqueue_p){
 
 /* ======================== SYNCHRONISATION ========================= */
 
-
-/* Init semaphore to 1 or 0 */
-static void bsem_init(bsem *bsem_p, int value) {
-	if (value < 0 || value > 1) {
-		err("bsem_init(): Binary semaphore can take only values 1 or 0");
-		exit(1);
-	}
-	pthread_mutex_init(&(bsem_p->mutex), NULL);
-	pthread_cond_init(&(bsem_p->cond), NULL);
-	bsem_p->v = value;
-}
-
-
-/* Reset semaphore to 0 */
-static void bsem_reset(bsem *bsem_p) {
-	bsem_init(bsem_p, 0);
-}
+// 10/05/2020 -- moved to threads/common
+// /* Init semaphore to 1 or 0 */
+// static void bsem_init(bsem *bsem_p, int value) {
+// 	if (value < 0 || value > 1) {
+// 		err("bsem_init(): Binary semaphore can take only values 1 or 0");
+// 		exit(1);
+// 	}
+// 	pthread_mutex_init(&(bsem_p->mutex), NULL);
+// 	pthread_cond_init(&(bsem_p->cond), NULL);
+// 	bsem_p->v = value;
+// }
 
 
-/* Post to at least one thread */
-static void bsem_post(bsem *bsem_p) {
-	pthread_mutex_lock(&bsem_p->mutex);
-	bsem_p->v = 1;
-	pthread_cond_signal(&bsem_p->cond);
-	pthread_mutex_unlock(&bsem_p->mutex);
-}
+// /* Reset semaphore to 0 */
+// static void bsem_reset(bsem *bsem_p) {
+// 	bsem_init(bsem_p, 0);
+// }
 
 
-/* Post to all threads */
-static void bsem_post_all(bsem *bsem_p) {
-	pthread_mutex_lock(&bsem_p->mutex);
-	bsem_p->v = 1;
-	pthread_cond_broadcast(&bsem_p->cond);
-	pthread_mutex_unlock(&bsem_p->mutex);
-}
+// /* Post to at least one thread */
+// static void bsem_post(bsem *bsem_p) {
+// 	pthread_mutex_lock(&bsem_p->mutex);
+// 	bsem_p->v = 1;
+// 	pthread_cond_signal(&bsem_p->cond);
+// 	pthread_mutex_unlock(&bsem_p->mutex);
+// }
 
 
-/* Wait on semaphore until semaphore has value 0 */
-static void bsem_wait(bsem* bsem_p) {
-	pthread_mutex_lock(&bsem_p->mutex);
-	while (bsem_p->v != 1) {
-		pthread_cond_wait(&bsem_p->cond, &bsem_p->mutex);
-	}
-	bsem_p->v = 0;
-	pthread_mutex_unlock(&bsem_p->mutex);
-}
+// /* Post to all threads */
+// static void bsem_post_all(bsem *bsem_p) {
+// 	pthread_mutex_lock(&bsem_p->mutex);
+// 	bsem_p->v = 1;
+// 	pthread_cond_broadcast(&bsem_p->cond);
+// 	pthread_mutex_unlock(&bsem_p->mutex);
+// }
+
+
+// /* Wait on semaphore until semaphore has value 0 */
+// static void bsem_wait(bsem* bsem_p) {
+// 	pthread_mutex_lock(&bsem_p->mutex);
+// 	while (bsem_p->v != 1) {
+// 		pthread_cond_wait(&bsem_p->cond, &bsem_p->mutex);
+// 	}
+// 	bsem_p->v = 0;
+// 	pthread_mutex_unlock(&bsem_p->mutex);
+// }

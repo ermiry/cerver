@@ -88,6 +88,9 @@ struct _PacketHeader {
 	PacketType packet_type;
 	size_t packet_size;
 
+	// 10/05/2020 -- select which app packet handler to use
+	u8 handler_id;
+
 };
 
 typedef struct _PacketHeader PacketHeader;
