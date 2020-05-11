@@ -43,7 +43,7 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 		
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
-			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
+			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false)) 
 				cerver_log_error ("Failed to send test packet to main cerver");
@@ -56,7 +56,24 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 		}
 	}
 
-	
+}
+
+static void handler (void *data) {
+
+	if (data) {
+		Packet *packet = (Packet *) data;
+		if (packet->data_size >= sizeof (RequestData)) {
+			RequestData *req = (RequestData *) (packet->data);
+
+			switch (req->type) {
+				case TEST_MSG: handle_test_request (packet, 7); break;
+
+				default: 
+					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					break;
+			}
+		}
+	}
 
 }
 
@@ -163,12 +180,15 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
+	cerver_log_debug ("Multiple handlers example");
+	printf ("\n");
+
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
 		cerver_set_thpool_n_threads (my_cerver, 4);
-		// cerver_set_app_handlers (my_cerver, NULL, NULL);
+		// cerver_set_app_handlers (my_cerver, handler, NULL);
 
 		cerver_set_multiple_handlers (my_cerver, 4);
 
