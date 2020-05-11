@@ -464,25 +464,6 @@ int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
 
 }
 
-// adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
-// returns 0 on success, 1 on error
-int cerver_handlers_add (Cerver *cerver, Handler *handler) {
-
-    int retval = 1;
-
-    if (cerver && handler) {
-        if (cerver->handlers) {
-            cerver->handlers[handler->id] = handler;
-
-            handler->cerver = cerver;
-        }
-    }
-
-    return retval;
-
-}
-
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
 void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps) {
@@ -525,6 +506,102 @@ u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
     return retval;
 
 }
+
+#pragma region handlers
+
+// prints info about current handlers
+void cerver_handlers_print_info (Cerver *cerver) {
+
+    if (cerver) {
+        char *status = NULL;
+
+        status = c_string_create ("%d - current ACTIVE handlers in cerver %s",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+
+        status = c_string_create ("%d - current WORKING handlers in cerver %s",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+    }
+
+}
+
+// adds a new handler to the cerver handlers array
+// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// returns 0 on success, 1 on error
+int cerver_handlers_add (Cerver *cerver, Handler *handler) {
+
+    int retval = 1;
+
+    if (cerver && handler) {
+        if (cerver->handlers) {
+            cerver->handlers[handler->id] = handler;
+
+            handler->cerver = cerver;
+        }
+    }
+
+    return retval;
+
+}
+
+static int cerver_handlers_destroy (Cerver *cerver) {
+
+    int retval = 1;
+
+    if (cerver) {
+        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+            char *status = NULL;
+
+            #ifdef CERVER_DEBUG
+            status = c_string_create ("Stopping handlers in cerver %s...",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_debug (status);
+                free (status);
+            }
+            #endif
+
+            #ifdef CERVER_DEBUG
+            cerver_handlers_print_info (cerver);
+            #endif
+
+            // give x timeout to kill idle handlers
+            double timeout = 1.0;
+            time_t start = 0, end = 0;
+            double time_passed = 0.0;
+            time (&start);
+            while (time_passed < timeout && cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    time (&end);
+                    time_passed = difftime (end, start);
+                }
+            }
+
+            // poll remaining handlers
+            while (cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    sleep (1);
+                }
+            }
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
 
 // inits the cerver networking capabilities
 static u8 cerver_network_init (Cerver *cerver) {
@@ -1150,50 +1227,6 @@ static void cerver_destroy_clients (Cerver *cerver) {
             cerver->fds = NULL;
         } 
     }
-
-}
-
-static int cerver_handlers_destroy (Cerver *cerver) {
-
-    int retval = 1;
-
-    if (cerver) {
-        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Stopping handlers in cerver %s...",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_debug (status);
-                free (status);
-            }
-            #endif
-
-            // give x timeout to kill idle handlers
-            double timeout = 1.0;
-            time_t start = 0, end = 0;
-            double time_passed = 0.0;
-            time (&start);
-            while (time_passed < timeout && cerver->num_handlers_alive) {
-                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
-                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
-                    time (&end);
-                    time_passed = difftime (end, start);
-                }
-            }
-
-            // poll remaining handlers
-            while (cerver->num_handlers_alive) {
-                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
-                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
-                    sleep (1);
-                }
-            }
-
-            retval = 0;
-        }
-    }
-
-    return retval;
 
 }
 

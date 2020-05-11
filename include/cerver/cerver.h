@@ -242,11 +242,6 @@ extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
 // returns 0 on success, 1 on error
 extern int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers);
 
-// adds a new handler to the cerver handlers array
-// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
-// returns 0 on success, 1 on error
-extern int cerver_handlers_add (Cerver *cerver, Handler *handler);
-
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
 extern void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps);
@@ -259,6 +254,18 @@ extern void cerver_set_update_interval (Cerver *cerver, Action update, void *upd
 // admin connections are handled in a different port and using a dedicated handler
 // returns 0 on success, 1 on error
 extern u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6);
+
+/*** handlers ***/
+
+// prints info about current handlers
+extern void cerver_handlers_print_info (Cerver *cerver);
+
+// adds a new handler to the cerver handlers array
+// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// returns 0 on success, 1 on error
+extern int cerver_handlers_add (Cerver *cerver, Handler *handler);
+
+/*** main **/
 
 // returns a new cerver with the specified parameters
 extern Cerver *cerver_create (const CerverType type, const char *name, 
