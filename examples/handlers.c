@@ -292,7 +292,7 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Multiple handlers example");
+	cerver_log_debug ("Multiple Handlers Example");
 	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);

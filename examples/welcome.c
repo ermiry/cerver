@@ -35,6 +35,9 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
+	cerver_log_debug ("Welcome Example");
+	printf ("\n");
+
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		/*** cerver configuration ***/
