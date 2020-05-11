@@ -76,6 +76,6 @@ examples: ./examples/welcome.c ./examples/game.c
 	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
 	$(CC) -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
-	$(CC) -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
+	$(CC) -I ./include -L ./bin ./examples/web/web.c $(CMONGO) -o ./examples/bin/web -l cerver
 
 .PHONY: all clean examples

@@ -11,6 +11,7 @@
 #include <cerver/types/estring.h>
 #include <cerver/collections/dllist.h>
 
+#include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
 
@@ -116,7 +117,7 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 				DoubleList *pairs = http_parse_query_into_pairs (query, last);
 
 				// now we can handle the action and its values
-				magic_main_handler (data, pairs);
+				app_main_handler (data, pairs);
 
 				dlist_delete (pairs);
 			}
@@ -137,6 +138,9 @@ int main (int argc, char **argv) {
 
 	printf ("\n");
 	cerver_version_print_full ();
+	printf ("\n");
+
+	cerver_log_debug ("Simple Web Cerver Example");
 	printf ("\n");
 
 	web_cerver = cerver_create (WEB_CERVER, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 2000);
