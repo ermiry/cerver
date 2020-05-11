@@ -1153,6 +1153,50 @@ static void cerver_destroy_clients (Cerver *cerver) {
 
 }
 
+static int cerver_handlers_destroy (Cerver *cerver) {
+
+    int retval = 1;
+
+    if (cerver) {
+        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+            #ifdef CERVER_DEBUG
+            char *status = c_string_create ("Stopping handlers in cerver %s...",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_debug (status);
+                free (status);
+            }
+            #endif
+
+            // give x timeout to kill idle handlers
+            double timeout = 1.0;
+            time_t start = 0, end = 0;
+            double time_passed = 0.0;
+            time (&start);
+            while (time_passed < timeout && cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    time (&end);
+                    time_passed = difftime (end, start);
+                }
+            }
+
+            // poll remaining handlers
+            while (cerver->num_handlers_alive) {
+                for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+                    bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+                    sleep (1);
+                }
+            }
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
 // clean cerver data structures
 static void cerver_clean (Cerver *cerver) {
 
@@ -1205,6 +1249,30 @@ static void cerver_clean (Cerver *cerver) {
                 c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str));
             #endif
         } 
+
+        // 11/05/2020
+        // end handlers
+        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+            if (!cerver_handlers_destroy (cerver)) {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Done destroying handlers in cerver %s!",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_success (status);
+                    free (status);
+                }
+                #endif
+            }
+
+            else {
+                char *status = c_string_create ("Failed to destroy handlers in cerver %s!",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_error (status);
+                    free (status);
+                }
+            }
+        }
         
         if (cerver->thpool) {
             #ifdef CERVER_DEBUG
