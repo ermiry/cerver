@@ -19,6 +19,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
+# CFLAGS      := -g $(DEFINES)
 CFLAGS      := -g $(DEFINES) -fPIC
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include
@@ -30,8 +31,8 @@ OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJE
 # all: directories $(TARGET)
 all: directories $(SLIB)
 
-# run: 
-# 	./$(TARGETDIR)/$(TARGET)
+run: 
+	./$(TARGETDIR)/$(TARGET)
 
 install: $(SLIB)
 	install -m 644 ./bin/libcerver.so /usr/local/lib/
@@ -40,8 +41,6 @@ install: $(SLIB)
 uninstall:
 	rm /usr/local/lib/libcerver.so
 	rm -r /usr/local/include/cerver
-
-remake: cleaner all
 
 directories:
 	@mkdir -p $(TARGETDIR)
@@ -75,6 +74,8 @@ examples: ./examples/welcome.c ./examples/game.c
 	@mkdir -p ./examples/bin
 	$(CC) -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
 	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
+	$(CC) -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
+	$(CC) -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
+	$(CC) -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
 
-# non-file Targets
-.PHONY: all remake clean examples
+.PHONY: all clean examples
