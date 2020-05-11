@@ -474,6 +474,8 @@ int cerver_handlers_add (Cerver *cerver, Handler *handler) {
     if (cerver && handler) {
         if (cerver->handlers) {
             cerver->handlers[handler->id] = handler;
+
+            handler->cerver = cerver;
         }
     }
 
@@ -990,6 +992,41 @@ static void cerver_update_interval (void *args) {
 
 }
 
+// 11/05/2020 -- start cerver's multiple handlers
+static int cerver_handlers_start (Cerver *cerver) {
+
+    int errors = 0;
+
+    if (cerver) {
+        cerver->num_handlers_alive = 0;
+        cerver->num_handlers_working = 0;
+
+        #ifdef CERVER_DEBUG
+        cerver_log_debug ("Initializing handlers...");
+        #endif
+
+        for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+            errors |= handler_start (cerver->handlers[i]);
+        }
+
+        if (!errors) {
+            // wait for all handlers to be initialized
+            while (cerver->num_handlers_alive != cerver->n_handlers) {}
+
+            #ifdef CERVER_DEBUG
+            cerver_log_success ("Handlers are ready!");
+            #endif
+        }
+
+        else {
+            cerver_log_error ("Failed to init ALL handlers!");
+        }
+    }
+
+    return errors;
+
+}
+
 // tell the cerver to start listening for connections and packets
 u8 cerver_start (Cerver *cerver) {
 
@@ -1004,6 +1041,9 @@ u8 cerver_start (Cerver *cerver) {
 
             if (cerver->update_interval) 
                 thread_create_detachable ((void *(*) (void *)) cerver_update_interval, cerver, NULL);
+
+            if (cerver->multiple_handlers)
+                cerver_handlers_start (cerver);
 
             switch (cerver->protocol) {
                 case PROTOCOL_TCP: {
