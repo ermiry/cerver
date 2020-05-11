@@ -56,7 +56,7 @@ We will focus on compiling the welcome example (welcome.c). To do this, first we
 
 After a success compilation you can run any of the examples running the following command:
 
-`LD_PRELOAD=./bin/cerver.so ./examples/bin/welcome`
+`LD_LIBRARY_PATH=bin/ ./examples/bin/welcome`
 
 You should see the following ouput in your terminal inidicating that the **cerver** has initialized successfully and is ready to listen for connections:
 
