@@ -6,6 +6,8 @@
 
 #include "cerver/types/types.h"
 
+#include "cerver/collections/htab.h"
+
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
@@ -13,13 +15,59 @@
 #include "cerver/handler.h"
 #include "cerver/auth.h"
 
+#include "cerver/threads/jobs.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/collections/htab.h"
-
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+
+#pragma region handler
+
+static Handler *handler_new (void) {
+
+    Handler *handler = (Handler *) malloc (sizeof (Handler));
+    if (handler) {
+        handler->id = -1;
+        handler->thread_id = 0;
+
+        handler->handler = NULL;
+
+        handler->job_queue = NULL;
+    }
+
+    return handler;
+
+}
+
+void handler_delete (void *handler_ptr) {
+
+    if (handler_ptr) {
+        Handler *handler = (Handler *) handler_ptr;
+
+        job_queue_delete (handler->job_queue);
+
+        free (handler_ptr);
+    }
+
+}
+
+Handler *handler_create (int id, Action handler_method) {
+
+    Handler *handler = handler_new ();
+    if (handler) {
+        handler->id = id;
+        handler->handler = handler_method;
+
+        handler->job_queue = job_queue_create ();
+    }
+
+    return handler;
+
+}
+
+#pragma endregion
 
 #pragma region auxiliary structures
 

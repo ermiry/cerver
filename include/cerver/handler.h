@@ -9,6 +9,8 @@
 #include "cerver/client.h"
 #include "cerver/packets.h"
 
+#include "cerver/threads/jobs.h"
+
 #include "cerver/game/lobby.h"
 
 #define RECEIVE_PACKET_BUFFER_SIZE      8192
@@ -18,6 +20,23 @@ struct _Client;
 struct _Connection;
 struct _Lobby;
 struct _Packet;
+
+typedef struct Handler {
+
+    int id;
+    pthread_t thread_id;
+
+    // the method that this handler will execute to handle packets
+    Action handler;
+
+    // the jobs (packets) that are waiting to be handled - passed as args to the handler method
+    JobQueue *job_queue;
+
+} Handler;
+
+extern void handler_delete (void *handler_ptr);
+
+extern Handler *handler_create (int id, Action handler_method);
 
 typedef struct ReceiveHandle {
 
