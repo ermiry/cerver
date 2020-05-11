@@ -3,11 +3,13 @@
 
 #include <pthread.h>
 
+#include "cerver/collections/dllist.h"
+
 #include "cerver/threads/common.h"
 
 typedef struct Job {
 
-	struct Job *prev;
+	// struct Job *prev;
 	void (*method) (void *args);
 	void *args;
 
@@ -19,10 +21,12 @@ extern void job_delete (void *job_ptr);
 
 typedef struct JobQueue {
 
-	Job *front;
-	Job *rear;
+	// Job *front;
+	// Job *rear;
 
-	size_t size;
+	// size_t size;
+
+	DoubleList *queue;
 
 	pthread_mutex_t *rwmutex;             // used for queue r/w access
 	bsem *has_jobs;
@@ -32,5 +36,17 @@ typedef struct JobQueue {
 extern JobQueue *job_queue_new (void);
 
 extern void job_queue_delete (void *job_queue_ptr);
+
+extern JobQueue *job_queue_create (void);
+
+// add a new job to the queue
+// returns 0 on success, 1 on error
+extern int jobqueue_push (JobQueue *job_queue, Job *job);
+
+// get the job at the start of the queue
+extern Job *job_queue_pull (JobQueue *job_queue);
+
+// clears the job queue -> destroys all jobs
+extern void job_queue_clear (JobQueue *job_queue);
 
 #endif
