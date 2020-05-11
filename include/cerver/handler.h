@@ -26,6 +26,19 @@ typedef struct Handler {
     int id;
     pthread_t thread_id;
 
+    // unique handler data
+    // will be passed to jobs alongside any job specific data as the args
+    void *data;
+    
+    // must return a newly allocated handler unique data
+    // will be executed when the handler starts
+    void *(*data_create) (void *args);
+    void *data_create_args;
+
+    // called at the end of the handler to delete the handler's data
+    // if no method is set, it won't be deleted
+    Action data_delete;
+
     // the method that this handler will execute to handle packets
     Action handler;
 
@@ -37,6 +50,17 @@ typedef struct Handler {
 extern void handler_delete (void *handler_ptr);
 
 extern Handler *handler_create (int id, Action handler_method);
+
+extern void handler_set_data (Handler *handler, void *data);
+
+extern void handler_set_data_create (Handler *handler, 
+    void *(*data_create) (void *args), void *data_create_args);
+
+extern void handler_set_data_delete (Handler *handler, Action data_delete);
+
+// starts the new handler by creating a dedicated thread for it
+// called by internal cerver methods
+extern int handler_start (Handler *handler);
 
 typedef struct ReceiveHandle {
 

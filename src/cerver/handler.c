@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+
 #include <errno.h>
+
+#include <sys/prctl.h>
 
 #include "cerver/types/types.h"
 
@@ -31,6 +34,11 @@ static Handler *handler_new (void) {
     if (handler) {
         handler->id = -1;
         handler->thread_id = 0;
+
+        handler->data = NULL;
+        handler->data_create = NULL;
+        handler->data_create_args = NULL;
+        handler->data_delete = NULL;
 
         handler->handler = NULL;
 
@@ -64,6 +72,64 @@ Handler *handler_create (int id, Action handler_method) {
     }
 
     return handler;
+
+}
+
+void handler_set_data (Handler *handler, void *data) {
+
+    if (handler) handler->data = data;
+
+}
+
+void handler_set_data_create (Handler *handler, 
+    void *(*data_create) (void *args), void *data_create_args) {
+
+    if (handler) {
+        handler->data_create = data_create;
+        handler->data_create_args = data_create_args;
+    }
+
+}
+
+void handler_set_data_delete (Handler *handler, Action data_delete) {
+
+    if (handler) handler->data_delete = data_delete;
+
+}
+
+static void handler_do (void *handler_ptr) {
+
+    if (handler_ptr) {
+        Handler *handler = (Handler *) handler_ptr;
+
+        // set the thread name
+        char thread_name[128] = { 0 };
+        snprintf (thread_name, 128, "handler-%d", handler->id);
+        prctl (PR_SET_NAME, thread_name);
+
+        // TODO: register to signals to handle multiple actions
+
+        // TODO: while cerver is running, check for new jobs and handle them
+    }
+
+}
+
+// starts the new handler by creating a dedicated thread for it
+// called by internal cerver methods
+int handler_start (Handler *handler) {
+
+    int retval = 1;
+
+    if (handler) {
+        retval = pthread_create (
+            &handler->thread_id,
+            NULL,
+            (void *(*)(void *)) handler_do,
+            (void *) handler
+        );
+    }
+
+    return retval;
 
 }
 
