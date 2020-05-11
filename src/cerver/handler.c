@@ -131,6 +131,9 @@ static void *handler_do (void *handler_ptr) {
 
         // TODO: register to signals to handle multiple actions
 
+        if (handler->data_create) 
+            handler->data = handler->data_create (handler->data_create_args);
+
         // mark the handler as alive and ready
         pthread_mutex_lock (handler->cerver->handlers_lock);
         handler->cerver->num_handlers_alive += 1;
@@ -163,6 +166,9 @@ static void *handler_do (void *handler_ptr) {
                 pthread_mutex_unlock (handler->cerver->handlers_lock);
             }
         }
+
+        if (handler->data_delete)
+            handler_data_delete (handler->data);
 
         pthread_mutex_lock (handler->cerver->handlers_lock);
         handler->cerver->num_handlers_alive -= 1;
