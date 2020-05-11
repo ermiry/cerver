@@ -1,11 +1,11 @@
 #ifndef _CERVER_VERSION_H_
 #define _CERVER_VERSION_H_
 
-#define VERSION                 "1.2.3"
-#define VERSION_NAME            "Release 1.2.3"
-#define VERSION_DATE			"07/05/2020"
-#define VERSION_TIME			"19:44 CST"
-#define VERSION_AUTHOR			"Erick Salas"
+#define CERVER_VERSION                  "1.3"
+#define CERVER_VERSION_NAME             "Release 1.3"
+#define CERVER_VERSION_DATE			    "11/05/2020"
+#define CERVER_VERSION_TIME			    "15:28 CST"
+#define CERVER_VERSION_AUTHOR			"Erick Salas"
 
 // print full cerver version information 
 extern void cerver_version_print_full (void);
