@@ -28,10 +28,12 @@
 
 #pragma region handler
 
-static HandlerData *handler_data_new (void *data, Packet *packet) {
+static HandlerData *handler_data_new (int handler_id, void *data, Packet *packet) {
 
     HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
     if (handler_data) {
+        handler_data->handler_id = handler_id;
+
         handler_data->data = data;
         handler_data->packet = packet;
     }
@@ -146,7 +148,7 @@ static void *handler_do (void *handler_ptr) {
                 // read job from queue
                 Job *job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    HandlerData *handler_data = handler_data_new (handler->data, (Packet *) job->args);
+                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, (Packet *) job->args);
 
                     handler->handler (handler_data);
 

@@ -24,6 +24,8 @@ struct _Packet;
 // the strcuture that will be passed to the handler
 typedef struct HandlerData {
 
+    int handler_id;
+
     void *data;                     // handler's own data
     struct _Packet *packet;         // the packet to handle
 
