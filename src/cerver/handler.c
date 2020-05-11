@@ -43,6 +43,8 @@ static Handler *handler_new (void) {
         handler->handler = NULL;
 
         handler->job_queue = NULL;
+
+        handler->cerver = NULL;
     }
 
     return handler;
@@ -97,7 +99,7 @@ void handler_set_data_delete (Handler *handler, Action data_delete) {
 
 }
 
-static void handler_do (void *handler_ptr) {
+static void *handler_do (void *handler_ptr) {
 
     if (handler_ptr) {
         Handler *handler = (Handler *) handler_ptr;
@@ -109,8 +111,41 @@ static void handler_do (void *handler_ptr) {
 
         // TODO: register to signals to handle multiple actions
 
-        // TODO: while cerver is running, check for new jobs and handle them
+        // mark the handler as alive and ready
+        pthread_mutex_lock (handler->cerver->handlers_lock);
+        handler->cerver->num_handlers_alive += 1;
+        pthread_mutex_unlock (handler->cerver->handlers_lock);
+
+        // while cerver is running, check for new jobs and handle them
+        while (handler->cerver->isRunning) {
+            bsem_wait (handler->job_queue->has_jobs);
+
+            if (handler->cerver->isRunning) {
+                pthread_mutex_lock (handler->cerver->handlers_lock);
+                handler->cerver->num_handlers_working += 1;
+                pthread_mutex_unlock (handler->cerver->handlers_lock);
+
+                // read job from queue
+                Job *job = job_queue_pull (handler->job_queue);
+                if (job) {
+                    // FIXME: pass also handler args
+                    // handler->handler (job->args);
+
+                    job_delete (job);
+                }
+
+                pthread_mutex_lock (handler->cerver->handlers_lock);
+                handler->cerver->num_handlers_working -= 1;
+                pthread_mutex_unlock (handler->cerver->handlers_lock);
+            }
+        }
+
+        pthread_mutex_lock (handler->cerver->handlers_lock);
+        handler->cerver->num_handlers_alive -= 1;
+        pthread_mutex_unlock (handler->cerver->handlers_lock);
     }
+
+    return NULL;
 
 }
 
