@@ -21,6 +21,14 @@ struct _Connection;
 struct _Lobby;
 struct _Packet;
 
+// the strcuture that will be passed to the handler
+typedef struct HandlerData {
+
+    void *data;                     // handler's own data
+    struct _Packet *packet;         // the packet to handle
+
+} HandlerData;
+
 struct _Handler {
 
     int id;

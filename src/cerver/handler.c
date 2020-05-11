@@ -28,6 +28,24 @@
 
 #pragma region handler
 
+static HandlerData *handler_data_new (void *data, Packet *packet) {
+
+    HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
+    if (handler_data) {
+        handler_data->data = data;
+        handler_data->packet = packet;
+    }
+
+    return handler_data;
+
+}
+
+static inline void handler_data_delete (HandlerData *handler_data) { 
+
+    if (handler_data) free (handler_data);
+    
+}
+
 static Handler *handler_new (void) {
 
     Handler *handler = (Handler *) malloc (sizeof (Handler));
@@ -128,9 +146,11 @@ static void *handler_do (void *handler_ptr) {
                 // read job from queue
                 Job *job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    // FIXME: pass also handler args
-                    // handler->handler (job->args);
+                    HandlerData *handler_data = handler_data_new (handler->data, (Packet *) job->args);
 
+                    handler->handler (handler_data);
+
+                    handler_data_delete (handler_data);
                     job_delete (job);
                 }
 
