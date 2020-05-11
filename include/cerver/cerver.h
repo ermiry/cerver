@@ -17,6 +17,7 @@
 #include "cerver/auth.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/handler.h"
 
 #include "cerver/threads/thpool.h"
 
@@ -161,6 +162,17 @@ struct _Cerver {
     Action app_error_packet_handler;
     Action custom_packet_handler;
 
+    // 10/05/2020
+    bool multiple_handlers;
+    // DoubleList *handlers;
+    Handler **handlers;
+    unsigned int n_handlers;
+    volatile unsigned int num_handlers_alive;       // handlers currently alive
+    volatile unsigned int num_handlers_working;     // handlers currently working
+    pthread_mutex_t *handlers_lock;
+    // TODO: add ability to control handler execution
+    // pthread_cond_t *handlers_wait;
+
     Action update;                          // method to be executed every tick
     void *update_args;                      // args to pass to custom update method
     u8 update_ticks;                        // like fps
@@ -224,6 +236,15 @@ extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action 
 
 // sets a custom packet handler
 extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
+
+// enables the ability of the cerver to have multiple app handlers
+// returns 0 on success, 1 on error
+extern int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers);
+
+// adds a new handler to the cerver handlers array
+// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// returns 0 on success, 1 on error
+extern int cerver_handlers_add (Cerver *cerver, Handler *handler);
 
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick

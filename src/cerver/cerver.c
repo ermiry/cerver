@@ -218,6 +218,10 @@ Cerver *cerver_new (void) {
         c->app_error_packet_handler = NULL;
         c->custom_packet_handler = NULL;
 
+        // 10/05/2020
+        c->handlers = NULL;
+        c->handlers_lock = NULL;
+
         c->update = NULL;
         c->update_args = NULL;
 
@@ -255,6 +259,17 @@ void cerver_delete (void *ptr) {
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
         if (cerver->hold_fds) free (cerver->hold_fds);
+
+        // 10/05/2020
+        if (cerver->handlers) {
+            for (unsigned int idx = 0; idx < cerver->n_handlers; idx++) {
+                handler_delete (cerver->handlers[idx]);
+            }
+
+            free (cerver->handlers);
+        }
+
+        if (cerver->handlers_lock) pthread_mutex_destroy (cerver->handlers_lock);
 
         admin_cerver_delete (cerver->admin);
 
@@ -420,6 +435,46 @@ void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_err
 void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
 
     if (cerver) cerver->custom_packet_handler = custom_handler;
+
+}
+
+// enables the ability of the cerver to have multiple app handlers
+// returns 0 on success, 1 on error
+int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
+
+    int retval = 1;
+
+    if (cerver) {
+        cerver->multiple_handlers = true;
+        cerver->n_handlers = n_handlers;
+
+        cerver->handlers = (Handler **) calloc (cerver->n_handlers, sizeof (Handler *));
+        if (cerver->handlers) {
+            for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
+                cerver->handlers[idx] = NULL;
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
+// adds a new handler to the cerver handlers array
+// is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
+// returns 0 on success, 1 on error
+int cerver_handlers_add (Cerver *cerver, Handler *handler) {
+
+    int retval = 1;
+
+    if (cerver && handler) {
+        if (cerver->handlers) {
+            cerver->handlers[handler->id] = handler;
+        }
+    }
+
+    return retval;
 
 }
 
