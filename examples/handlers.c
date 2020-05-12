@@ -182,7 +182,7 @@ static void handler_cero (void *data) {
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
-		AppData *app_data = handler_data->data;
+		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
 			if (packet->data_size >= sizeof (RequestData)) {
@@ -208,7 +208,7 @@ static void handler_one (void *data) {
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
-		AppData *app_data = handler_data->data;
+		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
 			if (packet->data_size >= sizeof (RequestData)) {
@@ -234,7 +234,7 @@ static void handler_two (void *data) {
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
-		AppData *app_data = handler_data->data;
+		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
 			if (packet->data_size >= sizeof (RequestData)) {
@@ -260,7 +260,7 @@ static void handler_three (void *data) {
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
-		AppData *app_data = handler_data->data;
+		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
 			if (packet->data_size >= sizeof (RequestData)) {
@@ -292,7 +292,7 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Multiple Handlers Example");
+	cerver_log_debug ("Multiple handlers example");
 	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
