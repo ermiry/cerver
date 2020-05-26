@@ -366,7 +366,7 @@ static void cerver_request_packet_handler (Packet *packet) {
                     client_drop (packet->cerver, packet->client);
                 } break;
 
-                default: 
+                default: {
                     #ifdef CERVER_DEBUG
                     char *s = c_string_create ("Got an unknown request in cerver %s",
                         packet->cerver->info->name->str);
@@ -375,7 +375,7 @@ static void cerver_request_packet_handler (Packet *packet) {
                         free (s);
                     }
                     #endif
-                    break;
+                } break;
             }
         }
     }
@@ -931,9 +931,9 @@ void cerver_receive (void *ptr) {
                         // man recv -> steam socket perfomed an orderly shutdown
                         // but in dgram it might mean something?
                         #ifdef CERVER_DEBUG
-                        char *status = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
+                        char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
                             cr->sock_fd);
-                        if (status) {
+                        if (s) {
                             cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
                             free (s);
                         }
@@ -1102,7 +1102,7 @@ static void cerver_register_new_connection (Cerver *cerver,
         }
 
         #ifdef CERVER_DEBUG
-        char *s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
+        s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
         if (s) {
             cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
             free (s);
@@ -1402,7 +1402,7 @@ u8 cerver_poll (Cerver *cerver) {
         }
 
         #ifdef CERVER_DEBUG
-        char *s = c_string_create ("Cerver %s main poll has stopped!", cerver->info->name->str);
+        s = c_string_create ("Cerver %s main poll has stopped!", cerver->info->name->str);
         if (s) {
             cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
             free (s);
