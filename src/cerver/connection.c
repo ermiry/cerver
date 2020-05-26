@@ -383,15 +383,21 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
         if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
             #ifdef CERVER_DEBUG
             if (client->session_id) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
-                    c_string_create ("Registered a new connection to client with session id: %s",
-                    client->session_id->str));
+                char *s = c_string_create ("Registered a new connection to client with session id: %s",
+                    client->session_id->str);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    free (s);
+                }
             }
 
             else {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
-                    c_string_create ("Registered a new connection to client (id): %ld",
-                    client->id));
+                char *s = c_string_create ("Registered a new connection to client (id): %ld",
+                    client->id);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    free (s);
+                }
             }
             #endif
 
@@ -481,9 +487,12 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
         const void *key = &connection->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
-                connection->sock_fd, cerver->info->name->str));
+            char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
+                connection->sock_fd, cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                free (s);
+            }
             #endif
             errors = 1;
         }
