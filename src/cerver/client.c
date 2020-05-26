@@ -725,10 +725,24 @@ int client_connection_start (Client *client, Connection *connection) {
         if (!connection_connect (connection)) {
             time (&connection->connected_timestamp);
             connection->active = true;
-            thread_create_detachable ((void *(*)(void *)) connection_update, 
-                client_connection_aux_new (client, connection), NULL);
-            client_start (client);
-            retval = 0;
+
+            if (!thread_create_detachable (
+                &connection->update_thread_id,
+                (void *(*)(void *)) connection_update,
+                client_connection_aux_new (client, connection)
+            )) {
+                client_start (client);
+                retval = 0;         // success
+            }
+
+            else {
+                char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %ld", 
+                    client->id);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
+            }
         }
     }
 
@@ -747,12 +761,29 @@ static void client_connection_start_wrapper (void *data_ptr) {
 }
 
 // starts the client connection async -- creates a new thread to handle how to connect with server
-void client_connection_start_async (Client *client, Connection *connection) {
+// returns 0 on success, 1 on error
+int client_connection_start_async (Client *client, Connection *connection) {
+
+    int retval = 1;
 
     if (client && connection) {
-        thread_create_detachable ((void *(*) (void *)) client_connection_start_wrapper, 
-            client_connection_aux_new (client, connection), NULL);
+        pthread_t thread_id = 0;
+        
+        if (!thread_create_detachable (
+            &thread_id,
+            (void *(*) (void *)) client_connection_start_wrapper,
+            client_connection_aux_new (client, connection)
+        )) {
+            retval = 0;         // success
+        }
+
+        else {
+            // error
+            cerver_log_error ("client_connection_start_async () - Failed to create and detatch thread!");
+        }
     }
+
+    return retval;
 
 }
 
