@@ -668,7 +668,7 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
                 if (cerver->holding_connections == false) {
                     cerver->holding_connections = true;
 
-                    if (thread_create_detachable (on_hold_poll, cerver, NULL)) {
+                    if (thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
                         char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
                             cerver->info->name->str);
                         if (status) {

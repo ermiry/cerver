@@ -610,7 +610,13 @@ void *admin_cerver_start (void *args) {
 				admin_cerver->running = true;
 
 				// create a dedicated thread for admin cerver update method
-				thread_create_detachable ((void *(*) (void *)) admin_cerver_update, admin_cerver, "admin-update");
+				if (thread_create_detachable (
+					&admin_cerver->update_thread_id,
+					(void *(*) (void *)) admin_cerver_update,
+					admin_cerver
+				)) {
+					cerver_log_error ("Failed to create admin_cerver_update () thread!");
+				}
 
 				admin_cerver_poll (admin_cerver);
 			}

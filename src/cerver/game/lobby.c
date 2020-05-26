@@ -884,7 +884,18 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
             //         lobby->id->str, cerver->info->name->str));
             // }
 
-            thread_create_detachable ((void *(*)(void *)) lobby->handler, cerver_lobby, "lobby-poll");
+            if (thread_create_detachable (
+                &lobby->handler_thread_id,
+                (void *(*)(void *)) lobby->handler, 
+                cerver_lobby
+            )) {
+                char *s = c_string_create ("Failed to create lobby %s HANDLER thread!",
+                    lobby->id->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
+            }
         }
 
         else {
@@ -915,7 +926,18 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
             //         lobby->id->str, cerver->info->name->str));
             // }
 
-            thread_create_detachable ((void *(*)(void *)) lobby->update, cerver_lobby, "lobby-update");
+            if (thread_create_detachable (
+                &lobby->update_thread_id,
+                (void *(*)(void *)) lobby->update, 
+                cerver_lobby
+            )) {
+                char *s = c_string_create ("Failed to create lobby %s UPDATE thread!",
+                    lobby->id->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
+            }
         }
 
         else {
