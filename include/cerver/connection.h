@@ -79,7 +79,9 @@ extern Connection *connection_new (void);
 
 extern void connection_delete (void *ptr);
 
-// creates a new lcient connection with the specified values
+extern Connection *connection_create_empty (void);
+
+// creates a new client connection with the specified values
 extern Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
     Protocol protocol);
 

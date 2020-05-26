@@ -635,7 +635,7 @@ Connection *client_connection_create (Client *client,
     Connection *connection = NULL;
 
     if (client) {
-        connection = connection_new ();
+        connection = connection_create_empty ();
         if (connection) {
             connection_set_values (connection, ip_address, port, protocol, use_ipv6);
             connection_init (connection);

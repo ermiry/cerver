@@ -50,6 +50,7 @@ Connection *connection_new (void) {
     if (connection) {
         memset (connection, 0, sizeof (Connection));
 
+        connection->sock_fd = -1;
         connection->use_ipv6 = false;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
 
@@ -73,7 +74,7 @@ Connection *connection_new (void) {
         connection->custom_receive = NULL;
         connection->custom_receive_args = NULL;
         
-        connection->stats = connection_stats_new ();
+        connection->stats = NULL;
     }
 
     return connection;
@@ -102,20 +103,28 @@ void connection_delete (void *ptr) {
 
 }
 
-Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
-    Protocol protocol) {
+Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
+        connection->sock_receive = sock_receive_new ();
+        connection->stats = connection_stats_new ();
+    }
+
+    return connection;
+
+}
+
+Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
+    Protocol protocol) {
+
+    Connection *connection = connection_create_empty ();
+    if (connection) {
         connection->sock_fd = sock_fd;
-        // time (&connection->timestamp);
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
-        connection_get_values (connection);
         connection->protocol = protocol;
 
-        connection->sock_receive = sock_receive_new ();
-
-        // connection->stats = connection_stats_new ();
+        connection_get_values (connection);
     }
 
     return connection;
