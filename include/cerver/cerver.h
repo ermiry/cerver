@@ -135,8 +135,6 @@ struct _Cerver {
     bool compress_clients;              // compress the fds array?
     u32 poll_timeout;           
 
-    Htab *sock_buffer_map;
-
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?
     struct _Auth *auth;                         // server auth info

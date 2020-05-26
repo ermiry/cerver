@@ -264,19 +264,6 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 }
 
-// static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd) {
-
-//     SockReceive *sock_receive = NULL;
-//     const i32 *key = &sock_fd;
-//     void *sock_buffer_data = htab_get_data (cerver->sock_buffer_map,
-//         key, sizeof (i32));
-
-//     if (sock_buffer_data) sock_receive = (SockReceive *) sock_buffer_data;
-
-//     return sock_receive;    
-
-// }
-
 static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, bool on_hold) {
 
     SockReceive *sock_receive = NULL;

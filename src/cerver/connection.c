@@ -459,11 +459,6 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
     if (cerver && client && connection) {
         const void *key = &connection->sock_fd;
 
-        // map the socket fd to a new receive buffer
-        SockReceive *sock_receive = sock_receive_new ();
-        htab_insert (cerver->sock_buffer_map, key, sizeof (i32), 
-            sock_receive, sizeof (SockReceive));
-
         // map the socket fd with the client
         htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
             client, sizeof (Client));
@@ -484,15 +479,6 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
     if (cerver && client && connection) {
         // remove the sock fd from each map
         const void *key = &connection->sock_fd;
-        if (htab_remove (cerver->sock_buffer_map, key, sizeof (i32))) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to remove sock fd %d from cerver's %s sock buffer map.",
-                connection->sock_fd, cerver->info->name->str));
-            #endif
-            errors = 1;
-        }
-
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
             #ifdef CERVER_DEBUG
             cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
@@ -501,8 +487,6 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
             #endif
             errors = 1;
         }
-
-        errors = 0;
     }
 
     return errors;

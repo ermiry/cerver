@@ -255,7 +255,6 @@ void cerver_delete (void *ptr) {
         if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
 
         if (cerver->fds) free (cerver->fds);
-        if (cerver->sock_buffer_map) htab_destroy (cerver->sock_buffer_map);
 
         if (cerver->auth) auth_delete (cerver->auth);
 
@@ -722,20 +721,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
         if (!cerver->client_sock_fd_map) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Failed to init clients sock fd map in cerver %s",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-            #endif
-
-            return 1;
-        }
-
-        cerver->sock_buffer_map = htab_init (poll_n_fds, NULL, NULL, NULL, false, NULL, sock_receive_delete);
-        if (!cerver->sock_buffer_map) {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to init sock buffer map in cerver %s",
                 cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
@@ -1293,10 +1278,6 @@ static void cerver_destroy_clients (Cerver *cerver) {
                 packet_delete (packet);
             }
         }
-
-        // destroy the sock fd buffer map
-        htab_destroy (cerver->sock_buffer_map);
-        cerver->sock_buffer_map = NULL;
 
         // destroy the sock fd client map
         htab_destroy (cerver->client_sock_fd_map);
