@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <errno.h>
+
 #include <pthread.h>
 #include <sys/prctl.h>
 
@@ -8,21 +10,23 @@
 #include "cerver/utils/log.h"
 
 // creates a custom detachable thread (will go away on its own upon completion)
-// handle manually in linux, with no name
-// in any other platform, created with sdl api and you can pass a custom name
-u8 thread_create_detachable (void *(*work) (void *), void *args, const char *name) {
+// returns 0 on success, 1 on error
+u8 thread_create_detachable (pthread_t *thread, void *(*work) (void *), void *args) {
 
     u8 retval = 1;
 
-    pthread_attr_t attr;
-    pthread_t thread;
+    if (thread) {
+        pthread_attr_t attr;
+        int rc = pthread_attr_init (&attr);
+        rc = pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
 
-    int rc = pthread_attr_init (&attr);
-    rc = pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
+        if (pthread_create (thread, &attr, work, args) != THREAD_OK) {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to create detachable thread!");
+            perror ("Error");
+        }
 
-    if (pthread_create (&thread, &attr, work, args) != THREAD_OK)
-        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to create detachable thread!");
-    else retval = 0;
+        else retval = 0;
+    }
 
     return retval;
 
