@@ -146,6 +146,7 @@ struct _Cerver {
     u16 current_on_hold_nfds;
     bool compress_on_hold;              // compress the hold fds array?
     bool holding_connections;
+    pthread_t on_hold_poll_id;
 
     // allow the clients to use sessions (have multiple connections)
     bool use_sessions;  
@@ -172,15 +173,18 @@ struct _Cerver {
     // TODO: add ability to control handler execution
     // pthread_cond_t *handlers_wait;
 
+    pthread_t update_thread_id;
     Action update;                          // method to be executed every tick
     void *update_args;                      // args to pass to custom update method
     u8 update_ticks;                        // like fps
 
+    pthread_t update_interval_thread_id;
     Action update_interval;                 // the actual method to execute every x seconds
     void *update_interval_args;             // args to pass to the update method
     u32 update_interval_secs;               // the interval in seconds          
 
     struct _AdminCerver *admin;
+    pthread_t admin_thread_id;
 
     CerverInfo *info;
     CerverStats *stats;
