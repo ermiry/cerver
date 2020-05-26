@@ -93,7 +93,7 @@ int main (void) {
 		if (my_cerver) {
 			/*** cerver configuration ***/
 			cerver_set_receive_buffer_size (my_cerver, 16384);
-			cerver_set_thpool_n_threads (my_cerver, 4);
+			// cerver_set_thpool_n_threads (my_cerver, 4);
 			cerver_set_app_handlers (my_cerver, my_game_packet_handler, NULL);
 			cerver_set_on_client_connected (my_cerver, my_game_on_client_connected);
 

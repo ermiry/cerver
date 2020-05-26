@@ -299,7 +299,7 @@ int main (void) {
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
-		cerver_set_thpool_n_threads (my_cerver, 4);
+		// cerver_set_thpool_n_threads (my_cerver, 4);
 		// cerver_set_app_handlers (my_cerver, handler, NULL);
 
 		cerver_set_multiple_handlers (my_cerver, 4);
@@ -339,6 +339,8 @@ int main (void) {
 	else {
 		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
 			"Failed to create cerver!");
+
+		cerver_delete (my_cerver);
 	}
 
 	return 0;
