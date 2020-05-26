@@ -110,9 +110,12 @@ static void auth_send_success_packet (const Cerver *cerver, const Connection *co
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                c_string_create ("Failed to create success auth packet in cerver %s",
-                cerver->info->name->str));
+            char *status = c_string_create ("Failed to create success auth packet in cerver %s",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                free (status);
+            }
             #endif
         }
     }
@@ -154,9 +157,12 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                     // cerver error -- failed to register the client to cerver
                     else {
                         #ifdef CERVER_DEBUG
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER,
-                            c_string_create ("Failed to register new lcient to cerver %s",
-                            packet->cerver->info->name->str));
+                        char *status = c_string_create ("Failed to register new lcient to cerver %s",
+                            packet->cerver->info->name->str);
+                        if (status) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                            free (status);
+                        }
                         #endif
 
                         Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
@@ -174,9 +180,12 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
                 // cerver error -- failed to register connection to new client
                 else {
                     #ifdef CERVER_DEBUG
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER,
-                        c_string_create ("Failed to register connection to client in cerver %s",
-                        packet->cerver->info->name->str));
+                    char *status = c_string_create ("Failed to register connection to client in cerver %s",
+                        packet->cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                        free (status);
+                    }
                     #endif
 
                     Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
@@ -194,9 +203,12 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
             // cerver error -- failed to allocate a new client
             else {
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                    c_string_create ("Failed to allocate a new client in cerver %s", 
-                    packet->cerver->info->name->str));
+                char *status = c_string_create ("Failed to allocate a new client in cerver %s", 
+                    packet->cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
                 #endif
                 
                 Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
@@ -214,9 +226,12 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
         // cerver error -- failed to remove connection from on hold structures
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to remove connection from cerver's %s on hold connections", 
-                packet->cerver->info->name->str));
+            char *status = c_string_create ("Failed to remove connection from cerver's %s on hold connections", 
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
             #endif
             
             Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
@@ -285,9 +300,12 @@ static void auth_with_token (const Packet *packet, const AuthData *auth_data) {
         // if we found a client, register the new connection to him
         if (client) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, 
-                c_string_create ("Found a client with session id %s in cerver %s.",
-                auth_data->token->str, packet->cerver->info->name->str));
+            char *status = c_string_create ("Found a client with session id %s in cerver %s.",
+                auth_data->token->str, packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
+                free (status);
+            }
             #endif
 
             if (!connection_register_to_client (client, packet->connection)) {
@@ -316,9 +334,12 @@ static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
         AuthPacket auth_packet = { .packet = packet, .auth_data = auth_data };
         if (!packet->cerver->auth->authenticate (&auth_packet)) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
-                c_string_create ("Client authenticated successfully to cerver %s",
-                packet->cerver->info->name->str));
+            char *status = c_string_create ("Client authenticated successfully to cerver %s",
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, status);
+                free (status);
+            }
             #endif
 
             auth_success (packet, auth_data);
@@ -326,9 +347,12 @@ static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_DEBUG, LOG_CLIENT, 
-                c_string_create ("Client failed to authenticate to cerver %s",
-                packet->cerver->info->name->str));
+            char *status = c_string_create ("Client failed to authenticate to cerver %s",
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_DEBUG, LOG_CLIENT, status);
+                free (status);
+            }
             #endif
 
             auth_failed (packet);
@@ -397,9 +421,12 @@ static void auth_try (Packet *packet) {
             // failed to get auth data form packet
             else {
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                    c_string_create ("Failed to get auth data from packet in cerver %s",
-                    packet->cerver->info->name->str));
+                char *status = c_string_create ("Failed to get auth data from packet in cerver %s",
+                    packet->cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
                 #endif
 
                 auth_failed (packet);
@@ -408,9 +435,12 @@ static void auth_try (Packet *packet) {
 
         // no authentication method -- clients are not able to interact to the cerver!
         else {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Cerver %s does not have an authenticate method!",
-                packet->cerver->info->name->str));
+            char *status = c_string_create ("Cerver %s does not have an authenticate method!",
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
 
             // close the on hold connection assocaited with sock fd 
             // and remove it from the cerver
@@ -461,13 +491,16 @@ void on_hold_packet_handler (void *ptr) {
                 // acknowledge the client we have received his test packet
                 case TEST_PACKET: cerver_test_packet_handler (packet); break;
 
-                default:
+                default: {
                     #ifdef CERVER_DEBUG
-                    cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, 
-                        c_string_create ("Got an on hold packet of unknown type in cerver %s.", 
-                        packet->cerver->info->name->str));
+                    char *status = c_string_create ("Got an on hold packet of unknown type in cerver %s.", 
+                        packet->cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, status);
+                        free (status);
+                    }
                     #endif
-                    break;
+                } break;
             }
         }
 
@@ -540,8 +573,12 @@ static u8 on_hold_poll (void *ptr) {
     if (ptr) {
         Cerver *cerver = (Cerver *) ptr;
 
-        cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, 
-            c_string_create ("Cerver %s on hold handler has started!", cerver->info->name->str));
+        char *status = c_string_create ("Cerver %s on hold handler has started!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+            free (status);
+        }
+
         #ifdef CERVER_DEBUG
         cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections to put on hold...");
         #endif
@@ -553,8 +590,12 @@ static u8 on_hold_poll (void *ptr) {
 
             // poll failed
             if (poll_retval < 0) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                    c_string_create ("Cerver %s on hold poll has failed!", cerver->info->name->str));
+                char *status = c_string_create ("Cerver %s on hold poll has failed!", cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
+
                 perror ("Error");
                 cerver->holding_connections = false;
                 cerver->isRunning = false;
@@ -564,8 +605,11 @@ static u8 on_hold_poll (void *ptr) {
             // if poll has timed out, just continue to the next loop... 
             if (poll_retval == 0) {
                 // #ifdef CERVER_DEBUG
-                // cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                //    c_string_create ("Cerver %s on hold poll timeout", cerver->info->name->str));
+                // char *status = c_string_create ("Cerver %s on hold poll timeout", cerver->info->name->str);
+                // if (status) {
+                //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                //     free (status);
+                // }
                 // #endif
                 continue;
             }
@@ -586,8 +630,11 @@ static u8 on_hold_poll (void *ptr) {
         }
 
         #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-            c_string_create ("Cerver %s on hold poll has stopped!", cerver->info->name->str));
+        status = c_string_create ("Cerver %s on hold poll has stopped!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
         #endif
 
         retval = 0;
@@ -624,23 +671,33 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
                 if (cerver->holding_connections == false) {
                     cerver->holding_connections = true;
                     if (thpool_add_work (cerver->thpool, (void (*)(void*)) on_hold_poll, cerver)) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                            c_string_create ("Failed to add on_hold_poll () to cerver's %s thpool!", 
-                            cerver->info->name->str));
+                        char *status = c_string_create ("Failed to add on_hold_poll () to cerver's %s thpool!", 
+                            cerver->info->name->str);
+                        if (status) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                            free (status);
+                        }
+                        
                         cerver->holding_connections = false;
                     }
                 }
 
+                char *status = NULL;
                 #ifdef CERVER_DEBUG
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER,
-                        c_string_create ("Connection is on hold on cerver %s.",
-                        cerver->info->name->str));
+                status = c_string_create ("Connection is on hold on cerver %s.", cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    free (status);
+                }
                 #endif
 
                 #ifdef CERVER_STATS
-                    cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-                        c_string_create ("Cerver %s current on hold connections: %i.", 
-                        cerver->info->name->str, cerver->stats->current_n_hold_connections));
+                status = c_string_create ("Cerver %s current on hold connections: %i.", 
+                    cerver->info->name->str, cerver->stats->current_n_hold_connections);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                    free (status);
+                }
                 #endif
 
                 connection->active = true;
@@ -650,14 +707,20 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
             else {
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                    c_string_create ("Cerver %s on hold poll is full -- we need to realloc...", 
-                    cerver->info->name->str));
+                char *status = c_string_create ("Cerver %s on hold poll is full -- we need to realloc...", 
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                    free (status);
+                }
                 #endif
                 if (cerver_realloc_on_hold_poll_fds (cerver)) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                        c_string_create ("Failed to realloc cerver %s on hold poll fds!", 
-                        cerver->info->name->str));
+                    char *status = c_string_create ("Failed to realloc cerver %s on hold poll fds!", 
+                        cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                        free (status);
+                    }
                 }
 
                 else retval = on_hold_connection (cerver, connection);
@@ -679,17 +742,23 @@ static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
             cerver->current_on_hold_nfds--;
 
             #ifdef CERVER_STATS
-                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-                    c_string_create ("Cerver %s current on hold connections: %i.", 
-                    cerver->info->name->str, cerver->stats->current_n_hold_connections));
+            char *status = c_string_create ("Cerver %s current on hold connections: %i.", 
+                cerver->info->name->str, cerver->stats->current_n_hold_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                free (status);
+            }
             #endif
 
             // check if we are holding any more connections, if not, we stop the on hold poll
             if (cerver->current_on_hold_nfds <= 0) {
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER,
-                    c_string_create ("Stoping cerver's %s on hold poll...",
-                    cerver->info->name->str));
+                char *status = c_string_create ("Stoping cerver's %s on hold poll...",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    free (status);
+                }
                 #endif
                 cerver->holding_connections = false;
             }
@@ -697,9 +766,12 @@ static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                c_string_create ("Couldn't find %i sock fd in cerver's %s on hold poll fds.",
-                sock_fd, cerver->info->name->str));
+            char *status = c_string_create ("Couldn't find %i sock fd in cerver's %s on hold poll fds.",
+                sock_fd, cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                free (status);
+            }
             #endif
         }
     }
@@ -761,18 +833,24 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
             }
 
             else {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                    c_string_create ("Failed to get on hold connection associated with sock: %i", 
-                    sock_fd));
+                char *status = c_string_create ("Failed to get on hold connection associated with sock: %i", 
+                    sock_fd);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                    free (status);
+                }
             }
         }
 
         else {
             // cerver error allocating memory -- this might not happen
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                c_string_create ("Failed to create connection query in cerver %s.",
-                cerver->info->name->str));
+            char *status = c_string_create ("Failed to create connection query in cerver %s.",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                free (status);
+            }
             #endif
         }    
     }

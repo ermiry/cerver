@@ -85,6 +85,9 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
+	cerver_log_debug ("Simple Game Cerver Example");
+	printf ("\n");
+
 	if (!my_game_init ()) {
 		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 		if (my_cerver) {

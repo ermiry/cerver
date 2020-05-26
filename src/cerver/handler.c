@@ -168,7 +168,7 @@ static void *handler_do (void *handler_ptr) {
         }
 
         if (handler->data_delete)
-            handler_data_delete (handler->data);
+            handler->data_delete (handler->data);
 
         pthread_mutex_lock (handler->cerver->handlers_lock);
         handler->cerver->num_handlers_alive -= 1;

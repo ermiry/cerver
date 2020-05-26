@@ -679,9 +679,12 @@ static void admin_cerver_register_new_connection (AdminCerver *admin_cerver,
 		Connection *connection = connection_create (new_fd, client_address, PROTOCOL_TCP);
 		if (connection) {
 			#ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT,
-                c_string_create ("New connection to admin from IP address: %s -- Port: %d", 
-                connection->ip->str, connection->port));
+			char *status = c_string_create ("New connection to admin from IP address: %s -- Port: %d", 
+                connection->ip->str, connection->port);
+			if (status) {
+            	cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
+				free (status);
+			}
         	#endif
 
 			if (!connection->sock_receive) connection->sock_receive = sock_receive_new ();
@@ -932,8 +935,11 @@ static void admin_packet_handler (AdminCerver *admin_cerver, Packet *packet,
 			// acknowledge the client we have received his test packet
 			case TEST_PACKET: {
 				#ifdef CERVER_DEBUG
-				cerver_log_msg (stdout, LOG_DEBUG, LOG_PACKET, 
-					c_string_create ("Got a test packet in cerver %s admin handler.", packet->cerver->info->name->str));
+				char *status = c_string_create ("Got a test packet in cerver %s admin handler.", packet->cerver->info->name->str);
+				if (status) {
+					cerver_log_msg (stdout, LOG_DEBUG, LOG_PACKET, status);
+					free (status);
+				}
 				#endif
 
 				Packet *test_packet = packet_new ();
@@ -946,9 +952,12 @@ static void admin_packet_handler (AdminCerver *admin_cerver, Packet *packet,
 					test_packet->packet_type = TEST_PACKET;
 					packet_generate (test_packet);
 					if (packet_send (test_packet, 0, NULL, false)) {
-						cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
-							c_string_create ("Failed to send error packet from cerver %s.", 
-							packet->cerver->info->name->str));
+						char *status = c_string_create ("Failed to send error packet from cerver %s.", 
+							packet->cerver->info->name->str);
+						if (status) {
+							cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, status);
+							free (status);
+						}
 					}
 
 					packet_delete (test_packet);

@@ -263,7 +263,7 @@ extern void cerver_handlers_print_info (Cerver *cerver);
 // adds a new handler to the cerver handlers array
 // is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
 // returns 0 on success, 1 on error
-extern int cerver_handlers_add (Cerver *cerver, Handler *handler);
+extern int cerver_handlers_add (Cerver *cerver, struct _Handler *handler);
 
 /*** main **/
 
