@@ -209,6 +209,11 @@ extern void cerver_set_receive_buffer_size (Cerver *cerver, const u32 size);
 extern void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data);
 
 // sets the cerver's thpool number of threads
+// this will enable the cerver's ability to handle received packets using multiple threads
+// usefull if you want the best concurrency and effiency
+// but we aware that you need to make your structures and data thread safe, as they might be accessed 
+// from multiple threads at the same time
+// by default, all received packets will be handle only in one thread
 extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
 
 // sets an action to be performed by the cerver when a new client connects
@@ -274,7 +279,10 @@ extern Cerver *cerver_create (const CerverType type, const char *name,
 // returns 0 on success, 1 on error
 extern u8 cerver_restart (Cerver *cerver);
 
-// starts the cerver
+// tell the cerver to start listening for connections and packets
+// initializes cerver's structures like thpool (if any) 
+// and any other processes that have been configured before
+// returns 0 on success, 1 on error
 extern u8 cerver_start (Cerver *cerver);
 
 // disable socket I/O in both ways and stop any ongoing job

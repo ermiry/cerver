@@ -194,6 +194,7 @@ Cerver *cerver_new (void) {
         c->cerver_data = NULL;
         c->delete_cerver_data = NULL;
 
+        c->n_thpool_threads = 0;
         c->thpool = NULL;
 
         c->clients = NULL;
@@ -321,6 +322,11 @@ void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data) {
 }
 
 // sets the cerver's thpool number of threads
+// this will enable the cerver's ability to handle received packets using multiple threads
+// usefull if you want the best concurrency and effiency
+// but we aware that you need to make your structures and data thread safe, as they might be accessed 
+// from multiple threads at the same time
+// by default, all received packets will be handle only in one thread
 void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
 
     if (cerver) cerver->n_thpool_threads = n_threads;
@@ -742,10 +748,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             cerver->current_n_fds = 0;
             cerver->compress_clients = false;
 
-            // initialize cerver's own thread pool
-            cerver->n_thpool_threads = DEFAULT_TH_POOL_INIT;
-            // cerver->thpool = thpool_create (cerver->info->name->str, DEFAULT_TH_POOL_INIT);
-
             switch (cerver->type) {
                 case CUSTOM_CERVER: break;
                 case FILE_CERVER: break;
@@ -909,32 +911,57 @@ u8 cerver_restart (Cerver *cerver) {
 
 }
 
+static u8 cerver_one_time_init_thpool (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->n_thpool_threads) {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s is configured to use a thpool with %d threads",
+                cerver->info->name->str, cerver->n_thpool_threads);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+
+            // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
+            cerver->thpool = thpool_init (cerver->n_thpool_threads);
+            if (!cerver->thpool) {
+                char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    free (s);
+                }
+
+                errors = 1;
+            }
+        }
+
+        else {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s is configured to not use a thpool for receive methods",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return errors;
+
+}
+
 static u8 cerver_one_time_init (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
         // init the cerver thpool
-        // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
-        cerver->thpool = thpool_init (4);
-        if (!cerver->thpool) {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                free (s);
-            }
-            #endif
-
-            avl_delete (cerver->clients);
-            htab_destroy (cerver->client_sock_fd_map);
-
-            free (cerver->fds);
-
-            cerver_delete (cerver);
-        }
-
-        else {
+        if (!cerver_one_time_init_thpool (cerver)) {
             // if we have a game cerver, we might wanna load game data -> set by cerver admin
             if (cerver->type == GAME_CERVER) {
                 GameCerver *game_data = (GameCerver *) cerver->cerver_data;
@@ -1162,6 +1189,9 @@ static int cerver_handlers_start (Cerver *cerver) {
 }
 
 // tell the cerver to start listening for connections and packets
+// initializes cerver's structures like thpool (if any) 
+// and any other processes that have been configured before
+// returns 0 on success, 1 on error
 u8 cerver_start (Cerver *cerver) {
 
     u8 retval = 1;
