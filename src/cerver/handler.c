@@ -965,12 +965,12 @@ void cerver_receive (void *ptr) {
                     }
 
                     else {
-                        char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
-                            cr->cerver->info->name->str, rc, cr->sock_fd);
-                        if (status) {
-                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                            free (status);
-                        }
+                        // char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
+                        //     cr->cerver->info->name->str, rc, cr->sock_fd);
+                        // if (status) {
+                        //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                        //     free (status);
+                        // }
 
                         if (cr->lobby) {
                             cr->lobby->stats->n_receives_done += 1;
@@ -1364,13 +1364,23 @@ u8 cerver_poll (Cerver *cerver) {
                             // not the cerver socket, so a connection fd must be readable
                             else {
                                 // printf ("Receive fd: %d\n", cerver->fds[i].fd);
-                                cerver_receive (cr);
-                                // if (thpool_add_work (cerver->thpool, cerver_receive, 
-                                //     cerver_receive_new (cerver, cerver->fds[i].fd, false))) {
-                                //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                                //         c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
-                                //         cerver->info->name->str));
-                                // }
+
+                                if (cerver->thpool) {
+                                    // handle received packets using multiple threads
+                                    if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
+                                        char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
+                                            cerver->info->name->str);
+                                        if (s) {
+                                            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                                            free (s);
+                                        }
+                                    }
+                                }
+
+                                else {
+                                    // handle all received packets in the same thread
+                                    cerver_receive (cr);
+                                }
                             } 
                         } break;
 
