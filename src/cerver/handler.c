@@ -18,6 +18,7 @@
 #include "cerver/handler.h"
 #include "cerver/auth.h"
 
+#include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
 
 #include "cerver/game/game.h"
@@ -186,12 +187,22 @@ int handler_start (Handler *handler) {
     int retval = 1;
 
     if (handler) {
-        retval = pthread_create (
+        // retval = pthread_create (
+        //     &handler->thread_id,
+        //     NULL,
+        //     (void *(*)(void *)) handler_do,
+        //     (void *) handler
+        // );
+
+
+        // 26/05/2020 -- 12:54 
+        // handler's threads are not explicitly joined by pthread_join () 
+        // on cerver teardown
+        retval = thread_create_detachable (
             &handler->thread_id,
-            NULL,
             (void *(*)(void *)) handler_do,
             (void *) handler
-        );
+        );  
     }
 
     return retval;
@@ -323,7 +334,7 @@ static void cerver_request_packet_handler (Packet *packet) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
-                case CLIENT_CLOSE_CONNECTION:
+                case CLIENT_CLOSE_CONNECTION: {
                     // check if the client is inside a lobby
                     if (packet->lobby) {
                         #ifdef CERVER_DEBUG
@@ -342,7 +353,7 @@ static void cerver_request_packet_handler (Packet *packet) {
 
                     client_remove_connection_by_sock_fd (packet->cerver, 
                         packet->client, packet->connection->sock_fd); 
-                    break;
+                } break;
 
                 // the client is going to disconnect and will close all of its active connections
                 // so drop it from the server
