@@ -54,7 +54,7 @@ void app_data_delete (void *app_data_ptr) {
 	if (app_data_ptr) {
 		AppData *app_data = (AppData *) app_data_ptr;
 
-		estring_delete (app_data_ptr);
+		estring_delete (app_data->message);
 
 		free (app_data);
 	}
@@ -84,7 +84,7 @@ void *app_data_copy (void *app_data_args_ptr) {
 		handler_data = app_data_new ();
 		if (handler_data) {
 			handler_data->id = app_data->id;
-			handler_data->message =estring_new (app_data->message->str);
+			handler_data->message = estring_new (app_data->message->str);
 		}
 	}
 
