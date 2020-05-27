@@ -90,7 +90,10 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
-		cerver_set_app_handlers (my_cerver, handler, NULL);
+
+		Handler *app_handler = handler_create (handler);
+		handler_set_direct_handle (app_handler, true);
+		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
 		if (!cerver_start (my_cerver)) {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
