@@ -657,7 +657,8 @@ static u8 cerver_app_handlers_destroy (Cerver *cerver) {
         else {
             if (cerver->app_packet_handler) {
                 if (!cerver->app_packet_handler->direct_handle) {
-                    // FIXME: stop app handler
+                    // stop app handler
+                    bsem_post_all (cerver->app_packet_handler->job_queue->has_jobs);
                 }
             }
         }
@@ -674,7 +675,8 @@ static u8 cerver_app_error_handler_destroy (Cerver *cerver) {
     if (cerver) {
         if (cerver->app_error_packet_handler) {
             if (!cerver->app_error_packet_handler->direct_handle) {
-                // FIXME:
+                // stop app error handler
+                bsem_post_all (cerver->app_error_packet_handler->job_queue->has_jobs);
             }
         }
     }
@@ -690,7 +692,8 @@ static u8 cerver_custom_handler_destroy (Cerver *cerver) {
     if (cerver) {
         if (cerver->custom_packet_handler) {
             if (!cerver->custom_packet_handler->direct_handle) {
-                // FIXME:
+                // stop custom handler
+                bsem_post_all (cerver->custom_packet_handler->job_queue->has_jobs);
             }
         }
     }
@@ -720,6 +723,20 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
         errors |= cerver_app_error_handler_destroy (cerver);
 
         errors |= cerver_custom_handler_destroy (cerver);
+
+        // poll remaining handlers
+        while (cerver->num_handlers_alive) {
+            if (cerver->app_packet_handler) {}
+                bsem_post_all (cerver->app_packet_handler->job_queue->has_jobs);
+
+            if (cerver->app_error_packet_handler)
+                bsem_post_all (cerver->app_error_packet_handler->job_queue->has_jobs);
+
+            if (cerver->custom_packet_handler)
+                bsem_post_all (cerver->custom_packet_handler->job_queue->has_jobs);
+            
+            sleep (1);
+        }
     }
 
     return errors;
@@ -1370,7 +1387,8 @@ static u8 cerver_app_error_handler_start (Cerver *cerver) {
         }
 
         else {
-            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler");
+            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler",
+                cerver->info->name->str);
             if (s) {
                 cerver_log_warning (s);
                 free (s);
@@ -1394,7 +1412,8 @@ static u8 cerver_custom_handler_start (Cerver *cerver) {
         }
 
         else {
-            // char *s = c_string_create ("Cerver %s does not have an custom_packet_handler");
+            // char *s = c_string_create ("Cerver %s does not have an custom_packet_handler",
+            //     cerver->info->name->str);
             // if (s) {
             //     cerver_log_warning (s);
             //     free (s);
