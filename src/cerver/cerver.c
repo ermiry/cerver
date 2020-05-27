@@ -218,9 +218,10 @@ Cerver *cerver_new (void) {
 
         c->handle_received_buffer = NULL;
 
+        // FIXME:
         c->app_packet_handler = NULL;
-        c->app_error_packet_handler = NULL;
-        c->custom_packet_handler = NULL;
+        // c->app_error_packet_handler = NULL;
+        // c->custom_packet_handler = NULL;
 
         // 10/05/2020
         c->handlers = NULL;
@@ -429,22 +430,36 @@ void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_b
 
 }
 
-// sets a cutom app packet hanlder and a custom app error packet handler
-void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler) {
+// 27/05/2020
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app_error_handler) {
 
     if (cerver) {
         cerver->app_packet_handler = app_handler;
-        cerver->app_error_packet_handler = app_error_handler;
+        // FIXME:
+        // cerver->app_error_packet_handler = app_error_handler;
     }
 
 }
 
+// FIXME:
+// sets a cutom app packet hanlder and a custom app error packet handler
+// void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler) {
+
+//     if (cerver) {
+//         cerver->app_packet_handler = app_handler;
+//         cerver->app_error_packet_handler = app_error_handler;
+//     }
+
+// }
+
+// FIXME:
 // sets a custom packet handler
-void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
+// void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
 
-    if (cerver) cerver->custom_packet_handler = custom_handler;
+//     if (cerver) cerver->custom_packet_handler = custom_handler;
 
-}
+// }
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
@@ -1296,6 +1311,7 @@ u8 cerver_start (Cerver *cerver) {
 }
 
 // disable socket I/O in both ways and stop any ongoing job
+// returns 0 on success, 1 on error
 u8 cerver_shutdown (Cerver *cerver) {
 
     if (cerver->isRunning) {
@@ -1500,6 +1516,7 @@ static void cerver_clean (Cerver *cerver) {
 }
 
 // teardown a cerver -> stop the cerver and clean all of its data
+// returns 0 on success, 1 on error
 u8 cerver_teardown (Cerver *cerver) {
 
     u8 retval = 1;

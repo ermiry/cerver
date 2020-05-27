@@ -157,10 +157,12 @@ struct _Cerver {
     // otherwise, it will be set to the default one
     Action handle_received_buffer;
 
+    // FIXME: correctly init and destroy handlers 
     // custom packet hanlders
-    Action app_packet_handler;
-    Action app_error_packet_handler;
-    Action custom_packet_handler;
+    // Action app_packet_handler;
+    // Action app_error_packet_handler;
+    // Action custom_packet_handler;
+    struct _Handler *app_packet_handler;
 
     // 10/05/2020
     bool multiple_handlers;
@@ -239,11 +241,17 @@ extern u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (co
 // sets a custom method to handle the raw received buffer from the socket
 extern void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer);
 
-// sets a cutom app packet hanlder and a custom app error packet handler
-extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler);
+// 27/05/2020
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+extern void cerver_set_app_handlers (Cerver *cerver, struct _Handler *app_handler, struct _Handler *app_error_handler);
 
+// FIXME:
+// sets a cutom app packet hanlder and a custom app error packet handler
+// extern void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler);
+
+// FIXME:
 // sets a custom packet handler
-extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
+// extern void cerver_set_custom_handler (Cerver *cerver, Action custom_handler);
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
@@ -290,9 +298,11 @@ extern u8 cerver_restart (Cerver *cerver);
 extern u8 cerver_start (Cerver *cerver);
 
 // disable socket I/O in both ways and stop any ongoing job
+// returns 0 on success, 1 on error
 extern u8 cerver_shutdown (Cerver *cerver);
 
 // teardown a server -> stop the server and clean all of its data
+// returns 0 on success, 1 on error
 extern u8 cerver_teardown (Cerver *cerver);
 
 // 31/01/2020 -- 11:15 -- aux structure for cerver update methods
