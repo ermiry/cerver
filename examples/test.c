@@ -92,6 +92,7 @@ int main (void) {
 		// cerver_set_thpool_n_threads (my_cerver, 4);
 
 		Handler *app_handler = handler_create (handler);
+		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
