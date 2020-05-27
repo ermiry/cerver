@@ -70,12 +70,13 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-examples: ./examples/welcome.c ./examples/game.c
+examples: ./examples/welcome.c ./examples/game.c ./examples/test.c ./examples/handlers.c ./examples/multi.c ./examples/web/web.c
 	@mkdir -p ./examples/bin
 	$(CC) -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
 	$(CC) -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
 	$(CC) -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
+	$(CC) -I ./include -L ./bin ./examples/multi.c -o ./examples/bin/multi -l cerver
 	$(CC) -I ./include -L ./bin ./examples/web/web.c $(CMONGO) -o ./examples/bin/web -l cerver
 
 .PHONY: all clean examples
