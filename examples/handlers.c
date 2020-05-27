@@ -54,7 +54,7 @@ void app_data_delete (void *app_data_ptr) {
 	if (app_data_ptr) {
 		AppData *app_data = (AppData *) app_data_ptr;
 
-		estring_delete (app_data_ptr);
+		estring_delete (app_data->message);
 
 		free (app_data);
 	}
@@ -84,7 +84,7 @@ void *app_data_copy (void *app_data_args_ptr) {
 		handler_data = app_data_new ();
 		if (handler_data) {
 			handler_data->id = app_data->id;
-			handler_data->message =estring_new (app_data->message->str);
+			handler_data->message = estring_new (app_data->message->str);
 		}
 	}
 
@@ -299,7 +299,7 @@ int main (void) {
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
-		cerver_set_thpool_n_threads (my_cerver, 4);
+		// cerver_set_thpool_n_threads (my_cerver, 4);
 		// cerver_set_app_handlers (my_cerver, handler, NULL);
 
 		cerver_set_multiple_handlers (my_cerver, 4);
@@ -339,6 +339,8 @@ int main (void) {
 	else {
 		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
 			"Failed to create cerver!");
+
+		cerver_delete (my_cerver);
 	}
 
 	return 0;

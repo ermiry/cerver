@@ -168,6 +168,8 @@ struct _AdminCerver {
     Action admin_packet_handler;
     Action admin_error_packet_handler;
 
+	pthread_t update_thread_id;
+
 	struct _AdminCerverStats *stats;
 
 };

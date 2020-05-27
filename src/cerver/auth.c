@@ -15,6 +15,7 @@
 #include "cerver/connection.h"
 #include "cerver/auth.h"
 
+#include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
 
 #include "cerver/collections/htab.h"
@@ -566,9 +567,7 @@ static void cerver_on_hold_poll_compress (Cerver *cerver) {
 }
 
 // handles packets from the on hold clients until they authenticate
-static u8 on_hold_poll (void *ptr) {
-
-    u8 retval = 1;
+static void *on_hold_poll (void *ptr) {
 
     if (ptr) {
         Cerver *cerver = (Cerver *) ptr;
@@ -636,13 +635,11 @@ static u8 on_hold_poll (void *ptr) {
             free (status);
         }
         #endif
-
-        retval = 0;
     }
 
     else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle on hold clients on a NULL cerver!");
 
-    return retval;
+    return NULL;
 
 }
 
@@ -670,8 +667,9 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
                 if (cerver->holding_connections == false) {
                     cerver->holding_connections = true;
-                    if (thpool_add_work (cerver->thpool, (void (*)(void*)) on_hold_poll, cerver)) {
-                        char *status = c_string_create ("Failed to add on_hold_poll () to cerver's %s thpool!", 
+
+                    if (thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
+                        char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
                             cerver->info->name->str);
                         if (status) {
                             cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);

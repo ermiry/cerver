@@ -18,6 +18,7 @@
 #include "cerver/handler.h"
 #include "cerver/auth.h"
 
+#include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
 
 #include "cerver/game/game.h"
@@ -186,12 +187,22 @@ int handler_start (Handler *handler) {
     int retval = 1;
 
     if (handler) {
-        retval = pthread_create (
+        // retval = pthread_create (
+        //     &handler->thread_id,
+        //     NULL,
+        //     (void *(*)(void *)) handler_do,
+        //     (void *) handler
+        // );
+
+
+        // 26/05/2020 -- 12:54 
+        // handler's threads are not explicitly joined by pthread_join () 
+        // on cerver teardown
+        retval = thread_create_detachable (
             &handler->thread_id,
-            NULL,
             (void *(*)(void *)) handler_do,
             (void *) handler
-        );
+        );  
     }
 
     return retval;
@@ -264,16 +275,30 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 }
 
-static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd) {
+static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, bool on_hold) {
 
     SockReceive *sock_receive = NULL;
-    const i32 *key = &sock_fd;
-    void *sock_buffer_data = htab_get_data (cerver->sock_buffer_map,
-        key, sizeof (i32));
 
-    if (sock_buffer_data) sock_receive = (SockReceive *) sock_buffer_data;
+    if (cerver) {
+        if (on_hold) {
+            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+            if (connection) {
+                sock_receive = connection->sock_receive;
+            }
+        }
 
-    return sock_receive;    
+        else {
+            Client *client = client_get_by_sock_fd (cerver, sock_fd);
+            if (client) {
+                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                if (connection) {
+                    sock_receive = connection->sock_receive;
+                }
+            }
+        }
+    }
+
+    return sock_receive;
 
 }
 
@@ -309,13 +334,16 @@ static void cerver_request_packet_handler (Packet *packet) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
-                case CLIENT_CLOSE_CONNECTION:
+                case CLIENT_CLOSE_CONNECTION: {
                     // check if the client is inside a lobby
                     if (packet->lobby) {
                         #ifdef CERVER_DEBUG
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, 
-                            c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str));
+                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
+                            packet->client->id, packet->lobby->id->str);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                            free (s);
+                        }
                         #endif
 
                         // remove the player from the lobby
@@ -325,7 +353,7 @@ static void cerver_request_packet_handler (Packet *packet) {
 
                     client_remove_connection_by_sock_fd (packet->cerver, 
                         packet->client, packet->connection->sock_fd); 
-                    break;
+                } break;
 
                 // the client is going to disconnect and will close all of its active connections
                 // so drop it from the server
@@ -333,9 +361,12 @@ static void cerver_request_packet_handler (Packet *packet) {
                     // check if the client is inside a lobby
                     if (packet->lobby) {
                         #ifdef CERVER_DEBUG
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, 
-                            c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str));
+                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
+                            packet->client->id, packet->lobby->id->str);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                            free (s);
+                        }
                         #endif
 
                         // remove the player from the lobby
@@ -346,13 +377,16 @@ static void cerver_request_packet_handler (Packet *packet) {
                     client_drop (packet->cerver, packet->client);
                 } break;
 
-                default: 
+                default: {
                     #ifdef CERVER_DEBUG
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                        c_string_create ("Got an unknown request in cerver %s",
-                        packet->cerver->info->name->str));
+                    char *s = c_string_create ("Got an unknown request in cerver %s",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                        free (s);
+                    }
                     #endif
-                    break;
+                } break;
             }
         }
     }
@@ -364,8 +398,11 @@ void cerver_test_packet_handler (Packet *packet) {
 
     if (packet) {
         #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_DEBUG, LOG_PACKET, 
-            c_string_create ("Got a test packet in cerver %s.", packet->cerver->info->name->str));
+        char *s = c_string_create ("Got a test packet in cerver %s.", packet->cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_PACKET, s);
+            free (s);
+        }
         #endif
 
         Packet *test_packet = packet_new ();
@@ -374,9 +411,12 @@ void cerver_test_packet_handler (Packet *packet) {
             test_packet->packet_type = TEST_PACKET;
             packet_generate (test_packet);
             if (packet_send (test_packet, 0, NULL, false)) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
-                    c_string_create ("Failed to send error packet from cerver %s.", 
-                    packet->cerver->info->name->str));
+                char *s = c_string_create ("Failed to send error packet from cerver %s.", 
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
+                    free (s);
+                }
             }
 
             packet_delete (test_packet);
@@ -491,17 +531,20 @@ static void cerver_packet_handler (void *ptr) {
                     cerver_test_packet_handler (packet); 
                     break;
 
-                default:
+                default: {
                     packet->cerver->stats->received_packets->n_bad_packets += 1;
                     packet->client->stats->received_packets->n_bad_packets += 1;
                     packet->connection->stats->received_packets->n_bad_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
                     #ifdef CERVER_DEBUG
-                    cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, 
-                        c_string_create ("Got a packet of unknown type in cerver %s.", 
-                        packet->cerver->info->name->str));
+                    char *s = c_string_create ("Got a packet of unknown type in cerver %s.", 
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, s);
+                        free (s);
+                    }
                     #endif
-                    break;
+                } break;
             }
         // }
 
@@ -536,9 +579,12 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-                c_string_create ("Failed to get on hold connection associated with sock: %i",
-                sock_fd));
+            char *s = c_string_create ("Failed to get on hold connection associated with sock: %i",
+                sock_fd);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                free (s);
+            }
             #endif
             // no connection - discard the data
             packet_delete (packet);
@@ -562,8 +608,11 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
-                c_string_create ("Failed to get client associated with sock: %i.", sock_fd));
+            char *s = c_string_create ("Failed to get client associated with sock: %i.", sock_fd);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, s);
+                free (s);
+            }
             #endif
             // no client - discard the data!
             packet_delete (packet);
@@ -576,11 +625,10 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 
 #pragma region receive
 
-static SockReceive *cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, bool on_hold,
+static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, bool on_hold,
+    SockReceive *sock_receive,
     size_t buffer_size, char **end, size_t *buffer_pos) {
 
-    // check if there is already a buffer asscoaited with the sock fd
-    SockReceive *sock_receive = sock_receive_get (cerver, sock_fd);
     if (sock_receive) {
         if (sock_receive->header) {
             // copy the remaining header size
@@ -625,23 +673,12 @@ static SockReceive *cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock
         }
     }
 
-    else {
-        #ifdef CERVER_DEBUG
-        cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER,
-            c_string_create ("Sock fd: %d does not have an associated receive buffer in cerver %s.",
-            sock_fd, cerver->info->name->str));
-        #endif
-    }
-
-    return sock_receive;
-
 }
 
 // default cerver receive handler
 void cerver_receive_handle_buffer (void *receive_ptr) {
 
     if (receive_ptr) {
-        // printf ("cerver_receive_handle_buffer ()\n");
         ReceiveHandle *receive = (ReceiveHandle *) receive_ptr;
 
         Cerver *cerver = receive->cerver;
@@ -651,153 +688,170 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
         bool on_hold = receive->on_hold;
         Lobby *lobby = receive->lobby;
 
-        if (buffer && (buffer_size > 0)) {
-            char *end = buffer;
-            size_t buffer_pos = 0;
+        SockReceive *sock_receive = sock_receive_get (cerver, sock_fd, on_hold);
+        if (sock_receive) {
+            if (buffer && (buffer_size > 0)) {
+                char *end = buffer;
+                size_t buffer_pos = 0;
 
-            SockReceive *sock_receive = cerver_receive_handle_spare_packet (cerver, sock_fd, on_hold,
-                buffer_size, &end, &buffer_pos);
+                cerver_receive_handle_spare_packet (
+                    cerver, sock_fd, on_hold,
+                    sock_receive,
+                    buffer_size, &end, &buffer_pos
+                );
 
-            PacketHeader *header = NULL;
-            size_t packet_size = 0;
-            char *packet_data = NULL;
+                PacketHeader *header = NULL;
+                size_t packet_size = 0;
+                char *packet_data = NULL;
 
-            size_t remaining_buffer_size = 0;
-            size_t packet_real_size = 0;
-            size_t to_copy_size = 0;
+                size_t remaining_buffer_size = 0;
+                size_t packet_real_size = 0;
+                size_t to_copy_size = 0;
 
-            bool spare_header = false;
+                bool spare_header = false;
 
-            while (buffer_pos < buffer_size) {
-                remaining_buffer_size = buffer_size - buffer_pos;
+                while (buffer_pos < buffer_size) {
+                    remaining_buffer_size = buffer_size - buffer_pos;
 
-                if (sock_receive->complete_header) {
-                    packet_header_copy (&header, (PacketHeader *) sock_receive->header);
-                    // header = ((PacketHeader *) sock_receive->header);
-                    // packet_header_print (header);
+                    if (sock_receive->complete_header) {
+                        packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+                        // header = ((PacketHeader *) sock_receive->header);
+                        // packet_header_print (header);
 
-                    end += sock_receive->remaining_header;
-                    buffer_pos += sock_receive->remaining_header;
-                    // printf ("buffer pos after copy to header: %ld\n", buffer_pos);
+                        end += sock_receive->remaining_header;
+                        buffer_pos += sock_receive->remaining_header;
+                        // printf ("buffer pos after copy to header: %ld\n", buffer_pos);
 
-                    // reset sock header values
-                    free (sock_receive->header);
-                    sock_receive->header = NULL;
-                    sock_receive->header_end = NULL;
-                    // sock_receive->curr_header_pos = 0;
-                    // sock_receive->remaining_header = 0;
-                    sock_receive->complete_header = false;
+                        // reset sock header values
+                        free (sock_receive->header);
+                        sock_receive->header = NULL;
+                        sock_receive->header_end = NULL;
+                        // sock_receive->curr_header_pos = 0;
+                        // sock_receive->remaining_header = 0;
+                        sock_receive->complete_header = false;
 
-                    spare_header = true;
-                }
+                        spare_header = true;
+                    }
 
-                else if (remaining_buffer_size >= sizeof (PacketHeader)) {
-                    header = (PacketHeader *) end;
-                    end += sizeof (PacketHeader);
-                    buffer_pos += sizeof (PacketHeader);
+                    else if (remaining_buffer_size >= sizeof (PacketHeader)) {
+                        header = (PacketHeader *) end;
+                        end += sizeof (PacketHeader);
+                        buffer_pos += sizeof (PacketHeader);
 
-                    // packet_header_print (header);
+                        // packet_header_print (header);
 
-                    spare_header = false;
-                }
+                        spare_header = false;
+                    }
 
-                if (header) {
-                    // check the packet size
-                    packet_size = header->packet_size;
-                    if ((packet_size > 0) /* && (packet_size < 65536) */) {
-                        // printf ("packet_size: %ld\n", packet_size);
-                        // end += sizeof (PacketHeader);
-                        // buffer_pos += sizeof (PacketHeader);
-                        // printf ("first buffer pos: %ld\n", buffer_pos);
+                    if (header) {
+                        // check the packet size
+                        packet_size = header->packet_size;
+                        if ((packet_size > 0) /* && (packet_size < 65536) */) {
+                            // printf ("packet_size: %ld\n", packet_size);
+                            // end += sizeof (PacketHeader);
+                            // buffer_pos += sizeof (PacketHeader);
+                            // printf ("first buffer pos: %ld\n", buffer_pos);
 
-                        Packet *packet = packet_new ();
-                        if (packet) {
-                            packet_header_copy (&packet->header, header);
-                            packet->packet_size = header->packet_size;
-                            packet->cerver = cerver;
-                            packet->lobby = lobby;
+                            Packet *packet = packet_new ();
+                            if (packet) {
+                                packet_header_copy (&packet->header, header);
+                                packet->packet_size = header->packet_size;
+                                packet->cerver = cerver;
+                                packet->lobby = lobby;
 
-                            if (spare_header) {
-                                free (header);
-                                header = NULL;
-                            }
+                                if (spare_header) {
+                                    free (header);
+                                    header = NULL;
+                                }
 
-                            // check for packet size and only copy what is in the current buffer
-                            packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
-                            to_copy_size = 0;
-                            if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
-                                sock_receive->spare_packet = packet;
+                                // check for packet size and only copy what is in the current buffer
+                                packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+                                to_copy_size = 0;
+                                if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
+                                    sock_receive->spare_packet = packet;
 
-                                if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
-                                else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-                                
-                                sock_receive->missing_packet = packet_real_size - to_copy_size;
+                                    if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
+                                    else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+                                    
+                                    sock_receive->missing_packet = packet_real_size - to_copy_size;
+                                }
+
+                                else {
+                                    to_copy_size = packet_real_size;
+                                    packet_delete (sock_receive->spare_packet);
+                                    sock_receive->spare_packet = NULL;
+                                } 
+
+                                // printf ("to copy size: %ld\n", to_copy_size);
+                                packet_set_data (packet, (void *) end, to_copy_size);
+
+                                end += to_copy_size;
+                                buffer_pos += to_copy_size;
+                                // printf ("second buffer pos: %ld\n", buffer_pos);
+
+                                if (!sock_receive->spare_packet) {
+                                    cerver_packet_select_handler (cerver, sock_fd, packet, on_hold);
+                                }
+                                    
                             }
 
                             else {
-                                to_copy_size = packet_real_size;
-                                packet_delete (sock_receive->spare_packet);
-                                sock_receive->spare_packet = NULL;
-                            } 
-
-                            // printf ("to copy size: %ld\n", to_copy_size);
-                            packet_set_data (packet, (void *) end, to_copy_size);
-
-                            end += to_copy_size;
-                            buffer_pos += to_copy_size;
-                            // printf ("second buffer pos: %ld\n", buffer_pos);
-
-                            if (!sock_receive->spare_packet) {
-                                cerver_packet_select_handler (cerver, sock_fd, packet, on_hold);
+                                cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
+                                    "Failed to create a new packet in cerver_handle_receive_buffer ()");
                             }
-                                
                         }
 
                         else {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
-                                "Failed to create a new packet in cerver_handle_receive_buffer ()");
+                            char *status = c_string_create ("Got a packet of invalid size: %ld", packet_size);
+                            if (status) {
+                                cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, status); 
+                                free (status);
+                            }
+
+                            // FIXME: what to do next?
+                            
+                            break;
                         }
                     }
 
                     else {
-                        char *status = c_string_create ("Got a packet of invalid size: %ld", packet_size);
-                        if (status) {
-                            cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, status); 
-                            free (status);
+                        if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
+
+                        else {
+                            // handle part of a new header
+                            // #ifdef CERVER_DEBUG
+                            // cerver_log_debug ("Handle part of a new header...");
+                            // #endif
+
+                            // copy the piece of possible header that was cut of between recv ()
+                            sock_receive->header = malloc (sizeof (PacketHeader));
+                            memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
+
+                            sock_receive->header_end = (char *) sock_receive->header;
+                            sock_receive->header_end += remaining_buffer_size;
+
+                            // sock_receive->curr_header_pos = remaining_buffer_size;
+                            sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
+
+                            // printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
+                            // printf ("remaining header: %d\n", sock_receive->remaining_header);
+
+                            buffer_pos += remaining_buffer_size;
                         }
-
-                        // FIXME: what to do next?
-                        
-                        break;
-                    }
-                }
-
-                else {
-                    if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
-
-                    else {
-                        // handle part of a new header
-                        // #ifdef CERVER_DEBUG
-                        // cerver_log_debug ("Handle part of a new header...");
-                        // #endif
-
-                        // copy the piece of possible header that was cut of between recv ()
-                        sock_receive->header = malloc (sizeof (PacketHeader));
-                        memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
-
-                        sock_receive->header_end = (char *) sock_receive->header;
-                        sock_receive->header_end += remaining_buffer_size;
-
-                        // sock_receive->curr_header_pos = remaining_buffer_size;
-                        sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
-
-                        // printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
-                        // printf ("remaining header: %d\n", sock_receive->remaining_header);
-
-                        buffer_pos += remaining_buffer_size;
                     }
                 }
             }
+        }
+
+        else {
+            #ifdef CERVER_DEBUG
+            char *status = c_string_create ("Sock fd: %d does not have an associated sock_receive in cerver %s.",
+                sock_fd, cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
+            #endif
         }
     }
 
@@ -814,9 +868,12 @@ static void cerver_receive_handle_failed (CerverReceive *cr) {
         // for what ever reason we have a rogue connection
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
-                cr->sock_fd, cr->cerver->info->name->str));
+            char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
+                cr->sock_fd, cr->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                free (s);
+            }
             #endif
             close (cr->sock_fd);
         }
@@ -838,9 +895,12 @@ static void cerver_receive_handle_failed (CerverReceive *cr) {
         // for what ever reason we have a rogue connection
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
-                cr->sock_fd, cr->cerver->info->name->str));
+            char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
+                cr->sock_fd, cr->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                free (s);
+            }
             #endif
             close (cr->sock_fd);        // just close the socket
         }
@@ -864,8 +924,11 @@ void cerver_receive (void *ptr) {
                     if (rc < 0) {
                         if (errno != EWOULDBLOCK) {     // no more data to read 
                             #ifdef CERVER_DEBUG 
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                                c_string_create ("cerver_receive () - rc < 0 - sock fd: %d", cr->sock_fd));
+                            char *s = c_string_create ("cerver_receive () - rc < 0 - sock fd: %d", cr->sock_fd);
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                                free (s);
+                            }
                             perror ("Error ");
                             #endif
 
@@ -879,9 +942,12 @@ void cerver_receive (void *ptr) {
                         // man recv -> steam socket perfomed an orderly shutdown
                         // but in dgram it might mean something?
                         #ifdef CERVER_DEBUG
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                            c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
-                            cr->sock_fd));
+                        char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
+                            cr->sock_fd);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                            free (s);
+                        }
                         // perror ("Error ");
                         #endif
 
@@ -910,9 +976,12 @@ void cerver_receive (void *ptr) {
                     }
 
                     else {
-                        // cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                        //     c_string_create ("Cerver %s rc: %ld for sock fd: %d",
-                        //     cr->cerver->info->name->str, rc, cr->sock_fd));
+                        // char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
+                        //     cr->cerver->info->name->str, rc, cr->sock_fd);
+                        // if (status) {
+                        //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                        //     free (status);
+                        // }
 
                         if (cr->lobby) {
                             cr->lobby->stats->n_receives_done += 1;
@@ -967,9 +1036,12 @@ static void cerver_register_new_connection (Cerver *cerver,
     Connection *connection = connection_create (new_fd, client_address, cerver->protocol);
     if (connection) {
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT,
-                c_string_create ("New connection from IP address: %s -- Port: %d", 
-                connection->ip->str, connection->port));
+        char *s = c_string_create ("New connection from IP address: %s -- Port: %d", 
+            connection->ip->str, connection->port);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+            free (s);
+        }
         #endif
 
         Client *client = NULL;
@@ -990,8 +1062,11 @@ static void cerver_register_new_connection (Cerver *cerver,
                     char *session_id = (char *) cerver->session_id_generator (client);
                     if (session_id) {
                         #ifdef CERVER_DEBUG
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT,
-                            c_string_create ("Generated client session id: %s", session_id));
+                        char *s = c_string_create ("Generated client session id: %s", session_id);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                            free (s);
+                        }
                         #endif
                         client_set_session_id (client, session_id);
 
@@ -1027,15 +1102,22 @@ static void cerver_register_new_connection (Cerver *cerver,
                 packet_set_network_values (cerver->info->cerver_info_packet, 
                     cerver, client, connection, NULL);
                 if (packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
-                        c_string_create ("Failed to send cerver %s info packet!", cerver->info->name->str));
+                    char *s = c_string_create ("Failed to send cerver %s info packet!",
+                         cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
+                        free (s);
+                    }
                 }   
             }
         }
 
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, 
-                c_string_create ("New connection to cerver %s!", cerver->info->name->str));
+        s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+            free (s);
+        }
         #endif
     }
 
@@ -1158,9 +1240,12 @@ u8 cerver_poll_register_connection (Cerver *cerver, Client *client, Connection *
             cerver->current_n_fds++;
 
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, 
-                c_string_create ("Added new sock fd to cerver %s main poll, idx: %i", 
-                cerver->info->name->str, idx));
+            char *s = c_string_create ("Added new sock fd to cerver %s main poll, idx: %i", 
+                cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+                free (s);
+            }
             #endif
 
             retval = 0;
@@ -1168,14 +1253,20 @@ u8 cerver_poll_register_connection (Cerver *cerver, Client *client, Connection *
 
         else if (idx < 0) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
-                c_string_create ("Cerver %s main poll is full -- we need to realloc...", 
-                cerver->info->name->str));
+            char *s = c_string_create ("Cerver %s main poll is full -- we need to realloc...", 
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                free (s);
+            }
             #endif
             if (cerver_realloc_main_poll_fds (cerver)) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                    c_string_create ("Failed to realloc cerver %s main poll fds!", 
-                    cerver->info->name->str));
+                char *s = c_string_create ("Failed to realloc cerver %s main poll fds!", 
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    free (s);
+                }
             }
 
             // try again to register the connection
@@ -1200,9 +1291,12 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Client *client, Connection
         i32 idx = cerver_poll_get_idx_by_sock_fd (cerver, connection->sock_fd);
         if (idx > 0) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER,
-                c_string_create ("Removed sock fd from cerver %s main poll, idx: %d",
-                cerver->info->name->str, idx));
+            char *s = c_string_create ("Removed sock fd from cerver %s main poll, idx: %d",
+                cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                free (s);
+            }
             #endif
 
             cerver->fds[idx].fd = -1;
@@ -1223,8 +1317,11 @@ u8 cerver_poll (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
-        cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, 
-            c_string_create ("Cerver %s main handler has started!", cerver->info->name->str));
+        char *s = c_string_create ("Cerver %s main handler has started!", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+            free (s);
+        }
         #ifdef CERVER_DEBUG
         cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections...");
         #endif
@@ -1236,8 +1333,12 @@ u8 cerver_poll (Cerver *cerver) {
 
             // poll failed
             if (poll_retval < 0) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                    c_string_create ("Cerver %s main poll has failed!", cerver->info->name->str));
+                char *s = c_string_create ("Cerver %s main poll has failed!", cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    free (s);
+                }
+
                 perror ("Error");
                 cerver->isRunning = false;
                 break;
@@ -1274,13 +1375,23 @@ u8 cerver_poll (Cerver *cerver) {
                             // not the cerver socket, so a connection fd must be readable
                             else {
                                 // printf ("Receive fd: %d\n", cerver->fds[i].fd);
-                                cerver_receive (cr);
-                                // if (thpool_add_work (cerver->thpool, cerver_receive, 
-                                //     cerver_receive_new (cerver, cerver->fds[i].fd, false))) {
-                                //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-                                //         c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
-                                //         cerver->info->name->str));
-                                // }
+
+                                if (cerver->thpool) {
+                                    // handle received packets using multiple threads
+                                    if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
+                                        char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
+                                            cerver->info->name->str);
+                                        if (s) {
+                                            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                                            free (s);
+                                        }
+                                    }
+                                }
+
+                                else {
+                                    // handle all received packets in the same thread
+                                    cerver_receive (cr);
+                                }
                             } 
                         } break;
 
@@ -1312,8 +1423,11 @@ u8 cerver_poll (Cerver *cerver) {
         }
 
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, 
-                c_string_create ("Cerver %s main poll has stopped!", cerver->info->name->str));
+        s = c_string_create ("Cerver %s main poll has stopped!", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
+            free (s);
+        }
         #endif
 
         retval = 0;

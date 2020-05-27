@@ -151,8 +151,11 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, 
-                c_string_create ("File %s not found!", filename));
+            char *s = c_string_create ("File %s not found!", filename);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                free (s);
+            }
             #endif
         } 
     }
@@ -177,8 +180,11 @@ char *file_read (const char *filename, int *file_size) {
             // read the entire file into the buffer
             if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, 
-                    c_string_create ("Failed to read file (%s) contents!"));
+                char *s = c_string_create ("Failed to read file (%s) contents!");
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                    free (s);
+                }
                 #endif
 
                 free (file_contents);
@@ -189,8 +195,11 @@ char *file_read (const char *filename, int *file_size) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, 
-                c_string_create ("Unable to open file %s.", filename));
+            char *s = c_string_create ("Unable to open file %s.", filename);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                free (s);
+            }
             #endif
         }
     }
@@ -210,8 +219,11 @@ int file_open_as_fd (const char *filename, struct stat *filestatus) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, 
-                c_string_create ("File %s not found!", filename));
+            char *s = c_string_create ("File %s not found!", filename);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                free (s);
+            }
             #endif
         } 
     }
@@ -237,8 +249,11 @@ int file_send (const char *filename, int sock_fd) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, 
-                c_string_create ("Failed to open file %s.", filename));
+            char *s = c_string_create ("Failed to open file %s.", filename);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                free (s);
+            }
             #endif
         }        
     }

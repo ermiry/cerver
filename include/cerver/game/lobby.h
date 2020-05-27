@@ -7,15 +7,17 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/dllist.h"
+#include "cerver/collections/htab.h"
+
 #include "cerver/cerver.h"
 #include "cerver/client.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/gametype.h"
 #include "cerver/game/player.h"
-
-#include "cerver/collections/dllist.h"
-#include "cerver/collections/htab.h"
 
 #define LOBBY_DEFAULT_POLL_TIMEOUT			2000
 #define LOBBY_DEFAULT_MAX_PLAYERS			4
@@ -86,6 +88,7 @@ struct _Lobby {
 	unsigned int max_players;
 	unsigned int n_current_players;
 
+	pthread_t handler_thread_id;
 	bool default_handler;
 	Action handler;						// lobby handler (lobby poll)
 	Action packet_handler;				// lobby packet handler
@@ -99,6 +102,7 @@ struct _Lobby {
 	void *game_data;
 	Action game_data_delete;
 
+	pthread_t update_thread_id;
 	Action update;						// lobby update function to be executed every fps
 
 	LobbyStats *stats;

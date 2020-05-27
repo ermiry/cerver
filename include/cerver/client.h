@@ -189,7 +189,8 @@ extern int client_connection_request_to_cerver (Client *client, struct _Connecti
 extern int client_connection_start (Client *client, struct _Connection *connection);
 
 // starts the client connection async -- creates a new thread to handle how to connect with server
-extern void client_connection_start_async (Client *client, struct _Connection *connection);
+// returns 0 on success, 1 on error
+extern int client_connection_start_async (Client *client, Connection *connection);
 
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver

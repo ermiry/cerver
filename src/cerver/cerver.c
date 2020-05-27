@@ -194,6 +194,7 @@ Cerver *cerver_new (void) {
         c->cerver_data = NULL;
         c->delete_cerver_data = NULL;
 
+        c->n_thpool_threads = 0;
         c->thpool = NULL;
 
         c->clients = NULL;
@@ -255,7 +256,6 @@ void cerver_delete (void *ptr) {
         if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
 
         if (cerver->fds) free (cerver->fds);
-        if (cerver->sock_buffer_map) htab_destroy (cerver->sock_buffer_map);
 
         if (cerver->auth) auth_delete (cerver->auth);
 
@@ -322,6 +322,11 @@ void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data) {
 }
 
 // sets the cerver's thpool number of threads
+// this will enable the cerver's ability to handle received packets using multiple threads
+// usefull if you want the best concurrency and effiency
+// but we aware that you need to make your structures and data thread safe, as they might be accessed 
+// from multiple threads at the same time
+// by default, all received packets will be handle only in one thread
 void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
 
     if (cerver) cerver->n_thpool_threads = n_threads;
@@ -519,14 +524,14 @@ void cerver_handlers_print_info (Cerver *cerver) {
         char *status = NULL;
 
         status = c_string_create ("%d - current ACTIVE handlers in cerver %s",
-            cerver->info->name->str);
+            cerver->num_handlers_alive, cerver->info->name->str);
         if (status) {
             cerver_log_debug (status);
             free (status);
         }
 
         status = c_string_create ("%d - current WORKING handlers in cerver %s",
-            cerver->info->name->str);
+            cerver->num_handlers_working, cerver->info->name->str);
         if (status) {
             cerver_log_debug (status);
             free (status);
@@ -732,20 +737,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             return 1;
         }
 
-        cerver->sock_buffer_map = htab_init (poll_n_fds, NULL, NULL, NULL, false, NULL, sock_receive_delete);
-        if (!cerver->sock_buffer_map) {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to init sock buffer map in cerver %s",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-            #endif
-
-            return 1;
-        }
-
         // initialize main pollfd structures
         cerver->fds = (struct pollfd *) calloc (poll_n_fds, sizeof (struct pollfd));
         if (cerver->fds) {
@@ -756,10 +747,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             cerver->max_n_fds = poll_n_fds;
             cerver->current_n_fds = 0;
             cerver->compress_clients = false;
-
-            // initialize cerver's own thread pool
-            cerver->n_thpool_threads = DEFAULT_TH_POOL_INIT;
-            // cerver->thpool = thpool_create (cerver->info->name->str, DEFAULT_TH_POOL_INIT);
 
             switch (cerver->type) {
                 case CUSTOM_CERVER: break;
@@ -924,32 +911,57 @@ u8 cerver_restart (Cerver *cerver) {
 
 }
 
+static u8 cerver_one_time_init_thpool (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->n_thpool_threads) {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s is configured to use a thpool with %d threads",
+                cerver->info->name->str, cerver->n_thpool_threads);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+
+            // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
+            cerver->thpool = thpool_init (cerver->n_thpool_threads);
+            if (!cerver->thpool) {
+                char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    free (s);
+                }
+
+                errors = 1;
+            }
+        }
+
+        else {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s is configured to not use a thpool for receive methods",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return errors;
+
+}
+
 static u8 cerver_one_time_init (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
         // init the cerver thpool
-        // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
-        cerver->thpool = thpool_init (4);
-        if (!cerver->thpool) {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                free (s);
-            }
-            #endif
-
-            avl_delete (cerver->clients);
-            htab_destroy (cerver->client_sock_fd_map);
-
-            free (cerver->fds);
-
-            cerver_delete (cerver);
-        }
-
-        else {
+        if (!cerver_one_time_init_thpool (cerver)) {
             // if we have a game cerver, we might wanna load game data -> set by cerver admin
             if (cerver->type == GAME_CERVER) {
                 GameCerver *game_data = (GameCerver *) cerver->cerver_data;
@@ -1007,7 +1019,20 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                 if (cerver->auth_required) cerver->holding_connections = false;
 
                 // 21/01/2020 -- start the admin cerver
-                if (cerver->admin) thread_create_detachable (admin_cerver_start, cerver->admin, "admin-main");
+                if (cerver->admin) {
+                    if (thread_create_detachable (
+                        &cerver->admin_thread_id,
+                        admin_cerver_start,
+                        cerver->admin
+                    )) {
+                        char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_error (s);
+                            free (s);
+                        }
+                    }
+                } 
 
                 cerver_poll (cerver);
 
@@ -1142,9 +1167,9 @@ static void cerver_update_interval (void *args) {
 }
 
 // 11/05/2020 -- start cerver's multiple handlers
-static int cerver_handlers_start (Cerver *cerver) {
+static u8 cerver_handlers_start (Cerver *cerver) {
 
-    int errors = 0;
+    u8 errors = 0;
 
     if (cerver) {
         cerver->num_handlers_alive = 0;
@@ -1168,7 +1193,12 @@ static int cerver_handlers_start (Cerver *cerver) {
         }
 
         else {
-            cerver_log_error ("Failed to init ALL handlers!");
+            char *s = c_string_create ("Failed to init ALL handlers in cerver %s",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
         }
     }
 
@@ -1177,6 +1207,9 @@ static int cerver_handlers_start (Cerver *cerver) {
 }
 
 // tell the cerver to start listening for connections and packets
+// initializes cerver's structures like thpool (if any) 
+// and any other processes that have been configured before
+// returns 0 on success, 1 on error
 u8 cerver_start (Cerver *cerver) {
 
     u8 retval = 1;
@@ -1185,33 +1218,66 @@ u8 cerver_start (Cerver *cerver) {
         cerver->isRunning = true;
 
         if (!cerver_one_time_init (cerver)) {
-            if (cerver->update)
-                thread_create_detachable ((void *(*) (void *)) cerver_update, cerver, NULL);
+            u8 errors = 0;
 
-            if (cerver->update_interval) 
-                thread_create_detachable ((void *(*) (void *)) cerver_update_interval, cerver, NULL);
-
-            if (cerver->multiple_handlers)
-                cerver_handlers_start (cerver);
-
-            switch (cerver->protocol) {
-                case PROTOCOL_TCP: {
-                    retval = cerver_start_tcp (cerver);
-                } break;
-
-                case PROTOCOL_UDP: {
-                    // retval = cerver_start_udp (cerver);
-                } break;
-
-                default: {
-                    char *s = c_string_create ("Cant't start cerver %s! Unknown protocol!",
+            if (cerver->update) {
+                if (thread_create_detachable (
+                    &cerver->update_thread_id,
+                    (void *(*) (void *)) cerver_update,
+                    cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s UPDATE thread!",
                         cerver->info->name->str);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        cerver_log_error (s);
                         free (s);
                     }
+
+                    errors |= 1;
                 }
-                break;
+            }
+
+            if (cerver->update_interval) {
+                if (thread_create_detachable (
+                    &cerver->update_interval_thread_id,
+                    (void *(*) (void *)) cerver_update_interval,
+                    cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s UPDATE INTERVAL thread!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    errors |= 1;
+                }
+            }
+
+            if (cerver->multiple_handlers) {
+                errors |= cerver_handlers_start (cerver);
+            }
+
+            if (!errors) {
+                switch (cerver->protocol) {
+                    case PROTOCOL_TCP: {
+                        retval = cerver_start_tcp (cerver);
+                    } break;
+
+                    case PROTOCOL_UDP: {
+                        // retval = cerver_start_udp (cerver);
+                    } break;
+
+                    default: {
+                        char *s = c_string_create ("Cant't start cerver %s! Unknown protocol!",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                            free (s);
+                        }
+                    }
+                    break;
+                }
             }
         }        
     }
@@ -1293,10 +1359,6 @@ static void cerver_destroy_clients (Cerver *cerver) {
                 packet_delete (packet);
             }
         }
-
-        // destroy the sock fd buffer map
-        htab_destroy (cerver->sock_buffer_map);
-        cerver->sock_buffer_map = NULL;
 
         // destroy the sock fd client map
         htab_destroy (cerver->client_sock_fd_map);
@@ -1421,7 +1483,18 @@ static void cerver_clean (Cerver *cerver) {
             #endif
 
             cerver->thpool = NULL;
-        } 
+        }
+
+        else {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s does NOT have a thpool to destroy",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+        }
     }
 
 }

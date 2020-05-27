@@ -50,6 +50,7 @@ Connection *connection_new (void) {
     if (connection) {
         memset (connection, 0, sizeof (Connection));
 
+        connection->sock_fd = -1;
         connection->use_ipv6 = false;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
 
@@ -73,7 +74,7 @@ Connection *connection_new (void) {
         connection->custom_receive = NULL;
         connection->custom_receive_args = NULL;
         
-        connection->stats = connection_stats_new ();
+        connection->stats = NULL;
     }
 
     return connection;
@@ -102,20 +103,28 @@ void connection_delete (void *ptr) {
 
 }
 
-Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
-    Protocol protocol) {
+Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
+        connection->sock_receive = sock_receive_new ();
+        connection->stats = connection_stats_new ();
+    }
+
+    return connection;
+
+}
+
+Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
+    Protocol protocol) {
+
+    Connection *connection = connection_create_empty ();
+    if (connection) {
         connection->sock_fd = sock_fd;
-        // time (&connection->timestamp);
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
-        connection_get_values (connection);
         connection->protocol = protocol;
 
-        connection->sock_receive = sock_receive_new ();
-
-        // connection->stats = connection_stats_new ();
+        connection_get_values (connection);
     }
 
     return connection;
@@ -374,15 +383,21 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
         if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
             #ifdef CERVER_DEBUG
             if (client->session_id) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
-                    c_string_create ("Registered a new connection to client with session id: %s",
-                    client->session_id->str));
+                char *s = c_string_create ("Registered a new connection to client with session id: %s",
+                    client->session_id->str);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    free (s);
+                }
             }
 
             else {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, 
-                    c_string_create ("Registered a new connection to client (id): %ld",
-                    client->id));
+                char *s = c_string_create ("Registered a new connection to client (id): %ld",
+                    client->id);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    free (s);
+                }
             }
             #endif
 
@@ -450,11 +465,6 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
     if (cerver && client && connection) {
         const void *key = &connection->sock_fd;
 
-        // map the socket fd to a new receive buffer
-        SockReceive *sock_receive = sock_receive_new ();
-        htab_insert (cerver->sock_buffer_map, key, sizeof (i32), 
-            sock_receive, sizeof (SockReceive));
-
         // map the socket fd with the client
         htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
             client, sizeof (Client));
@@ -475,25 +485,17 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
     if (cerver && client && connection) {
         // remove the sock fd from each map
         const void *key = &connection->sock_fd;
-        if (htab_remove (cerver->sock_buffer_map, key, sizeof (i32))) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to remove sock fd %d from cerver's %s sock buffer map.",
-                connection->sock_fd, cerver->info->name->str));
-            #endif
-            errors = 1;
-        }
-
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
-                connection->sock_fd, cerver->info->name->str));
+            char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
+                connection->sock_fd, cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                free (s);
+            }
             #endif
             errors = 1;
         }
-
-        errors = 0;
     }
 
     return errors;

@@ -11,6 +11,8 @@
 #include "cerver/packets.h"
 #include "cerver/handler.h"
 
+#include "cerver/threads/thread.h"
+
 struct _Cerver;
 struct _CerverReport;
 struct _Client;
@@ -65,6 +67,8 @@ struct _Connection {
     size_t received_data_size;
     Action received_data_delete;
 
+    pthread_t update_thread_id;
+
     bool receive_packets;                   // set if the connection will receive packets or not (default true)
     Action custom_receive;                  // custom receive method to handle incomming packets in the connection
     void *custom_receive_args;              // arguments to be passed to the custom receive method
@@ -79,7 +83,9 @@ extern Connection *connection_new (void);
 
 extern void connection_delete (void *ptr);
 
-// creates a new lcient connection with the specified values
+extern Connection *connection_create_empty (void);
+
+// creates a new client connection with the specified values
 extern Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
     Protocol protocol);
 
