@@ -574,16 +574,17 @@ int cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
 }
 
-static int cerver_handlers_destroy (Cerver *cerver) {
+// correctly destroys multiple app handlers, if any
+static u8 cerver_multiple_app_handlers_destroy (Cerver *cerver) {
 
-    int retval = 1;
+    u8 retval = 1;
 
     if (cerver) {
         if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
             char *status = NULL;
 
             #ifdef CERVER_DEBUG
-            status = c_string_create ("Stopping handlers in cerver %s...",
+            status = c_string_create ("Stopping multiple app handlers in cerver %s...",
                 cerver->info->name->str);
             if (status) {
                 cerver_log_debug (status);
@@ -621,6 +622,107 @@ static int cerver_handlers_destroy (Cerver *cerver) {
     }
 
     return retval;
+
+}
+
+static u8 cerver_app_handlers_destroy (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->multiple_handlers) {
+            if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
+                if (!cerver_multiple_app_handlers_destroy (cerver)) {
+                    #ifdef CERVER_DEBUG
+                    char *status = c_string_create ("Done destroying multiple app handlers in cerver %s!",
+                        cerver->info->name->str);
+                    if (status) {
+                        cerver_log_success (status);
+                        free (status);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *status = c_string_create ("Failed to destroy multiple app handlers in cerver %s!",
+                        cerver->info->name->str);
+                    if (status) {
+                        cerver_log_error (status);
+                        free (status);
+                    }
+                }
+            }
+        }
+
+        else {
+            if (cerver->app_packet_handler) {
+                if (!cerver->app_packet_handler->direct_handle) {
+                    // FIXME: stop app handler
+                }
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 cerver_app_error_handler_destroy (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->app_error_packet_handler) {
+            if (!cerver->app_error_packet_handler->direct_handle) {
+                // FIXME:
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 cerver_custom_handler_destroy (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->custom_packet_handler) {
+            if (!cerver->custom_packet_handler->direct_handle) {
+                // FIXME:
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+// 27/05/2020
+// correctly destroy cerver's custom handlers
+static u8 cerver_handlers_destroy (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        #ifdef CERVER_DEBUG
+        char *status = c_string_create ("Stopping handlers in cerver %s...",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+        #endif
+
+        errors |= cerver_app_handlers_destroy (cerver);
+
+        errors |= cerver_app_error_handler_destroy (cerver);
+
+        errors |= cerver_custom_handler_destroy (cerver);
+    }
+
+    return errors;
 
 }
 
@@ -1570,27 +1672,13 @@ static void cerver_clean (Cerver *cerver) {
             #endif
         } 
 
-        // 11/05/2020
-        // end handlers
-        if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
-            if (!cerver_handlers_destroy (cerver)) {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Done destroying handlers in cerver %s!",
-                    cerver->info->name->str);
-                if (status) {
-                    cerver_log_success (status);
-                    free (status);
-                }
-                #endif
-            }
-
-            else {
-                char *status = c_string_create ("Failed to destroy handlers in cerver %s!",
-                    cerver->info->name->str);
-                if (status) {
-                    cerver_log_error (status);
-                    free (status);
-                }
+        // stop any app / custom handler
+        if (!cerver_handlers_destroy (cerver)) {
+            char *s = c_string_create ("Done destroying handlers in cerver %s",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_success (s);
+                free (s);
             }
         }
         
