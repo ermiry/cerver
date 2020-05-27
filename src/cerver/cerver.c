@@ -1194,9 +1194,12 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
         cerver_log_debug ("Initializing multiple app handlers...");
         #endif
 
-        // FIXME: handle direct
         for (unsigned int i = 0; i < cerver->n_handlers; i++) {
-            errors |= handler_start (cerver->handlers[i]);
+            if (cerver->handlers[i]) {
+                if (!cerver->handlers[i]->direct_handle) {
+                    errors |= handler_start (cerver->handlers[i]);
+                }
+            }
         }
 
         if (!errors) {
