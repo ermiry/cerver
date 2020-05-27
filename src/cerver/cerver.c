@@ -218,10 +218,9 @@ Cerver *cerver_new (void) {
 
         c->handle_received_buffer = NULL;
 
-        // FIXME:
         c->app_packet_handler = NULL;
-        // c->app_error_packet_handler = NULL;
-        // c->custom_packet_handler = NULL;
+        c->app_error_packet_handler = NULL;
+        c->custom_packet_handler = NULL;
 
         // 10/05/2020
         c->handlers = NULL;
@@ -263,6 +262,11 @@ void cerver_delete (void *ptr) {
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
         if (cerver->hold_fds) free (cerver->hold_fds);
+
+        // 27/05/2020
+        handler_delete (cerver->app_packet_handler);
+        handler_delete (cerver->app_error_packet_handler);
+        handler_delete (cerver->custom_packet_handler);
 
         // 10/05/2020
         if (cerver->handlers) {
@@ -430,7 +434,6 @@ void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_b
 
 }
 
-// 27/05/2020
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app_error_handler) {
 
@@ -439,30 +442,23 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
         if (cerver->app_packet_handler)
             cerver->app_packet_handler->cerver = cerver;
 
-        // FIXME:
-        // cerver->app_error_packet_handler = app_error_handler;
+        cerver->app_error_packet_handler = app_error_handler;
+        if (cerver->app_error_packet_handler)
+            cerver->app_error_packet_handler->cerver = cerver;
     }
 
 }
 
-// FIXME:
-// sets a cutom app packet hanlder and a custom app error packet handler
-// void cerver_set_app_handlers (Cerver *cerver, Action app_handler, Action app_error_handler) {
+// sets a CUSTOM_PACKET packet type handler
+void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 
-//     if (cerver) {
-//         cerver->app_packet_handler = app_handler;
-//         cerver->app_error_packet_handler = app_error_handler;
-//     }
+    if (cerver) {
+        cerver->custom_packet_handler = custom_handler;
+        if (cerver->custom_packet_handler)
+            cerver->custom_packet_handler->cerver = cerver;
+    }
 
-// }
-
-// FIXME:
-// sets a custom packet handler
-// void cerver_set_custom_handler (Cerver *cerver, Action custom_handler) {
-
-//     if (cerver) cerver->custom_packet_handler = custom_handler;
-
-// }
+}
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
@@ -1236,10 +1232,68 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
         }
 
         else {
-            if (!cerver->app_packet_handler->direct_handle) {
-                // init single app packet handler
-                errors |= handler_start (cerver->app_packet_handler);
+            if (cerver->app_packet_handler) {
+                if (!cerver->app_packet_handler->direct_handle) {
+                    // init single app packet handler
+                    errors |= handler_start (cerver->app_packet_handler);
+                }
             }
+            
+            else {
+                char *s = c_string_create ("Cerver %s does not have an app_packet_handler");
+                if (s) {
+                    cerver_log_warning (s);
+                    free (s);
+                }
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 cerver_app_error_handler_start (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->app_error_packet_handler) {
+            if (!cerver->app_error_packet_handler->direct_handle) {
+                errors |= handler_start (cerver->app_error_packet_handler);
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler");
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 cerver_custom_handler_start (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->custom_packet_handler) {
+            if (!cerver->custom_packet_handler->direct_handle) {
+                errors |= handler_start (cerver->custom_packet_handler);
+            }
+        }
+
+        else {
+            // char *s = c_string_create ("Cerver %s does not have an custom_packet_handler");
+            // if (s) {
+            //     cerver_log_warning (s);
+            //     free (s);
+            // }
         }
     }
 
@@ -1267,7 +1321,9 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 
         errors |= cerver_app_handlers_start (cerver);
 
-        // FIXME: also init error and custom handler
+        errors |= cerver_app_error_handler_start (cerver);
+
+        errors |= cerver_custom_handler_start (cerver);
 
         #ifdef CERVER_DEBUG
         s = c_string_create ("Done initializing %s handlers!",
