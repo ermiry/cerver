@@ -94,7 +94,12 @@ int main (void) {
 			/*** cerver configuration ***/
 			cerver_set_receive_buffer_size (my_cerver, 16384);
 			// cerver_set_thpool_n_threads (my_cerver, 4);
-			cerver_set_app_handlers (my_cerver, my_game_packet_handler, NULL);
+
+			Handler *app_handler = handler_create (my_game_packet_handler);
+			// 27/05/2020 - needed for this example!
+			handler_set_direct_handle (app_handler, true);
+			cerver_set_app_handlers (my_cerver, app_handler, NULL);
+
 			cerver_set_on_client_connected (my_cerver, my_game_on_client_connected);
 
 			/*** game configuration ***/
