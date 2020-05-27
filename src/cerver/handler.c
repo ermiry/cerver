@@ -157,9 +157,11 @@ static void *handler_do (void *handler_ptr) {
         Handler *handler = (Handler *) handler_ptr;
 
         // set the thread name
-        char thread_name[128] = { 0 };
-        snprintf (thread_name, 128, "handler-%d", handler->id);
-        prctl (PR_SET_NAME, thread_name);
+        if (handler->id >= 0) {
+            char thread_name[128] = { 0 };
+            snprintf (thread_name, 128, "handler-%d", handler->id);
+            prctl (PR_SET_NAME, thread_name);
+        }
 
         // TODO: register to signals to handle multiple actions
 
