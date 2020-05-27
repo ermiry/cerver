@@ -436,6 +436,9 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
 
     if (cerver) {
         cerver->app_packet_handler = app_handler;
+        if (cerver->app_packet_handler)
+            cerver->app_packet_handler->cerver = cerver;
+
         // FIXME:
         // cerver->app_error_packet_handler = app_error_handler;
     }
@@ -476,8 +479,9 @@ int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
             for (unsigned int idx = 0; idx < cerver->n_handlers; idx++)
                 cerver->handlers[idx] = NULL;
 
-            cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-            pthread_mutex_init (cerver->handlers_lock, NULL);
+            // 27/05/2020 -- moved to cerver_handlers_start ()
+            // cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            // pthread_mutex_init (cerver->handlers_lock, NULL);
 
             retval = 0;
         }
@@ -1181,8 +1185,8 @@ static void cerver_update_interval (void *args) {
 
 }
 
-// 11/05/2020 -- start cerver's multiple handlers
-static u8 cerver_handlers_start (Cerver *cerver) {
+// 11/05/2020 -- start cerver's multiple app handlers
+static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
 
     u8 errors = 0;
 
@@ -1191,9 +1195,10 @@ static u8 cerver_handlers_start (Cerver *cerver) {
         cerver->num_handlers_working = 0;
 
         #ifdef CERVER_DEBUG
-        cerver_log_debug ("Initializing handlers...");
+        cerver_log_debug ("Initializing multiple app handlers...");
         #endif
 
+        // FIXME: handle direct
         for (unsigned int i = 0; i < cerver->n_handlers; i++) {
             errors |= handler_start (cerver->handlers[i]);
         }
@@ -1203,18 +1208,75 @@ static u8 cerver_handlers_start (Cerver *cerver) {
             while (cerver->num_handlers_alive != cerver->n_handlers) {}
 
             #ifdef CERVER_DEBUG
-            cerver_log_success ("Handlers are ready!");
+            cerver_log_success ("Multiple app handlers are ready!");
             #endif
         }
 
         else {
-            char *s = c_string_create ("Failed to init ALL handlers in cerver %s",
+            char *s = c_string_create ("Failed to init ALL multiple app handlers in cerver %s",
                 cerver->info->name->str);
             if (s) {
                 cerver_log_error (s);
                 free (s);
             }
         }
+    }
+
+    return errors;
+
+}
+
+static u8 cerver_app_handlers_start (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        if (cerver->multiple_handlers) {
+            errors |= cerver_multiple_app_handlers_start (cerver);
+        }
+
+        else {
+            if (!cerver->app_packet_handler->direct_handle) {
+                // init single app packet handler
+                errors |= handler_start (cerver->app_packet_handler);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+// 27/05/2020 -- start's all cerver's handlers
+static u8 cerver_handlers_start (Cerver *cerver) {
+
+    u8 errors = 0;
+
+    if (cerver) {
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Initializing %s handlers...",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+        #endif
+
+        cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (cerver->handlers_lock, NULL);
+
+        errors |= cerver_app_handlers_start (cerver);
+
+        // FIXME: also init error and custom handler
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Done initializing %s handlers!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+        #endif
     }
 
     return errors;
@@ -1269,9 +1331,7 @@ u8 cerver_start (Cerver *cerver) {
                 }
             }
 
-            if (cerver->multiple_handlers) {
-                errors |= cerver_handlers_start (cerver);
-            }
+            errors |= cerver_handlers_start (cerver);
 
             if (!errors) {
                 switch (cerver->protocol) {
