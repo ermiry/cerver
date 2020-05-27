@@ -52,6 +52,15 @@ struct _Handler {
     // the method that this handler will execute to handle packets
     Action handler;
 
+    // 27/05/2020 - used to avoid pushing job to the queue and instead handle
+    // the packet directly in the same thread
+    // this option is set to false as default
+    // pros - inmediate handle with no delays
+    //      - handler method can be called from multiple threads
+    // neutral - data create and delete will be executed every time
+    // cons - calling thread will be busy until handler method is done
+    bool direct_handle;
+
     // the jobs (packets) that are waiting to be handled - passed as args to the handler method
     JobQueue *job_queue;
 
@@ -63,14 +72,36 @@ typedef struct _Handler Handler;
 
 extern void handler_delete (void *handler_ptr);
 
-extern Handler *handler_create (int id, Action handler_method);
+// creates a new handler
+// handler method is your actual app packet handler
+extern Handler *handler_create (Action handler_method);
 
+// creates a new handler that will be used for cerver's multiple app handlers configuration
+// it should be registered to the cerver before it starts
+// the user is responsible for setting the unique id, which will be used to match
+// incoming packets
+// handler method is your actual app packet handler
+extern Handler *handler_create_with_id (int id, Action handler_method);
+
+// sets the handler's data directly
+// this data will be passed to the handler method using a HandlerData structure
 extern void handler_set_data (Handler *handler, void *data);
 
+// set a method to create the handler's data before it starts handling any packet
+// this data will be passed to the handler method using a HandlerData structure
 extern void handler_set_data_create (Handler *handler, 
     void *(*data_create) (void *args), void *data_create_args);
 
+// set the method to be used to delete the handler's data
 extern void handler_set_data_delete (Handler *handler, Action data_delete);
+
+// used to avoid pushing job to the queue and instead handle
+// the packet directly in the same thread
+// pros     - inmediate handle with no delays
+//          - handler method can be called from multiple threads
+// neutral  - data create and delete will be executed every time
+// cons     - calling thread will be busy until handler method is done
+extern void handler_set_direct_handle (Handler *handler, bool direct_handle);
 
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods

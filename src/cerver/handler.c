@@ -62,6 +62,7 @@ static Handler *handler_new (void) {
         handler->data_delete = NULL;
 
         handler->handler = NULL;
+        handler->direct_handle = false;
 
         handler->job_queue = NULL;
 
@@ -84,11 +85,12 @@ void handler_delete (void *handler_ptr) {
 
 }
 
-Handler *handler_create (int id, Action handler_method) {
+// creates a new handler
+// handler method is your actual app packet handler
+Handler *handler_create (Action handler_method) {
 
     Handler *handler = handler_new ();
     if (handler) {
-        handler->id = id;
         handler->handler = handler_method;
 
         handler->job_queue = job_queue_create ();
@@ -98,12 +100,32 @@ Handler *handler_create (int id, Action handler_method) {
 
 }
 
+// creates a new handler that will be used for cerver's multiple app handlers configuration
+// it should be registered to the cerver before it starts
+// the user is responsible for setting the unique id, which will be used to match
+// incoming packets
+// handler method is your actual app packet handler
+Handler *handler_create_with_id (int id, Action handler_method) {
+
+    Handler *handler = handler_create (handler_method);
+    if (handler) {
+        handler->id = id;
+    }
+
+    return handler;
+
+}
+
+// sets the handler's data directly
+// this data will be passed to the handler method using a HandlerData structure
 void handler_set_data (Handler *handler, void *data) {
 
     if (handler) handler->data = data;
 
 }
 
+// set a method to create the handler's data before it starts handling any packet
+// this data will be passed to the handler method using a HandlerData structure
 void handler_set_data_create (Handler *handler, 
     void *(*data_create) (void *args), void *data_create_args) {
 
@@ -114,9 +136,18 @@ void handler_set_data_create (Handler *handler,
 
 }
 
+// set the method to be used to delete the handler's data
 void handler_set_data_delete (Handler *handler, Action data_delete) {
 
     if (handler) handler->data_delete = data_delete;
+
+}
+
+// used to avoid pushing job to the queue and instead handle
+// the packet directly in the same thread
+void handler_set_direct_handle (Handler *handler, bool direct_handle) {
+
+    if (handler) handler->direct_handle = direct_handle;
 
 }
 
