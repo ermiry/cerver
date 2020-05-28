@@ -522,6 +522,86 @@ static void app_packet_handler (Packet *packet) {
 
 }
 
+// 27/05/2020
+// handles a APP_ERROR_PACKET packet type
+static void app_error_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->app_error_packet_handler) {
+            if (packet->cerver->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->cerver->app_error_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s app_error_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
+// 27/05/2020
+// handles a CUSTOM_PACKET packet type
+static void custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->custom_packet_handler) {
+            if (packet->cerver->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->cerver->custom_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s custom_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s does not have a custom_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
 // handle packet based on type
 static void cerver_packet_handler (void *ptr) {
 
@@ -578,26 +658,22 @@ static void cerver_packet_handler (void *ptr) {
                     app_packet_handler (packet);
                     break;
 
-                // FIXME:
                 // user set handler to handle app specific errors
                 case APP_ERROR_PACKET: 
                     packet->cerver->stats->received_packets->n_app_error_packets += 1;
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
-                    // if (packet->cerver->app_error_packet_handler)
-                    //     packet->cerver->app_error_packet_handler (packet);
+                    app_error_packet_handler (packet);
                     break;
 
-                // FIXME:
                 // custom packet hanlder
                 case CUSTOM_PACKET: 
                     packet->cerver->stats->received_packets->n_custom_packets += 1;
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
-                    // if (packet->cerver->custom_packet_handler)
-                    //     packet->cerver->custom_packet_handler (packet);
+                    custom_packet_handler (packet);
                     break;
 
                 // acknowledge the client we have received his test packet
