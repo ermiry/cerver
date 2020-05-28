@@ -130,7 +130,7 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false)) 
-				cerver_log_error ("Failed to send test packet to client");
+				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);

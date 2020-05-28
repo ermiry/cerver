@@ -40,7 +40,7 @@ static void handle_test_request (Packet *packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false)) 
-				cerver_log_error ("Failed to send test packet to main cerver");
+				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
