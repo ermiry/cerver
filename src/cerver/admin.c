@@ -164,7 +164,7 @@ static Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
 			Connection *con = NULL;
 			for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
 				con = (Connection *) le_sub->data;
-				if (con->sock_fd == sock_fd) {
+				if (con->socket->sock_fd == sock_fd) {
 					retval = admin;
 					break;
 				}
@@ -192,7 +192,7 @@ static Connection *admin_connection_get_by_sock_fd (AdminCerver *admin_cerver, i
 			Connection *con = NULL;
 			for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
 				con = (Connection *) le_sub->data;
-				if (con->sock_fd == sock_fd) {
+				if (con->socket->sock_fd == sock_fd) {
 					retval = con;
 					return retval;
 				}
@@ -843,7 +843,7 @@ static void admin_auth_packet_handler (AdminCerver *admin_cerver, Admin *admin, 
 			}
 
 			// drop the admin connection
-			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->sock_fd);
+			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->socket->sock_fd);
 
 			if (admin_cerver->on_admin_fail_connection)
 				admin_cerver->on_admin_fail_connection (NULL);
@@ -896,7 +896,7 @@ static void admin_bad_type_packet_handler (AdminCerver *admin_cerver, Packet *pa
 				packet_delete (packet);
 			}
 
-			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->sock_fd);
+			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->socket->sock_fd);
 		}
 	}
 
@@ -1408,7 +1408,7 @@ static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Conn
 	if (admin_cerver && connection) {
 		i32 idx = admin_cerver_poll_get_free_idx (admin_cerver);
 		if (idx > 0) {
-			admin_cerver->fds[idx].fd = connection->sock_fd;
+			admin_cerver->fds[idx].fd = connection->socket->sock_fd;
             admin_cerver->fds[idx].events = POLLIN;
             admin_cerver->current_n_fds++;
 
@@ -1421,7 +1421,7 @@ static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Conn
 			}
             #endif
 
-			printf ("admin_cerver_poll_register_connection () sock fd: %d\n", connection->sock_fd);
+			printf ("admin_cerver_poll_register_connection () sock fd: %d\n", connection->socket->sock_fd);
 
             retval = 0;
 		}
@@ -1450,7 +1450,7 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
 	u8 retval = 1;
 
 	if (admin_cerver && connection) {
-		i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->sock_fd);
+		i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->socket->sock_fd);
 		if (idx > 0) {
 			admin_cerver->fds[idx].fd = -1;
             admin_cerver->fds[idx].events = -1;
