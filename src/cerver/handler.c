@@ -62,6 +62,7 @@ static Handler *handler_new (void) {
         handler->data_delete = NULL;
 
         handler->handler = NULL;
+        handler->direct_handle = false;
 
         handler->job_queue = NULL;
 
@@ -84,11 +85,12 @@ void handler_delete (void *handler_ptr) {
 
 }
 
-Handler *handler_create (int id, Action handler_method) {
+// creates a new handler
+// handler method is your actual app packet handler
+Handler *handler_create (Action handler_method) {
 
     Handler *handler = handler_new ();
     if (handler) {
-        handler->id = id;
         handler->handler = handler_method;
 
         handler->job_queue = job_queue_create ();
@@ -98,12 +100,32 @@ Handler *handler_create (int id, Action handler_method) {
 
 }
 
+// creates a new handler that will be used for cerver's multiple app handlers configuration
+// it should be registered to the cerver before it starts
+// the user is responsible for setting the unique id, which will be used to match
+// incoming packets
+// handler method is your actual app packet handler
+Handler *handler_create_with_id (int id, Action handler_method) {
+
+    Handler *handler = handler_create (handler_method);
+    if (handler) {
+        handler->id = id;
+    }
+
+    return handler;
+
+}
+
+// sets the handler's data directly
+// this data will be passed to the handler method using a HandlerData structure
 void handler_set_data (Handler *handler, void *data) {
 
     if (handler) handler->data = data;
 
 }
 
+// set a method to create the handler's data before it starts handling any packet
+// this data will be passed to the handler method using a HandlerData structure
 void handler_set_data_create (Handler *handler, 
     void *(*data_create) (void *args), void *data_create_args) {
 
@@ -114,9 +136,18 @@ void handler_set_data_create (Handler *handler,
 
 }
 
+// set the method to be used to delete the handler's data
 void handler_set_data_delete (Handler *handler, Action data_delete) {
 
     if (handler) handler->data_delete = data_delete;
+
+}
+
+// used to avoid pushing job to the queue and instead handle
+// the packet directly in the same thread
+void handler_set_direct_handle (Handler *handler, bool direct_handle) {
+
+    if (handler) handler->direct_handle = direct_handle;
 
 }
 
@@ -126,9 +157,11 @@ static void *handler_do (void *handler_ptr) {
         Handler *handler = (Handler *) handler_ptr;
 
         // set the thread name
-        char thread_name[128] = { 0 };
-        snprintf (thread_name, 128, "handler-%d", handler->id);
-        prctl (PR_SET_NAME, thread_name);
+        if (handler->id >= 0) {
+            char thread_name[128] = { 0 };
+            snprintf (thread_name, 128, "handler-%d", handler->id);
+            prctl (PR_SET_NAME, thread_name);
+        }
 
         // TODO: register to signals to handle multiple actions
 
@@ -425,6 +458,150 @@ void cerver_test_packet_handler (Packet *packet) {
 
 }
 
+// 27/01/2020
+// handles a APP_PACKET packet type
+static void app_packet_handler (Packet *packet) {
+
+    if (packet) {
+        // 11/05/2020
+        if (packet->cerver->multiple_handlers) {
+            // select which handler to use
+            if (packet->header->handler_id < packet->cerver->n_handlers) {
+                if (packet->cerver->handlers[packet->header->handler_id]) {
+                    // add the packet to the handler's job queueu to be handled
+                    // as soon as the handler is available
+                    if (job_queue_push (
+                        packet->cerver->handlers[packet->header->handler_id]->job_queue,
+                        job_create (NULL, packet)
+                    )) {
+                        char *s = c_string_create ("Failed to push a new job to cerver's %s <%d> handler!",
+                            packet->cerver->info->name->str, packet->header->handler_id);
+                        if (s) {
+                            cerver_log_error (s);
+                            free (s);
+                        }
+                    }
+                }
+            }
+        }
+
+        else {
+            if (packet->cerver->app_packet_handler) {
+                if (packet->cerver->app_packet_handler->direct_handle) {
+                    // printf ("app_packet_handler - direct handle!\n");
+                    packet->cerver->app_packet_handler->handler (packet);
+                }
+
+                else {
+                    // add the packet to the handler's job queueu to be handled
+                    // as soon as the handler is available
+                    if (job_queue_push (
+                        packet->cerver->app_packet_handler->job_queue,
+                        job_create (NULL, packet)
+                    )) {
+                        char *s = c_string_create ("Failed to push a new job to cerver's %s app_packet_handler!",
+                            packet->cerver->info->name->str);
+                        if (s) {
+                            cerver_log_error (s);
+                            free (s);
+                        }
+                    }
+                }
+            }
+
+            else {
+                char *s = c_string_create ("Cerver %s does not have an app_packet_handler!",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_warning (s);
+                    free (s);
+                }
+            }
+        }
+    }
+
+}
+
+// 27/05/2020
+// handles a APP_ERROR_PACKET packet type
+static void app_error_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->app_error_packet_handler) {
+            if (packet->cerver->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->cerver->app_error_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s app_error_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
+// 27/05/2020
+// handles a CUSTOM_PACKET packet type
+static void custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->custom_packet_handler) {
+            if (packet->cerver->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->cerver->custom_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s custom_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s does not have a custom_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
 // handle packet based on type
 static void cerver_packet_handler (void *ptr) {
 
@@ -478,28 +655,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
-
-                    // 11/05/2020
-                    if (packet->cerver->multiple_handlers) {
-                        // select which handler to use
-                        if (packet->header->handler_id < packet->cerver->n_handlers) {
-                            if (packet->cerver->handlers[packet->header->handler_id]) {
-                                // add the packet to the handler's job queueu to be handled
-                                // as soon as the handler is available
-                                if (job_queue_push (
-                                    packet->cerver->handlers[packet->header->handler_id]->job_queue,
-                                    job_create (NULL, packet)
-                                )) {
-                                    // printf ("failed!\n");
-                                }
-                            }
-                        }
-                    }
-
-                    else {
-                        if (packet->cerver->app_packet_handler)
-                            packet->cerver->app_packet_handler (packet);
-                    }
+                    app_packet_handler (packet);
                     break;
 
                 // user set handler to handle app specific errors
@@ -508,8 +664,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
-                    if (packet->cerver->app_error_packet_handler)
-                        packet->cerver->app_error_packet_handler (packet);
+                    app_error_packet_handler (packet);
                     break;
 
                 // custom packet hanlder
@@ -518,8 +673,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
-                    if (packet->cerver->custom_packet_handler)
-                        packet->cerver->custom_packet_handler (packet);
+                    custom_packet_handler (packet);
                     break;
 
                 // acknowledge the client we have received his test packet

@@ -40,7 +40,7 @@ static void handle_test_request (Packet *packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false)) 
-				cerver_log_error ("Failed to send test packet to main cerver");
+				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
@@ -84,13 +84,19 @@ int main (void) {
 
 	cerver_log_debug ("Simple Test Message Example");
 	printf ("\n");
+	cerver_log_debug ("Single app handler with direct handle option enabled");
+	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
-		cerver_set_app_handlers (my_cerver, handler, NULL);
+
+		Handler *app_handler = handler_create (handler);
+		// 27/05/2020 - needed for this example!
+		handler_set_direct_handle (app_handler, true);
+		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
 		if (!cerver_start (my_cerver)) {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
