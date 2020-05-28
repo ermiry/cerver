@@ -1053,15 +1053,15 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                 Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
                 if (connection) on_hold_connection_drop (cr->cerver, connection);
 
-        // for what ever reason we have a rogue connection
-        else {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
-                cr->socket->sock_fd, cr->cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                free (s);
-            }
+                // for what ever reason we have a rogue connection
+                else {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
+                        cr->socket->sock_fd, cr->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                        free (s);
+                    }
                     #endif
 
                     close (cr->socket->sock_fd);
@@ -1071,28 +1071,28 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                 }
             }
 
-    else {
-        // check if the socket belongs to a player inside a lobby
-        if (cr->lobby) {
-            if (cr->lobby->players->size > 0) {
-                Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
-                if (player) player_unregister_from_lobby (cr->lobby, player);
-            }
-        }
+            else {
+                // check if the socket belongs to a player inside a lobby
+                if (cr->lobby) {
+                    if (cr->lobby->players->size > 0) {
+                        Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
+                        if (player) player_unregister_from_lobby (cr->lobby, player);
+                    }
+                }
 
-        // get to which client the connection is registered to
-        Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
-        if (client) client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
+                // get to which client the connection is registered to
+                Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
+                if (client) client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
 
-        // for what ever reason we have a rogue connection
-        else {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
-                cr->socket->sock_fd, cr->cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                free (s);
-            }
+                // for what ever reason we have a rogue connection
+                else {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
+                        cr->socket->sock_fd, cr->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                        free (s);
+                    }
                     #endif
 
                     close (cr->socket->sock_fd);        // just close the socket
@@ -1583,7 +1583,9 @@ u8 cerver_poll (Cerver *cerver) {
 
         int poll_retval = 0;
         while (cerver->isRunning) {
+            pthread_mutex_lock (cerver->poll_lock);
             poll_retval = poll (cerver->fds, cerver->max_n_fds, cerver->poll_timeout);
+            pthread_mutex_unlock (cerver->poll_lock);
 
             // poll failed
             if (poll_retval < 0) {
@@ -1631,6 +1633,7 @@ u8 cerver_poll (Cerver *cerver) {
                             // not the cerver socket, so a connection fd must be readable
                             else {
                                 // printf ("Receive fd: %d\n", cerver->fds[i].fd);
+                                printf ("Receive fd: %d\n", socket->sock_fd);
                                 
                                 if (cerver->thpool) {
                                     // pthread_mutex_lock (socket->mutex);
