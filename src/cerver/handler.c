@@ -1041,11 +1041,17 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
 
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
-static void cerver_receive_handle_failed (CerverReceive *cr) {
+static void cerver_receive_handle_failed (void *cr_ptr) {
 
-    if (cr->on_hold) {
-        Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
-        if (connection) on_hold_connection_drop (cr->cerver, connection);
+    if (cr_ptr) {
+        CerverReceive *cr = (CerverReceive *) cr_ptr;
+
+        pthread_mutex_lock (cr->socket->mutex);
+
+        if (cr->socket->sock_fd > 0) {
+            if (cr->on_hold) {
+                Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
+                if (connection) on_hold_connection_drop (cr->cerver, connection);
 
         // for what ever reason we have a rogue connection
         else {
@@ -1056,12 +1062,14 @@ static void cerver_receive_handle_failed (CerverReceive *cr) {
                 cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
                 free (s);
             }
-            #endif
+                    #endif
 
-            close (cr->socket->sock_fd);
-            socket_delete (cr->socket);
-        }
-    }
+                    close (cr->socket->sock_fd);
+                    cr->socket->sock_fd = -1;
+                    // FIXME:
+                    // socket_delete (cr->socket);
+                }
+            }
 
     else {
         // check if the socket belongs to a player inside a lobby
@@ -1085,11 +1093,17 @@ static void cerver_receive_handle_failed (CerverReceive *cr) {
                 cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
                 free (s);
             }
-            #endif
+                    #endif
 
-            close (cr->socket->sock_fd);        // just close the socket
-            socket_delete (cr->socket);
+                    close (cr->socket->sock_fd);        // just close the socket
+                    cr->socket->sock_fd = -1;
+                    // FIXME:
+                    // socket_delete (cr->socket);
+                }
+            }
         }
+
+        pthread_mutex_unlock (cr->socket->mutex);
     }
 
 }
@@ -1100,10 +1114,10 @@ void cerver_receive (void *ptr) {
     if (ptr) {
         CerverReceive *cr = (CerverReceive *) ptr;
 
+        // pthread_mutex_lock (cr->socket->mutex);
+
         if (cr->cerver && (cr->socket->sock_fd != -1)) {
             // do {
-                // pthread_mutex_lock (cr->socket->mutex);
-
                 char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
                 // cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
                 if (packet_buffer) {
@@ -1124,9 +1138,9 @@ void cerver_receive (void *ptr) {
                             perror ("Error ");
                             #endif
 
-                            // FIXME: handle failed
                             // pthread_mutex_unlock (cr->socket->mutex);
                             // cerver_receive_handle_failed (cr);
+                            thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
                         }
 
                         // break;
@@ -1135,15 +1149,15 @@ void cerver_receive (void *ptr) {
                     else if (rc == 0) {
                         // man recv -> steam socket perfomed an orderly shutdown
                         // but in dgram it might mean something?
-                        // #ifdef CERVER_DEBUG
-                        // char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
-                        //     cr->socket->sock_fd);
-                        // if (s) {
-                        //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                        //     free (s);
-                        // }
-                        // // perror ("Error ");
-                        // #endif
+                        #ifdef CERVER_DEBUG
+                        char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
+                            cr->socket->sock_fd);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                            free (s);
+                        }
+                        // perror ("Error ");
+                        #endif
 
                         /* int err = errno;
                         if (err) {
@@ -1164,9 +1178,10 @@ void cerver_receive (void *ptr) {
 
                         else cerver_receive_handle_failed (cr); */
 
-                        // FIXME: handle failed
                         // pthread_mutex_unlock (cr->socket->mutex);
                         // cerver_receive_handle_failed (cr);
+
+                        thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
 
                         // break;
                     }
@@ -1246,11 +1261,14 @@ void cerver_receive (void *ptr) {
                     // break;
                 }
 
-                // pthread_mutex_unlock (cr->socket->mutex);
+                
             // } while (true);
         }
 
-        cerver_receive_delete (cr);
+        // pthread_mutex_unlock (cr->socket->mutex);
+
+        // FIXME: should be delete in each method!
+        // cerver_receive_delete (cr);
     }
 
 }
