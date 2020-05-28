@@ -3,13 +3,16 @@
 #include <pthread.h>
 
 #include "cerver/socket.h"
+#include "cerver/cerver.h"
+#include "cerver/client.h"
 
-Socket *sockt_new (void) {
+Socket *socket_new (void) {
 
     Socket *socket = (Socket *) malloc (sizeof (Socket));
     if (socket) {
         socket->sock_fd = -1;
         socket->packet_buffer = NULL;
+        socket->packet_buffer_size = 0;
         socket->mutex = NULL;
     }
 
@@ -46,5 +49,32 @@ Socket *socket_create (int fd) {
     }
 
     return socket;
+
+}
+
+Socket *socket_get_by_fd (Cerver *cerver, int sock_fd, bool on_hold) {
+
+    Socket *retval = NULL;
+
+    if (cerver) {
+        if (on_hold) {
+            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+            if (connection) {
+                retval = connection->socket;
+            }
+        }
+
+        else {
+            Client *client = client_get_by_sock_fd (cerver, sock_fd);
+            if (client) {
+                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                if (connection) {
+                    retval = connection->socket;
+                }
+            }
+        }
+    }
+
+    return retval;
 
 }
