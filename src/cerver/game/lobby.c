@@ -11,6 +11,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/socket.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/handler.h"
@@ -464,7 +465,7 @@ u8 lobby_poll_register_connection (Lobby *lobby, Player *player, Connection *con
     if (lobby && player && connection) {
         i32 idx = lobby_poll_get_free_idx (lobby);
         if (idx >= 0) {
-            lobby->players_fds[idx].fd = connection->sock_fd;
+            lobby->players_fds[idx].fd = connection->socket->sock_fd;
             lobby->players_fds[idx].events = POLLIN;
             lobby->current_players_fds++;
 
@@ -478,7 +479,7 @@ u8 lobby_poll_register_connection (Lobby *lobby, Player *player, Connection *con
             #endif
 
             // map the socket fd with the player
-            const void *key = &connection->sock_fd;
+            const void *key = &connection->socket->sock_fd;
             htab_insert (lobby->sock_fd_player_map, key, sizeof (i32), player, sizeof (Player));
 
             retval = 0;
@@ -520,7 +521,7 @@ u8 lobby_poll_unregister_connection (Lobby *lobby, Player *player, Connection *c
 
     if (lobby && player && connection) {
         // get the idx of the connection sock in the lobby poll fds
-        i32 idx = lobby_poll_get_idx_by_sock_fd (lobby, connection->sock_fd);
+        i32 idx = lobby_poll_get_idx_by_sock_fd (lobby, connection->socket->sock_fd);
         if (idx >= 0) {
             lobby->players_fds[idx].fd = -1;
             lobby->players_fds[idx].events = -1;
@@ -587,7 +588,15 @@ void lobby_poll (void *ptr) {
                 if (lobby->players_fds[i].revents != POLLIN) continue;
 
                 if (lobby->players_fds[i].fd >= 0) {
-                    cerver_receive (cerver_receive_new (cerver, lobby->players_fds[i].fd, false, lobby));
+                    // cerver_receive (cerver_receive_new (cerver, lobby->players_fds[i].fd, false, lobby));
+                    cerver_receive (
+                        cerver_receive_new (
+                            cerver, 
+                            socket_get_by_fd (cerver, lobby->players_fds[i].fd, false),
+                            false,
+                            NULL
+                        )
+                    );
                     // if (thpool_add_work (cerver->thpool, lobby->handler, 
                     //     cerver_receive_new (cerver, lobby->players_fds[i].fd, false))) {
                     //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
