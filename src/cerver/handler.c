@@ -1035,6 +1035,8 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
         // receive->socket->packet_buffer = NULL;
 
         pthread_mutex_unlock (receive->socket->mutex);
+
+        receive_handle_delete (receive);
     }
 
 }
@@ -1104,6 +1106,32 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
         }
 
         pthread_mutex_unlock (cr->socket->mutex);
+
+        cerver_receive_delete (cr);
+    }
+
+}
+
+// 28/05/2020 -- correctly call cerver_receive_handle_failed ()
+static void cerver_switch_receive_handle_failed (CerverReceive *cr) {
+
+    if (cr) {
+        if (cr->cerver->thpool) {
+            if (thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr)) {
+                char *s = c_string_create (
+                    "Failed to add cerver_receive_handle_failed () to cerver's %s thpool!", 
+                    cr->cerver->info->name->str
+                );
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    free (s);
+                }
+            }
+        }
+
+        else {
+            cerver_receive_handle_failed (cr);
+        }
     }
 
 }
@@ -1113,9 +1141,6 @@ void cerver_receive (void *ptr) {
 
     if (ptr) {
         CerverReceive *cr = (CerverReceive *) ptr;
-
-        // pthread_mutex_lock (cr->socket->mutex);
-
         if (cr->cerver && (cr->socket->sock_fd != -1)) {
             // do {
                 char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
@@ -1140,8 +1165,12 @@ void cerver_receive (void *ptr) {
 
                             // pthread_mutex_unlock (cr->socket->mutex);
                             // cerver_receive_handle_failed (cr);
-                            thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
+                            // thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
+
+                            cerver_switch_receive_handle_failed (cr);
                         }
+
+                        
 
                         // break;
                     }
@@ -1181,9 +1210,11 @@ void cerver_receive (void *ptr) {
                         // pthread_mutex_unlock (cr->socket->mutex);
                         // cerver_receive_handle_failed (cr);
 
-                        thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
+                        // thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
 
                         // break;
+
+                        cerver_switch_receive_handle_failed (cr);
                     }
 
                     else {
@@ -1224,28 +1255,36 @@ void cerver_receive (void *ptr) {
                             cr->lobby
                         );
 
-                        // cr->cerver->handle_received_buffer (receive);
-                        // receive_handle_delete (receive);
-
-                        // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
-                        // and it seems to be working as expected
-                        if (thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
-                            char *s = c_string_create ("Failed to add cerver's cr->cerver->handle_received_buffer () to thpool!",
-                                cr->cerver->info->name->str);
-                            if (s) {
-                                cerver_log_error (s);
-                                free (s);
+                        if (cr->cerver->thpool) {
+                            // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
+                            // and it seems to be working as expected
+                            if (thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
+                                char *s = c_string_create ("Failed to add cerver's cr->cerver->handle_received_buffer () to thpool!",
+                                    cr->cerver->info->name->str);
+                                if (s) {
+                                    cerver_log_error (s);
+                                    free (s);
+                                }
                             }
+
+                            // TODO: 28/05/2020 -- create a better method in thpool
+                            // char *status = c_string_create ("Cerver %s active thpool threads: %i", 
+                            //     cr->cerver->info->name->str,
+                            //     thpool_num_threads_working (cr->cerver->thpool));
+                            // if (status) {
+                            //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                            //     free (status);
+                            // }
                         }
 
-                        // TODO: 28/05/2020 -- create a better method in thpool
-                        // char *status = c_string_create ("Cerver %s active thpool threads: %i", 
-                        //     cr->cerver->info->name->str,
-                        //     thpool_num_threads_working (cr->cerver->thpool));
-                        // if (status) {
-                        //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                        //     free (status);
-                        // }
+                        else {
+                            cr->cerver->handle_received_buffer (receive);
+
+                            // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
+                            // receive_handle_delete (receive);
+                        }
+
+                        cerver_receive_delete (cr);
                     }
 
                     // 28/05/2020 -- 02:40
@@ -1264,11 +1303,6 @@ void cerver_receive (void *ptr) {
                 
             // } while (true);
         }
-
-        // pthread_mutex_unlock (cr->socket->mutex);
-
-        // FIXME: should be delete in each method!
-        // cerver_receive_delete (cr);
     }
 
 }
@@ -1610,7 +1644,6 @@ u8 cerver_poll (Cerver *cerver) {
             }
 
             // one or more fd(s) are readable, need to determine which ones they are
-            // pthread_mutex_lock (cerver->poll_lock);
             for (u32 i = 0; i < cerver->max_n_fds; i++) {
                 if (cerver->fds[i].fd != -1) {
                     Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, false);
@@ -1633,7 +1666,6 @@ u8 cerver_poll (Cerver *cerver) {
                             // not the cerver socket, so a connection fd must be readable
                             else {
                                 // printf ("Receive fd: %d\n", cerver->fds[i].fd);
-                                printf ("Receive fd: %d\n", socket->sock_fd);
                                 
                                 if (cerver->thpool) {
                                     // pthread_mutex_lock (socket->mutex);
@@ -1665,21 +1697,17 @@ u8 cerver_poll (Cerver *cerver) {
                             } 
                         } break;
 
-                        // FIXME: handle failed
                         // A disconnection request has been initiated by the other end
                         // or a connection is broken (SIGPIPE is also set when we try to write to it)
                         // or The other end has shut down one direction
-                        // case POLLHUP: {
-                        //     cerver_receive_handle_failed (cr);
-                        //     cerver_receive_delete (cr);
-                        // } break;
+                        case POLLHUP: {
+                            cerver_switch_receive_handle_failed (cr);
+                        } break;
 
-                        // FIXME: handle failed
                         // An asynchronous error occurred
-                        // case POLLERR: {
-                        //     cerver_receive_handle_failed (cr);
-                        //     cerver_receive_delete (cr);
-                        // } break;
+                        case POLLERR: {
+                            cerver_switch_receive_handle_failed (cr);
+                        } break;
 
                         // Urgent data arrived. SIGURG is sent then.
                         case POLLPRI: {
@@ -1692,8 +1720,6 @@ u8 cerver_poll (Cerver *cerver) {
             }
 
             // if (cerver->compress_clients) cerver_poll_compress_clients (cerver);
-
-            // pthread_mutex_unlock (cerver->poll_lock);
         }
 
         #ifdef CERVER_DEBUG

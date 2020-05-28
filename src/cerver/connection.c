@@ -325,7 +325,7 @@ void connection_end (Connection *connection) {
     if (connection) {
         if (connection->active) {
             close (connection->socket->sock_fd);
-            // connection->sock_fd = -1;
+            connection->socket->sock_fd = -1;
             connection->active = false;
         }
     }
