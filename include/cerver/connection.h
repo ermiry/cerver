@@ -6,6 +6,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/socket.h"
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/packets.h"
@@ -13,6 +14,7 @@
 
 #include "cerver/threads/thread.h"
 
+struct _Socket;
 struct _Cerver;
 struct _CerverReport;
 struct _Client;
@@ -41,7 +43,8 @@ typedef struct _ConnectionStats ConnectionStats;
 struct _Connection {
 
     // connection values
-    i32 sock_fd;
+    // i32 sock_fd;
+    struct _Socket *socket;
     bool use_ipv6;
     Protocol protocol;
     u16 port;
