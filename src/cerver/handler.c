@@ -1141,170 +1141,134 @@ void cerver_receive (void *ptr) {
 
     if (ptr) {
         CerverReceive *cr = (CerverReceive *) ptr;
+        
         if (cr->cerver && (cr->socket->sock_fd != -1)) {
-            // do {
-                char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-                // cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-                if (packet_buffer) {
-                    // ssize_t rc = read (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size);
-                    // ssize_t rc = recv (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
-                    ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+            char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+            // cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+            if (packet_buffer) {
+                // ssize_t rc = read (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size);
+                // ssize_t rc = recv (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+                ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
 
-                    if (rc < 0) {
-                        // no more data to read 
-                        if (errno != EWOULDBLOCK) {
-                            #ifdef CERVER_DEBUG 
-                            char *s = c_string_create ("cerver_receive () - rc < 0 - sock fd: %d", 
-                                cr->socket->sock_fd);
-                            if (s) {
-                                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                                free (s);
-                            }
-                            perror ("Error ");
-                            #endif
-
-                            // pthread_mutex_unlock (cr->socket->mutex);
-                            // cerver_receive_handle_failed (cr);
-                            // thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
-
-                            cerver_switch_receive_handle_failed (cr);
-                        }
-
-                        
-
-                        // break;
-                    }
-
-                    else if (rc == 0) {
-                        // man recv -> steam socket perfomed an orderly shutdown
-                        // but in dgram it might mean something?
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
+                if (rc < 0) {
+                    // no more data to read 
+                    if (errno != EWOULDBLOCK) {
+                        #ifdef CERVER_DEBUG 
+                        char *s = c_string_create ("cerver_receive () - rc < 0 - sock fd: %d", 
                             cr->socket->sock_fd);
                         if (s) {
-                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
                             free (s);
                         }
-                        // perror ("Error ");
+                        perror ("Error ");
                         #endif
-
-                        /* int err = errno;
-                        if (err) {
-                            switch (err) {
-                                case EAGAIN: 
-                                    printf ("Is the connection still opened?\n"); 
-                                    // cerver_receive_handle_failed (cr);
-                                    break;
-                                case EBADF:
-                                case ENOTSOCK: {
-                                    #ifdef CERVER_DEBUG
-                                    perror ("Error ");
-                                    #endif
-                                    cerver_receive_handle_failed (cr);
-                                }
-                            }
-                        }
-
-                        else cerver_receive_handle_failed (cr); */
-
-                        // pthread_mutex_unlock (cr->socket->mutex);
-                        // cerver_receive_handle_failed (cr);
-
-                        // thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr);
-
-                        // break;
 
                         cerver_switch_receive_handle_failed (cr);
                     }
+                }
+
+                else if (rc == 0) {
+                    // man recv -> steam socket perfomed an orderly shutdown
+                    // but in dgram it might mean something?
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
+                        cr->socket->sock_fd);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                        free (s);
+                    }
+                    // perror ("Error ");
+                    #endif
+
+                    cerver_switch_receive_handle_failed (cr);
+                }
+
+                else {
+                    cr->socket->packet_buffer_size = rc;
+
+                    // char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
+                    //     cr->cerver->info->name->str, rc, cr->sock_fd);
+                    // if (status) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     free (status);
+                    // }
+
+                    if (cr->lobby) {
+                        cr->lobby->stats->n_receives_done += 1;
+                        cr->lobby->stats->bytes_received += rc;
+                    }
+
+                    if (cr->on_hold) {
+                        cr->cerver->stats->on_hold_receives_done += 1;
+                        cr->cerver->stats->on_hold_bytes_received += rc;
+                    }
 
                     else {
-                        cr->socket->packet_buffer_size = rc;
+                        cr->cerver->stats->client_receives_done += 1;
+                        cr->cerver->stats->client_bytes_received += rc;
+                    }
 
-                        // char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
-                        //     cr->cerver->info->name->str, rc, cr->sock_fd);
+                    cr->cerver->stats->total_n_receives_done += 1;
+                    cr->cerver->stats->total_bytes_received += rc;
+
+                    // handle the received packet buffer -> split them in packets of the correct size
+                    ReceiveHandle *receive = receive_handle_new (
+                        cr->cerver,
+                        cr->socket,
+                        packet_buffer,
+                        rc,
+                        cr->on_hold,
+                        cr->lobby
+                    );
+
+                    if (cr->cerver->thpool) {
+                        // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
+                        // and it seems to be working as expected
+                        if (thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
+                            char *s = c_string_create (
+                                "Failed to add cerver's cr->cerver->handle_received_buffer () to thpool!",
+                                cr->cerver->info->name->str
+                            );
+                            if (s) {
+                                cerver_log_error (s);
+                                free (s);
+                            }
+                        }
+
+                        // TODO: 28/05/2020 -- create a better method in thpool
+                        // char *status = c_string_create ("Cerver %s active thpool threads: %i", 
+                        //     cr->cerver->info->name->str,
+                        //     thpool_num_threads_working (cr->cerver->thpool));
                         // if (status) {
                         //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                         //     free (status);
                         // }
-
-                        if (cr->lobby) {
-                            cr->lobby->stats->n_receives_done += 1;
-                            cr->lobby->stats->bytes_received += rc;
-                        }
-
-                        if (cr->on_hold) {
-                            cr->cerver->stats->on_hold_receives_done += 1;
-                            cr->cerver->stats->on_hold_bytes_received += rc;
-                        }
-
-                        else {
-                            cr->cerver->stats->client_receives_done += 1;
-                            cr->cerver->stats->client_bytes_received += rc;
-                        }
-
-                        cr->cerver->stats->total_n_receives_done += 1;
-                        cr->cerver->stats->total_bytes_received += rc;
-
-                        // handle the received packet buffer -> split them in packets of the correct size
-                        ReceiveHandle *receive = receive_handle_new (
-                            cr->cerver,
-                            cr->socket,
-                            packet_buffer,
-                            rc,
-                            cr->on_hold,
-                            cr->lobby
-                        );
-
-                        if (cr->cerver->thpool) {
-                            // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
-                            // and it seems to be working as expected
-                            if (thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
-                                char *s = c_string_create ("Failed to add cerver's cr->cerver->handle_received_buffer () to thpool!",
-                                    cr->cerver->info->name->str);
-                                if (s) {
-                                    cerver_log_error (s);
-                                    free (s);
-                                }
-                            }
-
-                            // TODO: 28/05/2020 -- create a better method in thpool
-                            // char *status = c_string_create ("Cerver %s active thpool threads: %i", 
-                            //     cr->cerver->info->name->str,
-                            //     thpool_num_threads_working (cr->cerver->thpool));
-                            // if (status) {
-                            //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                            //     free (status);
-                            // }
-                        }
-
-                        else {
-                            cr->cerver->handle_received_buffer (receive);
-
-                            // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
-                            // receive_handle_delete (receive);
-                        }
-
-                        cerver_receive_delete (cr);
                     }
 
-                    // 28/05/2020 -- 02:40
-                    // packet_buffer is not free from inside cr->cerver->handle_received_buffer ()
-                    // free (packet_buffer);
+                    else {
+                        cr->cerver->handle_received_buffer (receive);
+
+                        // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
+                        // receive_handle_delete (receive);
+                    }
+
+                    cerver_receive_delete (cr);
                 }
 
-                else {
-                    #ifdef CERVER_DEBUG
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                        "Failed to allocate a new packet buffer!");
-                    #endif
-                    // break;
-                }
+                // 28/05/2020 -- 02:40
+                // packet_buffer is not free from inside cr->cerver->handle_received_buffer ()
+                // free (packet_buffer);
+            }
 
-                
-            // } while (true);
+            else {
+                #ifdef CERVER_DEBUG
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
+                    "Failed to allocate a new packet buffer!");
+                #endif
+                // break;
+            }
         }
     }
-
 }
 
 #pragma endregion

@@ -1085,7 +1085,7 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
         else {
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Cerver %s is configured to not use a thpool for receive methods",
+            char *s = c_string_create ("Cerver %s is configured to NOT use a thpool for receive methods",
                 cerver->info->name->str);
             if (s) {
                 cerver_log_debug (s);
