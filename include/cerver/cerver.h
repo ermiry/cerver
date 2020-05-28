@@ -133,7 +133,8 @@ struct _Cerver {
     u32 max_n_fds;                      // current max n fds in pollfd
     u16 current_n_fds;                  // n of active fds in the pollfd array
     bool compress_clients;              // compress the fds array?
-    u32 poll_timeout;           
+    u32 poll_timeout;   
+    pthread_mutex_t *poll_lock;        
 
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?

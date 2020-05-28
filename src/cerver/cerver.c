@@ -125,7 +125,7 @@ void cerver_stats_print (Cerver *cerver) {
     if (cerver) {
         if (cerver->stats) {
             printf ("\nCerver's %s stats: ", cerver->info->name->str);
-            printf ("\nThreshold time:            %ld\n", cerver->stats->threshold_time);
+            printf ("\nThreshold time:              %ld\n", cerver->stats->threshold_time);
 
             if (cerver->auth_required) {
                 printf ("\nClient packets received:       %ld\n", cerver->stats->client_n_packets_received);
@@ -203,6 +203,7 @@ Cerver *cerver_new (void) {
 
         c->fds = NULL;
         c->compress_clients = false;
+        c->poll_lock = NULL;
 
         c->auth_required = false;
         c->auth = NULL;
@@ -256,6 +257,12 @@ void cerver_delete (void *ptr) {
         if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
 
         if (cerver->fds) free (cerver->fds);
+
+        // 28/05/2020
+        if (cerver->poll_lock) {
+            pthread_mutex_destroy (cerver->poll_lock);
+            free (cerver->poll_lock);
+        }
 
         if (cerver->auth) auth_delete (cerver->auth);
 
@@ -1097,6 +1104,10 @@ static u8 cerver_one_time_init (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
+        // 28/05/2020
+        cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (cerver->poll_lock, NULL);
+
         // init the cerver thpool
         if (!cerver_one_time_init_thpool (cerver)) {
             // if we have a game cerver, we might wanna load game data -> set by cerver admin
