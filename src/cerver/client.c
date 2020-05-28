@@ -270,7 +270,7 @@ u8 client_remove_connection (Cerver *cerver, Client *client, Connection *connect
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("client_remove_connection () - Client with id" 
                 "%ld does not have a connection related to sock fd %d",
-                client->id, connection->sock_fd);
+                client->id, connection->socket->sock_fd);
             if (s) {
                 cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, s);
                 free (s);
@@ -305,7 +305,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
         else {
             // the connection may not belong to this client
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id" 
+            char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id " 
                 "%ld does not have a connection related to sock fd %d",
                 client->id, sock_fd);
             if (s) {
@@ -1157,12 +1157,13 @@ void client_receive (Client *client, Connection *connection) {
     if (client && connection) {
         char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
         if (packet_buffer) {
-            ssize_t rc = recv (connection->sock_fd, packet_buffer, connection->receive_packet_buffer_size, 0);
+            ssize_t rc = recv (connection->socket->sock_fd, packet_buffer, connection->receive_packet_buffer_size, 0);
 
             if (rc < 0) {
                 if (errno != EWOULDBLOCK) {     // no more data to read 
                     #ifdef CERVER_DEBUG 
-                    char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->sock_fd);
+                    char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", 
+                        connection->socket->sock_fd);
                     if (s) {
                         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
                         free (s);
@@ -1179,7 +1180,7 @@ void client_receive (Client *client, Connection *connection) {
                 // but in dgram it might mean something?
                 #ifdef CERVER_DEBUG
                 char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
-                    connection->sock_fd);
+                    connection->socket->sock_fd);
                 if (s) {
                     cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
                     free (s);
