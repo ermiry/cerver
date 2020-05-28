@@ -277,7 +277,10 @@ void cerver_delete (void *ptr) {
             free (cerver->handlers);
         }
 
-        if (cerver->handlers_lock) pthread_mutex_destroy (cerver->handlers_lock);
+        if (cerver->handlers_lock) {
+            pthread_mutex_destroy (cerver->handlers_lock);
+            free (cerver->handlers_lock);
+        }
 
         admin_cerver_delete (cerver->admin);
 
