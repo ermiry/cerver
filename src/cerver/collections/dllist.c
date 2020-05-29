@@ -99,6 +99,58 @@ static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *elem
 
 #pragma endregion
 
+void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const void *two)) { if (dlist) dlist->compare = compare; }
+
+void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
+
+size_t dlist_size (DoubleList *dlist) {
+
+	size_t retval = 0;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist->size;
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+bool dlist_is_empty (DoubleList *dlist) { 
+	
+	bool retval = true;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = (dlist->size == 0);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+	
+}
+
+bool dlist_is_not_empty (DoubleList *dlist) {
+
+	bool retval = false;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = (dlist->size > 0);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
 void dlist_delete (void *dlist_ptr) {
 
 	if (dlist_ptr) {
@@ -144,14 +196,6 @@ void dlist_delete_if_not_empty (void *dlist_ptr) {
 	}
 
 }
-
-void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const void *two)) { if (dlist) dlist->compare = compare; }
-
-void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
-
-bool dlist_is_empty (DoubleList *dlist) { return dlist ? (dlist->size == 0) : false; }
-
-bool dlist_is_not_empty (DoubleList *dlist) { return dlist ? (dlist->size > 0) : false; }
 
 DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *one, const void *two)) {
 
