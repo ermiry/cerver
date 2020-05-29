@@ -52,10 +52,12 @@ extern bool dlist_is_not_empty (DoubleList *dlist);
 extern void dlist_delete (void *dlist_ptr);
 
 // only deletes the list if its empty (size == 0)
-extern void dlist_delete_if_empty (void *dlist_ptr);
+// returns 0 on success, 1 on NOT deleted
+extern int dlist_delete_if_empty (void *dlist_ptr);
 
 // only deletes the list if its NOT empty (size > 0)
-extern void dlist_delete_if_not_empty (void *dlist_ptr);
+// returns 0 on success, 1 on NOT deleted
+extern int dlist_delete_if_not_empty (void *dlist_ptr);
 
 // creates a new double list (double linked list)
 // destroy is the method used to free up the data, NULL to use the default free
