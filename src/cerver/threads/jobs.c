@@ -62,7 +62,7 @@ void job_queue_delete (void *job_queue_ptr) {
 	if (job_queue_ptr) {
 		JobQueue *job_queue = (JobQueue *) job_queue_ptr;
 
-		job_queue_clear (job_queue);
+		// job_queue_clear (job_queue);
 		dlist_delete (job_queue->queue);
 
 		pthread_mutex_destroy (job_queue->rwmutex);
