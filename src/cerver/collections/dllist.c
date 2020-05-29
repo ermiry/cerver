@@ -44,7 +44,7 @@ static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *elem
 
 	if (dlist) {
 		void *data = NULL;
-		if (dlist_size (dlist) > 0) {
+		if (dlist->size > 0) {
 			ListElement *old;
 
 			if (element == NULL) {
@@ -103,7 +103,7 @@ static void dlist_internal_delete (DoubleList *dlist) {
 		if (dlist->size > 0) {
 			void *data = NULL;
 
-			while (dlist_size (dlist) > 0) {
+			while (dlist->size > 0) {
 				data = dlist_internal_remove_element (dlist, NULL);
 				if (data) {
 					if (dlist->destroy) dlist->destroy (data);
@@ -269,9 +269,9 @@ void dlist_reset (DoubleList *dlist) {
 	if (dlist) {
 		pthread_mutex_lock (dlist->mutex);
 
-		if (dlist_size (dlist) > 0) {
+		if (dlist->size > 0) {
 			void *data = NULL;
-			while (dlist_size (dlist) > 0) {
+			while (dlist->size > 0) {
 				data = dlist_internal_remove_element (dlist, NULL);
 				if (data != NULL && dlist->destroy != NULL) dlist->destroy (data);
 			}
@@ -296,7 +296,7 @@ void dlist_clear (void *dlist_ptr) {
 		pthread_mutex_lock (dlist->mutex);
 
 		void *data = NULL;
-		while (dlist_size (dlist) > 0) 
+		while (dlist->size > 0) 
 			data = dlist_internal_remove_element (dlist, NULL);
 
 		pthread_mutex_unlock (dlist->mutex);
@@ -343,7 +343,7 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, void *data) {
 			le->data = (void *) data;
 
 			if (element == NULL) {
-				if (dlist_size (dlist) == 0) dlist->end = le;
+				if (dlist->size == 0) dlist->end = le;
 				else dlist->start->prev = le;
 			
 				le->next = dlist->start;
@@ -385,7 +385,7 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, void *data) {
 			le->data = (void *) data;
 
 			if (element == NULL) {
-				if (dlist_size (dlist) == 0) dlist->end = le;
+				if (dlist->size == 0) dlist->end = le;
 				else dlist->start->prev = le;
 			
 				le->next = dlist->start;
@@ -423,7 +423,7 @@ int dlist_insert_at (DoubleList *dlist, void *data, unsigned int pos) {
 	if (dlist && data) {
 		// insert at the start of the list
 		if (pos == 0) retval = dlist_insert_before (dlist, NULL, data);
-		else if (pos > dlist_size (dlist)) {
+		else if (pos > dlist->size) {
 			// insert at the end of the list
 			retval = dlist_insert_after (dlist, dlist_end (dlist), data);
 		}
