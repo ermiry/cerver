@@ -74,12 +74,12 @@ static void app_main_handler (ReceiveHandle *data, DoubleList *pairs) {
 			// send the response to the client
 			http_response_compile (res);
 			printf ("Response: %s\n", res->res);
-			http_response_send_to_socket (res, data->sock_fd);
+			http_response_send_to_socket (res, data->socket->sock_fd);
 			http_respponse_delete (res);
 		}
 
 		// after the performed action, close the client socket
-		Client *client = client_get_by_sock_fd (data->cerver, data->sock_fd);
+		Client *client = client_get_by_sock_fd (data->cerver, data->socket->sock_fd);
 		client_disconnect (client);
 		client_drop (data->cerver, client);
 	}
@@ -91,7 +91,7 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 	if (rcvd_buffer_data) {
 		ReceiveHandle *data = (ReceiveHandle *) rcvd_buffer_data;
 
-		if (data->buffer && (data->buffer_size > 0)) {
+		if (data->socket->packet_buffer && (data->socket->packet_buffer_size > 0)) {
 			char *method, *path;
 			int pret, minor_version;
 			struct phr_header headers[100];
@@ -102,7 +102,7 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 			buflen += rret;
 			/* parse the request */
 			num_headers = sizeof (headers) / sizeof (headers[0]);
-			pret = phr_parse_request (data->buffer, data->buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
+			pret = phr_parse_request (data->socket->packet_buffer, data->socket->packet_buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
 				&minor_version, headers, &num_headers, prevbuflen);
 			if (pret > 0) {
 				char str[50];
