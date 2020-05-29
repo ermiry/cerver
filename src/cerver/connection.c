@@ -422,6 +422,33 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 }
 
+static void connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
+
+    if (cerver && client && connection) {
+        // pthread_mutex_lock (connection->socket->mutex);
+
+        // unmap the client connection from the cerver poll
+        cerver_poll_unregister_connection (cerver, client, connection);
+
+        // close the socket
+        connection_end (connection);
+
+        // remove the connection from the client
+        dlist_remove_element (client->connections, le);
+
+        // 29/05/2020
+        // move the socket to the cerver's socket pool to avoid destroying it
+        // to handle if any other thread is waiting to access the socket's mutex
+        cerver_sockets_pool_push (cerver, connection->socket);
+        connection->socket = NULL;
+
+        connection_delete (connection);
+
+        // pthread_mutex_unlock (connection->socket->mutex);
+    }
+
+}
+
 // unregisters a connection from a client, if the connection is active, it is stopped and removed 
 // from the cerver poll as there can't be a free connection withput client
 // returns 0 on success, 1 on error
@@ -435,16 +462,12 @@ u8 connection_unregister_from_client (Cerver *cerver, Client *client, Connection
             for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
                 con = (Connection *) le->data;
                 if (connection->socket->sock_fd == con->socket->sock_fd) {
-                    // pthread_mutex_lock (connection->socket->mutex);
-
-                    // unmap the client connection from the cerver poll
-                    cerver_poll_unregister_connection (cerver, client, connection);
-
-                    connection_end (connection);
-                    // FIXME: correctly delete connections - correctly resolve how to delete socket's mutex
-                    // connection_delete (dlist_remove_element (client->connections, le));
-
-                    // pthread_mutex_unlock (connection->socket->mutex);
+                    connection_remove (
+                        cerver,
+                        client,
+                        connection,
+                        le
+                    );
 
                     retval = 0;
                     
@@ -454,15 +477,12 @@ u8 connection_unregister_from_client (Cerver *cerver, Client *client, Connection
         }
 
         else {
-            // pthread_mutex_lock (connection->socket->mutex);
-
-            cerver_poll_unregister_connection (cerver, client, connection);
-
-            connection_end (connection);
-            // FIXME: correctly delete connections - correctly resolve how to delete socket's mutex
-            // connection_delete (dlist_remove_element (client->connections, NULL));
-
-            // pthread_mutex_unlock (connection->socket->mutex);
+            connection_remove (
+                cerver,
+                client,
+                connection,
+                NULL
+            );
 
             retval = 0;
         }

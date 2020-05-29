@@ -1053,7 +1053,9 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
         if (cr->socket->sock_fd > 0) {
             if (cr->on_hold) {
                 Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
-                if (connection) on_hold_connection_drop (cr->cerver, connection);
+                if (connection) {
+                    on_hold_connection_drop (cr->cerver, connection);
+                }
 
                 // for what ever reason we have a rogue connection
                 else {
@@ -1068,8 +1070,7 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
 
                     close (cr->socket->sock_fd);
                     cr->socket->sock_fd = -1;
-                    // FIXME:
-                    // socket_delete (cr->socket);
+                    // cerver_sockets_pool_push (cr->cerver, cr->socket);
                 }
             }
 
@@ -1084,7 +1085,9 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
 
                 // get to which client the connection is registered to
                 Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
-                if (client) client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
+                if (client) {
+                    client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
+                } 
 
                 // for what ever reason we have a rogue connection
                 else {
@@ -1099,8 +1102,7 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
 
                     close (cr->socket->sock_fd);        // just close the socket
                     cr->socket->sock_fd = -1;
-                    // FIXME:
-                    // socket_delete (cr->socket);
+                    // cerver_sockets_pool_push (cr->cerver, cr->socket);
                 }
             }
         }
