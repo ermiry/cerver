@@ -24,6 +24,8 @@ extern Socket *socket_new (void);
 
 extern void socket_delete (void *socket_ptr);
 
+extern void *socket_create_empty (void);
+
 extern Socket *socket_create (int fd);
 
 extern Socket *socket_get_by_fd (struct _Cerver *cerver, int sock_fd, bool on_hold);

@@ -38,14 +38,23 @@ void socket_delete (void *socket_ptr) {
 
 }
 
-Socket *socket_create (int fd) {
+void *socket_create_empty (void) {
 
     Socket *socket = socket_new ();
     if (socket) {
-        socket->sock_fd = fd;
-
         socket->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
         pthread_mutex_init (socket->mutex, NULL);
+    }
+
+    return socket;
+
+}
+
+Socket *socket_create (int fd) {
+
+    Socket *socket = (Socket *) socket_create_empty ();
+    if (socket) {
+        socket->sock_fd = fd;
     }
 
     return socket;
