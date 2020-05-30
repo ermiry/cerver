@@ -139,9 +139,9 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
                     if (packet->cerver->use_sessions) {
                         // FIXME: generate the new session id - token
-                        SessionData *session_data = session_data_new (packet, auth_data, c);
-                        estring *session_id = (estring *) packet->cerver->session_id_generator (session_data);
-                        session_data_delete (session_data);
+                        // SessionData *session_data = session_data_new (packet, auth_data, c);
+                        // estring *session_id = (estring *) packet->cerver->session_id_generator (session_data);
+                        // session_data_delete (session_data);
                     }
 
                     else {
@@ -667,7 +667,7 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
                 cerver->hold_fds[idx].events = POLLIN;
                 cerver->current_on_hold_nfds++; 
 
-                cerver->stats->current_n_hold_connections;
+                cerver->stats->current_n_hold_connections += 1;
 
                 avl_insert_node (cerver->on_hold_connections, connection);
                 const void *key = &connection->socket->sock_fd;
@@ -827,6 +827,8 @@ void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd) {
 
     Connection *connection = NULL;
@@ -867,3 +869,4 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
     return connection;
 
 }
+#pragma GCC diagnostic pop
