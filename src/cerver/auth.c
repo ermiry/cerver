@@ -550,23 +550,6 @@ static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
 
 }
 
-// we remove any fd that was set to -1 for what ever reason
-static void cerver_on_hold_poll_compress (Cerver *cerver) {
-
-    if (cerver) {
-        cerver->compress_on_hold = false;
-
-        for (u32 i = 0; i < cerver->max_on_hold_connections; i++) {
-            if (cerver->hold_fds[i].fd == -1) {
-                for (u32 j = i; j < cerver->max_on_hold_connections - 1; j++) 
-                    cerver->hold_fds[j].fd = cerver->hold_fds[j + 1].fd;
-                    
-            }
-        }
-    }  
-
-}
-
 // handles packets from the on hold clients until they authenticate
 static void *on_hold_poll (void *ptr) {
 

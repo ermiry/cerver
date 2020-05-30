@@ -204,7 +204,6 @@ Cerver *cerver_new (void) {
         c->on_client_connected = NULL;
 
         c->fds = NULL;
-        c->compress_clients = false;
         c->poll_lock = NULL;
 
         c->auth_required = false;
@@ -213,7 +212,6 @@ Cerver *cerver_new (void) {
         c->on_hold_connections = NULL;
         c->on_hold_connection_sock_fd_map = NULL;
         c->hold_fds = NULL;
-        c->compress_on_hold = false;
         c->holding_connections = false;
 
         c->use_sessions = false;
@@ -392,7 +390,6 @@ static u8 cerver_on_hold_init (Cerver *cerver) {
                 for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
                     cerver->hold_fds[i].fd = -1;
 
-                cerver->compress_on_hold = false;
                 cerver->holding_connections = false;
 
                 cerver->current_on_hold_nfds = 0;
@@ -961,7 +958,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 
             cerver->max_n_fds = poll_n_fds;
             cerver->current_n_fds = 0;
-            cerver->compress_clients = false;
 
             switch (cerver->type) {
                 case CUSTOM_CERVER: break;

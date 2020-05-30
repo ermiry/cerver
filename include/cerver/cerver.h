@@ -141,7 +141,6 @@ struct _Cerver {
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
     u16 current_n_fds;                  // n of active fds in the pollfd array
-    bool compress_clients;              // compress the fds array?
     u32 poll_timeout;   
     pthread_mutex_t *poll_lock;        
 
@@ -154,7 +153,6 @@ struct _Cerver {
     struct pollfd *hold_fds;
     u32 max_on_hold_connections;
     u16 current_on_hold_nfds;
-    bool compress_on_hold;              // compress the hold fds array?
     bool holding_connections;
     pthread_t on_hold_poll_id;
 
