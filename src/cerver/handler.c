@@ -1461,23 +1461,6 @@ i32 cerver_poll_get_idx_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 }
 
-// we remove any fd that was set to -1 for what ever reason
-static void cerver_poll_compress_clients (Cerver *cerver) {
-
-    if (cerver) {
-        cerver->compress_clients = false;
-
-        for (u32 i = 0; i < cerver->max_n_fds; i++) {
-            if (cerver->fds[i].fd == -1) {
-                for (u32 j = i; j < cerver->max_n_fds - 1; j++) 
-                    cerver->fds[j].fd = cerver->fds[j + 1].fd;
-                    
-            }
-        }
-    }  
-
-}
-
 // regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
 u8 cerver_poll_register_connection (Cerver *cerver, Client *client, Connection *connection) {
@@ -1689,8 +1672,6 @@ u8 cerver_poll (Cerver *cerver) {
                     }
                 }
             }
-
-            // if (cerver->compress_clients) cerver_poll_compress_clients (cerver);
         }
 
         #ifdef CERVER_DEBUG
