@@ -36,8 +36,6 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static DoubleList *cervers = NULL;
-
 static void cerver_clean (Cerver *cerver);
 
 #pragma region Cerver Info
@@ -388,7 +386,7 @@ static u8 cerver_on_hold_init (Cerver *cerver) {
             cerver->max_on_hold_connections = poll_n_fds;
             cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
             if (cerver->hold_fds) {
-                memset (cerver->hold_fds, 0, sizeof (cerver->hold_fds));
+                memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
                 cerver->max_on_hold_connections = poll_n_fds;
                 cerver->current_n_fds = 0;
                 for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
@@ -957,7 +955,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
         // initialize main pollfd structures
         cerver->fds = (struct pollfd *) calloc (poll_n_fds, sizeof (struct pollfd));
         if (cerver->fds) {
-            memset (cerver->fds, 0, sizeof (cerver->fds));
+            memset (cerver->fds, 0, sizeof (struct pollfd) * poll_n_fds);
             // set all fds as available spaces
             for (u32 i = 0; i < poll_n_fds; i++) cerver->fds[i].fd = -1;
 
@@ -1287,7 +1285,12 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
+
+#pragma GCC diagnostic pop
 
 static CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
 
@@ -1609,6 +1612,12 @@ u8 cerver_start (Cerver *cerver) {
 
                     case PROTOCOL_UDP: {
                         // retval = cerver_start_udp (cerver);
+                        char *s = c_string_create ("Cerver %s - udp server is not yet implemented!",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_warning (s);
+                            free (s);
+                        }
                     } break;
 
                     default: {
