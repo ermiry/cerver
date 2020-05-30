@@ -15,6 +15,7 @@
 
 #define RECEIVE_PACKET_BUFFER_SIZE      8192
 
+struct _Socket;
 struct _Cerver;
 struct _Client;
 struct _Connection;
@@ -110,9 +111,10 @@ extern int handler_start (Handler *handler);
 typedef struct ReceiveHandle {
 
     struct _Cerver *cerver;
-    i32 sock_fd;
+    // i32 sock_fd;
     char *buffer;
     size_t buffer_size;
+    struct _Socket *socket;
     bool on_hold;
     struct _Lobby *lobby;
 
@@ -145,14 +147,18 @@ extern void sock_receive_delete (void *sock_receive_ptr);
 typedef struct CerverReceive {
 
     struct _Cerver *cerver;
-    i32 sock_fd;
+    // i32 sock_fd;
+    struct _Socket *socket;
     bool on_hold;
     struct _Lobby *lobby;
 
 } CerverReceive;
 
-extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, 
-    i32 sock_fd, bool on_hold, struct _Lobby *lobby);
+// extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, 
+//     i32 sock_fd, bool on_hold, struct _Lobby *lobby);
+
+extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, struct _Socket *socket, 
+    bool on_hold, Lobby *lobby);
 
 extern void cerver_receive_delete (void *ptr);
 

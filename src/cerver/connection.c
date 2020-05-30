@@ -8,6 +8,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/socket.h"
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/handler.h"
@@ -50,7 +51,8 @@ Connection *connection_new (void) {
     if (connection) {
         memset (connection, 0, sizeof (Connection));
 
-        connection->sock_fd = -1;
+        // connection->sock_fd = -1;
+        connection->socket = NULL;
         connection->use_ipv6 = false;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
 
@@ -86,6 +88,8 @@ void connection_delete (void *ptr) {
     if (ptr) {
         Connection *connection = (Connection *) ptr;
 
+        socket_delete (connection->socket);
+
         if (connection->active) connection_end (connection);
 
         estring_delete (connection->ip);
@@ -120,7 +124,8 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
 
     Connection *connection = connection_create_empty ();
     if (connection) {
-        connection->sock_fd = sock_fd;
+        // connection->sock_fd = sock_fd;
+        connection->socket = socket_create (sock_fd);
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
         connection->protocol = protocol;
 
@@ -138,8 +143,8 @@ int connection_comparator (const void *a, const void *b) {
         Connection *con_a = (Connection *) a;
         Connection *con_b = (Connection *) b;
 
-        if (con_a->sock_fd < con_b->sock_fd) return -1;
-        else if (con_a->sock_fd == con_b->sock_fd) return 0;
+        if (con_a->socket->sock_fd < con_b->socket->sock_fd) return -1;
+        else if (con_a->socket->sock_fd == con_b->socket->sock_fd) return 0;
         else return 1; 
     }
 
@@ -230,16 +235,16 @@ u8 connection_init (Connection *connection) {
             // init the new connection socket
             switch (connection->protocol) {
                 case IPPROTO_TCP: 
-                    connection->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
+                    connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
                     break;
                 case IPPROTO_UDP:
-                    connection->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
+                    connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                     break;
 
                 default: cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Unkonw protocol type!"); return 1;
             }
 
-            if (connection->sock_fd > 0) {
+            if (connection->socket->sock_fd > 0) {
                 // if (connection->async) {
                 //     if (sock_set_blocking (connection->sock_fd, connection->blocking)) {
                 //         connection->blocking = false;
@@ -294,7 +299,7 @@ static u8 connection_try (Connection *connection, const struct sockaddr_storage 
 
     i32 numsec;
     for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
-        if (!connect (connection->sock_fd, 
+        if (!connect (connection->socket->sock_fd, 
             (const struct sockaddr *) &address, 
             sizeof (struct sockaddr))) 
             return 0;
@@ -319,8 +324,8 @@ void connection_end (Connection *connection) {
 
     if (connection) {
         if (connection->active) {
-            close (connection->sock_fd);
-            // connection->sock_fd = -1;
+            close (connection->socket->sock_fd);
+            connection->socket->sock_fd = -1;
             connection->active = false;
         }
     }
@@ -349,7 +354,8 @@ Connection *connection_get_by_sock_fd_from_client (Client *client, i32 sock_fd) 
     if (client) {
         Connection *query = connection_new ();
         if (query) {
-            query->sock_fd = sock_fd;
+            // query->sock_fd = sock_fd;
+            query->socket = socket_create (sock_fd);
             void *connection_data = dlist_search (client->connections, query, NULL);
             connection_delete (query);
             return (connection_data ? (Connection *) connection_data : NULL);
@@ -365,7 +371,7 @@ bool connection_check_owner (Client *client, Connection *connection) {
 
     if (client && connection) {
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-            if (connection->sock_fd == ((Connection *) le->data)->sock_fd) return true;
+            if (connection->socket->sock_fd == ((Connection *) le->data)->socket->sock_fd) return true;
         }
     }
 
@@ -416,6 +422,33 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 }
 
+static void connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
+
+    if (cerver && client && connection) {
+        // pthread_mutex_lock (connection->socket->mutex);
+
+        // unmap the client connection from the cerver poll
+        cerver_poll_unregister_connection (cerver, client, connection);
+
+        // close the socket
+        connection_end (connection);
+
+        // remove the connection from the client
+        dlist_remove_element (client->connections, le);
+
+        // 29/05/2020
+        // move the socket to the cerver's socket pool to avoid destroying it
+        // to handle if any other thread is waiting to access the socket's mutex
+        cerver_sockets_pool_push (cerver, connection->socket);
+        connection->socket = NULL;
+
+        connection_delete (connection);
+
+        // pthread_mutex_unlock (connection->socket->mutex);
+    }
+
+}
+
 // unregisters a connection from a client, if the connection is active, it is stopped and removed 
 // from the cerver poll as there can't be a free connection withput client
 // returns 0 on success, 1 on error
@@ -428,12 +461,13 @@ u8 connection_unregister_from_client (Cerver *cerver, Client *client, Connection
             Connection *con = NULL;
             for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
                 con = (Connection *) le->data;
-                if (connection->sock_fd == con->sock_fd) {
-                    // unmap the client connection from the cerver poll
-                    cerver_poll_unregister_connection (cerver, client, connection);
-
-                    connection_end (connection);
-                    connection_delete (dlist_remove_element (client->connections, le));
+                if (connection->socket->sock_fd == con->socket->sock_fd) {
+                    connection_remove (
+                        cerver,
+                        client,
+                        connection,
+                        le
+                    );
 
                     retval = 0;
                     
@@ -443,10 +477,12 @@ u8 connection_unregister_from_client (Cerver *cerver, Client *client, Connection
         }
 
         else {
-            cerver_poll_unregister_connection (cerver, client, connection);
-
-            connection_end (connection);
-            connection_delete (dlist_remove_element (client->connections, NULL));
+            connection_remove (
+                cerver,
+                client,
+                connection,
+                NULL
+            );
 
             retval = 0;
         }
@@ -463,7 +499,7 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
     u8 retval = 1;
 
     if (cerver && client && connection) {
-        const void *key = &connection->sock_fd;
+        const void *key = &connection->socket->sock_fd;
 
         // map the socket fd with the client
         htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
@@ -484,11 +520,11 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
 
     if (cerver && client && connection) {
         // remove the sock fd from each map
-        const void *key = &connection->sock_fd;
+        const void *key = &connection->socket->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
-                connection->sock_fd, cerver->info->name->str);
+                connection->socket->sock_fd, cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
                 free (s);

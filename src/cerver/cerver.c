@@ -16,7 +16,8 @@
 #include "cerver/types/estring.h"
 
 #include "cerver/collections/dllist.h"
-#include "cerver/collections/avl.h" 
+#include "cerver/collections/avl.h"
+#include "cerver/collections/pool.h"
 
 #include "cerver/admin.h"
 #include "cerver/auth.h"
@@ -125,7 +126,7 @@ void cerver_stats_print (Cerver *cerver) {
     if (cerver) {
         if (cerver->stats) {
             printf ("\nCerver's %s stats: ", cerver->info->name->str);
-            printf ("\nThreshold time:            %ld\n", cerver->stats->threshold_time);
+            printf ("\nThreshold time:              %ld\n", cerver->stats->threshold_time);
 
             if (cerver->auth_required) {
                 printf ("\nClient packets received:       %ld\n", cerver->stats->client_n_packets_received);
@@ -197,12 +198,16 @@ Cerver *cerver_new (void) {
         c->n_thpool_threads = 0;
         c->thpool = NULL;
 
+        c->sockets_pool_init = DEFAULT_SOCKETS_INIT;
+        c->sockets_pool = NULL;
+
         c->clients = NULL;
         c->client_sock_fd_map = NULL;
         c->on_client_connected = NULL;
 
         c->fds = NULL;
         c->compress_clients = false;
+        c->poll_lock = NULL;
 
         c->auth_required = false;
         c->auth = NULL;
@@ -252,10 +257,18 @@ void cerver_delete (void *ptr) {
             else free (cerver->cerver_data);
         }
 
+        pool_delete (cerver->sockets_pool);
+
         if (cerver->clients) avl_delete (cerver->clients);
         if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
 
         if (cerver->fds) free (cerver->fds);
+
+        // 28/05/2020
+        if (cerver->poll_lock) {
+            pthread_mutex_destroy (cerver->poll_lock);
+            free (cerver->poll_lock);
+        }
 
         if (cerver->auth) auth_delete (cerver->auth);
 
@@ -277,7 +290,10 @@ void cerver_delete (void *ptr) {
             free (cerver->handlers);
         }
 
-        if (cerver->handlers_lock) pthread_mutex_destroy (cerver->handlers_lock);
+        if (cerver->handlers_lock) {
+            pthread_mutex_destroy (cerver->handlers_lock);
+            free (cerver->handlers_lock);
+        }
 
         admin_cerver_delete (cerver->admin);
 
@@ -335,6 +351,14 @@ void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data) {
 void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
 
     if (cerver) cerver->n_thpool_threads = n_threads;
+
+}
+
+// sets the initial number of sockets to be created in the cerver's sockets pool
+// the defauult value is 10
+void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets) {
+
+    if (cerver) cerver->sockets_pool_init = n_sockets;
 
 }
 
@@ -529,6 +553,65 @@ u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
     return retval;
 
 }
+
+#pragma region sockets
+
+static int cerver_sockets_pool_init (Cerver *cerver) {
+
+    int retval = 1;
+
+    if (cerver) {
+        cerver->sockets_pool = pool_create (socket_delete);
+        if (cerver->sockets_pool) {
+            retval = pool_init (
+                cerver->sockets_pool, 
+                socket_create_empty, 
+                cerver->sockets_pool_init
+            );
+        }
+    }
+
+    return retval;
+
+}
+
+int cerver_sockets_pool_push (Cerver *cerver, Socket *socket) {
+
+    int retval = 1;
+    
+    if (cerver && socket) {
+        retval = pool_push (cerver->sockets_pool, socket);
+        // printf ("push!\n");
+    }
+
+    return retval;
+
+}
+
+Socket *cerver_sockets_pool_pop (Cerver *cerver) {
+
+    Socket *retval = NULL;
+
+    if (cerver) {
+        void *value = pool_pop (cerver->sockets_pool);
+        if (value) retval = (Socket *) value;
+        // printf ("pop!\n");
+    }
+
+    return retval;
+
+}
+
+static void cerver_sockets_pool_end (Cerver *cerver) {
+
+    if (cerver) {
+        pool_delete (cerver->sockets_pool);
+        cerver->sockets_pool = NULL;
+    }
+
+}
+
+#pragma endregion
 
 #pragma region handlers
 
@@ -726,7 +809,7 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 
         // poll remaining handlers
         while (cerver->num_handlers_alive) {
-            if (cerver->app_packet_handler) {}
+            if (cerver->app_packet_handler)
                 bsem_post_all (cerver->app_packet_handler->job_queue->has_jobs);
 
             if (cerver->app_error_packet_handler)
@@ -1075,7 +1158,7 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
         else {
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Cerver %s is configured to not use a thpool for receive methods",
+            char *s = c_string_create ("Cerver %s is configured to NOT use a thpool for receive methods",
                 cerver->info->name->str);
             if (s) {
                 cerver_log_debug (s);
@@ -1091,46 +1174,51 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
 static u8 cerver_one_time_init (Cerver *cerver) {
 
-    u8 retval = 1;
+    u8 errors = 0;
 
     if (cerver) {
+        // 29/05/2020
+        errors |= cerver_sockets_pool_init (cerver);
+
+        // 28/05/2020
+        cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (cerver->poll_lock, NULL);
+
         // init the cerver thpool
-        if (!cerver_one_time_init_thpool (cerver)) {
-            // if we have a game cerver, we might wanna load game data -> set by cerver admin
-            if (cerver->type == GAME_CERVER) {
-                GameCerver *game_data = (GameCerver *) cerver->cerver_data;
-                game_data->cerver = cerver;
-                if (game_data && game_data->load_game_data) {
-                    game_data->load_game_data (NULL);
-                }
+        errors |= cerver_one_time_init_thpool (cerver);
 
-                else {
-                    char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
-                        cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
-                        free (s);
-                    }
-                } 
-            }
-
-            cerver->info->cerver_info_packet = cerver_packet_generate (cerver);
-            if (cerver->info->cerver_info_packet) {
-                retval = 0;     // success
+        // if we have a game cerver, we might wanna load game data -> set by cerver admin
+        if (cerver->type == GAME_CERVER) {
+            GameCerver *game_data = (GameCerver *) cerver->cerver_data;
+            game_data->cerver = cerver;
+            if (game_data && game_data->load_game_data) {
+                game_data->load_game_data (NULL);
             }
 
             else {
-                char *s = c_string_create ("Failed to generate cerver %s info packet", 
+                char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
                     cerver->info->name->str);
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
                     free (s);
                 }
+            } 
+        }
+
+        cerver->info->cerver_info_packet = cerver_packet_generate (cerver);
+        if (!cerver->info->cerver_info_packet) {
+            char *s = c_string_create ("Failed to generate cerver %s info packet", 
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                free (s);
             }
+
+            errors |= 1;
         }
     }
 
-    return retval;
+    return errors;
 
 }
 
@@ -1534,7 +1622,16 @@ u8 cerver_start (Cerver *cerver) {
                     break;
                 }
             }
-        }        
+        }
+
+        else {
+            char *s = c_string_create ("Failed cerver_one_time_init () for cerver %s!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
+        } 
     }
 
     else {
@@ -1762,6 +1859,9 @@ u8 cerver_teardown (Cerver *cerver) {
 
         // 22/01/2020 -- 10:05 -- correctly end admin connections
         admin_cerver_teardown (cerver->admin);
+
+        // 29/05/2020
+        cerver_sockets_pool_end (cerver);
 
         status = c_string_create ("Cerver %s teardown was successfull!", 
             cerver->info->name->str);

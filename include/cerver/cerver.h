@@ -12,6 +12,7 @@
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/htab.h"
+#include "cerver/collections/pool.h"
 
 #include "cerver/admin.h"
 #include "cerver/auth.h"
@@ -32,6 +33,8 @@
 
 #define DEFAULT_POLL_TIMEOUT            2000
 #define poll_n_fds                      100         // n of fds for the pollfd array
+
+#define DEFAULT_SOCKETS_INIT            10
 
 struct _AdminCerver;
 struct _Auth;
@@ -124,6 +127,12 @@ struct _Cerver {
     // threadpool *thpool;
     threadpool thpool;
 
+    // 29/05/2020
+    // using this pool to avoid completely destroying connection's sockets
+    // as another thread might be blocked by the socket's mutex
+    unsigned int sockets_pool_init;
+    Pool *sockets_pool;
+
     AVLTree *clients;                   // connected clients 
     Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
     // action to be performed when a new client connects
@@ -133,7 +142,8 @@ struct _Cerver {
     u32 max_n_fds;                      // current max n fds in pollfd
     u16 current_n_fds;                  // n of active fds in the pollfd array
     bool compress_clients;              // compress the fds array?
-    u32 poll_timeout;           
+    u32 poll_timeout;   
+    pthread_mutex_t *poll_lock;        
 
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?
@@ -221,6 +231,10 @@ extern void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_da
 // by default, all received packets will be handle only in one thread
 extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
 
+// sets the initial number of sockets to be created in the cerver's sockets pool
+// the defauult value is 10
+extern void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets);
+
 // sets an action to be performed by the cerver when a new client connects
 extern void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected);
 
@@ -264,6 +278,12 @@ extern void cerver_set_update_interval (Cerver *cerver, Action update, void *upd
 // admin connections are handled in a different port and using a dedicated handler
 // returns 0 on success, 1 on error
 extern u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6);
+
+/*** sockets ***/
+
+extern int cerver_sockets_pool_push (Cerver *cerver, struct _Socket *socket);
+
+extern struct _Socket *cerver_sockets_pool_pop (Cerver *cerver);
 
 /*** handlers ***/
 

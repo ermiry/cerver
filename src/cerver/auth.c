@@ -5,6 +5,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/socket.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
 #include "cerver/errors.h"
@@ -314,7 +315,7 @@ static void auth_with_token (const Packet *packet, const AuthData *auth_data) {
                 connection_register_to_cerver_poll (packet->cerver, client, packet->connection);
 
                 // remove the connection from the on hold structures
-                on_hold_poll_remove_sock_fd (packet->cerver, packet->connection->sock_fd);
+                on_hold_poll_remove_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
 
                 // send success auth packet to client
                 auth_send_success_packet (packet->cerver, packet->connection);
@@ -618,7 +619,15 @@ static void *on_hold_poll (void *ptr) {
                 if (cerver->hold_fds[i].revents == 0) continue;
                 if (cerver->hold_fds[i].revents != POLLIN) continue;
 
-                cerver_receive (cerver_receive_new (cerver, cerver->hold_fds[i].fd, true, NULL));
+                // cerver_receive (cerver_receive_new (cerver, cerver->hold_fds[i].fd, true, NULL));
+                cerver_receive (
+                    cerver_receive_new (
+                        cerver, 
+                        socket_get_by_fd (cerver, cerver->hold_fds[i].fd, true),
+                        true,
+                        NULL
+                    )
+                );
                 // if (thpool_add_work (cerver->thpool, cerver_receive, 
                 //     cerver_receive_new (cerver, cerver->hold_fds[i].fd, true))) {
                 //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
@@ -654,14 +663,14 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
         if (cerver->on_hold_connections) {
             i32 idx = on_hold_get_free_idx (cerver);
             if (idx >= 0) {
-                cerver->hold_fds[idx].fd = connection->sock_fd;
+                cerver->hold_fds[idx].fd = connection->socket->sock_fd;
                 cerver->hold_fds[idx].events = POLLIN;
                 cerver->current_on_hold_nfds++; 
 
                 cerver->stats->current_n_hold_connections;
 
                 avl_insert_node (cerver->on_hold_connections, connection);
-                const void *key = &connection->sock_fd;
+                const void *key = &connection->socket->sock_fd;
                 htab_insert (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32),
                     connection, sizeof (Connection));
 
@@ -784,15 +793,16 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
     if (cerver && connection) {
         // remove the connection associated to the sock fd
         Connection *query = connection_new ();
-        query->sock_fd = connection->sock_fd;
+        // query->socket->sock_fd = connection->socket->sock_fd;
+        query->socket = socket_create (connection->socket->sock_fd);
         avl_remove_node (cerver->on_hold_connections, query);
 
         // remove connection from on hold map
-        const void *key = &connection->sock_fd;
+        const void *key = &connection->socket->sock_fd;
         htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32));
 
         // unregister the fd from the on hold structures
-        on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->sock_fd);
+        on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd);
 
         retval = 0;
     }
@@ -824,7 +834,8 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
     if (cerver) {
         Connection *query = connection_new ();
         if (query) {
-            query->sock_fd = sock_fd;
+            // query->sock_fd = sock_fd;
+            query->socket = socket_create (sock_fd);
             void *connection_data = avl_get_node_data (cerver->on_hold_connections, query, NULL);
             if (connection_data) {
                 connection = (Connection *) connection_data;

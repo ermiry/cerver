@@ -3,37 +3,41 @@
 
 #include <stdlib.h>
 
-typedef struct PoolMember {
-
-    void *data;
-    struct PoolMember *next;
-
-} PoolMember;
+#include "cerver/collections/dllist.h"
 
 typedef struct Pool {
 
-    size_t size;
-    PoolMember *top;
+    DoubleList *dlist;
     void (*destroy)(void *data);
 
 } Pool;
 
-#define POOL_SIZE(pool) ((pool)->size)
+// returns how many elements are inside the pool
+extern size_t pool_size (Pool *pool);
 
-#define POOL_TOP(pool) ((pool)->top)
+// creates a new pool
+extern Pool *pool_create (void (*destroy)(void *data));
 
-#define POOL_DATA(member) ((member)->data)
+// uses the create method to populate the pool with n elements
+// returns 0 on no error, 1 if at least one element failed to be inserted
+extern int pool_init (Pool *pool, 
+    void *(*create)(void), unsigned int n_elements);
 
-// Creates a new pool
-extern Pool *pool_init (void (*destroy)(void *data));
-
-// Inserts a the data as a new pool element at the top of the pool
-extern void pool_push (Pool *pool, void *data);
-
-// Returns the data of the pool element at the top of the pool
-extern void *pool_pop (Pool *pool);
-
-// Deletes the pool and all of its memebers using the destroy method
+// deletes the pool and all of its members using the destroy method
 extern void pool_delete (Pool *pool);
+
+// destroys all of the pool's elements and their data but keeps the pool
+extern void pool_reset (Pool *pool);
+
+// only gets rid of the pool's elements, but the data is kept
+// this is usefull if another structure points to the same data
+extern void pool_clear (Pool *pool);
+
+// inserts the new data at the end of the pool
+// returns 0 on success, 1 on error
+extern int pool_push (Pool *pool, void *data);
+
+// returns the data that is first in the pool
+extern void *pool_pop (Pool *pool);
 
 #endif

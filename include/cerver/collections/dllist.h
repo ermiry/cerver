@@ -27,21 +27,13 @@ typedef struct DoubleList {
 
 } DoubleList;
 
-#define dlist_size(list) ((list)->size)
+// #define dlist_size(list) ((list)->size)
 
 #define dlist_start(list) ((list)->start)
 #define dlist_end(list) ((list)->end)
 
 #define dlist_element_data(element) ((element)->data)
 #define dlist_element_next(element) ((element)->next)
-
-extern void dlist_delete (void *dlist_ptr);
-
-// only deletes the list if its empty (size == 0)
-extern void dlist_delete_if_empty (void *dlist_ptr);
-
-// only deletes the list if its NOT empty (size > 0)
-extern void dlist_delete_if_not_empty (void *dlist_ptr);
 
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
@@ -50,9 +42,22 @@ extern void dlist_set_compare (DoubleList *list, int (*compare)(const void *one,
 // sets list destroy function
 extern void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data));
 
+// thread safe method to get the dlist's size
+extern size_t dlist_size (DoubleList *dlist);
+
 extern bool dlist_is_empty (DoubleList *dlist);
 
 extern bool dlist_is_not_empty (DoubleList *dlist);
+
+extern void dlist_delete (void *dlist_ptr);
+
+// only deletes the list if its empty (size == 0)
+// returns 0 on success, 1 on NOT deleted
+extern int dlist_delete_if_empty (void *dlist_ptr);
+
+// only deletes the list if its NOT empty (size > 0)
+// returns 0 on success, 1 on NOT deleted
+extern int dlist_delete_if_not_empty (void *dlist_ptr);
 
 // creates a new double list (double linked list)
 // destroy is the method used to free up the data, NULL to use the default free

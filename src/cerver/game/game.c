@@ -525,7 +525,7 @@ static void game_lobby_start (Packet *packet) {
             Lobby *lobby = lobby_search_by_id (packet->cerver, lobby_id->str);
             if (lobby) {
                 // check if the client is the owner of the lobby
-                Player *owner = player_get_by_sock_fd_list (lobby, packet->connection->sock_fd);
+                Player *owner = player_get_by_sock_fd_list (lobby, packet->connection->socket->sock_fd);
                 if (owner) {
                     lobby->game_type->start (lobby);
                     if (!lobby_start (packet->cerver, lobby)) {

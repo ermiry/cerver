@@ -433,7 +433,7 @@ static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, 
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
         while (packet_size > 0) {
-            sent = send (packet->connection->sock_fd, p, packet_size, flags);
+            sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
             if (sent < 0) return 1;
             p += sent;
             packet_size -= sent;

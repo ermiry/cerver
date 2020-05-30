@@ -248,7 +248,7 @@ Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
             player = (Player *) le->data;
             for (ListElement *le_sub = dlist_start (player->client->connections); le_sub; le_sub = le_sub->next) {
                 connection = (Connection *) le_sub->data;
-                if (connection->sock_fd == sock_fd) return player;
+                if (connection->socket->sock_fd == sock_fd) return player;
             }
         }
     }
