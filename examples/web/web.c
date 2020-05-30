@@ -96,10 +96,10 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 			int pret, minor_version;
 			struct phr_header headers[100];
 			size_t buflen = 0, prevbuflen = 0, method_len, path_len, num_headers;
-			ssize_t rret;
+			// ssize_t rret;
 
 			prevbuflen = buflen;
-			buflen += rret;
+			// buflen += rret;
 			/* parse the request */
 			num_headers = sizeof (headers) / sizeof (headers[0]);
 			pret = phr_parse_request (data->socket->packet_buffer, data->socket->packet_buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
@@ -111,7 +111,7 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 				char *query = http_strip_path_from_query (str);
 				printf ("%s\n", query);
 				
-				int count = 0;
+				// int count = 0;
 				const char *first = query;
 				const char *last = first + strlen (query);
 				DoubleList *pairs = http_parse_query_into_pairs (query, last);
