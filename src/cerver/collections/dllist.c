@@ -295,9 +295,8 @@ void dlist_clear (void *dlist_ptr) {
 
 		pthread_mutex_lock (dlist->mutex);
 
-		void *data = NULL;
 		while (dlist->size > 0) 
-			data = dlist_internal_remove_element (dlist, NULL);
+			(void) dlist_internal_remove_element (dlist, NULL);
 
 		pthread_mutex_unlock (dlist->mutex);
 	}

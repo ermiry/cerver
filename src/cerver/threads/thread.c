@@ -17,15 +17,18 @@ u8 thread_create_detachable (pthread_t *thread, void *(*work) (void *), void *ar
 
     if (thread) {
         pthread_attr_t attr;
-        int rc = pthread_attr_init (&attr);
-        rc = pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
+        if (!pthread_attr_init (&attr)) {
+            if (!pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED)) {
+                if (!pthread_create (thread, &attr, work, args) != THREAD_OK) {
+                    retval = 0;     // success
+                }
 
-        if (pthread_create (thread, &attr, work, args) != THREAD_OK) {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to create detachable thread!");
-            perror ("Error");
+                else {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to create detachable thread!");
+                    perror ("Error");
+                }
+            }
         }
-
-        else retval = 0;
     }
 
     return retval;

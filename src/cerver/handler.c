@@ -875,7 +875,7 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
 
                 PacketHeader *header = NULL;
                 size_t packet_size = 0;
-                char *packet_data = NULL;
+                // char *packet_data = NULL;
 
                 size_t remaining_buffer_size = 0;
                 size_t packet_real_size = 0;
@@ -1419,8 +1419,13 @@ u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
         cerver->max_n_fds = cerver->max_n_fds * 2;
         cerver->fds = (struct pollfd *) realloc (cerver->fds, cerver->max_n_fds * sizeof (struct pollfd));
         if (cerver->fds) {
-            for (u32 i = current_max; i < cerver->max_n_fds; i++)
-                cerver->fds[i].fd == -1;
+            #pragma GCC diagnostic push
+            #pragma GCC diagnostic ignored "-Wunused-value"
+                for (u32 i = current_max; i < cerver->max_n_fds; i++)
+                    cerver->fds[i].fd == -1;
+            #pragma GCC diagnostic pop
+
+            
 
             retval = 0;
         }

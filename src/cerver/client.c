@@ -992,7 +992,7 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 
         PacketHeader *header = NULL;
         size_t packet_size = 0;
-        char *packet_data = NULL;
+        // char *packet_data = NULL;
 
         size_t remaining_buffer_size = 0;
         size_t packet_real_size = 0;

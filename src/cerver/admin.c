@@ -575,9 +575,9 @@ static u8 admin_cerver_before_start (AdminCerver *admin_cerver) {
 		// initialize main pollfd structures
 		// 21/01/2020 -- plus ten as a healthy buffer for when we accept a new client and we are waiting for authentication
 		unsigned int admin_poll_n_fds = (admin_cerver->max_admins * admin_cerver->max_admin_connections) + 10;
-		admin_cerver->fds = (struct pollfd *) calloc (poll_n_fds, sizeof (struct pollfd));
+		admin_cerver->fds = (struct pollfd *) calloc (poll_n_fds / 2, sizeof (struct pollfd));
 		if (admin_cerver->fds) {
-			memset (admin_cerver->fds, 0, sizeof (admin_cerver->fds));
+			memset (admin_cerver->fds, 0, sizeof (struct pollfd) * (poll_n_fds / 2));
 			// set all fds as available spaces
 			for (u32 i = 0; i < admin_poll_n_fds; i++) admin_cerver->fds[i].fd = -1;
 
@@ -1101,7 +1101,7 @@ static void admin_cerver_receive_handle_buffer (AdminCerver *admin_cerver, i32 s
 
             PacketHeader *header = NULL;
             size_t packet_size = 0;
-            char *packet_data = NULL;
+            // char *packet_data = NULL;
 
             size_t remaining_buffer_size = 0;
             size_t packet_real_size = 0;

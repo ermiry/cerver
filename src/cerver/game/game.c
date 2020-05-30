@@ -332,7 +332,7 @@ static void game_lobby_create (Packet *packet) {
 
 static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
 
-    if (packet && lobby_join) {
+    if (packet && lj) {
         #ifdef CERVER_DEBUG
         char *s = c_string_create ("Client %ld requested to join lobby with id ""%s"" in cerver %s.",
             packet->client->id, lj->lobby_id.str, packet->cerver->info->name->str);

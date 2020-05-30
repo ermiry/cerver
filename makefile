@@ -20,7 +20,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 # CFLAGS      := -g $(DEFINES)
-CFLAGS      := -g $(DEFINES) -fPIC
+CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
 LIB         := $(PTHREAD) $(MATH) $(CMONGO)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)

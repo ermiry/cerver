@@ -30,7 +30,7 @@ char *files_get_file_extension (const char *filename) {
     if (filename) {
         char *ptr = strrchr ((char *) filename, '.');
         if (ptr) {
-            *ptr++;
+            // *ptr++;
             size_t ext_len = 0;
             char *p = ptr;
             while (*p++) ext_len++;

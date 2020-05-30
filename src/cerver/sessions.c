@@ -40,8 +40,10 @@ void session_data_delete (void *ptr) {
 // create a unique session id for each client based on the current time
 void *session_default_generate_id (const void *session_data) {
 
+    char *retval = NULL;
+
     if (session_data) {
-        SessionData *data = (SessionData *) session_data;
+        // SessionData *data = (SessionData *) session_data;
 
         // get current time
         time_t now = time (0);
@@ -56,9 +58,9 @@ void *session_default_generate_id (const void *session_data) {
         sha_256_calc (hash, buf, strlen (buf));
         sha_256_hash_to_string (hash_string, hash);
 
-        return c_string_create ("%s", hash_string);
+        retval = c_string_create ("%s", hash_string);
     }
 
-    return NULL;
+    return retval;
 
 }

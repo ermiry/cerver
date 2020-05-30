@@ -448,11 +448,13 @@ static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, 
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 // TODO: correctly send an udp packet!!
 static u8 packet_send_udp (const void *packet, size_t packet_size) {
 
-    ssize_t sent;
-    const void *p = packet;
+    // ssize_t sent;
+    // const void *p = packet;
     // while (packet_size > 0) {
     //     sent = sendto (server->serverSock, begin, packetSize, 0, 
     //         (const struct sockaddr *) &address, sizeof (struct sockaddr_storage));
@@ -464,6 +466,7 @@ static u8 packet_send_udp (const void *packet, size_t packet_size) {
     return 0;
 
 }
+#pragma GCC diagnostic pop
 
 static void packet_send_update_stats (PacketType packet_type, size_t sent,
     Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
@@ -487,6 +490,10 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     switch (packet_type) {
+        case CERVER_PACKET: break;
+
+        case CLIENT_PACKET: break;
+
         case ERROR_PACKET: 
             if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
             if (client) client->stats->sent_packets->n_error_packets += 1;
@@ -542,6 +549,8 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
             connection->stats->sent_packets->n_test_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
             break;
+
+        default: break;
     }
 
 }
