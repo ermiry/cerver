@@ -6,7 +6,7 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 
-Socket *socket_new (void) {
+static Socket *socket_new (void) {
 
     Socket *socket = (Socket *) malloc (sizeof (Socket));
     if (socket) {

@@ -20,8 +20,6 @@ struct _Socket {
 
 typedef struct _Socket Socket;
 
-extern Socket *socket_new (void);
-
 extern void socket_delete (void *socket_ptr);
 
 extern void *socket_create_empty (void);

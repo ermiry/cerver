@@ -111,6 +111,7 @@ Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
+        connection->socket = (Socket *) socket_create_empty ();
         connection->sock_receive = sock_receive_new ();
         connection->stats = connection_stats_new ();
     }
@@ -124,8 +125,7 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
 
     Connection *connection = connection_create_empty ();
     if (connection) {
-        // connection->sock_fd = sock_fd;
-        connection->socket = socket_create (sock_fd);
+        connection->socket->sock_fd = sock_fd;
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
         connection->protocol = protocol;
 
