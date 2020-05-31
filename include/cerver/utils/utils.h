@@ -81,7 +81,7 @@ extern char *c_string_remove_sub_simetric_token (char *str, const char token, ch
 // example: test_20191118142101759__TEST__.png - token: '_' - idx (first: 1,  last: 3)
 // result: testTEST__.png
 // returns a newly allocated string, and a option to get the substring
-extern char *c_string_remove_sub_range_token (char *str, const char token, unsigned int first, int last,
+extern char *c_string_remove_sub_range_token (char *str, const char token, unsigned int first, unsigned int last,
 	char **sub);
 
 #endif

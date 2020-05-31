@@ -102,13 +102,13 @@ estring *estring_concat (estring *s1, estring *s2) {
 
 void estring_to_upper (estring *str) {
 
-    if (str) for (int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
+    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
 
 }
 
 void estring_to_lower (estring *str) {
 
-    if (str) for (int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
+    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
 
 }
 
@@ -188,9 +188,9 @@ void estring_remove_char (estring *str, char garbage) {
 
 int estring_contains (estring *str, char *to_find) {
 
-    int slen = str->len;
-    int tFlen = strlen (to_find);
-    int found = 0;
+    unsigned int slen = str->len;
+    unsigned int tFlen = strlen (to_find);
+    unsigned int found = 0;
 
     if (slen >= tFlen) {
         for (unsigned int s = 0, t = 0; s < slen; s++) {

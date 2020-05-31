@@ -1449,7 +1449,8 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
             }
             
             else {
-                char *s = c_string_create ("Cerver %s does not have an app_packet_handler");
+                char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
+                    cerver->info->name->str);
                 if (s) {
                     cerver_log_warning (s);
                     free (s);

@@ -550,6 +550,7 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
             if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
             break;
 
+        case DONT_CHECK_TYPE:
         default: break;
     }
 

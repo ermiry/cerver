@@ -297,7 +297,7 @@ u8 connection_init (Connection *connection) {
 // try to connect a client to an address (server) with exponential backoff
 static u8 connection_try (Connection *connection, const struct sockaddr_storage address) {
 
-    i32 numsec;
+    u32 numsec;
     for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
         if (!connect (connection->socket->sock_fd, 
             (const struct sockaddr *) &address, 
