@@ -834,13 +834,16 @@ u8 client_teardown (Client *client) {
     u8 retval = 1;
 
     if (client) {
+        client->running = false;
+
         // end any ongoing connection
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             client_connection_terminate (client, (Connection *) le->data);
-            connection_delete (dlist_remove_element (client->connections, le));
         }
 
-        client->running = false;
+        // delete all connections
+        dlist_delete (client->connections);
+        client->connections = NULL;
 
         client_delete (client);
 
