@@ -208,6 +208,8 @@ int client_comparator_session_id (const void *a, const void *b) {
 // closes all client connections
 u8 client_disconnect (Client *client) {
 
+    u8 retval = 1;
+
     if (client) {
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
@@ -215,10 +217,10 @@ u8 client_disconnect (Client *client) {
             connection_end (connection);
         }
 
-        return 0;
+        retval = 0;
     }
 
-    return 1;
+    return retval;
 
 }
 

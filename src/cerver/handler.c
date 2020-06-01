@@ -1226,9 +1226,18 @@ void cerver_receive (void *ptr) {
                     if (cr->cerver->thpool) {
                         // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
                         // and it seems to be working as expected
-                        if (thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
+                        if (!thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive)) {
+                            // char *s = c_string_create ("Added %s cr->cerver->handle_received_buffer () to thpool!",
+                            //     cr->cerver->info->name->str);
+                            // if (s) {
+                            //     cerver_log_debug (s);
+                            //     free (s);
+                            // }
+                        }
+
+                        else {
                             char *s = c_string_create (
-                                "Failed to add cerver's cr->cerver->handle_received_buffer () to thpool!",
+                                "Failed to add %s cr->cerver->handle_received_buffer () to thpool!",
                                 cr->cerver->info->name->str
                             );
                             if (s) {
@@ -1531,6 +1540,10 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Client *client, Connection
         // get the idx of the connection sock fd in the cerver poll fds
         i32 idx = cerver_poll_get_idx_by_sock_fd (cerver, connection->socket->sock_fd);
         if (idx > 0) {
+            cerver->fds[idx].fd = -1;
+            cerver->fds[idx].events = -1;
+            cerver->current_n_fds--;
+
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Removed sock fd from cerver %s main poll, idx: %d",
                 cerver->info->name->str, idx);
@@ -1539,10 +1552,6 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Client *client, Connection
                 free (s);
             }
             #endif
-
-            cerver->fds[idx].fd = -1;
-            cerver->fds[idx].events = -1;
-            cerver->current_n_fds--;
 
             retval = 0;     // removed the sock fd form the cerver poll
         }
