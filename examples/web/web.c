@@ -36,7 +36,7 @@ void end (int dummy) {
 
 }
 
-static void app_main_handler (ReceiveHandle *data, DoubleList *pairs) {
+static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 
 	if (pairs) {
 		HttpResponse *res = NULL;
@@ -74,24 +74,25 @@ static void app_main_handler (ReceiveHandle *data, DoubleList *pairs) {
 			// send the response to the client
 			http_response_compile (res);
 			printf ("Response: %s\n", res->res);
-			http_response_send_to_socket (res, data->socket->sock_fd);
+			http_response_send_to_socket (res, receive->socket->sock_fd);
 			http_respponse_delete (res);
 		}
 
+
 		// after the performed action, close the client socket
-		Client *client = client_get_by_sock_fd (data->cerver, data->socket->sock_fd);
-		client_disconnect (client);
-		client_drop (data->cerver, client);
+		Client *client = client_get_by_sock_fd (receive->cerver, receive->socket->sock_fd);
+		client_remove_connection_by_sock_fd (receive->cerver, 
+			client, receive->socket->sock_fd);
 	}
 
 }
 
-void app_handle_recieved_buffer (void *rcvd_buffer_data) {
+void app_handle_recieved_buffer (void *receive_handle_ptr) {
 
-	if (rcvd_buffer_data) {
-		ReceiveHandle *data = (ReceiveHandle *) rcvd_buffer_data;
+	if (receive_handle_ptr) {
+		ReceiveHandle *receive = (ReceiveHandle *) receive_handle_ptr;
 
-		if (data->socket->packet_buffer && (data->socket->packet_buffer_size > 0)) {
+		if (receive->socket->packet_buffer && (receive->socket->packet_buffer_size > 0)) {
 			char *method, *path;
 			int pret, minor_version;
 			struct phr_header headers[100];
@@ -102,7 +103,7 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 			// buflen += rret;
 			/* parse the request */
 			num_headers = sizeof (headers) / sizeof (headers[0]);
-			pret = phr_parse_request (data->socket->packet_buffer, data->socket->packet_buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
+			pret = phr_parse_request (receive->socket->packet_buffer, receive->socket->packet_buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
 				&minor_version, headers, &num_headers, prevbuflen);
 			if (pret > 0) {
 				char str[50];
@@ -117,14 +118,14 @@ void app_handle_recieved_buffer (void *rcvd_buffer_data) {
 				DoubleList *pairs = http_parse_query_into_pairs (query, last);
 
 				// now we can handle the action and its values
-				app_main_handler (data, pairs);
+				app_main_handler (receive, pairs);
 
 				dlist_delete (pairs);
 			}
 		}
 
-		// DONT need to call! Cerver calls this method for you
-		// receive_handle_delete (data);
+		// In latest cerver 1.4 you need to call this here!
+		receive_handle_delete (receive);
 	}
 
 }
