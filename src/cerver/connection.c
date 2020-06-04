@@ -339,8 +339,11 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, i32 sock_fd)
 
     if (cerver) {
         const i32 *key = &sock_fd;
-        void *connection_data = htab_get_data (cerver->on_hold_connection_sock_fd_map,
-            key, sizeof (i32));
+        void *connection_data = htab_get (
+            cerver->on_hold_connection_sock_fd_map,
+            key, sizeof (i32)
+        );
+        
         if (connection_data) connection = (Connection *) connection_data;
     }
 
