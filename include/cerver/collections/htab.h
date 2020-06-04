@@ -5,11 +5,9 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define HTAB_INIT_SIZE      7
+#include <pthread.h>
 
-typedef size_t (*Hash)(const void *key, size_t key_size, size_t table_size);
-typedef int (*Compare)(const void *k1, size_t s1, const void *k2, size_t s2);
-typedef int (*Copy)(void **dst, const void *src, size_t sz);
+#define HTAB_DEFAULT_INIT_SIZE				32
 
 typedef struct HtabNode {
 
@@ -21,49 +19,93 @@ typedef struct HtabNode {
 
 } HtabNode;
 
+typedef struct HtabBucket {
+
+	struct HtabNode *start;
+	size_t count;
+
+} HtabBucket;
+
 typedef struct Htab {
 
-	HtabNode **table;
+	HtabBucket **table;
+
 	size_t size;
 	size_t count;
 
-	Hash hash_f;
-	Compare compare_f;
-	Copy kcopy_f;
+	size_t (*hash)(const void *key, size_t key_size, size_t table_size);
 
-	bool allow_copy;
-	Copy vcopy_f;
-	void (*destroy)(void *data);
+	// int (*compare)(const void *k1, size_t s1, const void *k2, size_t s2);
+	void *(*key_create)(const void *);
+	void (*key_delete)(void *);
+	int (*key_compare)(const void *one, const void *two);
+
+	// method to delete the data
+	void (*delete_data)(void *data);
+
+	pthread_mutex_t *mutex;
 
 } Htab;
 
+// sets a method to correctly create (allocate) a new key
+// your original key data is passed as the argument to this method
+// if not set, a genreic internal method will be called instead
+extern void htab_set_key_create (Htab *htab, void *(*key_create)(const void *));
+
+// sets a method to correctly delete (free) your previous allocated key
+// a ptr to the allocated key if passed for you to correctly handle it
+// if not set, free will be used as default
+extern void htab_set_key_delete (Htab *htab, void (*key_delete)(void *));
+
+// sets a method to correctly compare keys
+// usefull if you want to compare your keys (data) by specific fields
+// if not set, a generic method will be used instead
+extern void htab_set_key_comparator (Htab *htab, 
+	int (*key_compare)(const void *one, const void *two));
+
 // creates a new htab
-// size --> initial htab nodes size, the default is 7
-// hash_f --> ptr to a custom hash function, NULL to use default
-// compare_f -> ptr to a custom value compare function, NULL to use default
-// kcopy_f --> ptr to a custom function to copy keys into the htab (generate a new copy), NULL to us ethe same key
-// allow_copy --> select if you want to create a new copy of the values
-// vcopy_f --> ptr to a custom function to copy values into the htab (generate a new copy), NULL to use the same value
-// destroy --> custom function to destroy copied values
-extern Htab *htab_init (unsigned int size, Hash hash_f, Compare compare_f, Copy kcopy_f, 
-	bool allow_copy, Copy vcopy_f, void (*destroy)(void *data));
+// size - how many buckets do you want - more buckets = less collisions
+// hash - custom method to hash the key for insertion, NULL for default
+// delete_data - custom method to delete your data, NULL for no delete when htab gets destroyed
+extern Htab *htab_create (size_t size,
+	size_t (*hash)(const void *key, size_t key_size, size_t table_size),
+	void (*delete_data)(void *data)
+);
+
+// returns the current number of elements inside the htab
+extern size_t htab_size (Htab *htab);
+
+// returns true if its empty (size == 0)
+extern bool htab_is_empty (Htab *htab);
+
+// returns true if its NOT empty (size > 0)
+extern bool htab_is_not_empty (Htab *htab);
+
+// returns true if there is at least 1 data associated with the key
+// returns false if their is none
+extern bool htab_contains_key (Htab *ht, const void *key, size_t key_size);
 
 // inserts a new value to the htab associated with its key
-extern int htab_insert (Htab *ht, const void *key, size_t key_size, 
-	void *val, size_t val_size);
+// returns 0 on success, 1 on error
+extern int htab_insert (
+	Htab *ht, 
+	const void *key, size_t key_size, 
+	void *val, size_t val_size
+);
 
 // returns a ptr to the data associated with the key
-extern void *htab_get_data (Htab *ht, const void *key, size_t key_size);
+// returns NULL if no data was found
+extern void *htab_get (Htab *ht, const void *key, size_t key_size);
 
 // removes the data associated with the key from the htab
-extern int htab_remove (Htab *ht, const void *key, size_t key_size);
-
-// checks if the htab containes the matching value for the key
-extern bool htab_contains_key (Htab *ht, const void *key, size_t key_size);
+extern void *htab_remove (Htab *ht, const void *key, size_t key_size);
 
 // destroys the htb and all of its data
 extern void htab_destroy (Htab *ht);
 
-// extern int htab_get (Htab *ht, const void *key, size_t ksz, void **val, size_t *vsz);
+// prints the htab - buckets - nodes
+// currently only works if both keys and values are int
+// used for debugging and testing
+extern void htab_print (Htab *htab);
 
 #endif
