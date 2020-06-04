@@ -1,13 +1,13 @@
-#ifndef _CERVER_THREADS_COMMON_H_
-#define _CERVER_THREADS_COMMON_H_
+#ifndef _THREADS_BSEM_H_
+#define _THREADS_BSEM_H_
 
 #include <pthread.h>
 
 /* Binary semaphore */
 typedef struct bsem {
 
-	pthread_mutex_t mutex;
-	pthread_cond_t   cond;
+	pthread_mutex_t *mutex;
+	pthread_cond_t *cond;
 	int v;
 	
 } bsem;
