@@ -91,7 +91,7 @@ int main (void) {
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 16384);
-		// cerver_set_thpool_n_threads (my_cerver, 4);
+		cerver_set_thpool_n_threads (my_cerver, 4);
 
 		Handler *app_handler = handler_create (handler);
 		// 27/05/2020 - needed for this example!

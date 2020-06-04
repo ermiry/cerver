@@ -1137,9 +1137,9 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
             }
             #endif
 
-            // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
-            cerver->thpool = thpool_init (cerver->n_thpool_threads);
-            if (!cerver->thpool) {
+            cerver->thpool = thpool_create (cerver->n_thpool_threads);
+            thpool_set_name (cerver->thpool, cerver->info->name->str);
+            if (thpool_init (cerver->thpool)) {
                 char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
                 if (s) {
                     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
@@ -1810,7 +1810,8 @@ static void cerver_clean (Cerver *cerver) {
             #ifdef CERVER_DEBUG
             status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
-                thpool_num_threads_working (cerver->thpool));
+                thpool_get_num_threads_working (cerver->thpool)
+            );
             if (status) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                 free (status);

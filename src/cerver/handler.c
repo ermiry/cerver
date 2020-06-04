@@ -1246,10 +1246,10 @@ void cerver_receive (void *ptr) {
                             }
                         }
 
-                        // TODO: 28/05/2020 -- create a better method in thpool
-                        // char *status = c_string_create ("Cerver %s active thpool threads: %i", 
+                        // char *status = c_string_create ("Cerver %s active thpool threads: %d", 
                         //     cr->cerver->info->name->str,
-                        //     thpool_num_threads_working (cr->cerver->thpool));
+                        //     thpool_get_num_threads_working (cr->cerver->thpool)
+                        // );
                         // if (status) {
                         //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                         //     free (status);
