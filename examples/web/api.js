@@ -7,6 +7,8 @@ const cerver_url = 'http://127.0.0.7:7010/';
 
 app.get ('/api/test', (req, res) => {
 
+	console.log ('test!');
+
 	axios ({
 		method: 'get',
 		url: cerver_url + "?action=test",
@@ -14,6 +16,7 @@ app.get ('/api/test', (req, res) => {
 	})
 		.then (result => {
 			// console.log (result);
+			console.log (result.data);
 			return res.status (200).json ({ msg: result.data });
 		})
 		.catch (err => {
