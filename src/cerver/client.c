@@ -305,8 +305,9 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
                     free (s);
                 }
                 #endif
-
-                // FIXME: remove client
+                
+                client_remove_from_cerver (cerver, client);
+                client_delete (client);
             } break;
 
             case 1: {
@@ -319,7 +320,9 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
                     NULL
                 );
 
-                client_drop (cerver, client);
+                // no connections left in cerver, just remove and delete
+                client_remove_from_cerver (cerver, client);
+                client_delete (client);
             } break;
 
             default: {
@@ -504,6 +507,53 @@ u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *clien
 
 }
 
+// 07/06/2020
+// removes the client from cerver data structures, not taking into account its connections
+Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
+
+    Client *retval = NULL;
+
+    if (cerver && client) {
+        void *client_data = avl_remove_node (cerver->clients, client);
+        if (client_data) {
+            retval = (Client *) client_data;
+
+            char *s = NULL;
+            #ifdef CERVER_DEBUG
+            s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                free (s);
+            }
+            #endif
+
+            cerver->stats->current_n_connected_clients--;
+            #ifdef CERVER_STATS
+            s = c_string_create ("Connected clients to cerver %s: %i.", 
+                cerver->info->name->str, cerver->stats->current_n_connected_clients);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+        }
+
+        else {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Received NULL ptr when attempting to remove a client from cerver's %s client tree.", 
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
 // registers a client to the cerver --> add it to cerver's structures
 // registers all of the current active client connections to the cerver poll
 // returns 0 on success, 1 on error
@@ -565,40 +615,7 @@ Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
         }
 
         // remove the client from the cerver's clients
-        void *client_data = avl_remove_node (cerver->clients, client);
-        if (client_data) {
-            retval = (Client *) client_data;
-
-            char *s = NULL;
-            #ifdef CERVER_DEBUG
-            s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
-                free (s);
-            }
-            #endif
-
-            cerver->stats->current_n_connected_clients--;
-            #ifdef CERVER_STATS
-            s = c_string_create ("Connected clients to cerver %s: %i.", 
-                cerver->info->name->str, cerver->stats->current_n_connected_clients);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                free (s);
-            }
-            #endif
-        }
-
-        else {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Received NULL ptr when attempting to remove a client from cerver's %s client tree.", 
-                cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                free (s);
-            }
-            #endif
-        }
+        retval = client_remove_from_cerver (cerver, client);
     }
 
     return retval;

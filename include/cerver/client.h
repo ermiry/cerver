@@ -142,6 +142,10 @@ extern u8 client_register_connections_to_cerver_poll (struct _Cerver *cerver, Cl
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
 extern u8 client_unregister_connections_from_cerver_poll (struct _Cerver *cerver, Client *client);
 
+// 07/06/2020
+// removes the client from cerver data structures, not taking into account its connections
+extern Client *client_remove_from_cerver (struct _Cerver *cerver, Client *client);
+
 // registers a client to the cerver --> add it to cerver's structures
 // returns 0 on success, 1 on error
 extern u8 client_register_to_cerver (struct _Cerver *cerver, Client *client);
