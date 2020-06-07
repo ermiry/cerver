@@ -293,28 +293,60 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
     u8 retval = 1;
 
     if (cerver && client) {
-        // remove the connection from the cerver and from the client
-        Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
-        if (connection) {
-            connection_unregister_from_client (cerver, client, connection);
+        Connection *connection = NULL;
+        switch (client->connections->size) {
+            case 0: {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id " 
+                    "%ld does not have ANY connection - removing him from cerver...",
+                    client->id);
+                if (s) {
+                    cerver_log_warning (s);
+                    free (s);
+                }
+                #endif
 
-            // if the client does not have any active connection, drop it
-            if (client->connections->size <= 0) client_drop (cerver, client);
+                // FIXME: remove client
+            } break;
 
-            retval = 0;
-        }
+            case 1: {
+                connection = (Connection *) client->connections->start->data;
 
-        else {
-            // the connection may not belong to this client
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id " 
-                "%ld does not have a connection related to sock fd %d",
-                client->id, sock_fd);
-            if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, s);
-                free (s);
-            }
-            #endif
+                retval = connection_remove (
+                    cerver,
+                    client,
+                    connection,
+                    NULL
+                );
+
+                client_drop (cerver, client);
+            } break;
+
+            default: {
+                // search the connection in the client
+                connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                if (connection) {
+                    retval = connection_remove (
+                        cerver,
+                        client,
+                        connection,
+                        NULL
+                    );
+                }
+
+                else {
+                    // the connection may not belong to this client
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id " 
+                        "%ld does not have a connection related to sock fd %d",
+                        client->id, sock_fd);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, s);
+                        free (s);
+                    }
+                    #endif
+                }
+            } break;
         }
     }
 
@@ -523,10 +555,10 @@ Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
             // unregister the connections from the cerver
             client_unregister_connections_from_cerver (cerver, client);
 
-        // unregister all the client connections from the cerver
-        // client_unregister_connections_from_cerver (cerver, client);
-        Connection *connection = NULL;
-        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            // unregister all the client connections from the cerver
+            // client_unregister_connections_from_cerver (cerver, client);
+            Connection *connection = NULL;
+            for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
                 connection = (Connection *) le->data;
                 connection_unregister_from_cerver_poll (cerver, client, connection);
             }
