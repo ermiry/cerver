@@ -244,7 +244,7 @@ char *c_string_remove_sub (char *str, const char *sub) {
 	if (str && sub) {
 		char *start_sub = strstr (str, sub);
 		if (start_sub) {
-			size_t len_str = strlen (str);
+			ptrdiff_t len_str = strlen (str);
 			size_t len_sub = strlen (sub);
 
 			ptrdiff_t diff = start_sub - str;
@@ -252,7 +252,7 @@ char *c_string_remove_sub (char *str, const char *sub) {
 			retval = (char *) calloc (new_len + 1, sizeof (char));
 			if (retval) {
 				char *ptr = retval; 
-				int idx = 0;
+				ptrdiff_t idx = 0;
 
 				// copy the first part of the string
 				while (idx < diff) {
@@ -437,15 +437,15 @@ char *c_string_remove_sub_simetric_token (char *str, const char token, char **su
 // example: test_20191118142101759__TEST__.png - token: '_' - idx (first: 1,  last: 3)
 // result: testTEST__.png
 // returns a newly allocated string, and a option to get the substring
-char *c_string_remove_sub_range_token (char *str, const char token, unsigned int first, int last,
+char *c_string_remove_sub_range_token (char *str, const char token, unsigned int first, unsigned int last,
 	char **sub) {
 
 	char *retval = NULL;
 
 	if (str) {
 		if (first != last) {
-			int first_token_count = 0;
-			int last_token_count = 0;
+			unsigned int first_token_count = 0;
+			unsigned int last_token_count = 0;
 			char *ptr = str;
 			char *first_ptr = NULL;
 			char *last_ptr = NULL;

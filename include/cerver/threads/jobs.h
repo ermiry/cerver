@@ -5,7 +5,7 @@
 
 #include "cerver/collections/dllist.h"
 
-#include "cerver/threads/common.h"
+#include "cerver/threads/bsem.h"
 
 typedef struct Job {
 

@@ -124,8 +124,7 @@ struct _Cerver {
     Action delete_cerver_data;
 
     u16 n_thpool_threads;
-    // threadpool *thpool;
-    threadpool thpool;
+    Thpool *thpool;
 
     // 29/05/2020
     // using this pool to avoid completely destroying connection's sockets

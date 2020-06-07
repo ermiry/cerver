@@ -379,7 +379,7 @@ static u8 cerver_on_hold_init (Cerver *cerver) {
 
     if (cerver) {
         cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
-        cerver->on_hold_connection_sock_fd_map = htab_init (poll_n_fds / 2, NULL, NULL, NULL, false, NULL, NULL);
+        cerver->on_hold_connection_sock_fd_map = htab_create (poll_n_fds / 2, NULL, NULL);
         if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
             cerver->max_on_hold_connections = poll_n_fds;
             cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
@@ -935,7 +935,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             return 1;
         }
 
-        cerver->client_sock_fd_map = htab_init (poll_n_fds, NULL, NULL, NULL, false, NULL, NULL);
+        cerver->client_sock_fd_map = htab_create (poll_n_fds, NULL, NULL);
         if (!cerver->client_sock_fd_map) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Failed to init clients sock fd map in cerver %s",
@@ -1137,9 +1137,9 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
             }
             #endif
 
-            // cerver->thpool = thpool_create (cerver->info->name->str, cerver->n_thpool_threads);
-            cerver->thpool = thpool_init (cerver->n_thpool_threads);
-            if (!cerver->thpool) {
+            cerver->thpool = thpool_create (cerver->n_thpool_threads);
+            thpool_set_name (cerver->thpool, cerver->info->name->str);
+            if (thpool_init (cerver->thpool)) {
                 char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
                 if (s) {
                     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
@@ -1449,7 +1449,8 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
             }
             
             else {
-                char *s = c_string_create ("Cerver %s does not have an app_packet_handler");
+                char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
+                    cerver->info->name->str);
                 if (s) {
                     cerver_log_warning (s);
                     free (s);
@@ -1809,7 +1810,8 @@ static void cerver_clean (Cerver *cerver) {
             #ifdef CERVER_DEBUG
             status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
-                thpool_num_threads_working (cerver->thpool));
+                thpool_get_num_threads_working (cerver->thpool)
+            );
             if (status) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                 free (status);

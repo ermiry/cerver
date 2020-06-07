@@ -239,7 +239,7 @@ u8 lobby_init (GameCerver *game_cerver, Lobby *lobby) {
             }
             #endif
 
-            lobby->sock_fd_player_map = htab_init (LOBBY_DEFAULT_MAX_PLAYERS, NULL, NULL, NULL, false, NULL, NULL);
+            lobby->sock_fd_player_map = htab_create (LOBBY_DEFAULT_MAX_PLAYERS, NULL, NULL);
             lobby->players = dlist_init (player_delete, player_comparator_client_id);
             
             lobby->stats = lobby_stats_new ();

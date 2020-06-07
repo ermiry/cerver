@@ -3,7 +3,7 @@
 #include "cerver/collections/dllist.h"
 
 #include "cerver/threads/jobs.h"
-#include "cerver/threads/common.h"
+#include "cerver/threads/bsem.h"
 
 void job_queue_clear (JobQueue *job_queue);
 

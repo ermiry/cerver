@@ -208,6 +208,8 @@ int client_comparator_session_id (const void *a, const void *b) {
 // closes all client connections
 u8 client_disconnect (Client *client) {
 
+    u8 retval = 1;
+
     if (client) {
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
@@ -215,10 +217,10 @@ u8 client_disconnect (Client *client) {
             connection_end (connection);
         }
 
-        return 0;
+        retval = 0;
     }
 
-    return 1;
+    return retval;
 
 }
 
@@ -576,8 +578,11 @@ Client *client_get_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
     if (cerver) {
         const i32 *key = &sock_fd;
-        void *client_data = htab_get_data (cerver->client_sock_fd_map, 
-            key, sizeof (i32));
+        void *client_data = htab_get (
+            cerver->client_sock_fd_map, 
+            key, sizeof (i32)
+        );
+        
         if (client_data) client = (Client *) client_data;
     }
 
@@ -834,13 +839,16 @@ u8 client_teardown (Client *client) {
     u8 retval = 1;
 
     if (client) {
+        client->running = false;
+
         // end any ongoing connection
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             client_connection_terminate (client, (Connection *) le->data);
-            connection_delete (dlist_remove_element (client->connections, le));
         }
 
-        client->running = false;
+        // delete all connections
+        dlist_delete (client->connections);
+        client->connections = NULL;
 
         client_delete (client);
 

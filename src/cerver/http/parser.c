@@ -511,7 +511,7 @@ char *http_strip_path_from_query (char *str) {
 
     if (str) {
         unsigned int len = strlen (str);
-        int idx = 0;
+        unsigned int idx = 0;
         for (; idx < len; idx++) {
             if (str[idx] == '?') break;
         } 
@@ -520,7 +520,7 @@ char *http_strip_path_from_query (char *str) {
         int newlen = len - idx;
         char *query = (char *) calloc (newlen, sizeof (char));
         int j = 0;
-        for (int i = idx; i < len; i++) {
+        for (unsigned int i = idx; i < len; i++) {
             query[j] = str[i];
             j++;
         } 

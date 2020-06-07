@@ -111,6 +111,7 @@ Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
+        connection->socket = (Socket *) socket_create_empty ();
         connection->sock_receive = sock_receive_new ();
         connection->stats = connection_stats_new ();
     }
@@ -124,8 +125,7 @@ Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage 
 
     Connection *connection = connection_create_empty ();
     if (connection) {
-        // connection->sock_fd = sock_fd;
-        connection->socket = socket_create (sock_fd);
+        connection->socket->sock_fd = sock_fd;
         memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
         connection->protocol = protocol;
 
@@ -297,7 +297,7 @@ u8 connection_init (Connection *connection) {
 // try to connect a client to an address (server) with exponential backoff
 static u8 connection_try (Connection *connection, const struct sockaddr_storage address) {
 
-    i32 numsec;
+    u32 numsec;
     for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
         if (!connect (connection->socket->sock_fd, 
             (const struct sockaddr *) &address, 
@@ -339,8 +339,11 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, i32 sock_fd)
 
     if (cerver) {
         const i32 *key = &sock_fd;
-        void *connection_data = htab_get_data (cerver->on_hold_connection_sock_fd_map,
-            key, sizeof (i32));
+        void *connection_data = htab_get (
+            cerver->on_hold_connection_sock_fd_map,
+            key, sizeof (i32)
+        );
+        
         if (connection_data) connection = (Connection *) connection_data;
     }
 
