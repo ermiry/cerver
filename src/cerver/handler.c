@@ -1144,7 +1144,9 @@ void cerver_receive (void *ptr) {
     if (ptr) {
         CerverReceive *cr = (CerverReceive *) ptr;
         
-        if (cr->cerver && (cr->socket->sock_fd != -1)) {
+        if (!cr->cerver || !cr->socket) return;
+
+        if (cr->socket > 0) {
             char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
             // cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
             if (packet_buffer) {
