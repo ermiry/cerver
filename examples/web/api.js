@@ -3,7 +3,7 @@ const express = require ('express');
 
 const app = express ();
 
-const cerver_url = 'http://192.168.100.39:7010/';
+const cerver_url = 'http://127.0.0.7:7010/';
 
 app.get ('/api/test', (req, res) => {
 
@@ -13,7 +13,7 @@ app.get ('/api/test', (req, res) => {
 		// headers: { Connection: 'keep-alive' }
 	})
 		.then (result => {
-			console.log (result);
+			// console.log (result);
 			return res.status (200).json ({ msg: result.data });
 		})
 		.catch (err => {
@@ -26,6 +26,6 @@ app.get ('/api/test', (req, res) => {
 // catch all
 app.get ("*", (req, res) => res.json ({ msg: 'Web Cerver!' }));
 
-const port = process.env.PORT;
+const port = 8080;
 
 app.listen (port, () => console.log (`Server running on port ${port}`));
