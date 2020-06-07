@@ -519,15 +519,17 @@ Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
     Client *retval = NULL;
 
     if (cerver && client) {
-        // unregister the connections from the cerver
-        client_unregister_connections_from_cerver (cerver, client);
+        if (client->connections->size > 0) {
+            // unregister the connections from the cerver
+            client_unregister_connections_from_cerver (cerver, client);
 
         // unregister all the client connections from the cerver
         // client_unregister_connections_from_cerver (cerver, client);
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-            connection = (Connection *) le->data;
-            connection_unregister_from_cerver_poll (cerver, client, connection);
+                connection = (Connection *) le->data;
+                connection_unregister_from_cerver_poll (cerver, client, connection);
+            }
         }
 
         // remove the client from the cerver's clients
