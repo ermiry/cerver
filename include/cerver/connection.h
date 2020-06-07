@@ -36,6 +36,8 @@ struct _ConnectionStats {
 
 typedef struct _ConnectionStats ConnectionStats;
 
+extern ConnectionStats *connection_stats_new (void);
+
 #define DEFAULT_CONNECTION_MAX_SLEEP                60        // used for connection with exponential backoff (secs)
 #define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
 

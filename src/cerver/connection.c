@@ -21,7 +21,7 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static ConnectionStats *connection_stats_new (void) {
+ConnectionStats *connection_stats_new (void) {
 
     ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
     if (stats) {

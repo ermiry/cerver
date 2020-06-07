@@ -1288,10 +1288,53 @@ void cerver_receive (void *ptr) {
 
 #pragma region accept
 
+// 07/06/2020 - create a new connection but check if we can use the cerver's socket pool first
+static Connection *cerver_connection_create (Cerver *cerver, 
+    const i32 new_fd, const struct sockaddr_storage client_address) {
+
+    Connection *retval = NULL;
+
+    if (cerver) {
+        if (cerver->sockets_pool) {
+            // use a socket from the pool to create a new connection
+            Socket *socket = cerver_sockets_pool_pop (cerver);
+            if (socket) {
+                // manually create the connection
+                retval = connection_new ();
+                if (retval) {
+                    // from connection_create_empty ()
+                    // retval->socket = (Socket *) socket_create_empty ();
+                    retval->socket = socket;
+                    retval->sock_receive = sock_receive_new ();
+                    retval->stats = connection_stats_new ();
+
+                    // from connection_create ()
+                    retval->socket->sock_fd = new_fd;
+                    memcpy (&retval->address, &client_address, sizeof (struct sockaddr_storage));
+                    retval->protocol = cerver->protocol;
+
+                    connection_get_values (retval);
+                }
+            }
+
+            else {
+                retval = connection_create (new_fd, client_address, cerver->protocol);
+            }
+        }
+
+        else {
+            retval = connection_create (new_fd, client_address, cerver->protocol);
+        }
+    }
+
+    return retval;
+
+}
+
 static void cerver_register_new_connection (Cerver *cerver, 
     const i32 new_fd, const struct sockaddr_storage client_address) {
 
-    Connection *connection = connection_create (new_fd, client_address, cerver->protocol);
+    Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
     if (connection) {
         #ifdef CERVER_DEBUG
         char *s = c_string_create ("New connection from IP address: %s -- Port: %d", 
