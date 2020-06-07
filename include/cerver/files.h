@@ -9,6 +9,10 @@
 
 #include "cerver/utils/json.h"
 
+// check if a directory already exists, and if not, creates it
+// returns 0 on success, 1 on error
+extern unsigned int files_create_dir (const char *dir_path, mode_t mode);
+
 // returns an allocated string with the file extensio
 // NULL if no file extension
 extern char *files_get_file_extension (const char *filename);
