@@ -51,9 +51,11 @@ static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 			}
 		}
 
+		printf ("app_main_handler ()\n");
+
 		// handle the action
 		if (!strcmp (action, "test")) {
-			estring *test = estring_new ("Magic I/O works!");
+			estring *test = estring_new ("Web cerver works!");
 			JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
 			size_t json_len;
 			char *json = json_create_with_one_pair (jkvp, &json_len);
@@ -87,42 +89,57 @@ static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 
 }
 
-void app_handle_recieved_buffer (void *receive_handle_ptr) {
+void app_handle_received_buffer (void *rcvd_buffer_data) {
 
-	if (receive_handle_ptr) {
-		ReceiveHandle *receive = (ReceiveHandle *) receive_handle_ptr;
+	if (rcvd_buffer_data) {
+		ReceiveHandle *receive = (ReceiveHandle *) rcvd_buffer_data;
 
-		if (receive->socket->packet_buffer && (receive->socket->packet_buffer_size > 0)) {
+		// pthread_mutex_lock (receive->socket->mutex);
+
+		if (receive->buffer && (receive->buffer_size > 0)) {
 			char *method, *path;
 			int pret, minor_version;
-			struct phr_header headers[100];
-			size_t buflen = 0, prevbuflen = 0, method_len, path_len, num_headers;
+			struct phr_header headers[128];
+			size_t buflen = 0, prevbuflen = 0, method_len = 0, path_len = 0, num_headers = 0;
 			// ssize_t rret;
 
 			prevbuflen = buflen;
 			// buflen += rret;
 			/* parse the request */
 			num_headers = sizeof (headers) / sizeof (headers[0]);
-			pret = phr_parse_request (receive->socket->packet_buffer, receive->socket->packet_buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
+			pret = phr_parse_request (receive->buffer, receive->buffer_size, (const char **) &method, &method_len, (const char **) &path, &path_len,
 				&minor_version, headers, &num_headers, prevbuflen);
 			if (pret > 0) {
-				char str[50];
-				snprintf (str, 50, "%.*s", (int) path_len, path);
-				printf ("%s\n", str);
-				char *query = http_strip_path_from_query (str);
-				printf ("%s\n", query);
-				
-				// int count = 0;
-				const char *first = query;
-				const char *last = first + strlen (query);
-				DoubleList *pairs = http_parse_query_into_pairs (query, last);
+				char *str = c_string_create ("%.*s", (int) path_len, path);
+				if (str) {
+					// printf ("%s\n", str);
+					char *query = http_strip_path_from_query (str);
+					if (query) {
+						// printf ("%s\n", query);
+						// int count = 0;
+						const char *first = query;
+						const char *last = first + strlen (query);
+						DoubleList *pairs = http_parse_query_into_pairs (query, last);
+						// KeyValuePair *kvp = NULL;
+						// for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+						// 	kvp = (KeyValuePair *) le->data;
+						// 	printf ("key: %s - value: %s\n", kvp->key, kvp->value);
+						// }
 
-				// now we can handle the action and its values
-				app_main_handler (receive, pairs);
+						// now we can handle the action and its values
+						app_main_handler (receive, pairs);
 
-				dlist_delete (pairs);
+						dlist_delete (pairs);
+
+						free (query);
+					}
+
+					free (str);
+				}
 			}
 		}
+
+		pthread_mutex_unlock (receive->socket->mutex);
 
 		// In latest cerver 1.4 you need to call this here!
 		receive_handle_delete (receive);
@@ -148,9 +165,9 @@ int main (int argc, char **argv) {
 	if (web_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (web_cerver, 4096);
-		cerver_set_thpool_n_threads (web_cerver, 4);
+		// cerver_set_thpool_n_threads (web_cerver, 4);
 
-		cerver_set_handle_recieved_buffer (web_cerver, app_handle_recieved_buffer);
+		cerver_set_handle_recieved_buffer (web_cerver, app_handle_received_buffer);
 
 		if (!cerver_start (web_cerver)) {
 			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
