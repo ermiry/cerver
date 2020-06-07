@@ -382,6 +382,43 @@ bool connection_check_owner (Client *client, Connection *connection) {
 
 }
 
+// necessary steps to completely remove a connection from the cerver and from the client
+// returns 0 on success, 1 on error
+u8 connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
+
+    u8 retval = 1;
+
+    if (cerver && client && connection) {
+        // pthread_mutex_lock (connection->socket->mutex);
+
+        connection_unregister_from_cerver (cerver, client, connection);
+
+        // unmap the client connection from the cerver poll
+        cerver_poll_unregister_connection (cerver, client, connection);
+
+        // close the socket
+        connection_end (connection);
+
+        // remove the connection from the client
+        dlist_remove_element (client->connections, le);
+
+        // 29/05/2020
+        // move the socket to the cerver's socket pool to avoid destroying it
+        // to handle if any other thread is waiting to access the socket's mutex
+        cerver_sockets_pool_push (cerver, connection->socket);
+        connection->socket = NULL;
+
+        connection_delete (connection);
+
+        retval = 0;
+
+        // pthread_mutex_unlock (connection->socket->mutex);
+    }
+
+    return retval;
+
+}
+
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
 u8 connection_register_to_client (Client *client, Connection *connection) {
@@ -422,33 +459,6 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
     }
 
     return retval;
-
-}
-
-static void connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
-
-    if (cerver && client && connection) {
-        // pthread_mutex_lock (connection->socket->mutex);
-
-        // unmap the client connection from the cerver poll
-        cerver_poll_unregister_connection (cerver, client, connection);
-
-        // close the socket
-        connection_end (connection);
-
-        // remove the connection from the client
-        dlist_remove_element (client->connections, le);
-
-        // 29/05/2020
-        // move the socket to the cerver's socket pool to avoid destroying it
-        // to handle if any other thread is waiting to access the socket's mutex
-        cerver_sockets_pool_push (cerver, connection->socket);
-        connection->socket = NULL;
-
-        connection_delete (connection);
-
-        // pthread_mutex_unlock (connection->socket->mutex);
-    }
 
 }
 
@@ -519,12 +529,23 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
 // returns 0 on success, 1 on error
 u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection *connection) {
 
-    u8 errors = 0;
+    u8 retval = 1;
 
     if (cerver && client && connection) {
         // remove the sock fd from each map
         const void *key = &connection->socket->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
+            // char *s = c_string_create ("Removed sock fd %d from cerver's %s client sock map.", 
+            //     connection->socket->sock_fd, cerver->info->name->str);
+            // if (s) {
+            //     cerver_log_success (s);
+            //     free (s);
+            // }
+
+            retval = 0;
+        }
+
+        else {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
                 connection->socket->sock_fd, cerver->info->name->str);
@@ -533,11 +554,10 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
                 free (s);
             }
             #endif
-            errors = 1;
         }
     }
 
-    return errors;
+    return retval;
 
 }
 
