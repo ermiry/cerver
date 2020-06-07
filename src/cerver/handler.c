@@ -1580,9 +1580,9 @@ u8 cerver_poll (Cerver *cerver) {
 
         int poll_retval = 0;
         while (cerver->isRunning) {
-            pthread_mutex_lock (cerver->poll_lock);
+            // pthread_mutex_lock (cerver->poll_lock);
             poll_retval = poll (cerver->fds, cerver->max_n_fds, cerver->poll_timeout);
-            pthread_mutex_unlock (cerver->poll_lock);
+            // pthread_mutex_unlock (cerver->poll_lock);
 
             // poll failed
             if (poll_retval < 0) {

@@ -51,8 +51,6 @@ static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 			}
 		}
 
-		printf ("app_main_handler ()\n");
-
 		// handle the action
 		if (!strcmp (action, "test")) {
 			estring *test = estring_new ("Web cerver works!");
@@ -80,7 +78,6 @@ static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 			http_respponse_delete (res);
 		}
 
-
 		// after the performed action, close the client socket
 		Client *client = client_get_by_sock_fd (receive->cerver, receive->socket->sock_fd);
 		client_remove_connection_by_sock_fd (receive->cerver, 
@@ -94,7 +91,7 @@ void app_handle_received_buffer (void *rcvd_buffer_data) {
 	if (rcvd_buffer_data) {
 		ReceiveHandle *receive = (ReceiveHandle *) rcvd_buffer_data;
 
-		// pthread_mutex_lock (receive->socket->mutex);
+		pthread_mutex_lock (receive->socket->mutex);
 
 		if (receive->buffer && (receive->buffer_size > 0)) {
 			char *method, *path;
@@ -161,11 +158,11 @@ int main (int argc, char **argv) {
 	cerver_log_debug ("Simple Web Cerver Example");
 	printf ("\n");
 
-	web_cerver = cerver_create (WEB_CERVER, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 2000);
+	web_cerver = cerver_create (WEB_CERVER, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 1000);
 	if (web_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (web_cerver, 4096);
-		// cerver_set_thpool_n_threads (web_cerver, 4);
+		cerver_set_thpool_n_threads (web_cerver, 4);
 
 		cerver_set_handle_recieved_buffer (web_cerver, app_handle_received_buffer);
 
