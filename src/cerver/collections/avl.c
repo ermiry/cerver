@@ -348,8 +348,9 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 					avl_left_rotation (&(*parent)->left);
 					avl_right_rotation (parent);
 					avl_balance_fix (*parent, shortCut);
-					*flag  = 1;
-					break;
+						*flag  = 1;
+						break;
+				}
 			}
 			break;
 		default: break;
@@ -416,7 +417,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 				}
 				
 				else {
-					void *data = NULL;
+					void *data = data = (*parent)->id;
 
 					if ((*parent)->left != NULL) {
 						AVLNode *p = (*parent)->left;
