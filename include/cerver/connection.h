@@ -36,6 +36,8 @@ struct _ConnectionStats {
 
 typedef struct _ConnectionStats ConnectionStats;
 
+extern ConnectionStats *connection_stats_new (void);
+
 #define DEFAULT_CONNECTION_MAX_SLEEP                60        // used for connection with exponential backoff (secs)
 #define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
 
@@ -148,6 +150,10 @@ extern Connection *connection_get_by_sock_fd_from_client (struct _Client *client
 
 // checks if the connection belongs to the client
 extern bool connection_check_owner (struct _Client *client, Connection *connection);
+
+// necessary steps to completely remove a connection from the cerver and from the client
+// returns 0 on success, 1 on error
+extern u8 connection_remove (struct _Cerver *cerver, struct _Client *client, Connection *connection, ListElement *le);
 
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
