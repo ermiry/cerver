@@ -228,6 +228,8 @@ extern unsigned int client_request_to_cerver (Client *client, struct _Connection
 // returns 0 on success request, 1 on error
 extern unsigned int client_request_to_cerver_async (Client *client, struct _Connection *connection, struct _Packet *request);
 
+/*** start ***/
+
 // starts a client connection -- used to connect a client to another server
 // returns only after a success or failed connection
 // returns 0 on success, 1 on error
@@ -237,6 +239,8 @@ extern int client_connection_start (Client *client, struct _Connection *connecti
 // returns 0 on success, 1 on error
 extern int client_connection_start_async (Client *client, Connection *connection);
 
+/*** end ***/
+
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error
@@ -244,6 +248,8 @@ extern int client_connection_end (Client *client, struct _Connection *connection
 
 // stop any on going connection and process then, destroys the client
 extern u8 client_teardown (Client *client);
+
+/*** update ***/
 
 // receives incoming data from the socket and handles cerver packets
 extern void client_receive (Client *client, Connection *connection);
