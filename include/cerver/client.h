@@ -220,7 +220,7 @@ extern unsigned int client_connect (Client *client, struct _Connection *connecti
 // performs a first read to get the cerver info packet 
 // this is a blocking method, and works exactly the same as if only calling client_connect ()
 // returns 0 when the connection has been established, 1 on error or failed to connect
-extern unsigned int client_connect_to_cerver (Client *client, Connection *connection);
+extern unsigned int client_connect_to_cerver (Client *client, struct _Connection *connection);
 
 // connects a client to the host with the specified values in the connection
 // it can be a cerver or not
@@ -251,14 +251,22 @@ extern unsigned int client_request_to_cerver_async (Client *client, struct _Conn
 
 /*** start ***/
 
-// starts a client connection -- used to connect a client to another server
-// returns only after a success or failed connection
+// after a client connection successfully connects to a server, 
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
 // returns 0 on success, 1 on error
 extern int client_connection_start (Client *client, struct _Connection *connection);
 
-// starts the client connection async -- creates a new thread to handle how to connect with server
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
 // returns 0 on success, 1 on error
-extern int client_connection_start_async (Client *client, Connection *connection);
+extern int client_connect_and_start (Client *client, struct _Connection *connection);
+
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+extern u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
 
 /*** end ***/
 

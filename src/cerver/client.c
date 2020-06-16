@@ -983,6 +983,11 @@ static u8 client_start (Client *client) {
                 retval = 0;
             }
         }
+
+        else {
+            // client is already running because of an active connection
+            retval = 0;
+        }
     }
 
     return retval;
@@ -1025,9 +1030,6 @@ unsigned int client_connect (Client *client, Connection *connection) {
             // connection->connected = true;
             connection->active = true;
             time (&connection->connected_timestamp);
-            
-            // FIXME: create an individual method to start client
-            client_start (client);
 
             retval = 0;     // success - connected to cerver
         }
@@ -1209,31 +1211,38 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 
 #pragma region start
 
-// starts a client connection -- used to connect a client to another server
-// returns only after a success or failed connection
+// after a client connection successfully connects to a server, 
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
 // returns 0 on success, 1 on error
 int client_connection_start (Client *client, Connection *connection) {
 
     int retval = 1;
 
     if (client && connection) {
-        if (!connection_connect (connection)) {
-            time (&connection->connected_timestamp);
-            connection->active = true;
+        if (connection->active) {
+            if (!client_start (client)) {
+                if (!thread_create_detachable (
+                    &connection->update_thread_id,
+                    (void *(*)(void *)) connection_update,
+                    client_connection_aux_new (client, connection)
+                )) {
+                    retval = 0;         // success
+                }
 
-            client_start (client);
-
-            if (!thread_create_detachable (
-                &connection->update_thread_id,
-                (void *(*)(void *)) connection_update,
-                client_connection_aux_new (client, connection)
-            )) {
-                retval = 0;         // success
+                else {
+                    char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %s", 
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
             }
 
             else {
-                char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %ld", 
-                    client->id);
+                char *s = c_string_create ("client_connection_start () - Failed to start client %s", 
+                    client->name->str);
                 if (s) {
                     cerver_log_error (s);
                     free (s);
@@ -1246,40 +1255,57 @@ int client_connection_start (Client *client, Connection *connection) {
 
 }
 
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+int client_connect_and_start (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        if (!client_connect (client, connection)) {
+            if (!client_connection_start (client, connection)) {
+                retval = 0;
+            }
+        }
+
+        else {
+            char *s = c_string_create ("client_connect_and_start () - Client %s failed to connect", 
+                client->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
 static void client_connection_start_wrapper (void *data_ptr) {
 
     if (data_ptr) {
         ClientConnection *cc = (ClientConnection *) data_ptr;
-        client_connection_start (cc->client, cc->connection);
+        client_connect_and_start (cc->client, cc->connection);
         client_connection_aux_delete (cc);
     }
 
 }
 
-// starts the client connection async -- creates a new thread to handle how to connect with server
-// returns 0 on success, 1 on error
-int client_connection_start_async (Client *client, Connection *connection) {
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+u8 client_connect_and_start_async (Client *client, Connection *connection) {
 
-    int retval = 1;
+    pthread_t thread_id = 0;
 
-    if (client && connection) {
-        pthread_t thread_id = 0;
-        
-        if (!thread_create_detachable (
-            &thread_id,
-            (void *(*) (void *)) client_connection_start_wrapper,
-            client_connection_aux_new (client, connection)
-        )) {
-            retval = 0;         // success
-        }
-
-        else {
-            // error
-            cerver_log_error ("client_connection_start_async () - Failed to create and detatch thread!");
-        }
-    }
-
-    return retval;
+    return (client && connection) ? thread_create_detachable (
+        &thread_id,
+        (void *(*)(void *)) client_connection_start_wrapper,
+        client_connection_aux_new (client, connection)
+    ) : 1;
 
 }
 
