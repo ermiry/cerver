@@ -170,8 +170,11 @@ extern void client_broadcast_to_all_avl (AVLNode *node, struct _Cerver *cerver,
 
 /*** Use these to connect/disconnect a client to/from another server ***/
 
+#pragma region client
+
 typedef struct ClientConnection {
 
+    pthread_t connection_thread_id;
     struct _Client *client;
     struct _Connection *connection;
 
@@ -182,6 +185,29 @@ extern void client_connection_aux_delete (ClientConnection *cc);
 // creates a new connection that is ready to connect and registers it to the client
 extern struct _Connection *client_connection_create (Client *client,
     const char *ip_address, u16 port, Protocol protocol, bool use_ipv6);
+
+/*** connect ***/
+
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is a blocking method, as it will wait until the connection has been successfull or a timeout
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been established, 1 on error or failed to connect
+extern unsigned int client_connect (Client *client, struct _Connection *connection);
+
+// connects a client to the host with the specified values in the connection
+// performs a first read to get the cerver info packet 
+// this is a blocking method, and works exactly the same as if only calling client_connect ()
+// returns 0 when the connection has been established, 1 on error or failed to connect
+extern unsigned int client_connect_to_cerver (Client *client, Connection *connection);
+
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
+// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 on success connection thread creation, 1 on error
+extern unsigned int client_connect_async (Client *client, struct _Connection *connection);
 
 // this is a blocking method and ONLY works for cerver packets
 // connects the client connection and makes a first request to the cerver
@@ -210,5 +236,7 @@ extern u8 client_teardown (Client *client);
 
 // receives incoming data from the socket and handles cerver packets
 extern void client_receive (Client *client, Connection *connection);
+
+#pragma endregion
 
 #endif

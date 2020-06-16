@@ -705,6 +705,7 @@ static ClientConnection *client_connection_aux_new (Client *client, Connection *
 
     ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
     if (cc) {
+        cc->connection_thread_id = 0;   
         cc->client = client;
         cc->connection = connection;
     }
@@ -716,6 +717,8 @@ static ClientConnection *client_connection_aux_new (Client *client, Connection *
 void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 #pragma endregion
+
+#pragma region client
 
 static u8 client_start (Client *client) {
 
@@ -752,6 +755,106 @@ Connection *client_connection_create (Client *client,
     return connection;
 
 }
+
+#pragma region connect
+
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is a blocking method, as it will wait until the connection has been successfull or a timeout
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been established, 1 on error or failed to connect
+unsigned int client_connect (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
+
+    if (client && connection) {
+        if (!connection_connect (connection)) {
+            // client_event_trigger (client, EVENT_CONNECTED);
+            // connection->connected = true;
+            connection->active = true;
+            time (&connection->connected_timestamp);
+            
+            client_start (client);
+
+            retval = 0;     // success - connected to cerver
+        }
+    }
+
+    return retval;
+
+}
+
+// connects a client to the host with the specified values in the connection
+// performs a first read to get the cerver info packet 
+// this is a blocking method, and works exactly the same as if only calling client_connect ()
+// returns 0 when the connection has been established, 1 on error or failed to connect
+unsigned int client_connect_to_cerver (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
+
+    if (!client_connect (client, connection)) {
+        client_receive (client, connection);
+
+        retval = 0;
+    }
+
+    return retval;
+
+}
+
+static void *client_connect_thread (void *client_connection_ptr) {
+
+    if (client_connection_ptr) {
+        ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+
+        if (!connection_connect (cc->connection)) {
+            // client_event_trigger (cc->client, EVENT_CONNECTED);
+            // cc->connection->connected = true;
+            cc->connection->active = true;
+            time (&cc->connection->connected_timestamp);
+            
+            client_start (cc->client);
+        }
+
+        client_connection_aux_delete (cc);
+    }
+
+    return NULL;
+
+}
+
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
+// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 on success connection thread creation, 1 on error
+unsigned int client_connect_async (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
+
+    if (client && connection) {
+        ClientConnection *cc = client_connection_aux_new (client, connection);
+        if (cc) {
+            if (!thread_create_detachable (&cc->connection_thread_id, client_connect_thread, cc)) {
+                retval = 0;         // success
+            }
+
+            else {
+                #ifdef CLIENT_DEBUG
+                client_log_error ("Failed to create client_connect_thread () detachable thread!");
+                #endif
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma endregion
 
 // this is a blocking method and ONLY works for cerver packets
 // connects the client connection and makes a first request to the cerver
