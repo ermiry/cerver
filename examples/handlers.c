@@ -154,15 +154,25 @@ int main (void) {
 		cerver_set_app_handlers (my_cerver, app_handler, app_error_handler);
 		cerver_set_custom_handler (my_cerver, app_custom_handler);
 
-		if (!cerver_start (my_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start magic cerver!");
+		if (cerver_start (my_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				my_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (my_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+		char *s = c_string_create ("Failed to create %s!",
+			my_cerver->info->name->str);
+		if (s) {
+			cerver_log_error (s);
+			free (s);
+		}
 
 		cerver_delete (my_cerver);
 	}

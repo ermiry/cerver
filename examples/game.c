@@ -6,10 +6,12 @@
 #include <signal.h>
 
 #include <cerver/version.h>
-
 #include <cerver/cerver.h>
+
 #include <cerver/game/game.h>
 #include <cerver/game/gametype.h>
+
+#include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
 static Cerver *my_cerver = NULL;
@@ -112,15 +114,27 @@ int main (void) {
 			game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
 			game_type_register (game_cerver->game_types, arcade_game_type);
 
-			if (!cerver_start (my_cerver)) {
-				cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-					"Failed to start cerver!");
+			if (cerver_start (my_cerver)) {
+				char *s = c_string_create ("Failed to start %s!",
+					my_cerver->info->name->str);
+				if (s) {
+					cerver_log_error (s);
+					free (s);
+				}
+
+				cerver_delete (my_cerver);
 			}
 		}
 
 		else {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-				"Failed to create game cerver!");
+			char *s = c_string_create ("Failed to create %s!",
+				my_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (my_cerver);
 		}
 
 		my_game_end (0);
