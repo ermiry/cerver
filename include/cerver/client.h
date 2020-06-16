@@ -68,6 +68,8 @@ struct _Client {
 
 typedef struct _Client Client;
 
+#pragma region main
+
 extern Client *client_new (void);
 
 // completely deletes a client and all of its data
@@ -163,6 +165,8 @@ extern Client *client_get_by_session_id (struct _Cerver *cerver, char *session_i
 // broadcast a packet to all clients inside an avl structure
 extern void client_broadcast_to_all_avl (AVLNode *node, struct _Cerver *cerver, 
     struct _Packet *packet);
+
+#pragma endregion
 
 /*** Use these to connect/disconnect a client to/from another server ***/
 

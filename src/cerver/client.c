@@ -29,6 +29,8 @@ void client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
 
+#pragma region stats
+
 static ClientStats *client_stats_new (void) {
 
     ClientStats *client_stats = (ClientStats *) malloc (sizeof (ClientStats));
@@ -52,6 +54,10 @@ static inline void client_stats_delete (ClientStats *client_stats) {
     } 
     
 }
+
+#pragma endregion
+
+#pragma region main
 
 Client *client_new (void) {
 
@@ -201,6 +207,9 @@ int client_comparator_client_id (const void *a, const void *b) {
 int client_comparator_session_id (const void *a, const void *b) {
 
     if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && !b) return -1;
+    if (!a && b) return 1;
+
     return 0;
 
 }
@@ -688,6 +697,10 @@ void client_broadcast_to_all_avl (AVLNode *node, Cerver *cerver, Packet *packet)
 
 }
 
+#pragma endregion
+
+#pragma region aux
+
 static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
 
     ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
@@ -701,6 +714,8 @@ static ClientConnection *client_connection_aux_new (Client *client, Connection *
 }
 
 void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
+
+#pragma endregion
 
 static u8 client_start (Client *client) {
 
