@@ -67,6 +67,9 @@ struct _Connection {
     struct _CerverReport *cerver_report;    // 01/01/2020 - info about the cerver we are connecting to
     struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
 
+    // 16/06/2020 - used for direct requests to cerver
+    bool full_packet;
+
     // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
     void *received_data;                    
     size_t received_data_size;

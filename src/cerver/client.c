@@ -869,7 +869,7 @@ unsigned int client_request_to_cerver (Client *client, Connection *connection, P
 
     if (client && connection && request) {
         // send the request to the cerver
-        packet_set_network_values (request, client, connection);
+        packet_set_network_values (request, NULL, client, connection, NULL);
 
         size_t sent = 0;
         if (!packet_send (request, 0, &sent, false)) {

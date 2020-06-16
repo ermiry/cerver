@@ -69,6 +69,8 @@ Connection *connection_new (void) {
         connection->cerver_report = NULL;
         connection->sock_receive = NULL;
 
+        connection->full_packet = false;
+
         connection->received_data = NULL;
         connection->received_data_delete = NULL;
 
