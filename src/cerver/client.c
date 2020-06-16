@@ -9,6 +9,9 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
+
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/auth.h"
@@ -19,13 +22,11 @@
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
-
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
 void client_receive (Client *client, Connection *connection);
+u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message);
 
 static u64 next_client_id = 0;
 
@@ -163,6 +164,29 @@ void client_set_name (Client *client, const char *name) {
         if (client->name) estring_delete (client->name);
         client->name = name ? estring_new (name) : NULL;
     }
+
+}
+
+// this methods is primarily used for logging
+// returns the client's name directly (if any) & should NOT be deleted, if not
+// returns a newly allocated string with the clients id that should be deleted after use
+char *client_get_identifier (Client *client, bool *is_name) {
+
+    char *retval = NULL;
+
+    if (client) {
+        if (client->name) {
+            retval = client->name->str;
+            *is_name = true;
+        } 
+
+        else {
+           retval = c_string_create ("%ld", client->id);
+           *is_name = false;
+        }
+    }
+
+    return retval;
 
 }
 
@@ -1139,6 +1163,102 @@ u8 client_teardown (Client *client) {
 
 #pragma region handler 
 
+// 16/06/2020
+// handles a APP_PACKET packet type
+static void client_app_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->app_packet_handler) {
+            if (packet->client->app_packet_handler->direct_handle) {
+                // printf ("app_packet_handler - direct handle!\n");
+                packet->client->app_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->app_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    client_log_with_identifier (packet->client, LOG_ERROR, 
+                        "Failed to push a new job to client's %s app_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (packet->client, LOG_WARNING,
+                "Client %s does not have an app_packet_handler!");
+        }
+    }
+
+}
+
+// 16/06/2020
+// handles a APP_ERROR_PACKET packet type
+static void client_app_error_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->app_error_packet_handler) {
+            if (packet->client->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->client->app_error_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    client_log_with_identifier (packet->client, LOG_ERROR, 
+                        "Failed to push a new job to client's %s app_error_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (packet->client, LOG_ERROR, 
+                "Client %s does not have an app_error_packet_handler!");
+        }
+    }
+
+}
+
+// 16/06/2020
+// handles a CUSTOM_PACKET packet type
+static void client_custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->custom_packet_handler) {
+            if (packet->client->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->client->custom_packet_handler->handler (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    client_log_with_identifier (packet->client, LOG_ERROR, 
+                        "Failed to push a new job to client's %s custom_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (packet->client, LOG_ERROR, 
+                "Client %s does not have a custom_packet_handler!");
+        }
+    }
+
+}
+
 // the client handles a packet based on its type
 static void client_packet_handler (void *data) {
 
@@ -1178,25 +1298,22 @@ static void client_packet_handler (void *data) {
                     // client_game_packet_handler (packet);
                     break;
 
-                // user set handler to handle app specific errors
-                case APP_ERROR_PACKET: 
-                    packet->client->stats->received_packets->n_app_error_packets += 1;
-                    if (packet->client->app_error_packet_handler)
-                        packet->client->app_error_packet_handler (packet);
-                    break;
-
                 // user set handler to handler app specific packets
                 case APP_PACKET:
                     packet->client->stats->received_packets->n_app_packets += 1;
-                    if (packet->client->app_packet_handler)
-                        packet->client->app_packet_handler (packet);
+                    client_app_packet_handler (packet);
+                    break;
+
+                // user set handler to handle app specific errors
+                case APP_ERROR_PACKET: 
+                    packet->client->stats->received_packets->n_app_error_packets += 1;
+                    client_app_error_packet_handler (packet);
                     break;
 
                 // custom packet hanlder
                 case CUSTOM_PACKET: 
                     packet->client->stats->received_packets->n_custom_packets += 1;
-                    if (packet->client->custom_packet_handler)
-                        packet->client->custom_packet_handler (packet);
+                    client_custom_packet_handler (packet);
                     break;
 
                 // handles a test packet form the cerver
@@ -1516,5 +1633,49 @@ void client_receive (Client *client, Connection *connection) {
 
 }
 
+#pragma endregion
+
+#pragma region helpers
+
+// logs a message that contains a single reference to a client's identifier
+// returns 0 on success, 1 on error
+u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message) {
+
+    u8 retval = 1;
+
+    if (client && log_message) {
+        bool is_name = false;
+        char *name = client_get_identifier (client, &is_name);
+        if (name) {
+            char *s = c_string_create (log_message, name);
+            if (s) {
+                FILE *stream = stdin;
+                switch (log_type) {
+                    case LOG_WARNING:
+                    case LOG_ERROR: stream = stderr; break;
+
+                    default: break;
+                }
+
+                cerver_log_msg (
+                    stream,
+                    log_type,
+                    LOG_CLIENT,
+                    log_message
+                );
+
+                cerver_log_error (s);
+                free (s);
+
+                retval = 0;
+            }
+
+            if (!is_name) free (name);
+        }
+    }
+
+    return retval;
+
+}
 
 #pragma endregion

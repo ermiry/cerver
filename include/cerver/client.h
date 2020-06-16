@@ -16,6 +16,8 @@
 #include "cerver/connection.h"
 #include "cerver/handler.h"
 
+#include "cerver/utils/log.h"
+
 struct _Cerver;
 struct _Packet;
 struct _PacketsPerType;
@@ -92,6 +94,11 @@ extern Client *client_create_with_connection (struct _Cerver *cerver,
 
 // sets the client's name
 extern void client_set_name (Client *client, const char *name);
+
+// this methods is primarily used for logging
+// returns the client's name directly (if any) & should NOT be deleted, if not
+// returns a newly allocated string with the clients id that should be deleted after use
+extern char *client_get_identifier (Client *client, bool *is_name);
 
 // sets the client's session id
 extern void client_set_session_id (Client *client, const char *session_id);
@@ -264,6 +271,14 @@ extern u8 client_teardown (Client *client);
 
 // receives incoming data from the socket and handles cerver packets
 extern void client_receive (Client *client, Connection *connection);
+
+#pragma endregion
+
+#pragma region helpers
+
+// logs a message that contains a single reference to a client's identifier
+// returns 0 on success, 1 on error
+extern u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message);
 
 #pragma endregion
 

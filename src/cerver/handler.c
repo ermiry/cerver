@@ -474,7 +474,7 @@ void cerver_test_packet_handler (Packet *packet) {
 
 // 27/01/2020
 // handles a APP_PACKET packet type
-static void app_packet_handler (Packet *packet) {
+static void cerver_app_packet_handler (Packet *packet) {
 
     if (packet) {
         // 11/05/2020
@@ -538,7 +538,7 @@ static void app_packet_handler (Packet *packet) {
 
 // 27/05/2020
 // handles a APP_ERROR_PACKET packet type
-static void app_error_packet_handler (Packet *packet) {
+static void cerver_app_error_packet_handler (Packet *packet) {
 
     if (packet) {
         if (packet->cerver->app_error_packet_handler) {
@@ -578,7 +578,7 @@ static void app_error_packet_handler (Packet *packet) {
 
 // 27/05/2020
 // handles a CUSTOM_PACKET packet type
-static void custom_packet_handler (Packet *packet) {
+static void cerver_custom_packet_handler (Packet *packet) {
 
     if (packet) {
         if (packet->cerver->custom_packet_handler) {
@@ -669,7 +669,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
-                    app_packet_handler (packet);
+                    cerver_app_packet_handler (packet);
                     break;
 
                 // user set handler to handle app specific errors
@@ -678,7 +678,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
-                    app_error_packet_handler (packet);
+                    cerver_app_error_packet_handler (packet);
                     break;
 
                 // custom packet hanlder
@@ -687,7 +687,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
-                    custom_packet_handler (packet);
+                    cerver_custom_packet_handler (packet);
                     break;
 
                 // acknowledge the client we have received his test packet
