@@ -458,12 +458,16 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
 
     if (cerver) {
         cerver->app_packet_handler = app_handler;
-        if (cerver->app_packet_handler)
+        if (cerver->app_packet_handler) {
+            cerver->app_packet_handler->type = HANDLER_TYPE_CERVER;
             cerver->app_packet_handler->cerver = cerver;
+        }
 
         cerver->app_error_packet_handler = app_error_handler;
-        if (cerver->app_error_packet_handler)
+        if (cerver->app_error_packet_handler) {
+            cerver->app_error_packet_handler->type = HANDLER_TYPE_CERVER;
             cerver->app_error_packet_handler->cerver = cerver;
+        }
     }
 
 }
@@ -473,8 +477,10 @@ void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 
     if (cerver) {
         cerver->custom_packet_handler = custom_handler;
-        if (cerver->custom_packet_handler)
+        if (cerver->custom_packet_handler) {
+            cerver->custom_packet_handler->type = HANDLER_TYPE_CERVER;
             cerver->custom_packet_handler->cerver = cerver;
+        }
     }
 
 }
@@ -644,6 +650,7 @@ int cerver_handlers_add (Cerver *cerver, Handler *handler) {
         if (cerver->handlers) {
             cerver->handlers[handler->id] = handler;
 
+            handler->type = HANDLER_TYPE_CERVER;
             handler->cerver = cerver;
         }
     }
@@ -1319,6 +1326,7 @@ static void cerver_update (void *args) {
 
         CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
 
+        // FIXME: use real cerver ticks
         u32 time_per_frame = 1000000 / 15;
         // printf ("time per frame: %d\n", time_per_frame);
         u32 temp = 0;
@@ -1444,7 +1452,27 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
             if (cerver->app_packet_handler) {
                 if (!cerver->app_packet_handler->direct_handle) {
                     // init single app packet handler
-                    errors |= handler_start (cerver->app_packet_handler);
+                    if (!handler_start (cerver->app_packet_handler)) {
+                        #ifdef CERVER_DEBUG
+                        char *s = c_string_create ("Cerver %s app_packet_handler has started!",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_success (s);
+                            free (s);
+                        }
+                        #endif
+                    }
+
+                    else {
+                        char *s = c_string_create ("Failed to start cerver %s app_packet_handler!",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_error (s);
+                            free (s);
+                        }
+
+                        errors = 1;
+                    }
                 }
             }
             
@@ -1471,12 +1499,30 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
 
 static u8 cerver_app_error_handler_start (Cerver *cerver) {
 
-    u8 errors = 0;
+    u8 retval = 0;
 
     if (cerver) {
         if (cerver->app_error_packet_handler) {
             if (!cerver->app_error_packet_handler->direct_handle) {
-                errors |= handler_start (cerver->app_error_packet_handler);
+                if (!handler_start (cerver->app_error_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Cerver %s app_error_packet_handler has started!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start cerver %s app_error_packet_handler!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
             }
         }
 
@@ -1496,18 +1542,36 @@ static u8 cerver_app_error_handler_start (Cerver *cerver) {
         }
     }
 
-    return errors;
+    return retval;
 
 }
 
 static u8 cerver_custom_handler_start (Cerver *cerver) {
 
-    u8 errors = 0;
+    u8 retval = 0;
 
     if (cerver) {
         if (cerver->custom_packet_handler) {
             if (!cerver->custom_packet_handler->direct_handle) {
-                errors |= handler_start (cerver->custom_packet_handler);
+                if (!handler_start (cerver->custom_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Cerver %s custom_packet_handler has started!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start cerver %s custom_packet_handler!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
             }
         }
 
@@ -1521,11 +1585,11 @@ static u8 cerver_custom_handler_start (Cerver *cerver) {
         }
     }
 
-    return errors;
+    return retval;
 
 }
 
-// 27/05/2020 -- start's all cerver's handlers
+// 27/05/2020 -- starts all cerver's handlers
 static u8 cerver_handlers_start (Cerver *cerver) {
 
     u8 errors = 0;
@@ -1549,14 +1613,16 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 
         errors |= cerver_custom_handler_start (cerver);
 
-        #ifdef CERVER_DEBUG
-        s = c_string_create ("Done initializing %s handlers!",
-            cerver->info->name->str);
-        if (s) {
-            cerver_log_debug (s);
-            free (s);
+        if (!errors) {
+            #ifdef CERVER_DEBUG
+            s = c_string_create ("Done initializing %s handlers!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
         }
-        #endif
     }
 
     return errors;
