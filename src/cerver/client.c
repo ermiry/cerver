@@ -1279,6 +1279,71 @@ int client_connection_end (Client *client, Connection *connection) {
 
 }
 
+static void client_app_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->app_packet_handler) {
+            if (!client->app_packet_handler->direct_handle) {
+                // stop app handler
+                bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_app_error_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->app_error_packet_handler) {
+            if (!client->app_error_packet_handler->direct_handle) {
+                // stop app error handler
+                bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_custom_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->custom_packet_handler) {
+            if (!client->custom_packet_handler->direct_handle) {
+                // stop custom handler
+                bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_handlers_destroy (Client *client) {
+
+    if (client) {
+        client_app_handler_destroy (client);
+
+        client_app_error_handler_destroy (client);
+
+        client_custom_handler_destroy (client);
+
+        // poll remaining handlers
+        // while (client->num_handlers_alive) {
+            if (client->app_packet_handler)
+                bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+
+            if (client->app_error_packet_handler)
+                bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+
+            if (client->custom_packet_handler)
+                bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+            
+            // sleep (1);
+        // }
+    }
+
+}
+
 // stop any on going connection and process then, destroys the client
 u8 client_teardown (Client *client) {
 
@@ -1291,6 +1356,8 @@ u8 client_teardown (Client *client) {
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             client_connection_terminate (client, (Connection *) le->data);
         }
+
+        client_handlers_destroy (client);
 
         // delete all connections
         dlist_delete (client->connections);
