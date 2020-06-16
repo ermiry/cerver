@@ -63,9 +63,10 @@ Client *client_new (void) {
 
     Client *client = (Client *) malloc (sizeof (Client));
     if (client) {
-        memset (client, 0, sizeof (Client));
-
+        client->id = 0;
         client->session_id = NULL;
+
+        client->name = NULL;
 
         client->connections = NULL;
 
@@ -75,6 +76,8 @@ Client *client_new (void) {
         client->delete_data = NULL;
 
         client->running = false;
+        client->time_started = 0;
+        client->uptime = 0;
 
         client->app_packet_handler = NULL;
         client->app_error_packet_handler = NULL;
@@ -93,6 +96,8 @@ void client_delete (void *ptr) {
         Client *client = (Client *) ptr;
 
         estring_delete (client->session_id);
+
+        estring_delete (client->name);
 
         dlist_delete (client->connections);
 
@@ -148,6 +153,16 @@ Client *client_create_with_connection (Cerver *cerver,
     }
 
     return client;
+
+}
+
+// sets the client's name
+void client_set_name (Client *client, const char *name) {
+
+    if (client) {
+        if (client->name) estring_delete (client->name);
+        client->name = name ? estring_new (name) : NULL;
+    }
 
 }
 

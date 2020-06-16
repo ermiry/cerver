@@ -43,6 +43,9 @@ struct _Client {
     // generated using connection values
     u64 id;
     time_t connected_timestamp;
+    
+    // 16/06/2020 - abiility to add a name to a client
+    estring *name;
 
     DoubleList *connections;
 
@@ -86,6 +89,9 @@ extern Client *client_create (void);
 // creates a new client and registers a new connection
 extern Client *client_create_with_connection (struct _Cerver *cerver, 
     const i32 sock_fd, const struct sockaddr_storage address);
+
+// sets the client's name
+extern void client_set_name (Client *client, const char *name);
 
 // sets the client's session id
 extern void client_set_session_id (Client *client, const char *session_id);
