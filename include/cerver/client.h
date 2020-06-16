@@ -7,18 +7,20 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
+
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/packets.h"
 #include "cerver/connection.h"
-
-#include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/handler.h"
 
 struct _Cerver;
 struct _Packet;
 struct _PacketsPerType;
 struct _Connection;
+struct _Handler;
 
 struct _ClientStats {
 
@@ -58,9 +60,9 @@ struct _Client {
     u64 uptime;
 
     // custom packet handlers
-    Action app_packet_handler;
-    Action app_error_packet_handler;
-    Action custom_packet_handler;
+    struct _Handler *app_packet_handler;
+    struct _Handler *app_error_packet_handler;
+    struct _Handler *custom_packet_handler;
 
     ClientStats *stats;
 
@@ -95,9 +97,12 @@ extern void *client_get_data (Client *client);
 // deletes the previous data of the client
 extern void client_set_data (Client *client, void *data, Action delete_data);
 
-// sets the client packet handlers
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 extern void client_set_handlers (Client *client, 
-    Action app_handler, Action app_error_handler, Action custom_handler);
+    struct _Handler *app_handler, struct _Handler *app_error_handler);
+
+// sets a CUSTOM_PACKET packet type handler
+extern void client_set_custom_handler (Client *client, struct _Handler *custom_handler);
 
 // compare clients based on their client ids
 extern int client_comparator_client_id (const void *a, const void *b);

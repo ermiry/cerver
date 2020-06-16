@@ -68,6 +68,7 @@ static Handler *handler_new (void) {
         handler->job_queue = NULL;
 
         handler->cerver = NULL;
+        handler->client = NULL;
     }
 
     return handler;

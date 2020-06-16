@@ -65,7 +65,8 @@ struct _Handler {
     // the jobs (packets) that are waiting to be handled - passed as args to the handler method
     JobQueue *job_queue;
 
-    struct _Cerver *cerver;      // the cerver this handler belongs to
+    struct _Cerver *cerver;     // the cerver this handler belongs to
+    struct _Client *client;     // the client this handler belongs to
 
 };
 

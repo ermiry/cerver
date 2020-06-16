@@ -101,6 +101,11 @@ void client_delete (void *ptr) {
             else free (client->data);
         }
 
+        // 16/06/2020
+        handler_delete (client->app_packet_handler);
+        handler_delete (client->app_error_packet_handler);
+        handler_delete (client->custom_packet_handler);
+
         client_stats_delete (client->stats);
 
         free (client);
@@ -175,14 +180,29 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 
 }
 
-// sets the client packet handlers
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 void client_set_handlers (Client *client, 
-    Action app_handler, Action app_error_handler, Action custom_handler) {
+    Handler *app_handler, Handler *app_error_handler) {
 
     if (client) {
         client->app_packet_handler = app_handler;
+        if (client->app_packet_handler)
+            client->app_packet_handler->client = client;
+
         client->app_error_packet_handler = app_error_handler;
+        if (client->app_error_packet_handler)
+            client->app_error_packet_handler->client = client;
+    }
+
+}
+
+// sets a CUSTOM_PACKET packet type handler
+void client_set_custom_handler (Client *client, Handler *custom_handler) {
+
+    if (client) {
         client->custom_packet_handler = custom_handler;
+        if (client->custom_packet_handler)
+            client->custom_packet_handler->client = client;
     }
 
 }
