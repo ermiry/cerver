@@ -80,6 +80,9 @@ Client *client_new (void) {
         client->time_started = 0;
         client->uptime = 0;
 
+        client->num_handlers_alive = 0;
+        client->num_handlers_working = 0;
+        client->handlers_lock = NULL;
         client->app_packet_handler = NULL;
         client->app_error_packet_handler = NULL;
         client->custom_packet_handler = NULL;
@@ -108,6 +111,11 @@ void client_delete (void *ptr) {
         }
 
         // 16/06/2020
+        if (client->handlers_lock) {
+            pthread_mutex_destroy (client->handlers_lock);
+            free (client->handlers_lock);
+        }
+
         handler_delete (client->app_packet_handler);
         handler_delete (client->app_error_packet_handler);
         handler_delete (client->custom_packet_handler);
@@ -225,12 +233,16 @@ void client_set_handlers (Client *client,
 
     if (client) {
         client->app_packet_handler = app_handler;
-        if (client->app_packet_handler)
+        if (client->app_packet_handler) {
+            client->app_packet_handler->type = HANDLER_TYPE_CLIENT;
             client->app_packet_handler->client = client;
+        }
 
         client->app_error_packet_handler = app_error_handler;
-        if (client->app_error_packet_handler)
+        if (client->app_error_packet_handler) {
+            client->app_error_packet_handler->type = HANDLER_TYPE_CLIENT;
             client->app_error_packet_handler->client = client;
+        }
     }
 
 }
@@ -240,8 +252,10 @@ void client_set_custom_handler (Client *client, Handler *custom_handler) {
 
     if (client) {
         client->custom_packet_handler = custom_handler;
-        if (client->custom_packet_handler)
+        if (client->custom_packet_handler) {
+            client->custom_packet_handler->type = HANDLER_TYPE_CLIENT;
             client->custom_packet_handler->client = client;
+        }
     }
 
 }
@@ -779,6 +793,135 @@ void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 #pragma region client
 
+static u8 client_app_handler_start (Client *client) {
+
+    u8 retval = 1;
+
+    if (client) {
+        if (client->app_packet_handler) {
+            if (!client->app_packet_handler->direct_handle) {
+                if (!handler_start (client->app_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    client_log_with_identifier (client, LOG_SUCCESS,
+                        "Client %s app_packet_handler has started!");
+                    #endif
+                    
+                    retval = 0;
+                }
+
+                else {
+                    client_log_with_identifier (client, LOG_ERROR,
+                        "Failed to start client %s app_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (client, LOG_WARNING, 
+                "Client %s does not have an app_packet_handler");
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 client_app_error_handler_start (Client *client) {
+
+    u8 retval = 0;
+
+    if (client) {
+        if (client->app_error_packet_handler) {
+            if (!client->app_error_packet_handler->direct_handle) {
+                if (!handler_start (client->app_error_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    client_log_with_identifier (client, LOG_SUCCESS,
+                        "Client %s app_error_packet_handler has started!");
+                    #endif
+                    
+                    retval = 0;
+                }
+
+                else {
+                    client_log_with_identifier (client, LOG_ERROR,
+                        "Failed to start client %s app_error_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (client, LOG_WARNING, 
+                "Client %s does not have an app_error_packet_handler");
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 client_custom_handler_start (Client *client) {
+
+    u8 retval = 0;
+
+    if (client) {
+        if (client->custom_packet_handler) {
+            if (!client->custom_packet_handler->direct_handle) {
+                if (!handler_start (client->custom_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    client_log_with_identifier (client, LOG_SUCCESS,
+                        "Client %s custom_packet_handler has started!");
+                    #endif
+                    
+                    retval = 0;
+                }
+
+                else {
+                    client_log_with_identifier (client, LOG_ERROR,
+                        "Failed to start client %s custom_packet_handler!");
+                }
+            }
+        }
+
+        else {
+            client_log_with_identifier (client, LOG_WARNING, 
+                "Client %s does not have an custom_packet_handler");
+        }
+    }
+
+    return retval;
+
+}
+
+// 16/06/2020 -- starts all client's handlers
+static u8 client_handlers_start (Client *client) {
+
+    u8 errors = 0;
+
+    if (client) {
+        #ifdef CERVER_DEBUG
+        client_log_with_identifier (client, LOG_DEBUG, "Initializing %s handlers...");
+        #endif
+
+        client->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (client->handlers_lock, NULL);
+
+        errors |= client_app_handler_start (client);
+
+        errors |= client_app_error_handler_start (client);
+
+        errors |= client_custom_handler_start (client);
+
+        if (!errors) {
+            #ifdef CERVER_DEBUG
+            client_log_with_identifier (client, LOG_SUCCESS, "Done initializing %s handlers!");
+            #endif
+        }
+    }
+
+    return errors;
+
+}
+
 static u8 client_start (Client *client) {
 
     u8 retval = 1;
@@ -787,8 +930,11 @@ static u8 client_start (Client *client) {
         // check if we walready have the client poll running
         if (!client->running) {
             time (&client->time_started);
-            client->running = true;
-            retval = 0;
+
+            if (!client_handlers_start (client)) {
+                client->running = true;
+                retval = 0;
+            }
         }
     }
 
@@ -932,7 +1078,7 @@ unsigned int client_request_to_cerver (Client *client, Connection *connection, P
 
         size_t sent = 0;
         if (!packet_send (request, 0, &sent, false)) {
-            printf ("Request to cerver: %ld\n", sent);
+            // printf ("Request to cerver: %ld\n", sent);
 
             // receive the data directly
             connection->full_packet = false;

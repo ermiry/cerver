@@ -64,7 +64,10 @@ struct _Client {
     time_t time_started;
     u64 uptime;
 
-    // custom packet handlers
+    // 16/06/2020 - custom packet handlers
+    volatile unsigned int num_handlers_alive;       // handlers currently alive
+    volatile unsigned int num_handlers_working;     // handlers currently working
+    pthread_mutex_t *handlers_lock;
     struct _Handler *app_packet_handler;
     struct _Handler *app_error_packet_handler;
     struct _Handler *custom_packet_handler;
