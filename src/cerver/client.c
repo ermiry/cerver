@@ -26,7 +26,6 @@
 #include "cerver/utils/utils.h"
 
 void client_receive (Client *client, Connection *connection);
-u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message);
 
 static u64 next_client_id = 0;
 
@@ -134,11 +133,15 @@ Client *client_create (void) {
 
     Client *client = client_new ();
     if (client) {
-        // init client values
         client->id = next_client_id;
         next_client_id += 1;
+
+        client->name = estring_new ("no-name");
+
         time (&client->connected_timestamp);
+
         client->connections = dlist_init (connection_delete, connection_comparator);
+
         client->stats = client_stats_new ();
     }
 
@@ -228,7 +231,7 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 }
 
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
-void client_set_handlers (Client *client, 
+void client_set_app_handlers (Client *client, 
     Handler *app_handler, Handler *app_error_handler) {
 
     if (client) {
@@ -795,30 +798,42 @@ void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 static u8 client_app_handler_start (Client *client) {
 
-    u8 retval = 1;
+    u8 retval = 0;
 
     if (client) {
         if (client->app_packet_handler) {
             if (!client->app_packet_handler->direct_handle) {
                 if (!handler_start (client->app_packet_handler)) {
                     #ifdef CERVER_DEBUG
-                    client_log_with_identifier (client, LOG_SUCCESS,
-                        "Client %s app_packet_handler has started!");
+                    char *s = c_string_create ("Client %s app_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
                     #endif
-                    
-                    retval = 0;
                 }
 
                 else {
-                    client_log_with_identifier (client, LOG_ERROR,
-                        "Failed to start client %s app_packet_handler!");
+                    char *s = c_string_create ("Failed to start client %s app_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
                 }
             }
         }
 
         else {
-            client_log_with_identifier (client, LOG_WARNING, 
-                "Client %s does not have an app_packet_handler");
+            char *s = c_string_create ("Client %s does not have an app_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -835,23 +850,35 @@ static u8 client_app_error_handler_start (Client *client) {
             if (!client->app_error_packet_handler->direct_handle) {
                 if (!handler_start (client->app_error_packet_handler)) {
                     #ifdef CERVER_DEBUG
-                    client_log_with_identifier (client, LOG_SUCCESS,
-                        "Client %s app_error_packet_handler has started!");
+                    char *s = c_string_create ("Client %s app_error_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
                     #endif
-                    
-                    retval = 0;
                 }
 
                 else {
-                    client_log_with_identifier (client, LOG_ERROR,
-                        "Failed to start client %s app_error_packet_handler!");
+                    char *s = c_string_create ("Failed to start client %s app_error_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
                 }
             }
         }
 
         else {
-            client_log_with_identifier (client, LOG_WARNING, 
-                "Client %s does not have an app_error_packet_handler");
+            char *s = c_string_create ("Client %s does not have an app_error_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -868,23 +895,35 @@ static u8 client_custom_handler_start (Client *client) {
             if (!client->custom_packet_handler->direct_handle) {
                 if (!handler_start (client->custom_packet_handler)) {
                     #ifdef CERVER_DEBUG
-                    client_log_with_identifier (client, LOG_SUCCESS,
-                        "Client %s custom_packet_handler has started!");
+                    char *s = c_string_create ("Client %s custom_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
                     #endif
-                    
-                    retval = 0;
                 }
 
                 else {
-                    client_log_with_identifier (client, LOG_ERROR,
-                        "Failed to start client %s custom_packet_handler!");
+                    char *s = c_string_create ("Failed to start client %s custom_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
                 }
             }
         }
 
         else {
-            client_log_with_identifier (client, LOG_WARNING, 
-                "Client %s does not have an custom_packet_handler");
+            char *s = c_string_create ("Client %s does not have a custom_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -899,7 +938,11 @@ static u8 client_handlers_start (Client *client) {
 
     if (client) {
         #ifdef CERVER_DEBUG
-        client_log_with_identifier (client, LOG_DEBUG, "Initializing %s handlers...");
+        char *s = c_string_create ("Initializing %s handlers...", client->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
         #endif
 
         client->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
@@ -913,7 +956,11 @@ static u8 client_handlers_start (Client *client) {
 
         if (!errors) {
             #ifdef CERVER_DEBUG
-            client_log_with_identifier (client, LOG_SUCCESS, "Done initializing %s handlers!");
+            char *s = c_string_create ("Done initializing %s handlers!", client->name->str);
+            if (s) {
+                cerver_log_success (s);
+                free (s);
+            }
             #endif
         }
     }
@@ -979,6 +1026,7 @@ unsigned int client_connect (Client *client, Connection *connection) {
             connection->active = true;
             time (&connection->connected_timestamp);
             
+            // FIXME: create an individual method to start client
             client_start (client);
 
             retval = 0;     // success - connected to cerver
@@ -1173,12 +1221,13 @@ int client_connection_start (Client *client, Connection *connection) {
             time (&connection->connected_timestamp);
             connection->active = true;
 
+            client_start (client);
+
             if (!thread_create_detachable (
                 &connection->update_thread_id,
                 (void *(*)(void *)) connection_update,
                 client_connection_aux_new (client, connection)
             )) {
-                client_start (client);
                 retval = 0;         // success
             }
 
@@ -1394,15 +1443,23 @@ static void client_app_packet_handler (Packet *packet) {
                     packet->client->app_packet_handler->job_queue,
                     job_create (NULL, packet)
                 )) {
-                    client_log_with_identifier (packet->client, LOG_ERROR, 
-                        "Failed to push a new job to client's %s app_packet_handler!");
+                    char *s = c_string_create ("Failed to push a new job to client's %s app_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
                 }
             }
         }
 
         else {
-            client_log_with_identifier (packet->client, LOG_WARNING,
-                "Client %s does not have an app_packet_handler!");
+            char *s = c_string_create ("Client %s does not have a app_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -1426,15 +1483,23 @@ static void client_app_error_packet_handler (Packet *packet) {
                     packet->client->app_error_packet_handler->job_queue,
                     job_create (NULL, packet)
                 )) {
-                    client_log_with_identifier (packet->client, LOG_ERROR, 
-                        "Failed to push a new job to client's %s app_error_packet_handler!");
+                    char *s = c_string_create ("Failed to push a new job to client's %s app_error_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
                 }
             }
         }
 
         else {
-            client_log_with_identifier (packet->client, LOG_ERROR, 
-                "Client %s does not have an app_error_packet_handler!");
+            char *s = c_string_create ("Client %s does not have a app_error_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -1458,15 +1523,23 @@ static void client_custom_packet_handler (Packet *packet) {
                     packet->client->custom_packet_handler->job_queue,
                     job_create (NULL, packet)
                 )) {
-                    client_log_with_identifier (packet->client, LOG_ERROR, 
-                        "Failed to push a new job to client's %s custom_packet_handler!");
+                    char *s = c_string_create ("Failed to push a new job to client's %s custom_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
                 }
             }
         }
 
         else {
-            client_log_with_identifier (packet->client, LOG_ERROR, 
-                "Client %s does not have a custom_packet_handler!");
+            char *s = c_string_create ("Client %s does not have a custom_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
         }
     }
 
@@ -1843,51 +1916,6 @@ void client_receive (Client *client, Connection *connection) {
             #endif
         }
     }
-
-}
-
-#pragma endregion
-
-#pragma region helpers
-
-// logs a message that contains a single reference to a client's identifier
-// returns 0 on success, 1 on error
-u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message) {
-
-    u8 retval = 1;
-
-    if (client && log_message) {
-        bool is_name = false;
-        char *name = client_get_identifier (client, &is_name);
-        if (name) {
-            char *s = c_string_create (log_message, name);
-            if (s) {
-                FILE *stream = stdin;
-                switch (log_type) {
-                    case LOG_WARNING:
-                    case LOG_ERROR: stream = stderr; break;
-
-                    default: break;
-                }
-
-                cerver_log_msg (
-                    stream,
-                    log_type,
-                    LOG_CLIENT,
-                    log_message
-                );
-
-                cerver_log_error (s);
-                free (s);
-
-                retval = 0;
-            }
-
-            if (!is_name) free (name);
-        }
-    }
-
-    return retval;
 
 }
 

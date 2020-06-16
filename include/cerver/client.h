@@ -114,7 +114,7 @@ extern void *client_get_data (Client *client);
 extern void client_set_data (Client *client, void *data, Action delete_data);
 
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
-extern void client_set_handlers (Client *client, 
+extern void client_set_app_handlers (Client *client, 
     struct _Handler *app_handler, struct _Handler *app_error_handler);
 
 // sets a CUSTOM_PACKET packet type handler
@@ -274,14 +274,6 @@ extern u8 client_teardown (Client *client);
 
 // receives incoming data from the socket and handles cerver packets
 extern void client_receive (Client *client, Connection *connection);
-
-#pragma endregion
-
-#pragma region helpers
-
-// logs a message that contains a single reference to a client's identifier
-// returns 0 on success, 1 on error
-extern u8 client_log_with_identifier (Client *client, LogMsgType log_type, const char *log_message);
 
 #pragma endregion
 
