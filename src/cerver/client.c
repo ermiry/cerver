@@ -954,38 +954,6 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 
 #pragma endregion
 
-// this is a blocking method and ONLY works for cerver packets
-// connects the client connection and makes a first request to the cerver
-// then listen for packets until the target one is received, 
-// then it returns the packet data as it is
-// returns 0 on success, 1 on error
-int client_connection_request_to_cerver (Client *client, Connection *connection, Packet *request_packet) {
-
-    int retval = 1;
-
-    if (client && connection) {
-        // connection->sock_receive = sock_receive_new ();
-        if (!connection_connect (connection)) {
-            client_start (client);
-            connection->active = true;
-
-            // send the request to the cerver
-            packet_set_network_values (request_packet, NULL, client, connection, NULL);
-            packet_send (request_packet, 0, NULL, false);
-            // packet_delete (request_packet);
-
-            // read incoming buffer from cerver
-            while (client->running && connection->active) 
-                client_receive (client, connection);
-
-            retval = 0;
-        }
-    }
-
-    return retval;
-
-}
-
 // starts a client connection -- used to connect a client to another server
 // returns only after a success or failed connection
 // returns 0 on success, 1 on error
