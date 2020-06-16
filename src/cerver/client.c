@@ -854,6 +854,104 @@ unsigned int client_connect_async (Client *client, Connection *connection) {
 
 #pragma endregion
 
+#pragma region requests
+
+// when a client is already connected to the cerver, a request can be made to the cerver
+// and the result will be returned
+// this is a blocking method, as it will wait until a complete cerver response has been received
+// the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// retruns 0 when the response has been handled, 1 on error
+unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
+
+    unsigned int retval = 1;
+
+    if (client && connection && request) {
+        // send the request to the cerver
+        packet_set_network_values (request, client, connection);
+
+        size_t sent = 0;
+        if (!packet_send (request, 0, &sent, false)) {
+            printf ("Request to cerver: %ld\n", sent);
+
+            // receive the data directly
+            connection->full_packet = false;
+            while (!connection->full_packet) {
+                client_receive (client, connection);
+            }
+
+            retval = 0;
+        }
+
+        else {
+            #ifdef CLIENT_DEBUG
+            client_log_error ("client_request_to_cerver () - failed to send request packet!");
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
+static void *client_request_to_cerver_thread (void *cc_ptr) {
+
+    if (cc_ptr) {
+        ClientConnection *cc = (ClientConnection *) cc_ptr;
+
+        cc->connection->full_packet = false;
+        while (!cc->connection->full_packet) {
+            client_receive (cc->client, cc->connection);
+        }
+
+        client_connection_aux_delete (cc);
+    }
+
+    return NULL;
+
+}
+
+// when a client is already connected to the cerver, a request can be made to the cerver
+// the result will be placed inside the connection
+// this method will NOT block and the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// returns 0 on success request, 1 on error
+unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
+
+    unsigned int retval = 1;
+
+    if (client && connection && request) {
+        // send the request to the cerver
+        packet_set_network_values (request, NULL, client, connection, NULL);
+        if (!packet_send (request, 0, NULL, false)) {
+            ClientConnection *cc = client_connection_aux_new (client, connection);
+            if (cc) {
+                // create a new thread to receive & handle the response
+                if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
+                    retval = 0;         // success
+                }
+
+                else {
+                    #ifdef CLIENT_DEBUG
+                    client_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
+                    #endif
+                }
+            }
+        }
+
+        else {
+            #ifdef CLIENT_DEBUG
+            client_log_error ("client_request_to_cerver_async () - failed to send request packet!");
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
 #pragma endregion
 
 // this is a blocking method and ONLY works for cerver packets
