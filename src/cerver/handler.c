@@ -30,6 +30,8 @@
 
 #pragma region handler
 
+static int unique_handler_id = 0;
+
 static HandlerData *handler_data_new (int handler_id, void *data, Packet *packet) {
 
     HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
@@ -54,6 +56,9 @@ static Handler *handler_new (void) {
 
     Handler *handler = (Handler *) malloc (sizeof (Handler));
     if (handler) {
+        handler->type = HANDLER_TYPE_NONE;
+        handler->unique_id = -1;
+
         handler->id = -1;
         handler->thread_id = 0;
 
@@ -93,6 +98,9 @@ Handler *handler_create (Action handler_method) {
 
     Handler *handler = handler_new ();
     if (handler) {
+        handler->unique_id = unique_handler_id;
+        unique_handler_id += 1;
+
         handler->handler = handler_method;
 
         handler->job_queue = job_queue_create ();
@@ -153,29 +161,10 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 
 }
 
-static void *handler_do (void *handler_ptr) {
+// while cerver is running, check for new jobs and handle them
+static void handler_do_while_cerver (Handler *handler) {
 
-    if (handler_ptr) {
-        Handler *handler = (Handler *) handler_ptr;
-
-        // set the thread name
-        if (handler->id >= 0) {
-            char thread_name[128] = { 0 };
-            snprintf (thread_name, 128, "handler-%d", handler->id);
-            prctl (PR_SET_NAME, thread_name);
-        }
-
-        // TODO: register to signals to handle multiple actions
-
-        if (handler->data_create) 
-            handler->data = handler->data_create (handler->data_create_args);
-
-        // mark the handler as alive and ready
-        pthread_mutex_lock (handler->cerver->handlers_lock);
-        handler->cerver->num_handlers_alive += 1;
-        pthread_mutex_unlock (handler->cerver->handlers_lock);
-
-        // while cerver is running, check for new jobs and handle them
+    if (handler) {
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
 
@@ -202,13 +191,101 @@ static void *handler_do (void *handler_ptr) {
                 pthread_mutex_unlock (handler->cerver->handlers_lock);
             }
         }
+    }
+
+}
+
+// while client is running, check for new jobs and handle them
+static void handler_do_while_client (Handler *handler) {
+
+    if (handler) {
+        while (handler->client->running) {
+            bsem_wait (handler->job_queue->has_jobs);
+
+            if (handler->client->running) {
+                pthread_mutex_lock (handler->client->handlers_lock);
+                handler->client->num_handlers_working += 1;
+                pthread_mutex_unlock (handler->client->handlers_lock);
+
+                // read job from queue
+                Job *job = job_queue_pull (handler->job_queue);
+                if (job) {
+                    Packet *packet = (Packet *) job->args;
+                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+
+                    handler->handler (handler_data);
+
+                    handler_data_delete (handler_data);
+                    job_delete (job);
+                    packet_delete (packet);
+                }
+
+                pthread_mutex_lock (handler->client->handlers_lock);
+                handler->client->num_handlers_working -= 1;
+                pthread_mutex_unlock (handler->client->handlers_lock);
+            }
+        }
+    }
+
+}
+
+static void *handler_do (void *handler_ptr) {
+
+    if (handler_ptr) {
+        Handler *handler = (Handler *) handler_ptr;
+
+        pthread_mutex_t *handlers_lock = NULL;
+        switch (handler->type) {
+            case HANDLER_TYPE_CERVER: handlers_lock = handler->cerver->handlers_lock; break;
+            case HANDLER_TYPE_CLIENT: handlers_lock = handler->client->handlers_lock; break;
+            default: break;
+        }
+
+        // set the thread name
+        if (handler->id >= 0) {
+            char thread_name[128] = { 0 };
+
+            switch (handler->type) {
+                case HANDLER_TYPE_CERVER: snprintf (thread_name, 128, "cerver-handler-%d", handler->unique_id); break;
+                case HANDLER_TYPE_CLIENT: snprintf (thread_name, 128, "client-handler-%d", handler->unique_id); break;
+                default: break;
+            }
+
+            // printf ("%s\n", thread_name);
+            prctl (PR_SET_NAME, thread_name);
+        }
+
+        // TODO: register to signals to handle multiple actions
+
+        if (handler->data_create) 
+            handler->data = handler->data_create (handler->data_create_args);
+
+        // mark the handler as alive and ready
+        pthread_mutex_lock (handlers_lock);
+        switch (handler->type) {
+            case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive += 1; break;
+            case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive += 1; break;
+            default: break;
+        }
+        pthread_mutex_unlock (handlers_lock);
+
+        // while cerver / client is running, check for new jobs and handle them
+        switch (handler->type) {
+            case HANDLER_TYPE_CERVER: handler_do_while_cerver (handler); break;
+            case HANDLER_TYPE_CLIENT: handler_do_while_client (handler); break;
+            default: break;
+        }
 
         if (handler->data_delete)
             handler->data_delete (handler->data);
 
-        pthread_mutex_lock (handler->cerver->handlers_lock);
-        handler->cerver->num_handlers_alive -= 1;
-        pthread_mutex_unlock (handler->cerver->handlers_lock);
+        pthread_mutex_lock (handlers_lock);
+        switch (handler->type) {
+            case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive -= 1; break;
+            case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive -= 1; break;
+            default: break;
+        }
+        pthread_mutex_unlock (handlers_lock);
     }
 
     return NULL;
@@ -222,22 +299,33 @@ int handler_start (Handler *handler) {
     int retval = 1;
 
     if (handler) {
-        // retval = pthread_create (
-        //     &handler->thread_id,
-        //     NULL,
-        //     (void *(*)(void *)) handler_do,
-        //     (void *) handler
-        // );
+        if (handler->type != HANDLER_TYPE_NONE) {
+            // retval = pthread_create (
+            //     &handler->thread_id,
+            //     NULL,
+            //     (void *(*)(void *)) handler_do,
+            //     (void *) handler
+            // );
 
 
-        // 26/05/2020 -- 12:54 
-        // handler's threads are not explicitly joined by pthread_join () 
-        // on cerver teardown
-        retval = thread_create_detachable (
-            &handler->thread_id,
-            (void *(*)(void *)) handler_do,
-            (void *) handler
-        );  
+            // 26/05/2020 -- 12:54 
+            // handler's threads are not explicitly joined by pthread_join () 
+            // on cerver teardown
+            retval = thread_create_detachable (
+                &handler->thread_id,
+                (void *(*)(void *)) handler_do,
+                (void *) handler
+            );
+        }
+
+        else {
+            char *s = c_string_create ("handler_start () - Handler %d is of invalid type!",
+                handler->unique_id);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
+        }
     }
 
     return retval;
