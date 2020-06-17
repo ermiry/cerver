@@ -22,6 +22,15 @@ struct _Connection;
 struct _Lobby;
 struct _Packet;
 
+typedef enum HandlerType {
+
+    HANDLER_TYPE_NONE         = 0,
+
+    HANDLER_TYPE_CERVER       = 1,
+    HANDLER_TYPE_CLIENT       = 2
+
+} HandlerType;
+
 // the strcuture that will be passed to the handler
 typedef struct HandlerData {
 
@@ -33,6 +42,9 @@ typedef struct HandlerData {
 } HandlerData;
 
 struct _Handler {
+
+    HandlerType type;
+    int unique_id;                  // added every time a new handler gets created
 
     int id;
     pthread_t thread_id;
@@ -65,7 +77,8 @@ struct _Handler {
     // the jobs (packets) that are waiting to be handled - passed as args to the handler method
     JobQueue *job_queue;
 
-    struct _Cerver *cerver;      // the cerver this handler belongs to
+    struct _Cerver *cerver;     // the cerver this handler belongs to
+    struct _Client *client;     // the client this handler belongs to
 
 };
 

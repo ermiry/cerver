@@ -330,19 +330,25 @@ int main (void) {
 		handler_set_data_create (handler_3, app_data_copy, app_data_3);
 		handler_set_data_delete (handler_3, app_data_delete);
 
-		if (!cerver_start (my_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start magic cerver!");
+		if (cerver_start (my_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				my_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (my_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+        cerver_log_error ("Failed to create cerver!");
 
-		cerver_delete (my_cerver);
+        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// cerver_delete (client_cerver);
 	}
-
+	
 	return 0;
 
 }

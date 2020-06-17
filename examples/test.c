@@ -6,9 +6,10 @@
 #include <signal.h>
 
 #include <cerver/version.h>
-
 #include <cerver/cerver.h>
+
 #include <cerver/utils/log.h>
+#include <cerver/utils/utils.h>
 
 typedef enum AppRequest {
 
@@ -98,17 +99,23 @@ int main (void) {
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
-		if (!cerver_start (my_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start cerver!");
+		if (cerver_start (my_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				my_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (my_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+        cerver_log_error ("Failed to create cerver!");
 
-		cerver_delete (my_cerver);
+        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// cerver_delete (client_cerver);
 	}
 
 	return 0;

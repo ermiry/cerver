@@ -21,6 +21,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+#pragma region stats
+
 ConnectionStats *connection_stats_new (void) {
 
     ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
@@ -45,6 +47,45 @@ static inline void connection_stats_delete (ConnectionStats *stats) {
     
 }
 
+void connection_stats_print (Connection *connection) {
+
+    if (connection) {
+        if (connection->stats) {
+            printf ("\nConnection's stats:\n");
+            printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
+
+            printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
+
+            printf ("Total bytes received:      %ld\n", connection->stats->total_bytes_received);
+            printf ("Total bytes sent:          %ld\n", connection->stats->total_bytes_sent);
+
+            printf ("N packets received:        %ld\n", connection->stats->n_packets_received);
+            printf ("N packets sent:            %ld\n", connection->stats->n_packets_sent);
+
+            printf ("\nReceived packets:\n");
+            packets_per_type_print (connection->stats->received_packets);
+
+            printf ("\nSent packets:\n");
+            packets_per_type_print (connection->stats->sent_packets);
+        }
+
+        else {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+                "Connection does not have a reference to a connection stats!");
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
+            "Can't get stats of a NULL connection!");
+    }
+
+}
+
+#pragma endregion
+
+#pragma region main
+
 Connection *connection_new (void) {
 
     Connection *connection = (Connection *) malloc (sizeof (Connection));
@@ -68,6 +109,8 @@ Connection *connection_new (void) {
         connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
         connection->cerver_report = NULL;
         connection->sock_receive = NULL;
+
+        connection->full_packet = false;
 
         connection->received_data = NULL;
         connection->received_data_delete = NULL;
@@ -215,7 +258,8 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 
 // sets a custom receive method to handle incomming packets in the connection
 // a reference to the client and connection will be passed to the action as ClientConnection structure
-void connection_set_custom_receive (Connection *connection, Action custom_receive, void *args) {
+// the method must return 0 on success & 1 on error
+void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args) {
 
     if (connection) {
         connection->custom_receive = custom_receive;
@@ -622,12 +666,16 @@ void connection_update (void *ptr) {
             while (cc->client->running && cc->connection->active) {
                 if (cc->connection->custom_receive) {
                     // if a custom receive method is set, use that one directly
-                    cc->connection->custom_receive (custom_data);
+                    if (cc->connection->custom_receive (custom_data)) {
+                        break;      // an error has ocurred
+                    }
                 } 
 
                 else {
                     // use the default receive method that expects cerver type packages
-                    client_receive (cc->client, cc->connection);
+                    if (client_receive (cc->client, cc->connection)) {
+                        break;      // an error has ocurred
+                    }
                 }
             }
         // }
@@ -637,3 +685,5 @@ void connection_update (void *ptr) {
     }
 
 }
+
+#pragma endregion

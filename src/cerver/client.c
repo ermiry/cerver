@@ -9,6 +9,9 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/avl.h"
+#include "cerver/collections/dllist.h"
+
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/auth.h"
@@ -19,15 +22,14 @@
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
-
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-void client_receive (Client *client, Connection *connection);
+unsigned int client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
+
+#pragma region stats
 
 static ClientStats *client_stats_new (void) {
 
@@ -53,13 +55,53 @@ static inline void client_stats_delete (ClientStats *client_stats) {
     
 }
 
+void client_stats_print (Client *client) {
+
+    if (client) {
+        if (client->stats) {
+            printf ("\nClient's stats:\n");
+            printf ("Threshold time:            %ld\n", client->stats->threshold_time);
+
+            printf ("N receives done:           %ld\n", client->stats->n_receives_done);
+
+            printf ("Total bytes received:      %ld\n", client->stats->total_bytes_received);
+            printf ("Total bytes sent:          %ld\n", client->stats->total_bytes_sent);
+
+            printf ("N packets received:        %ld\n", client->stats->n_packets_received);
+            printf ("N packets sent:            %ld\n", client->stats->n_packets_sent);
+
+            printf ("\nReceived packets:\n");
+            packets_per_type_print (client->stats->received_packets);
+
+            printf ("\nSent packets:\n");
+            packets_per_type_print (client->stats->sent_packets);
+        }
+
+        else {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
+                "Client does not have a reference to a client stats!");
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, 
+            "Can't get stats of a NULL client!");
+    }
+
+}
+
+#pragma endregion
+
+#pragma region main
+
 Client *client_new (void) {
 
     Client *client = (Client *) malloc (sizeof (Client));
     if (client) {
-        memset (client, 0, sizeof (Client));
-
+        client->id = 0;
         client->session_id = NULL;
+
+        client->name = NULL;
 
         client->connections = NULL;
 
@@ -69,7 +111,12 @@ Client *client_new (void) {
         client->delete_data = NULL;
 
         client->running = false;
+        client->time_started = 0;
+        client->uptime = 0;
 
+        client->num_handlers_alive = 0;
+        client->num_handlers_working = 0;
+        client->handlers_lock = NULL;
         client->app_packet_handler = NULL;
         client->app_error_packet_handler = NULL;
         client->custom_packet_handler = NULL;
@@ -88,12 +135,24 @@ void client_delete (void *ptr) {
 
         estring_delete (client->session_id);
 
+        estring_delete (client->name);
+
         dlist_delete (client->connections);
 
         if (client->data) {
             if (client->delete_data) client->delete_data (client->data);
             else free (client->data);
         }
+
+        // 16/06/2020
+        if (client->handlers_lock) {
+            pthread_mutex_destroy (client->handlers_lock);
+            free (client->handlers_lock);
+        }
+
+        handler_delete (client->app_packet_handler);
+        handler_delete (client->app_error_packet_handler);
+        handler_delete (client->custom_packet_handler);
 
         client_stats_delete (client->stats);
 
@@ -109,11 +168,15 @@ Client *client_create (void) {
 
     Client *client = client_new ();
     if (client) {
-        // init client values
         client->id = next_client_id;
         next_client_id += 1;
+
+        client->name = estring_new ("no-name");
+
         time (&client->connected_timestamp);
+
         client->connections = dlist_init (connection_delete, connection_comparator);
+
         client->stats = client_stats_new ();
     }
 
@@ -137,6 +200,39 @@ Client *client_create_with_connection (Cerver *cerver,
     }
 
     return client;
+
+}
+
+// sets the client's name
+void client_set_name (Client *client, const char *name) {
+
+    if (client) {
+        if (client->name) estring_delete (client->name);
+        client->name = name ? estring_new (name) : NULL;
+    }
+
+}
+
+// this methods is primarily used for logging
+// returns the client's name directly (if any) & should NOT be deleted, if not
+// returns a newly allocated string with the clients id that should be deleted after use
+char *client_get_identifier (Client *client, bool *is_name) {
+
+    char *retval = NULL;
+
+    if (client) {
+        if (client->name) {
+            retval = client->name->str;
+            *is_name = true;
+        } 
+
+        else {
+           retval = c_string_create ("%ld", client->id);
+           *is_name = false;
+        }
+    }
+
+    return retval;
 
 }
 
@@ -169,14 +265,35 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 
 }
 
-// sets the client packet handlers
-void client_set_handlers (Client *client, 
-    Action app_handler, Action app_error_handler, Action custom_handler) {
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+void client_set_app_handlers (Client *client, 
+    Handler *app_handler, Handler *app_error_handler) {
 
     if (client) {
         client->app_packet_handler = app_handler;
+        if (client->app_packet_handler) {
+            client->app_packet_handler->type = HANDLER_TYPE_CLIENT;
+            client->app_packet_handler->client = client;
+        }
+
         client->app_error_packet_handler = app_error_handler;
+        if (client->app_error_packet_handler) {
+            client->app_error_packet_handler->type = HANDLER_TYPE_CLIENT;
+            client->app_error_packet_handler->client = client;
+        }
+    }
+
+}
+
+// sets a CUSTOM_PACKET packet type handler
+void client_set_custom_handler (Client *client, Handler *custom_handler) {
+
+    if (client) {
         client->custom_packet_handler = custom_handler;
+        if (client->custom_packet_handler) {
+            client->custom_packet_handler->type = HANDLER_TYPE_CLIENT;
+            client->custom_packet_handler->client = client;
+        }
     }
 
 }
@@ -201,6 +318,9 @@ int client_comparator_client_id (const void *a, const void *b) {
 int client_comparator_session_id (const void *a, const void *b) {
 
     if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && !b) return -1;
+    if (!a && b) return 1;
+
     return 0;
 
 }
@@ -688,10 +808,15 @@ void client_broadcast_to_all_avl (AVLNode *node, Cerver *cerver, Packet *packet)
 
 }
 
+#pragma endregion
+
+#pragma region aux
+
 static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
 
     ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
     if (cc) {
+        cc->connection_thread_id = 0;   
         cc->client = client;
         cc->connection = connection;
     }
@@ -702,6 +827,183 @@ static ClientConnection *client_connection_aux_new (Client *client, Connection *
 
 void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
+#pragma endregion
+
+#pragma region client
+
+static u8 client_app_handler_start (Client *client) {
+
+    u8 retval = 0;
+
+    if (client) {
+        if (client->app_packet_handler) {
+            if (!client->app_packet_handler->direct_handle) {
+                if (!handler_start (client->app_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Client %s app_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start client %s app_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have an app_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 client_app_error_handler_start (Client *client) {
+
+    u8 retval = 0;
+
+    if (client) {
+        if (client->app_error_packet_handler) {
+            if (!client->app_error_packet_handler->direct_handle) {
+                if (!handler_start (client->app_error_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Client %s app_error_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start client %s app_error_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have an app_error_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 client_custom_handler_start (Client *client) {
+
+    u8 retval = 0;
+
+    if (client) {
+        if (client->custom_packet_handler) {
+            if (!client->custom_packet_handler->direct_handle) {
+                if (!handler_start (client->custom_packet_handler)) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Client %s custom_packet_handler has started!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start client %s custom_packet_handler!",
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    retval = 1;
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have a custom_packet_handler", 
+                client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+// 16/06/2020 -- starts all client's handlers
+static u8 client_handlers_start (Client *client) {
+
+    u8 errors = 0;
+
+    if (client) {
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Initializing %s handlers...", client->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+        #endif
+
+        client->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (client->handlers_lock, NULL);
+
+        errors |= client_app_handler_start (client);
+
+        errors |= client_app_error_handler_start (client);
+
+        errors |= client_custom_handler_start (client);
+
+        if (!errors) {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Done initializing %s handlers!", client->name->str);
+            if (s) {
+                cerver_log_success (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return errors;
+
+}
+
 static u8 client_start (Client *client) {
 
     u8 retval = 1;
@@ -711,6 +1013,18 @@ static u8 client_start (Client *client) {
         if (!client->running) {
             time (&client->time_started);
             client->running = true;
+
+            if (!client_handlers_start (client)) {
+                retval = 0;
+            }
+
+            else {
+                client->running = false;
+            }
+        }
+
+        else {
+            // client is already running because of an active connection
             retval = 0;
         }
     }
@@ -738,31 +1052,25 @@ Connection *client_connection_create (Client *client,
 
 }
 
-// this is a blocking method and ONLY works for cerver packets
-// connects the client connection and makes a first request to the cerver
-// then listen for packets until the target one is received, 
-// then it returns the packet data as it is
-// returns 0 on success, 1 on error
-int client_connection_request_to_cerver (Client *client, Connection *connection, Packet *request_packet) {
+#pragma region connect
 
-    int retval = 1;
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is a blocking method, as it will wait until the connection has been successfull or a timeout
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been established, 1 on error or failed to connect
+unsigned int client_connect (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
 
     if (client && connection) {
-        // connection->sock_receive = sock_receive_new ();
         if (!connection_connect (connection)) {
-            client_start (client);
+            // client_event_trigger (client, EVENT_CONNECTED);
+            // connection->connected = true;
             connection->active = true;
+            time (&connection->connected_timestamp);
 
-            // send the request to the cerver
-            packet_set_network_values (request_packet, NULL, client, connection, NULL);
-            packet_send (request_packet, 0, NULL, false);
-            // packet_delete (request_packet);
-
-            // read incoming buffer from cerver
-            while (client->running && connection->active) 
-                client_receive (client, connection);
-
-            retval = 0;
+            retval = 0;     // success - connected to cerver
         }
     }
 
@@ -770,30 +1078,210 @@ int client_connection_request_to_cerver (Client *client, Connection *connection,
 
 }
 
-// starts a client connection -- used to connect a client to another server
-// returns only after a success or failed connection
+// connects a client to the host with the specified values in the connection
+// performs a first read to get the cerver info packet 
+// this is a blocking method, and works exactly the same as if only calling client_connect ()
+// returns 0 when the connection has been established, 1 on error or failed to connect
+unsigned int client_connect_to_cerver (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
+
+    if (!client_connect (client, connection)) {
+        client_receive (client, connection);
+
+        retval = 0;
+    }
+
+    return retval;
+
+}
+
+static void *client_connect_thread (void *client_connection_ptr) {
+
+    if (client_connection_ptr) {
+        ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+
+        if (!connection_connect (cc->connection)) {
+            // client_event_trigger (cc->client, EVENT_CONNECTED);
+            // cc->connection->connected = true;
+            cc->connection->active = true;
+            time (&cc->connection->connected_timestamp);
+            
+            client_start (cc->client);
+        }
+
+        client_connection_aux_delete (cc);
+    }
+
+    return NULL;
+
+}
+
+// connects a client to the host with the specified values in the connection
+// it can be a cerver or not
+// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
+// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
+// user must manually handle how he wants to receive / handle incomming packets and also send requests
+// returns 0 on success connection thread creation, 1 on error
+unsigned int client_connect_async (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
+
+    if (client && connection) {
+        ClientConnection *cc = client_connection_aux_new (client, connection);
+        if (cc) {
+            if (!thread_create_detachable (&cc->connection_thread_id, client_connect_thread, cc)) {
+                retval = 0;         // success
+            }
+
+            else {
+                #ifdef CLIENT_DEBUG
+                client_log_error ("Failed to create client_connect_thread () detachable thread!");
+                #endif
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma region requests
+
+// when a client is already connected to the cerver, a request can be made to the cerver
+// and the result will be returned
+// this is a blocking method, as it will wait until a complete cerver response has been received
+// the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// retruns 0 when the response has been handled, 1 on error
+unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
+
+    unsigned int retval = 1;
+
+    if (client && connection && request) {
+        // send the request to the cerver
+        packet_set_network_values (request, NULL, client, connection, NULL);
+
+        size_t sent = 0;
+        if (!packet_send (request, 0, &sent, false)) {
+            // printf ("Request to cerver: %ld\n", sent);
+
+            // receive the data directly
+            connection->full_packet = false;
+            while (!connection->full_packet) {
+                client_receive (client, connection);
+            }
+
+            retval = 0;
+        }
+
+        else {
+            #ifdef CLIENT_DEBUG
+            client_log_error ("client_request_to_cerver () - failed to send request packet!");
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
+static void *client_request_to_cerver_thread (void *cc_ptr) {
+
+    if (cc_ptr) {
+        ClientConnection *cc = (ClientConnection *) cc_ptr;
+
+        cc->connection->full_packet = false;
+        while (!cc->connection->full_packet) {
+            client_receive (cc->client, cc->connection);
+        }
+
+        client_connection_aux_delete (cc);
+    }
+
+    return NULL;
+
+}
+
+// when a client is already connected to the cerver, a request can be made to the cerver
+// the result will be placed inside the connection
+// this method will NOT block and the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// returns 0 on success request, 1 on error
+unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
+
+    unsigned int retval = 1;
+
+    if (client && connection && request) {
+        // send the request to the cerver
+        packet_set_network_values (request, NULL, client, connection, NULL);
+        if (!packet_send (request, 0, NULL, false)) {
+            ClientConnection *cc = client_connection_aux_new (client, connection);
+            if (cc) {
+                // create a new thread to receive & handle the response
+                if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
+                    retval = 0;         // success
+                }
+
+                else {
+                    #ifdef CLIENT_DEBUG
+                    client_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
+                    #endif
+                }
+            }
+        }
+
+        else {
+            #ifdef CLIENT_DEBUG
+            client_log_error ("client_request_to_cerver_async () - failed to send request packet!");
+            #endif
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma region start
+
+// after a client connection successfully connects to a server, 
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
 // returns 0 on success, 1 on error
 int client_connection_start (Client *client, Connection *connection) {
 
     int retval = 1;
 
     if (client && connection) {
-        if (!connection_connect (connection)) {
-            time (&connection->connected_timestamp);
-            connection->active = true;
+        if (connection->active) {
+            if (!client_start (client)) {
+                if (!thread_create_detachable (
+                    &connection->update_thread_id,
+                    (void *(*)(void *)) connection_update,
+                    client_connection_aux_new (client, connection)
+                )) {
+                    retval = 0;         // success
+                }
 
-            if (!thread_create_detachable (
-                &connection->update_thread_id,
-                (void *(*)(void *)) connection_update,
-                client_connection_aux_new (client, connection)
-            )) {
-                client_start (client);
-                retval = 0;         // success
+                else {
+                    char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %s", 
+                        client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
             }
 
             else {
-                char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %ld", 
-                    client->id);
+                char *s = c_string_create ("client_connection_start () - Failed to start client %s", 
+                    client->name->str);
                 if (s) {
                     cerver_log_error (s);
                     free (s);
@@ -806,42 +1294,63 @@ int client_connection_start (Client *client, Connection *connection) {
 
 }
 
-static void client_connection_start_wrapper (void *data_ptr) {
-
-    if (data_ptr) {
-        ClientConnection *cc = (ClientConnection *) data_ptr;
-        client_connection_start (cc->client, cc->connection);
-        client_connection_aux_delete (cc);
-    }
-
-}
-
-// starts the client connection async -- creates a new thread to handle how to connect with server
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
 // returns 0 on success, 1 on error
-int client_connection_start_async (Client *client, Connection *connection) {
+int client_connect_and_start (Client *client, Connection *connection) {
 
     int retval = 1;
 
     if (client && connection) {
-        pthread_t thread_id = 0;
-        
-        if (!thread_create_detachable (
-            &thread_id,
-            (void *(*) (void *)) client_connection_start_wrapper,
-            client_connection_aux_new (client, connection)
-        )) {
-            retval = 0;         // success
+        if (!client_connect (client, connection)) {
+            if (!client_connection_start (client, connection)) {
+                retval = 0;
+            }
         }
 
         else {
-            // error
-            cerver_log_error ("client_connection_start_async () - Failed to create and detatch thread!");
+            char *s = c_string_create ("client_connect_and_start () - Client %s failed to connect", 
+                client->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
         }
     }
 
     return retval;
 
 }
+
+static void client_connection_start_wrapper (void *data_ptr) {
+
+    if (data_ptr) {
+        ClientConnection *cc = (ClientConnection *) data_ptr;
+        client_connect_and_start (cc->client, cc->connection);
+        client_connection_aux_delete (cc);
+    }
+
+}
+
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+u8 client_connect_and_start_async (Client *client, Connection *connection) {
+
+    pthread_t thread_id = 0;
+
+    return (client && connection) ? thread_create_detachable (
+        &thread_id,
+        (void *(*)(void *)) client_connection_start_wrapper,
+        client_connection_aux_new (client, connection)
+    ) : 1;
+
+}
+
+#pragma endregion
+
+#pragma region end
 
 // ends a connection with a cerver by sending a disconnect packet and the closing the connection
 static void client_connection_terminate (Client *client, Connection *connection) {
@@ -853,7 +1362,9 @@ static void client_connection_terminate (Client *client, Connection *connection)
                 Packet *packet = packet_generate_request (REQUEST_PACKET, CLIENT_CLOSE_CONNECTION, NULL, 0);
                 if (packet) {
                     packet_set_network_values (packet, NULL, client, connection, NULL);
-                    packet_send (packet, 0, NULL, false);
+                    if (packet_send (packet, 0, NULL, false)) {
+                        cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
+                    }
                     packet_delete (packet);
                 }
             }
@@ -861,6 +1372,23 @@ static void client_connection_terminate (Client *client, Connection *connection)
             connection_end (connection);
         } 
     }
+
+}
+
+static int client_connection_drop (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        connection_end (connection);
+
+        connection_delete (dlist_remove_element (client->connections, 
+            dlist_get_element (client->connections, connection, NULL)));
+
+        retval = 0;
+    }
+
+    return retval;
 
 }
 
@@ -873,18 +1401,110 @@ int client_connection_end (Client *client, Connection *connection) {
 
     if (client && connection) {
         client_connection_terminate (client, connection);
-
-        connection_delete (dlist_remove_element (client->connections, 
-            dlist_get_element (client->connections, connection, NULL)));
-
-        retval = 0;
+        retval = client_connection_drop (client, connection);
     }
 
     return retval;
 
 }
 
-// stop any on going connection and process then, destroys the client
+static void client_app_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->app_packet_handler) {
+            if (!client->app_packet_handler->direct_handle) {
+                // stop app handler
+                bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_app_error_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->app_error_packet_handler) {
+            if (!client->app_error_packet_handler->direct_handle) {
+                // stop app error handler
+                bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_custom_handler_destroy (Client *client) {
+
+    if (client) {
+        if (client->custom_packet_handler) {
+            if (!client->custom_packet_handler->direct_handle) {
+                // stop custom handler
+                bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+}
+
+static void client_handlers_destroy (Client *client) {
+
+    if (client) {
+        char *s = c_string_create ("Client %s num_handlers_alive: %d",
+            client->name->str, client->num_handlers_alive);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+
+        client_app_handler_destroy (client);
+
+        client_app_error_handler_destroy (client);
+
+        client_custom_handler_destroy (client);
+
+        // poll remaining handlers
+        while (client->num_handlers_alive) {
+            if (client->app_packet_handler)
+                bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+
+            if (client->app_error_packet_handler)
+                bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+
+            if (client->custom_packet_handler)
+                bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+            
+            sleep (1);
+        }
+    }
+
+}
+
+static void *client_teardown_internal (void *client_ptr) {
+
+    if (client_ptr) {
+        Client *client = (Client *) client_ptr;
+
+        // end any ongoing connection
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            client_connection_terminate (client, (Connection *) le->data);
+        }
+
+        client_handlers_destroy (client);
+
+        // delete all connections
+        dlist_delete (client->connections);
+        client->connections = NULL;
+
+        client_delete (client);
+    }
+
+    return NULL;
+
+}
+
+// stop any on going connection and process and destroys the client
+// returns 0 on success, 1 on error
 u8 client_teardown (Client *client) {
 
     u8 retval = 1;
@@ -892,16 +1512,7 @@ u8 client_teardown (Client *client) {
     if (client) {
         client->running = false;
 
-        // end any ongoing connection
-        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-            client_connection_terminate (client, (Connection *) le->data);
-        }
-
-        // delete all connections
-        dlist_delete (client->connections);
-        client->connections = NULL;
-
-        client_delete (client);
+        client_teardown_internal (client);
 
         retval = 0;
     }
@@ -910,7 +1521,146 @@ u8 client_teardown (Client *client) {
 
 }
 
+// calls client_teardown () in a new thread as handlers might need time to stop
+// that will cause the calling thread to wait at least a second
+// returns 0 on success creating thread, 1 on error
+u8 client_teardown_async (Client *client) {
+
+    pthread_t thread_id = 0;
+    return client ? thread_create_detachable (
+        &thread_id,
+        client_teardown_internal,
+        client
+    ) : 1;
+
+}
+
+#pragma endregion
+
 #pragma region handler 
+
+// 16/06/2020
+// handles a APP_PACKET packet type
+static void client_app_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->app_packet_handler) {
+            if (packet->client->app_packet_handler->direct_handle) {
+                // printf ("app_packet_handler - direct handle!\n");
+                packet->client->app_packet_handler->handler (packet);
+                packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->app_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to client's %s app_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have a app_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
+// 16/06/2020
+// handles a APP_ERROR_PACKET packet type
+static void client_app_error_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->app_error_packet_handler) {
+            if (packet->client->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->client->app_error_packet_handler->handler (packet);
+                packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to client's %s app_error_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have a app_error_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
+
+// 16/06/2020
+// handles a CUSTOM_PACKET packet type
+static void client_custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->client->custom_packet_handler) {
+            if (packet->client->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->client->custom_packet_handler->handler (packet);
+                packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->client->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to client's %s custom_packet_handler!",
+                        packet->client->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Client %s does not have a custom_packet_handler!",
+                packet->client->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+}
 
 // the client handles a packet based on its type
 static void client_packet_handler (void *data) {
@@ -925,57 +1675,60 @@ static void client_packet_handler (void *data) {
                 case CERVER_PACKET:
                     // packet->client->stats->received_packets->n_cerver_packets += 1; 
                     client_cerver_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles an error from the server
                 case ERROR_PACKET: 
                     packet->client->stats->received_packets->n_error_packets += 1;
                     // error_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles authentication packets
                 case AUTH_PACKET: 
                     packet->client->stats->received_packets->n_auth_packets += 1;
                     // client_auth_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles a request made from the server
                 case REQUEST_PACKET: 
                     // packet->client->stats->received_packets->n_request_packets += 1; 
                     // client_request_packet_handler (packet);
+                    packet_delete (packet);
                     break;
 
                 // handles a game packet sent from the server
                 case GAME_PACKET: 
                     // packet->client->stats->received_packets->n_game_packets += 1;
                     // client_game_packet_handler (packet);
-                    break;
-
-                // user set handler to handle app specific errors
-                case APP_ERROR_PACKET: 
-                    packet->client->stats->received_packets->n_app_error_packets += 1;
-                    if (packet->client->app_error_packet_handler)
-                        packet->client->app_error_packet_handler (packet);
+                    packet_delete (packet);
                     break;
 
                 // user set handler to handler app specific packets
                 case APP_PACKET:
                     packet->client->stats->received_packets->n_app_packets += 1;
-                    if (packet->client->app_packet_handler)
-                        packet->client->app_packet_handler (packet);
+                    client_app_packet_handler (packet);
+                    break;
+
+                // user set handler to handle app specific errors
+                case APP_ERROR_PACKET: 
+                    packet->client->stats->received_packets->n_app_error_packets += 1;
+                    client_app_error_packet_handler (packet);
                     break;
 
                 // custom packet hanlder
                 case CUSTOM_PACKET: 
                     packet->client->stats->received_packets->n_custom_packets += 1;
-                    if (packet->client->custom_packet_handler)
-                        packet->client->custom_packet_handler (packet);
+                    client_custom_packet_handler (packet);
                     break;
 
                 // handles a test packet form the cerver
                 case TEST_PACKET: 
                     packet->client->stats->received_packets->n_test_packets += 1;
                     cerver_log_msg (stdout, LOG_TEST, LOG_NO_TYPE, "Got a test packet from cerver.");
+                    packet_delete (packet);
                     break;
 
                 default:
@@ -983,58 +1736,55 @@ static void client_packet_handler (void *data) {
                     #ifdef CERVER_DEBUG
                     cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "Got a packet of unknown type.");
                     #endif
+                    packet_delete (packet);
                     break;
             }
         // }
-
-        packet_delete (packet);
     }
 
 }
 
-static SockReceive *client_receive_handle_spare_packet (Client *client, Connection *connection, 
+static void client_receive_handle_spare_packet (Client *client, Connection *connection, 
     size_t buffer_size, char **end, size_t *buffer_pos) {
 
-    if (connection->sock_receive) {
-        if (connection->sock_receive->header) {
-            // copy the remaining header size
-            memcpy (connection->sock_receive->header_end, (void *) *end, connection->sock_receive->remaining_header);
+    if (connection->sock_receive->header) {
+        // copy the remaining header size
+        memcpy (connection->sock_receive->header_end, (void *) *end, connection->sock_receive->remaining_header);
 
-            connection->sock_receive->complete_header = true;
-        }
-
-        if (connection->sock_receive->spare_packet) {
-            size_t copy_to_spare = 0;
-            if (connection->sock_receive->missing_packet < buffer_size) 
-                copy_to_spare = connection->sock_receive->missing_packet;
-
-            else copy_to_spare = buffer_size;
-
-            // append new data from buffer to the spare packet
-            if (copy_to_spare > 0) {
-                packet_append_data (connection->sock_receive->spare_packet, *end, copy_to_spare);
-
-                // check if we can handler the packet 
-                size_t curr_packet_size = connection->sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-                if (connection->sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-                    connection->sock_receive->spare_packet->client = client;
-                    connection->sock_receive->spare_packet->connection = connection;
-                    client_packet_handler (connection->sock_receive->spare_packet);
-
-                    connection->sock_receive->spare_packet = NULL;
-                    connection->sock_receive->missing_packet = 0;
-                }
-
-                else connection->sock_receive->missing_packet -= copy_to_spare;
-
-                // offset for the buffer
-                if (copy_to_spare < buffer_size) *end += copy_to_spare;
-                *buffer_pos += copy_to_spare;
-            }
-        }
+        connection->sock_receive->complete_header = true;
     }
 
-    return connection->sock_receive;
+    else if (connection->sock_receive->spare_packet) {
+        size_t copy_to_spare = 0;
+        if (connection->sock_receive->missing_packet < buffer_size) 
+            copy_to_spare = connection->sock_receive->missing_packet;
+
+        else copy_to_spare = buffer_size;
+
+        // append new data from buffer to the spare packet
+        if (copy_to_spare > 0) {
+            packet_append_data (connection->sock_receive->spare_packet, *end, copy_to_spare);
+
+            // check if we can handler the packet 
+            size_t curr_packet_size = connection->sock_receive->spare_packet->data_size + sizeof (PacketHeader);
+            if (connection->sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+                connection->sock_receive->spare_packet->client = client;
+                connection->sock_receive->spare_packet->connection = connection;
+
+                connection->full_packet = true;
+                client_packet_handler (connection->sock_receive->spare_packet);
+
+                connection->sock_receive->spare_packet = NULL;
+                connection->sock_receive->missing_packet = 0;
+            }
+
+            else connection->sock_receive->missing_packet -= copy_to_spare;
+
+            // offset for the buffer
+            if (copy_to_spare < buffer_size) *end += copy_to_spare;
+            *buffer_pos += copy_to_spare;
+        }
+    }
 
 }
 
@@ -1046,8 +1796,13 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
         char *end = buffer;
         size_t buffer_pos = 0;
 
-        SockReceive *sock_receive = client_receive_handle_spare_packet (client, connection, 
-            buffer_size, &end, &buffer_pos);
+        SockReceive *sock_receive = connection->sock_receive;
+
+        client_receive_handle_spare_packet (
+            client, connection, 
+            buffer_size, &end, 
+            &buffer_pos
+        );
 
         PacketHeader *header = NULL;
         size_t packet_size = 0;
@@ -1141,13 +1896,14 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
                         // printf ("second buffer pos: %ld\n", buffer_pos);
 
                         if (!sock_receive->spare_packet) {
+                            connection->full_packet = true;
                             client_packet_handler (packet);
                         }
                             
                     }
 
                     else {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
                             "Failed to create a new packet in cerver_handle_receive_buffer ()");
                     }
                 }
@@ -1155,11 +1911,9 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
                 else {
                     char *status = c_string_create ("Got a packet of invalid size: %ld", packet_size);
                     if (status) {
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, status); 
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, status); 
                         free (status);
                     }
-
-                    // FIXME: what to do next?
                     
                     break;
                 }
@@ -1200,7 +1954,7 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 static void client_receive_handle_failed (Client *client, Connection *connection) {
 
     if (client && connection) {
-        if (!client_connection_end (client, connection)) {
+        if (!client_connection_drop (client, connection)) {
             // check if the client has any other active connection
             if (client->connections->size <= 0) {
                 client->running = false;
@@ -1211,79 +1965,86 @@ static void client_receive_handle_failed (Client *client, Connection *connection
 }
 
 // receives incoming data from the socket
-void client_receive (Client *client, Connection *connection) {
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+unsigned int client_receive (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
 
     if (client && connection) {
         char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
         if (packet_buffer) {
             ssize_t rc = recv (connection->socket->sock_fd, packet_buffer, connection->receive_packet_buffer_size, 0);
 
-            if (rc < 0) {
-                if (errno != EWOULDBLOCK) {     // no more data to read 
-                    #ifdef CERVER_DEBUG 
-                    char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", 
-                        connection->socket->sock_fd);
+            switch (rc) {
+                case -1: {
+                    if (errno != EWOULDBLOCK) {
+                        #ifdef CLIENT_DEBUG 
+                        char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->sock_fd);
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                            free (s);
+                        }
+                        perror ("Error");
+                        #endif
+
+                        client_receive_handle_failed (client, connection);
+                    }
+                } break;
+
+                case 0: {
+                    // man recv -> steam socket perfomed an orderly shutdown
+                    // but in dgram it might mean something?
+                    #ifdef CLIENT_DEBUG
+                    char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
+                        connection->sock_fd);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                        cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
                         free (s);
                     }
-                    perror ("Error");
+                    // perror ("Error");
                     #endif
-
+                    
                     client_receive_handle_failed (client, connection);
-                }
-            }
+                } break;
 
-            else if (rc == 0) {
-                // man recv -> steam socket perfomed an orderly shutdown
-                // but in dgram it might mean something?
-                #ifdef CERVER_DEBUG
-                char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
-                    connection->socket->sock_fd);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
-                    free (s);
-                }
-                // perror ("Error");
-                #endif
+                default: {
+                    // char *s = c_string_create ("Connection %s rc: %ld",
+                    //     connection->name->str, rc);
+                    // if (s) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                    //     free (s);
+                    // }
 
-                switch (errno) {
-                    case EAGAIN: 
-                        printf ("Is the connection still opened?\n"); 
-                        client_receive_handle_failed (client, connection);
-                        break;
-                    case EBADF:
-                    case ENOTSOCK: {
-                        #ifdef CERVER_DEBUG
-                        perror ("Error ");
-                        #endif
-                        client_receive_handle_failed (client, connection);
-                    }
-                }
-            }
+                    client->stats->n_receives_done += 1;
+                    client->stats->total_bytes_received += rc;
 
-            else {
-                // cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, 
-                //     c_string_create ("Connection %s rc: %ld",
-                //     connection->name->str, rc));
-                // client->stats->n_receives_done += 1;
-                client->stats->total_bytes_received += rc;
+                    connection->stats->n_receives_done += 1;
+                    connection->stats->total_bytes_received += rc;
 
-                // handle the recived packet buffer -> split them in packets of the correct size
-                client_receive_handle_buffer (client, connection, 
-                    packet_buffer, rc);
+                    // handle the recived packet buffer -> split them in packets of the correct size
+                    client_receive_handle_buffer (
+                        client, 
+                        connection, 
+                        packet_buffer, 
+                        rc
+                    );
+
+                    retval = 0;
+                } break;
             }
 
             free (packet_buffer);
         }
 
         else {
-            #ifdef CERVER_DEBUG
+            #ifdef CLIENT_DEBUG
             cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
                 "Failed to allocate a new packet buffer!");
             #endif
         }
     }
+
+    return retval;
 
 }
 
