@@ -36,6 +36,9 @@
 
 #define DEFAULT_SOCKETS_INIT            10
 
+#define DEFAULT_MAX_INACTIVE_TIME           60
+#define DEFAULT_CHECK_INACTIVE_INTERVAL     30
+
 struct _AdminCerver;
 struct _Auth;
 struct _Cerver;
@@ -137,6 +140,13 @@ struct _Cerver {
     // action to be performed when a new client connects
     Action on_client_connected;   
 
+    // 17/06/2020 - ability to check for inactive clients
+    // clients that have not been sent or received from a packet in x time
+    // will be automatically dropped from the cerver
+    bool inactive_clients;              // enable / disable checking
+    u32 max_inactive_time;              // max secs allowed for a client to be inactive
+    u32 check_inactive_interval;        // how often to check for inactive clients
+
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
     u16 current_n_fds;                  // n of active fds in the pollfd array
@@ -201,7 +211,7 @@ struct _Cerver {
 
 typedef struct _Cerver Cerver;
 
-/*** Cerver Methods ***/
+#pragma region main
 
 extern Cerver *cerver_new (void);
 
@@ -235,6 +245,14 @@ extern void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets
 // sets an action to be performed by the cerver when a new client connects
 extern void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected);
 
+// 17/06/2020
+// enables the ability to check for inactive clients - clients that have not been sent or received from a packet in x time
+// will be automatically dropped from the cerver
+// max_inactive_time - max secs allowed for a client to be inactive, 0 for default
+// check_inactive_interval - how often to check for inactive clients in secs, 0 for default
+extern void cerver_set_inactive_clients (Cerver *cerver, 
+    u32 max_inactive_time, u32 check_inactive_interval);
+
 // sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 
@@ -253,7 +271,8 @@ extern void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_rec
 
 // 27/05/2020 - changed form Action to Handler
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
-extern void cerver_set_app_handlers (Cerver *cerver, struct _Handler *app_handler, struct _Handler *app_error_handler);
+extern void cerver_set_app_handlers (Cerver *cerver, 
+    struct _Handler *app_handler, struct _Handler *app_error_handler);
 
 // 27/05/2020 - changed form Action to Handler
 // sets a CUSTOM_PACKET packet type handler
@@ -276,6 +295,8 @@ extern void cerver_set_update_interval (Cerver *cerver, Action update, void *upd
 // returns 0 on success, 1 on error
 extern u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6);
 
+#pragma endregion
+
 /*** sockets ***/
 
 extern int cerver_sockets_pool_push (Cerver *cerver, struct _Socket *socket);
@@ -292,7 +313,7 @@ extern void cerver_handlers_print_info (Cerver *cerver);
 // returns 0 on success, 1 on error
 extern int cerver_handlers_add (Cerver *cerver, struct _Handler *handler);
 
-/*** main **/
+#pragma region start
 
 // returns a new cerver with the specified parameters
 extern Cerver *cerver_create (const CerverType type, const char *name, 
@@ -309,6 +330,10 @@ extern u8 cerver_restart (Cerver *cerver);
 // returns 0 on success, 1 on error
 extern u8 cerver_start (Cerver *cerver);
 
+#pragma endregion
+
+#pragma region end
+
 // disable socket I/O in both ways and stop any ongoing job
 // returns 0 on success, 1 on error
 extern u8 cerver_shutdown (Cerver *cerver);
@@ -316,6 +341,8 @@ extern u8 cerver_shutdown (Cerver *cerver);
 // teardown a server -> stop the server and clean all of its data
 // returns 0 on success, 1 on error
 extern u8 cerver_teardown (Cerver *cerver);
+
+#pragma endregion
 
 // 31/01/2020 -- 11:15 -- aux structure for cerver update methods
 struct _CerverUpdate {
@@ -327,7 +354,7 @@ struct _CerverUpdate {
 
 typedef struct _CerverUpdate CerverUpdate;
 
-/*** Serialization ***/
+#pragma region serialization
 
 // serialized cerver structure
 typedef struct SCerver {
@@ -347,7 +374,9 @@ typedef struct SCerver {
 // creates a cerver info packet ready to be sent
 extern struct _Packet *cerver_packet_generate (Cerver *cerver);
 
-/*** Handler ***/
+#pragma endregion
+
+#pragma region report
 
 // information that we get from another cerver when connecting to it
 struct _CerverReport {
@@ -387,5 +416,7 @@ typedef struct SCerverReport {
 
 // handles cerver type packets
 extern void client_cerver_packet_handler (struct _Packet *packet);
+
+#pragma endregion
 
 #endif

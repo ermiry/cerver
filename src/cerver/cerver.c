@@ -179,6 +179,8 @@ void cerver_stats_print (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region main
+
 Cerver *cerver_new (void) {
 
     Cerver *c = (Cerver *) malloc (sizeof (Cerver));
@@ -365,6 +367,21 @@ void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets) {
 void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected) {
 
     if (cerver) cerver->on_client_connected = on_client_connected;
+
+}
+
+// 17/06/2020
+// enables the ability to check for inactive clients - clients that have not been sent or received from a packet in x time
+// will be automatically dropped from the cerver
+// max_inactive_time - max secs allowed for a client to be inactive, 0 for default
+// check_inactive_interval - how often to check for inactive clients in secs, 0 for default
+void cerver_set_inactive_clients (Cerver *cerver, u32 max_inactive_time, u32 check_inactive_interval) {
+
+    if (cerver) {
+        cerver->inactive_clients = true;
+        cerver->max_inactive_time = max_inactive_time ? max_inactive_time : DEFAULT_MAX_INACTIVE_TIME;
+        cerver->check_inactive_interval = check_inactive_interval ? check_inactive_interval : DEFAULT_CHECK_INACTIVE_INTERVAL;
+    }
 
 }
 
@@ -557,6 +574,8 @@ u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
     return retval;
 
 }
+
+#pragma endregion
 
 #pragma region sockets
 
@@ -1298,6 +1317,18 @@ static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
 
 #pragma GCC diagnostic pop
 
+static u8 cerver_start_inactive (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+
+    }
+
+    return retval;
+
+}
+
 static CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
 
     CerverUpdate *cu = (CerverUpdate *) malloc (sizeof (CerverUpdate));
@@ -1645,6 +1676,13 @@ u8 cerver_start (Cerver *cerver) {
         if (!cerver_one_time_init (cerver)) {
             u8 errors = 0;
 
+            // 17/06/2020
+            // check for inactive will be handled in its own thread
+            // to avoid messing with other dedicated update threads timings
+            if (cerver->inactive_clients) {
+                errors |= cerver_start_inactive (cerver);
+            }
+
             if (cerver->update) {
                 if (thread_create_detachable (
                     &cerver->update_thread_id,
@@ -1732,6 +1770,8 @@ u8 cerver_start (Cerver *cerver) {
     return retval;
 
 }
+
+#pragma region end
 
 // disable socket I/O in both ways and stop any ongoing job
 // returns 0 on success, 1 on error
@@ -1972,7 +2012,9 @@ u8 cerver_teardown (Cerver *cerver) {
 
 }
 
-/*** serialization ***/
+#pragma endregion
+
+#pragma region serialization
 
 static inline SCerver *scerver_new (void) {
 
@@ -2024,7 +2066,9 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 
 }
 
-#pragma region handler 
+#pragma endregion
+
+#pragma region report 
 
 static CerverReport *cerver_report_new (void) {
 
