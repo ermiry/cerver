@@ -717,7 +717,12 @@ static void cerver_packet_handler (void *ptr) {
         packet->cerver->stats->total_n_packets_received += 1;
         if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
 
-        // if (!packet_check (packet)) {
+        bool good = true;
+        if (packet->cerver->check_packets) {
+            good = packet_check (packet);
+        }
+
+        if (good) {
             switch (packet->header->packet_type) {
                 // handles an error from the client
                 case ERROR_PACKET: 
@@ -811,7 +816,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet_delete (packet);
                 } break;
             }
-        // }
+        }
     }
 
 }

@@ -628,31 +628,34 @@ u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd,
 }
 
 // check if packet has a compatible protocol id and a version
-// returns 0 on success, 1 on error
-u8 packet_check (Packet *packet) {
+// returns false on a bad packet
+bool packet_check (Packet *packet) {
 
-    u8 errors = 0;
+    bool retval = false;
 
     if (packet) {
         PacketHeader *header = packet->header;
 
-        if (header->protocol_id != protocol_id) {
+        if (header->protocol_id == protocol_id) {
+            if ((header->protocol_version.major > protocol_version.major)
+                || (header->protocol_version.minor > protocol_version.minor)) {
+                retval = true;
+            }
+
+            else {
+                #ifdef CERVER_DEBUG
+                cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+                #endif
+            }
+        }
+
+        else {
             #ifdef CERVER_DEBUG
             cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
             #endif
-            errors |= 1;
-        }
-
-        if (header->protocol_version.major != protocol_version.major) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
-            #endif
-            errors |= 1;
         }
     }
 
-    else errors |= 1;
-
-    return errors;
+    return retval;
 
 }

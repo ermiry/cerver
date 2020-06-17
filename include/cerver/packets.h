@@ -244,6 +244,7 @@ extern u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd,
     int flags, size_t *total_sent, bool raw);
 
 // check if packet has a compatible protocol id and a version
-extern u8 packet_check (Packet *packet);
+// returns false on a bad packet
+extern bool packet_check (Packet *packet);
 
 #endif
