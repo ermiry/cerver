@@ -1786,9 +1786,11 @@ static inline void cerver_poll_handle (Cerver *cerver) {
                     } break;
 
                     default: {
-                        // 17/06/2020 -- 15:06 -- handle as failed any other signal
-                        // to avoid hanging up at 100% or getting a segfault
-                        cerver_switch_receive_handle_failed (cr);
+                        if (cerver->fds[i].revents != 0) {
+                            // 17/06/2020 -- 15:06 -- handle as failed any other signal
+                            // to avoid hanging up at 100% or getting a segfault
+                            cerver_switch_receive_handle_failed (cr);
+                        }
                     } break;
                 }
             }
