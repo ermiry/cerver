@@ -2177,8 +2177,13 @@ void client_cerver_packet_handler (Packet *packet) {
                     cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver info packet.");
                     #endif
                     packet->connection->cerver_report = cerver_report_deserialize ((SCerverReport *) (end += sizeof (RequestData)));
-                    if (cerver_check_info (packet->connection->cerver_report, packet->connection))
+                    if (!cerver_check_info (packet->connection->cerver_report, packet->connection)) {
+                        packet->connection->connected_to_cerver = true;
+                    }
+
+                    else {
                         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
+                    }
                 } break;
 
                 // the cerves is going to be teardown, we have to disconnect
@@ -2187,7 +2192,6 @@ void client_cerver_packet_handler (Packet *packet) {
                     cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "---> Server teardown! <---");
                     #endif
                     client_connection_end (packet->client, packet->connection);
-                    // FIXME:
                     // client_event_trigger (packet->client, EVENT_DISCONNECTED);
                     break;
 
