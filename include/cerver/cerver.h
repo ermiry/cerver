@@ -191,6 +191,8 @@ struct _Cerver {
     // TODO: add ability to control handler execution
     // pthread_cond_t *handlers_wait;
 
+    bool check_packets;                     // enable / disbale packet checking
+
     pthread_t update_thread_id;
     Action update;                          // method to be executed every tick
     void *update_args;                      // args to pass to custom update method
@@ -281,6 +283,13 @@ extern void cerver_set_custom_handler (Cerver *cerver, struct _Handler *custom_h
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
 extern int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers);
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+extern void cerver_set_check_packets (Cerver *cerver, bool check_packets);
 
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick

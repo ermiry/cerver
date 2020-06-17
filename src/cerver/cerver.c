@@ -208,6 +208,8 @@ Cerver *cerver_new (void) {
         c->client_sock_fd_map = NULL;
         c->on_client_connected = NULL;
 
+        c->inactive_clients = false;
+
         c->fds = NULL;
         c->poll_lock = NULL;
 
@@ -231,6 +233,8 @@ Cerver *cerver_new (void) {
         // 10/05/2020
         c->handlers = NULL;
         c->handlers_lock = NULL;
+
+        c->check_packets = false;
 
         c->update = NULL;
         c->update_args = NULL;
@@ -529,6 +533,19 @@ int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
     }
 
     return retval;
+
+}
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+void cerver_set_check_packets (Cerver *cerver, bool check_packets) {
+
+    if (cerver) {
+        cerver->check_packets = check_packets;
+    }
 
 }
 
