@@ -121,6 +121,8 @@ Client *client_new (void) {
         client->app_error_packet_handler = NULL;
         client->custom_packet_handler = NULL;
 
+        client->lock = NULL;
+
         client->stats = NULL;   
     }
 
@@ -154,6 +156,11 @@ void client_delete (void *ptr) {
         handler_delete (client->app_error_packet_handler);
         handler_delete (client->custom_packet_handler);
 
+        if (client->lock) {
+            pthread_mutex_destroy (client->lock);
+            free (client->lock);
+        }
+
         client_stats_delete (client->stats);
 
         free (client);
@@ -176,6 +183,9 @@ Client *client_create (void) {
         time (&client->connected_timestamp);
 
         client->connections = dlist_init (connection_delete, connection_comparator);
+
+        client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (client->lock, NULL);
 
         client->stats = client_stats_new ();
     }
@@ -1499,6 +1509,8 @@ static void *client_teardown_internal (void *client_ptr) {
     if (client_ptr) {
         Client *client = (Client *) client_ptr;
 
+        pthread_mutex_lock (client->lock);
+
         // end any ongoing connection
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             client_connection_close (client, (Connection *) le->data);
@@ -1509,6 +1521,8 @@ static void *client_teardown_internal (void *client_ptr) {
         // delete all connections
         dlist_delete (client->connections);
         client->connections = NULL;
+
+        pthread_mutex_unlock (client->lock);
 
         client_delete (client);
     }
@@ -1993,7 +2007,7 @@ unsigned int client_receive (Client *client, Connection *connection) {
                 case -1: {
                     if (errno != EWOULDBLOCK) {
                         #ifdef CLIENT_DEBUG 
-                        char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->sock_fd);
+                        char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd);
                         if (s) {
                             cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
                             free (s);
@@ -2010,7 +2024,7 @@ unsigned int client_receive (Client *client, Connection *connection) {
                     // but in dgram it might mean something?
                     #ifdef CLIENT_DEBUG
                     char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
-                        connection->sock_fd);
+                        connection->socket->sock_fd);
                     if (s) {
                         cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
                         free (s);

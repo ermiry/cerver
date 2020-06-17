@@ -81,6 +81,9 @@ struct _Client {
     struct _Handler *app_error_packet_handler;
     struct _Handler *custom_packet_handler;
 
+    // 17/06/2020 - general client lock
+    pthread_mutex_t *lock;
+
     ClientStats *stats;
 
 };
