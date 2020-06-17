@@ -1343,7 +1343,7 @@ static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current
         Client *client = (Client *) node->id;
 
         if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
-            // the client should be dropped
+            // TODO: the client should be dropped
             char *s = c_string_create ("Client %ld has been inactive more than %d secs and should be dropped",
                 client->id, cerver->max_inactive_time);
             if (s) {
