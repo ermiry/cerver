@@ -279,6 +279,11 @@ extern u8 client_connect_and_start_async (Client *client, struct _Connection *co
 
 /*** end ***/
 
+// terminates the connection & closes the socket
+// but does NOT destroy the current connection
+// returns 0 on success, 1 on error
+extern int client_connection_close (Client *client, Connection *connection);
+
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error

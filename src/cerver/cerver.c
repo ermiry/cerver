@@ -2346,7 +2346,8 @@ void client_cerver_packet_handler (Packet *packet) {
                     #ifdef CERVER_DEBUG
                     cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "---> Server teardown! <---");
                     #endif
-                    client_connection_end (packet->client, packet->connection);
+                    client_connection_close (packet->client, packet->connection);
+                    // client_connection_end (packet->client, packet->connection);
                     // client_event_trigger (packet->client, EVENT_DISCONNECTED);
                     break;
 

@@ -1368,8 +1368,6 @@ static void client_connection_terminate (Client *client, Connection *connection)
                     packet_delete (packet);
                 }
             }
-
-            connection_end (connection);
         } 
     }
 
@@ -1392,6 +1390,22 @@ static int client_connection_drop (Client *client, Connection *connection) {
 
 }
 
+// terminates the connection & closes the socket
+// but does NOT destroy the current connection
+// returns 0 on success, 1 on error
+int client_connection_close (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        client_connection_terminate (client, connection);
+        connection_end (connection);
+    }
+
+    return retval;
+
+}
+
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error
@@ -1400,7 +1414,7 @@ int client_connection_end (Client *client, Connection *connection) {
     int retval = 1;
 
     if (client && connection) {
-        client_connection_terminate (client, connection);
+        client_connection_close (client, connection);
         retval = client_connection_drop (client, connection);
     }
 
@@ -1487,7 +1501,7 @@ static void *client_teardown_internal (void *client_ptr) {
 
         // end any ongoing connection
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-            client_connection_terminate (client, (Connection *) le->data);
+            client_connection_close (client, (Connection *) le->data);
         }
 
         client_handlers_destroy (client);
