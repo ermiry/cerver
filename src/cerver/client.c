@@ -1495,6 +1495,7 @@ static void client_app_packet_handler (Packet *packet) {
             if (packet->client->app_packet_handler->direct_handle) {
                 // printf ("app_packet_handler - direct handle!\n");
                 packet->client->app_packet_handler->handler (packet);
+                packet_delete (packet);
             }
 
             else {
@@ -1535,6 +1536,7 @@ static void client_app_error_packet_handler (Packet *packet) {
             if (packet->client->app_error_packet_handler->direct_handle) {
                 // printf ("app_error_packet_handler - direct handle!\n");
                 packet->client->app_error_packet_handler->handler (packet);
+                packet_delete (packet);
             }
 
             else {
@@ -1575,6 +1577,7 @@ static void client_custom_packet_handler (Packet *packet) {
             if (packet->client->custom_packet_handler->direct_handle) {
                 // printf ("custom_packet_handler - direct handle!\n");
                 packet->client->custom_packet_handler->handler (packet);
+                packet_delete (packet);
             }
 
             else {
@@ -1678,7 +1681,17 @@ static void client_packet_handler (void *data) {
             }
         // }
 
-        packet_delete (packet);
+        switch (packet->header->packet_type) {
+            case APP_PACKET:
+            case APP_ERROR_PACKET:
+            case CUSTOM_PACKET:
+                // do nothing - packet gets deleted in handler method
+                break;
+
+            default:
+                packet_delete (packet);
+                break;
+        }
     }
 
 }
