@@ -462,7 +462,7 @@ static void cerver_request_packet_handler (Packet *packet) {
                 // if not, it will be dropped
                 case CLIENT_CLOSE_CONNECTION: {
                     #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Client %ld request to close the connection",
+                    char *s = c_string_create ("Client %ld requested to close the connection",
                         packet->client->id);
                     if (s) {
                         cerver_log_debug (s);
@@ -592,6 +592,7 @@ static void cerver_app_packet_handler (Packet *packet) {
                 if (packet->cerver->app_packet_handler->direct_handle) {
                     // printf ("app_packet_handler - direct handle!\n");
                     packet->cerver->app_packet_handler->handler (packet);
+                    packet_delete (packet);
                 }
 
                 else {
@@ -633,6 +634,7 @@ static void cerver_app_error_packet_handler (Packet *packet) {
             if (packet->cerver->app_error_packet_handler->direct_handle) {
                 // printf ("app_error_packet_handler - direct handle!\n");
                 packet->cerver->app_error_packet_handler->handler (packet);
+                packet_delete (packet);
             }
 
             else {
@@ -673,6 +675,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
             if (packet->cerver->custom_packet_handler->direct_handle) {
                 // printf ("custom_packet_handler - direct handle!\n");
                 packet->cerver->custom_packet_handler->handler (packet);
+                packet_delete (packet);
             }
 
             else {
@@ -709,6 +712,7 @@ static void cerver_packet_handler (void *ptr) {
 
     if (ptr) {
         Packet *packet = (Packet *) ptr;
+
         packet->cerver->stats->client_n_packets_received += 1;
         packet->cerver->stats->total_n_packets_received += 1;
         if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
@@ -722,6 +726,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->connection->stats->received_packets->n_error_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
                     /* TODO: */ 
+                    packet_delete (packet);
                     break;
 
                 // handles authentication packets
@@ -731,6 +736,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->connection->stats->received_packets->n_auth_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
                     /* TODO: */ 
+                    packet_delete (packet);
                     break;
 
                 // handles a request made from the client
@@ -740,6 +746,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->connection->stats->received_packets->n_request_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
                     cerver_request_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles a game packet sent from the client
@@ -785,6 +792,7 @@ static void cerver_packet_handler (void *ptr) {
                     packet->connection->stats->received_packets->n_test_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
                     cerver_test_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 default: {
@@ -800,21 +808,10 @@ static void cerver_packet_handler (void *ptr) {
                         free (s);
                     }
                     #endif
+                    packet_delete (packet);
                 } break;
             }
         // }
-
-        switch (packet->header->packet_type) {
-            case APP_PACKET: {
-                if (packet->cerver->multiple_handlers) {
-                    // do nothing - packet gets deleted in handler method
-                }
-            } break;
-
-            default:
-                packet_delete (packet);
-                break;
-        }
     }
 
 }

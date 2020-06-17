@@ -1675,30 +1675,35 @@ static void client_packet_handler (void *data) {
                 case CERVER_PACKET:
                     // packet->client->stats->received_packets->n_cerver_packets += 1; 
                     client_cerver_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles an error from the server
                 case ERROR_PACKET: 
                     packet->client->stats->received_packets->n_error_packets += 1;
                     // error_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles authentication packets
                 case AUTH_PACKET: 
                     packet->client->stats->received_packets->n_auth_packets += 1;
                     // client_auth_packet_handler (packet); 
+                    packet_delete (packet);
                     break;
 
                 // handles a request made from the server
                 case REQUEST_PACKET: 
                     // packet->client->stats->received_packets->n_request_packets += 1; 
                     // client_request_packet_handler (packet);
+                    packet_delete (packet);
                     break;
 
                 // handles a game packet sent from the server
                 case GAME_PACKET: 
                     // packet->client->stats->received_packets->n_game_packets += 1;
                     // client_game_packet_handler (packet);
+                    packet_delete (packet);
                     break;
 
                 // user set handler to handler app specific packets
@@ -1723,6 +1728,7 @@ static void client_packet_handler (void *data) {
                 case TEST_PACKET: 
                     packet->client->stats->received_packets->n_test_packets += 1;
                     cerver_log_msg (stdout, LOG_TEST, LOG_NO_TYPE, "Got a test packet from cerver.");
+                    packet_delete (packet);
                     break;
 
                 default:
@@ -1730,21 +1736,10 @@ static void client_packet_handler (void *data) {
                     #ifdef CERVER_DEBUG
                     cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "Got a packet of unknown type.");
                     #endif
+                    packet_delete (packet);
                     break;
             }
         // }
-
-        switch (packet->header->packet_type) {
-            case APP_PACKET:
-            case APP_ERROR_PACKET:
-            case CUSTOM_PACKET:
-                // do nothing - packet gets deleted in handler method
-                break;
-
-            default:
-                packet_delete (packet);
-                break;
-        }
     }
 
 }
