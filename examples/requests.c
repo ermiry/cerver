@@ -118,7 +118,7 @@ static void end (int dummy) {
 static void handle_test_request (Packet *packet) {
 
 	if (packet) {
-		cerver_log_debug ("Got a TEST request!");
+		cerver_log_debug ("Got a TEST request from client! Sending another one back...");
 
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {

@@ -112,14 +112,10 @@ int main (void) {
 	}
 
 	else {
-		char *s = c_string_create ("Failed to create %s!",
-			my_cerver->info->name->str);
-		if (s) {
-			cerver_log_error (s);
-			free (s);
-		}
+        cerver_log_error ("Failed to create cerver!");
 
-		cerver_delete (my_cerver);
+        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// cerver_delete (client_cerver);
 	}
 
 	return 0;
