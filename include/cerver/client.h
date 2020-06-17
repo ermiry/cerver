@@ -19,6 +19,7 @@
 #include "cerver/utils/log.h"
 
 struct _Cerver;
+struct _Client;
 struct _Packet;
 struct _PacketsPerType;
 struct _Connection;
@@ -26,11 +27,15 @@ struct _Handler;
 
 struct _ClientStats {
 
-    time_t client_threshold_time;           // every time we want to reset the client's stats
+    time_t threshold_time;                  // every time we want to reset the client's stats
+
+    u64 n_receives_done;                    // n calls to recv ()
+
     u64 total_bytes_received;               // total amount of bytes received from this client
     u64 total_bytes_sent;                   // total amount of bytes that have been sent to the client (all of its connections)
+
     u64 n_packets_received;                 // total number of packets received from this client (packet header + data)
-    u64 n_packets_send;                     // total number of packets sent to this client (all connections)
+    u64 n_packets_sent;                     // total number of packets sent to this client (all connections)
 
     struct _PacketsPerType *received_packets;
     struct _PacketsPerType *sent_packets;
@@ -38,6 +43,8 @@ struct _ClientStats {
 };
 
 typedef struct _ClientStats ClientStats;
+
+extern void client_stats_print (struct _Client *client);
 
 // anyone that connects to the cerver
 struct _Client {

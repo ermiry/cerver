@@ -477,7 +477,7 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     if (client) {
-        client->stats->n_packets_send += 1;
+        client->stats->n_packets_sent += 1;
         client->stats->total_bytes_sent += sent;
     }
 

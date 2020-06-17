@@ -55,6 +55,41 @@ static inline void client_stats_delete (ClientStats *client_stats) {
     
 }
 
+void client_stats_print (Client *client) {
+
+    if (client) {
+        if (client->stats) {
+            printf ("\nClient's stats:\n");
+            printf ("Threshold time:            %ld\n", client->stats->threshold_time);
+
+            printf ("N receives done:           %ld\n", client->stats->n_receives_done);
+
+            printf ("Total bytes received:      %ld\n", client->stats->total_bytes_received);
+            printf ("Total bytes sent:          %ld\n", client->stats->total_bytes_sent);
+
+            printf ("N packets received:        %ld\n", client->stats->n_packets_received);
+            printf ("N packets sent:            %ld\n", client->stats->n_packets_sent);
+
+            printf ("\nReceived packets:\n");
+            packets_per_type_print (client->stats->received_packets);
+
+            printf ("\nSent packets:\n");
+            packets_per_type_print (client->stats->sent_packets);
+        }
+
+        else {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
+                "Client does not have a reference to a client stats!");
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, 
+            "Can't get stats of a NULL client!");
+    }
+
+}
+
 #pragma endregion
 
 #pragma region main
@@ -1916,11 +1951,11 @@ void client_receive (Client *client, Connection *connection) {
                     //     free (s);
                     // }
 
-                    // client->stats->n_receives_done += 1;
+                    client->stats->n_receives_done += 1;
                     client->stats->total_bytes_received += rc;
 
-                    // connection->stats->n_receives_done += 1;
-                    // connection->stats->total_bytes_received += rc;
+                    connection->stats->n_receives_done += 1;
+                    connection->stats->total_bytes_received += rc;
 
                     // handle the recived packet buffer -> split them in packets of the correct size
                     client_receive_handle_buffer (

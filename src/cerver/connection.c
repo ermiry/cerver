@@ -21,6 +21,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+#pragma region stats
+
 ConnectionStats *connection_stats_new (void) {
 
     ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
@@ -44,6 +46,45 @@ static inline void connection_stats_delete (ConnectionStats *stats) {
     } 
     
 }
+
+void connection_stats_print (Connection *connection) {
+
+    if (connection) {
+        if (connection->stats) {
+            printf ("\nConnection's stats:\n");
+            printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
+
+            printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
+
+            printf ("Total bytes received:      %ld\n", connection->stats->total_bytes_received);
+            printf ("Total bytes sent:          %ld\n", connection->stats->total_bytes_sent);
+
+            printf ("N packets received:        %ld\n", connection->stats->n_packets_received);
+            printf ("N packets sent:            %ld\n", connection->stats->n_packets_sent);
+
+            printf ("\nReceived packets:\n");
+            packets_per_type_print (connection->stats->received_packets);
+
+            printf ("\nSent packets:\n");
+            packets_per_type_print (connection->stats->sent_packets);
+        }
+
+        else {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+                "Connection does not have a reference to a connection stats!");
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
+            "Can't get stats of a NULL connection!");
+    }
+
+}
+
+#pragma endregion
+
+#pragma region main
 
 Connection *connection_new (void) {
 
@@ -639,3 +680,5 @@ void connection_update (void *ptr) {
     }
 
 }
+
+#pragma endregion

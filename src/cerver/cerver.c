@@ -38,7 +38,7 @@
 
 static void cerver_clean (Cerver *cerver);
 
-#pragma region Cerver Info
+#pragma region info
 
 static CerverInfo *cerver_info_new (void) {
 
@@ -84,7 +84,7 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 #pragma endregion
 
-#pragma region Cerver Stats
+#pragma region stats
 
 static CerverStats *cerver_stats_new (void) {
 
@@ -124,10 +124,10 @@ void cerver_stats_print (Cerver *cerver) {
     if (cerver) {
         if (cerver->stats) {
             printf ("\nCerver's %s stats: ", cerver->info->name->str);
-            printf ("\nThreshold time:              %ld\n", cerver->stats->threshold_time);
+            printf ("Threshold time:                %ld\n", cerver->stats->threshold_time);
 
             if (cerver->auth_required) {
-                printf ("\nClient packets received:       %ld\n", cerver->stats->client_n_packets_received);
+                printf ("Client packets received:       %ld\n", cerver->stats->client_n_packets_received);
                 printf ("Client receives done:          %ld\n", cerver->stats->client_receives_done);
                 printf ("Client bytes received:         %ld\n\n", cerver->stats->client_bytes_received);
 
@@ -136,14 +136,17 @@ void cerver_stats_print (Cerver *cerver) {
                 printf ("On hold bytes received:         %ld\n\n", cerver->stats->on_hold_bytes_received);
             }
 
+            printf ("\n");
             printf ("Total packets received:        %ld\n", cerver->stats->total_n_packets_received);
             printf ("Total receives done:           %ld\n", cerver->stats->total_n_receives_done);
             printf ("Total bytes received:          %ld\n\n", cerver->stats->total_bytes_received);
 
+            printf ("\n");
             printf ("N packets sent:                %ld\n", cerver->stats->n_packets_sent);
             printf ("Total bytes sent:              %ld\n", cerver->stats->total_bytes_sent);
 
-            printf ("\nCurrent active client connections:         %ld\n", cerver->stats->current_active_client_connections);
+            printf ("\n");
+            printf ("Current active client connections:         %ld\n", cerver->stats->current_active_client_connections);
             printf ("Current connected clients:                 %ld\n", cerver->stats->current_n_connected_clients);
             printf ("Current on hold connections:               %ld\n", cerver->stats->current_n_hold_connections);
             printf ("Total clients:                             %ld\n", cerver->stats->total_n_clients);

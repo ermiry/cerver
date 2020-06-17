@@ -14,18 +14,27 @@
 
 #include "cerver/threads/thread.h"
 
+// used for connection with exponential backoff (secs)
+#define DEFAULT_CONNECTION_MAX_SLEEP                60
+#define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
+
 struct _Socket;
 struct _Cerver;
 struct _CerverReport;
 struct _Client;
+struct _Connection;
 struct _PacketsPerType;
 struct _SockReceive;
 
 struct _ConnectionStats {
     
-    time_t connection_threshold_time;       // every time we want to reset the connection's stats
+    time_t threshold_time;                  // every time we want to reset the connection's stats
+
+    u64 n_receives_done;                    // n calls to recv ()
+
     u64 total_bytes_received;               // total amount of bytes received from this connection
     u64 total_bytes_sent;                   // total amount of bytes that have been sent to the connection
+
     u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
     u64 n_packets_sent;                     // total number of packets sent to this connection
 
@@ -38,8 +47,7 @@ typedef struct _ConnectionStats ConnectionStats;
 
 extern ConnectionStats *connection_stats_new (void);
 
-#define DEFAULT_CONNECTION_MAX_SLEEP                60        // used for connection with exponential backoff (secs)
-#define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
+extern void connection_stats_print (struct _Connection *connection);
 
 // a connection from a client
 struct _Connection {

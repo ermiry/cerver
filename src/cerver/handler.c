@@ -1304,6 +1304,8 @@ void cerver_receive (void *ptr) {
                     cr->cerver->stats->total_n_receives_done += 1;
                     cr->cerver->stats->total_bytes_received += rc;
 
+                    // TODO: also update client & connection stats
+
                     // handle the received packet buffer -> split them in packets of the correct size
                     ReceiveHandle *receive = receive_handle_new (
                         cr->cerver,
