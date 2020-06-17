@@ -1805,7 +1805,7 @@ u8 cerver_poll (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
-        char *s = c_string_create ("Cerver %s main handler has started!", cerver->info->name->str);
+        char *s = c_string_create ("Cerver %s ready in port %d!", cerver->info->name->str, cerver->port);
         if (s) {
             cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
             free (s);

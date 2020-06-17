@@ -251,20 +251,22 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 
     int retval = 1;
 
-    Packet *packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
-    if (packet) {
-        packet_set_network_values (packet, NULL, client, connection, NULL);
-        size_t sent = 0;
-        if (packet_send (packet, 0, &sent, false)) {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to send test to cerver");
+    if ((client->running) && connection->active) {
+        Packet *packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+        if (packet) {
+            packet_set_network_values (packet, NULL, client, connection, NULL);
+            size_t sent = 0;
+            if (packet_send (packet, 0, &sent, false)) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to send test to cerver");
+            }
+
+            else {
+                printf ("APP_PACKET sent to cerver: %ld\n", sent);
+                retval = 0;
+            } 
+
+            packet_delete (packet);
         }
-
-        else {
-            printf ("APP_PACKET sent to cerver: %ld\n", sent);
-            retval = 0;
-        } 
-
-        packet_delete (packet);
     }
 
     return retval;
