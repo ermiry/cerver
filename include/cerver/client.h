@@ -282,8 +282,14 @@ extern u8 client_connect_and_start_async (Client *client, struct _Connection *co
 // returns 0 on success, 1 on error
 extern int client_connection_end (Client *client, struct _Connection *connection);
 
-// stop any on going connection and process then, destroys the client
+// stop any on going connection and process and destroys the client
+// returns 0 on success, 1 on error
 extern u8 client_teardown (Client *client);
+
+// calls client_teardown () in a new thread as handlers might need time to stop
+// that will cause the calling thread to wait at least a second
+// returns 0 on success creating thread, 1 on error
+extern u8 client_teardown_async (Client *client);
 
 /*** update ***/
 

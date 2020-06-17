@@ -1362,7 +1362,9 @@ static void client_connection_terminate (Client *client, Connection *connection)
                 Packet *packet = packet_generate_request (REQUEST_PACKET, CLIENT_CLOSE_CONNECTION, NULL, 0);
                 if (packet) {
                     packet_set_network_values (packet, NULL, client, connection, NULL);
-                    packet_send (packet, 0, NULL, false);
+                    if (packet_send (packet, 0, NULL, false)) {
+                        cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
+                    }
                     packet_delete (packet);
                 }
             }
@@ -1370,6 +1372,23 @@ static void client_connection_terminate (Client *client, Connection *connection)
             connection_end (connection);
         } 
     }
+
+}
+
+static int client_connection_drop (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        connection_end (connection);
+
+        connection_delete (dlist_remove_element (client->connections, 
+            dlist_get_element (client->connections, connection, NULL)));
+
+        retval = 0;
+    }
+
+    return retval;
 
 }
 
@@ -1381,13 +1400,8 @@ int client_connection_end (Client *client, Connection *connection) {
     int retval = 1;
 
     if (client && connection) {
-        // client_connection_terminate (client, connection);
-        connection_end (connection);
-
-        connection_delete (dlist_remove_element (client->connections, 
-            dlist_get_element (client->connections, connection, NULL)));
-
-        retval = 0;
+        client_connection_terminate (client, connection);
+        retval = client_connection_drop (client, connection);
     }
 
     return retval;
@@ -1436,6 +1450,13 @@ static void client_custom_handler_destroy (Client *client) {
 static void client_handlers_destroy (Client *client) {
 
     if (client) {
+        char *s = c_string_create ("Client %s num_handlers_alive: %d",
+            client->name->str, client->num_handlers_alive);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+
         client_app_handler_destroy (client);
 
         client_app_error_handler_destroy (client);
@@ -1443,7 +1464,7 @@ static void client_handlers_destroy (Client *client) {
         client_custom_handler_destroy (client);
 
         // poll remaining handlers
-        // while (client->num_handlers_alive) {
+        while (client->num_handlers_alive) {
             if (client->app_packet_handler)
                 bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
 
@@ -1453,19 +1474,16 @@ static void client_handlers_destroy (Client *client) {
             if (client->custom_packet_handler)
                 bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
             
-            // sleep (1);
-        // }
+            sleep (1);
+        }
     }
 
 }
 
-// stop any on going connection and process then, destroys the client
-u8 client_teardown (Client *client) {
+static void *client_teardown_internal (void *client_ptr) {
 
-    u8 retval = 1;
-
-    if (client) {
-        client->running = false;
+    if (client_ptr) {
+        Client *client = (Client *) client_ptr;
 
         // end any ongoing connection
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
@@ -1479,11 +1497,41 @@ u8 client_teardown (Client *client) {
         client->connections = NULL;
 
         client_delete (client);
+    }
+
+    return NULL;
+
+}
+
+// stop any on going connection and process and destroys the client
+// returns 0 on success, 1 on error
+u8 client_teardown (Client *client) {
+
+    u8 retval = 1;
+
+    if (client) {
+        client->running = false;
+
+        client_teardown_internal (client);
 
         retval = 0;
     }
 
     return retval;
+
+}
+
+// calls client_teardown () in a new thread as handlers might need time to stop
+// that will cause the calling thread to wait at least a second
+// returns 0 on success creating thread, 1 on error
+u8 client_teardown_async (Client *client) {
+
+    pthread_t thread_id = 0;
+    return client ? thread_create_detachable (
+        &thread_id,
+        client_teardown_internal,
+        client
+    ) : 1;
 
 }
 
@@ -1911,7 +1959,7 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 static void client_receive_handle_failed (Client *client, Connection *connection) {
 
     if (client && connection) {
-        if (!client_connection_end (client, connection)) {
+        if (!client_connection_drop (client, connection)) {
             // check if the client has any other active connection
             if (client->connections->size <= 0) {
                 client->running = false;
