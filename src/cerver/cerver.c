@@ -1324,10 +1324,9 @@ static void cerver_update (void *args) {
         cerver_log_success ("cerver_update () has started!");
         #endif
 
-        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_args);
 
-        // FIXME: use real cerver ticks
-        u32 time_per_frame = 1000000 / 15;
+        u32 time_per_frame = 1000000 / cerver->update_ticks;
         // printf ("time per frame: %d\n", time_per_frame);
         u32 temp = 0;
         i32 sleep_time = 0;
@@ -1360,7 +1359,7 @@ static void cerver_update (void *args) {
             fps++;
             // printf ("delta ticks: %ld\n", delta_ticks);
             if (delta_ticks >= 1000) {
-                printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+                // printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
                 delta_ticks = 0;
                 fps = 0;
             }
