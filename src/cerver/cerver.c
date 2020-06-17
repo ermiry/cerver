@@ -1334,12 +1334,106 @@ static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
 
 #pragma GCC diagnostic pop
 
+static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
+
+    cerver_inactive_check (node->right, cerver, current_time);
+
+    // check for client inactivity
+    if (node->id) {
+        Client *client = (Client *) node->id;
+
+        if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
+            // the client should be dropped
+            char *s = c_string_create ("Client %ld has been inactive more than %d secs and should be dropped",
+                client->id, cerver->max_inactive_time);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    cerver_inactive_check (node->left, cerver, current_time);
+
+}
+
+// 17/06/2020 - thread to check for inactive clients
+static void *cerver_inactive_thread (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+
+        u32 count = 0;
+        while (cerver->isRunning) {
+            if (count == cerver->check_inactive_interval) {
+                count = 0;
+
+                char *s = c_string_create ("Checking for inactive clients in cerver %s...",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+
+                time_t current_time = time (NULL);
+                cerver_inactive_check (cerver->clients->root, cerver, current_time);
+
+                s = c_string_create ("Done checking for inactive clients in cerver %s",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+            }
+
+            sleep (1);
+            count++;
+        }
+    }
+
+    return NULL;
+
+}
+
 static u8 cerver_start_inactive (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
+        char *s = c_string_create (
+            "Cerver %s is set to check for inactive clients with max time of <%d> secs every <%d> secs",
+            cerver->info->name->str,
+            cerver->max_inactive_time,
+            cerver->check_inactive_interval
+        );
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
 
+        if (!thread_create_detachable (
+            &cerver->inactive_thread_id,
+            (void *(*) (void *)) cerver_inactive_thread,
+            cerver
+        )) {
+            char *s = c_string_create ("Created cerver %s INACTIVE thread!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_success (s);
+                free (s);
+            }
+
+            retval = 0;
+        }
+
+        else {
+            char *s = c_string_create ("Failed to create cerver %s INACTIVE thread!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
+        }
     }
 
     return retval;

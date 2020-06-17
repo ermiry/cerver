@@ -146,6 +146,7 @@ struct _Cerver {
     bool inactive_clients;              // enable / disable checking
     u32 max_inactive_time;              // max secs allowed for a client to be inactive
     u32 check_inactive_interval;        // how often to check for inactive clients
+    pthread_t inactive_thread_id;
 
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd

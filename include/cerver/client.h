@@ -61,6 +61,8 @@ struct _Client {
     // multiple connections can be associated with the same client using the same session id
     estring *session_id;
 
+    time_t last_activity;   // the last time the client sent / receive data
+
     bool drop_client;        // client failed to authenticate
 
     void *data;
