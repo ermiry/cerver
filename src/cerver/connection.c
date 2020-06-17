@@ -258,7 +258,8 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 
 // sets a custom receive method to handle incomming packets in the connection
 // a reference to the client and connection will be passed to the action as ClientConnection structure
-void connection_set_custom_receive (Connection *connection, Action custom_receive, void *args) {
+// the method must return 0 on success & 1 on error
+void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args) {
 
     if (connection) {
         connection->custom_receive = custom_receive;
@@ -665,12 +666,16 @@ void connection_update (void *ptr) {
             while (cc->client->running && cc->connection->active) {
                 if (cc->connection->custom_receive) {
                     // if a custom receive method is set, use that one directly
-                    cc->connection->custom_receive (custom_data);
+                    if (cc->connection->custom_receive (custom_data)) {
+                        break;      // an error has ocurred
+                    }
                 } 
 
                 else {
                     // use the default receive method that expects cerver type packages
-                    client_receive (cc->client, cc->connection);
+                    if (client_receive (cc->client, cc->connection)) {
+                        break;      // an error has ocurred
+                    }
                 }
             }
         // }

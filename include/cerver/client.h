@@ -287,8 +287,9 @@ extern u8 client_teardown (Client *client);
 
 /*** update ***/
 
-// receives incoming data from the socket and handles cerver packets
-extern void client_receive (Client *client, Connection *connection);
+// receives incoming data from the socket
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+extern unsigned int client_receive (Client *client, struct _Connection *connection);
 
 #pragma endregion
 

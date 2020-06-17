@@ -25,7 +25,7 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-void client_receive (Client *client, Connection *connection);
+unsigned int client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
 
@@ -1012,10 +1012,14 @@ static u8 client_start (Client *client) {
         // check if we walready have the client poll running
         if (!client->running) {
             time (&client->time_started);
+            client->running = true;
 
             if (!client_handlers_start (client)) {
-                client->running = true;
                 retval = 0;
+            }
+
+            else {
+                client->running = false;
             }
         }
 
@@ -1377,7 +1381,8 @@ int client_connection_end (Client *client, Connection *connection) {
     int retval = 1;
 
     if (client && connection) {
-        client_connection_terminate (client, connection);
+        // client_connection_terminate (client, connection);
+        connection_end (connection);
 
         connection_delete (dlist_remove_element (client->connections, 
             dlist_get_element (client->connections, connection, NULL)));
@@ -1917,7 +1922,10 @@ static void client_receive_handle_failed (Client *client, Connection *connection
 }
 
 // receives incoming data from the socket
-void client_receive (Client *client, Connection *connection) {
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+unsigned int client_receive (Client *client, Connection *connection) {
+
+    unsigned int retval = 1;
 
     if (client && connection) {
         char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
@@ -1977,6 +1985,8 @@ void client_receive (Client *client, Connection *connection) {
                         packet_buffer, 
                         rc
                     );
+
+                    retval = 0;
                 } break;
             }
 
@@ -1990,6 +2000,8 @@ void client_receive (Client *client, Connection *connection) {
             #endif
         }
     }
+
+    return retval;
 
 }
 
