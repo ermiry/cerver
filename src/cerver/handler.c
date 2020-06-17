@@ -1139,66 +1139,68 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
     if (cr_ptr) {
         CerverReceive *cr = (CerverReceive *) cr_ptr;
 
-        pthread_mutex_lock (cr->socket->mutex);
+        if (cr->socket) {
+            pthread_mutex_lock (cr->socket->mutex);
 
-        if (cr->socket->sock_fd > 0) {
-            if (cr->on_hold) {
-                Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
-                if (connection) {
-                    on_hold_connection_drop (cr->cerver, connection);
+            if (cr->socket->sock_fd > 0) {
+                if (cr->on_hold) {
+                    Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
+                    if (connection) {
+                        on_hold_connection_drop (cr->cerver, connection);
+                    }
+
+                    // for what ever reason we have a rogue connection
+                    else {
+                        #ifdef CERVER_DEBUG
+                        char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
+                            cr->socket->sock_fd, cr->cerver->info->name->str);
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                            free (s);
+                        }
+                        #endif
+
+                        close (cr->socket->sock_fd);
+                        cr->socket->sock_fd = -1;
+                        // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                    }
                 }
 
-                // for what ever reason we have a rogue connection
                 else {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
-                        cr->socket->sock_fd, cr->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                        free (s);
+                    // check if the socket belongs to a player inside a lobby
+                    if (cr->lobby) {
+                        if (cr->lobby->players->size > 0) {
+                            Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
+                            if (player) player_unregister_from_lobby (cr->lobby, player);
+                        }
                     }
-                    #endif
 
-                    close (cr->socket->sock_fd);
-                    cr->socket->sock_fd = -1;
-                    // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                    // get to which client the connection is registered to
+                    Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
+                    if (client) {
+                        client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
+                    } 
+
+                    // for what ever reason we have a rogue connection
+                    else {
+                        #ifdef CERVER_DEBUG
+                        char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
+                            cr->socket->sock_fd, cr->cerver->info->name->str);
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                            free (s);
+                        }
+                        #endif
+
+                        close (cr->socket->sock_fd);        // just close the socket
+                        cr->socket->sock_fd = -1;
+                        // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                    }
                 }
             }
 
-            else {
-                // check if the socket belongs to a player inside a lobby
-                if (cr->lobby) {
-                    if (cr->lobby->players->size > 0) {
-                        Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
-                        if (player) player_unregister_from_lobby (cr->lobby, player);
-                    }
-                }
-
-                // get to which client the connection is registered to
-                Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
-                if (client) {
-                    client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
-                } 
-
-                // for what ever reason we have a rogue connection
-                else {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
-                        cr->socket->sock_fd, cr->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                        free (s);
-                    }
-                    #endif
-
-                    close (cr->socket->sock_fd);        // just close the socket
-                    cr->socket->sock_fd = -1;
-                    // cerver_sockets_pool_push (cr->cerver, cr->socket);
-                }
-            }
+            pthread_mutex_unlock (cr->socket->mutex);
         }
-
-        pthread_mutex_unlock (cr->socket->mutex);
 
         cerver_receive_delete (cr);
     }
@@ -1768,11 +1770,13 @@ static inline void cerver_poll_handle (Cerver *cerver) {
                     // or a connection is broken (SIGPIPE is also set when we try to write to it)
                     // or The other end has shut down one direction
                     case POLLHUP: {
+                        // printf ("POLLHUP\n");
                         cerver_switch_receive_handle_failed (cr);
                     } break;
 
                     // An asynchronous error occurred
                     case POLLERR: {
+                        // printf ("POLLERR\n");
                         cerver_switch_receive_handle_failed (cr);
                     } break;
 
@@ -1781,7 +1785,11 @@ static inline void cerver_poll_handle (Cerver *cerver) {
                         /*** TODO: ***/
                     } break;
 
-                    default: break;
+                    default: {
+                        // 17/06/2020 -- 15:06 -- handle as failed any other signal
+                        // to avoid hanging up at 100% or getting a segfault
+                        cerver_switch_receive_handle_failed (cr);
+                    } break;
                 }
             }
         }
