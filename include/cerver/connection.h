@@ -18,6 +18,8 @@
 #define DEFAULT_CONNECTION_MAX_SLEEP                60
 #define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
 
+#define DEFAULT_CONNECTION_UPDATE_SLEEP             200000
+
 struct _Socket;
 struct _Cerver;
 struct _CerverReport;
@@ -84,6 +86,7 @@ struct _Connection {
     Action received_data_delete;
 
     pthread_t update_thread_id;
+    u32 update_sleep;
 
     bool receive_packets;                   // set if the connection will receive packets or not (default true)
     delegate custom_receive;                // custom receive method to handle incomming packets in the connection
@@ -129,6 +132,10 @@ extern void connection_set_receive_buffer_size (Connection *connection, u32 size
 // sets the connection received data
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
 extern void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
+
+// 17/06/2020
+// sets the waiting time (sleep) between each call to recv () in connection_update () thread
+extern void connection_set_update_sleep (Connection *connection, u32 sleep);
 
 typedef struct ConnectionCustomReceiveData {
 

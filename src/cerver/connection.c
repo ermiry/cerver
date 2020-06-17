@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <unistd.h>
 #include <time.h>
 
 #include "cerver/types/types.h"
@@ -114,6 +115,8 @@ Connection *connection_new (void) {
 
         connection->received_data = NULL;
         connection->received_data_delete = NULL;
+
+        connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
 
         connection->receive_packets = true;
         connection->custom_receive = NULL;
@@ -253,6 +256,14 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
         connection->received_data_size = data_size;
         connection->received_data_delete = data_delete;
     }
+
+}
+
+// 17/06/2020
+// sets the waiting time (sleep) between each call to recv () in connection_update () thread
+void connection_set_update_sleep (Connection *connection, u32 sleep) {
+
+    if (connection) connection->update_sleep = sleep;
 
 }
 
@@ -662,23 +673,33 @@ void connection_update (void *ptr) {
 
         if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
-        // if (cc->connection->receive_packets) {
-            while (cc->client->running && cc->connection->active) {
-                if (cc->connection->custom_receive) {
-                    // if a custom receive method is set, use that one directly
-                    if (cc->connection->custom_receive (custom_data)) {
-                        break;      // an error has ocurred
-                    }
-                } 
+        // 17/06/2020 - non blocking recv () to correctly use client mutex
+        // when destroying client
+        if (sock_set_blocking (cc->connection->socket->sock_fd, true)) {
+            // if (cc->connection->receive_packets) {
+                while (cc->client->running && cc->connection->active) {
+                    pthread_mutex_lock (cc->client->lock);
 
-                else {
-                    // use the default receive method that expects cerver type packages
-                    if (client_receive (cc->client, cc->connection)) {
-                        break;      // an error has ocurred
+                    if (cc->connection->custom_receive) {
+                        // if a custom receive method is set, use that one directly
+                        if (cc->connection->custom_receive (custom_data)) {
+                            // break;      // an error has ocurred
+                        }
+                    } 
+
+                    else {
+                        // use the default receive method that expects cerver type packages
+                        if (client_receive (cc->client, cc->connection)) {
+                            // break;      // an error has ocurred
+                        }
                     }
+
+                    pthread_mutex_unlock (cc->client->lock);
+
+                    usleep (cc->connection->update_sleep);
                 }
-            }
-        // }
+            // }    
+        }
 
         connection_custom_receive_data_delete (custom_data);
         client_connection_aux_delete (cc);
