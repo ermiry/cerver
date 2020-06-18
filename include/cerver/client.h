@@ -81,6 +81,9 @@ struct _Client {
     struct _Handler *app_error_packet_handler;
     struct _Handler *custom_packet_handler;
 
+    // 17/06/2020 - general client lock
+    pthread_mutex_t *lock;
+
     ClientStats *stats;
 
 };
@@ -278,6 +281,11 @@ extern int client_connect_and_start (Client *client, struct _Connection *connect
 extern u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
 
 /*** end ***/
+
+// terminates the connection & closes the socket
+// but does NOT destroy the current connection
+// returns 0 on success, 1 on error
+extern int client_connection_close (Client *client, Connection *connection);
 
 // terminates and destroy a connection registered to a client
 // that is connected to a cerver
