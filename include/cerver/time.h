@@ -1,10 +1,24 @@
 #ifndef _CERVER_TIME_H_
 #define _CERVER_TIME_H_
 
+#ifndef __USE_POSIX199309
+    #define __USE_POSIX199309
+#endif
+
 #include <time.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
+
+typedef struct timespec TimeSpec;
+
+extern void timespec_delete (void *timespec_ptr);
+
+extern TimeSpec *timer_get_timespec (void);
+
+extern double timer_elapsed_time (TimeSpec *start, TimeSpec *end);
+
+extern void timer_sleep_for_seconds (double seconds);
 
 extern struct tm *timer_get_gmt_time (void);
 
