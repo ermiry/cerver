@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include <errno.h>
 #endif
 
@@ -19,7 +19,7 @@
 
 #include "cerver/game/lobby.h"
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include "cerver/utils/log.h"
 #endif
 
@@ -243,7 +243,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to realloc packet data!");
                 #endif
                 packet->data = NULL;
@@ -265,7 +265,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to allocate packet data!");
                 #endif
                 packet->data = NULL;
@@ -576,7 +576,7 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
                 }
 
                 else {
-                    #ifdef CERVER_DEBUG
+                    #ifdef PACKETS_DEBUG
                     printf ("\n");
                     perror ("Error");
                     printf ("\n");
@@ -643,14 +643,14 @@ bool packet_check (Packet *packet) {
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
                 #endif
             }
         }
 
         else {
-            #ifdef CERVER_DEBUG
+            #ifdef PACKETS_DEBUG
             cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
             #endif
         }
