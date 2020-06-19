@@ -6,7 +6,7 @@ MATH		:= -lm
 CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
-DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D PACKETS_DEBUG
+DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D PACKETS_DEBUG
 
 CC          := gcc
 
