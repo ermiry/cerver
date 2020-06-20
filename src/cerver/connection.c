@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <unistd.h>
 #include <time.h>
 
 #include "cerver/types/types.h"
@@ -21,7 +22,9 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static ConnectionStats *connection_stats_new (void) {
+#pragma region stats
+
+ConnectionStats *connection_stats_new (void) {
 
     ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
     if (stats) {
@@ -44,6 +47,45 @@ static inline void connection_stats_delete (ConnectionStats *stats) {
     } 
     
 }
+
+void connection_stats_print (Connection *connection) {
+
+    if (connection) {
+        if (connection->stats) {
+            printf ("\nConnection's stats:\n");
+            printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
+
+            printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
+
+            printf ("Total bytes received:      %ld\n", connection->stats->total_bytes_received);
+            printf ("Total bytes sent:          %ld\n", connection->stats->total_bytes_sent);
+
+            printf ("N packets received:        %ld\n", connection->stats->n_packets_received);
+            printf ("N packets sent:            %ld\n", connection->stats->n_packets_sent);
+
+            printf ("\nReceived packets:\n");
+            packets_per_type_print (connection->stats->received_packets);
+
+            printf ("\nSent packets:\n");
+            packets_per_type_print (connection->stats->sent_packets);
+        }
+
+        else {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+                "Connection does not have a reference to a connection stats!");
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
+            "Can't get stats of a NULL connection!");
+    }
+
+}
+
+#pragma endregion
+
+#pragma region main
 
 Connection *connection_new (void) {
 
@@ -69,8 +111,12 @@ Connection *connection_new (void) {
         connection->cerver_report = NULL;
         connection->sock_receive = NULL;
 
+        connection->full_packet = false;
+
         connection->received_data = NULL;
         connection->received_data_delete = NULL;
+
+        connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
 
         connection->receive_packets = true;
         connection->custom_receive = NULL;
@@ -213,9 +259,18 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 
 }
 
+// 17/06/2020
+// sets the waiting time (sleep) between each call to recv () in connection_update () thread
+void connection_set_update_sleep (Connection *connection, u32 sleep) {
+
+    if (connection) connection->update_sleep = sleep;
+
+}
+
 // sets a custom receive method to handle incomming packets in the connection
 // a reference to the client and connection will be passed to the action as ClientConnection structure
-void connection_set_custom_receive (Connection *connection, Action custom_receive, void *args) {
+// the method must return 0 on success & 1 on error
+void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args) {
 
     if (connection) {
         connection->custom_receive = custom_receive;
@@ -382,6 +437,43 @@ bool connection_check_owner (Client *client, Connection *connection) {
 
 }
 
+// necessary steps to completely remove a connection from the cerver and from the client
+// returns 0 on success, 1 on error
+u8 connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
+
+    u8 retval = 1;
+
+    if (cerver && client && connection) {
+        // pthread_mutex_lock (connection->socket->mutex);
+
+        connection_unregister_from_cerver (cerver, client, connection);
+
+        // unmap the client connection from the cerver poll
+        cerver_poll_unregister_connection (cerver, client, connection);
+
+        // close the socket
+        connection_end (connection);
+
+        // remove the connection from the client
+        dlist_remove_element (client->connections, le);
+
+        // 29/05/2020
+        // move the socket to the cerver's socket pool to avoid destroying it
+        // to handle if any other thread is waiting to access the socket's mutex
+        cerver_sockets_pool_push (cerver, connection->socket);
+        connection->socket = NULL;
+
+        connection_delete (connection);
+
+        retval = 0;
+
+        // pthread_mutex_unlock (connection->socket->mutex);
+    }
+
+    return retval;
+
+}
+
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
 u8 connection_register_to_client (Client *client, Connection *connection) {
@@ -422,33 +514,6 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
     }
 
     return retval;
-
-}
-
-static void connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
-
-    if (cerver && client && connection) {
-        // pthread_mutex_lock (connection->socket->mutex);
-
-        // unmap the client connection from the cerver poll
-        cerver_poll_unregister_connection (cerver, client, connection);
-
-        // close the socket
-        connection_end (connection);
-
-        // remove the connection from the client
-        dlist_remove_element (client->connections, le);
-
-        // 29/05/2020
-        // move the socket to the cerver's socket pool to avoid destroying it
-        // to handle if any other thread is waiting to access the socket's mutex
-        cerver_sockets_pool_push (cerver, connection->socket);
-        connection->socket = NULL;
-
-        connection_delete (connection);
-
-        // pthread_mutex_unlock (connection->socket->mutex);
-    }
 
 }
 
@@ -519,12 +584,23 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
 // returns 0 on success, 1 on error
 u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection *connection) {
 
-    u8 errors = 0;
+    u8 retval = 1;
 
     if (cerver && client && connection) {
         // remove the sock fd from each map
         const void *key = &connection->socket->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
+            // char *s = c_string_create ("Removed sock fd %d from cerver's %s client sock map.", 
+            //     connection->socket->sock_fd, cerver->info->name->str);
+            // if (s) {
+            //     cerver_log_success (s);
+            //     free (s);
+            // }
+
+            retval = 0;
+        }
+
+        else {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
                 connection->socket->sock_fd, cerver->info->name->str);
@@ -533,11 +609,10 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
                 free (s);
             }
             #endif
-            errors = 1;
         }
     }
 
-    return errors;
+    return retval;
 
 }
 
@@ -598,22 +673,38 @@ void connection_update (void *ptr) {
 
         if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
-        // if (cc->connection->receive_packets) {
-            while (cc->client->running && cc->connection->active) {
-                if (cc->connection->custom_receive) {
-                    // if a custom receive method is set, use that one directly
-                    cc->connection->custom_receive (custom_data);
-                } 
+        // 17/06/2020 - non blocking recv () to correctly use client mutex
+        // when destroying client
+        if (sock_set_blocking (cc->connection->socket->sock_fd, true)) {
+            // if (cc->connection->receive_packets) {
+                while (cc->client->running && cc->connection->active) {
+                    pthread_mutex_lock (cc->client->lock);
 
-                else {
-                    // use the default receive method that expects cerver type packages
-                    client_receive (cc->client, cc->connection);
+                    if (cc->connection->custom_receive) {
+                        // if a custom receive method is set, use that one directly
+                        if (cc->connection->custom_receive (custom_data)) {
+                            // break;      // an error has ocurred
+                        }
+                    } 
+
+                    else {
+                        // use the default receive method that expects cerver type packages
+                        if (client_receive (cc->client, cc->connection)) {
+                            // break;      // an error has ocurred
+                        }
+                    }
+
+                    pthread_mutex_unlock (cc->client->lock);
+
+                    usleep (cc->connection->update_sleep);
                 }
-            }
-        // }
+            // }    
+        }
 
         connection_custom_receive_data_delete (custom_data);
         client_connection_aux_delete (cc);
     }
 
 }
+
+#pragma endregion

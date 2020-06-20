@@ -51,10 +51,10 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+        cerver_log_error ("Failed to create cerver!");
 
-		cerver_delete (my_cerver);
+        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// cerver_delete (client_cerver);
 	}
 
 	return 0;

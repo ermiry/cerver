@@ -7,7 +7,7 @@
 
 static char *log_get_msg_type (LogMsgType type) {
 
-	char temp[16];
+	char temp[16] = { 0 };
 
 	switch (type) {
 		case LOG_ERROR: strcpy (temp, "[ERROR]"); break;
@@ -29,7 +29,7 @@ static char *log_get_msg_type (LogMsgType type) {
 	}
 
 	char *retval = (char *) calloc (strlen (temp) + 1, sizeof (temp));
-	strcpy (retval, temp);
+	if (retval) strcpy (retval, temp);
 
 	return retval;
 

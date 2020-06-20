@@ -1,0 +1,16 @@
+{
+  "name": "cerver-web-example",
+  "version": "1.0.0",
+  "description": "Cerver Web Example",
+  "main": "api.js",
+  "scripts": {
+    "start": "node api.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Erick Salas",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "express": "^4.17.1"
+  }
+}

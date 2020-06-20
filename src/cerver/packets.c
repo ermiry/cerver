@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include <errno.h>
 #endif
 
@@ -19,7 +19,7 @@
 
 #include "cerver/game/lobby.h"
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include "cerver/utils/log.h"
 #endif
 
@@ -243,7 +243,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to realloc packet data!");
                 #endif
                 packet->data = NULL;
@@ -265,7 +265,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to allocate packet data!");
                 #endif
                 packet->data = NULL;
@@ -477,7 +477,7 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     if (client) {
-        client->stats->n_packets_send += 1;
+        client->stats->n_packets_sent += 1;
         client->stats->total_bytes_sent += sent;
     }
 
@@ -576,13 +576,13 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
                 }
 
                 else {
-                    #ifdef CERVER_DEBUG
+                    #ifdef PACKETS_DEBUG
                     printf ("\n");
                     perror ("Error");
                     printf ("\n");
                     #endif
 
-                    if (packet->connection) packet->cerver->stats->sent_packets->n_bad_packets += 1;
+                    if (packet->cerver) packet->cerver->stats->sent_packets->n_bad_packets += 1;
                     if (packet->client) packet->client->stats->sent_packets->n_bad_packets += 1;
                     if (packet->connection) packet->connection->stats->sent_packets->n_bad_packets += 1;
 
@@ -628,31 +628,34 @@ u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd,
 }
 
 // check if packet has a compatible protocol id and a version
-// returns 0 on success, 1 on error
-u8 packet_check (Packet *packet) {
+// returns false on a bad packet
+bool packet_check (Packet *packet) {
 
-    u8 errors = 0;
+    bool retval = false;
 
     if (packet) {
         PacketHeader *header = packet->header;
 
-        if (header->protocol_id != protocol_id) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
-            #endif
-            errors |= 1;
+        if (header->protocol_id == protocol_id) {
+            if ((header->protocol_version.major > protocol_version.major)
+                || (header->protocol_version.minor > protocol_version.minor)) {
+                retval = true;
+            }
+
+            else {
+                #ifdef PACKETS_DEBUG
+                cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+                #endif
+            }
         }
 
-        if (header->protocol_version.major != protocol_version.major) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+        else {
+            #ifdef PACKETS_DEBUG
+            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
             #endif
-            errors |= 1;
         }
     }
 
-    else errors |= 1;
-
-    return errors;
+    return retval;
 
 }

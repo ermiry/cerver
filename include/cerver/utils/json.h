@@ -27,8 +27,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _CENGIN_JSON_H_
-#define _CENGIN_JSON_H_
+#ifndef _CERVER_UTILS_JSON_H_
+#define _CERVER_UTILS_JSON_H_
 
 #ifndef json_char
    #define json_char char

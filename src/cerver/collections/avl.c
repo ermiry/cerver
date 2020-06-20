@@ -245,10 +245,12 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 			} 
 			
 			else {
-				int balance = (*parent)->left->right->balance;
-				avl_left_rotation (&(*parent)->left);
-				avl_right_rotation (parent);
-				avl_balance_fix (*parent, balance);
+				if ((*parent)->left->right) {
+					int balance = (*parent)->left->right->balance;
+					avl_left_rotation (&(*parent)->left);
+					avl_right_rotation (parent);
+					avl_balance_fix (*parent, balance);
+				}
 			}
 			*flag = 0;
 			break;
@@ -272,10 +274,12 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 			} 
 			
 			else {
-				int balance = (*parent)->right->left->balance;
-				avl_right_rotation (&(*parent)->right);
-				avl_left_rotation (parent);
-				avl_balance_fix (*parent, balance);
+				if ((*parent)->right->left) {
+					int balance = (*parent)->right->left->balance;
+					avl_right_rotation (&(*parent)->right);
+					avl_left_rotation (parent);
+					avl_balance_fix (*parent, balance);
+				}
 			}
 			*flag = 0;
 			break;
@@ -288,31 +292,32 @@ static void avl_treat_left_reduction (AVLNode **parent, char *flag) {
 
 	(*parent)->balance++;
 
-	short shortCut;
 	switch ((*parent)->balance) {
 		case 1: *flag = 0; break;
 		case 2:
-			shortCut = (*parent)->right->balance;
-			switch (shortCut) {
-				case 1:
-					avl_left_rotation (parent);
-					(*parent)->balance = 0;
-					(*parent)->left->balance = 0;
-					*flag = 1;
-					break;
-				case 0:
-					avl_left_rotation (parent);
-					(*parent)->balance = -1;
-					(*parent)->left->balance = 1;
-					*flag = 0;
-					break;
-				case -1:
-					shortCut = (*parent)->right->left->balance;
-					avl_right_rotation (&(*parent)->right);
-					avl_left_rotation (parent);
-					avl_balance_fix (*parent, shortCut);
-					*flag = 1;
-					break;
+			if ((*parent)->right) {
+				short shortCut = (*parent)->right->balance;
+				switch (shortCut) {
+					case 1:
+						avl_left_rotation (parent);
+						(*parent)->balance = 0;
+						(*parent)->left->balance = 0;
+						*flag = 1;
+						break;
+					case 0:
+						avl_left_rotation (parent);
+						(*parent)->balance = -1;
+						(*parent)->left->balance = 1;
+						*flag = 0;
+						break;
+					case -1:
+						shortCut = (*parent)->right->left->balance;
+						avl_right_rotation (&(*parent)->right);
+						avl_left_rotation (parent);
+						avl_balance_fix (*parent, shortCut);
+						*flag = 1;
+						break;
+				}
 			}
 			break;
 		default: break;
@@ -325,31 +330,32 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 
 	(*parent)->balance--;
 
-	short shortCut;
 	switch ((*parent)->balance){
 		case -1: *flag = 0; break;
 		case -2:
-			shortCut = (*parent)->left->balance;
-			switch (shortCut) {
-				case -1:
-					avl_right_rotation (parent);
-					(*parent)->balance = 0;
-					(*parent)->right->balance = 0;
-					*flag = 1;
-					break;
-				case 0:
-					avl_right_rotation(parent);
-					(*parent)->balance = 1;
-					(*parent)->right->balance = -1;
-					*flag = 0;
-					break;
-				case 1:
-					shortCut = (*parent)->left->right->balance;
-					avl_left_rotation (&(*parent)->left);
-					avl_right_rotation (parent);
-					avl_balance_fix (*parent, shortCut);
-					*flag  = 1;
-					break;
+			if ((*parent)->left) {
+				short shortCut = (*parent)->left->balance;
+				switch (shortCut) {
+					case -1:
+						avl_right_rotation (parent);
+						(*parent)->balance = 0;
+						(*parent)->right->balance = 0;
+						*flag = 1;
+						break;
+					case 0:
+						avl_right_rotation(parent);
+						(*parent)->balance = 1;
+						(*parent)->right->balance = -1;
+						*flag = 0;
+						break;
+					case 1:
+						shortCut = (*parent)->left->right->balance;
+						avl_left_rotation (&(*parent)->left);
+						avl_right_rotation (parent);
+						avl_balance_fix (*parent, shortCut);
+						*flag  = 1;
+						break;
+				}
 			}
 			break;
 		default: break;
@@ -416,7 +422,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 				}
 				
 				else {
-					void *data = NULL;
+					void *data = data = (*parent)->id;
 
 					if ((*parent)->left != NULL) {
 						AVLNode *p = (*parent)->left;
@@ -438,7 +444,9 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 						free (*parent);
 						*parent = NULL;
 					}
+
 					*flag = 1;
+
 					return data;
 				}
 				break;
