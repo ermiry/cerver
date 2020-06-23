@@ -17,13 +17,14 @@ char *input_get_line (void) {
 
 	size_t lenmax = 128, len = lenmax;
 	char *line = malloc (lenmax), *linep = line;
-	int c = 0;
 
 	if (line) {
+		int c = 0;
+
 		for (;;) {
 			c = fgetc (stdin);
 
-			if (c == EOF) break;
+			if (c == EOF || c == '\n') break;
 
 			if (--len == 0) {
 				len = lenmax;
