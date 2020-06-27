@@ -16,7 +16,7 @@ void input_clean_stdin (void) {
 char *input_get_line (void) {
 
 	size_t lenmax = 128, len = lenmax;
-	char *line = malloc (lenmax), *linep = line;
+	char *line = (char *) malloc (lenmax), *linep = line;
 
 	if (line) {
 		int c = 0;
@@ -28,7 +28,7 @@ char *input_get_line (void) {
 
 			if (--len == 0) {
 				len = lenmax;
-				char * linen = realloc (linep, lenmax *= 2);
+				char * linen = (char *) realloc (linep, lenmax *= 2);
 
 				if(linen == NULL) {
 					free (linep);
@@ -53,18 +53,18 @@ unsigned int input_password (char *password) {
 
 	unsigned int retval = 1;
 
-	struct termios old = { 0 }, new = { 0 };
+	struct termios old_term = { 0 }, new_term = { 0 };
 
 	/* Turn echoing off and fail if we can't. */
-	if (!tcgetattr (fileno (stdin), &old)) {
-		new = old;
-		new.c_lflag &= ~ECHO;
-		if (!tcsetattr (fileno (stdin), TCSAFLUSH, &new) != 0) {
+	if (!tcgetattr (fileno (stdin), &old_term)) {
+		new_term = old_term;
+		new_term.c_lflag &= ~ECHO;
+		if (!tcsetattr (fileno (stdin), TCSAFLUSH, &new_term) != 0) {
 			printf ("Enter password: ");
 			scanf ("%128s", password);
 
 			/* Restore terminal. */
-			(void) tcsetattr (fileno (stdin), TCSAFLUSH, &old);
+			(void) tcsetattr (fileno (stdin), TCSAFLUSH, &old_term);
 
 			retval = 0;
 		}
