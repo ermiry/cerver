@@ -46,6 +46,82 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 
 #pragma endregion
 
+#pragma region admin
+
+Admin *admin_new (void) {
+
+	Admin *admin = (Admin *) malloc (sizeof (Admin));
+	if (admin) {
+		admin->id = NULL;
+
+		admin->client = NULL;
+
+		admin->data = NULL;
+		admin->delete_data = NULL;
+
+		admin->authenticated = false;
+		admin->credentials = NULL;
+
+		admin->bad_packets = 0;
+	}
+
+	return admin;
+
+}
+
+void admin_delete (void *admin_ptr) {
+
+	if (admin_ptr) {
+		Admin *admin = (Admin *) admin_ptr;
+
+		estring_delete (admin->id);
+
+		client_delete (admin->client);
+
+		if (admin->data) {
+			if (admin->delete_data) admin->delete_data (admin->data);
+		}
+
+		free (admin);
+	}
+
+}
+
+Admin *admin_create_with_client (Client *client) {
+
+	Admin *admin = NULL;
+
+	if (client) {
+		admin = admin_new ();
+		if (admin) admin->client = client;
+	}
+
+	return client;
+
+}
+
+int admin_comparator_by_id (const void *a, const void *b) {
+
+	if (a && b) return strcmp (((Admin *) a)->id->str, ((Admin *) b)->id->str);
+
+	else if (a && !b) return -1;
+	else if (!a && b) return 1;
+	return 0;
+
+}
+
+// sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
+void admin_set_data (Admin *admin, void *data, Action delete_data) {
+
+	if (admin) {
+		admin->data = data;
+		admin->delete_data = delete_data;
+	}
+
+}
+
+#pragma endregion
+
 #pragma region main
 
 AdminCerver *admin_cerver_new (void) {

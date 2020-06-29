@@ -7,6 +7,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/collections/dllist.h"
 
@@ -48,6 +49,47 @@ struct _AdminCerverStats {
 };
 
 typedef struct _AdminCerverStats AdminCerverStats;
+
+struct _AdminCredentials {
+
+	estring *username;
+	estring *password;
+
+	bool logged_in;
+
+};
+
+typedef struct _AdminCredentials AdminCredentials;
+
+struct _Admin {
+
+	estring *id;						// unique admin identifier
+
+	struct _Client *client;				// network values for the admin
+
+	// a place to store dedicated admin data
+	void *data;
+	Action delete_data;
+
+	bool authenticated;
+	AdminCredentials *credentials;
+
+	u32 bad_packets;					// disconnect after a number of bad packets
+
+};
+
+typedef struct _Admin Admin;
+
+extern Admin *admin_new (void);
+
+extern void admin_delete (void *admin_ptr);
+
+extern Admin *admin_create_with_client (Client *client);
+
+extern int admin_comparator_by_id (const void *a, const void *b);
+
+// sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
+extern void admin_set_data (Admin *admin, void *data, Action delete_data);
 
 #define ADMIN_CERVER_CONNECTION_QUEUE				2
 
