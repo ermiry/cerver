@@ -47,6 +47,17 @@ struct _AdminCerverStats {
 
 typedef struct _AdminCerverStats AdminCerverStats;
 
+#define ADMIN_CERVER_CONNECTION_QUEUE				2
+
+#define DEFAULT_MAX_ADMINS							1
+#define DEFAULT_MAX_ADMIN_CONNECTIONS				1
+
+#define DEFAULT_N_BAD_PACKETS_LIMIT					5
+#define DEFAULT_N_BAD_PACKETS_LIMIT_AUTH			20
+
+#define DEFAULT_ADMIN_MAX_N_FDS						10
+#define DEFAULT_ADMIN_POLL_TIMEOUT					2000
+
 struct _AdminCerver {
 
 	struct _Cerver *cerver;				// the cerver this belongs to
@@ -86,5 +97,11 @@ struct _AdminCerver {
 };
 
 typedef struct _AdminCerver AdminCerver;
+
+extern AdminCerver *admin_cerver_new (void);
+
+extern void admin_cerver_delete (AdminCerver *admin_cerver);
+
+extern AdminCerver *admin_cerver_create (void);
 
 #endif
