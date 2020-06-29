@@ -230,6 +230,10 @@ Cerver *cerver_new (void) {
         c->app_error_packet_handler = NULL;
         c->custom_packet_handler = NULL;
 
+        c->app_packet_handler_delete_packet = true;
+        c->app_error_packet_handler_delete_packet = true;
+        c->custom_packet_handler_delete_packet = true;
+
         // 10/05/2020
         c->handlers = NULL;
         c->handlers_lock = NULL;
@@ -496,6 +500,24 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
 
 }
 
+// sets option to automatically delete APP_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet) {
+
+    if (cerver) cerver->app_packet_handler_delete_packet = delete_packet;
+
+}
+
+// sets option to automatically delete APP_ERROR_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet) {
+
+    if (cerver) cerver->app_error_packet_handler_delete_packet = delete_packet;
+
+}
+
 // sets a CUSTOM_PACKET packet type handler
 void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 
@@ -506,6 +528,15 @@ void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
             cerver->custom_packet_handler->cerver = cerver;
         }
     }
+
+}
+
+// sets option to automatically delete CUSTOM_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet) {
+
+    if (cerver) cerver->custom_packet_handler_delete_packet = delete_packet;
 
 }
 

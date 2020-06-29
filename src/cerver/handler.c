@@ -183,7 +183,14 @@ static void handler_do_while_cerver (Handler *handler) {
 
                     handler_data_delete (handler_data);
                     job_delete (job);
-                    packet_delete (packet);
+
+                    switch (packet->header->packet_type) {
+                        case APP_PACKET: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case APP_ERROR_PACKET: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case CUSTOM_PACKET: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
+
+                        default: packet_delete (packet); break;
+                    }
                 }
 
                 pthread_mutex_lock (handler->cerver->handlers_lock);
@@ -592,7 +599,7 @@ static void cerver_app_packet_handler (Packet *packet) {
                 if (packet->cerver->app_packet_handler->direct_handle) {
                     // printf ("app_packet_handler - direct handle!\n");
                     packet->cerver->app_packet_handler->handler (packet);
-                    packet_delete (packet);
+                    if (packet->cerver->app_packet_handler_delete_packet) packet_delete (packet);
                 }
 
                 else {
@@ -634,7 +641,7 @@ static void cerver_app_error_packet_handler (Packet *packet) {
             if (packet->cerver->app_error_packet_handler->direct_handle) {
                 // printf ("app_error_packet_handler - direct handle!\n");
                 packet->cerver->app_error_packet_handler->handler (packet);
-                packet_delete (packet);
+                if (packet->cerver->app_error_packet_handler_delete_packet) packet_delete (packet);
             }
 
             else {
@@ -675,7 +682,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
             if (packet->cerver->custom_packet_handler->direct_handle) {
                 // printf ("custom_packet_handler - direct handle!\n");
                 packet->cerver->custom_packet_handler->handler (packet);
-                packet_delete (packet);
+                if (packet->cerver->custom_packet_handler_delete_packet) packet_delete (packet);
             }
 
             else {

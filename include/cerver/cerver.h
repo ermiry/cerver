@@ -181,6 +181,10 @@ struct _Cerver {
     struct _Handler *app_error_packet_handler;
     struct _Handler *custom_packet_handler;
 
+    bool app_packet_handler_delete_packet;
+    bool app_error_packet_handler_delete_packet;
+    bool custom_packet_handler_delete_packet;
+
     // 10/05/2020
     bool multiple_handlers;
     // DoubleList *handlers;
@@ -277,9 +281,24 @@ extern void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_rec
 extern void cerver_set_app_handlers (Cerver *cerver, 
     struct _Handler *app_handler, struct _Handler *app_error_handler);
 
+// sets option to automatically delete APP_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet);
+
+// sets option to automatically delete APP_ERROR_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet);
+
 // 27/05/2020 - changed form Action to Handler
 // sets a CUSTOM_PACKET packet type handler
 extern void cerver_set_custom_handler (Cerver *cerver, struct _Handler *custom_handler);
+
+// sets option to automatically delete CUSTOM_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet);
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
