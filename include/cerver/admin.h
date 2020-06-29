@@ -1,6 +1,8 @@
 #ifndef _CERVER_ADMIN_H_
 #define _CERVER_ADMIN_H_
 
+#include <stdbool.h>
+
 #include <pthread.h>
 #include <poll.h>
 
@@ -86,9 +88,13 @@ struct _AdminCerver {
 
 	// custom admin packet handlers
 	// this handlers will only be accessible for authenticated admins
-    struct _Handler *app_packet_handler;
-    struct _Handler *app_error_packet_handler;
-    struct _Handler *custom_packet_handler;
+	struct _Handler *app_packet_handler;
+	struct _Handler *app_error_packet_handler;
+	struct _Handler *custom_packet_handler;
+
+	bool app_packet_handler_delete_packet;
+	bool app_error_packet_handler_delete_packet;
+	bool custom_packet_handler_delete_packet;
 
 	pthread_t update_thread_id;
 
@@ -103,5 +109,50 @@ extern AdminCerver *admin_cerver_new (void);
 extern void admin_cerver_delete (AdminCerver *admin_cerver);
 
 extern AdminCerver *admin_cerver_create (void);
+
+// sets the max numbers of admins allowed at any given time
+extern void admin_cerver_set_max_admins (AdminCerver *admin_cerver, u8 max_admins);
+
+// sets the max number of connections allowed per admin
+extern void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u8 max_admin_connections);
+
+// sets the mac number of packets to tolerate before dropping an admin connection
+// n_bad_packets_limit for NON auth admins
+// n_bad_packets_limit_auth for authenticated clients
+// -1 to use defaults (5 and 20)
+extern void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, 
+	i32 n_bad_packets_limit, i32 n_bad_packets_limit_auth);
+
+// sets a custom poll time out to use for admins
+extern void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
+
+// sets an action to be performed when a new admin failed to authenticate
+extern void admin_cerver_set_on_fail_connection (AdminCerver *admin_cerver, Action on_fail_connection);
+
+// sets an action to be performed when a new admin authenticated successfully
+// a struct _OnAdminConnection will be passed as the argument
+extern void admin_cerver_set_on_success_connection (AdminCerver *admin_cerver, Action on_success_connection);
+
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+extern void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, 
+	struct _Handler *app_handler, struct _Handler *app_error_handler);
+
+// sets option to automatically delete APP_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
+
+// sets option to automatically delete APP_ERROR_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
+
+// sets a CUSTOM_PACKET packet type handler
+extern void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _Handler *custom_handler);
+
+// sets option to automatically delete CUSTOM_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+extern void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
 #endif
