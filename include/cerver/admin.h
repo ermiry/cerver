@@ -237,4 +237,10 @@ extern u8 admin_cerver_start (struct _Cerver *cerver);
 
 #pragma endregion
 
+#pragma region end
+
+extern u8 admin_cerver_end (AdminCerver *admin_cerver);
+
+#pragma endregion
+
 #endif

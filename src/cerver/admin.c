@@ -686,6 +686,36 @@ u8 admin_cerver_start (Cerver *cerver) {
 
 #pragma region end
 
+u8 admin_cerver_end (AdminCerver *admin_cerver) {
+
+	u8 retval = 1;
+
+	if (admin_cerver) {
+		char *status = NULL;
+
+		#ifdef ADMIN_DEBUG
+		status = c_string_create ("Staring cerver %s admin teardown...",
+			admin_cerver->cerver->info->name->str);
+		if (status) {
+			cerver_log_debug (status);
+			free (status);
+		}
+		#endif
+
+		// TODO:
+
+		status = c_string_create ("Cerver %s admin teardown was successful!",
+			admin_cerver->cerver->info->name->str);
+		if (status) {
+			cerver_log_success (status);
+			free (status);
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region poll
