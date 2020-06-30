@@ -214,7 +214,9 @@ Cerver *cerver_new (void) {
         c->poll_lock = NULL;
 
         c->auth_required = false;
-        c->auth = NULL;
+        c->auth_packet = NULL;
+        c->max_auth_tries = DEFAULT_AUTH_TRIES;
+        c->authenticate = NULL;
 
         c->on_hold_connections = NULL;
         c->on_hold_connection_sock_fd_map = NULL;
@@ -279,7 +281,7 @@ void cerver_delete (void *ptr) {
             free (cerver->poll_lock);
         }
 
-        if (cerver->auth) auth_delete (cerver->auth);
+        packet_delete (cerver->auth_packet);
 
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
@@ -400,58 +402,37 @@ void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout) {
 
 }
 
-// init on hold client on hold structures and values
-static u8 cerver_on_hold_init (Cerver *cerver) {
+// enables cerver's built in authentication methods
+// cerver requires client authentication upon new client connections
+// retuns 0 on success, 1 on error
+u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate) {
 
     u8 retval = 1;
 
-    if (cerver) {
-        cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
-        cerver->on_hold_connection_sock_fd_map = htab_create (poll_n_fds / 2, NULL, NULL);
-        if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
-            cerver->max_on_hold_connections = poll_n_fds;
-            cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
-            if (cerver->hold_fds) {
-                memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
-                cerver->max_on_hold_connections = poll_n_fds;
-                cerver->current_n_fds = 0;
-                for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
-                    cerver->hold_fds[i].fd = -1;
+    if (cerver && authenticate) {
+        cerver->auth_required = true;
+        cerver->max_auth_tries = max_auth_tries;
+        cerver->authenticate = authenticate;
 
-                cerver->holding_connections = false;
-
-                cerver->current_on_hold_nfds = 0;
-
-                retval = 0;
-            }
-        }
+        retval = 0;
     }
 
     return retval;
 
 }
 
-// configures the cerver to require client authentication upon new client connections
-// retuns 0 on success, 1 on error
-u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate) {
+// sets the max auth tries a new connection is allowed to have before it is dropped due to failure
+void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries) {
 
-    u8 retval = 1;
+    if (cerver) cerver->max_auth_tries = max_auth_tries;
 
-    if (cerver) {
-        cerver->auth = auth_new ();
-        if (cerver->auth) {
-            cerver->auth->max_auth_tries = max_auth_tries;
-            cerver->auth->authenticate = authenticate;
-            cerver->auth->auth_packet = auth_packet_generate ();
+}
 
-            if (!cerver_on_hold_init (cerver)) {
-                cerver->auth_required = true;
-                retval = 0;
-            } 
-        }
-    }
+// sets the method to be used for client authentication
+// must return 0 on success authentication
+void cerver_set_auth_method (Cerver *cerver, delegate authenticate) {
 
-    return retval;
+    if (cerver && authenticate) cerver->authenticate = authenticate;
 
 }
 
@@ -605,14 +586,13 @@ void cerver_set_update_interval (Cerver *cerver, Action update, void *update_arg
 }
 
 // enables admin connections to cerver
-// admin connections are handled in a different port and using a dedicated handler
 // returns 0 on success, 1 on error
-u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6) {
+u8 cerver_admin_enable (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
-        cerver->admin = admin_cerver_create (port, use_ipv6);
+        cerver->admin = admin_cerver_create ();
         if (cerver->admin) {
             cerver->admin->cerver = cerver;
             retval = 0;
@@ -1311,20 +1291,21 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                 // cerver is not holding clients if there is not new connections
                 if (cerver->auth_required) cerver->holding_connections = false;
 
+                // FIXME:
                 // 21/01/2020 -- start the admin cerver
                 if (cerver->admin) {
-                    if (thread_create_detachable (
-                        &cerver->admin_thread_id,
-                        admin_cerver_start,
-                        cerver->admin
-                    )) {
-                        char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
-                            cerver->info->name->str);
-                        if (s) {
-                            cerver_log_error (s);
-                            free (s);
-                        }
-                    }
+                    // if (thread_create_detachable (
+                    //     &cerver->admin_thread_id,
+                    //     admin_cerver_start,
+                    //     cerver->admin
+                    // )) {
+                    //     char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
+                    //         cerver->info->name->str);
+                    //     if (s) {
+                    //         cerver_log_error (s);
+                    //         free (s);
+                    //     }
+                    // }
                 } 
 
                 cerver_poll (cerver);

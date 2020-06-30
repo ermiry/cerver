@@ -15,7 +15,6 @@
 #include "cerver/collections/pool.h"
 
 #include "cerver/admin.h"
-#include "cerver/auth.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
 #include "cerver/handler.h"
@@ -40,7 +39,6 @@
 #define DEFAULT_CHECK_INACTIVE_INTERVAL     30
 
 struct _AdminCerver;
-struct _Auth;
 struct _Cerver;
 struct _Packet;
 struct _PacketsPerType;
@@ -156,7 +154,9 @@ struct _Cerver {
 
     /*** auth ***/
     bool auth_required;                 // does the server requires authentication?
-    struct _Auth *auth;                         // server auth info
+    struct _Packet *auth_packet;        // requests client authentication
+    u8 max_auth_tries;                  // client's chances of auth before being dropped
+    delegate authenticate;              // authentication function
      
     AVLTree *on_hold_connections;       // hold on the connections until they authenticate
     Htab *on_hold_connection_sock_fd_map;
@@ -263,9 +263,17 @@ extern void cerver_set_inactive_clients (Cerver *cerver,
 // sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 
-// configures the cerver to require client authentication upon new client connections
+// enables cerver's built in authentication methods
+// cerver requires client authentication upon new client connections
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate);
+
+// sets the max auth tries a new connection is allowed to have before it is dropped due to failure
+extern void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries);
+
+// sets the method to be used for client authentication
+// must return 0 on success authentication
+extern void cerver_set_auth_method (Cerver *cerver, delegate authenticate);
 
 // configures the cerver to use client sessions
 // This will allow for multiple connections from the same client, 
@@ -320,9 +328,8 @@ extern void cerver_set_update (Cerver *cerver, Action update, void *update_args,
 extern void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, u32 interval);
 
 // enables admin connections to cerver
-// admin connections are handled in a different port and using a dedicated handler
 // returns 0 on success, 1 on error
-extern u8 cerver_admin_enable (Cerver *cerver, u16 port, bool use_ipv6);
+extern u8 cerver_admin_enable (Cerver *cerver);
 
 #pragma endregion
 
