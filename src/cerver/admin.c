@@ -586,7 +586,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 
     if (admin_cerver) {
         #ifdef ADMIN_DEBUG
-        char *s = c_string_create ("Initializing %s admin handlers...",
+        char *s = c_string_create ("Initializing cerver %s admin handlers...",
             admin_cerver->cerver->info->name->str);
         if (s) {
             cerver_log_debug (s);
@@ -605,7 +605,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 
         if (!errors) {
             #ifdef ADMIN_DEBUG
-            s = c_string_create ("Done initializing %s admin handlers!",
+            s = c_string_create ("Done initializing cerver %s admin handlers!",
                 admin_cerver->cerver->info->name->str);
             if (s) {
                 cerver_log_debug (s);
@@ -686,9 +686,100 @@ u8 admin_cerver_start (Cerver *cerver) {
 
 #pragma region end
 
+static u8 admin_cerver_app_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_packet_handler) {
+            if (!admin_cerver->app_packet_handler->direct_handle) {
+                // stop app handler
+                bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_app_error_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_error_packet_handler) {
+            if (!admin_cerver->app_error_packet_handler->direct_handle) {
+                // stop app error handler
+                bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_custom_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->custom_packet_handler) {
+            if (!admin_cerver->custom_packet_handler->direct_handle) {
+                // stop custom handler
+                bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+// correctly destroy admin cerver's custom handlers
+static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        #ifdef ADMIN_DEBUG
+        char *status = c_string_create ("Stopping handlers in cerver %s admin...",
+            admin_cerver->cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+        #endif
+
+        errors |= admin_cerver_app_handlers_destroy (admin_cerver);
+
+        errors |= admin_cerver_app_error_handler_destroy (admin_cerver);
+
+        errors |= admin_cerver_custom_handler_destroy (admin_cerver);
+
+        // poll remaining handlers
+        while (admin_cerver->num_handlers_alive) {
+            if (admin_cerver->app_packet_handler)
+                bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
+
+            if (admin_cerver->app_error_packet_handler)
+                bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
+
+            if (admin_cerver->custom_packet_handler)
+                bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
+            
+            sleep (1);
+        }
+    }
+
+    return errors;
+
+}
+
 u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
-	u8 retval = 1;
+	u8 errors = 0;
 
 	if (admin_cerver) {
 		char *status = NULL;
@@ -702,7 +793,7 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 		}
 		#endif
 
-		// TODO:
+		errors |= admin_cerver_handlers_end (admin_cerver);
 
 		status = c_string_create ("Cerver %s admin teardown was successful!",
 			admin_cerver->cerver->info->name->str);
@@ -712,7 +803,7 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 		}
 	}
 
-	return retval;
+	return errors;
 
 }
 
