@@ -78,6 +78,8 @@ Packet *auth_packet_generate (void) {
     
 }
 
+#pragma region auth
+
 static void auth_send_success_packet (const Cerver *cerver, const Connection *connection) {
 
     if (cerver) {
@@ -430,6 +432,10 @@ static void auth_try (Packet *packet) {
 
 }
 
+#pragma endregion
+
+#pragma region handler
+
 // handle an auth packet
 static void cerver_auth_packet_handler (Packet *packet) {
 
@@ -489,44 +495,9 @@ void on_hold_packet_handler (void *ptr) {
 
 }
 
-// reallocs on hold cerver poll fds
-// returns 0 on success, 1 on error
-static u8 cerver_realloc_on_hold_poll_fds (Cerver *cerver) {
+#pragma endregion
 
-    u8 retval = 1;
-
-    if (cerver) {
-        cerver->max_on_hold_connections = cerver->max_on_hold_connections * 2;
-        cerver->hold_fds = (struct pollfd *) realloc (cerver->hold_fds, 
-            cerver->max_on_hold_connections * sizeof (struct pollfd));
-        if (cerver->hold_fds) retval = 0;
-    }
-
-    return retval;
-
-}
-
-static i32 on_hold_get_free_idx (Cerver *cerver) {
-
-    if (cerver) {
-        for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
-            if (cerver->hold_fds[i].fd == -1) return i;
-    }
-
-    return -1;
-
-}
-
-static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
-
-    if (cerver) {
-        for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
-            if (cerver->hold_fds[i].fd == sock_fd) return i;
-    }
-
-    return -1;
-
-}
+#pragma region connections
 
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess authentication or it failed to, so it is dropped
@@ -615,6 +586,132 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
 }
 
+// removes the connection from the on hold structures
+static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver && connection) {
+        // remove the connection associated to the sock fd
+        Connection *query = connection_new ();
+        // query->socket->sock_fd = connection->socket->sock_fd;
+        query->socket = socket_create (connection->socket->sock_fd);
+        avl_remove_node (cerver->on_hold_connections, query);
+
+        // remove connection from on hold map
+        const void *key = &connection->socket->sock_fd;
+        htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32));
+
+        // unregister the fd from the on hold structures
+        on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd);
+
+        retval = 0;
+    }
+
+    return retval;
+
+}
+
+// closes the on hold connection and removes it from the cerver
+void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
+
+    if (cerver && connection) {
+        // close the connection socket
+        connection_end (connection);
+
+        // remove the connection from the on hold structures
+        on_hold_connection_remove (cerver, connection);
+
+        // we can now safely delete the connection
+        connection_delete (connection);
+    }
+
+}
+
+static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd) {
+
+    Connection *connection = NULL;
+
+    if (cerver) {
+        Connection *query = connection_new ();
+        if (query) {
+            // query->sock_fd = sock_fd;
+            query->socket = socket_create (sock_fd);
+            void *connection_data = avl_get_node_data (cerver->on_hold_connections, query, NULL);
+            if (connection_data) {
+                connection = (Connection *) connection_data;
+            }
+
+            else {
+                char *status = c_string_create ("Failed to get on hold connection associated with sock: %i", 
+                    sock_fd);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                    free (status);
+                }
+            }
+        }
+
+        else {
+            // cerver error allocating memory -- this might not happen
+            #ifdef CERVER_DEBUG
+            char *status = c_string_create ("Failed to create connection query in cerver %s.",
+                cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+                free (status);
+            }
+            #endif
+        }    
+    }
+
+    return connection;
+
+}
+
+#pragma endregion
+
+#pragma region poll
+
+// reallocs on hold cerver poll fds
+// returns 0 on success, 1 on error
+static u8 cerver_realloc_on_hold_poll_fds (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        cerver->max_on_hold_connections = cerver->max_on_hold_connections * 2;
+        cerver->hold_fds = (struct pollfd *) realloc (cerver->hold_fds, 
+            cerver->max_on_hold_connections * sizeof (struct pollfd));
+        if (cerver->hold_fds) retval = 0;
+    }
+
+    return retval;
+
+}
+
+static i32 on_hold_get_free_idx (Cerver *cerver) {
+
+    if (cerver) {
+        for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
+            if (cerver->hold_fds[i].fd == -1) return i;
+    }
+
+    return -1;
+
+}
+
+static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
+
+    if (cerver) {
+        for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
+            if (cerver->hold_fds[i].fd == sock_fd) return i;
+    }
+
+    return -1;
+
+}
+
 static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
     if (cerver) {
@@ -660,94 +757,6 @@ static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
     }
 
 }
-
-// removes the connection from the on hold structures
-static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection) {
-
-    u8 retval = 1;
-
-    if (cerver && connection) {
-        // remove the connection associated to the sock fd
-        Connection *query = connection_new ();
-        // query->socket->sock_fd = connection->socket->sock_fd;
-        query->socket = socket_create (connection->socket->sock_fd);
-        avl_remove_node (cerver->on_hold_connections, query);
-
-        // remove connection from on hold map
-        const void *key = &connection->socket->sock_fd;
-        htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32));
-
-        // unregister the fd from the on hold structures
-        on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd);
-
-        retval = 0;
-    }
-
-    return retval;
-
-}
-
-// closes the on hold connection and removes it from the cerver
-void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
-
-    if (cerver && connection) {
-        // close the connection socket
-        connection_end (connection);
-
-        // remove the connection from the on hold structures
-        on_hold_connection_remove (cerver, connection);
-
-        // we can now safely delete the connection
-        connection_delete (connection);
-    }
-
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd) {
-
-    Connection *connection = NULL;
-
-    if (cerver) {
-        Connection *query = connection_new ();
-        if (query) {
-            // query->sock_fd = sock_fd;
-            query->socket = socket_create (sock_fd);
-            void *connection_data = avl_get_node_data (cerver->on_hold_connections, query, NULL);
-            if (connection_data) {
-                connection = (Connection *) connection_data;
-            }
-
-            else {
-                char *status = c_string_create ("Failed to get on hold connection associated with sock: %i", 
-                    sock_fd);
-                if (status) {
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                    free (status);
-                }
-            }
-        }
-
-        else {
-            // cerver error allocating memory -- this might not happen
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to create connection query in cerver %s.",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                free (status);
-            }
-            #endif
-        }    
-    }
-
-    return connection;
-
-}
-#pragma GCC diagnostic pop
-
-#pragma region poll
 
 static inline void on_hold_poll_handle (Cerver *cerver) {
 
