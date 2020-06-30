@@ -71,28 +71,6 @@ static void auth_data_delete (AuthData *auth_data) {
 
 }
 
-Auth *auth_new (void) {
-
-    Auth *auth = (Auth *) malloc (sizeof (Auth));
-    if (auth) {
-        memset (auth, 0, sizeof (Auth));
-        auth->auth_packet = NULL;
-        auth->authenticate = NULL;
-    }
-
-    return auth;
-
-}
-
-void auth_delete (Auth *auth) {
-
-    if (auth) {
-        packet_delete (auth->auth_packet);
-        free (auth);
-    }
-
-}
-
 // generates an authentication packet with client auth request
 Packet *auth_packet_generate (void) { 
     
@@ -551,7 +529,7 @@ static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
 }
 
 // handles packets from the on hold clients until they authenticate
-static void *on_hold_poll (void *ptr) {
+void *on_hold_poll (void *cerver_ptr) {
 
     if (ptr) {
         Cerver *cerver = (Cerver *) ptr;

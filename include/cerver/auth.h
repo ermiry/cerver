@@ -32,21 +32,6 @@ typedef struct AuthData {
 
 } AuthData;
 
-// info for the server to perfom a correct client authentication
-struct _Auth {
-
-    struct _Packet *auth_packet;              // requests client authentication
-
-    u8 max_auth_tries;                // client's chances of auth before being dropped
-    delegate authenticate;            // authentication function
-
-};
-
-typedef struct _Auth Auth;
-
-extern Auth *auth_new (void);
-extern void auth_delete (Auth *auth);
-
 // generates an authentication packet with client auth request
 extern struct _Packet *auth_packet_generate (void);
 
@@ -60,6 +45,9 @@ extern u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connec
 
 // closes the on hold connection and removes it from the cerver
 extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
+
+// handles packets from the on hold clients until they authenticate
+extern void *on_hold_poll (void *cerver_ptr);
 
 // auxiliary structure passed to the user defined auth method
 typedef struct AuthPacket {
