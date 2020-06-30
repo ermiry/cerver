@@ -528,135 +528,6 @@ static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
 
 }
 
-static inline void on_hold_poll_handle (Cerver *cerver) {
-
-    if (cerver) {
-        // one or more fd(s) are readable, need to determine which ones they are
-        for (u32 i = 0; i < cerver->max_on_hold_connections; i++) {
-            if (cerver->fds[i].fd > -1) {
-                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
-                CerverReceive *cr = cerver_receive_new (cerver, socket, true, NULL);
-
-                switch (cerver->hold_fds[i].revents) {
-                    // A connection setup has been completed or new data arrived
-                    case POLLIN: {
-                        // printf ("Receive fd: %d\n", cerver->fds[i].fd);
-                            
-                        // if (cerver->thpool) {
-                            // pthread_mutex_lock (socket->mutex);
-
-                            // handle received packets using multiple threads
-                            // if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
-                            //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
-                            //         cerver->info->name->str);
-                            //     if (s) {
-                            //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                            //         free (s);
-                            //     }
-                            // }
-
-                            // 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
-                            // and the received buffer handler method is the one that is called 
-                            // inside the thread pool - using this method we were able to get a correct behaviour
-                            // however, we still may have room form improvement as we original though ->
-                            // by performing reading also inside the thpool
-                            // cerver_receive (cr);
-
-                            // pthread_mutex_unlock (socket->mutex);
-                        // }
-
-                        // else {
-                            // handle all received packets in the same thread
-                            cerver_receive (cr);
-                        // }
-                    } break;
-
-                    default: {
-                        if (cerver->fds[i].revents != 0) {
-                            // 17/06/2020 -- 15:06 -- handle as failed any other signal
-                            // to avoid hanging up at 100% or getting a segfault
-
-                            // FIXME:
-                            // cerver_switch_receive_handle_failed (cr);
-                        }
-                    } break;
-                }
-            }
-        }
-    }
-
-}
-
-// handles packets from the on hold clients until they authenticate
-void *on_hold_poll (void *cerver_ptr) {
-
-    if (cerver_ptr) {
-        Cerver *cerver = (Cerver *) cerver_ptr;
-
-        char *status = c_string_create ("Cerver %s on hold poll has started!", cerver->info->name->str);
-        if (status) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
-            free (status);
-        }
-
-        char *thread_name = c_string_create ("%s-on-hold", cerver->info->name->str);
-        if (thread_name) {
-            thread_set_name (thread_name);
-            free (thread_name);
-        }
-
-        #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections to put on hold...");
-        #endif
-
-        int poll_retval = 0;
-        while (cerver->isRunning) {
-            poll_retval = poll (cerver->hold_fds, cerver->max_on_hold_connections, cerver->poll_timeout);
-
-            switch (poll_retval) {
-                case -1: {
-                    char *status = c_string_create ("Cerver %s on hold poll has failed!", cerver->info->name->str);
-                    if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                        free (status);
-                    }
-
-                    perror ("Error");
-                    cerver->holding_connections = false;
-                    cerver->isRunning = false;
-                } break;
-
-                case 0: {
-                    // #ifdef CERVER_DEBUG
-                    // char *status = c_string_create ("Cerver %s on hold poll timeout", cerver->info->name->str);
-                    // if (status) {
-                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                    //     free (status);
-                    // }
-                    // #endif
-                } break;
-
-                default: {
-                    on_hold_poll_handle (cerver);
-                } break;
-            }
-        }
-
-        #ifdef CERVER_DEBUG
-        status = c_string_create ("Cerver %s on hold poll has stopped!", cerver->info->name->str);
-        if (status) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
-            free (status);
-        }
-        #endif
-    }
-
-    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle on hold clients on a NULL cerver!");
-
-    return NULL;
-
-}
-
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess authentication or it failed to, so it is dropped
 // returns 0 on success, 1 on error
@@ -875,3 +746,136 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
 
 }
 #pragma GCC diagnostic pop
+
+#pragma region poll
+
+static inline void on_hold_poll_handle (Cerver *cerver) {
+
+    if (cerver) {
+        // one or more fd(s) are readable, need to determine which ones they are
+        for (u32 i = 0; i < cerver->max_on_hold_connections; i++) {
+            if (cerver->fds[i].fd > -1) {
+                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
+                CerverReceive *cr = cerver_receive_new (cerver, socket, true, NULL);
+
+                switch (cerver->hold_fds[i].revents) {
+                    // A connection setup has been completed or new data arrived
+                    case POLLIN: {
+                        // printf ("Receive fd: %d\n", cerver->fds[i].fd);
+                            
+                        // if (cerver->thpool) {
+                            // pthread_mutex_lock (socket->mutex);
+
+                            // handle received packets using multiple threads
+                            // if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
+                            //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
+                            //         cerver->info->name->str);
+                            //     if (s) {
+                            //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                            //         free (s);
+                            //     }
+                            // }
+
+                            // 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
+                            // and the received buffer handler method is the one that is called 
+                            // inside the thread pool - using this method we were able to get a correct behaviour
+                            // however, we still may have room form improvement as we original though ->
+                            // by performing reading also inside the thpool
+                            // cerver_receive (cr);
+
+                            // pthread_mutex_unlock (socket->mutex);
+                        // }
+
+                        // else {
+                            // handle all received packets in the same thread
+                            cerver_receive (cr);
+                        // }
+                    } break;
+
+                    default: {
+                        if (cerver->fds[i].revents != 0) {
+                            // 17/06/2020 -- 15:06 -- handle as failed any other signal
+                            // to avoid hanging up at 100% or getting a segfault
+
+                            // FIXME:
+                            // cerver_switch_receive_handle_failed (cr);
+                        }
+                    } break;
+                }
+            }
+        }
+    }
+
+}
+
+// handles packets from the on hold clients until they authenticate
+void *on_hold_poll (void *cerver_ptr) {
+
+    if (cerver_ptr) {
+        Cerver *cerver = (Cerver *) cerver_ptr;
+
+        char *status = c_string_create ("Cerver %s on hold poll has started!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+            free (status);
+        }
+
+        char *thread_name = c_string_create ("%s-on-hold", cerver->info->name->str);
+        if (thread_name) {
+            thread_set_name (thread_name);
+            free (thread_name);
+        }
+
+        #ifdef CERVER_DEBUG
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections to put on hold...");
+        #endif
+
+        int poll_retval = 0;
+        while (cerver->isRunning) {
+            poll_retval = poll (cerver->hold_fds, cerver->max_on_hold_connections, cerver->poll_timeout);
+
+            switch (poll_retval) {
+                case -1: {
+                    char *status = c_string_create ("Cerver %s on hold poll has failed!", cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                        free (status);
+                    }
+
+                    perror ("Error");
+                    cerver->holding_connections = false;
+                    cerver->isRunning = false;
+                } break;
+
+                case 0: {
+                    // #ifdef CERVER_DEBUG
+                    // char *status = c_string_create ("Cerver %s on hold poll timeout", cerver->info->name->str);
+                    // if (status) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     free (status);
+                    // }
+                    // #endif
+                } break;
+
+                default: {
+                    on_hold_poll_handle (cerver);
+                } break;
+            }
+        }
+
+        #ifdef CERVER_DEBUG
+        status = c_string_create ("Cerver %s on hold poll has stopped!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
+        #endif
+    }
+
+    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle on hold clients on a NULL cerver!");
+
+    return NULL;
+
+}
+
+#pragma endregion

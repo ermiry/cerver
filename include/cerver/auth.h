@@ -46,9 +46,6 @@ extern u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connec
 // closes the on hold connection and removes it from the cerver
 extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
 
-// handles packets from the on hold clients until they authenticate
-extern void *on_hold_poll (void *cerver_ptr);
-
 // auxiliary structure passed to the user defined auth method
 typedef struct AuthPacket {
 
@@ -56,5 +53,12 @@ typedef struct AuthPacket {
     AuthData *auth_data;
 
 } AuthPacket;
+
+#pragma region poll
+
+// handles packets from the on hold clients until they authenticate
+extern void *on_hold_poll (void *cerver_ptr);
+
+#pragma endregion
 
 #endif
