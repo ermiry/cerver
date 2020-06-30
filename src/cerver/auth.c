@@ -821,9 +821,7 @@ static inline void on_hold_poll_handle (Cerver *cerver) {
                         if (cerver->fds[i].revents != 0) {
                             // 17/06/2020 -- 15:06 -- handle as failed any other signal
                             // to avoid hanging up at 100% or getting a segfault
-
-                            // FIXME:
-                            // cerver_switch_receive_handle_failed (cr);
+                            cerver_switch_receive_handle_failed (cr);
                         }
                     } break;
                 }

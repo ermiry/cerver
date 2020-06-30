@@ -1215,7 +1215,7 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
 }
 
 // 28/05/2020 -- correctly call cerver_receive_handle_failed ()
-static void cerver_switch_receive_handle_failed (CerverReceive *cr) {
+void cerver_switch_receive_handle_failed (CerverReceive *cr) {
 
     if (cr) {
         if (cr->cerver->thpool) {
