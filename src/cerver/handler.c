@@ -1451,8 +1451,19 @@ static void cerver_register_new_connection (Cerver *cerver,
         bool failed = false;
 
         // if the cerver requires auth, we put the connection on hold
-        if (cerver->auth_required) 
-            on_hold_connection (cerver, connection);
+        if (cerver->auth_required) {
+            if (on_hold_connection (cerver, connection)) {
+                char *status = c_string_create ("Failed to put connection on hold in cerver %s",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_error (status);
+                    free (status);
+                }
+
+                // drop the connection
+                connection_end (connection);
+            }
+        }
 
         // if not, we create a new client and we register the connection
         else {
