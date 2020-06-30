@@ -54,6 +54,8 @@ struct _AdminCerverStats {
 
 typedef struct _AdminCerverStats AdminCerverStats;
 
+extern void admin_cerver_stats_print (AdminCerverStats *stats);
+
 #pragma endregion
 
 #pragma region credentials

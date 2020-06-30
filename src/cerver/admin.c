@@ -46,6 +46,47 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 
 }
 
+void admin_cerver_stats_print (AdminCerverStats *stats) {
+
+    if (stats) {
+        printf ("threshold_time: %ld\n", stats->threshold_time);
+        
+        printf ("\n");
+        printf ("Admin n packets received:               %ld\n", stats->admin_n_packets_received);
+        printf ("Admin receives done:                    %ld\n", stats->admin_receives_done);
+        printf ("Admin bytes received:                   %ld\n", stats->admin_bytes_received);
+
+        printf ("\n");
+        printf ("Total n receives done:                  %ld\n", stats->total_n_receives_done);
+        printf ("Total n packets received:               %ld\n", stats->total_n_packets_received);
+        printf ("Total bytes received:                   %ld\n", stats->total_bytes_received);
+
+        printf ("\n");
+        printf ("Total n packets sent:                   %ld\n", stats->total_n_packets_sent);
+        printf ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
+
+        printf ("\n");
+        printf ("Current active admin connections:       %ld\n", stats->current_active_admin_connections);
+        printf ("Current n connected admins:             %ld\n", stats->current_n_connected_admins);
+
+        printf ("\n");
+        printf ("Current auth active admin connections:  %ld\n", stats->current_auth_active_admin_connections);
+        printf ("Current auth n connected admins:        %ld\n", stats->current_auth_n_connected_admins);
+
+        printf ("\n");
+        printf ("Total n admins:                         %ld\n", stats->total_n_admins);
+        printf ("Unique admins:                          %ld\n", stats->unique_admins);
+        printf ("Total admin connections:                %ld\n", stats->total_admin_connections);
+
+        printf ("\nReceived packets:\n");
+        packets_per_type_print (stats->received_packets);
+
+        printf ("\nSent packets:\n");
+        packets_per_type_print (stats->sent_packets);
+    }
+
+}
+
 #pragma endregion
 
 #pragma region credentials
