@@ -14,6 +14,12 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/threads/thread.h"
+#include "cerver/threads/bsem.h"
+
+#include "cerver/utils/utils.h"
+#include "cerver/utils/log.h"
+
 #pragma region stats
 
 static AdminCerverStats *admin_cerver_stats_new (void) {
@@ -168,6 +174,33 @@ void admin_set_data (Admin *admin, void *data, Action delete_data) {
 
 }
 
+// sends a packet to the first connection of the specified admin
+// returns 0 on success, 1 on error
+u8 admin_send_packet (Admin *admin, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin && packet) {
+		if (admin->authenticated) {
+			// printf ("admin client: %ld -- sock fd: %d\n", admin->client->id, ((Connection *) dlist_start (admin->client->connections))->sock_fd);
+
+			packet_set_network_values (
+				packet, 
+				NULL, 
+				admin->client, 
+				(Connection *) dlist_start (admin->client->connections)->data, 
+				NULL
+			);
+
+			retval = packet_send (packet, 0, NULL, false);
+			if (retval) cerver_log_error ("Failed to send packet to admin!");
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region main
@@ -207,8 +240,6 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->app_packet_handler_delete_packet = true;
 		admin_cerver->app_error_packet_handler_delete_packet = true;
 		admin_cerver->custom_packet_handler_delete_packet = true;
-
-		admin_cerver->update_thread_id = 0;
 
 		admin_cerver->stats = NULL;
 	}
@@ -412,6 +443,25 @@ AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_
 			
 			admin_credentials_delete (query);
 		}
+	}
+
+	return retval;
+
+}
+
+// broadcasts a packet to all connected admins in an admin cerver
+// returns 0 on success, 1 on error
+u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin_cerver && packet) {
+		u8 errors = 0;
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+			errors |= admin_send_packet ((Admin *) le->data, packet);
+		}
+
+		retval = errors;
 	}
 
 	return retval;

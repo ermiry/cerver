@@ -16,7 +16,9 @@
 #include "cerver/packets.h"
 
 struct _Cerver;
+struct _Client;
 struct _Handler;
+struct _Packet;
 
 #pragma region stats
 
@@ -98,12 +100,16 @@ extern Admin *admin_new (void);
 
 extern void admin_delete (void *admin_ptr);
 
-extern Admin *admin_create_with_client (Client *client);
+extern Admin *admin_create_with_client (struct _Client *client);
 
 extern int admin_comparator_by_id (const void *a, const void *b);
 
 // sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
 extern void admin_set_data (Admin *admin, void *data, Action delete_data);
+
+// sends a packet to the first connection of the specified admin
+// returns 0 on success, 1 on error
+extern u8 admin_send_packet (Admin *admin, struct _Packet *packet);
 
 #pragma endregion
 
@@ -157,8 +163,6 @@ struct _AdminCerver {
 	bool app_packet_handler_delete_packet;
 	bool app_error_packet_handler_delete_packet;
 	bool custom_packet_handler_delete_packet;
-
-	pthread_t update_thread_id;
 
 	struct _AdminCerverStats *stats;
 
@@ -228,6 +232,10 @@ extern u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
 // removes a registered admin credentials
 extern AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_cerver, 
 	const char *username);
+
+// broadcasts a packet to all connected admins in an admin cerver
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
 
 #pragma endregion
 
