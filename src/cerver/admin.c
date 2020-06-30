@@ -42,7 +42,41 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 
 #pragma region credentials
 
+static AdminCredentials *admin_credentials_new (void) {
 
+	AdminCredentials *credentials = (AdminCredentials *) malloc (sizeof (AdminCredentials));
+	if (credentials) {
+		credentials->username = NULL;
+		credentials->password = NULL;
+		credentials->logged_in = false;
+	}
+
+	return credentials;
+
+}
+
+static void admin_credentials_delete (void *credentials_ptr) {
+
+	if (credentials_ptr) {
+		AdminCredentials *credentials = (AdminCredentials *) credentials_ptr;
+
+		estring_delete (credentials->username);
+		estring_delete (credentials->password);
+
+		free (credentials);
+	}
+
+}
+
+static int admin_credentials_comparator (const void *a, const void *b) {
+
+	if (a && b) return strcmp (((AdminCredentials *) a)->username->str, ((AdminCredentials *) b)->username->str);
+
+	else if (a && !b) return -1;
+	else if (!a && b) return 1;
+	return 0;
+
+}
 
 #pragma endregion
 
@@ -185,14 +219,13 @@ void admin_cerver_delete (AdminCerver *admin_cerver) {
 
 }
 
-// FIXME:
 AdminCerver *admin_cerver_create (void) {
 
 	AdminCerver *admin_cerver = admin_cerver_new ();
 	if (admin_cerver) {
-		admin_cerver->credentials = dlist_init (NULL, NULL);
+		admin_cerver->credentials = dlist_init (admin_credentials_delete, admin_credentials_comparator);
 
-		admin_cerver->admins = dlist_init (NULL, NULL);
+		admin_cerver->admins = dlist_init (admin_delete, admin_comparator_by_id);
 
 		admin_cerver->stats = admin_cerver_stats_new ();
 	}
