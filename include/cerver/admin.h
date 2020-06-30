@@ -109,8 +109,6 @@ extern void admin_set_data (Admin *admin, void *data, Action delete_data);
 
 #pragma region main
 
-#define ADMIN_CERVER_CONNECTION_QUEUE				2
-
 #define DEFAULT_MAX_ADMINS							1
 #define DEFAULT_MAX_ADMIN_CONNECTIONS				1
 

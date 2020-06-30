@@ -424,6 +424,27 @@ AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_
 
 static void *admin_poll (void *cerver_ptr);
 
+// inits admin cerver's internal structures & values
+static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
+
+    u8 retval = 1;
+
+    if (admin_cerver) {
+		admin_cerver->fds = (struct pollfd *) calloc (admin_cerver->max_n_fds, sizeof (struct pollfd));
+		if (admin_cerver->fds) {
+			memset (admin_cerver->fds, 0, sizeof (struct pollfd) * admin_cerver->max_n_fds);
+
+			for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
+				admin_cerver->fds[i].fd = -1;
+
+			admin_cerver->current_n_fds = 0;
+		}
+    }
+
+    return retval;
+
+}
+
 static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
 
     u8 retval = 0;
@@ -598,22 +619,62 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 
 }
 
-u8 admin_cerver_start (Cerver *cerver) {
+static u8 admin_cerver_start_poll (Cerver *cerver) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		if (thread_create_detachable (
+		if (!thread_create_detachable (
 		    &cerver->admin_thread_id,
 		    admin_poll,
-		    cerver->admin
+		    cerver
 		)) {
-		    char *s = c_string_create ("Failed to create admin_poll () thread in cerver %s",
+		    retval = 0;		// success
+		}
+
+		else {
+			char *s = c_string_create ("Failed to create admin_poll () thread in cerver %s!",
 		        cerver->info->name->str);
 		    if (s) {
 		        cerver_log_error (s);
 		        free (s);
 		    }
+		}
+	}
+
+	return retval;
+
+}
+
+u8 admin_cerver_start (Cerver *cerver) {
+
+	u8 retval = 1;
+
+	if (cerver) {
+		if (!admin_cerver_start_internal (cerver->admin)) {
+			if (!admin_cerver_handlers_start (cerver->admin)) {
+				if (!admin_cerver_start_poll (cerver)) {
+					retval = 0;
+				}
+			}
+
+			else {
+				char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin handlers!",
+					cerver->info->name->str);
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+			}
+		}
+
+		else {
+			char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin internal!",
+				cerver->info->name->str);
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
 		}
 	}
 
