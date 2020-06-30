@@ -25,15 +25,12 @@ typedef struct AuthData {
 
     // recover data used for authentication
     // after a success auth, it will be added to the client
-    // if not, it should be dispossed by user dfined auth method
+    // if not, it should be dispossed by user defined auth method
     // and set to NULL
     void *data;                 
     Action delete_data;         // how to delete the data
 
 } AuthData;
-
-// closes the on hold connection and removes it from the cerver
-extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
 
 // auxiliary structure passed to the user defined auth method
 typedef struct AuthPacket {
@@ -55,7 +52,10 @@ extern void on_hold_packet_handler (void *packet_ptr);
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess authentication or it failed to, so it is dropped
 // returns 0 on success, 1 on error
-extern u8 on_hold_connection (Cerver *cerver, Connection *connection);
+extern u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connection);
+
+// closes the on hold connection and removes it from the cerver
+extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
 
 #pragma endregion
 

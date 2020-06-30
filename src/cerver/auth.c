@@ -30,16 +30,32 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
 void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
 static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd);
 
-static AuthData *auth_data_new (const char *token, void *data, size_t auth_data_size) {
+#pragma region auth data
+
+static AuthData *auth_data_new (void) {
 
     AuthData *auth_data = (AuthData *) malloc (sizeof (AuthData));
     if (auth_data) {
+        auth_data->token = NULL;
+
+        auth_data->auth_data = NULL;
+        auth_data->auth_data_size = 0;
+
         auth_data->data = NULL;
         auth_data->delete_data = NULL;
+    }
 
+    return auth_data;
+
+}
+
+static AuthData *auth_data_create (const char *token, void *data, size_t auth_data_size) {
+
+    AuthData *auth_data = auth_data_new ();
+    if (auth_data) {
         auth_data->token = token ? estring_new (token) : NULL;
         if (data) {
-            auth_data->auth_data = malloc (sizeof (auth_data_size));
+            auth_data->auth_data = malloc (auth_data_size);
             if (auth_data->auth_data) {
                 memcpy (auth_data->auth_data, data, auth_data_size);
                 auth_data->auth_data_size = auth_data_size;
@@ -70,6 +86,8 @@ static void auth_data_delete (AuthData *auth_data) {
     }
 
 }
+
+#pragma endregion
 
 #pragma region auth
 
@@ -307,7 +325,7 @@ static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
 
     if (packet && auth_data) {
         AuthPacket auth_packet = { .packet = packet, .auth_data = auth_data };
-        if (!packet->cerver->auth->authenticate (&auth_packet)) {
+        if (!packet->cerver->authenticate (&auth_packet)) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Client authenticated successfully to cerver %s",
                 packet->cerver->info->name->str);
@@ -349,14 +367,14 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
             // check if we have a token
             if (packet->packet_size == (sizeof (PacketHeader) + sizeof (SToken))) {
                 SToken *s_token = (SToken *) (end += sizeof (PacketHeader));
-                auth_data = auth_data_new (s_token->token, NULL, 0);
+                auth_data = auth_data_create (s_token->token, NULL, 0);
             }
 
             // we have custom data credentials
             else {
                 end += sizeof (PacketHeader);
                 size_t data_size = packet->packet_size - sizeof (PacketHeader);
-                auth_data = auth_data_new (NULL, end, data_size);
+                auth_data = auth_data_create (NULL, end, data_size);
             }
         }
     }
@@ -369,7 +387,7 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 static void auth_try (Packet *packet) {
 
     if (packet) {
-        if (packet->cerver->auth->authenticate) {
+        if (packet->cerver->authenticate) {
             // strip out the auth data from the packet
             AuthData *auth_data = auth_strip_auth_data (packet);
             if (auth_data) {
@@ -453,12 +471,11 @@ static void cerver_auth_packet_handler (Packet *packet) {
 
 }
 
-// TODO: add cerver stats
 // handles an packet from an on hold connection
-void on_hold_packet_handler (void *ptr) {
+void on_hold_packet_handler (void *packet_ptr) {
 
-    if (ptr) {
-        Packet *packet = (Packet *) ptr;
+    if (packet_ptr) {
+        Packet *packet = (Packet *) packet_ptr;
         if (!packet_check (packet)) {
             switch (packet->header->packet_type) {
                 // handles an error from the client
@@ -510,23 +527,15 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
                 cerver->stats->current_n_hold_connections += 1;
 
                 avl_insert_node (cerver->on_hold_connections, connection);
+
                 const void *key = &connection->socket->sock_fd;
-                htab_insert (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32),
-                    connection, sizeof (Connection));
+                if (!htab_insert (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32),
+                    connection, sizeof (Connection))) {
+                    cerver_log_debug ("on_hold_connection () - inserted connection in on_hold_connection_sock_fd_map htab");
+                }
 
-                if (cerver->holding_connections == false) {
-                    cerver->holding_connections = true;
-
-                    if (thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
-                        char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
-                            cerver->info->name->str);
-                        if (status) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
-                            free (status);
-                        }
-                        
-                        cerver->holding_connections = false;
-                    }
+                else {
+                    cerver_log_error ("on_hold_connection () - failed to insert connection in on_hold_connection_sock_fd_map htab!");
                 }
 
                 char *status = NULL;
@@ -589,14 +598,28 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
         Connection *query = connection_new ();
         // query->socket->sock_fd = connection->socket->sock_fd;
         query->socket = socket_create (connection->socket->sock_fd);
-        avl_remove_node (cerver->on_hold_connections, query);
+        if (avl_remove_node (cerver->on_hold_connections, query)) {
+            cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connections avl");
+        }
+
+        else {
+            cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connections avl!");
+        }
 
         // remove connection from on hold map
         const void *key = &connection->socket->sock_fd;
-        htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32));
+        if (htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32))) {
+            cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connection_sock_fd_map htab");
+        }
+
+        else {
+            cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connection_sock_fd_map htab!");
+        }
 
         // unregister the fd from the on hold structures
         on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd);
+
+        connection_delete (query);
 
         retval = 0;
     }
