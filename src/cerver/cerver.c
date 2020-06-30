@@ -1773,6 +1773,8 @@ static u8 cerver_auth_start (Cerver *cerver) {
     if (cerver) {
         cerver->holding_connections = false;
 
+        cerver->auth_packet = packet_generate_request (AUTH_PACKET, REQ_AUTH_CLIENT, NULL, 0); 
+
         cerver->max_on_hold_connections = poll_n_fds / 2;
         cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
         cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);

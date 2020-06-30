@@ -71,13 +71,6 @@ static void auth_data_delete (AuthData *auth_data) {
 
 }
 
-// generates an authentication packet with client auth request
-Packet *auth_packet_generate (void) { 
-    
-    return packet_generate_request (AUTH_PACKET, REQ_AUTH_CLIENT, NULL, 0); 
-    
-}
-
 #pragma region auth
 
 static void auth_send_success_packet (const Cerver *cerver, const Connection *connection) {
