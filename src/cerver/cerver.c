@@ -1829,21 +1829,9 @@ u8 cerver_start (Cerver *cerver) {
                 errors |= cerver_auth_start (cerver);
             }
 
-            // FIXME:
-            // 21/01/2020 -- start the admin cerver
+            // start the admin cerver
             if (cerver->admin) {
-                // if (thread_create_detachable (
-                //     &cerver->admin_thread_id,
-                //     admin_cerver_start,
-                //     cerver->admin
-                // )) {
-                //     char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
-                //         cerver->info->name->str);
-                //     if (s) {
-                //         cerver_log_error (s);
-                //         free (s);
-                //     }
-                // }
+                errors |= admin_cerver_start (cerver);
             } 
 
             // 17/06/2020

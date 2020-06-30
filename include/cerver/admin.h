@@ -107,7 +107,7 @@ extern void admin_set_data (Admin *admin, void *data, Action delete_data);
 
 #pragma endregion
 
-#pragma region admin cerver
+#pragma region main
 
 #define ADMIN_CERVER_CONNECTION_QUEUE				2
 
@@ -183,6 +183,9 @@ extern void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u
 extern void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, 
 	i32 n_bad_packets_limit, i32 n_bad_packets_limit_auth);
 
+// sets the max number of poll fds for the admin cerver
+extern void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds);
+
 // sets a custom poll time out to use for admins
 extern void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
 
@@ -223,6 +226,12 @@ extern u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
 // removes a registered admin credentials
 extern AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_cerver, 
 	const char *username);
+
+#pragma endregion
+
+#pragma region start
+
+extern u8 admin_cerver_start (struct _Cerver *cerver);
 
 #pragma endregion
 

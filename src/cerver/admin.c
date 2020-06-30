@@ -274,6 +274,13 @@ void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver,
 
 }
 
+// sets the max number of poll fds for the admin cerver
+void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds) {
+
+	if (admin_cerver) admin_cerver->max_n_fds = max_n_fds;
+
+}
+
 // sets a custom poll time out to use for admins
 void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout) {
 
@@ -400,11 +407,111 @@ AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_
 
 }
 
+#pragma endregion
+
+#pragma region start
+
+static void *admin_poll (void *cerver_ptr);
+
+u8 admin_cerver_start (Cerver *cerver) {
+
+	u8 retval = 1;
+
+	if (cerver) {
+		if (thread_create_detachable (
+		    &cerver->admin_thread_id,
+		    admin_poll,
+		    cerver->admin
+		)) {
+		    char *s = c_string_create ("Failed to create admin_poll () thread in cerver %s",
+		        cerver->info->name->str);
+		    if (s) {
+		        cerver_log_error (s);
+		        free (s);
+		    }
+		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region end
 
 #pragma endregion
 
 #pragma region poll
 
+// handles packets from the admin clients
+static void *admin_poll (void *cerver_ptr) {
 
+    if (cerver_ptr) {
+        Cerver *cerver = (Cerver *) cerver_ptr;
+		AdminCerver *admin_cerver = cerver->admin;
+
+        char *status = c_string_create ("Admin cerver %s poll has started!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+            free (status);
+        }
+
+        char *thread_name = c_string_create ("%s-admin", cerver->info->name->str);
+        if (thread_name) {
+            thread_set_name (thread_name);
+            free (thread_name);
+        }
+
+        int poll_retval = 0;
+        while (cerver->isRunning) {
+            poll_retval = poll (
+				admin_cerver->fds,
+				admin_cerver->max_n_fds,
+				admin_cerver->poll_timeout
+			);
+
+            switch (poll_retval) {
+                case -1: {
+                    char *status = c_string_create ("Admin cerver %s poll has failed!", cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                        free (status);
+                    }
+
+                    perror ("Error");
+                    cerver->isRunning = false;
+                } break;
+
+                case 0: {
+                    // #ifdef CERVER_DEBUG
+                    // char *status = c_string_create ("Admin cerver %s poll timeout", cerver->info->name->str);
+                    // if (status) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     free (status);
+                    // }
+                    // #endif
+                } break;
+
+                default: {
+                    admin_poll_handle (cerver);
+                } break;
+            }
+        }
+
+        #ifdef CERVER_DEBUG
+        status = c_string_create ("Admin cerver %s poll has stopped!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
+        #endif
+    }
+
+    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle admins on a NULL cerver!");
+
+    return NULL;
+
+}
 
 #pragma endregion
