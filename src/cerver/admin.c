@@ -827,6 +827,25 @@ static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
 
 }
 
+static u8 admin_cerver_disconnect_admins (AdminCerver *admin_cerver) {
+
+	u8 errors = 0;
+
+	if (admin_cerver) {
+		if (dlist_size (admin_cerver->admins)) {
+			// send a cerver teardown packet to all clients connected to cerver
+            Packet *packet = packet_generate_request (CERVER_PACKET, CERVER_TEARDOWN, NULL, 0);
+            if (packet) {
+                errors |= admin_cerver_broadcast_to_admins (admin_cerver, packet);
+                packet_delete (packet);
+            }
+		}
+	}
+
+	return errors;
+
+}
+
 u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
 	u8 errors = 0;
@@ -844,6 +863,8 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 		#endif
 
 		errors |= admin_cerver_handlers_end (admin_cerver);
+
+		errors |= admin_cerver_disconnect_admins (admin_cerver);
 
 		status = c_string_create ("Cerver %s admin teardown was successful!",
 			admin_cerver->cerver->info->name->str);
