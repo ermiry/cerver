@@ -200,6 +200,10 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->app_error_packet_handler = NULL;
 		admin_cerver->custom_packet_handler = NULL;
 
+		admin_cerver->num_handlers_alive = 0;
+		admin_cerver->num_handlers_working = 0;
+		admin_cerver->handlers_lock = NULL;
+
 		admin_cerver->app_packet_handler_delete_packet = true;
 		admin_cerver->app_error_packet_handler_delete_packet = true;
 		admin_cerver->custom_packet_handler_delete_packet = true;
@@ -225,6 +229,11 @@ void admin_cerver_delete (AdminCerver *admin_cerver) {
 		handler_delete (admin_cerver->app_packet_handler);
         handler_delete (admin_cerver->app_error_packet_handler);
         handler_delete (admin_cerver->custom_packet_handler);
+
+		if (admin_cerver->handlers_lock) {
+            pthread_mutex_destroy (admin_cerver->handlers_lock);
+            free (admin_cerver->handlers_lock);
+        }
 
 		admin_cerver_stats_delete (admin_cerver->stats);
 
@@ -414,6 +423,45 @@ AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_
 #pragma region start
 
 static void *admin_poll (void *cerver_ptr);
+
+static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Initializing %s admin handlers...",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+        #endif
+
+        admin_cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (admin_cerver->handlers_lock, NULL);
+
+        errors |= admin_cerver_app_handlers_start (admin_cerver);
+
+        errors |= admin_cerver_app_error_handler_start (admin_cerver);
+
+        errors |= admin_cerver_custom_handler_start (admin_cerver);
+
+        if (!errors) {
+            #ifdef CERVER_DEBUG
+            s = c_string_create ("Done initializing %s admin handlers!",
+                admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return errors;
+
+}
 
 u8 admin_cerver_start (Cerver *cerver) {
 

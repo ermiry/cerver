@@ -147,10 +147,14 @@ struct _AdminCerver {
 	Action on_admin_success_connection;
 
 	// custom admin packet handlers
-	// this handlers will only be accessible for authenticated admins
+	// these handlers will only be accessible for authenticated admins
 	struct _Handler *app_packet_handler;
 	struct _Handler *app_error_packet_handler;
 	struct _Handler *custom_packet_handler;
+
+	unsigned int num_handlers_alive;       // handlers currently alive
+    unsigned int num_handlers_working;     // handlers currently working
+	pthread_mutex_t *handlers_lock;
 
 	bool app_packet_handler_delete_packet;
 	bool app_error_packet_handler_delete_packet;
