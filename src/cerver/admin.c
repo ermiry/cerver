@@ -424,12 +424,147 @@ AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_
 
 static void *admin_poll (void *cerver_ptr);
 
+static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
+
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_packet_handler) {
+            if (!admin_cerver->app_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->app_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s app_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start admin cerver %s app_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+			#ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
+				admin_cerver->cerver->info->name->str);
+			if (s) {
+				cerver_log_warning (s);
+				free (s);
+			}
+			#endif
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
+
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_error_packet_handler) {
+            if (!admin_cerver->app_error_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->app_error_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s app_error_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start admin cerver %s app_error_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+			#ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler",
+				admin_cerver->cerver->info->name->str);
+			if (s) {
+				cerver_log_warning (s);
+				free (s);
+			}
+			#endif
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
+
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->custom_packet_handler) {
+            if (!admin_cerver->custom_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->custom_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s custom_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start admin cerver %s custom_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+			#ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s does not have a custom_packet_handler",
+				admin_cerver->cerver->info->name->str);
+			if (s) {
+				cerver_log_warning (s);
+				free (s);
+			}
+			#endif
+        }
+    }
+
+    return retval;
+
+}
+
 static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 
     u8 errors = 0;
 
     if (admin_cerver) {
-        #ifdef CERVER_DEBUG
+        #ifdef ADMIN_DEBUG
         char *s = c_string_create ("Initializing %s admin handlers...",
             admin_cerver->cerver->info->name->str);
         if (s) {
@@ -448,7 +583,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
         errors |= admin_cerver_custom_handler_start (admin_cerver);
 
         if (!errors) {
-            #ifdef CERVER_DEBUG
+            #ifdef ADMIN_DEBUG
             s = c_string_create ("Done initializing %s admin handlers!",
                 admin_cerver->cerver->info->name->str);
             if (s) {
@@ -608,7 +743,7 @@ static void *admin_poll (void *cerver_ptr) {
             }
         }
 
-        #ifdef CERVER_DEBUG
+        #ifdef ADMIN_DEBUG
         status = c_string_create ("Admin cerver %s poll has stopped!", cerver->info->name->str);
         if (status) {
             cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
