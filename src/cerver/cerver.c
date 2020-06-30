@@ -1288,26 +1288,6 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                 cerver->fds[cerver->current_n_fds].events = POLLIN;
                 cerver->current_n_fds++;
 
-                // cerver is not holding clients if there is not new connections
-                if (cerver->auth_required) cerver->holding_connections = false;
-
-                // FIXME:
-                // 21/01/2020 -- start the admin cerver
-                if (cerver->admin) {
-                    // if (thread_create_detachable (
-                    //     &cerver->admin_thread_id,
-                    //     admin_cerver_start,
-                    //     cerver->admin
-                    // )) {
-                    //     char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
-                    //         cerver->info->name->str);
-                    //     if (s) {
-                    //         cerver_log_error (s);
-                    //         free (s);
-                    //     }
-                    // }
-                } 
-
                 cerver_poll (cerver);
 
                 retval = 0;
@@ -1785,6 +1765,49 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 
 }
 
+// inits cerver's auth capabilities
+static u8 cerver_auth_start (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        cerver->holding_connections = false;
+
+        cerver->max_on_hold_connections = poll_n_fds / 2;
+        cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
+        cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
+        if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
+            cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
+            if (cerver->hold_fds) {
+                memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
+
+                for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
+                    cerver->hold_fds[i].fd = -1;
+
+                cerver->current_on_hold_nfds = 0;
+
+                if (!thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
+                    retval = 0;
+                }
+
+                else {
+                    char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
+                        cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                        free (status);
+                    }
+                }
+
+                retval = 0;
+            }
+        }
+    }
+
+    return retval;
+
+}
+
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any) 
 // and any other processes that have been configured before
@@ -1798,6 +1821,28 @@ u8 cerver_start (Cerver *cerver) {
 
         if (!cerver_one_time_init (cerver)) {
             u8 errors = 0;
+
+            // cerver is not holding clients if there is not new connections
+            if (cerver->auth_required) {
+                errors |= cerver_auth_start (cerver);
+            }
+
+            // FIXME:
+            // 21/01/2020 -- start the admin cerver
+            if (cerver->admin) {
+                // if (thread_create_detachable (
+                //     &cerver->admin_thread_id,
+                //     admin_cerver_start,
+                //     cerver->admin
+                // )) {
+                //     char *s = c_string_create ("Failed to create admin_cerver_start () thread in cerver %s",
+                //         cerver->info->name->str);
+                //     if (s) {
+                //         cerver_log_error (s);
+                //         free (s);
+                //     }
+                // }
+            } 
 
             // 17/06/2020
             // check for inactive will be handled in its own thread
