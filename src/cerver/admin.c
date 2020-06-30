@@ -5,9 +5,11 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/estring.h"
 
 #include "cerver/collections/dllist.h"
 
+#include "cerver/admin.h"
 #include "cerver/cerver.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
@@ -443,6 +445,65 @@ u8 admin_cerver_start (Cerver *cerver) {
 #pragma endregion
 
 #pragma region poll
+
+static inline void admin_poll_handle (Cerver *cerver) {
+
+    if (cerver) {
+        // one or more fd(s) are readable, need to determine which ones they are
+        for (u32 i = 0; i < cerver->admin->max_n_fds; i++) {
+            if (cerver->fds[i].fd > -1) {
+				// FIXME: pass admin type to both methods
+                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
+                CerverReceive *cr = cerver_receive_new (cerver, socket, true, NULL);
+
+                switch (cerver->hold_fds[i].revents) {
+                    // A connection setup has been completed or new data arrived
+                    case POLLIN: {
+                        // printf ("Receive fd: %d\n", cerver->fds[i].fd);
+                            
+                        // if (cerver->thpool) {
+                            // pthread_mutex_lock (socket->mutex);
+
+                            // handle received packets using multiple threads
+                            // if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
+                            //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
+                            //         cerver->info->name->str);
+                            //     if (s) {
+                            //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                            //         free (s);
+                            //     }
+                            // }
+
+                            // 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
+                            // and the received buffer handler method is the one that is called 
+                            // inside the thread pool - using this method we were able to get a correct behaviour
+                            // however, we still may have room form improvement as we original though ->
+                            // by performing reading also inside the thpool
+                            // cerver_receive (cr);
+
+                            // pthread_mutex_unlock (socket->mutex);
+                        // }
+
+                        // else {
+                            // handle all received packets in the same thread
+                            cerver_receive (cr);
+                        // }
+                    } break;
+
+                    default: {
+                        if (cerver->fds[i].revents != 0) {
+                            // 17/06/2020 -- 15:06 -- handle as failed any other signal
+                            // to avoid hanging up at 100% or getting a segfault
+							// FIXME:
+                            // cerver_switch_receive_handle_failed (cr);
+                        }
+                    } break;
+                }
+            }
+        }
+    }
+
+}
 
 // handles packets from the admin clients
 static void *admin_poll (void *cerver_ptr) {
