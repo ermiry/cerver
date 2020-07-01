@@ -84,6 +84,13 @@ extern int admin_comparator_by_id (const void *a, const void *b);
 // sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
 extern void admin_set_data (Admin *admin, void *data, Action delete_data);
 
+extern Admin *admin_get_by_sock_fd (struct _AdminCerver *admin_cerver, i32 sock_fd);
+
+// removes the connection from the admin referred to by the sock fd
+// and also checks if there is another active connection in the admin, if not it will be dropped
+// returns 0 on success, 1 on error
+extern u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_cerver, Admin *admin, i32 sock_fd);
+
 // sends a packet to the first connection of the specified admin
 // returns 0 on success, 1 on error
 extern u8 admin_send_packet (Admin *admin, struct _Packet *packet);

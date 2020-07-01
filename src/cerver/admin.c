@@ -157,6 +157,111 @@ void admin_set_data (Admin *admin, void *data, Action delete_data) {
 
 }
 
+static Connection *admin_connection_get_by_sock_fd (Admin *admin, i32 sock_fd) {
+
+    Connection *retval = NULL;
+
+    if (admin) {
+        Connection *connection = NULL;
+        for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
+            connection = (Connection *) le_sub->data;
+            if (connection->socket->sock_fd == sock_fd) {
+                retval = connection;
+                break;
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
+
+	Admin *retval = NULL;
+
+	if (admin_cerver) {
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+            if (admin_connection_get_by_sock_fd ((Admin *) le->data, sock_fd)) {
+                retval = (Admin *) le->data;
+                break;
+            }
+		}
+	}
+
+	return retval;
+
+}
+
+// removes the connection from the admin referred to by the sock fd
+// and also checks if there is another active connection in the admin, if not it will be dropped
+// returns 0 on success, 1 on error
+u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, i32 sock_fd) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        Connection *connection = NULL;
+        switch (admin->client->connections->size) {
+            case 0: {
+                // #ifdef ADMIN_DEBUG
+                char *s = c_string_create ("admin_remove_connection_by_sock_fd () - Admin client with id " 
+                    "%ld does not have ANY connection - removing him from cerver...",
+                    admin->client->id);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                    free (s);
+                }
+                // #endif
+                
+                admin_cerver_unregister_admin (admin_cerver, admin);
+                admin_delete (admin);
+            } break;
+
+            case 1: {
+                connection = (Connection *) admin->client->connections->start->data;
+
+                // FIXME: just remove the connection from the client
+                // retval = connection_remove (
+                //     cerver,
+                //     client,
+                //     connection,
+                //     NULL
+                // );
+
+                // no connections left in cerver, just remove and delete
+                admin_cerver_unregister_admin (admin_cerver, admin);
+                admin_delete (admin);
+            } break;
+
+            default: {
+                // FIXME:
+                // get the connection from the client
+                // client_connection_get_by_fd ()
+
+                if (connection) {
+                    // FIXME: just remove the connection from the client
+                }
+
+                else {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("admin_remove_connection_by_sock_fd () - Admin client with id " 
+                        "%ld does not have a connection related to sock fd %d",
+                        admin->client->id, sock_fd);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                        free (s);
+                    }
+                    #endif
+                }
+            } break;
+        }
+    }
+
+    return retval;
+
+}
+
 // sends a packet to the first connection of the specified admin
 // returns 0 on success, 1 on error
 u8 admin_send_packet (Admin *admin, Packet *packet) {
@@ -642,7 +747,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
         admin_cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
         pthread_mutex_init (admin_cerver->handlers_lock, NULL);
 
-        errors |= admin_cerver_app_handlers_start (admin_cerver);
+        errors |= admin_cerver_app_handler_start (admin_cerver);
 
         errors |= admin_cerver_app_error_handler_start (admin_cerver);
 
@@ -797,7 +902,7 @@ static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
         }
         #endif
 
-        errors |= admin_cerver_app_handlers_destroy (admin_cerver);
+        errors |= admin_cerver_app_handler_destroy (admin_cerver);
 
         errors |= admin_cerver_app_error_handler_destroy (admin_cerver);
 
