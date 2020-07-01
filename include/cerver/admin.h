@@ -253,4 +253,11 @@ extern u8 admin_cerver_end (AdminCerver *admin_cerver);
 
 #pragma endregion
 
+#pragma region handler
+
+// handles a packet from an admin
+extern void admin_packet_handler (struct _Packet *packet);
+
+#pragma endregion
+
 #endif

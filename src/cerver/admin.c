@@ -921,6 +921,169 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
 #pragma endregion
 
+#pragma region handler
+
+// handles an APP_PACKET packet type
+static void admin_app_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin->app_packet_handler) {
+            if (packet->cerver->admin->app_packet_handler->direct_handle) {
+                // printf ("app_packet_handler - direct handle!\n");
+                packet->cerver->admin->app_packet_handler->handler (packet);
+                if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->app_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an app_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+}
+
+// handles an APP_ERROR_PACKET packet type
+static void admin_app_error_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin->app_error_packet_handler) {
+            if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->cerver->admin->app_error_packet_handler->handler (packet);
+                if (packet->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an app_error_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+}
+
+// handles a CUSTOM_PACKET packet type
+static void admin_custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin->custom_packet_handler) {
+            if (packet->cerver->admin->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->cerver->admin->custom_packet_handler->handler (packet);
+                if (packet->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an custom_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+}
+
+// TODO: handle stats
+// handles a packet from an admin
+void admin_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (!packet_check (packet)) {
+            switch (packet->header->packet_type) {
+                case APP_PACKET: admin_app_packet_handler (packet); break;
+
+                case APP_ERROR_PACKET: admin_app_error_packet_handler (packet); break;
+
+                case CUSTOM_PACKET: admin_custom_packet_handler (packet); break;
+
+                default: {
+                    // packet->cerver->stats->received_packets->n_bad_packets += 1;
+                    // packet->client->stats->received_packets->n_bad_packets += 1;
+                    // packet->connection->stats->received_packets->n_bad_packets += 1;
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Got a packet of unknown type in cerver %s admin handler", 
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, s);
+                        free (s);
+                    }
+                    #endif
+                    packet_delete (packet);
+                } break;
+            }
+        }
+    }
+
+}
+
+#pragma endregion
+
 #pragma region poll
 
 static inline void admin_poll_handle (Cerver *cerver) {
