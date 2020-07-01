@@ -289,6 +289,9 @@ extern void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_ti
 // configures the cerver to use client sessions
 // This will allow for multiple connections from the same client, 
 // or you can use it to allow different connections from different devices using a token
+// you can pass your own session generator method that must take a SessionData as the argument
+// and must return a char * representing the session id (token) for the client
+// or use the default one
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const void *));
 

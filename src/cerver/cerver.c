@@ -503,6 +503,8 @@ u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const voi
             cerver->use_sessions = true;
 
             avl_set_comparator (cerver->clients, client_comparator_session_id);
+
+            retval = 0;
         }
     }
 
