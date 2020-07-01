@@ -124,7 +124,7 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
             Client *c = client_create ();
             if (c) {
                 if (!connection_register_to_client (c, packet->connection)) {
-                    connection_register_to_cerver_poll (packet->cerver, c, packet->connection);
+                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
 
                     if (packet->cerver->use_sessions) {
                         // FIXME: generate the new session id - token
@@ -290,7 +290,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
 
             if (!connection_register_to_client (client, packet->connection)) {
                 // add the connection sock fd to the cerver poll fds
-                connection_register_to_cerver_poll (packet->cerver, client, packet->connection);
+                connection_register_to_cerver_poll (packet->cerver, packet->connection);
 
                 // remove the connection from the on hold structures
                 on_hold_poll_remove_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
@@ -440,7 +440,7 @@ static void auth_try (Packet *packet) {
         if (packet->cerver->authenticate) {
             Client *client = NULL;
             if (!auth_try_common (packet, packet->cerver->authenticate, &client)) {
-
+                // FIXME: remove from on hold structures and register to cerver main structures & poll
             }
         }
 
@@ -468,7 +468,13 @@ static void admin_auth_try (Packet *packet) {
             if (packet->cerver->admin->authenticate) {
                 Client *client = NULL;
                 if (!auth_try_common (packet, packet->cerver->admin->authenticate, &client)) {
-                    // create a new admin with client
+                    if (client) {
+                        // create a new admin with client and register it to the admin
+                        Admin *admin = admin_create_with_client (client);
+                        if (admin_cerver_register_admin (packet->cerver->admin, admin)) {
+                            // FIXME: error
+                        }
+                    }
                 }
             }
 
@@ -742,23 +748,6 @@ static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i
 
 #pragma region poll
 
-// reallocs on hold cerver poll fds
-// returns 0 on success, 1 on error
-static u8 cerver_realloc_on_hold_poll_fds (Cerver *cerver) {
-
-    u8 retval = 1;
-
-    if (cerver) {
-        cerver->max_on_hold_connections = cerver->max_on_hold_connections * 2;
-        cerver->hold_fds = (struct pollfd *) realloc (cerver->hold_fds, 
-            cerver->max_on_hold_connections * sizeof (struct pollfd));
-        if (cerver->hold_fds) retval = 0;
-    }
-
-    return retval;
-
-}
-
 static i32 on_hold_get_free_idx (Cerver *cerver) {
 
     if (cerver) {
@@ -781,17 +770,88 @@ static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd) {
 
 }
 
-static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
+// FIXME: on_hold_poll_lock
+// regsiters a connection to the cerver's on hold poll array
+// returns 0 on success, 1 on error
+static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver && connection) {
+        // pthread_mutex_lock (cerver->on_hold_poll_lock);
+
+        i32 idx = on_hold_get_free_idx (cerver);
+        if (idx >= 0) {
+            cerver->fds[idx].fd = connection->socket->sock_fd;
+            cerver->fds[idx].events = POLLIN;
+            cerver->current_n_fds++;
+
+            cerver->stats->current_n_hold_connections--;
+
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Added new sock fd to cerver %s ON HOLD poll, idx: %i", 
+                cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s current on hold connections: %i", 
+                cerver->info->name->str, cerver->stats->current_n_hold_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                free (status);
+            }
+            #endif
+
+            retval = 0;
+        }
+
+        else if (idx < 0) {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s ON HOLD poll is full!", 
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+        }
+
+        // pthread_mutex_unlock (cerver->on_hold_poll_lock);
+    }
+
+    return retval;
+
+}
+
+// FIXME: on_hold_poll_lock
+// unregsiters a connection from the cerver's on hold poll array
+// returns 0 on success, 1 on error
+static void on_hold_poll_unregister_connection (Cerver *cerver, Connection *connection) {
 
     if (cerver) {
-        i32 idx = on_hold_poll_get_idx_by_sock_fd (cerver, sock_fd);
-        if (idx) {
+        i32 idx = on_hold_poll_get_idx_by_sock_fd (cerver, connection->socket->sock_fd);
+        if (idx >= 0) {
             cerver->hold_fds[idx].fd = -1;
             cerver->hold_fds[idx].events = -1;
             cerver->current_on_hold_nfds--;
 
+            cerver->stats->current_n_hold_connections--;
+
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Removed sock fd <%d> from cerver %s ON HOLD poll, idx: %d",
+                connection->socket->sock_fd, cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s current on hold connections: %i.", 
+            char *status = c_string_create ("Cerver %s current on hold connections: %i", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
                 cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
@@ -801,25 +861,17 @@ static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
             // check if we are holding any more connections, if not, we stop the on hold poll
             if (cerver->current_on_hold_nfds <= 0) {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Stoping cerver's %s on hold poll...",
-                    cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                    free (status);
-                }
-                #endif
                 cerver->holding_connections = false;
             }
         }
 
         else {
             #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Couldn't find %i sock fd in cerver's %s on hold poll fds.",
-                sock_fd, cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                free (status);
+            char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ON HOLD poll!",
+                connection->socket->sock_fd, cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
+                free (s);
             }
             #endif
         }
@@ -827,6 +879,7 @@ static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
 }
 
+// FIXME: on_hold_poll_lock
 static inline void on_hold_poll_handle (Cerver *cerver) {
 
     if (cerver) {
