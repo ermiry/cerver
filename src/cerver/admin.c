@@ -1185,12 +1185,23 @@ static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Conn
             admin_cerver->fds[idx].events = POLLIN;
             admin_cerver->current_n_fds++;
 
+            admin_cerver->stats->current_connections++;
+
             #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Added new sock fd to cerver %s ADMIN poll, idx: %i", 
                 admin_cerver->cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
                 free (s);
+            }
+            #endif
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %i", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
             }
             #endif
 
@@ -1224,12 +1235,13 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
     if (admin_cerver && connection) {
         pthread_mutex_lock (admin_cerver->poll_lock);
 
-        // get the idx of the connection sock fd in the cerver poll fds
         i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->socket->sock_fd);
         if (idx >= 0) {
             admin_cerver->fds[idx].fd = -1;
             admin_cerver->fds[idx].events = -1;
             admin_cerver->current_n_fds--;
+
+            admin_cerver->stats->current_connections--;
 
             #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
@@ -1240,18 +1252,27 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
             }
             #endif
 
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %i", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
+
             retval = 0;
         }
 
         else {
-            #ifdef ADMIN_DEBUG
+            // #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
                 connection->socket->sock_fd, admin_cerver->cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_WARNING, LOG_ADMIN, s);
                 free (s);
             }
-            #endif
+            // #endif
         }
 
         pthread_mutex_unlock (admin_cerver->poll_lock);
@@ -1271,7 +1292,7 @@ static inline void admin_poll_handle (Cerver *cerver) {
             if (cerver->fds[i].fd > -1) {
 				// FIXME: pass admin type to both methods
                 Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
-                CerverReceive *cr = cerver_receive_new (cerver, socket, true, NULL);
+                CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_ADMIN, NULL);
 
                 switch (cerver->hold_fds[i].revents) {
                     // A connection setup has been completed or new data arrived
@@ -1309,10 +1330,9 @@ static inline void admin_poll_handle (Cerver *cerver) {
 
                     default: {
                         if (cerver->fds[i].revents != 0) {
-                            // 17/06/2020 -- 15:06 -- handle as failed any other signal
+                            // handle as failed any other signal
                             // to avoid hanging up at 100% or getting a segfault
-							// FIXME:
-                            // cerver_switch_receive_handle_failed (cr);
+                            cerver_switch_receive_handle_failed (cr);
                         }
                     } break;
                 }
