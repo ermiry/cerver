@@ -446,6 +446,27 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
 
 }
 
+// unregisters an existing admin from the admin cerver structures (internal & poll)
+// returns 0 on success, 1 on error
+u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        if (dlist_remove (admin_cerver->admins, admin, NULL)) {
+            // unregister all his active connections from the poll array
+            for (ListElement *le = dlist_start (admin->client->connections); le; le = le->next) {
+                admin_cerver_poll_unregister_connection (admin_cerver, (Connection *) le->data);
+            }
+
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start

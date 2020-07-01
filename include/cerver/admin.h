@@ -220,6 +220,10 @@ extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _P
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin);
 
+// unregisters an existing admin from the admin cerver structures (internal & poll)
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin);
+
 #pragma endregion
 
 #pragma region start
