@@ -94,7 +94,7 @@ static void auth_data_delete (AuthData *auth_data) {
 static void auth_send_success_packet (const Cerver *cerver, const Connection *connection) {
 
     if (cerver) {
-        Packet *success_packet = packet_generate_request (AUTH_PACKET, SUCCESS_AUTH, NULL, 0);
+        Packet *success_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_SUCCESS, NULL, 0);
         if (success_packet) {
             packet_set_network_values (success_packet, (Cerver *) cerver, NULL, (Connection *) connection, NULL);
             packet_send (success_packet, 0, NULL, false);
@@ -115,11 +115,9 @@ static void auth_send_success_packet (const Cerver *cerver, const Connection *co
 
 }
 
-// FIXME: if something fails in this functions, the client and its data should be completely destroyed
-// creates a new lcient and registers to cerver with new data
-static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
+static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
-    u8 retval = 1;
+    Client *retval = NULL;
 
     if (packet) {
         if (!on_hold_connection_remove (packet->cerver, packet->connection)) {
@@ -243,20 +241,6 @@ static u8 auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
 }
 
-// how to manage a successfull authentication to the cerver
-// we have a new client authenticated with credentials
-static void auth_success (Packet *packet, AuthData *auth_data) {
-
-    if (packet) {
-        // create a new lcient and register to cerver
-        if (!auth_create_new_client (packet, auth_data)) {
-            // if we are successfull, send success packet
-            auth_send_success_packet (packet->cerver, packet->connection);
-        }
-    }
-
-}
-
 // how to manage a failed auth to the cerver
 static void auth_failed (const Packet *packet) {
 
@@ -273,7 +257,7 @@ static void auth_failed (const Packet *packet) {
         if (packet->connection->auth_tries <= 0) {
             #ifdef CERVER_DEBUG
             cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, 
-            "Connection reached max auth tries, dropping now...");
+                "Connection reached max auth tries, dropping now...");
             #endif
             on_hold_connection_drop (packet->cerver, packet->connection);
         }
@@ -284,7 +268,10 @@ static void auth_failed (const Packet *packet) {
 // authenticate a new connection using a session token
 // if we find a client with that token, we register the connection to him;
 // if we don't find a client, the token is invalid
-static void auth_with_token (const Packet *packet, const AuthData *auth_data) {
+// returns 0 on success, 1 on error
+static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
+
+    u8 retval = 1;
 
     if (packet && auth_data) {
         // if we get a token, we search for a client with the same token
@@ -310,6 +297,8 @@ static void auth_with_token (const Packet *packet, const AuthData *auth_data) {
 
                 // send success auth packet to client
                 auth_send_success_packet (packet->cerver, packet->connection);
+
+                retval = 0;
             }
         }
 
@@ -319,13 +308,19 @@ static void auth_with_token (const Packet *packet, const AuthData *auth_data) {
         }
     }
 
+    return retval;
+
 }
 
-static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
+// calls the user defined method passing the auth data and creates a new client on success
+// returns 0 on success, 1 on error
+static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthData *auth_data, Client **client) {
+
+    u8 retval = 1;
 
     if (packet && auth_data) {
         AuthPacket auth_packet = { .packet = packet, .auth_data = auth_data };
-        if (!packet->cerver->authenticate (&auth_packet)) {
+        if (!authenticate (&auth_packet)) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Client authenticated successfully to cerver %s",
                 packet->cerver->info->name->str);
@@ -335,7 +330,13 @@ static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
             }
             #endif
 
-            auth_success (packet, auth_data);
+            *client = auth_create_new_client (packet, auth_data);
+            if (*client) {
+                // if we are successfull, send success packet
+                auth_send_success_packet (packet->cerver, packet->connection);
+
+                retval = 0;
+            }
         }
 
         else {
@@ -351,6 +352,8 @@ static void auth_with_defined_method (Packet *packet, AuthData *auth_data) {
             auth_failed (packet);
         }   
     }
+
+    return retval;
 
 }
 
@@ -383,50 +386,65 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 
 }
 
+static u8 auth_try_common (Packet *packet, delegate authenticate, Client **client) {
+
+    u8 retval = 1;
+
+    if (packet) {
+        // strip out the auth data from the packet
+        AuthData *auth_data = auth_strip_auth_data (packet);
+        if (auth_data) {
+            // check that the cerver supports sessions
+            if (packet->cerver->use_sessions) {
+                if (auth_data->token) {
+                    retval = auth_with_token (packet, auth_data);
+                }
+
+                else {
+                    // if not, we authenticate using the user defined method
+                    retval = auth_with_defined_method (packet, authenticate, auth_data, client);
+                }
+            }
+
+            else {
+                // if not, we authenticate using the user defined method
+                retval = auth_with_defined_method (packet, authenticate, auth_data, client);
+            }
+
+            auth_data_delete (auth_data);
+        }
+
+        // failed to get auth data form packet
+        else {
+            #ifdef CERVER_DEBUG
+            char *status = c_string_create ("Failed to get auth data from packet in cerver %s",
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                free (status);
+            }
+            #endif
+
+            auth_failed (packet);
+        }
+    }
+
+    return retval;
+
+}
+
 // try to authenticate a connection using the values he sent to use
 static void auth_try (Packet *packet) {
 
     if (packet) {
         if (packet->cerver->authenticate) {
-            // strip out the auth data from the packet
-            AuthData *auth_data = auth_strip_auth_data (packet);
-            if (auth_data) {
-                // check that the cerver supports sessions
-                if (packet->cerver->use_sessions) {
-                    if (auth_data->token) {
-                        auth_with_token (packet, auth_data);
-                    }
+            Client *client = NULL;
+            if (!auth_try_common (packet, packet->cerver->authenticate, &client)) {
 
-                    else {
-                        // if not, we authenticate using the user defined method
-                        auth_with_defined_method (packet, auth_data);
-                    }
-                }
-
-                else {
-                    // if not, we authenticate using the user defined method
-                    auth_with_defined_method (packet, auth_data);
-                }
-
-                auth_data_delete (auth_data);
-            }
-
-            // failed to get auth data form packet
-            else {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Failed to get auth data from packet in cerver %s",
-                    packet->cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                    free (status);
-                }
-                #endif
-
-                auth_failed (packet);
             }
         }
 
-        // no authentication method -- clients are not able to interact to the cerver!
+        // no authentication method -- clients are not able to authenticate with to the cerver!
         else {
             char *status = c_string_create ("Cerver %s does not have an authenticate method!",
                 packet->cerver->info->name->str);
@@ -437,6 +455,39 @@ static void auth_try (Packet *packet) {
 
             // close the on hold connection assocaited with sock fd 
             // and remove it from the cerver
+            on_hold_connection_drop (packet->cerver, packet->connection);
+        }
+    }
+
+}
+
+static void admin_auth_try (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin) {
+            if (packet->cerver->admin->authenticate) {
+                Client *client = NULL;
+                if (!auth_try_common (packet, packet->cerver->admin->authenticate, &client)) {
+                    // create a new admin with client
+                }
+            }
+
+            // no authentication method -- clients are not able to authenticate with the cerver!
+            else {
+                char *status = c_string_create ("Cerver %s ADMIN does not have an authenticate method!",
+                    packet->cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
+
+                // close the on hold connection assocaited with sock fd 
+                // and remove it from the cerver
+                on_hold_connection_drop (packet->cerver, packet->connection);
+            }
+        }
+
+        else {
             on_hold_connection_drop (packet->cerver, packet->connection);
         }
     }
@@ -457,7 +508,9 @@ static void cerver_auth_packet_handler (Packet *packet) {
 
             switch (req->type) {
                 // the client sent use its data to authenticate itself
-                case CLIENT_AUTH_DATA: auth_try (packet); break;
+                case AUTH_PACKET_TYPE_CLIENT_AUTH: auth_try (packet); break;
+
+                case AUTH_PACKET_TYPE_ADMIN_AUTH: admin_auth_try (packet); break;
 
                 default: {
                     #ifdef CERVER_DEBUG
