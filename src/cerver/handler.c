@@ -1600,13 +1600,8 @@ u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
         cerver->max_n_fds = cerver->max_n_fds * 2;
         cerver->fds = (struct pollfd *) realloc (cerver->fds, cerver->max_n_fds * sizeof (struct pollfd));
         if (cerver->fds) {
-            #pragma GCC diagnostic push
-            #pragma GCC diagnostic ignored "-Wunused-value"
-                for (u32 i = current_max; i < cerver->max_n_fds; i++)
-                    cerver->fds[i].fd == -1;
-            #pragma GCC diagnostic pop
-
-            
+            for (u32 i = current_max; i < cerver->max_n_fds; i++)
+                cerver->fds[i].fd == -1;
 
             retval = 0;
         }
@@ -1616,17 +1611,15 @@ u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
 
 }
 
-// get a free index in the main cerver poll strcuture
+// get a free index in the main cerver poll array
 i32 cerver_poll_get_free_idx (Cerver *cerver) {
 
     if (cerver) {
         for (u32 i = 0; i < cerver->max_n_fds; i++)
             if (cerver->fds[i].fd == -1) return i;
-
-        return -1;
     }
 
-    return 0;
+    return -1;
 
 }
 
@@ -1642,34 +1635,46 @@ i32 cerver_poll_get_idx_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 }
 
-// regsiters a client connection to the cerver's mains poll structure
-// and maps the sock fd to the client
-u8 cerver_poll_register_connection (Cerver *cerver, Client *client, Connection *connection) {
+static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
 
-    if (cerver && client && connection) {
+    i32 idx = cerver_poll_get_free_idx (cerver);
+    if (idx > 0) {
+        cerver->fds[idx].fd = connection->socket->sock_fd;
+        cerver->fds[idx].events = POLLIN;
+        cerver->current_n_fds++;
+
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Added new sock fd to cerver %s main poll, idx: %i", 
+            cerver->info->name->str, idx);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+            free (s);
+        }
+        #endif
+
+        retval = 0;
+    }
+
+    return retval;
+
+}
+
+// regsiters a client connection to the cerver's mains poll structure
+// and maps the sock fd to the client
+u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver && connection) {
         pthread_mutex_lock (cerver->poll_lock);
 
-        i32 idx = cerver_poll_get_free_idx (cerver);
-        if (idx > 0) {
-            cerver->fds[idx].fd = connection->socket->sock_fd;
-            cerver->fds[idx].events = POLLIN;
-            cerver->current_n_fds++;
-
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Added new sock fd to cerver %s main poll, idx: %i", 
-                cerver->info->name->str, idx);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
-                free (s);
-            }
-            #endif
-
+        if (!cerver_poll_register_connection_internal (cerver, connection)) {
             retval = 0;
         }
 
-        else if (idx < 0) {
+        else {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Cerver %s main poll is full -- we need to realloc...", 
                 cerver->info->name->str);
@@ -1689,7 +1694,7 @@ u8 cerver_poll_register_connection (Cerver *cerver, Client *client, Connection *
 
             // try again to register the connection
             else {
-                retval = cerver_poll_register_connection (cerver, client, connection);
+                retval = cerver_poll_register_connection_internal (cerver, connection);
             }
         }
 
