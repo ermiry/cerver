@@ -70,15 +70,56 @@ static void cerver_info_delete (CerverInfo *cerver_info) {
 // retuns 0 on success, 1 on error
 u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
+    u8 retval = 1;
+
     if (cerver) {
         if (cerver->info) {
             estring_delete (cerver->info->welcome_msg);
             cerver->info->welcome_msg = msg ? estring_new (msg) : NULL;
-            return 0;
+            retval = 0;
         }
     }
 
-    return 1;
+    return retval;
+
+}
+
+// sends the cerver info packet
+// retuns 0 on success, 1 on error
+u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver && connection) {
+        switch (cerver->type) {
+            case WEB_CERVER: break;
+
+            default: {
+                packet_set_network_values (
+                    cerver->info->cerver_info_packet, 
+                    cerver, 
+                    client, 
+                    connection, 
+                    NULL
+                );
+
+                if (packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
+                    retval = 0;
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to send cerver %s info packet!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
+                        free (s);
+                    }
+                }
+            } break;
+        }
+    }
+
+    return retval;
 
 }
 

@@ -38,8 +38,10 @@
 #define DEFAULT_MAX_INACTIVE_TIME           60
 #define DEFAULT_CHECK_INACTIVE_INTERVAL     30
 
-struct _AdminCerver;
 struct _Cerver;
+struct _AdminCerver;
+struct _Client;
+struct _Connection;
 struct _Packet;
 struct _PacketsPerType;
 struct _Handler;
@@ -67,6 +69,11 @@ typedef struct CerverInfo {
 // sets the cerver msg to be sent when a client connects
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_welcome_msg (struct _Cerver *cerver, const char *msg);
+
+// sends the cerver info packet
+// retuns 0 on success, 1 on error
+extern u8 cerver_info_send_info_packet (struct _Cerver *cerver, 
+    struct _Client *client, struct _Connection *connection);
 
 typedef struct CerverStats {
 
