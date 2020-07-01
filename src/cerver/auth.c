@@ -114,129 +114,56 @@ static void auth_send_success_packet (const Cerver *cerver, const Connection *co
 
 }
 
+// creates a new client and registers the connection to it
 static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
-    Client *retval = NULL;
+    Client *client = NULL;
 
     if (packet) {
-        if (!on_hold_connection_remove (packet->cerver, packet->connection)) {
-            Client *c = client_create ();
-            if (c) {
-                if (!connection_register_to_client (c, packet->connection)) {
-                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
+        client = client_create ();
+        if (client) {
+            connection_register_to_client (client, packet->connection);
 
-                    if (packet->cerver->use_sessions) {
-                        // FIXME: generate the new session id - token
-                        // SessionData *session_data = session_data_new (packet, auth_data, c);
-                        // estring *session_id = (estring *) packet->cerver->session_id_generator (session_data);
-                        // session_data_delete (session_data);
-                    }
+            client_set_data (client, auth_data->data, auth_data->delete_data);
 
-                    else {
-                        // TODO: generate client id
-                    }
+            // if the cerver is configured to use sessions, we need to generate a new session id with the
+            // session id generator method and add it to the client
+            // this client has the first connection associated with the id & auth data
+            // any new connections that authenticates using the session id (token), 
+            // will be added to this client
+            if (packet->cerver->use_sessions) {
+                // FIXME: add documentation to session id method
 
-                    // register the new client to the cerver
-                    if (!client_register_to_cerver (packet->cerver, c)) {
-                        // set the data to the client (eg. user data)
-                        client_set_data (c, auth_data->data, auth_data->delete_data);
+                SessionData *session_data = session_data_new (packet, auth_data, client);
 
-                        retval = 0;     // success!!!
-                    }
-
-                    // cerver error -- failed to register the client to cerver
-                    else {
-                        #ifdef CERVER_DEBUG
-                        char *status = c_string_create ("Failed to register new lcient to cerver %s",
-                            packet->cerver->info->name->str);
-                        if (status) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                            free (status);
-                        }
-                        #endif
-
-                        Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
-                        if (error_packet) {
-                            packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
-                            packet_send (error_packet, 0, NULL, false);
-                            packet_delete (error_packet);
-                        }
-                        
-                        // close the connection
-                        client_drop (packet->cerver, c);
-                    }
-                }
-
-                // cerver error -- failed to register connection to new client
-                else {
+                char *session_id = (char *) packet->cerver->session_id_generator (session_data);
+                if (session_id) {
                     #ifdef CERVER_DEBUG
-                    char *status = c_string_create ("Failed to register connection to client in cerver %s",
-                        packet->cerver->info->name->str);
-                    if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                        free (status);
+                    char *s = c_string_create ("Generated client <%ld> session id: %s", 
+                        client->id, session_id);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                        free (s);
                     }
                     #endif
+                    client_set_session_id (client, session_id);
+                }
 
-                    Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
-                    if (error_packet) {
-                        packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
-                        packet_send (error_packet, 0, NULL, false);
-                        packet_delete (error_packet);
-                    }
+                else {
+                    cerver_log_msg (
+                        stderr, LOG_ERROR, LOG_CLIENT, 
+                        "Failed to generate client session id!"
+                    );
                     
-                    // close the connection
-                    on_hold_connection_drop (packet->cerver, packet->connection);
-                }
-            }
-
-            // cerver error -- failed to allocate a new client
-            else {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Failed to allocate a new client in cerver %s", 
-                    packet->cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                    free (status);
-                }
-                #endif
-                
-                Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
-                if (error_packet) {
-                    packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
-                    packet_send (error_packet, 0, NULL, false);
-                    packet_delete (error_packet);
+                    // FIXME: drop the client
                 }
 
-                // close the connection
-                on_hold_connection_drop (packet->cerver, packet->connection);
+                session_data_delete (session_data);
             }
-        }
-
-        // cerver error -- failed to remove connection from on hold structures
-        else {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to remove connection from cerver's %s on hold connections", 
-                packet->cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-            #endif
-            
-            Packet *error_packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error!");
-            if (error_packet) {
-                packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
-                packet_send (error_packet, 0, NULL, false);
-                packet_delete (error_packet);
-            }
-
-            // close the connection
-            on_hold_connection_drop (packet->cerver, packet->connection);
         }
     }
 
-    return retval;
+    return client;
 
 }
 
