@@ -71,7 +71,6 @@ struct _Admin {
 	Action delete_data;
 
 	bool authenticated;
-	AdminCredentials *credentials;
 
 	u32 bad_packets;					// disconnect after a number of bad packets
 
@@ -126,6 +125,7 @@ struct _AdminCerver {
 	u32 max_n_fds;                      // current max n fds in pollfd
 	u16 current_n_fds;                  // n of active fds in the pollfd array
 	u32 poll_timeout;
+	pthread_mutex_t *poll_lock;
 
 	// action to be performed when a new admin fail to authenticate
 	Action on_admin_fail_connection;
@@ -214,6 +214,11 @@ extern void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, b
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
+
+// registers a newly created admin to the admin cerver structures (internal & poll)
+// this will allow the admin cerver to start handling admin's packets
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin);
 
 #pragma endregion
 

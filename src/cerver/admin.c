@@ -11,6 +11,7 @@
 
 #include "cerver/admin.h"
 #include "cerver/cerver.h"
+#include "cerver/client.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
@@ -19,6 +20,9 @@
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+
+static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection);
+static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection);
 
 #pragma region stats
 
@@ -103,7 +107,6 @@ Admin *admin_new (void) {
 		admin->delete_data = NULL;
 
 		admin->authenticated = false;
-		admin->credentials = NULL;
 
 		admin->bad_packets = 0;
 	}
@@ -139,7 +142,7 @@ Admin *admin_create_with_client (Client *client) {
 		if (admin) admin->client = client;
 	}
 
-	return client;
+	return admin;
 
 }
 
@@ -243,6 +246,11 @@ void admin_cerver_delete (AdminCerver *admin_cerver) {
 		dlist_delete (admin_cerver->admins);
 
 		if (admin_cerver->fds) free (admin_cerver->fds);
+
+        if (admin_cerver->poll_lock) {
+            pthread_mutex_destroy (admin_cerver->poll_lock);
+            free (admin_cerver->poll_lock);
+        }
 
 		handler_delete (admin_cerver->app_packet_handler);
         handler_delete (admin_cerver->app_error_packet_handler);
@@ -416,6 +424,28 @@ u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) 
 
 }
 
+// registers a newly created admin to the admin cerver structures (internal & poll)
+// this will allow the admin cerver to start handling admin's packets
+// returns 0 on success, 1 on error
+u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        if (!admin_cerver_poll_register_connection (
+            admin_cerver, 
+            (Connection *) dlist_start (admin->client->connections)->data
+        )) {
+            dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
+
+            retval = 0;     // success
+        }
+    }
+
+    return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -436,6 +466,11 @@ static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
 				admin_cerver->fds[i].fd = -1;
 
 			admin_cerver->current_n_fds = 0;
+
+            admin_cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            pthread_mutex_init (admin_cerver->poll_lock, NULL);
+
+            retval = 0;
 		}
     }
 
@@ -956,7 +991,7 @@ static void admin_custom_packet_handler (Packet *packet) {
 
 }
 
-// TODO: handle stats
+// FIXME: handle stats
 // handles a packet from an admin
 void admin_packet_handler (Packet *packet) {
 
@@ -993,9 +1028,127 @@ void admin_packet_handler (Packet *packet) {
 
 #pragma region poll
 
+// get a free index in the admin cerver poll fds array
+static i32 admin_cerver_poll_get_free_idx (AdminCerver *admin_cerver) {
+
+    if (admin_cerver) {
+        for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
+            if (admin_cerver->fds[i].fd == -1) return i;
+
+    }
+    
+    return -1;
+
+}
+
+// get the idx of the connection sock fd in the admin cerver poll fds
+static i32 admin_cerver_poll_get_idx_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
+
+    if (admin_cerver) {
+        for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
+            if (admin_cerver->fds[i].fd == sock_fd) return i;
+    }
+
+    return -1;
+
+}
+
+// regsiters a client connection to the cerver's admin poll array
+// returns 0 on success, 1 on error
+static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && connection) {
+        pthread_mutex_lock (admin_cerver->poll_lock);
+
+        i32 idx = admin_cerver_poll_get_free_idx (admin_cerver);
+        if (idx >= 0) {
+            admin_cerver->fds[idx].fd = connection->socket->sock_fd;
+            admin_cerver->fds[idx].events = POLLIN;
+            admin_cerver->current_n_fds++;
+
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Added new sock fd to cerver %s ADMIN poll, idx: %i", 
+                admin_cerver->cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+                free (s);
+            }
+            #endif
+
+            retval = 0;
+        }
+
+        else if (idx < 0) {
+            #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN poll is full!", 
+                admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                free (s);
+            }
+            #endif
+        }
+
+        pthread_mutex_unlock (admin_cerver->poll_lock);
+    }
+
+    return retval;
+
+}
+
+// unregsiters a client connection from the cerver's admin poll array
+// returns 0 on success, 1 on error
+static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && connection) {
+        pthread_mutex_lock (admin_cerver->poll_lock);
+
+        // get the idx of the connection sock fd in the cerver poll fds
+        i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->socket->sock_fd);
+        if (idx >= 0) {
+            admin_cerver->fds[idx].fd = -1;
+            admin_cerver->fds[idx].events = -1;
+            admin_cerver->current_n_fds--;
+
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
+                connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
+                free (s);
+            }
+            #endif
+
+            retval = 0;
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
+                connection->socket->sock_fd, admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_WARNING, LOG_ADMIN, s);
+                free (s);
+            }
+            #endif
+        }
+
+        pthread_mutex_unlock (admin_cerver->poll_lock);
+    }
+
+    return retval;
+
+}
+
 static inline void admin_poll_handle (Cerver *cerver) {
 
     if (cerver) {
+        pthread_mutex_lock (cerver->admin->poll_lock);
+
         // one or more fd(s) are readable, need to determine which ones they are
         for (u32 i = 0; i < cerver->admin->max_n_fds; i++) {
             if (cerver->fds[i].fd > -1) {
@@ -1048,6 +1201,8 @@ static inline void admin_poll_handle (Cerver *cerver) {
                 }
             }
         }
+
+        pthread_mutex_unlock (cerver->admin->poll_lock);
     }
 
 }
