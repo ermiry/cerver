@@ -89,58 +89,6 @@ void admin_cerver_stats_print (AdminCerverStats *stats) {
 
 #pragma endregion
 
-#pragma region credentials
-
-AdminCredentials *admin_credentials_new (void) {
-
-	AdminCredentials *credentials = (AdminCredentials *) malloc (sizeof (AdminCredentials));
-	if (credentials) {
-		credentials->username = NULL;
-		credentials->password = NULL;
-		credentials->logged_in = false;
-	}
-
-	return credentials;
-
-}
-
-void admin_credentials_delete (void *credentials_ptr) {
-
-	if (credentials_ptr) {
-		AdminCredentials *credentials = (AdminCredentials *) credentials_ptr;
-
-		estring_delete (credentials->username);
-		estring_delete (credentials->password);
-
-		free (credentials);
-	}
-
-}
-
-static int admin_credentials_comparator (const void *a, const void *b) {
-
-	if (a && b) return strcmp (((AdminCredentials *) a)->username->str, ((AdminCredentials *) b)->username->str);
-
-	else if (a && !b) return -1;
-	else if (!a && b) return 1;
-	return 0;
-
-}
-
-static AdminCredentials *admin_credentials_create (const char *username, const char *password) {
-
-	AdminCredentials *admin_credentials = admin_credentials_new ();
-	if (admin_credentials) {
-		admin_credentials->username = username ? estring_new (username) : NULL;
-		admin_credentials->password = password ? estring_new (password) : NULL;
-	}
-
-	return admin_credentials;
-
-}
-
-#pragma endregion
-
 #pragma region admin
 
 Admin *admin_new (void) {
@@ -252,8 +200,6 @@ AdminCerver *admin_cerver_new (void) {
 	if (admin_cerver) {
 		admin_cerver->cerver = NULL;
 
-		admin_cerver->credentials = NULL;
-
 		admin_cerver->admins = NULL;
 
 		admin_cerver->max_admins = DEFAULT_MAX_ADMINS;
@@ -292,8 +238,6 @@ AdminCerver *admin_cerver_new (void) {
 void admin_cerver_delete (AdminCerver *admin_cerver) {
 
 	if (admin_cerver) {
-		dlist_delete (admin_cerver->credentials);
-
 		dlist_delete (admin_cerver->admins);
 
 		if (admin_cerver->fds) free (admin_cerver->fds);
@@ -318,8 +262,6 @@ AdminCerver *admin_cerver_create (void) {
 
 	AdminCerver *admin_cerver = admin_cerver_new ();
 	if (admin_cerver) {
-		admin_cerver->credentials = dlist_init (admin_credentials_delete, admin_credentials_comparator);
-
 		admin_cerver->admins = dlist_init (admin_delete, admin_comparator_by_id);
 
 		admin_cerver->stats = admin_cerver_stats_new ();
@@ -442,51 +384,6 @@ void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, Handler *custom
 void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
 
     if (admin_cerver) admin_cerver->custom_packet_handler_delete_packet = delete_packet;
-
-}
-
-// registers new admin credentials
-// returns 0 on success, 1 on error
-u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
-	const char *username, const char *password) {
-
-	u8 retval = 1;
-
-	if (admin_cerver && username && password) {
-		retval = dlist_insert_after (
-			admin_cerver->credentials,
-			dlist_end (admin_cerver->credentials),
-			admin_credentials_create (
-				username,
-				password
-			)
-		);
-	}
-
-	return retval;
-
-}
-
-// removes a registered admin credentials
-AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_cerver, 
-	const char *username) {
-
-	AdminCredentials *retval = NULL;
-
-	if (admin_cerver) {
-		AdminCredentials *query = admin_credentials_create (username, NULL);
-		if (query) {
-			retval = (AdminCredentials *) dlist_remove (
-				admin_cerver->credentials,
-				query,
-				NULL
-			);
-			
-			admin_credentials_delete (query);
-		}
-	}
-
-	return retval;
 
 }
 

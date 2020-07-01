@@ -58,25 +58,6 @@ extern void admin_cerver_stats_print (AdminCerverStats *stats);
 
 #pragma endregion
 
-#pragma region credentials
-
-struct _AdminCredentials {
-
-	estring *username;
-	estring *password;
-
-	bool logged_in;
-
-};
-
-typedef struct _AdminCredentials AdminCredentials;
-
-extern AdminCredentials *admin_credentials_new (void);
-
-extern void admin_credentials_delete (void *credentials_ptr);
-
-#pragma endregion
-
 #pragma region admin
 
 struct _Admin {
@@ -129,8 +110,6 @@ extern u8 admin_send_packet (Admin *admin, struct _Packet *packet);
 struct _AdminCerver {
 
 	struct _Cerver *cerver;				// the cerver this belongs to
-
-	DoubleList *credentials;			// 29/06/2020 -- using only hardcoded admin credentials
 
 	DoubleList *admins;					// connected admins to the cerver
 
@@ -225,15 +204,6 @@ extern void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 extern void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
-
-// registers new admin credentials
-// returns 0 on success, 1 on error
-extern u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
-	const char *username, const char *password);
-
-// removes a registered admin credentials
-extern AdminCredentials *admin_cerver_unregister_admin_credentials (AdminCerver *admin_cerver, 
-	const char *username);
 
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
