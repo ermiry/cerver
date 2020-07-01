@@ -368,46 +368,45 @@ void client_drop (Cerver *cerver, Client *client) {
 // adds a new connection to the end of the client to the client's connection list
 // without adding it to any other structure
 // returns 0 on success, 1 on error
-u8 client_add_connection (Client *client, Connection *connection) {
+u8 client_connection_add (Client *client, Connection *connection) {
+
+    return (client && connection) ? 
+        (u8) dlist_insert_after (client->connections, dlist_end (client->connections), connection) : 1;
+
+}
+
+// removes the connection from the client
+// returns 0 on success, 1 on error
+u8 client_connection_remove (Client *client, Connection *connection) {
 
     u8 retval = 1;
 
-    if (client && connection) {
-        retval = dlist_insert_after (client->connections, dlist_end (client->connections), connection);
-    }
+    if (client && connection) retval = dlist_remove (client->connections, connection, NULL) ? 0 : 1;
 
     return retval;
 
 }
 
-// removes the connection from the client
-// and also checks if there is another active connection in the client, if not it will be dropped
+// closes the connection & them removes it from the client & finally deletes the connection
+// moves the socket to the cerver's socket pool
 // returns 0 on success, 1 on error
-u8 client_remove_connection (Cerver *cerver, Client *client, Connection *connection) {
+u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connection) {
 
     u8 retval = 1;
 
     if (cerver && client && connection) {
-        // check if the connection actually belongs to the client
-        if (connection_check_owner (client, connection)) {
-            connection_unregister_from_client (cerver, client, connection);
+        if (!dlist_remove (client->connections, connection, NULL)) {
+            // close the socket
+            connection_end (connection);
 
-            // if the client does not have any active connection, drop it
-            if (client->connections->size <= 0) client_drop (cerver, client);
+            // move the socket to the cerver's socket pool to avoid destroying it
+            // to handle if any other thread is waiting to access the socket's mutex
+            cerver_sockets_pool_push (cerver, connection->socket);
+            connection->socket = NULL;
+
+            connection_delete (connection);
 
             retval = 0;
-        }
-
-        else {
-            #ifdef CLIENT_DEBUG
-            char *s = c_string_create ("client_remove_connection () - Client with id" 
-                "%ld does not have a connection related to sock fd %d",
-                client->id, connection->socket->sock_fd);
-            if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, s);
-                free (s);
-            }
-            #endif
         }
     }
 
@@ -459,6 +458,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
                 // search the connection in the client
                 connection = connection_get_by_sock_fd_from_client (client, sock_fd);
                 if (connection) {
+                    // FIXME: remove the correct connection
                     retval = connection_remove (
                         cerver,
                         client,
@@ -574,7 +574,7 @@ u8 client_register_connections_to_cerver_poll (Cerver *cerver, Client *client) {
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             connection = (Connection *) le->data;
-            if (connection_register_to_cerver_poll (cerver, client, connection))
+            if (connection_register_to_cerver_poll (cerver, connection))
                 n_failed++;
         }
 
@@ -1383,23 +1383,6 @@ static void client_connection_terminate (Client *client, Connection *connection)
 
 }
 
-static int client_connection_drop (Client *client, Connection *connection) {
-
-    int retval = 1;
-
-    if (client && connection) {
-        connection_end (connection);
-
-        connection_delete (dlist_remove_element (client->connections, 
-            dlist_get_element (client->connections, connection, NULL)));
-
-        retval = 0;
-    }
-
-    return retval;
-
-}
-
 // terminates the connection & closes the socket
 // but does NOT destroy the current connection
 // returns 0 on success, 1 on error
@@ -1425,7 +1408,12 @@ int client_connection_end (Client *client, Connection *connection) {
 
     if (client && connection) {
         client_connection_close (client, connection);
-        retval = client_connection_drop (client, connection);
+
+        dlist_remove (client->connections, connection, NULL);
+
+        connection_delete (connection);
+
+        retval = 0;
     }
 
     return retval;
@@ -1982,7 +1970,7 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 static void client_receive_handle_failed (Client *client, Connection *connection) {
 
     if (client && connection) {
-        if (!client_connection_drop (client, connection)) {
+        if (!client_connection_end (client, connection)) {
             // check if the client has any other active connection
             if (client->connections->size <= 0) {
                 client->running = false;

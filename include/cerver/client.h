@@ -149,12 +149,16 @@ extern void client_drop (struct _Cerver *cerver, Client *client);
 // adds a new connection to the end of the client to the client's connection list
 // without adding it to any other structure
 // returns 0 on success, 1 on error
-extern u8 client_add_connection (Client *client, struct _Connection *connection);
+extern u8 client_connection_add (Client *client, struct _Connection *connection);
 
 // removes the connection from the client
-// and also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
-extern u8 client_remove_connection (struct _Cerver *cerver, Client *client, struct _Connection *connection);
+extern u8 client_connection_remove (Client *client, struct _Connection *connection);
+
+// closes the connection & them removes it from the client & finally deletes the connection
+// moves the socket to the cerver's socket pool
+// returns 0 on success, 1 on error
+extern u8 client_connection_drop (struct _Cerver *cerver, Client *client, struct _Connection *connection);
 
 // removes the connection from the client referred to by the sock fd
 // and also checks if there is another active connection in the client, if not it will be dropped
