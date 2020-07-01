@@ -113,6 +113,8 @@ struct _AdminCerver {
 
 	DoubleList *admins;					// connected admins to the cerver
 
+	delegate authenticate;              // authentication method
+
 	u8 max_admins;						// the max numbers of admins allowed at any time
 	u8 max_admin_connections;			// the max number of connections allowed per admin
 
@@ -156,6 +158,10 @@ extern AdminCerver *admin_cerver_new (void);
 extern void admin_cerver_delete (AdminCerver *admin_cerver);
 
 extern AdminCerver *admin_cerver_create (void);
+
+// sets the authentication methods to be used to successfully authenticate admin credentials
+// must return 0 on success, 1 on error
+extern void admin_cerver_set_authenticate (AdminCerver *admin_cerver, delegate authenticate);
 
 // sets the max numbers of admins allowed at any given time
 extern void admin_cerver_set_max_admins (AdminCerver *admin_cerver, u8 max_admins);

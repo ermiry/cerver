@@ -202,6 +202,8 @@ AdminCerver *admin_cerver_new (void) {
 
 		admin_cerver->admins = NULL;
 
+        admin_cerver->authenticate = NULL;
+
 		admin_cerver->max_admins = DEFAULT_MAX_ADMINS;
 		admin_cerver->max_admin_connections = DEFAULT_MAX_ADMIN_CONNECTIONS;
 
@@ -268,6 +270,14 @@ AdminCerver *admin_cerver_create (void) {
 	}
 
 	return admin_cerver;
+
+}
+
+// sets the authentication methods to be used to successfully authenticate admin credentials
+// must return 0 on success, 1 on error
+void admin_cerver_set_authenticate (AdminCerver *admin_cerver, delegate authenticate) {
+
+    if (admin_cerver) admin_cerver->authenticate = authenticate;
 
 }
 
