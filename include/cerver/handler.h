@@ -157,6 +157,16 @@ extern void sock_receive_delete (void *sock_receive_ptr);
 
 #pragma region receive
 
+typedef enum ReceiveType {
+
+    RECEIVE_TYPE_NONE            = 0,
+
+    RECEIVE_TYPE_NORMAL          = 1,
+    RECEIVE_TYPE_ON_HOLD         = 2,
+    RECEIVE_TYPE_ADMIN           = 3,
+
+} ReceiveType;
+
 typedef struct ReceiveHandle {
 
     struct _Cerver *cerver;
@@ -164,7 +174,7 @@ typedef struct ReceiveHandle {
     char *buffer;
     size_t buffer_size;
     struct _Socket *socket;
-    bool on_hold;
+    ReceiveType receive_type;
     struct _Lobby *lobby;
 
 } ReceiveHandle;
@@ -179,13 +189,10 @@ typedef struct CerverReceive {
     struct _Cerver *cerver;
     // i32 sock_fd;
     struct _Socket *socket;
-    bool on_hold;
+    ReceiveType receive_type;
     struct _Lobby *lobby;
 
 } CerverReceive;
-
-// extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, 
-//     i32 sock_fd, bool on_hold, struct _Lobby *lobby);
 
 extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, struct _Socket *socket, 
     bool on_hold, struct _Lobby *lobby);

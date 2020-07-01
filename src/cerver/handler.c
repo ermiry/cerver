@@ -344,7 +344,7 @@ int handler_start (Handler *handler) {
 #pragma region auxiliary structures
 
 static ReceiveHandle *receive_handle_new (Cerver *cerver, Socket *socket, 
-    char *buffer, size_t buffer_size, bool on_hold, Lobby *lobby) {
+    char *buffer, size_t buffer_size, ReceiveType receive_type, Lobby *lobby) {
 
     ReceiveHandle *receive = (ReceiveHandle *) malloc (sizeof (ReceiveHandle));
     if (receive) {
@@ -353,7 +353,7 @@ static ReceiveHandle *receive_handle_new (Cerver *cerver, Socket *socket,
         receive->buffer = buffer;
         receive->buffer_size = buffer_size;
         receive->socket = socket;
-        receive->on_hold = on_hold;
+        receive->receive_type = receive_type;
         receive->lobby = lobby;
     }
 
@@ -361,20 +361,7 @@ static ReceiveHandle *receive_handle_new (Cerver *cerver, Socket *socket,
 
 }
 
-void receive_handle_delete (void *receive_ptr) {
-
-    if (receive_ptr) {
-        ReceiveHandle *receive = (ReceiveHandle *) receive_ptr;
-
-        receive->cerver = NULL;
-        // receive->buffer = NULL;
-        receive->socket = NULL;
-        receive->lobby = NULL;
-
-        free (receive);
-    }
-
-}
+void receive_handle_delete (void *receive_ptr) { if (receive_ptr) free (receive_ptr); }
 
 SockReceive *sock_receive_new (void) {
 
@@ -434,14 +421,14 @@ static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, bool on_hold)
 
 }
 
-CerverReceive *cerver_receive_new (Cerver *cerver, Socket *socket, bool on_hold, Lobby *lobby) {
+CerverReceive *cerver_receive_new (Cerver *cerver, Socket *socket, ReceiveType receive_type, Lobby *lobby) {
 
     CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
     if (cr) {
         cr->cerver = cerver;
         // cr->sock_fd = sock_fd;
         cr->socket = socket;
-        cr->on_hold = on_hold;
+        cr->receive_type = receive_type;
         cr->lobby = lobby;
     }
 
@@ -568,7 +555,7 @@ void cerver_test_packet_handler (Packet *packet) {
 }
 
 // 27/01/2020
-// handles a APP_PACKET packet type
+// handles an APP_PACKET packet type
 static void cerver_app_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -633,7 +620,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 }
 
 // 27/05/2020
-// handles a APP_ERROR_PACKET packet type
+// handles an APP_ERROR_PACKET packet type
 static void cerver_app_error_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -829,59 +816,70 @@ static void cerver_packet_handler (void *ptr) {
 }
 
 static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
-    Packet *packet, bool on_hold) {
+    Packet *packet, ReceiveType receive_type) {
 
-    if (on_hold) {
-        Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
-        if (connection) {
-            packet->connection = connection;
+    switch (receive_type) {
+        case RECEIVE_TYPE_NONE: break;
 
-            packet->connection->stats->n_packets_received += 1;
-            packet->connection->stats->total_bytes_received += packet->packet_size;
+        case RECEIVE_TYPE_NORMAL: {
+            Client *client = client_get_by_sock_fd (cerver, sock_fd);
+            if (client) {
+                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                packet->client = client;
+                packet->connection = connection;
 
-            on_hold_packet_handler (packet);
-        }
+                packet->client->stats->n_packets_received += 1;
+                packet->client->stats->total_bytes_received += packet->packet_size;
+                packet->connection->stats->n_packets_received += 1;
+                packet->connection->stats->total_bytes_received += packet->packet_size;
 
-        else {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Failed to get on hold connection associated with sock: %i",
-                sock_fd);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                free (s);
+                cerver_packet_handler (packet);
+            } 
+
+            else {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("Failed to get client associated with sock: %i.", sock_fd);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, s);
+                    free (s);
+                }
+                #endif
+                // no client - discard the data!
+                packet_delete (packet);
             }
-            #endif
-            // no connection - discard the data
-            packet_delete (packet);
-        }
-    } 
+        } break;
 
-    else {
-        Client *client = client_get_by_sock_fd (cerver, sock_fd);
-        if (client) {
-            Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
-            packet->client = client;
-            packet->connection = connection;
+        case RECEIVE_TYPE_ON_HOLD: {
+            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+            if (connection) {
+                packet->connection = connection;
 
-            packet->client->stats->n_packets_received += 1;
-            packet->client->stats->total_bytes_received += packet->packet_size;
-            packet->connection->stats->n_packets_received += 1;
-            packet->connection->stats->total_bytes_received += packet->packet_size;
+                packet->connection->stats->n_packets_received += 1;
+                packet->connection->stats->total_bytes_received += packet->packet_size;
 
-            cerver_packet_handler (packet);
-        } 
-
-        else {
-            #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Failed to get client associated with sock: %i.", sock_fd);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, s);
-                free (s);
+                on_hold_packet_handler (packet);
             }
-            #endif
-            // no client - discard the data!
-            packet_delete (packet);
-        }
+
+            else {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("Failed to get on hold connection associated with sock: %i",
+                    sock_fd);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    free (s);
+                }
+                #endif
+                // no connection - discard the data
+                packet_delete (packet);
+            }
+        } break;
+
+        case RECEIVE_TYPE_ADMIN: {
+            // FIXME:
+            admin_packet_handler (packet);
+        } break;
+
+        default:  break;
     }
 
 }
@@ -890,7 +888,7 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 
 #pragma region receive
 
-static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, bool on_hold,
+static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, ReceiveType receive_type,
     SockReceive *sock_receive,
     size_t buffer_size, char **end, size_t *buffer_pos) {
 
@@ -923,7 +921,7 @@ static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, boo
                 // check if we can handle the packet 
                 size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
                 if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-                    cerver_packet_select_handler (cerver, sock_fd, sock_receive->spare_packet, on_hold);
+                    cerver_packet_select_handler (cerver, sock_fd, sock_receive->spare_packet, receive_type);
                     sock_receive->spare_packet = NULL;
                     sock_receive->missing_packet = 0;
                 }
@@ -954,19 +952,19 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
         i32 sock_fd = receive->socket->sock_fd;
         // char *buffer = receive->socket->packet_buffer;
         // size_t buffer_size = receive->socket->packet_buffer_size;
-        bool on_hold = receive->on_hold;
+        ReceiveType receive_type = receive->receive_type;
         Lobby *lobby = receive->lobby;
 
         pthread_mutex_lock (receive->socket->mutex);
 
-        SockReceive *sock_receive = sock_receive_get (cerver, sock_fd, on_hold);
+        SockReceive *sock_receive = sock_receive_get (cerver, sock_fd, receive_type);
         if (sock_receive) {
             if (buffer && (buffer_size > 0)) {
                 char *end = buffer;
                 size_t buffer_pos = 0;
 
                 cerver_receive_handle_spare_packet (
-                    cerver, sock_fd, on_hold,
+                    cerver, sock_fd, receive_type,
                     sock_receive,
                     buffer_size, &end, &buffer_pos
                 );
@@ -1061,7 +1059,7 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
                                 // printf ("second buffer pos: %ld\n", buffer_pos);
 
                                 if (!sock_receive->spare_packet) {
-                                    cerver_packet_select_handler (cerver, sock_fd, packet, on_hold);
+                                    cerver_packet_select_handler (cerver, sock_fd, packet, receive_type);
                                 }
                                     
                             }
@@ -1150,59 +1148,67 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
             pthread_mutex_lock (cr->socket->mutex);
 
             if (cr->socket->sock_fd > 0) {
-                if (cr->on_hold) {
-                    Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
-                    if (connection) {
-                        on_hold_connection_drop (cr->cerver, connection);
-                    }
-
-                    // for what ever reason we have a rogue connection
-                    else {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
-                            cr->socket->sock_fd, cr->cerver->info->name->str);
-                        if (s) {
-                            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                            free (s);
+                switch (cr->receive_type) {
+                    case RECEIVE_TYPE_NORMAL: {
+                        // check if the socket belongs to a player inside a lobby
+                        if (cr->lobby) {
+                            if (cr->lobby->players->size > 0) {
+                                Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
+                                if (player) player_unregister_from_lobby (cr->lobby, player);
+                            }
                         }
-                        #endif
 
-                        close (cr->socket->sock_fd);
-                        cr->socket->sock_fd = -1;
-                        // cerver_sockets_pool_push (cr->cerver, cr->socket);
-                    }
-                }
+                        // get to which client the connection is registered to
+                        Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
+                        if (client) {
+                            client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
+                        } 
 
-                else {
-                    // check if the socket belongs to a player inside a lobby
-                    if (cr->lobby) {
-                        if (cr->lobby->players->size > 0) {
-                            Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
-                            if (player) player_unregister_from_lobby (cr->lobby, player);
+                        // for what ever reason we have a rogue connection
+                        else {
+                            #ifdef CERVER_DEBUG
+                            char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
+                                cr->socket->sock_fd, cr->cerver->info->name->str);
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                                free (s);
+                            }
+                            #endif
+
+                            close (cr->socket->sock_fd);        // just close the socket
+                            cr->socket->sock_fd = -1;
+                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
                         }
-                    }
+                    } break;
 
-                    // get to which client the connection is registered to
-                    Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
-                    if (client) {
-                        client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
-                    } 
-
-                    // for what ever reason we have a rogue connection
-                    else {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
-                            cr->socket->sock_fd, cr->cerver->info->name->str);
-                        if (s) {
-                            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                            free (s);
+                    case RECEIVE_TYPE_ON_HOLD: {
+                        Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
+                        if (connection) {
+                            on_hold_connection_drop (cr->cerver, connection);
                         }
-                        #endif
 
-                        close (cr->socket->sock_fd);        // just close the socket
-                        cr->socket->sock_fd = -1;
-                        // cerver_sockets_pool_push (cr->cerver, cr->socket);
-                    }
+                        // for what ever reason we have a rogue connection
+                        else {
+                            #ifdef CERVER_DEBUG
+                            char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
+                                cr->socket->sock_fd, cr->cerver->info->name->str);
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                                free (s);
+                            }
+                            #endif
+
+                            close (cr->socket->sock_fd);
+                            cr->socket->sock_fd = -1;
+                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                        }
+                    } break;
+
+                    case RECEIVE_TYPE_ADMIN: {
+                        // FIXME:
+                    } break;
+
+                    default: break;
                 }
             }
 
@@ -1302,14 +1308,22 @@ void cerver_receive (void *ptr) {
                         cr->lobby->stats->bytes_received += rc;
                     }
 
-                    if (cr->on_hold) {
-                        cr->cerver->stats->on_hold_receives_done += 1;
-                        cr->cerver->stats->on_hold_bytes_received += rc;
-                    }
+                    switch (cr->receive_type) {
+                        case RECEIVE_TYPE_NORMAL: {
+                            cr->cerver->stats->client_receives_done += 1;
+                            cr->cerver->stats->client_bytes_received += rc;
+                        } break;
 
-                    else {
-                        cr->cerver->stats->client_receives_done += 1;
-                        cr->cerver->stats->client_bytes_received += rc;
+                        case RECEIVE_TYPE_ON_HOLD: {
+                            cr->cerver->stats->on_hold_receives_done += 1;
+                            cr->cerver->stats->on_hold_bytes_received += rc;
+                        } break;
+
+                        case RECEIVE_TYPE_ADMIN: {
+                            // FIXME:
+                        } break;
+
+                        default: break;
                     }
 
                     cr->cerver->stats->total_n_receives_done += 1;
@@ -1323,7 +1337,7 @@ void cerver_receive (void *ptr) {
                         cr->socket,
                         packet_buffer,
                         rc,
-                        cr->on_hold,
+                        cr->receive_type,
                         cr->lobby
                     );
 
