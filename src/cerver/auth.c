@@ -24,11 +24,9 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-static i32 on_hold_poll_get_idx_by_sock_fd (const Cerver *cerver, i32 sock_fd);
-static void on_hold_poll_remove_sock_fd (Cerver *cerver, const i32 sock_fd);
 static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection);
-void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
-static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd);
+static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connection);
+static void on_hold_poll_unregister_connection (Cerver *cerver, Connection *connection);
 
 #pragma region auth data
 
@@ -569,7 +567,7 @@ void on_hold_packet_handler (void *packet_ptr) {
 #pragma region connections
 
 // if the cerver requires authentication, we put the connection on hold
-// until it has a sucess authentication or it failed to, so it is dropped
+// until it has a sucess or failed authentication
 // returns 0 on success, 1 on error
 u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
@@ -577,68 +575,20 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
     if (cerver && connection) {
         if (cerver->on_hold_connections) {
-            i32 idx = on_hold_get_free_idx (cerver);
-            if (idx >= 0) {
-                cerver->hold_fds[idx].fd = connection->socket->sock_fd;
-                cerver->hold_fds[idx].events = POLLIN;
-                cerver->current_on_hold_nfds++; 
-
-                cerver->stats->current_n_hold_connections += 1;
-
+            if (!on_hold_poll_register_connection (cerver, connection)) {
                 avl_insert_node (cerver->on_hold_connections, connection);
 
                 const void *key = &connection->socket->sock_fd;
-                if (!htab_insert (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32),
-                    connection, sizeof (Connection))) {
+                if (!htab_insert (cerver->on_hold_connection_sock_fd_map, 
+                    key, sizeof (i32),
+                    connection, sizeof (Connection)
+                )) {
                     cerver_log_debug ("on_hold_connection () - inserted connection in on_hold_connection_sock_fd_map htab");
                 }
 
                 else {
                     cerver_log_error ("on_hold_connection () - failed to insert connection in on_hold_connection_sock_fd_map htab!");
                 }
-
-                char *status = NULL;
-                #ifdef CERVER_DEBUG
-                status = c_string_create ("Connection is on hold on cerver %s.", cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                    free (status);
-                }
-                #endif
-
-                #ifdef CERVER_STATS
-                status = c_string_create ("Cerver %s current on hold connections: %i.", 
-                    cerver->info->name->str, cerver->stats->current_n_hold_connections);
-                if (status) {
-                    cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
-                    free (status);
-                }
-                #endif
-
-                connection->active = true;
-
-                retval = 0;
-            }
-
-            else {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Cerver %s on hold poll is full -- we need to realloc...", 
-                    cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                    free (status);
-                }
-                #endif
-                if (cerver_realloc_on_hold_poll_fds (cerver)) {
-                    char *status = c_string_create ("Failed to realloc cerver %s on hold poll fds!", 
-                        cerver->info->name->str);
-                    if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
-                        free (status);
-                    }
-                }
-
-                else retval = on_hold_connection (cerver, connection);
             }
         }
     }
@@ -648,37 +598,37 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 }
 
 // removes the connection from the on hold structures
+// returns 0 on success, 1 on error
 static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
 
     if (cerver && connection) {
-        // remove the connection associated to the sock fd
-        Connection *query = connection_new ();
-        // query->socket->sock_fd = connection->socket->sock_fd;
-        query->socket = socket_create (connection->socket->sock_fd);
-        if (avl_remove_node (cerver->on_hold_connections, query)) {
-            cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connections avl");
+        if (!on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd)) {
+            // remove the connection associated to the sock fd
+            Connection *query = connection_new ();
+            // query->socket->sock_fd = connection->socket->sock_fd;
+            query->socket = socket_create (connection->socket->sock_fd);
+            if (avl_remove_node (cerver->on_hold_connections, query)) {
+                cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connections avl");
+            }
+
+            else {
+                cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connections avl!");
+            }
+
+            // remove connection from on hold map
+            const void *key = &connection->socket->sock_fd;
+            if (htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32))) {
+                cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connection_sock_fd_map htab");
+            }
+
+            else {
+                cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connection_sock_fd_map htab!");
+            }
+
+            connection_delete (query);
         }
-
-        else {
-            cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connections avl!");
-        }
-
-        // remove connection from on hold map
-        const void *key = &connection->socket->sock_fd;
-        if (htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32))) {
-            cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connection_sock_fd_map htab");
-        }
-
-        else {
-            cerver_log_error ("on_hold_connection_remove () - failed to remove connection from on_hold_connection_sock_fd_map htab!");
-        }
-
-        // unregister the fd from the on hold structures
-        on_hold_poll_remove_sock_fd ((Cerver *) cerver, connection->socket->sock_fd);
-
-        connection_delete (query);
 
         retval = 0;
     }
@@ -858,11 +808,6 @@ static void on_hold_poll_unregister_connection (Cerver *cerver, Connection *conn
                 free (status);
             }
             #endif
-
-            // check if we are holding any more connections, if not, we stop the on hold poll
-            if (cerver->current_on_hold_nfds <= 0) {
-                cerver->holding_connections = false;
-            }
         }
 
         else {
@@ -961,7 +906,7 @@ void *on_hold_poll (void *cerver_ptr) {
 
         int poll_retval = 0;
         while (cerver->isRunning) {
-            poll_retval = poll (cerver->hold_fds, cerver->max_on_hold_connections, cerver->poll_timeout);
+            poll_retval = poll (cerver->hold_fds, cerver->max_on_hold_connections, cerver->on_hold_poll_timeout);
 
             switch (poll_retval) {
                 case -1: {
@@ -972,7 +917,6 @@ void *on_hold_poll (void *cerver_ptr) {
                     }
 
                     perror ("Error");
-                    cerver->holding_connections = false;
                     cerver->isRunning = false;
                 } break;
 

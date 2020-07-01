@@ -16,7 +16,7 @@ struct _Cerver;
 struct _Connection;
 
 // the auth data stripped from the packet
-typedef struct AuthData {
+struct _AuthData {
 
     estring *token;
 
@@ -30,7 +30,9 @@ typedef struct AuthData {
     void *data;                 
     Action delete_data;         // how to delete the data
 
-} AuthData;
+};
+
+typedef struct _AuthData AuthData;
 
 // auxiliary structure passed to the user defined auth method
 typedef struct AuthPacket {
@@ -50,7 +52,7 @@ extern void on_hold_packet_handler (void *packet_ptr);
 #pragma region connections
 
 // if the cerver requires authentication, we put the connection on hold
-// until it has a sucess authentication or it failed to, so it is dropped
+// until it has a sucess or failed authentication
 // returns 0 on success, 1 on error
 extern u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connection);
 
