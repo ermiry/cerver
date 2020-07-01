@@ -164,7 +164,6 @@ struct _Cerver {
     u32 on_hold_poll_timeout;
     u32 max_on_hold_connections;
     u16 current_on_hold_nfds;
-    bool holding_connections;
     pthread_t on_hold_poll_id;
     pthread_mutex_t *on_hold_poll_lock;
 

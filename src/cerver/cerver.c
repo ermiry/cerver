@@ -224,7 +224,6 @@ Cerver *cerver_new (void) {
         c->hold_fds = NULL;
         c->on_hold_poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->on_hold_poll_lock = NULL;
-        c->holding_connections = false;
 
         c->use_sessions = false;
         c->session_id_generator = NULL;
@@ -1786,8 +1785,6 @@ static u8 cerver_auth_start (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
-        cerver->holding_connections = false;
-
         cerver->auth_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
 
         cerver->max_on_hold_connections = poll_n_fds / 2;
