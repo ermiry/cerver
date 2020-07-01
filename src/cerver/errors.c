@@ -81,3 +81,21 @@ Packet *error_packet_generate (u32 error_type, const char *msg) {
     return packet;
 
 }
+
+// creates and send a new error packet
+// returns 0 on success, 1 on error
+u8 error_packet_generate_and_send (u32 error_type, const char *msg,
+    Cerver *cerver, Client *client, Connection *connection) {
+
+    u8 retval = 1;
+
+    Packet *error_packet = error_packet_generate (error_type, msg);
+    if (error_packet) {
+        packet_set_network_values (error_packet, cerver, client, connection, NULL);
+        retval = packet_send (error_packet, 0, NULL, false);
+        packet_delete (error_packet);
+    }
+
+    return retval;
+
+}
