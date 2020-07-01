@@ -20,28 +20,23 @@ struct _Client;
 struct _Handler;
 struct _Packet;
 
+struct _AdminCerver;
+
 #pragma region stats
 
 struct _AdminCerverStats {
 
 	time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
-	
-	u64 admin_n_packets_received;                  	// packets received from clients
-	u64 admin_receives_done;                       	// receives done to clients
-	u64 admin_bytes_received;                      	// bytes received from clients
 
+	u64 total_n_packets_received;                   // total number of packets received (packet header + data)
 	u64 total_n_receives_done;                      // total amount of actual calls to recv ()
-	u64 total_n_packets_received;                   // total number of cerver packets received (packet header + data)
 	u64 total_bytes_received;                       // total amount of bytes received in the cerver
 	
 	u64 total_n_packets_sent;                       // total number of packets that were sent
 	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
-	u64 current_active_admin_connections;          	// all of the current active connections for all current clients
-	u64 current_n_connected_admins;                	// the current number of admins connected 
-
-	u64 current_auth_active_admin_connections;      // all of the current auth active connections for all current clients
-	u64 current_auth_n_connected_admins;            // the current number of auth admins connected 
+	u64 current_connections;      					// all of the current auth active connections for all current clients
+	u64 current_connected_admins;            		// the current number of auth admins connected 
 
 	u64 total_n_admins;                            	// the total amount of clients that were registered to the cerver (no auth required)
 	u64 unique_admins;                             	// n unique clients connected in a threshold time (check used authentication)
