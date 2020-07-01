@@ -12,6 +12,7 @@
 #include "cerver/admin.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
+#include "cerver/connection.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
@@ -219,28 +220,32 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
             } break;
 
             case 1: {
-                connection = (Connection *) admin->client->connections->start->data;
+                if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+                    // remove, close & delete the connection
+                    if (!client_connection_drop (
+                        admin_cerver->cerver,
+                        admin->client,
+                        (Connection *) admin->client->connections->start->data
+                    )) {
+                        // no connections left in admin, just remove and delete
+                        admin_cerver_unregister_admin (admin_cerver, admin);
+                        admin_delete (admin);
 
-                // FIXME: just remove the connection from the client
-                // retval = connection_remove (
-                //     cerver,
-                //     client,
-                //     connection,
-                //     NULL
-                // );
-
-                // no connections left in cerver, just remove and delete
-                admin_cerver_unregister_admin (admin_cerver, admin);
-                admin_delete (admin);
+                        retval = 0;
+                    }
+                }
             } break;
 
             default: {
-                // FIXME:
-                // get the connection from the client
-                // client_connection_get_by_fd ()
-
+                Connection *connection = admin_connection_get_by_sock_fd (admin, sock_fd);
                 if (connection) {
-                    // FIXME: just remove the connection from the client
+                    if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+                        retval = client_connection_drop (
+                            admin_cerver->cerver,
+                            admin->client,
+                            connection
+                        );
+                    }
                 }
 
                 else {
