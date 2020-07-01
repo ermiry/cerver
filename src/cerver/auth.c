@@ -191,6 +191,7 @@ static void auth_failed (const Packet *packet) {
 
 }
 
+// FIXME: check this method!
 // authenticate a new connection using a session token
 // if we find a client with that token, we register the connection to him;
 // if we don't find a client, the token is invalid
@@ -366,7 +367,37 @@ static void auth_try (Packet *packet) {
         if (packet->cerver->authenticate) {
             Client *client = NULL;
             if (!auth_try_common (packet, packet->cerver->authenticate, &client)) {
-                // FIXME: remove from on hold structures and register to cerver main structures & poll
+                // remove from on hold structures & poll array
+                on_hold_connection_remove (packet->cerver, packet->connection);
+
+                if (client) {
+                    // register the new client & its connection to the cerver main structures & poll
+                    if (client_register_to_cerver (packet->cerver, client)) {
+                        char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
+                            packet->cerver->info->name->str);
+                        if (status) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                            free (status);
+                        }
+
+                        // send an error packet to the client
+                        error_packet_generate_and_send (ERR_CERVER_ERROR, "Internal cerver error!",
+                            packet->cerver, client, packet->connection);
+
+                        // close the client's only connection and delete the client
+                        client_connection_drop (
+                            packet->cerver, 
+                            client, 
+                            (Connection *) client->connections->start->data
+                        );
+
+                        client_delete (client);
+                    }
+                }
+
+                else {
+                    // FIXME: sessions
+                }
             }
         }
 
@@ -394,12 +425,37 @@ static void admin_auth_try (Packet *packet) {
             if (packet->cerver->admin->authenticate) {
                 Client *client = NULL;
                 if (!auth_try_common (packet, packet->cerver->admin->authenticate, &client)) {
+                    // remove from on hold structures & poll array
+                    on_hold_connection_remove (packet->cerver, packet->connection);
+
                     if (client) {
                         // create a new admin with client and register it to the admin
                         Admin *admin = admin_create_with_client (client);
                         if (admin_cerver_register_admin (packet->cerver->admin, admin)) {
-                            // FIXME: error
+                            char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
+                                packet->cerver->info->name->str);
+                            if (status) {
+                                cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                                free (status);
+                            }
+
+                            // send an error packet to the client
+                            error_packet_generate_and_send (ERR_CERVER_ERROR, "Internal cerver error!",
+                                packet->cerver, client, packet->connection);
+
+                            // close the admin's client only connection and delete the admin
+                            client_connection_drop (
+                                packet->cerver, 
+                                admin->client, 
+                                (Connection *) admin->client->connections->start->data
+                            );
+
+                            admin_delete (admin);
                         }
+                    }
+
+                    else {
+                        // FIXME: sessions
                     }
                 }
             }
@@ -556,9 +612,9 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
             }
 
             connection_delete (query);
-        }
 
-        retval = 0;
+            retval = 0;
+        }
     }
 
     return retval;
