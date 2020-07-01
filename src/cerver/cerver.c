@@ -211,6 +211,7 @@ Cerver *cerver_new (void) {
         c->inactive_clients = false;
 
         c->fds = NULL;
+        c->poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->poll_lock = NULL;
 
         c->auth_required = false;
@@ -221,6 +222,8 @@ Cerver *cerver_new (void) {
         c->on_hold_connections = NULL;
         c->on_hold_connection_sock_fd_map = NULL;
         c->hold_fds = NULL;
+        c->on_hold_poll_timeout = DEFAULT_POLL_TIMEOUT;
+        c->on_hold_poll_lock = NULL;
         c->holding_connections = false;
 
         c->use_sessions = false;
@@ -286,6 +289,11 @@ void cerver_delete (void *ptr) {
         if (cerver->on_hold_connections) avl_delete (cerver->on_hold_connections);
         if (cerver->on_hold_connection_sock_fd_map) htab_destroy (cerver->on_hold_connection_sock_fd_map);
         if (cerver->hold_fds) free (cerver->hold_fds);
+
+        if (cerver->on_hold_poll_lock) {
+            pthread_mutex_destroy (cerver->on_hold_poll_lock);
+            free (cerver->on_hold_poll_lock);
+        }
 
         // 27/05/2020
         handler_delete (cerver->app_packet_handler);
@@ -433,6 +441,13 @@ void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries) {
 void cerver_set_auth_method (Cerver *cerver, delegate authenticate) {
 
     if (cerver && authenticate) cerver->authenticate = authenticate;
+
+}
+
+// sets the cerver on poll timeout in ms
+void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout) {
+
+    if (cerver) cerver->on_hold_poll_timeout = on_hold_poll_timeout;
 
 }
 
@@ -1773,7 +1788,7 @@ static u8 cerver_auth_start (Cerver *cerver) {
     if (cerver) {
         cerver->holding_connections = false;
 
-        cerver->auth_packet = packet_generate_request (AUTH_PACKET, REQ_AUTH_CLIENT, NULL, 0); 
+        cerver->auth_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
 
         cerver->max_on_hold_connections = poll_n_fds / 2;
         cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
@@ -1787,6 +1802,9 @@ static u8 cerver_auth_start (Cerver *cerver) {
                     cerver->hold_fds[i].fd = -1;
 
                 cerver->current_on_hold_nfds = 0;
+
+                cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+                pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
 
                 if (!thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
                     retval = 0;
@@ -1826,11 +1844,25 @@ u8 cerver_start (Cerver *cerver) {
 
             // cerver is not holding clients if there is not new connections
             if (cerver->auth_required) {
+                char *status = c_string_create ("Cerver %s requires authentication",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_debug (status);
+                    free (status);
+                }
+
                 errors |= cerver_auth_start (cerver);
             }
 
             // start the admin cerver
             if (cerver->admin) {
+                char *status = c_string_create ("Cerver %s can handle admins",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_debug (status);
+                    free (status);
+                }
+
                 errors |= admin_cerver_start (cerver);
             } 
 
@@ -2142,13 +2174,13 @@ u8 cerver_teardown (Cerver *cerver) {
 
         cerver_clean (cerver);
 
-        // 22/01/2020 -- 10:05 -- correctly end admin connections
-        admin_cerver_teardown (cerver->admin);
+        // correctly end admin connections & stop admin handlers
+        admin_cerver_end (cerver->admin);
 
         // 29/05/2020
         cerver_sockets_pool_end (cerver);
 
-        status = c_string_create ("Cerver %s teardown was successfull!", 
+        status = c_string_create ("Cerver %s teardown was successful!", 
             cerver->info->name->str);
         if (status) {
             cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, status);

@@ -161,10 +161,12 @@ struct _Cerver {
     AVLTree *on_hold_connections;       // hold on the connections until they authenticate
     Htab *on_hold_connection_sock_fd_map;
     struct pollfd *hold_fds;
+    u32 on_hold_poll_timeout;
     u32 max_on_hold_connections;
     u16 current_on_hold_nfds;
     bool holding_connections;
     pthread_t on_hold_poll_id;
+    pthread_mutex_t *on_hold_poll_lock;
 
     // allow the clients to use sessions (have multiple connections)
     bool use_sessions;  
@@ -274,6 +276,9 @@ extern void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries);
 // sets the method to be used for client authentication
 // must return 0 on success authentication
 extern void cerver_set_auth_method (Cerver *cerver, delegate authenticate);
+
+// sets the cerver on poll timeout in ms
+extern void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout);
 
 // configures the cerver to use client sessions
 // This will allow for multiple connections from the same client, 
