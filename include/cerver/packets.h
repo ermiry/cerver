@@ -139,10 +139,14 @@ typedef enum ClientPacketType {
 
 typedef enum AuthPacketType {
 
-    REQ_AUTH_CLIENT             = 1,
+	AUTH_PACKET_TYPE_NONE			= 0,
 
-    CLIENT_AUTH_DATA            = 2,
-    SUCCESS_AUTH                = 3,
+	AUTH_PACKET_TYPE_REQUEST_AUTH	= 1,
+
+	AUTH_PACKET_TYPE_CLIENT_AUTH	= 2,
+	AUTH_PACKET_TYPE_ADMIN_AUTH		= 3,
+
+	AUTH_PACKET_TYPE_SUCCESS		= 4
 
 } AuthPacketType;
 
