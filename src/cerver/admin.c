@@ -1093,7 +1093,7 @@ static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Conn
             char *s = c_string_create ("Added new sock fd to cerver %s ADMIN poll, idx: %i", 
                 admin_cerver->cerver->info->name->str, idx);
             if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
                 free (s);
             }
             #endif
@@ -1102,11 +1102,11 @@ static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Conn
         }
 
         else if (idx < 0) {
-            #ifdef CERVER_DEBUG
+            #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Cerver %s ADMIN poll is full!", 
                 admin_cerver->cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
                 free (s);
             }
             #endif
@@ -1235,9 +1235,9 @@ static void *admin_poll (void *cerver_ptr) {
         Cerver *cerver = (Cerver *) cerver_ptr;
 		AdminCerver *admin_cerver = cerver->admin;
 
-        char *status = c_string_create ("Admin cerver %s poll has started!", cerver->info->name->str);
+        char *status = c_string_create ("Cerver %s ADMIN poll has started!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_ADMIN, status);
             free (status);
         }
 
@@ -1257,9 +1257,9 @@ static void *admin_poll (void *cerver_ptr) {
 
             switch (poll_retval) {
                 case -1: {
-                    char *status = c_string_create ("Admin cerver %s poll has failed!", cerver->info->name->str);
+                    char *status = c_string_create ("Cerver %s ADMIN poll has failed!", cerver->info->name->str);
                     if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
                         free (status);
                     }
 
@@ -1268,10 +1268,10 @@ static void *admin_poll (void *cerver_ptr) {
                 } break;
 
                 case 0: {
-                    // #ifdef CERVER_DEBUG
-                    // char *status = c_string_create ("Admin cerver %s poll timeout", cerver->info->name->str);
+                    // #ifdef ADMIN_DEBUG
+                    // char *status = c_string_create ("Cerver %s ADMIN poll timeout", cerver->info->name->str);
                     // if (status) {
-                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
                     //     free (status);
                     // }
                     // #endif
@@ -1284,15 +1284,15 @@ static void *admin_poll (void *cerver_ptr) {
         }
 
         #ifdef ADMIN_DEBUG
-        status = c_string_create ("Admin cerver %s poll has stopped!", cerver->info->name->str);
+        status = c_string_create ("Cerver %s ADMIN poll has stopped!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
             free (status);
         }
         #endif
     }
 
-    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle admins on a NULL cerver!");
+    else cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, "Can't handle admins on a NULL cerver!");
 
     return NULL;
 

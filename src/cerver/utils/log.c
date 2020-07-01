@@ -25,6 +25,8 @@ static char *log_get_msg_type (LogMsgType type) {
 		case LOG_PLAYER: strcpy (temp, "[PLAYER]"); break;
 		case LOG_GAME: strcpy (temp, "[GAME]"); break;
 
+		case LOG_ADMIN: strcpy (temp, "[ADMIN]"); break;
+
 		default: break;
 	}
 

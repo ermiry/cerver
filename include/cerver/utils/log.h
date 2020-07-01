@@ -30,6 +30,8 @@ typedef enum LogMsgType {
 	LOG_GAME,
 	LOG_PLAYER,
 
+	LOG_ADMIN
+
 } LogMsgType;
 
 extern void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
