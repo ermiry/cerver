@@ -644,7 +644,7 @@ void cerver_set_update_interval (Cerver *cerver, Action update, void *update_arg
 
 // enables admin connections to cerver
 // returns 0 on success, 1 on error
-u8 cerver_admin_enable (Cerver *cerver) {
+u8 cerver_set_admin_enable (Cerver *cerver) {
 
     u8 retval = 1;
 
@@ -749,9 +749,9 @@ void cerver_handlers_print_info (Cerver *cerver) {
 // adds a new handler to the cerver handlers array
 // is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
 // returns 0 on success, 1 on error
-int cerver_handlers_add (Cerver *cerver, Handler *handler) {
+u8 cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
-    int retval = 1;
+    u8 retval = 1;
 
     if (cerver && handler) {
         if (cerver->handlers) {
@@ -759,7 +759,54 @@ int cerver_handlers_add (Cerver *cerver, Handler *handler) {
 
             handler->type = HANDLER_TYPE_CERVER;
             handler->cerver = cerver;
+
+            retval = 0;
         }
+    }
+
+    return retval;
+
+}
+
+// returns the current number of app handlers (multiple handlers option)
+unsigned int cerver_get_n_handlers (Cerver *cerver) {
+
+    unsigned int retval = 0;
+
+    if (cerver) {
+        pthread_mutex_lock (cerver->handlers_lock);
+        retval = cerver->n_handlers;
+        pthread_mutex_unlock (cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
+// returns the total number of handlers currently alive (ready to handle packets)
+unsigned int cerver_get_n_handlers_alive (Cerver *cerver) {
+
+    unsigned int retval = 0;
+
+    if (cerver) {
+        pthread_mutex_lock (cerver->handlers_lock);
+        retval = cerver->num_handlers_alive;
+        pthread_mutex_unlock (cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
+// returns the total number of handlers currently working (handling a packet)
+unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
+
+    unsigned int retval = 0;
+
+    if (cerver) {
+        pthread_mutex_lock (cerver->handlers_lock);
+        retval = cerver->num_handlers_working;
+        pthread_mutex_unlock (cerver->handlers_lock);
     }
 
     return retval;

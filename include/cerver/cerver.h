@@ -198,8 +198,8 @@ struct _Cerver {
     // DoubleList *handlers;
     struct _Handler **handlers;
     unsigned int n_handlers;
-    volatile unsigned int num_handlers_alive;       // handlers currently alive
-    volatile unsigned int num_handlers_working;     // handlers currently working
+    unsigned int num_handlers_alive;       // handlers currently alive
+    unsigned int num_handlers_working;     // handlers currently working
     pthread_mutex_t *handlers_lock;
     // TODO: add ability to control handler execution
     // pthread_cond_t *handlers_wait;
@@ -343,17 +343,19 @@ extern void cerver_set_update_interval (Cerver *cerver, Action update, void *upd
 
 // enables admin connections to cerver
 // returns 0 on success, 1 on error
-extern u8 cerver_admin_enable (Cerver *cerver);
+extern u8 cerver_set_admin_enable (Cerver *cerver);
 
 #pragma endregion
 
-/*** sockets ***/
+#pragma region sockets
 
 extern int cerver_sockets_pool_push (Cerver *cerver, struct _Socket *socket);
 
 extern struct _Socket *cerver_sockets_pool_pop (Cerver *cerver);
 
-/*** handlers ***/
+#pragma endregion
+
+#pragma region handlers
 
 // prints info about current handlers
 extern void cerver_handlers_print_info (Cerver *cerver);
@@ -361,7 +363,18 @@ extern void cerver_handlers_print_info (Cerver *cerver);
 // adds a new handler to the cerver handlers array
 // is the responsability of the user to provide a unique handler id, which must be < cerver->n_handlers
 // returns 0 on success, 1 on error
-extern int cerver_handlers_add (Cerver *cerver, struct _Handler *handler);
+extern u8 cerver_handlers_add (Cerver *cerver, struct _Handler *handler);
+
+// returns the current number of app handlers (multiple handlers option)
+extern unsigned int cerver_get_n_handlers (Cerver *cerver);
+
+// returns the total number of handlers currently alive (ready to handle packets)
+extern unsigned int cerver_get_n_handlers_alive (Cerver *cerver);
+
+// returns the total number of handlers currently working (handling a packet)
+extern unsigned int cerver_get_n_handlers_working (Cerver *cerver);
+
+#pragma endregion
 
 #pragma region start
 
