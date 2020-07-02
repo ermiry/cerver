@@ -170,19 +170,9 @@ extern Connection *connection_get_by_sock_fd_from_client (struct _Client *client
 // checks if the connection belongs to the client
 extern bool connection_check_owner (struct _Client *client, Connection *connection);
 
-// necessary steps to completely remove a connection from the cerver and from the client
-// returns 0 on success, 1 on error
-extern u8 connection_remove (struct _Cerver *cerver, struct _Client *client, Connection *connection, ListElement *le);
-
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
 extern u8 connection_register_to_client (struct _Client *client, Connection *connection);
-
-// unregisters a connection from a client, if the connection is active, it is stopped and removed 
-// from the cerver poll as there can't be a free connection withput client
-// returns 0 on success, 1 on error
-extern u8 connection_unregister_from_client (struct _Cerver *cerver, 
-    struct _Client *client, Connection *connection);
 
 // registers the client connection to the cerver's strcutures (like maps)
 // returns 0 on success, 1 on error
@@ -191,18 +181,29 @@ extern u8 connection_register_to_cerver (struct _Cerver *cerver,
 
 // unregister the client connection from the cerver's structures (like maps)
 // returns 0 on success, 1 on error
-extern u8 connection_unregister_from_cerver (struct _Cerver *cerver, 
-    struct _Client *client, Connection *connection);
+extern u8 connection_unregister_from_cerver (struct _Cerver *cerver, Connection *connection);
 
 // wrapper function for easy access
-// registers a client connection to the cerver and maps the sock fd to the client
-extern u8 connection_register_to_cerver_poll (struct _Cerver *cerver, 
-    struct _Client *client, Connection *connection);
+// registers a client connection to the cerver poll array
+// returns 0 on success, 1 on error
+extern u8 connection_register_to_cerver_poll (struct _Cerver *cerver, Connection *connection);
 
 // wrapper function for easy access
-// unregisters a client connection from the cerver and unmaps the sock fd from the client
-extern u8 connection_unregister_from_cerver_poll (struct _Cerver *cerver, 
-    struct _Client *client, Connection *connection);
+// unregisters a client connection from the cerver poll array
+// returns 0 on success, 1 on error
+extern u8 connection_unregister_from_cerver_poll (struct _Cerver *cerver, Connection *connection);
+
+// first adds the client connection to the cerver's poll array, and upon success,
+// adds the connection to the cerver's structures
+// this method is equivalent to call connection_register_to_cerver_poll () & connection_register_to_cerver
+// returns 0 on success, 1 on error
+extern u8 connection_add_to_cerver (struct _Cerver *cerver, struct _Client *client, Connection *connection);
+
+// removes the connection's sock fd from the cerver's poll array and then removes the connection
+// from the cerver's structures
+// this method is equivalent to call connection_unregister_from_cerver_poll () & connection_unregister_from_cerver ()
+// returns 0 on success, 1 on error
+extern u8 connection_remove_from_cerver (struct _Cerver *cerver, Connection *connection);
 
 // starts listening and receiving data in the connection sock
 extern void connection_update (void *ptr);

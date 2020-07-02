@@ -9,15 +9,16 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/htab.h"
+#include "cerver/collections/dllist.h"
+
 #include "cerver/socket.h"
 #include "cerver/network.h"
 #include "cerver/cerver.h"
 #include "cerver/handler.h"
 #include "cerver/client.h"
 #include "cerver/packets.h"
-
-#include "cerver/collections/htab.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/auth.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -437,43 +438,6 @@ bool connection_check_owner (Client *client, Connection *connection) {
 
 }
 
-// necessary steps to completely remove a connection from the cerver and from the client
-// returns 0 on success, 1 on error
-u8 connection_remove (Cerver *cerver, Client *client, Connection *connection, ListElement *le) {
-
-    u8 retval = 1;
-
-    if (cerver && client && connection) {
-        // pthread_mutex_lock (connection->socket->mutex);
-
-        connection_unregister_from_cerver (cerver, client, connection);
-
-        // unmap the client connection from the cerver poll
-        cerver_poll_unregister_connection (cerver, client, connection);
-
-        // close the socket
-        connection_end (connection);
-
-        // remove the connection from the client
-        dlist_remove_element (client->connections, le);
-
-        // 29/05/2020
-        // move the socket to the cerver's socket pool to avoid destroying it
-        // to handle if any other thread is waiting to access the socket's mutex
-        cerver_sockets_pool_push (cerver, connection->socket);
-        connection->socket = NULL;
-
-        connection_delete (connection);
-
-        retval = 0;
-
-        // pthread_mutex_unlock (connection->socket->mutex);
-    }
-
-    return retval;
-
-}
-
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
 u8 connection_register_to_client (Client *client, Connection *connection) {
@@ -517,49 +481,6 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 }
 
-// unregisters a connection from a client, if the connection is active, it is stopped and removed 
-// from the cerver poll as there can't be a free connection withput client
-// returns 0 on success, 1 on error
-u8 connection_unregister_from_client (Cerver *cerver, Client *client, Connection *connection) {
-
-    u8 retval = 1;
-
-    if (client && connection) {
-        if (client->connections->size > 1) {
-            Connection *con = NULL;
-            for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-                con = (Connection *) le->data;
-                if (connection->socket->sock_fd == con->socket->sock_fd) {
-                    connection_remove (
-                        cerver,
-                        client,
-                        connection,
-                        le
-                    );
-
-                    retval = 0;
-                    
-                    break;
-                }
-            }
-        }
-
-        else {
-            connection_remove (
-                cerver,
-                client,
-                connection,
-                NULL
-            );
-
-            retval = 0;
-        }
-    }
-
-    return retval;
-
-}
-
 // registers the client connection to the cerver's strcutures (like maps)
 // returns 0 on success, 1 on error
 u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *connection) {
@@ -567,13 +488,10 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
     u8 retval = 1;
 
     if (cerver && client && connection) {
-        const void *key = &connection->socket->sock_fd;
-
         // map the socket fd with the client
-        htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
+        const void *key = &connection->socket->sock_fd;
+        retval = (u8) htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
             client, sizeof (Client));
-
-        retval = 0;
     }
 
     return retval;
@@ -582,11 +500,11 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
 
 // unregister the client connection from the cerver's structures (like maps)
 // returns 0 on success, 1 on error
-u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection *connection) {
+u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
 
-    if (cerver && client && connection) {
+    if (cerver && connection) {
         // remove the sock fd from each map
         const void *key = &connection->socket->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
@@ -617,28 +535,58 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Client *client, Connection
 }
 
 // wrapper function for easy access
-// registers a client connection to the cerver poll structures
-u8 connection_register_to_cerver_poll (Cerver *cerver, Client *client, Connection *connection) {
+// registers a client connection to the cerver poll array
+// returns 0 on success, 1 on error
+u8 connection_register_to_cerver_poll (Cerver *cerver, Connection *connection) {
 
-    if (!cerver_poll_register_connection (cerver, client, connection)) {
-        connection->active = true;
-        return 0;
-    }
-
-    return 1;
+    return (cerver && connection) ? 
+        cerver_poll_register_connection (cerver, connection) : 1;
 
 }
 
 // wrapper function for easy access
-// unregisters a client connection from the cerver poll structures
-u8 connection_unregister_from_cerver_poll (Cerver *cerver, Client *client, Connection *connection) {
+// unregisters a client connection from the cerver poll array
+// returns 0 on success, 1 on error
+u8 connection_unregister_from_cerver_poll (Cerver *cerver, Connection *connection) {
 
-    if (!cerver_poll_unregister_connection (cerver, client, connection)) {
-        connection->active = false;
-        return 0;
+    return (cerver && connection) ?
+        cerver_poll_unregister_connection (cerver, connection) : 1;
+
+}
+
+// first adds the client connection to the cerver's poll array, and upon success,
+// adds the connection to the cerver's structures
+// this method is equivalent to call connection_register_to_cerver_poll () & connection_register_to_cerver
+// returns 0 on success, 1 on error
+u8 connection_add_to_cerver (Cerver *cerver, Client *client, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver && client && connection) {
+        if (!connection_register_to_cerver_poll (cerver, connection)) {
+            retval = connection_register_to_cerver (cerver, client, connection);
+        }
     }
 
-    return 1;
+    return retval;
+
+}
+
+// removes the connection's sock fd from the cerver's poll array and then removes the connection
+// from the cerver's structures
+// this method is equivalent to call connection_unregister_from_cerver_poll () & connection_unregister_from_cerver ()
+// returns 0 on success, 1 on error
+u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
+
+    u8 errors = 0;
+
+    if (cerver && connection) {
+        errors |= connection_unregister_from_cerver_poll (cerver, connection);
+        
+        errors |= connection_unregister_from_cerver (cerver, connection);
+    }
+
+    return errors;
 
 }
 
