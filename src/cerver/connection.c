@@ -410,18 +410,20 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, i32 sock_fd)
 // gets the connection from the client by its sock fd
 Connection *connection_get_by_sock_fd_from_client (Client *client, i32 sock_fd) {
 
+    Connection *retval = NULL;
+
     if (client) {
-        Connection *query = connection_new ();
-        if (query) {
-            // query->sock_fd = sock_fd;
-            query->socket = socket_create (sock_fd);
-            void *connection_data = dlist_search (client->connections, query, NULL);
-            connection_delete (query);
-            return (connection_data ? (Connection *) connection_data : NULL);
+        Connection *con = NULL;
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            con = (Connection *) le->data;
+            if (con->socket->sock_fd == sock_fd) {
+                retval = con;
+                break;
+            }
         }
     }
 
-    return NULL;
+    return retval;
 
 }
 
