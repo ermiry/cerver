@@ -1,19 +1,21 @@
 #ifndef _CERVER_SESSIONS_H_
 #define _CERVER_SESSIONS_H_
 
-#include "cerver/types/types.h"
-#include "cerver/network.h"
+#include "cerver/client.h"
+#include "cerver/packets.h"
+
+struct _AuthData;
 
 // auxiliary struct that is passed to cerver session id generator
 typedef struct SessionData {
 
     Packet *packet;
-    AuthData *auth_data;
+    struct _AuthData *auth_data;
     Client *client;
 
 } SessionData;
 
-extern SessionData *session_data_new (Packet *packet, AuthData *auth_data, Client *client);
+extern SessionData *session_data_new (Packet *packet, struct _AuthData *auth_data, Client *client);
 
 extern void session_data_delete (void *ptr);
 

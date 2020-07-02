@@ -1,14 +1,14 @@
 #include <stdlib.h>
 #include <string.h>
+
 #include <time.h>
 
 #include "cerver/types/types.h"
 
-#include "cerver/network.h"
-#include "cerver/packets.h"
-#include "cerver/client.h"
-#include "cerver/sessions.h"
 #include "cerver/auth.h"
+#include "cerver/client.h"
+#include "cerver/packets.h"
+#include "cerver/sessions.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/sha-256.h"
@@ -28,12 +28,7 @@ SessionData *session_data_new (Packet *packet, AuthData *auth_data, Client *clie
 
 void session_data_delete (void *ptr) {
 
-    if (ptr) {
-        SessionData *session_data = (SessionData *) ptr;
-        session_data->packet = NULL;
-        session_data->auth_data = NULL;
-        session_data->client = NULL;
-    }
+    if (ptr) { free (ptr); }
 
 }
 
@@ -46,19 +41,21 @@ void *session_default_generate_id (const void *session_data) {
         // SessionData *data = (SessionData *) session_data;
 
         // get current time
-        time_t now = time (0);
-        struct tm *nowtm = localtime (&now);
-        char buf[80] = { 0 };
-        strftime (buf, sizeof(buf), "%Y-%m-%d.%X", nowtm);
-        free (nowtm);
+        time_t now = time (NULL);
+        char buf[128] = { 0 };
+        strftime (buf, 128, "%Y-%m-%d.%X", localtime (&now));
 
-        uint8_t hash[32];
-        char hash_string[65];
+        char *temp = c_string_create ("%s-%d", buf, random_int_in_range (0, 8096));
+        if (temp) {
+            uint8_t hash[32] = { 0 };
+            char hash_string[65] = { 0 };
+            sha_256_calc (hash, temp, strlen (temp));
+            sha_256_hash_to_string (hash_string, hash);
 
-        sha_256_calc (hash, buf, strlen (buf));
-        sha_256_hash_to_string (hash_string, hash);
+            retval = c_string_create ("%s", hash_string);
 
-        retval = c_string_create ("%s", hash_string);
+            free (temp);
+        }
     }
 
     return retval;
