@@ -236,6 +236,47 @@ static void handler_do_while_client (Handler *handler) {
 
 }
 
+// while cerver is running, check for new jobs and handle them
+static void handler_do_while_admin (Handler *handler) {
+
+    if (handler) {
+        while (handler->cerver->isRunning) {
+            bsem_wait (handler->job_queue->has_jobs);
+
+            if (handler->cerver->isRunning) {
+                pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+                handler->cerver->admin->num_handlers_working += 1;
+                pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+
+                // read job from queue
+                Job *job = job_queue_pull (handler->job_queue);
+                if (job) {
+                    Packet *packet = (Packet *) job->args;
+                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+
+                    handler->handler (handler_data);
+
+                    handler_data_delete (handler_data);
+                    job_delete (job);
+
+                    switch (packet->header->packet_type) {
+                        case APP_PACKET: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case APP_ERROR_PACKET: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case CUSTOM_PACKET: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
+
+                        default: packet_delete (packet); break;
+                    }
+                }
+
+                pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+                handler->cerver->admin->num_handlers_working -= 1;
+                pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+            }
+        }
+    }
+
+}
+
 static void *handler_do (void *handler_ptr) {
 
     if (handler_ptr) {
@@ -245,6 +286,7 @@ static void *handler_do (void *handler_ptr) {
         switch (handler->type) {
             case HANDLER_TYPE_CERVER: handlers_lock = handler->cerver->handlers_lock; break;
             case HANDLER_TYPE_CLIENT: handlers_lock = handler->client->handlers_lock; break;
+            case HANDLER_TYPE_ADMIN: handlers_lock = handler->cerver->admin->handlers_lock; break;
             default: break;
         }
 
@@ -255,6 +297,7 @@ static void *handler_do (void *handler_ptr) {
             switch (handler->type) {
                 case HANDLER_TYPE_CERVER: snprintf (thread_name, 128, "cerver-handler-%d", handler->unique_id); break;
                 case HANDLER_TYPE_CLIENT: snprintf (thread_name, 128, "client-handler-%d", handler->unique_id); break;
+                case HANDLER_TYPE_ADMIN: snprintf (thread_name, 128, "admin-handler-%d", handler->unique_id); break;
                 default: break;
             }
 
@@ -272,6 +315,7 @@ static void *handler_do (void *handler_ptr) {
         switch (handler->type) {
             case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive += 1; break;
             case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive += 1; break;
+            case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive += 1; break;
             default: break;
         }
         pthread_mutex_unlock (handlers_lock);
@@ -280,6 +324,7 @@ static void *handler_do (void *handler_ptr) {
         switch (handler->type) {
             case HANDLER_TYPE_CERVER: handler_do_while_cerver (handler); break;
             case HANDLER_TYPE_CLIENT: handler_do_while_client (handler); break;
+            case HANDLER_TYPE_ADMIN: handler_do_while_admin (handler); break;
             default: break;
         }
 
@@ -290,6 +335,7 @@ static void *handler_do (void *handler_ptr) {
         switch (handler->type) {
             case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive -= 1; break;
             case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive -= 1; break;
+            case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive -= 1; break;
             default: break;
         }
         pthread_mutex_unlock (handlers_lock);

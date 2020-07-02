@@ -454,13 +454,13 @@ void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, Handler *app_hand
     if (admin_cerver) {
         admin_cerver->app_packet_handler = app_handler;
         if (admin_cerver->app_packet_handler) {
-            admin_cerver->app_packet_handler->type = HANDLER_TYPE_CERVER;
+            admin_cerver->app_packet_handler->type = HANDLER_TYPE_ADMIN;
             admin_cerver->app_packet_handler->cerver = admin_cerver->cerver;
         }
 
         admin_cerver->app_error_packet_handler = app_error_handler;
         if (admin_cerver->app_error_packet_handler) {
-            admin_cerver->app_error_packet_handler->type = HANDLER_TYPE_CERVER;
+            admin_cerver->app_error_packet_handler->type = HANDLER_TYPE_ADMIN;
             admin_cerver->app_error_packet_handler->cerver = admin_cerver->cerver;
         }
     }
@@ -491,7 +491,7 @@ void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, Handler *custom
     if (admin_cerver) {
         admin_cerver->custom_packet_handler = custom_handler;
         if (admin_cerver->custom_packet_handler) {
-            admin_cerver->custom_packet_handler->type = HANDLER_TYPE_CERVER;
+            admin_cerver->custom_packet_handler->type = HANDLER_TYPE_ADMIN;
             admin_cerver->custom_packet_handler->cerver = admin_cerver->cerver;
         }
     }

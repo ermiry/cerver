@@ -29,7 +29,8 @@ typedef enum HandlerType {
     HANDLER_TYPE_NONE         = 0,
 
     HANDLER_TYPE_CERVER       = 1,
-    HANDLER_TYPE_CLIENT       = 2
+    HANDLER_TYPE_CLIENT       = 2,
+    HANDLER_TYPE_ADMIN        = 3,
 
 } HandlerType;
 
