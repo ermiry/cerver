@@ -13,6 +13,7 @@
 
 #include "cerver/game/lobby.h"
 
+struct _Socket;
 struct _Cerver;
 struct _Client;
 struct _Connection;

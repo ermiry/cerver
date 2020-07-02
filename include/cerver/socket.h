@@ -14,7 +14,8 @@ struct _Socket {
 	char *packet_buffer;
 	size_t packet_buffer_size;
 
-	pthread_mutex_t *mutex;
+	pthread_mutex_t *read_mutex;
+	pthread_mutex_t *write_mutex;
 
 };
 
