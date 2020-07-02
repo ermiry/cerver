@@ -468,13 +468,6 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
             retval = 0;
         }
-
-        // for wahtever reason failed to register the connection to the client
-        // we close the connection, as it can not be a free connection
-        else {
-            connection_end (connection);
-            connection_delete (connection);
-        }
     }
 
     return retval;
