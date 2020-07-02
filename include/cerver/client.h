@@ -160,8 +160,9 @@ extern u8 client_connection_remove (Client *client, struct _Connection *connecti
 // returns 0 on success, 1 on error
 extern u8 client_connection_drop (struct _Cerver *cerver, Client *client, struct _Connection *connection);
 
-// removes the connection from the client referred to by the sock fd
-// and also checks if there is another active connection in the client, if not it will be dropped
+// removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
+// and also remove the client & connection from the cerver's structures when needed
+// also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
 extern u8 client_remove_connection_by_sock_fd (struct _Cerver *cerver, Client *client, i32 sock_fd);
 

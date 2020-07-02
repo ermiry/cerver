@@ -414,8 +414,9 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
 
 }
 
-// removes the connection from the client referred to by the sock fd
-// and also checks if there is another active connection in the client, if not it will be dropped
+// removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
+// and also remove the client & connection from the cerver's structures when needed
+// also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
 u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock_fd) {
 
@@ -442,28 +443,34 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
             case 1: {
                 connection = (Connection *) client->connections->start->data;
 
-                retval = connection_remove (
+                // remove the connection from cerver structures & poll array
+                connection_remove_from_cerver (cerver, connection);
+
+                // remove, close & delete the connection
+                if (!client_connection_drop (
                     cerver,
                     client,
-                    connection,
-                    NULL
-                );
+                    connection
+                )) {
+                    // no connections left in client, just remove and delete
+                    client_remove_from_cerver (cerver, client);
+                    client_delete (client);
 
-                // no connections left in cerver, just remove and delete
-                client_remove_from_cerver (cerver, client);
-                client_delete (client);
+                    retval = 0;
+                }
             } break;
 
             default: {
                 // search the connection in the client
                 connection = connection_get_by_sock_fd_from_client (client, sock_fd);
                 if (connection) {
-                    // FIXME: remove the correct connection
-                    retval = connection_remove (
+                    // remove the connection from cerver structures & poll array
+                    connection_remove_from_cerver (cerver, connection);
+
+                    retval = client_connection_drop (
                         cerver,
                         client,
-                        connection,
-                        NULL
+                        connection
                     );
                 }
 
@@ -536,7 +543,7 @@ u8 client_unregister_connections_from_cerver (Cerver *cerver, Client *client) {
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             connection = (Connection *) le->data;
-            if (connection_unregister_from_cerver (cerver, client, connection))
+            if (connection_unregister_from_cerver (cerver, connection))
                 n_failed++;
         }
 
@@ -612,7 +619,7 @@ u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *clien
         Connection *connection = NULL;
         for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
             connection = (Connection *) le->data;
-            if (connection_unregister_from_cerver_poll (cerver, client, connection))
+            if (connection_unregister_from_cerver_poll (cerver, connection))
                 n_failed++;
         }
 
@@ -740,7 +747,7 @@ Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
             Connection *connection = NULL;
             for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
                 connection = (Connection *) le->data;
-                connection_unregister_from_cerver_poll (cerver, client, connection);
+                connection_unregister_from_cerver_poll (cerver, connection);
             }
         }
 
