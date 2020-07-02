@@ -223,6 +223,10 @@ extern i32 cerver_poll_get_idx_by_sock_fd (struct _Cerver *cerver, i32 sock_fd);
 // returns 0 on success, 1 on error
 extern u8 cerver_poll_register_connection (struct _Cerver *cerver, struct _Connection *connection);
 
+// removes a sock fd from the cerver's main poll array
+// returns 0 on success, 1 on error
+extern u8 cerver_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
+
 // unregsiters a client connection from the cerver's main poll structure
 // returns 0 on success, 1 on error
 extern u8 cerver_poll_unregister_connection (struct _Cerver *cerver, struct _Connection *connection);

@@ -94,7 +94,7 @@ typedef struct CerverStats {
     u64 n_packets_sent;                             // total number of packets that were sent
     u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
-    u64 current_active_client_connections;          // all of the current active connections for all current clients
+    u64 current_active_client_connections;          // all of the current active connections for all current clients (active in main poll array)
     u64 current_n_connected_clients;                // the current number of clients connected 
     u64 current_n_hold_connections;                 // current numbers of on hold connections (only if the cerver requires authentication)
     u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)

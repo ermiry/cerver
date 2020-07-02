@@ -888,6 +888,8 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 
 #pragma region receive
 
+u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
+
 static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, ReceiveType receive_type,
     SockReceive *sock_receive,
     size_t buffer_size, char **end, size_t *buffer_pos) {
@@ -1137,6 +1139,17 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
 
 }
 
+// directly close the connection & push the socket to the cerver's pool
+static void cerver_receive_handle_rogue_socket (Cerver *cerver, Socket *socket) {
+
+    if (cerver && socket) {
+        close (socket->sock_fd);        // just close the socket
+        socket->sock_fd = -1;
+        cerver_sockets_pool_push (cerver, socket);
+    }
+
+}
+
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
 static void cerver_receive_handle_failed (void *cr_ptr) {
@@ -1175,10 +1188,14 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                             }
                             #endif
 
-                            // FIXME: unregister from poll array
-                            close (cr->socket->sock_fd);        // just close the socket
-                            cr->socket->sock_fd = -1;
-                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                            // remove the sock fd from the cerver's main poll array
+                            cerver_poll_unregister_sock_fd (cr->cerver, cr->socket->sock_fd);
+
+                            // try to remove the sock fd from the cerver's map
+                            const void *key = &cr->socket->sock_fd;
+                            htab_remove (cr->cerver->client_sock_fd_map, key, sizeof (i32));
+
+                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
                         }
                     } break;
 
@@ -1199,10 +1216,10 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                             }
                             #endif
 
-                            // FIXME: unregister from poll array
-                            close (cr->socket->sock_fd);
-                            cr->socket->sock_fd = -1;
-                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                            // remove the sock fd from the cerver's on hold poll array
+                            on_hold_poll_unregister_sock_fd (cr->cerver, cr->socket->sock_fd);
+
+                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
                         }
                     } break;
 
@@ -1224,10 +1241,10 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                             }
                             #endif
 
-                            // FIXME: unregister from poll array
-                            close (cr->socket->sock_fd);        // just close the socket
-                            cr->socket->sock_fd = -1;
-                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                            // remove the sock fd from the cerver's admin poll array
+                            admin_cerver_poll_unregister_sock_fd (cr->cerver->admin, cr->socket->sock_fd);
+
+                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
                         }
                     } break;
 
@@ -1716,17 +1733,17 @@ u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 
 }
 
-// unregsiters a client connection from the cerver's main poll structure
+// removes a sock fd from the cerver's main poll array
 // returns 0 on success, 1 on error
-u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
+u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
     u8 retval = 1;
 
-    if (cerver && connection) {
+    if (cerver) {
         pthread_mutex_lock (cerver->poll_lock);
 
-        // get the idx of the connection sock fd in the cerver poll fds
-        i32 idx = cerver_poll_get_idx_by_sock_fd (cerver, connection->socket->sock_fd);
+        // get the idx of the sock fd in the cerver poll fds
+        i32 idx = cerver_poll_get_idx_by_sock_fd (cerver, sock_fd);
         if (idx > 0) {
             cerver->fds[idx].fd = -1;
             cerver->fds[idx].events = -1;
@@ -1736,7 +1753,7 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
 
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s MAIN poll, idx: %d",
-                connection->socket->sock_fd, cerver->info->name->str, idx);
+                sock_fd, cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
                 free (s);
@@ -1758,7 +1775,7 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
         else {
             // #ifdef CERVER_DEBUG
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s MAIN poll!",
-                connection->socket->sock_fd, cerver->info->name->str);
+                sock_fd, cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
                 free (s);
@@ -1770,6 +1787,15 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
     }
 
     return retval;
+
+}
+
+// unregsiters a client connection from the cerver's main poll structure
+// returns 0 on success, 1 on error
+u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
+
+    return (cerver && connection) ?
+        cerver_poll_unregister_sock_fd (cerver, connection->socket->sock_fd) : 1;
 
 }
 

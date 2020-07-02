@@ -583,6 +583,10 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
 
 }
 
+#pragma endregion
+
+#pragma region receive
+
 static ConnectionCustomReceiveData *connection_custom_receive_data_new (Client *client, Connection *connection, void *args) {
 
     ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
