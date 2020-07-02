@@ -205,7 +205,7 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
         Connection *connection = NULL;
         switch (admin->client->connections->size) {
             case 0: {
-                // #ifdef ADMIN_DEBUG
+                #ifdef ADMIN_DEBUG
                 char *s = c_string_create ("admin_remove_connection_by_sock_fd () - Admin client with id " 
                     "%ld does not have ANY connection - removing him from cerver...",
                     admin->client->id);
@@ -213,19 +213,20 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
                     cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
                     free (s);
                 }
-                // #endif
+                #endif
                 
                 admin_cerver_unregister_admin (admin_cerver, admin);
                 admin_delete (admin);
             } break;
 
             case 1: {
+                connection = (Connection *) admin->client->connections->start->data;
                 if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
                     // remove, close & delete the connection
                     if (!client_connection_drop (
                         admin_cerver->cerver,
                         admin->client,
-                        (Connection *) admin->client->connections->start->data
+                        connection
                     )) {
                         // no connections left in admin, just remove and delete
                         admin_cerver_unregister_admin (admin_cerver, admin);
@@ -237,7 +238,7 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
             } break;
 
             default: {
-                Connection *connection = admin_connection_get_by_sock_fd (admin, sock_fd);
+                connection = admin_connection_get_by_sock_fd (admin, sock_fd);
                 if (connection) {
                     if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
                         retval = client_connection_drop (
@@ -1193,8 +1194,8 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             admin_cerver->stats->current_connections++;
 
             #ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Added new sock fd to cerver %s ADMIN poll, idx: %i", 
-                admin_cerver->cerver->info->name->str, idx);
+            char *s = c_string_create ("Added sock fd <%d> to cerver %s ADMIN poll, idx: %i", 
+                connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
                 free (s);
@@ -1202,7 +1203,7 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s ADMIN current connections: %i", 
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
             if (status) {
                 cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
@@ -1231,16 +1232,16 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
 
 }
 
-// unregsiters a client connection from the cerver's admin poll array
+// unregsiters a sock fd connection from the cerver's admin poll array
 // returns 0 on success, 1 on error
-static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection) {
+u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd) {
 
     u8 retval = 1;
 
-    if (admin_cerver && connection) {
+    if (admin_cerver) {
         pthread_mutex_lock (admin_cerver->poll_lock);
 
-        i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->socket->sock_fd);
+        i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, sock_fd);
         if (idx >= 0) {
             admin_cerver->fds[idx].fd = -1;
             admin_cerver->fds[idx].events = -1;
@@ -1250,7 +1251,7 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
 
             #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
-                connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx);
+                sock_fd, admin_cerver->cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
                 free (s);
@@ -1258,7 +1259,7 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s ADMIN current connections: %i", 
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
             if (status) {
                 cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
@@ -1272,7 +1273,7 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
         else {
             // #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
-                connection->socket->sock_fd, admin_cerver->cerver->info->name->str);
+                sock_fd, admin_cerver->cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_WARNING, LOG_ADMIN, s);
                 free (s);
@@ -1284,6 +1285,15 @@ static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Co
     }
 
     return retval;
+
+}
+
+// unregsiters a connection from the cerver's admin hold poll array
+// returns 0 on success, 1 on error
+static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection) {
+
+    return (admin_cerver && connection) ?
+        admin_cerver_poll_unregister_sock_fd (admin_cerver, connection->socket->sock_fd) : 1;
 
 }
 

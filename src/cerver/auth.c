@@ -26,7 +26,7 @@
 
 static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection);
 static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connection);
-static u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
+u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connection);
 
 #pragma region auth data
@@ -735,8 +735,8 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             cerver->stats->current_n_hold_connections--;
 
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Added new sock fd to cerver %s ON HOLD poll, idx: %i", 
-                cerver->info->name->str, idx);
+            char *s = c_string_create ("Added sock fd <%d> to cerver %s ON HOLD poll, idx: %i", 
+                connection->socket->sock_fd, cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
                 free (s);
@@ -744,10 +744,10 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s current on hold connections: %i", 
+            char *status = c_string_create ("Cerver %s current on hold connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
                 free (status);
             }
             #endif
@@ -775,7 +775,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
 
 // removed a sock fd from the cerver's on hold poll array
 // returns 0 on success, 1 on error
-static u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
+u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
     u8 retval = 1;
 
@@ -800,10 +800,10 @@ static u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s current on hold connections: %i", 
+            char *status = c_string_create ("Cerver %s current on hold connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
                 free (status);
             }
             #endif

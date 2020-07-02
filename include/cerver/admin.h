@@ -253,6 +253,10 @@ extern void admin_packet_handler (struct _Packet *packet);
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, struct _Connection *connection);
 
+// unregsiters a sock fd connection from the cerver's admin poll array
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd);
+
 #pragma endregion
 
 #endif

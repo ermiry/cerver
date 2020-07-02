@@ -63,6 +63,10 @@ extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Conne
 
 #pragma region poll
 
+// removed a sock fd from the cerver's on hold poll array
+// returns 0 on success, 1 on error
+extern u8 on_hold_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
+
 // handles packets from the on hold clients until they authenticate
 extern void *on_hold_poll (void *cerver_ptr);
 
