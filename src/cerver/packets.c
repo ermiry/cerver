@@ -763,8 +763,8 @@ bool packet_check (Packet *packet) {
         PacketHeader *header = packet->header;
 
         if (header->protocol_id == protocol_id) {
-            if ((header->protocol_version.major > protocol_version.major)
-                || (header->protocol_version.minor > protocol_version.minor)) {
+            if ((header->protocol_version.major <= protocol_version.major)
+                && (header->protocol_version.minor >= protocol_version.minor)) {
                 retval = true;
             }
 
