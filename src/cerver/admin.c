@@ -507,6 +507,36 @@ void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool del
 
 }
 
+// returns the total number of handlers currently alive (ready to handle packets)
+unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver) {
+
+    unsigned int retval = 0;
+
+    if (admin_cerver) {
+        pthread_mutex_lock (admin_cerver->handlers_lock);
+        retval = admin_cerver->num_handlers_alive;
+        pthread_mutex_unlock (admin_cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
+// returns the total number of handlers currently working (handling a packet)
+unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver) {
+
+    unsigned int retval = 0;
+
+    if (admin_cerver) {
+        pthread_mutex_lock (admin_cerver->handlers_lock);
+        retval = admin_cerver->num_handlers_working;
+        pthread_mutex_unlock (admin_cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) {

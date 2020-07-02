@@ -213,6 +213,12 @@ extern void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _
 // by the default, packets are deleted by cerver
 extern void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
+// returns the total number of handlers currently alive (ready to handle packets)
+extern unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver);
+
+// returns the total number of handlers currently working (handling a packet)
+extern unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver);
+
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
