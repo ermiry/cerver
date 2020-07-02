@@ -1644,12 +1644,23 @@ static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *
         cerver->fds[idx].events = POLLIN;
         cerver->current_n_fds++;
 
+        cerver->stats->current_active_client_connections++;
+
         #ifdef CERVER_DEBUG
-        char *s = c_string_create ("Added new sock fd to cerver %s main poll, idx: %i", 
-            cerver->info->name->str, idx);
+        char *s = c_string_create ("Added sock fd <%d> to cerver %s MAIN poll, idx: %i", 
+            connection->socket->sock_fd, cerver->info->name->str, idx);
         if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
             free (s);
+        }
+        #endif
+
+        #ifdef CERVER_STATS
+        char *status = c_string_create ("Cerver %s current active connections: %ld", 
+            cerver->info->name->str, cerver->stats->current_active_client_connections);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
         }
         #endif
 
@@ -1721,16 +1732,38 @@ u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
             cerver->fds[idx].events = -1;
             cerver->current_n_fds--;
 
+            cerver->stats->current_active_client_connections--;
+
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Removed sock fd from cerver %s main poll, idx: %d",
-                cerver->info->name->str, idx);
+            char *s = c_string_create ("Removed sock fd <%d> from cerver %s MAIN poll, idx: %d",
+                connection->socket->sock_fd, cerver->info->name->str, idx);
             if (s) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
                 free (s);
             }
             #endif
 
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s current active connections: %ld", 
+                cerver->info->name->str, cerver->stats->current_active_client_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+                free (status);
+            }
+            #endif
+
             retval = 0;     // removed the sock fd form the cerver poll
+        }
+
+        else {
+            // #ifdef CERVER_DEBUG
+            char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s MAIN poll!",
+                connection->socket->sock_fd, cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
+                free (s);
+            }
+            // #endif
         }
 
         pthread_mutex_unlock (cerver->poll_lock);
