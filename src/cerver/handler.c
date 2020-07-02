@@ -875,7 +875,7 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
         } break;
 
         case RECEIVE_TYPE_ADMIN: {
-            // FIXME:
+            // FIXME: get the admin to create a handlerdata
             admin_packet_handler (packet);
         } break;
 
@@ -955,7 +955,7 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
         ReceiveType receive_type = receive->receive_type;
         Lobby *lobby = receive->lobby;
 
-        pthread_mutex_lock (receive->socket->mutex);
+        pthread_mutex_lock (receive->socket->read_mutex);
 
         SockReceive *sock_receive = sock_receive_get (cerver, sock_fd, receive_type);
         if (sock_receive) {
@@ -1130,7 +1130,7 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
         // free (receive->socket->packet_buffer);
         // receive->socket->packet_buffer = NULL;
 
-        pthread_mutex_unlock (receive->socket->mutex);
+        pthread_mutex_unlock (receive->socket->read_mutex);
 
         receive_handle_delete (receive);
     }
@@ -1145,7 +1145,7 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
         CerverReceive *cr = (CerverReceive *) cr_ptr;
 
         if (cr->socket) {
-            pthread_mutex_lock (cr->socket->mutex);
+            pthread_mutex_lock (cr->socket->read_mutex);
 
             if (cr->socket->sock_fd > 0) {
                 switch (cr->receive_type) {
@@ -1167,14 +1167,15 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                         // for what ever reason we have a rogue connection
                         else {
                             #ifdef CERVER_DEBUG
-                            char *s = c_string_create ("Sock fd: %d is not registered to a client in cerver %s",
+                            char *s = c_string_create ("Sock fd <%d> is NOT registered to a client in cerver %s",
                                 cr->socket->sock_fd, cr->cerver->info->name->str);
                             if (s) {
-                                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                                cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER, s);
                                 free (s);
                             }
                             #endif
 
+                            // FIXME: unregister from poll array
                             close (cr->socket->sock_fd);        // just close the socket
                             cr->socket->sock_fd = -1;
                             // cerver_sockets_pool_push (cr->cerver, cr->socket);
@@ -1198,6 +1199,7 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                             }
                             #endif
 
+                            // FIXME: unregister from poll array
                             close (cr->socket->sock_fd);
                             cr->socket->sock_fd = -1;
                             // cerver_sockets_pool_push (cr->cerver, cr->socket);
@@ -1205,14 +1207,35 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                     } break;
 
                     case RECEIVE_TYPE_ADMIN: {
-                        // FIXME:
+                        // get to which admin the connection belongs to
+                        Admin *admin = admin_get_by_sock_fd (cr->cerver->admin, cr->socket->sock_fd);
+                        if (admin) {
+                            admin_remove_connection_by_sock_fd (cr->cerver->admin, admin, cr->socket->sock_fd);
+                        }
+
+                        // for what ever reason we have a rogue connection
+                        else {
+                            #ifdef ADMIN_DEBUG
+                            char *s = c_string_create ("Sock fd <%d> is NOT registered to an admin in cerver %s",
+                                cr->socket->sock_fd, cr->cerver->info->name->str);
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                                free (s);
+                            }
+                            #endif
+
+                            // FIXME: unregister from poll array
+                            close (cr->socket->sock_fd);        // just close the socket
+                            cr->socket->sock_fd = -1;
+                            // cerver_sockets_pool_push (cr->cerver, cr->socket);
+                        }
                     } break;
 
                     default: break;
                 }
             }
 
-            pthread_mutex_unlock (cr->socket->mutex);
+            pthread_mutex_unlock (cr->socket->read_mutex);
         }
 
         cerver_receive_delete (cr);
@@ -1461,12 +1484,23 @@ static void cerver_register_new_connection (Cerver *cerver,
         }
         #endif
 
-        Client *client = NULL;
-        bool failed = false;
-
         // if the cerver requires auth, we put the connection on hold
         if (cerver->auth_required) {
-            if (on_hold_connection (cerver, connection)) {
+            if (!on_hold_connection (cerver, connection)) {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Connection is on hold on cerver %s!", cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    free (status);
+                }
+                #endif
+
+                connection->active = true;
+
+                cerver_info_send_info_packet (cerver, NULL, connection);
+            }
+
+            else {
                 char *status = c_string_create ("Failed to put connection on hold in cerver %s",
                     cerver->info->name->str);
                 if (status) {
@@ -1481,10 +1515,11 @@ static void cerver_register_new_connection (Cerver *cerver,
 
         // if not, we create a new client and we register the connection
         else {
-            client = client_create ();
+            Client *client = client_create ();
             if (client) {
                 connection_register_to_client (client, connection);
 
+                // FIXME: sessions should only exist if cerver authentication is enabled
                 // if we need to generate session ids...
                 if (cerver->use_sessions) {
                     char *session_id = (char *) cerver->session_id_generator (client);
@@ -1502,41 +1537,32 @@ static void cerver_register_new_connection (Cerver *cerver,
                             // trigger cerver on client connected action
                             if (cerver->on_client_connected) 
                                 cerver->on_client_connected (client);
+
+                            cerver_info_send_info_packet (cerver, client, connection);
                         }
                     }
 
                     else {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, 
-                            "Failed to generate client session id!");
-                        // TODO: do we want to drop the client connection?
-                        failed = true;
+                        cerver_log_msg (
+                            stderr, LOG_ERROR, LOG_CLIENT, 
+                            "Failed to generate client session id!"
+                        );
+                        
+                        // FIXME: drop the client
                     }
                 }
 
                 // just register the client to the cerver
                 else {
                     if (!client_register_to_cerver ((Cerver *) cerver, client)) {
+                        // FIXME: this method only happens if cerver does NOT use auth!
                         // trigger cerver on client connected action
                         if (cerver->on_client_connected) 
                             cerver->on_client_connected (client);
+
+                        cerver_info_send_info_packet (cerver, client, connection);
                     }
                 } 
-            }
-        }
-
-        if (!failed) {
-            // send cerver info packet
-            if (cerver->type != WEB_CERVER) {
-                packet_set_network_values (cerver->info->cerver_info_packet, 
-                    cerver, client, connection, NULL);
-                if (packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
-                    char *s = c_string_create ("Failed to send cerver %s info packet!",
-                         cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
-                        free (s);
-                    }
-                }   
             }
         }
 
@@ -1551,7 +1577,10 @@ static void cerver_register_new_connection (Cerver *cerver,
 
     else {
         #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_ERROR, LOG_CLIENT, "Failed to create a new connection!");
+        cerver_log_msg (
+            stdout, LOG_ERROR, LOG_CLIENT, 
+            "cerver_register_new_connection () failed to create a new connection!"
+        );
         #endif
     }
 
@@ -1597,11 +1626,16 @@ u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
 
     if (cerver) {
         u32 current_max = cerver->max_n_fds;
-        cerver->max_n_fds = cerver->max_n_fds * 2;
+        cerver->max_n_fds *= 2;
         cerver->fds = (struct pollfd *) realloc (cerver->fds, cerver->max_n_fds * sizeof (struct pollfd));
         if (cerver->fds) {
+            #pragma GCC diagnostic push
+            #pragma GCC diagnostic ignored "-Wunused-value"
+
             for (u32 i = current_max; i < cerver->max_n_fds; i++)
                 cerver->fds[i].fd == -1;
+
+            #pragma GCC diagnostic pop
 
             retval = 0;
         }
@@ -1663,6 +1697,7 @@ static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *
 
 // regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
+// returns 0 on success, 1 on error
 u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
@@ -1706,12 +1741,12 @@ u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 }
 
 // unregsiters a client connection from the cerver's main poll structure
-// and removes the map from the socket to the client
-u8 cerver_poll_unregister_connection (Cerver *cerver, Client *client, Connection *connection) {
+// returns 0 on success, 1 on error
+u8 cerver_poll_unregister_connection (Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
 
-    if (cerver && client && connection) {
+    if (cerver && connection) {
         pthread_mutex_lock (cerver->poll_lock);
 
         // get the idx of the connection sock fd in the cerver poll fds
