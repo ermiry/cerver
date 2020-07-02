@@ -1519,50 +1519,15 @@ static void cerver_register_new_connection (Cerver *cerver,
             if (client) {
                 connection_register_to_client (client, connection);
 
-                // FIXME: sessions should only exist if cerver authentication is enabled
-                // if we need to generate session ids...
-                if (cerver->use_sessions) {
-                    char *session_id = (char *) cerver->session_id_generator (client);
-                    if (session_id) {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Generated client session id: %s", session_id);
-                        if (s) {
-                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
-                            free (s);
-                        }
-                        #endif
-                        client_set_session_id (client, session_id);
+                if (!client_register_to_cerver ((Cerver *) cerver, client)) {
+                    // trigger cerver on client connected action
+                    if (cerver->on_client_connected) 
+                        cerver->on_client_connected (client);
 
-                        if (!client_register_to_cerver ((Cerver *) cerver, client)) {
-                            // trigger cerver on client connected action
-                            if (cerver->on_client_connected) 
-                                cerver->on_client_connected (client);
+                    connection->active = true;
 
-                            cerver_info_send_info_packet (cerver, client, connection);
-                        }
-                    }
-
-                    else {
-                        cerver_log_msg (
-                            stderr, LOG_ERROR, LOG_CLIENT, 
-                            "Failed to generate client session id!"
-                        );
-                        
-                        // FIXME: drop the client
-                    }
+                    cerver_info_send_info_packet (cerver, client, connection);
                 }
-
-                // just register the client to the cerver
-                else {
-                    if (!client_register_to_cerver ((Cerver *) cerver, client)) {
-                        // FIXME: this method only happens if cerver does NOT use auth!
-                        // trigger cerver on client connected action
-                        if (cerver->on_client_connected) 
-                            cerver->on_client_connected (client);
-
-                        cerver_info_send_info_packet (cerver, client, connection);
-                    }
-                } 
             }
         }
 
