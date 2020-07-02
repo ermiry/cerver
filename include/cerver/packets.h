@@ -261,10 +261,32 @@ extern Packet *packet_generate_request (PacketType packet_type, u32 req_type,
 // returns 0 on success, 1 on error
 extern u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
 
+// sends a packet to the specified destination
+// sets flags to 0
+// at least a packet & an active connection are required for this method to succeed
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+extern u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
+    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+
+// sends a packet to the socket in two parts, first the header & then the data
+// this method can be useful when trying to forward a big received packet without the overhead of 
+// performing and additional copy to create a continuos data (packet) buffer
+// the socket's write mutex will be locked to ensure that the packet
+// is sent correctly and to avoid race conditions
+// returns 0 on success, 1 on error
+extern u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent);
+
+// sends a packet to the socket in two parts, first the header & then the data
+// works just as packet_send_split () but with the flags set to 0
+// returns 0 on success, 1 on error
+extern u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
+    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-extern u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd, 
+extern u8 packet_send_to_socket (const Packet *packet, struct _Socket *socket, 
     int flags, size_t *total_sent, bool raw);
 
 // check if packet has a compatible protocol id and a version

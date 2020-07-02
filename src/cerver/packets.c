@@ -422,46 +422,100 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
 
 }
 
-// TODO: check for errno appropierly
 // sends a packet directly using the tcp protocol and the packet sock fd
 // returns 0 on success, 1 on error
 static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
+    u8 retval = 0;
+
     if (packet) {
-        ssize_t sent;
-        const char *p = raw ? (char *) packet->data : (char *) packet->packet;
+        pthread_mutex_lock (packet->connection->socket->write_mutex);
+
+        ssize_t sent = 0;
+        char *p = raw ? (char *) packet->data : (char *) packet->packet;
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
         while (packet_size > 0) {
             sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
-            if (sent < 0) return 1;
+            if (sent < 0) {
+                retval = 1;
+                break;
+            }
+
             p += sent;
-            packet_size -= sent;
+            packet_size -= (size_t) sent;
         }
 
-        if (total_sent) *total_sent = sent;
+        if (total_sent) *total_sent = (size_t) sent;
 
-        return 0;
+        pthread_mutex_unlock (packet->connection->socket->write_mutex);
     }
 
-    return 1;
+    return retval;
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// returns 0 on success, 1 on error
+static u8 packet_send_split_tcp (const Packet *packet, int flags, size_t *total_sent) {
+
+    u8 retval = 1;
+
+    if (packet) {
+        pthread_mutex_lock (packet->connection->socket->write_mutex);
+
+        size_t actual_sent = 0;
+
+        // first send the header
+        bool fail = false;
+        ssize_t sent = 0;
+        char *p = (char *) packet->header;
+        size_t packet_size = sizeof (PacketHeader);
+
+        while (packet_size > 0) {
+            sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
+            if (sent < 0) {
+                fail = true;
+                break;
+            }
+
+            p += sent;
+            actual_sent += (size_t) sent;
+            packet_size -= (size_t) sent;
+            fail = false;
+        }
+
+        // now send the data
+        if (!fail) {
+            sent = 0;
+            p = (char *) packet->data;
+            packet_size = packet->data_size;
+
+            while (packet_size > 0) {
+                sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
+                if (sent < 0) break;
+                p += sent;
+                actual_sent += (size_t) sent;
+                packet_size -= (size_t) sent;
+            }
+
+            if (total_sent) *total_sent = actual_sent;
+
+            retval = 0;
+        }
+
+        pthread_mutex_unlock (packet->connection->socket->write_mutex);
+    }
+
+    return retval;
 
 }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-// TODO: correctly send an udp packet!!
 static u8 packet_send_udp (const void *packet, size_t packet_size) {
 
-    // ssize_t sent;
-    // const void *p = packet;
-    // while (packet_size > 0) {
-    //     sent = sendto (server->serverSock, begin, packetSize, 0, 
-    //         (const struct sockaddr *) &address, sizeof (struct sockaddr_storage));
-    //     if (sent <= 0) return -1;
-    //     p += sent;
-    //     packetSize -= sent;
-    // }
+    // TODO:
 
     return 0;
 
@@ -556,21 +610,25 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
 
 }
 
-// sends a packet using its network values
-// raw flag to send a raw packet (only the data that was set to the packet, without any header)
-// returns 0 on success, 1 on error
-u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+static inline u8 packet_send_internal (const Packet *packet, int flags, size_t *total_sent, 
+    bool raw, bool split,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
 
     u8 retval = 1;
 
-    if (packet) {
-        switch (packet->connection->protocol) {
+    if (packet && connection) {
+        switch (connection->protocol) {
             case PROTOCOL_TCP: {
                 size_t sent = 0;
-                if (!packet_send_tcp (packet, flags, &sent, raw)) {
+
+                if (!(split ? packet_send_split_tcp (packet, flags, &sent)
+                    : packet_send_tcp (packet, flags, &sent, raw))) {
                     if (total_sent) *total_sent = sent;
-                    packet_send_update_stats (packet->packet_type, sent,
-                        packet->cerver, packet->client, packet->connection, packet->lobby);
+
+                    packet_send_update_stats (
+                        packet->packet_type, sent,
+                        cerver, client, connection, lobby
+                    );
 
                     retval = 0;
                 }
@@ -582,13 +640,14 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
                     printf ("\n");
                     #endif
 
-                    if (packet->cerver) packet->cerver->stats->sent_packets->n_bad_packets += 1;
-                    if (packet->client) packet->client->stats->sent_packets->n_bad_packets += 1;
-                    if (packet->connection) packet->connection->stats->sent_packets->n_bad_packets += 1;
+                    if (cerver) cerver->stats->sent_packets->n_bad_packets += 1;
+                    if (client) client->stats->sent_packets->n_bad_packets += 1;
+                    if (connection) connection->stats->sent_packets->n_bad_packets += 1;
 
                     if (total_sent) *total_sent = 0;
                 }
             } break;
+
             case PROTOCOL_UDP:
                 break;
 
@@ -600,30 +659,97 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 }
 
+// sends a packet using its network values
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+
+    return packet_send_internal (
+        packet, flags, total_sent, 
+        raw, false,
+        packet->cerver, packet->client, packet->connection, packet->lobby
+    );
+
+}
+
+// sends a packet to the specified destination
+// sets flags to 0
+// at least a packet & an active connection are required for this method to succeed
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+
+    return packet_send_internal (
+        packet, 0, total_sent, 
+        raw, false,
+        cerver, client, connection, lobby
+    );
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// this method can be useful when trying to forward a big received packet without the overhead of 
+// performing and additional copy to create a continuos data (packet) buffer
+// the socket's write mutex will be locked to ensure that the packet
+// is sent correctly and to avoid race conditions
+// returns 0 on success, 1 on error
+u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
+
+    return packet_send_internal (
+        packet, flags, total_sent, 
+        false, true,
+        packet->cerver, packet->client, packet->connection, packet->lobby
+    );
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// works just as packet_send_split () but with the flags set to 0
+// returns 0 on success, 1 on error
+u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+
+    return packet_send_internal (
+        packet, 0, total_sent, 
+        false, true,
+        cerver, client, connection, lobby
+    );
+
+}
+
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd, 
+u8 packet_send_to_socket (const Packet *packet, Socket *socket, 
     int flags, size_t *total_sent, bool raw) {
 
+    u8 retval = 0;
+
     if (packet) {
-        ssize_t sent;
+        ssize_t sent = 0;
         const char *p = raw ? (char *) packet->data : (char *) packet->packet;
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
+        pthread_mutex_lock (socket->write_mutex);
+
         while (packet_size > 0) {
-            sent = send (sock_fd, p, packet_size, flags);
-            if (sent < 0) return 1;
+            sent = send (socket->sock_fd, p, packet_size, flags);
+            if (sent < 0) {
+                retval = 1;
+                break;
+            };
+
             p += sent;
             packet_size -= sent;
         }
 
-        if (total_sent) *total_sent = sent;
+        if (total_sent) *total_sent = (size_t) sent;
 
-        return 0;
+        pthread_mutex_lock (socket->write_mutex);
     }
 
-    return 1;
+    return retval;
 
 }
 
