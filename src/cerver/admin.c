@@ -22,7 +22,7 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection);
+u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection);
 static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection);
 
 #pragma region stats
@@ -1177,7 +1177,7 @@ static i32 admin_cerver_poll_get_idx_by_sock_fd (AdminCerver *admin_cerver, i32 
 
 // regsiters a client connection to the cerver's admin poll array
 // returns 0 on success, 1 on error
-static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection) {
+u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection) {
 
     u8 retval = 1;
 

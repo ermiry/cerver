@@ -124,7 +124,7 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
         if (client) {
             connection_register_to_client (client, packet->connection);
 
-            client_set_data (client, auth_data->data, auth_data->delete_data);
+            // client_set_data (client, auth_data->data, auth_data->delete_data);
 
             // if the cerver is configured to use sessions, we need to generate a new session id with the
             // session id generator method and add it to the client
@@ -132,8 +132,6 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
             // any new connections that authenticates using the session id (token), 
             // will be added to this client
             if (packet->cerver->use_sessions) {
-                // FIXME: add documentation to session id method
-
                 SessionData *session_data = session_data_new (packet, auth_data, client);
 
                 char *session_id = (char *) packet->cerver->session_id_generator (session_data);
@@ -154,8 +152,21 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
                         stderr, LOG_ERROR, LOG_CLIENT, 
                         "Failed to generate client session id!"
                     );
+
+                    char *s = c_string_create ("auth_create_new_client () - failed to generate client's <%ld> session id!",
+                        client->id);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+
+                    client_connection_remove (client, packet->connection);
                     
-                    // FIXME: drop the client
+                    // remove the connection from on hold structures to stop receiving data
+                    on_hold_connection_drop (packet->cerver, packet->connection);
+
+                    client_delete (client);
+                    client = NULL;
                 }
 
                 session_data_delete (session_data);
@@ -191,7 +202,6 @@ static void auth_failed (const Packet *packet) {
 
 }
 
-// FIXME: check this method!
 // authenticate a new connection using a session token
 // if we find a client with that token, we register the connection to him;
 // if we don't find a client, the token is invalid
@@ -216,14 +226,8 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
             #endif
 
             if (!connection_register_to_client (client, packet->connection)) {
-                // remove the connection from the on hold structures
-                if (!on_hold_connection_remove (packet->cerver, packet->connection)) {
-                    // add the connection sock fd to the cerver poll fds
-                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
-                    
-                    // send success auth packet to client
-                    auth_send_success_packet (packet->cerver, packet->connection);
-                }
+                // send success auth packet to client
+                auth_send_success_packet (packet->cerver, packet->connection);
 
                 retval = 0;
             }
@@ -395,8 +399,15 @@ static void auth_try (Packet *packet) {
                     }
                 }
 
+                // added connection to client with matching id (token)
                 else {
-                    // FIXME: sessions
+                    Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
+
+                    // register connection to cerver structures
+                    connection_register_to_cerver (packet->cerver, match, packet->connection);
+
+                    // add connection's sock fd to cerver's main poll array
+                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
                 }
             }
         }
@@ -454,8 +465,10 @@ static void admin_auth_try (Packet *packet) {
                         }
                     }
 
+                    // added connection to client with matching id (token)
                     else {
-                        // FIXME: sessions
+                        // register the new connection to the cerver admin's poll array
+                        admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
                     }
                 }
             }

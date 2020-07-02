@@ -247,4 +247,12 @@ extern void admin_packet_handler (struct _Packet *packet);
 
 #pragma endregion
 
+#pragma region poll
+
+// regsiters a client connection to the cerver's admin poll array
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, struct _Connection *connection);
+
+#pragma endregion
+
 #endif
