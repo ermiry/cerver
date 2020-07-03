@@ -8,6 +8,7 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 
 #include "cerver/threads/jobs.h"
 
@@ -157,16 +158,6 @@ extern void sock_receive_delete (void *sock_receive_ptr);
 #pragma endregion
 
 #pragma region receive
-
-typedef enum ReceiveType {
-
-    RECEIVE_TYPE_NONE            = 0,
-
-    RECEIVE_TYPE_NORMAL          = 1,
-    RECEIVE_TYPE_ON_HOLD         = 2,
-    RECEIVE_TYPE_ADMIN           = 3,
-
-} ReceiveType;
 
 typedef struct ReceiveHandle {
 
