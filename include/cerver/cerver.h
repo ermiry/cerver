@@ -23,20 +23,23 @@
 
 #include "cerver/game/game.h"
 
-#define DEFAULT_CONNECTION_QUEUE        7
+#define DEFAULT_CONNECTION_QUEUE            7
 
-#define DEFAULT_TH_POOL_INIT            4
+#define DEFAULT_TH_POOL_INIT                4
 
-#define MAX_PORT_NUM                    65535
-#define MAX_UDP_PACKET_SIZE             65515
+#define MAX_PORT_NUM                        65535
+#define MAX_UDP_PACKET_SIZE                 65515
 
-#define DEFAULT_POLL_TIMEOUT            2000
-#define poll_n_fds                      100         // n of fds for the pollfd array
+#define DEFAULT_POLL_TIMEOUT                2000
+#define poll_n_fds                          100         // n of fds for the pollfd array
 
-#define DEFAULT_SOCKETS_INIT            10
+#define DEFAULT_SOCKETS_INIT                10
 
 #define DEFAULT_MAX_INACTIVE_TIME           60
 #define DEFAULT_CHECK_INACTIVE_INTERVAL     30
+
+#define DEFAULT_UPDATE_TICKS                15
+#define DEFAULT_UPDATE_INTERVAL_SECS        1
 
 struct _Cerver;
 struct _AdminCerver;
@@ -409,7 +412,7 @@ extern u8 cerver_teardown (Cerver *cerver);
 
 #pragma endregion
 
-// 31/01/2020 -- 11:15 -- aux structure for cerver update methods
+// aux structure for cerver update methods
 struct _CerverUpdate {
 
     Cerver *cerver;
@@ -418,6 +421,10 @@ struct _CerverUpdate {
 };
 
 typedef struct _CerverUpdate CerverUpdate;
+
+extern CerverUpdate *cerver_update_new (Cerver *cerver, void *args);
+
+extern void cerver_update_delete (void *cerver_update_ptr);
 
 #pragma region serialization
 

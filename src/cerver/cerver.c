@@ -279,7 +279,6 @@ Cerver *cerver_new (void) {
         c->app_error_packet_handler_delete_packet = true;
         c->custom_packet_handler_delete_packet = true;
 
-        // 10/05/2020
         c->handlers = NULL;
         c->handlers_lock = NULL;
 
@@ -287,9 +286,11 @@ Cerver *cerver_new (void) {
 
         c->update = NULL;
         c->update_args = NULL;
+        c->update_ticks = DEFAULT_UPDATE_TICKS;
 
         c->update_interval = NULL;
         c->update_interval_args = NULL;
+        c->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
 
         c->admin = NULL;
 
@@ -1538,7 +1539,7 @@ static u8 cerver_start_inactive (Cerver *cerver) {
 
 }
 
-static CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
+CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
 
     CerverUpdate *cu = (CerverUpdate *) malloc (sizeof (CerverUpdate));
     if (cu) {
@@ -1550,7 +1551,7 @@ static CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
 
 }
 
-static inline void cerver_update_delete (void *cerver_update_ptr) {
+void cerver_update_delete (void *cerver_update_ptr) {
 
     if (cerver_update_ptr) free (cerver_update_ptr);
 
@@ -1564,7 +1565,12 @@ static void cerver_update (void *args) {
         Cerver *cerver = (Cerver *) args;
         
         #ifdef CERVER_DEBUG
-        cerver_log_success ("cerver_update () has started!");
+        char *s = c_string_create ("Cerver's %s cerver_update () has started!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
         #endif
 
         CerverUpdate *cu = cerver_update_new (cerver, cerver->update_args);
@@ -1577,7 +1583,7 @@ static void cerver_update (void *args) {
 
         u64 delta_ticks = 0;
         u32 fps = 0;
-        struct timespec start, middle, end;
+        struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
         while (cerver->isRunning) {
             clock_gettime (CLOCK_MONOTONIC_RAW, &start);
@@ -1609,6 +1615,15 @@ static void cerver_update (void *args) {
         }
 
         cerver_update_delete (cu);
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Cerver's %s cerver_update () has ended!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
     }
 
 }
@@ -1621,7 +1636,12 @@ static void cerver_update_interval (void *args) {
         Cerver *cerver = (Cerver *) args;
         
         #ifdef CERVER_DEBUG
-        cerver_log_success ("cerver_update_interval () has started!");
+        char *s = c_string_create ("Cerver's %s cerver_update_interval () has started!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
         #endif
 
         CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
@@ -1633,6 +1653,15 @@ static void cerver_update_interval (void *args) {
         }
 
         cerver_update_delete (cu);
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Cerver's %s cerver_update_interval () has ended!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
     }
 
 }
@@ -1952,7 +1981,7 @@ u8 cerver_start (Cerver *cerver) {
                     free (status);
                 }
 
-                errors |= admin_cerver_start (cerver);
+                errors |= admin_cerver_start (cerver->admin);
             } 
 
             // 17/06/2020
