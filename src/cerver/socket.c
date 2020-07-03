@@ -5,6 +5,7 @@
 #include "cerver/socket.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
+#include "cerver/handler.h"
 
 static Socket *socket_new (void) {
 
@@ -72,26 +73,40 @@ Socket *socket_create (int fd) {
 
 }
 
-Socket *socket_get_by_fd (Cerver *cerver, int sock_fd, bool on_hold) {
+Socket *socket_get_by_fd (Cerver *cerver, int sock_fd, ReceiveType receive_type) {
 
     Socket *retval = NULL;
 
     if (cerver) {
-        if (on_hold) {
-            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
-            if (connection) {
-                retval = connection->socket;
-            }
-        }
+        Connection *connection = NULL;
+        switch (receive_type) {
+            case RECEIVE_TYPE_NONE: break;
 
-        else {
-            Client *client = client_get_by_sock_fd (cerver, sock_fd);
-            if (client) {
-                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+            case RECEIVE_TYPE_NORMAL: {
+                Client *client = client_get_by_sock_fd (cerver, sock_fd);
+                if (client) {
+                    connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                    if (connection) {
+                        retval = connection->socket;
+                    }
+                }
+            } break;
+
+            case RECEIVE_TYPE_ON_HOLD: {
+                connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
                 if (connection) {
                     retval = connection->socket;
                 }
-            }
+            } break;
+
+            case RECEIVE_TYPE_ADMIN: {
+                connection = connection_get_by_sock_fd_from_admin (cerver->admin, sock_fd);
+                if (connection) {
+                    retval = connection->socket;
+                }
+            } break;
+
+            default: break;
         }
     }
 

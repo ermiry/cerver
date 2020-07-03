@@ -1873,8 +1873,8 @@ static inline void cerver_poll_handle (Cerver *cerver) {
         // one or more fd(s) are readable, need to determine which ones they are
         for (u32 i = 0; i < cerver->max_n_fds; i++) {
             if (cerver->fds[i].fd != -1) {
-                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, false);
-                CerverReceive *cr = cerver_receive_new (cerver, socket, false, NULL);
+                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, RECEIVE_TYPE_NORMAL);
+                CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_NORMAL, NULL);
 
                 switch (cerver->fds[i].revents) {
                     // A connection setup has been completed or new data arrived
