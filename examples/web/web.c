@@ -91,7 +91,7 @@ void app_handle_received_buffer (void *rcvd_buffer_data) {
 	if (rcvd_buffer_data) {
 		ReceiveHandle *receive = (ReceiveHandle *) rcvd_buffer_data;
 
-		pthread_mutex_lock (receive->socket->mutex);
+		pthread_mutex_lock (receive->socket->read_mutex);
 
 		if (receive->buffer && (receive->buffer_size > 0)) {
 			char *method, *path;
@@ -136,7 +136,7 @@ void app_handle_received_buffer (void *rcvd_buffer_data) {
 			}
 		}
 
-		pthread_mutex_unlock (receive->socket->mutex);
+		pthread_mutex_unlock (receive->socket->read_mutex);
 
 		// In latest cerver 1.4 you need to call this here!
 		receive_handle_delete (receive);
