@@ -103,7 +103,7 @@ u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *con
                     NULL
                 );
 
-                if (packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
+                if (!packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
                     retval = 0;
                 }
 
@@ -164,7 +164,7 @@ void cerver_stats_print (Cerver *cerver) {
 
     if (cerver) {
         if (cerver->stats) {
-            printf ("\nCerver's %s stats: ", cerver->info->name->str);
+            printf ("\nCerver's %s stats: \n", cerver->info->name->str);
             printf ("Threshold time:                %ld\n", cerver->stats->threshold_time);
 
             if (cerver->auth_required) {
@@ -1676,7 +1676,12 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
         cerver->num_handlers_working = 0;
 
         #ifdef CERVER_DEBUG
-        cerver_log_debug ("Initializing multiple app handlers...");
+        char *s = c_string_create ("Initializing cerver %s multiple app handlers...",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            free (s);
+        }
         #endif
 
         for (unsigned int i = 0; i < cerver->n_handlers; i++) {
@@ -1692,7 +1697,12 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
             while (cerver->num_handlers_alive != cerver->n_handlers) {}
 
             #ifdef CERVER_DEBUG
-            cerver_log_success ("Multiple app handlers are ready!");
+            char *s = c_string_create ("Cerver %s multiple app handlers are ready!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                free (s);
+            }
             #endif
         }
 
