@@ -155,7 +155,7 @@ extern u8 client_connection_add (Client *client, struct _Connection *connection)
 // returns 0 on success, 1 on error
 extern u8 client_connection_remove (Client *client, struct _Connection *connection);
 
-// closes the connection & them removes it from the client & finally deletes the connection
+// closes the connection & then removes it from the client & finally deletes the connection
 // moves the socket to the cerver's socket pool
 // returns 0 on success, 1 on error
 extern u8 client_connection_drop (struct _Cerver *cerver, Client *client, struct _Connection *connection);

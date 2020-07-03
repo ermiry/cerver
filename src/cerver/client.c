@@ -387,7 +387,7 @@ u8 client_connection_remove (Client *client, Connection *connection) {
 
 }
 
-// closes the connection & them removes it from the client & finally deletes the connection
+// closes the connection & then removes it from the client & finally deletes the connection
 // moves the socket to the cerver's socket pool
 // returns 0 on success, 1 on error
 u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connection) {
@@ -395,7 +395,7 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
     u8 retval = 1;
 
     if (cerver && client && connection) {
-        if (!dlist_remove (client->connections, connection, NULL)) {
+        if (dlist_remove (client->connections, connection, NULL)) {
             // close the socket
             connection_end (connection);
 
