@@ -103,7 +103,6 @@ extern u8 admin_send_packet (Admin *admin, struct _Packet *packet);
 #define DEFAULT_MAX_ADMIN_CONNECTIONS				1
 
 #define DEFAULT_N_BAD_PACKETS_LIMIT					5
-#define DEFAULT_N_BAD_PACKETS_LIMIT_AUTH			20
 
 #define DEFAULT_ADMIN_MAX_N_FDS						10
 #define DEFAULT_ADMIN_POLL_TIMEOUT					2000
@@ -121,7 +120,6 @@ struct _AdminCerver {
 
 	// number of bad packets before ending connection
 	u32 n_bad_packets_limit;
-	u32 n_bad_packets_limit_auth;		// for auth admins we might want more tolerance
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
@@ -185,8 +183,7 @@ extern void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u
 // n_bad_packets_limit for NON auth admins
 // n_bad_packets_limit_auth for authenticated clients
 // -1 to use defaults (5 and 20)
-extern void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, 
-	i32 n_bad_packets_limit, i32 n_bad_packets_limit_auth);
+extern void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, i32 n_bad_packets_limit);
 
 // sets the max number of poll fds for the admin cerver
 extern void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds);

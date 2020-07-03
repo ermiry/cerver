@@ -314,7 +314,6 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->max_admin_connections = DEFAULT_MAX_ADMIN_CONNECTIONS;
 
 		admin_cerver->n_bad_packets_limit = DEFAULT_N_BAD_PACKETS_LIMIT;
-		admin_cerver->n_bad_packets_limit_auth = DEFAULT_N_BAD_PACKETS_LIMIT_AUTH;
 
 		admin_cerver->fds = NULL;
 		admin_cerver->max_n_fds = DEFAULT_ADMIN_MAX_N_FDS;
@@ -420,12 +419,10 @@ void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u8 max_a
 // n_bad_packets_limit for NON auth admins
 // n_bad_packets_limit_auth for authenticated clients
 // -1 to use defaults (5 and 20)
-void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, 
-	i32 n_bad_packets_limit, i32 n_bad_packets_limit_auth) {
+void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, i32 n_bad_packets_limit) {
 
 	if (admin_cerver) {
 		admin_cerver->n_bad_packets_limit = n_bad_packets_limit > 0 ? n_bad_packets_limit : DEFAULT_N_BAD_PACKETS_LIMIT;
-		admin_cerver->n_bad_packets_limit_auth = n_bad_packets_limit_auth > 0 ? n_bad_packets_limit : DEFAULT_N_BAD_PACKETS_LIMIT_AUTH;
 	}
 
 }
