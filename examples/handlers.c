@@ -140,7 +140,7 @@ int main (void) {
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		/*** cerver configuration ***/
-		cerver_set_receive_buffer_size (my_cerver, 16384);
+		cerver_set_receive_buffer_size (my_cerver, 4096);
 
 		Handler *app_handler = handler_create (my_app_handler);
 		handler_set_direct_handle (app_handler, true);
