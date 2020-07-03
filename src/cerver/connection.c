@@ -19,6 +19,7 @@
 #include "cerver/client.h"
 #include "cerver/packets.h"
 #include "cerver/auth.h"
+#include "cerver/admin.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -389,7 +390,7 @@ void connection_end (Connection *connection) {
 }
 
 // gets the connection from the on hold connections map in cerver
-Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, i32 sock_fd) {
+Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 sock_fd) {
 
     Connection *connection = NULL;
 
@@ -408,7 +409,7 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, i32 sock_fd)
 }
 
 // gets the connection from the client by its sock fd
-Connection *connection_get_by_sock_fd_from_client (Client *client, i32 sock_fd) {
+Connection *connection_get_by_sock_fd_from_client (Client *client, const i32 sock_fd) {
 
     Connection *retval = NULL;
 
@@ -419,6 +420,28 @@ Connection *connection_get_by_sock_fd_from_client (Client *client, i32 sock_fd) 
             if (con->socket->sock_fd == sock_fd) {
                 retval = con;
                 break;
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+// gets the connection from the admin cerver by its sock fd
+Connection *connection_get_by_sock_fd_from_admin (AdminCerver *admin_cerver, const i32 sock_fd) {
+
+    Connection *retval = NULL;
+
+    if (admin_cerver) {
+        Connection *con = NULL;
+        for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+            for (ListElement *le_sub = dlist_start (((Admin *) le->data)->client->connections); le_sub; le_sub = le_sub->next) {
+                con = (Connection *) le_sub->data;
+                if (con->socket->sock_fd == sock_fd) {
+                    retval = con;
+                    break;
+                }
             }
         }
     }
