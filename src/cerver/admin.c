@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
 #include <pthread.h>
 #include <poll.h>
 
@@ -338,12 +339,12 @@ AdminCerver *admin_cerver_new (void) {
         admin_cerver->update_thread_id = 0;
         admin_cerver->update = NULL;
         admin_cerver->update_args = NULL;
-        admin_cerver->update_ticks = 0;
+        admin_cerver->update_ticks = DEFAULT_UPDATE_TICKS;
 
         admin_cerver->update_interval_thread_id = 0;
         admin_cerver->update_interval = NULL;
         admin_cerver->update_interval_args = NULL;
-        admin_cerver->update_interval_secs = 0;
+        admin_cerver->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
 
 		admin_cerver->stats = NULL;
 	}
@@ -641,6 +642,115 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
 
 static void *admin_poll (void *cerver_ptr);
 
+// called in a dedicated thread only if a user method was set
+// executes methods every tick
+static void admin_cerver_update (void *args) {
+
+    if (args) {
+        AdminCerver *admin_cerver = (AdminCerver *) admin_cerver;
+        
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver's %s admin_cerver_update () has started!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_args);
+
+        u32 time_per_frame = 1000000 / admin_cerver->update_ticks;
+        // printf ("time per frame: %d\n", time_per_frame);
+        u32 temp = 0;
+        i32 sleep_time = 0;
+        u64 delta_time = 0;
+
+        u64 delta_ticks = 0;
+        u32 fps = 0;
+        struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
+
+        while (admin_cerver->cerver->isRunning) {
+            clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+
+            // do stuff
+            if (admin_cerver->update) admin_cerver->update (cu);
+
+            // limit the fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+            temp = (middle.tv_nsec - start.tv_nsec) / 1000;
+            // printf ("temp: %d\n", temp);
+            sleep_time = time_per_frame - temp;
+            // printf ("sleep time: %d\n", sleep_time);
+            if (sleep_time > 0) {
+                usleep (sleep_time);
+            } 
+
+            // count fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+            delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
+            delta_ticks += delta_time;
+            fps++;
+            // printf ("delta ticks: %ld\n", delta_ticks);
+            if (delta_ticks >= 1000) {
+                // printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+                delta_ticks = 0;
+                fps = 0;
+            }
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef ADMIN_DEBUG
+        s = c_string_create ("Cerver's %s admin_cerver_update () has ended!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
+
+}
+
+// called in a dedicated thread only if a user method was set
+// executes methods every x seconds
+static void admin_cerver_update_interval (void *args) {
+
+    if (args) {
+        AdminCerver *admin_cerver = (AdminCerver *) args;
+        
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver's %s admin_cerver_update_interval () has started!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_interval_args);
+
+        while (admin_cerver->cerver->isRunning) {
+            if (admin_cerver->update_interval) admin_cerver->update_interval (cu);
+
+            sleep (admin_cerver->update_interval_secs);
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef ADMIN_DEBUG
+        s = c_string_create ("Cerver's %s admin_cerver_update_interval () has ended!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
+
+}
+
 // inits admin cerver's internal structures & values
 static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
 
@@ -868,21 +978,51 @@ static u8 admin_cerver_start_poll (Cerver *cerver) {
 
 }
 
-u8 admin_cerver_start (Cerver *cerver) {
+u8 admin_cerver_start (AdminCerver *admin_cerver) {
 
 	u8 retval = 1;
 
-	if (cerver) {
-		if (!admin_cerver_start_internal (cerver->admin)) {
-			if (!admin_cerver_handlers_start (cerver->admin)) {
-				if (!admin_cerver_start_poll (cerver)) {
+	if (admin_cerver) {
+		if (!admin_cerver_start_internal (admin_cerver)) {
+            if (admin_cerver->update) {
+                if (thread_create_detachable (
+                    &admin_cerver->update_thread_id,
+                    (void *(*) (void *)) admin_cerver_update,
+                    admin_cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s ADMIN UPDATE thread!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+
+            if (admin_cerver->update_interval) {
+                if (thread_create_detachable (
+                    &admin_cerver->update_interval_thread_id,
+                    (void *(*) (void *)) admin_cerver_update_interval,
+                    admin_cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s ADMIN UPDATE INTERVAL thread!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+
+			if (!admin_cerver_handlers_start (admin_cerver)) {
+				if (!admin_cerver_start_poll (admin_cerver->cerver)) {
 					retval = 0;
 				}
 			}
 
 			else {
 				char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin handlers!",
-					cerver->info->name->str);
+					admin_cerver->cerver->info->name->str);
 				if (status) {
 					cerver_log_error (status);
 					free (status);
@@ -892,7 +1032,7 @@ u8 admin_cerver_start (Cerver *cerver) {
 
 		else {
 			char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin internal!",
-				cerver->info->name->str);
+				admin_cerver->cerver->info->name->str);
 			if (status) {
 				cerver_log_error (status);
 				free (status);

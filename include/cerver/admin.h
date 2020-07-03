@@ -256,7 +256,7 @@ extern u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin
 
 #pragma region start
 
-extern u8 admin_cerver_start (struct _Cerver *cerver);
+extern u8 admin_cerver_start (AdminCerver *admin_cerver);
 
 #pragma endregion
 
