@@ -450,26 +450,43 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 }
 
-static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, bool on_hold) {
+// FIXME: this is practicaly the same method as socket_get_by_fd ()
+// so we are performing the same operations twice!! to get the same connection
+// possible fix - get the connection when calling socket_get_by_fd () and add it to ReceiveHandle
+static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, ReceiveType receive_type) {
 
     SockReceive *sock_receive = NULL;
 
     if (cerver) {
-        if (on_hold) {
-            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
-            if (connection) {
-                sock_receive = connection->sock_receive;
-            }
-        }
+        Connection *connection = NULL;
+        switch (receive_type) {
+            case RECEIVE_TYPE_NONE: break;
 
-        else {
-            Client *client = client_get_by_sock_fd (cerver, sock_fd);
-            if (client) {
-                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+            case RECEIVE_TYPE_NORMAL: {
+                Client *client = client_get_by_sock_fd (cerver, sock_fd);
+                if (client) {
+                    connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+                    if (connection) {
+                        sock_receive = connection->sock_receive;
+                    }
+                }
+            } break;
+
+            case RECEIVE_TYPE_ON_HOLD: {
+                connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
                 if (connection) {
                     sock_receive = connection->sock_receive;
                 }
-            }
+            } break;
+
+            case RECEIVE_TYPE_ADMIN: {
+                connection = connection_get_by_sock_fd_from_admin (cerver->admin, sock_fd);
+                if (connection) {
+                    sock_receive = connection->sock_receive;
+                }
+            } break;
+
+            default: break;
         }
     }
 
