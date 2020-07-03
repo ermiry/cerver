@@ -650,47 +650,6 @@ void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
 
 }
 
-static Connection *on_hold_connection_get_by_sock (const Cerver *cerver, const i32 sock_fd) {
-
-    Connection *connection = NULL;
-
-    if (cerver) {
-        Connection *query = connection_new ();
-        if (query) {
-            // query->sock_fd = sock_fd;
-            query->socket = socket_create (sock_fd);
-            void *connection_data = avl_get_node_data (cerver->on_hold_connections, query, NULL);
-            if (connection_data) {
-                connection = (Connection *) connection_data;
-            }
-
-            else {
-                char *status = c_string_create ("Failed to get on hold connection associated with sock: %i", 
-                    sock_fd);
-                if (status) {
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                    free (status);
-                }
-            }
-        }
-
-        else {
-            // cerver error allocating memory -- this might not happen
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to create connection query in cerver %s.",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
-                free (status);
-            }
-            #endif
-        }    
-    }
-
-    return connection;
-
-}
-
 #pragma endregion
 
 #pragma region poll
@@ -844,8 +803,8 @@ static inline void on_hold_poll_handle (Cerver *cerver) {
         // one or more fd(s) are readable, need to determine which ones they are
         for (u32 i = 0; i < cerver->max_on_hold_connections; i++) {
             if (cerver->fds[i].fd > -1) {
-                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
-                CerverReceive *cr = cerver_receive_new (cerver, socket, true, NULL);
+                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, RECEIVE_TYPE_ON_HOLD);
+                CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_ON_HOLD, NULL);
 
                 switch (cerver->hold_fds[i].revents) {
                     // A connection setup has been completed or new data arrived
