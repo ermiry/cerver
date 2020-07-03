@@ -571,6 +571,13 @@ void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update,
 
 }
 
+// returns the current number of connected admins
+u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver) {
+
+    return admin_cerver ? (u8) dlist_size (admin_cerver->admins) : 1; 
+
+}
+
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) {
@@ -644,7 +651,7 @@ static void *admin_poll (void *cerver_ptr);
 static void admin_cerver_update (void *args) {
 
     if (args) {
-        AdminCerver *admin_cerver = (AdminCerver *) admin_cerver;
+        AdminCerver *admin_cerver = (AdminCerver *) args;
         
         #ifdef ADMIN_DEBUG
         char *s = c_string_create ("Cerver's %s admin_cerver_update () has started!",

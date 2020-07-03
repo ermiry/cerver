@@ -592,8 +592,8 @@ void lobby_poll (void *ptr) {
                     cerver_receive (
                         cerver_receive_new (
                             cerver, 
-                            socket_get_by_fd (cerver, lobby->players_fds[i].fd, false),
-                            false,
+                            socket_get_by_fd (cerver, lobby->players_fds[i].fd, RECEIVE_TYPE_NORMAL),
+                            RECEIVE_TYPE_NORMAL,
                             NULL
                         )
                     );

@@ -236,6 +236,9 @@ extern void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, v
 // the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
 extern void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval);
 
+// returns the current number of connected admins
+extern u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver);
+
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
