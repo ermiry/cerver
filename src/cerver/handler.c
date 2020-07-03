@@ -364,11 +364,21 @@ int handler_start (Handler *handler) {
             // 26/05/2020 -- 12:54 
             // handler's threads are not explicitly joined by pthread_join () 
             // on cerver teardown
-            retval = thread_create_detachable (
+            if (!thread_create_detachable (
                 &handler->thread_id,
                 (void *(*)(void *)) handler_do,
                 (void *) handler
-            );
+            )) {
+                #ifdef HANDLER_DEBUG
+                char *s = c_string_create ("Created handler %d thread!", handler->unique_id);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, s);
+                    free (s);
+                }
+                #endif
+
+                retval = 0;
+            }
         }
 
         else {
