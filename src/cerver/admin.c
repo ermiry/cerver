@@ -335,6 +335,16 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->app_error_packet_handler_delete_packet = true;
 		admin_cerver->custom_packet_handler_delete_packet = true;
 
+        admin_cerver->update_thread_id = 0;
+        admin_cerver->update = NULL;
+        admin_cerver->update_args = NULL;
+        admin_cerver->update_ticks = 0;
+
+        admin_cerver->update_interval_thread_id = 0;
+        admin_cerver->update_interval = NULL;
+        admin_cerver->update_interval_args = NULL;
+        admin_cerver->update_interval_secs = 0;
+
 		admin_cerver->stats = NULL;
 	}
 
@@ -534,6 +544,32 @@ unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver) {
     }
 
     return retval;
+
+}
+
+// sets a custom update function to be executed every n ticks
+// a new thread will be created that will call your method each tick
+// the update args will be passed to your method as a CerverUpdate & won't be deleted 
+void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps) {
+
+    if (admin_cerver) {
+        admin_cerver->update = update;
+        admin_cerver->update_args = update_args;
+        admin_cerver->update_ticks = fps;
+    }
+
+}
+
+// sets a custom update method to be executed every x seconds (in intervals)
+// a new thread will be created that will call your method every x seconds
+// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
+void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval) {
+
+    if (admin_cerver) {
+        admin_cerver->update_interval = update;
+        admin_cerver->update_interval_args = update_args;
+        admin_cerver->update_interval_secs = interval;
+    }
 
 }
 
@@ -1335,8 +1371,7 @@ static inline void admin_poll_handle (Cerver *cerver) {
         // one or more fd(s) are readable, need to determine which ones they are
         for (u32 i = 0; i < cerver->admin->max_n_fds; i++) {
             if (cerver->fds[i].fd > -1) {
-				// FIXME: pass admin type to both methods
-                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, true);
+                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, RECEIVE_TYPE_ADMIN);
                 CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_ADMIN, NULL);
 
                 switch (cerver->hold_fds[i].revents) {

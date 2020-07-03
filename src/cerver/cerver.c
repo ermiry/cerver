@@ -620,6 +620,7 @@ void cerver_set_check_packets (Cerver *cerver, bool check_packets) {
 
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
+// the update args will be passed to your method as a CerverUpdate & won't be deleted 
 void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps) {
 
     if (cerver) {
@@ -632,7 +633,8 @@ void cerver_set_update (Cerver *cerver, Action update, void *update_args, const 
 
 // sets a custom cerver update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
-void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, u32 interval) {
+// the update args will be passed to your method as a CerverUpdate & won't be deleted 
+void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, const u32 interval) {
 
     if (cerver) {
         cerver->update_interval = update;

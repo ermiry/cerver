@@ -149,6 +149,16 @@ struct _AdminCerver {
 	bool app_error_packet_handler_delete_packet;
 	bool custom_packet_handler_delete_packet;
 
+	pthread_t update_thread_id;
+    Action update;                          // method to be executed every tick
+    void *update_args;                      // args to pass to custom update method
+    u8 update_ticks;                        // like fps
+
+    pthread_t update_interval_thread_id;
+    Action update_interval;                 // the actual method to execute every x seconds
+    void *update_interval_args;             // args to pass to the update method
+    u32 update_interval_secs;               // the interval in seconds
+
 	struct _AdminCerverStats *stats;
 
 };
@@ -218,6 +228,16 @@ extern unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver
 
 // returns the total number of handlers currently working (handling a packet)
 extern unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver);
+
+// sets a custom update function to be executed every n ticks
+// a new thread will be created that will call your method each tick
+// the update args will be passed to your method as a CerverUpdate & won't be deleted 
+extern void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps);
+
+// sets a custom update method to be executed every x seconds (in intervals)
+// a new thread will be created that will call your method every x seconds
+// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
+extern void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval);
 
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
