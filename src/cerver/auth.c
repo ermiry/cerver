@@ -688,11 +688,11 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
 
         i32 idx = on_hold_get_free_idx (cerver);
         if (idx >= 0) {
-            cerver->fds[idx].fd = connection->socket->sock_fd;
-            cerver->fds[idx].events = POLLIN;
-            cerver->current_n_fds++;
+            cerver->hold_fds[idx].fd = connection->socket->sock_fd;
+            cerver->hold_fds[idx].events = POLLIN;
+            cerver->current_on_hold_nfds++;
 
-            cerver->stats->current_n_hold_connections--;
+            cerver->stats->current_n_hold_connections++;
 
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Added sock fd <%d> to cerver %s ON HOLD poll, idx: %i", 
