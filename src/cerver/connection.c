@@ -93,14 +93,16 @@ Connection *connection_new (void) {
 
     Connection *connection = (Connection *) malloc (sizeof (Connection));
     if (connection) {
-        memset (connection, 0, sizeof (Connection));
-
         // connection->sock_fd = -1;
         connection->socket = NULL;
-        connection->use_ipv6 = false;
+        connection->port = 0;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
+        connection->use_ipv6 = false;
 
         connection->ip = NULL;
+        memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+        connection->connected_timestamp = 0;
 
         connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
         connection->connected_to_cerver = false;
@@ -113,12 +115,14 @@ Connection *connection_new (void) {
         connection->cerver_report = NULL;
         connection->sock_receive = NULL;
 
+        connection->update_thread_id = 0;
+        connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
+
         connection->full_packet = false;
 
         connection->received_data = NULL;
+        connection->received_data_size = 0;
         connection->received_data_delete = NULL;
-
-        connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
 
         connection->receive_packets = true;
         connection->custom_receive = NULL;
@@ -191,9 +195,11 @@ int connection_comparator (const void *a, const void *b) {
         Connection *con_a = (Connection *) a;
         Connection *con_b = (Connection *) b;
 
-        if (con_a->socket->sock_fd < con_b->socket->sock_fd) return -1;
-        else if (con_a->socket->sock_fd == con_b->socket->sock_fd) return 0;
-        else return 1; 
+        if (con_a->socket && con_b->socket) {
+            if (con_a->socket->sock_fd < con_b->socket->sock_fd) return -1;
+            else if (con_a->socket->sock_fd == con_b->socket->sock_fd) return 0;
+            else return 1; 
+        }
     }
 
     return 0;
@@ -249,6 +255,15 @@ void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 
 }
 
+// 17/06/2020
+// sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
+// the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
+void connection_set_update_sleep (Connection *connection, u32 sleep) {
+
+    if (connection) connection->update_sleep = sleep;
+
+}
+
 // sets the connection received data
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
 void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete) {
@@ -258,14 +273,6 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
         connection->received_data_size = data_size;
         connection->received_data_delete = data_delete;
     }
-
-}
-
-// 17/06/2020
-// sets the waiting time (sleep) between each call to recv () in connection_update () thread
-void connection_set_update_sleep (Connection *connection, u32 sleep) {
-
-    if (connection) connection->update_sleep = sleep;
 
 }
 

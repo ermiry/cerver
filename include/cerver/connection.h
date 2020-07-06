@@ -55,12 +55,11 @@ extern void connection_stats_print (struct _Connection *connection);
 // a connection from a client
 struct _Connection {
 
-    // connection values
     // i32 sock_fd;
     struct _Socket *socket;
-    bool use_ipv6;
-    Protocol protocol;
     u16 port;
+    Protocol protocol;
+    bool use_ipv6;
 
     estring *ip;
     struct sockaddr_storage address;
@@ -70,13 +69,16 @@ struct _Connection {
     u32 max_sleep;
     bool connected_to_cerver;
 
-    u8 auth_tries;                          // remaining attemps to authenticate
-
     bool active;
+    
+    u8 auth_tries;                          // remaining attemps to authenticate
 
     u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
     struct _CerverReport *cerver_report;    // 01/01/2020 - info about the cerver we are connecting to
     struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
+
+    pthread_t update_thread_id;
+    u32 update_sleep;
 
     // 16/06/2020 - used for direct requests to cerver
     bool full_packet;
@@ -85,9 +87,6 @@ struct _Connection {
     void *received_data;                    
     size_t received_data_size;
     Action received_data_delete;
-
-    pthread_t update_thread_id;
-    u32 update_sleep;
 
     bool receive_packets;                   // set if the connection will receive packets or not (default true)
     delegate custom_receive;                // custom receive method to handle incomming packets in the connection
@@ -135,7 +134,8 @@ extern void connection_set_receive_buffer_size (Connection *connection, u32 size
 extern void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
 
 // 17/06/2020
-// sets the waiting time (sleep) between each call to recv () in connection_update () thread
+// sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
+// the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
 extern void connection_set_update_sleep (Connection *connection, u32 sleep);
 
 typedef struct ConnectionCustomReceiveData {
