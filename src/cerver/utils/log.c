@@ -76,17 +76,10 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 			}
 
 			if (message) {
-				// log messages with color
 				switch (first_type) {
-					case LOG_DEBUG: 
-						if (second_type != LOG_NO_TYPE) fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s", first, message); 
-						else fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s", first, msg); 
-						break;
+					case LOG_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s", first, message); break;
 					
-					case LOG_TEST: 
-						if (second_type != LOG_NO_TYPE) fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s", first, message); 
-						else fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s", first, msg);
-						break;
+					case LOG_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s", first, message); break;
 
 					case LOG_ERROR: fprintf (__stream, LOG_COLOR_RED "%s" LOG_COLOR_RESET, message); break;
 					case LOG_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s" LOG_COLOR_RESET, message); break;
@@ -98,6 +91,20 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 				}
 
 				free (message);
+			}
+
+			else {
+				switch (first_type) {
+					case LOG_DEBUG: 
+						fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", first, msg); 
+						break;
+					
+					case LOG_TEST: 
+						fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", first, msg);
+						break;
+
+					default: break;
+				}
 			}
 
 			free (first);
