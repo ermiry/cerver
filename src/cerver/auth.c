@@ -524,12 +524,14 @@ static void cerver_auth_packet_handler (Packet *packet) {
 
 }
 
+// FIXME: drop after a number of bad requests
 // handles an packet from an on hold connection
 void on_hold_packet_handler (void *packet_ptr) {
 
     if (packet_ptr) {
         Packet *packet = (Packet *) packet_ptr;
-        if (!packet_check (packet)) {
+        // FIXME:
+        // if (!packet_check (packet)) {
             switch (packet->header->packet_type) {
                 // handles an error from the client
                 case ERROR_PACKET: /* TODO: */ break;
@@ -551,7 +553,7 @@ void on_hold_packet_handler (void *packet_ptr) {
                     #endif
                 } break;
             }
-        }
+        // }
 
         packet_delete (packet);
     }
