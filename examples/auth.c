@@ -80,37 +80,82 @@ static void handler (void *data) {
 
 }
 
-static u8 my_auth_method (void *auth_packet_ptr)  {
+static u8 my_auth_method_username (AuthMethod *auth_method, const char *username) {
 
 	u8 retval = 1;
 
-	if (auth_packet_ptr) {
-		AuthPacket *auth_packet = (AuthPacket *) auth_packet_ptr;
-		if (auth_packet->auth_data) {
-			if (auth_packet->auth_data->auth_data_size >= sizeof (Credentials)) {
-				Credentials *credentials = (Credentials *) auth_packet->auth_data->auth_data;
+	if (username) {
+		if (strlen (username) > 0) {
+			if (!strcmp (username, "ermiry")) {
+				retval = 0;		// success
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - Username does not exists!");
+				auth_method->error_message = estring_new ("Username does not exists!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - Username is required!");
+			auth_method->error_message = estring_new ("Username is required!");
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 my_auth_method_password (AuthMethod *auth_method, const char *password) {
+	
+	u8 retval = 1;
+
+	if (password) {
+		if (strlen (password) > 0) {
+			if (!strcmp (password, "hola12")) {
+				retval = 0;		// success auth
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - Password is incorrect!");
+				auth_method->error_message = estring_new ("Password is incorrect!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - Password is required!");
+			auth_method->error_message = estring_new ("Password is required!");
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 my_auth_method (void *auth_method_ptr)  {
+
+	u8 retval = 1;
+
+	if (auth_method_ptr) {
+		AuthMethod *auth_method = (AuthMethod *) auth_method_ptr;
+		if (auth_method->auth_data) {
+			if (auth_method->auth_data->auth_data_size >= sizeof (Credentials)) {
+				Credentials *credentials = (Credentials *) auth_method->auth_data->auth_data;
 
 				printf ("\nReceived credentials: \n");
 				printf ("\tUsername: %s\n", credentials->username);
 				printf ("\tPassword: %s\n", credentials->password);
 
-				if (!strcmp (credentials->username, "ermiry")) {
-					if (!strcmp (credentials->password, "hola12")) {
-						retval = 0;		// success auth
+				if (!my_auth_method_username (auth_method, credentials->username)) {
+					if (!my_auth_method_password (auth_method, credentials->password)) {
+						retval = 0;		// success
 					}
-
-					else {
-						cerver_log_error ("my_auth_method () - Password is incorrect!");
-					}
-				}
-
-				else {
-					cerver_log_error ("my_auth_method () - Username does not exists!");
 				}
 			}
 
 			else {
 				cerver_log_error ("my_auth_method () - auth data is of wrong size!");
+				auth_method->error_message = estring_new ("Missing auth data!");
 			}
 		}
 
@@ -120,7 +165,7 @@ static u8 my_auth_method (void *auth_packet_ptr)  {
 	}
 
 	else {
-		cerver_log_error ("my_auth_method () - NULL auth_packet_ptr!");
+		cerver_log_error ("my_auth_method () - NULL auth_method_ptr!");
 	}
 
 	return retval;
