@@ -564,6 +564,7 @@ void on_hold_packet_handler (void *packet_ptr) {
 
 #pragma region connections
 
+// FIXME: drop connection after n seconds of innactivity
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess or failed authentication
 // returns 0 on success, 1 on error
@@ -582,6 +583,8 @@ u8 on_hold_connection (Cerver *cerver, Connection *connection) {
                     connection, sizeof (Connection)
                 )) {
                     cerver_log_debug ("on_hold_connection () - inserted connection in on_hold_connection_sock_fd_map htab");
+
+                    retval = 0;     // success
                 }
 
                 else {
