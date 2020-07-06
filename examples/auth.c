@@ -7,6 +7,7 @@
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
+#include <cerver/auth.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -16,6 +17,13 @@ typedef enum AppRequest {
 	TEST_MSG		= 0
 
 } AppRequest;
+
+typedef struct Credentials {
+
+	char username[64];
+	char password[64];
+
+} Credentials;
 
 static Cerver *my_cerver = NULL;
 
@@ -72,6 +80,53 @@ static void handler (void *data) {
 
 }
 
+static u8 my_auth_method (void *auth_packet_ptr)  {
+
+	u8 retval = 1;
+
+	if (auth_packet_ptr) {
+		AuthPacket *auth_packet = (AuthPacket *) auth_packet_ptr;
+		if (auth_packet->auth_data) {
+			if (auth_packet->auth_data->auth_data_size >= sizeof (Credentials)) {
+				Credentials *credentials = (Credentials *) auth_packet->auth_data->auth_data;
+
+				printf ("\nReceived credentials: \n");
+				printf ("\tUsername: %s\n", credentials->username);
+				printf ("\tPassword: %s\n", credentials->password);
+
+				if (!strcmp (credentials->username, "ermiry")) {
+					if (!strcmp (credentials->password, "hola12")) {
+						retval = 0;		// success auth
+					}
+
+					else {
+						cerver_log_error ("my_auth_method () - Password is incorrect!");
+					}
+				}
+
+				else {
+					cerver_log_error ("my_auth_method () - Username does not exists!");
+				}
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - auth data is of wrong size!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - auth packet does not have auth data!");
+		}
+	}
+
+	else {
+		cerver_log_error ("my_auth_method () - NULL auth_packet_ptr!");
+	}
+
+	return retval;
+
+}
+
 int main (void) {
 
 	srand (time (NULL));
@@ -92,11 +147,14 @@ int main (void) {
 	if (my_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
-		cerver_set_thpool_n_threads (my_cerver, 4);
+		// cerver_set_thpool_n_threads (my_cerver, 4);
 
 		Handler *app_handler = handler_create (handler);
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
+
+		/*** cerver auth configuration ***/
+		cerver_set_auth (my_cerver, 2, my_auth_method);
 
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",

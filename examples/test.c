@@ -34,7 +34,8 @@ static void end (int dummy) {
 static void handle_test_request (Packet *packet) {
 
 	if (packet) {
-		cerver_log_debug ("Got a test message from client. Sending another one back...");
+		// cerver_log_debug ("Got a test message from client. Sending another one back...");
+		cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from client. Sending another one back...");
 		
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
