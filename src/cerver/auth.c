@@ -215,24 +215,24 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
 // send an ERR_FAILED_AUTH to the connection and update connection stats
 // if the connection's max auth tries has been reached, it will be dropped
-static void auth_failed (const Packet *packet) {
+static void auth_failed (Cerver *cerver, Connection *connection, const char *error_message) {
 
-    if (packet) {
+    if (cerver && connection) {
         // send failed auth packet to client
-        Packet *error_packet = error_packet_generate (ERR_FAILED_AUTH, "Failed to authenticate!");
+        Packet *error_packet = error_packet_generate (ERR_FAILED_AUTH, error_message);
         if (error_packet) {
-            packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
+            packet_set_network_values (error_packet, cerver, NULL, connection, NULL);
             packet_send (error_packet, 0, NULL, false);
             packet_delete (error_packet);
         }
 
-        packet->connection->auth_tries--;
-        if (packet->connection->auth_tries <= 0) {
-            #ifdef CERVER_DEBUG
+        connection->auth_tries--;
+        if (connection->auth_tries <= 0) {
+            #ifdef AUTH_DEBUG
             cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, 
                 "Connection reached max auth tries, dropping now...");
             #endif
-            on_hold_connection_drop (packet->cerver, packet->connection);
+            on_hold_connection_drop (cerver, connection);
         }
     }
 
@@ -252,7 +252,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
 
         // if we found a client, register the new connection to him
         if (client) {
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *status = c_string_create ("Found a client with session id %s in cerver %s.",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
@@ -271,7 +271,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
 
         else {
             // if not, the token is invalid!
-            auth_failed (packet);
+            auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
         }
     }
 
@@ -289,7 +289,7 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
         AuthMethod *auth_method = auth_method_create (packet, auth_data);
         if (auth_method) {
             if (!authenticate (auth_method)) {
-                #ifdef CERVER_DEBUG
+                #ifdef AUTH_DEBUG
                 char *status = c_string_create ("Client authenticated successfully to cerver %s",
                     packet->cerver->info->name->str);
                 if (status) {
@@ -308,7 +308,7 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef AUTH_DEBUG
                 char *status = c_string_create ("Client failed to authenticate to cerver %s",
                     packet->cerver->info->name->str);
                 if (status) {
@@ -317,7 +317,7 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
                 }
                 #endif
 
-                auth_failed (packet);
+                auth_failed (packet->cerver, packet->connection, auth_method->error_message->str);
             }   
 
             auth_method_delete (auth_method);
@@ -388,7 +388,7 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
 
         // failed to get auth data form packet
         else {
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *status = c_string_create ("Failed to get auth data from packet in cerver %s",
                 packet->cerver->info->name->str);
             if (status) {
@@ -397,7 +397,7 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
             }
             #endif
 
-            auth_failed (packet);
+            auth_failed (packet->cerver, packet->connection, "Missing auth data!");
         }
     }
 
