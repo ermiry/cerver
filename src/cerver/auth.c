@@ -29,7 +29,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
 u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connection);
 
-#pragma region auth data
+#pragma region data
 
 static AuthData *auth_data_new (void) {
 
@@ -77,6 +77,46 @@ static void auth_data_delete (AuthData *auth_data) {
         estring_delete (auth_data->token);
         if (auth_data->auth_data) free (auth_data->auth_data);
         free (auth_data);
+    }
+
+}
+
+#pragma endregion
+
+#pragma region method
+
+static AuthMethod *auth_method_new (void) {
+
+    AuthMethod *auth_method = (AuthMethod *) malloc (sizeof (AuthMethod));
+    if (auth_method) {
+        auth_method->packet = NULL;
+        auth_method->auth_data = NULL;
+
+        auth_method->error_message = NULL;
+    }
+
+    return auth_method;
+
+}
+
+static AuthMethod *auth_method_create (Packet *packet, AuthData *auth_data) {
+
+    AuthMethod *auth_method = auth_method_new ();
+    if (auth_method) {
+        auth_method->packet = packet;
+        auth_method->auth_data = auth_data;
+    }
+
+    return auth_method;
+
+}
+
+static void auth_method_delete (AuthMethod *auth_method) {
+
+    if (auth_method) {
+        estring_delete (auth_method->error_message);
+
+        free (auth_method);
     }
 
 }
@@ -173,7 +213,8 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
 }
 
-// how to manage a failed auth to the cerver
+// send an ERR_FAILED_AUTH to the connection and update connection stats
+// if the connection's max auth tries has been reached, it will be dropped
 static void auth_failed (const Packet *packet) {
 
     if (packet) {
@@ -245,38 +286,42 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
     u8 retval = 1;
 
     if (packet && auth_data) {
-        AuthPacket auth_packet = { .packet = packet, .auth_data = auth_data };
-        if (!authenticate (&auth_packet)) {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Client authenticated successfully to cerver %s",
-                packet->cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, status);
-                free (status);
-            }
-            #endif
+        AuthMethod *auth_method = auth_method_create (packet, auth_data);
+        if (auth_method) {
+            if (!authenticate (auth_method)) {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Client authenticated successfully to cerver %s",
+                    packet->cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, status);
+                    free (status);
+                }
+                #endif
 
-            *client = auth_create_new_client (packet, auth_data);
-            if (*client) {
-                // if we are successfull, send success packet
-                auth_send_success_packet (packet->cerver, packet->connection);
+                *client = auth_create_new_client (packet, auth_data);
+                if (*client) {
+                    // if we are successfull, send success packet
+                    auth_send_success_packet (packet->cerver, packet->connection);
 
-                retval = 0;
+                    retval = 0;
+                }
             }
+
+            else {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Client failed to authenticate to cerver %s",
+                    packet->cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_DEBUG, LOG_CLIENT, status);
+                    free (status);
+                }
+                #endif
+
+                auth_failed (packet);
+            }   
+
+            auth_method_delete (auth_method);
         }
-
-        else {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Client failed to authenticate to cerver %s",
-                packet->cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_DEBUG, LOG_CLIENT, status);
-                free (status);
-            }
-            #endif
-
-            auth_failed (packet);
-        }   
     }
 
     return retval;

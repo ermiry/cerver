@@ -35,12 +35,18 @@ struct _AuthData {
 typedef struct _AuthData AuthData;
 
 // auxiliary structure passed to the user defined auth method
-typedef struct AuthPacket {
+struct _AuthMethod {
 
-    struct _Packet *packet;
-    AuthData *auth_data;
+    struct _Packet *packet;         // the original packet
+    AuthData *auth_data;            // the stripped auth data from the packet
 
-} AuthPacket;
+    // a user message that can be sent to the connection when teh auth has failed
+    // in a generated ERR_FAILED_AUTH packet
+    estring *error_message;
+
+};
+
+typedef struct _AuthMethod AuthMethod;
 
 #pragma region handler
 
