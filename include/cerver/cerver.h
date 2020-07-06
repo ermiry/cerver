@@ -100,6 +100,7 @@ typedef struct CerverStats {
     u64 current_active_client_connections;          // all of the current active connections for all current clients (active in main poll array)
     u64 current_n_connected_clients;                // the current number of clients connected 
     u64 current_n_hold_connections;                 // current numbers of on hold connections (only if the cerver requires authentication)
+    u64 total_on_hold_connections;                  // the total amount of on hold connections
     u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
     u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
     u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
@@ -277,7 +278,7 @@ extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
 // max_auth_tries is the number of failed auth allowed for each new client connection
-// authenticate is a user defined method that takes a AuthPacket ptr that should NOT be free
+// authenticate is a user defined method that takes an AuthMethod ptr that should NOT be free
 // and must return 0 on a success authentication & 1 on any error
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate);
