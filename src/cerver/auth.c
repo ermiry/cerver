@@ -499,9 +499,8 @@ static void admin_auth_try (Packet *packet) {
 static void cerver_auth_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->packet_size >= (sizeof (PacketHeader) + sizeof (RequestData))) {
-            char *end = (char *) packet->packet;
-            RequestData *req = (RequestData *) (end += sizeof (PacketHeader));
+        if (packet->packet_size > sizeof (RequestData)) {
+            RequestData *req = (RequestData *) (packet->data);
 
             switch (req->type) {
                 // the client sent use its data to authenticate itself
@@ -516,6 +515,10 @@ static void cerver_auth_packet_handler (Packet *packet) {
                     #endif
                 } break;
             }
+        }
+
+        else {
+            // FIXME: bad packet
         }
     }
 
