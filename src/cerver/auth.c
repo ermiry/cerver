@@ -65,11 +65,6 @@ static AuthData *auth_data_create (const char *token, void *data, size_t auth_da
                 auth_data = NULL;
             }
         }
-
-        else {
-            auth_data->auth_data = NULL;
-            auth_data->auth_data_size = 0;
-        }
     }
 
     return auth_data;
@@ -295,19 +290,20 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 
     if (packet) {
         // check we have a big enough packet
-        if (packet->packet_size > sizeof (PacketHeader)) {
-            char *end = (char *) packet->packet;
+        if (packet->data_size > sizeof (RequestData)) {
+            char *end = (char *) packet->data;
+
+            end += sizeof (RequestData);
 
             // check if we have a token
-            if (packet->packet_size == (sizeof (PacketHeader) + sizeof (SToken))) {
-                SToken *s_token = (SToken *) (end += sizeof (PacketHeader));
+            if (packet->packet_size == (sizeof (SToken))) {
+                SToken *s_token = (SToken *) (end);
                 auth_data = auth_data_create (s_token->token, NULL, 0);
             }
 
             // we have custom data credentials
             else {
-                end += sizeof (PacketHeader);
-                size_t data_size = packet->packet_size - sizeof (PacketHeader);
+                size_t data_size = packet->data_size;
                 auth_data = auth_data_create (NULL, end, data_size);
             }
         }
