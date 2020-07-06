@@ -30,6 +30,8 @@ typedef enum ErrorType {
 
 } ErrorType;
 
+#pragma region error
+
 // when a client error happens, it sets the appropaited msg (if any)
 // and an event is triggered
 typedef struct Error {
@@ -44,6 +46,10 @@ extern Error *error_new (u32 error_type, const char *msg);
 
 extern void error_delete (void *ptr);
 
+#pragma endregion
+
+#pragma region packets
+
 // creates an error packet ready to be sent
 extern struct _Packet *error_packet_generate (u32 error_type, const char *msg);
 
@@ -52,13 +58,21 @@ extern struct _Packet *error_packet_generate (u32 error_type, const char *msg);
 extern u8 error_packet_generate_and_send (u32 error_type, const char *msg,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection);
 
+#pragma endregion
+
+#pragma region serialization
+
+#define ERROR_MESSAGE_LENGTH        128
+
 // serialized error data
 typedef struct SError {
 
     time_t timestamp;
     u32 error_type;
-    char msg[64];
+    char msg[128];
 
 } SError;
+
+#pragma endregion
 
 #endif

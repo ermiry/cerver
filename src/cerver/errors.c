@@ -8,6 +8,8 @@
 #include "cerver/errors.h"
 #include "cerver/packets.h"
 
+#pragma region error
+
 Error *error_new (u32 error_type, const char *msg) {
 
     Error *error = (Error *) malloc (sizeof (Error));
@@ -33,32 +35,9 @@ void error_delete (void *ptr) {
 
 }
 
-static inline SError *serror_new (void) { 
+#pragma endregion
 
-    SError *serror = (SError *) malloc (sizeof (SError));
-    if (serror) memset (serror, 0, sizeof (SError));
-    return serror;
-
-}
-
-static inline void serror_delete (void *ptr) { if (ptr) free (ptr); }
-
-static SError *error_serialize (Error *error) {
-
-    if (error) {
-        SError *serror = serror_new ();
-
-        serror->timestamp = error->timestamp;
-        serror->error_type = error->error_type;
-        memset (serror->msg, 0, 64);
-        strncpy (serror->msg, error->msg->str, 64);
-
-        return serror;
-    }
-
-    return NULL;
-
-}
+#pragma region packets
 
 // creates an error packet ready to be sent
 Packet *error_packet_generate (u32 error_type, const char *msg) {
@@ -99,3 +78,35 @@ u8 error_packet_generate_and_send (u32 error_type, const char *msg,
     return retval;
 
 }
+
+#pragma endregion
+
+#pragma region serialization
+
+static inline SError *serror_new (void) { 
+
+    SError *serror = (SError *) malloc (sizeof (SError));
+    if (serror) memset (serror, 0, sizeof (SError));
+    return serror;
+
+}
+
+static inline void serror_delete (void *ptr) { if (ptr) free (ptr); }
+
+static SError *error_serialize (Error *error) {
+
+    SError *serror = NULL;
+
+    if (error) {
+        serror = serror_new ();
+        serror->timestamp = error->timestamp;
+        serror->error_type = error->error_type;
+        memset (serror->msg, 0, ERROR_MESSAGE_LENGTH);
+        strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
+    }
+
+    return serror;
+
+}
+
+#pragma endregion
