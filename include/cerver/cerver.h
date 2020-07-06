@@ -276,6 +276,9 @@ extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
 
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
+// max_auth_tries is the number of failed auth allowed for each new client connection
+// authenticate is a user defined method that takes a AuthPacket ptr that should NOT be free
+// and must return 0 on a success authentication & 1 on any error
 // retuns 0 on success, 1 on error
 extern u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate);
 
