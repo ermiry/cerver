@@ -55,7 +55,6 @@ extern void connection_stats_print (struct _Connection *connection);
 // a connection from a client
 struct _Connection {
 
-    // i32 sock_fd;
     struct _Socket *socket;
     u16 port;
     Protocol protocol;
@@ -64,14 +63,15 @@ struct _Connection {
     estring *ip;
     struct sockaddr_storage address;
 
-    time_t connected_timestamp;         // when the connection started
+    time_t connected_timestamp;             // when the connection started
 
     u32 max_sleep;
     bool connected_to_cerver;
 
     bool active;
     
-    u8 auth_tries;                          // remaining attemps to authenticate
+    u8 auth_tries;                          // remaining attempts to authenticate
+    u8 bad_packets;                         // number of bad packets before being disconnected
 
     u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
     struct _CerverReport *cerver_report;    // 01/01/2020 - info about the cerver we are connecting to

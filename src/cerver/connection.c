@@ -110,6 +110,7 @@ Connection *connection_new (void) {
         connection->active = false;
 
         connection->auth_tries = DEFAULT_AUTH_TRIES;
+        connection->bad_packets = 0;
 
         connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
         connection->cerver_report = NULL;
