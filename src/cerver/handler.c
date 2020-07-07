@@ -397,27 +397,7 @@ int handler_start (Handler *handler) {
 
 #pragma endregion
 
-#pragma region auxiliary structures
-
-static ReceiveHandle *receive_handle_new (Cerver *cerver, Socket *socket, 
-    char *buffer, size_t buffer_size, ReceiveType receive_type, Lobby *lobby) {
-
-    ReceiveHandle *receive = (ReceiveHandle *) malloc (sizeof (ReceiveHandle));
-    if (receive) {
-        receive->cerver = cerver;
-        // receive->sock_fd = sock_fd;
-        receive->buffer = buffer;
-        receive->buffer_size = buffer_size;
-        receive->socket = socket;
-        receive->receive_type = receive_type;
-        receive->lobby = lobby;
-    }
-
-    return receive;
-
-}
-
-void receive_handle_delete (void *receive_ptr) { if (receive_ptr) free (receive_ptr); }
+#pragma region sock receive
 
 SockReceive *sock_receive_new (void) {
 
@@ -493,23 +473,6 @@ static SockReceive *sock_receive_get (Cerver *cerver, i32 sock_fd, ReceiveType r
     return sock_receive;
 
 }
-
-CerverReceive *cerver_receive_new (Cerver *cerver, Socket *socket, ReceiveType receive_type, Lobby *lobby) {
-
-    CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
-    if (cr) {
-        cr->cerver = cerver;
-        // cr->sock_fd = sock_fd;
-        cr->socket = socket;
-        cr->receive_type = receive_type;
-        cr->lobby = lobby;
-    }
-
-    return cr;
-
-}
-
-void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
 
 #pragma endregion
 
@@ -980,6 +943,43 @@ static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
 #pragma endregion
 
 #pragma region receive
+
+static ReceiveHandle *receive_handle_new (Cerver *cerver, Socket *socket, 
+    char *buffer, size_t buffer_size, ReceiveType receive_type, Lobby *lobby) {
+
+    ReceiveHandle *receive = (ReceiveHandle *) malloc (sizeof (ReceiveHandle));
+    if (receive) {
+        receive->cerver = cerver;
+        // receive->sock_fd = sock_fd;
+        receive->buffer = buffer;
+        receive->buffer_size = buffer_size;
+        receive->socket = socket;
+        receive->receive_type = receive_type;
+        receive->lobby = lobby;
+    }
+
+    return receive;
+
+}
+
+void receive_handle_delete (void *receive_ptr) { if (receive_ptr) free (receive_ptr); }
+
+CerverReceive *cerver_receive_new (Cerver *cerver, Socket *socket, ReceiveType receive_type, Lobby *lobby) {
+
+    CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
+    if (cr) {
+        cr->cerver = cerver;
+        // cr->sock_fd = sock_fd;
+        cr->socket = socket;
+        cr->receive_type = receive_type;
+        cr->lobby = lobby;
+    }
+
+    return cr;
+
+}
+
+void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 
@@ -1903,6 +1903,11 @@ static inline void cerver_poll_handle (Cerver *cerver) {
         for (u32 i = 0; i < cerver->max_n_fds; i++) {
             if (cerver->fds[i].fd != -1) {
                 Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, RECEIVE_TYPE_NORMAL);
+                if (!socket) {
+                    // printf ("no socket!\n");
+                    // continue;
+                }
+
                 CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_NORMAL, NULL);
 
                 switch (cerver->fds[i].revents) {
@@ -2025,8 +2030,11 @@ u8 cerver_poll (Cerver *cerver) {
 
                 case 0: {
                     // #ifdef CERVER_DEBUG
-                    // cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                    // c_string_create ("Cerver %s poll timeout", cerver->info->name->str));
+                    // char *status = c_string_create ("Cerver %s MAIN poll timeout", cerver->info->name->str);
+                    // if (status) {
+                    //     cerver_log_debug (status);
+                    //     free (status);
+                    // }
                     // #endif
                 } break;
 
