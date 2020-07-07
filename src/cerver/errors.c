@@ -8,6 +8,9 @@
 #include "cerver/errors.h"
 #include "cerver/packets.h"
 
+static SError *error_serialize (Error *error);
+static inline void serror_delete (void *ptr);
+
 #pragma region error
 
 Error *error_new (u32 error_type, const char *msg) {
