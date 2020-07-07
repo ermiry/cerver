@@ -84,8 +84,10 @@ void estring_copy (estring *to, estring *from) {
 
 estring *estring_concat (estring *s1, estring *s2) {
 
+    estring *des = NULL;
+
     if (s1 && s2) {
-        estring *des = estring_new (NULL);
+        des = estring_new (NULL);
         des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
 
         while (*s1->str) *des->str++ = *s1->str++;
@@ -96,7 +98,7 @@ estring *estring_concat (estring *s1, estring *s2) {
         des->len = s1->len + s2->len;
     }
 
-    return NULL;
+    return des;
 
 }
 
