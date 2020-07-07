@@ -46,6 +46,24 @@ typedef struct CerverEvent {
 
 extern void cerver_event_delete (void *event_ptr);
 
+// registers an action to be triggered when the specified event occurs
+// if there is an existing action registered to an event, it will be overrided
+// a newly allocated CerverEventData structure will be passed to your method 
+// that should be free using the cerver_event_data_delete () method
+// returns 0 on success, 1 on error
+extern u8 cerver_event_register (struct _Cerver *cerver, CerverEventType event_type, 
+    Action action, void *action_args, Action delete_action_args, 
+    bool create_thread, bool drop_after_trigger);
+
+// unregister the action associated with an event
+// deletes the action args using the delete_action_args () if NOT NULL
+// returns 0 on success, 1 on error
+extern u8 cerver_event_unregister (struct _Cerver *cerver, CerverEventType event_type);
+
+// triggers all the actions that are registred to an event
+extern void cerver_event_trigger (CerverEventType event_type, Cerver *cerver, 
+	struct _Client *client, struct _Connection *connection);
+
 #pragma region data
 
 // structure that is passed to the user registered method
@@ -62,5 +80,7 @@ typedef struct CerverEventData {
 } CerverEventData;
 
 extern void cerver_event_data_delete (CerverEventData *event_data);
+
+#pragma endregion
 
 #endif
