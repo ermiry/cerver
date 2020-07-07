@@ -190,6 +190,7 @@ void cerver_stats_print (Cerver *cerver) {
             printf ("Current active client connections:         %ld\n", cerver->stats->current_active_client_connections);
             printf ("Current connected clients:                 %ld\n", cerver->stats->current_n_connected_clients);
             printf ("Current on hold connections:               %ld\n", cerver->stats->current_n_hold_connections);
+            printf ("Total on hold connections:                 %ld\n", cerver->stats->total_on_hold_connections);
             printf ("Total clients:                             %ld\n", cerver->stats->total_n_clients);
             printf ("Unique clients:                            %ld\n", cerver->stats->unique_clients);
             printf ("Total client connections:                  %ld\n", cerver->stats->total_client_connections);
