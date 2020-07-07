@@ -11,22 +11,23 @@ struct _Client;
 struct _Packet;
 struct _Connection;
 
+// FIXME: refactor errors like in client!
 typedef enum ErrorType {
 
     ERR_NONE                    = 0,
 
-    // internal server error, like no memory
-    ERR_CERVER_ERROR            = 1,   
+	// internal server error, like no memory
+	ERR_CERVER_ERROR            = 1, 
 
-    ERR_CREATE_LOBBY            = 2,
-    ERR_JOIN_LOBBY              = 3,
-    ERR_LEAVE_LOBBY             = 4,
-    ERR_FIND_LOBBY              = 5,
+	ERR_FAILED_AUTH             = 2,  
 
-    ERR_GAME_INIT               = 6,
-    ERR_GAME_START              = 7,
+	ERR_CREATE_LOBBY            = 3,
+	ERR_JOIN_LOBBY              = 4,
+	ERR_LEAVE_LOBBY             = 5,
+	ERR_FIND_LOBBY              = 6,
 
-    ERR_FAILED_AUTH             = 8,
+	ERR_GAME_INIT               = 7,
+	ERR_GAME_START              = 8,
 
 } ErrorType;
 
