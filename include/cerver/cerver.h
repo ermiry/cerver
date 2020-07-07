@@ -178,6 +178,7 @@ struct _Cerver {
     pthread_t on_hold_poll_id;
     pthread_mutex_t *on_hold_poll_lock;
     u8 on_hold_max_bad_packets;
+    bool on_hold_check_packets;
 
     // allow the clients to use sessions (have multiple connections)
     bool use_sessions;  
@@ -299,6 +300,10 @@ extern void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_ti
 // a bad packet is anyone which can't be handle by the cerver because there is no handle, 
 // or because it failed the packet_check () method
 extern void cerver_set_on_hold_max_bad_packets (Cerver *cerver, u8 on_hold_max_bad_packets);
+
+// sets whether to check for packets using the packet_check () method in ON HOLD handler or NOT
+// any packet that fails the check will be considered as a bad packet
+extern void cerver_set_on_hold_check_packets (Cerver *cerver, bool check);
 
 // configures the cerver to use client sessions
 // This will allow for multiple connections from the same client, 

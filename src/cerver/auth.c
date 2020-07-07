@@ -599,8 +599,13 @@ void on_hold_packet_handler (void *packet_ptr) {
 
     if (packet_ptr) {
         Packet *packet = (Packet *) packet_ptr;
-        // FIXME:
-        // if (!packet_check (packet)) {
+
+        bool good = true;
+        if (packet->cerver->on_hold_check_packets) {
+            good = packet_check (packet);
+        }
+
+        if (good) {
             switch (packet->header->packet_type) {
                 // handles authentication packets
                 case AUTH_PACKET: cerver_auth_packet_handler (packet); break;
@@ -621,7 +626,12 @@ void on_hold_packet_handler (void *packet_ptr) {
                     cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
                 } break;
             }
-        // }
+        }
+
+        else {
+            // bad packet
+            cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
+        }
 
         packet_delete (packet);
     }
@@ -632,7 +642,6 @@ void on_hold_packet_handler (void *packet_ptr) {
 
 #pragma region connections
 
-// FIXME: drop connection after n seconds of innactivity
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess or failed authentication
 // returns 0 on success, 1 on error

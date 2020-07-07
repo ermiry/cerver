@@ -267,6 +267,7 @@ Cerver *cerver_new (void) {
         c->on_hold_poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->on_hold_poll_lock = NULL;
         c->on_hold_max_bad_packets = DEFAULT_ON_HOLD_MAX_BAD_PACKETS;
+        c->on_hold_check_packets = true;
 
         c->use_sessions = false;
         c->session_id_generator = NULL;
@@ -501,6 +502,14 @@ void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout) 
 void cerver_set_on_hold_max_bad_packets (Cerver *cerver, u8 on_hold_max_bad_packets) {
 
     if (cerver) cerver->on_hold_max_bad_packets = on_hold_max_bad_packets;
+
+}
+
+// sets whether to check for packets using the packet_check () method in ON HOLD handler or NOT
+// any packet that fails the check will be considered as a bad packet
+void cerver_set_on_hold_check_packets (Cerver *cerver, bool check) {
+
+    if (cerver) cerver->on_hold_check_packets = check;
 
 }
 
