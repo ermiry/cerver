@@ -7,7 +7,7 @@
 #include "cerver/client.h"
 #include "cerver/handler.h"
 
-static Socket *socket_new (void) {
+Socket *socket_new (void) {
 
     Socket *socket = (Socket *) malloc (sizeof (Socket));
     if (socket) {
@@ -29,18 +29,22 @@ void socket_delete (void *socket_ptr) {
     if (socket_ptr) {
         Socket *socket = (Socket *) socket_ptr;
 
-        pthread_mutex_lock (socket->read_mutex);
-        pthread_mutex_lock (socket->write_mutex);
+        if (socket->read_mutex) pthread_mutex_lock (socket->read_mutex);
+        if (socket->write_mutex) pthread_mutex_lock (socket->write_mutex);
 
         if (socket->packet_buffer) free (socket->packet_buffer);
 
-        pthread_mutex_unlock (socket->read_mutex);
-        pthread_mutex_destroy (socket->read_mutex);
-        free (socket->read_mutex);
+        if (socket->read_mutex) {
+            pthread_mutex_unlock (socket->read_mutex);
+            pthread_mutex_destroy (socket->read_mutex);
+            free (socket->read_mutex);
+        }
 
-        pthread_mutex_unlock (socket->write_mutex);
-        pthread_mutex_destroy (socket->write_mutex);
-        free (socket->write_mutex);
+        if (socket->write_mutex) {
+            pthread_mutex_unlock (socket->write_mutex);
+            pthread_mutex_destroy (socket->write_mutex);
+            free (socket->write_mutex);
+        }
 
         free (socket_ptr);
     }
