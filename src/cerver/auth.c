@@ -687,11 +687,11 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
 void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
 
     if (cerver && connection) {
-        // close the connection socket
-        connection_end (connection);
-
         // remove the connection from the on hold structures
         on_hold_connection_remove (cerver, connection);
+
+        // close the connection socket
+        connection_end (connection);
 
         // we can now safely delete the connection
         connection_delete (connection);
