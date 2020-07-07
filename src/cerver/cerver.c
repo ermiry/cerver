@@ -266,6 +266,7 @@ Cerver *cerver_new (void) {
         c->hold_fds = NULL;
         c->on_hold_poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->on_hold_poll_lock = NULL;
+        c->on_hold_max_bad_packets = DEFAULT_ON_HOLD_MAX_BAD_PACKETS;
 
         c->use_sessions = false;
         c->session_id_generator = NULL;
@@ -490,6 +491,16 @@ void cerver_set_auth_method (Cerver *cerver, delegate authenticate) {
 void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout) {
 
     if (cerver) cerver->on_hold_poll_timeout = on_hold_poll_timeout;
+
+}
+
+// sets the max number of bad packets to tolerate from an ON HOLD connection before being dropped, 
+// the default is DEFAULT_ON_HOLD_MAX_BAD_PACKETS
+// a bad packet is anyone which can't be handle by the cerver because there is no handle, 
+// or because it failed the packet_check () method
+void cerver_set_on_hold_max_bad_packets (Cerver *cerver, u8 on_hold_max_bad_packets) {
+
+    if (cerver) cerver->on_hold_max_bad_packets = on_hold_max_bad_packets;
 
 }
 
