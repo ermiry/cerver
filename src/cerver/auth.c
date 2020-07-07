@@ -125,12 +125,14 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 #pragma region auth
 
-static void auth_send_success_packet (const Cerver *cerver, const Connection *connection) {
+static void auth_send_success_packet (const Cerver *cerver, 
+    const Client *client, const Connection *connection,
+    SToken *token, size_t token_size) {
 
-    if (cerver) {
-        Packet *success_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_SUCCESS, NULL, 0);
+    if (cerver && connection) {
+        Packet *success_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_SUCCESS, token, token_size);
         if (success_packet) {
-            packet_set_network_values (success_packet, (Cerver *) cerver, NULL, (Connection *) connection, NULL);
+            packet_set_network_values (success_packet, (Cerver *) cerver, (Client *) client, (Connection *) connection, NULL);
             packet_send (success_packet, 0, NULL, false);
             packet_delete (success_packet);
         }
@@ -183,11 +185,6 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
                 }
 
                 else {
-                    cerver_log_msg (
-                        stderr, LOG_ERROR, LOG_CLIENT, 
-                        "Failed to generate client session id!"
-                    );
-
                     char *s = c_string_create ("auth_create_new_client () - failed to generate client's <%ld> session id!",
                         client->id);
                     if (s) {
@@ -253,7 +250,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
         // if we found a client, register the new connection to him
         if (client) {
             #ifdef AUTH_DEBUG
-            char *status = c_string_create ("Found a client with session id %s in cerver %s.",
+            char *status = c_string_create ("Found a client with session id <%s> in cerver %s.",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
@@ -262,14 +259,24 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
             #endif
 
             if (!connection_register_to_client (client, packet->connection)) {
-                // send success auth packet to client
-                auth_send_success_packet (packet->cerver, packet->connection);
+                // register connection to cerver structures
+                connection_register_to_cerver (packet->cerver, client, packet->connection);
+
+                // add connection's sock fd to cerver's main poll array
+                connection_register_to_cerver_poll (packet->cerver, packet->connection);
 
                 retval = 0;
             }
         }
 
         else {
+            char *status = c_string_create ("Failed to get client with matching session id <%s> in cerver %s",
+                auth_data->token->str, packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_error (status);
+                free (status);
+            }
+
             // if not, the token is invalid!
             auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
         }
@@ -300,9 +307,6 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
 
                 *client = auth_create_new_client (packet, auth_data);
                 if (*client) {
-                    // if we are successfull, send success packet
-                    auth_send_success_packet (packet->cerver, packet->connection);
-
                     retval = 0;
                 }
             }
@@ -341,7 +345,7 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
             end += sizeof (RequestData);
 
             // check if we have a token
-            if (packet->packet_size == (sizeof (SToken))) {
+            if (packet->data_size == (sizeof (RequestData) + sizeof (SToken))) {
                 SToken *s_token = (SToken *) (end);
                 auth_data = auth_data_create (s_token->token, NULL, 0);
             }
@@ -420,7 +424,29 @@ static void auth_try (Packet *packet) {
 
                 if (client) {
                     // register the new client & its connection to the cerver main structures & poll
-                    if (client_register_to_cerver (packet->cerver, client)) {
+                    if (!client_register_to_cerver (packet->cerver, client)) {
+                        // if we are successfull, send success packet
+                        if (packet->cerver->use_sessions) {
+                            SToken token = { 0 };
+                            memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+                            
+                            auth_send_success_packet (
+                                packet->cerver, 
+                                client, packet->connection,
+                                &token, sizeof (SToken)
+                            );
+                        }
+
+                        else {
+                            auth_send_success_packet (
+                                packet->cerver, 
+                                client, packet->connection,
+                                NULL, 0
+                            );
+                        }
+                    }
+
+                    else {
                         char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
                             packet->cerver->info->name->str);
                         if (status) {
@@ -447,11 +473,8 @@ static void auth_try (Packet *packet) {
                 else {
                     Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
 
-                    // register connection to cerver structures
-                    connection_register_to_cerver (packet->cerver, match, packet->connection);
-
-                    // add connection's sock fd to cerver's main poll array
-                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
+                    // send success auth packet to client
+                    auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
                 }
             }
         }
@@ -473,6 +496,7 @@ static void auth_try (Packet *packet) {
 
 }
 
+// FIXME: send auth packet
 static void admin_auth_try (Packet *packet) {
 
     if (packet) {
@@ -566,7 +590,7 @@ static void cerver_on_hold_handle_max_bad_packets (Cerver *cerver, Connection *c
 static void cerver_auth_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->packet_size > sizeof (RequestData)) {
+        if (packet->data_size > sizeof (RequestData)) {
             RequestData *req = (RequestData *) (packet->data);
 
             switch (req->type) {
