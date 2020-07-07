@@ -415,6 +415,9 @@ static void auth_try (Packet *packet) {
                 // remove from on hold structures & poll array
                 on_hold_connection_remove (packet->cerver, packet->connection);
 
+                // reset connection's bad packets counter
+                packet->connection->bad_packets = 0;
+
                 if (client) {
                     // register the new client & its connection to the cerver main structures & poll
                     if (client_register_to_cerver (packet->cerver, client)) {
@@ -480,6 +483,9 @@ static void admin_auth_try (Packet *packet) {
                     // remove from on hold structures & poll array
                     on_hold_connection_remove (packet->cerver, packet->connection);
 
+                    // reset connection's bad packets counter
+                    packet->connection->bad_packets = 0;
+
                     if (client) {
                         // create a new admin with client and register it to the admin
                         Admin *admin = admin_create_with_client (client);
@@ -540,6 +546,22 @@ static void admin_auth_try (Packet *packet) {
 
 #pragma region handler
 
+static void cerver_on_hold_handle_max_bad_packets (Cerver *cerver, Connection *connection) {
+
+    if (cerver && connection) {
+        connection->bad_packets += 1;
+
+        if (connection->bad_packets >= cerver->on_hold_max_bad_packets) {
+            #ifdef AUTH_DEBUG
+            cerver_log_debug ("ON HOLD Connection has reached max bad packets, dropping...");
+            #endif
+
+            on_hold_connection_drop (cerver, connection);
+        }
+    }
+
+}
+
 // handle an auth packet
 static void cerver_auth_packet_handler (Packet *packet) {
 
@@ -558,18 +580,20 @@ static void cerver_auth_packet_handler (Packet *packet) {
                     cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, 
                         "cerver_auth_packet_hanlder () -- got an unknwown request type");
                     #endif
+
+                    cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
                 } break;
             }
         }
 
         else {
-            // FIXME: bad packet
+            // bad packet
+            cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
         }
     }
 
 }
 
-// FIXME: drop after a number of bad requests
 // handles an packet from an on hold connection
 void on_hold_packet_handler (void *packet_ptr) {
 
@@ -578,9 +602,6 @@ void on_hold_packet_handler (void *packet_ptr) {
         // FIXME:
         // if (!packet_check (packet)) {
             switch (packet->header->packet_type) {
-                // handles an error from the client
-                case ERROR_PACKET: /* TODO: */ break;
-
                 // handles authentication packets
                 case AUTH_PACKET: cerver_auth_packet_handler (packet); break;
 
@@ -596,6 +617,8 @@ void on_hold_packet_handler (void *packet_ptr) {
                         free (status);
                     }
                     #endif
+
+                    cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
                 } break;
             }
         // }

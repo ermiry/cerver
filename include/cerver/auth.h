@@ -10,7 +10,8 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 
-#define DEFAULT_AUTH_TRIES              3
+#define DEFAULT_AUTH_TRIES                  3
+#define DEFAULT_ON_HOLD_MAX_BAD_PACKETS     3
 
 struct _Cerver;
 struct _Connection;
