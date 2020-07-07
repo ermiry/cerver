@@ -46,4 +46,21 @@ typedef struct CerverEvent {
 
 extern void cerver_event_delete (void *event_ptr);
 
+#pragma region data
+
+// structure that is passed to the user registered method
+typedef struct CerverEventData {
+
+	struct _Cerver *cerver;
+
+	struct _Client *client;
+	struct _Connection *connection;
+
+	void *action_args;                  // the action arguments
+	Action delete_action_args;
+
+} CerverEventData;
+
+extern void cerver_event_data_delete (CerverEventData *event_data);
+
 #endif

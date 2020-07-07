@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-#include "dllist.h"
+#include "dlist.h"
 
 typedef struct Queue {
 
