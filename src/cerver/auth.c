@@ -589,7 +589,7 @@ void on_hold_packet_handler (void *packet_ptr) {
 
                 default: {
                     #ifdef CERVER_DEBUG
-                    char *status = c_string_create ("Got an on hold packet of unknown type in cerver %s.", 
+                    char *status = c_string_create ("Got an ON HOLD packet of unknown type in cerver %s.", 
                         packet->cerver->info->name->str);
                     if (status) {
                         cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, status);
@@ -653,8 +653,9 @@ static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connectio
         if (!on_hold_poll_unregister_connection ((Cerver *) cerver, connection)) {
             // remove the connection associated to the sock fd
             Connection *query = connection_new ();
-            // query->socket->sock_fd = connection->socket->sock_fd;
-            query->socket = socket_create (connection->socket->sock_fd);
+            query->socket = socket_new ();
+            if (query->socket) query->socket->sock_fd = connection->socket->sock_fd;
+
             if (avl_remove_node (cerver->on_hold_connections, query)) {
                 cerver_log_debug ("on_hold_connection_remove () - removed connection from on_hold_connections avl");
             }
@@ -692,6 +693,9 @@ void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
 
         // close the connection socket
         connection_end (connection);
+
+        cerver_sockets_pool_push ((Cerver *) cerver, connection->socket);
+        connection->socket = NULL;
 
         // we can now safely delete the connection
         connection_delete (connection);

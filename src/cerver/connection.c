@@ -202,7 +202,7 @@ int connection_comparator (const void *a, const void *b) {
         }
     }
 
-    return 0;
+    return -1;
 
 }
 

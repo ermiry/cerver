@@ -17,8 +17,6 @@ Error *error_new (u32 error_type, const char *msg) {
 
     Error *error = (Error *) malloc (sizeof (Error));
     if (error) {
-        memset (error, 0, sizeof (Error));
-
         time (&error->timestamp);
         error->error_type = error_type;
         error->msg = msg ? estring_new (msg) : NULL;
@@ -32,7 +30,9 @@ void error_delete (void *ptr) {
 
     if (ptr) {
         Error *error = (Error *) ptr;
+
         estring_delete (error->msg);
+        
         free (error);
     }
 

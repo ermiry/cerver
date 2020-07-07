@@ -1605,6 +1605,8 @@ static void cerver_register_new_connection (Cerver *cerver,
                 }
                 #endif
 
+                cerver->stats->total_on_hold_connections += 1;
+
                 connection->active = true;
 
                 cerver_info_send_info_packet (cerver, NULL, connection);
