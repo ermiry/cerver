@@ -136,7 +136,7 @@ static void auth_send_success_packet (const Cerver *cerver, const Connection *co
         }
 
         else {
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *status = c_string_create ("Failed to create success auth packet in cerver %s",
                 cerver->info->name->str);
             if (status) {
@@ -171,7 +171,7 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
 
                 char *session_id = (char *) packet->cerver->session_id_generator (session_data);
                 if (session_id) {
-                    #ifdef CERVER_DEBUG
+                    #ifdef AUTH_DEBUG
                     char *s = c_string_create ("Generated client <%ld> session id: %s", 
                         client->id, session_id);
                     if (s) {
@@ -576,7 +576,7 @@ static void cerver_auth_packet_handler (Packet *packet) {
                 case AUTH_PACKET_TYPE_ADMIN_AUTH: admin_auth_try (packet); break;
 
                 default: {
-                    #ifdef CERVER_DEBUG
+                    #ifdef AUTH_DEBUG
                     cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, 
                         "cerver_auth_packet_hanlder () -- got an unknwown request type");
                     #endif
@@ -609,7 +609,7 @@ void on_hold_packet_handler (void *packet_ptr) {
                 case TEST_PACKET: cerver_test_packet_handler (packet); break;
 
                 default: {
-                    #ifdef CERVER_DEBUG
+                    #ifdef AUTH_DEBUG
                     char *status = c_string_create ("Got an ON HOLD packet of unknown type in cerver %s.", 
                         packet->cerver->info->name->str);
                     if (status) {
@@ -769,7 +769,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
 
             cerver->stats->current_n_hold_connections++;
 
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *s = c_string_create ("Added sock fd <%d> to cerver %s ON HOLD poll, idx: %i", 
                 connection->socket->sock_fd, cerver->info->name->str, idx);
             if (s) {
@@ -791,7 +791,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
         }
 
         else if (idx < 0) {
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *s = c_string_create ("Cerver %s ON HOLD poll is full!", 
                 cerver->info->name->str);
             if (s) {
@@ -825,7 +825,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
             cerver->stats->current_n_hold_connections--;
 
-            #ifdef CERVER_DEBUG
+            #ifdef AUTH_DEBUG
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s ON HOLD poll, idx: %d",
                 sock_fd, cerver->info->name->str, idx);
             if (s) {
@@ -847,7 +847,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
         }
 
         else {
-            // #ifdef CERVER_DEBUG
+            // #ifdef AUTH_DEBUG
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ON HOLD poll!",
                 sock_fd, cerver->info->name->str);
             if (s) {
@@ -952,7 +952,7 @@ void *on_hold_poll (void *cerver_ptr) {
             free (thread_name);
         }
 
-        #ifdef CERVER_DEBUG
+        #ifdef AUTH_DEBUG
         cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections to put on hold...");
         #endif
 
@@ -973,7 +973,7 @@ void *on_hold_poll (void *cerver_ptr) {
                 } break;
 
                 case 0: {
-                    // #ifdef CERVER_DEBUG
+                    // #ifdef AUTH_DEBUG
                     // char *status = c_string_create ("Cerver %s ON HOLD poll timeout", cerver->info->name->str);
                     // if (status) {
                     //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
@@ -988,7 +988,7 @@ void *on_hold_poll (void *cerver_ptr) {
             }
         }
 
-        #ifdef CERVER_DEBUG
+        #ifdef AUTH_DEBUG
         status = c_string_create ("Cerver %s ON HOLD poll has stopped!", cerver->info->name->str);
         if (status) {
             cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
