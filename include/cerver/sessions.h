@@ -22,11 +22,19 @@ extern void session_data_delete (void *ptr);
 // create a unique session id for each client based on the current time
 extern void *session_default_generate_id (const void *session_data);
 
+#pragma region serialization
+
+#define TOKEN_SIZE         64
+
 // serialized session id - token
-typedef struct SToken {
+struct _SToken {
 
-    char token[64];
+    char token[TOKEN_SIZE];
 
-} SToken;
+};
+
+typedef struct _SToken SToken;
+
+#pragma endregion
 
 #endif
