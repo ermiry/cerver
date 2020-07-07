@@ -732,7 +732,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
     u8 retval = 1;
 
     if (cerver && connection) {
-        pthread_mutex_lock (cerver->on_hold_poll_lock);
+        // pthread_mutex_lock (cerver->on_hold_poll_lock);
 
         i32 idx = on_hold_get_free_idx (cerver);
         if (idx >= 0) {
@@ -752,7 +752,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s current on hold connections: %ld", 
+            char *status = c_string_create ("Cerver %s current ON HOLD connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
                 cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
@@ -774,7 +774,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             #endif
         }
 
-        pthread_mutex_unlock (cerver->on_hold_poll_lock);
+        // pthread_mutex_unlock (cerver->on_hold_poll_lock);
     }
 
     return retval;
@@ -788,7 +788,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
     u8 retval = 1;
 
     if (cerver) {
-        pthread_mutex_lock (cerver->on_hold_poll_lock);
+        // pthread_mutex_lock (cerver->on_hold_poll_lock);
 
         i32 idx = on_hold_poll_get_idx_by_sock_fd (cerver, sock_fd);
         if (idx >= 0) {
@@ -808,13 +808,15 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             #endif
 
             #ifdef CERVER_STATS
-            char *status = c_string_create ("Cerver %s current on hold connections: %ld", 
+            char *status = c_string_create ("Cerver %s current ON HOLD connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
                 cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
                 free (status);
             }
             #endif
+
+            retval = 0;
         }
 
         else {
@@ -828,7 +830,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             // #endif
         }
 
-        pthread_mutex_unlock (cerver->on_hold_poll_lock);
+        // pthread_mutex_unlock (cerver->on_hold_poll_lock);
     }
 
     return retval;
@@ -847,18 +849,18 @@ static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connec
 static inline void on_hold_poll_handle (Cerver *cerver) {
 
     if (cerver) {
-        pthread_mutex_lock (cerver->on_hold_poll_lock);
+        // pthread_mutex_lock (cerver->on_hold_poll_lock);
 
         // one or more fd(s) are readable, need to determine which ones they are
         for (u32 i = 0; i < cerver->max_on_hold_connections; i++) {
-            if (cerver->fds[i].fd > -1) {
-                Socket *socket = socket_get_by_fd (cerver, cerver->fds[i].fd, RECEIVE_TYPE_ON_HOLD);
+            if (cerver->hold_fds[i].fd > -1) {
+                Socket *socket = socket_get_by_fd (cerver, cerver->hold_fds[i].fd, RECEIVE_TYPE_ON_HOLD);
                 CerverReceive *cr = cerver_receive_new (cerver, socket, RECEIVE_TYPE_ON_HOLD, NULL);
 
                 switch (cerver->hold_fds[i].revents) {
                     // A connection setup has been completed or new data arrived
                     case POLLIN: {
-                        // printf ("Receive fd: %d\n", cerver->fds[i].fd);
+                        printf ("on_hold_poll_handle () - Receive fd: %d\n", cerver->hold_fds[i].fd);
                             
                         // if (cerver->thpool) {
                             // pthread_mutex_lock (socket->mutex);
@@ -890,7 +892,7 @@ static inline void on_hold_poll_handle (Cerver *cerver) {
                     } break;
 
                     default: {
-                        if (cerver->fds[i].revents != 0) {
+                        if (cerver->hold_fds[i].revents != 0) {
                             // 17/06/2020 -- 15:06 -- handle as failed any other signal
                             // to avoid hanging up at 100% or getting a segfault
                             cerver_switch_receive_handle_failed (cr);
@@ -900,7 +902,7 @@ static inline void on_hold_poll_handle (Cerver *cerver) {
             }
         }
 
-        pthread_mutex_unlock (cerver->on_hold_poll_lock);
+        // pthread_mutex_unlock (cerver->on_hold_poll_lock);
     }
 
 }
@@ -911,7 +913,7 @@ void *on_hold_poll (void *cerver_ptr) {
     if (cerver_ptr) {
         Cerver *cerver = (Cerver *) cerver_ptr;
 
-        char *status = c_string_create ("Cerver %s on hold poll has started!", cerver->info->name->str);
+        char *status = c_string_create ("Cerver %s ON HOLD poll has started!", cerver->info->name->str);
         if (status) {
             cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
             free (status);
@@ -933,7 +935,7 @@ void *on_hold_poll (void *cerver_ptr) {
 
             switch (poll_retval) {
                 case -1: {
-                    char *status = c_string_create ("Cerver %s on hold poll has failed!", cerver->info->name->str);
+                    char *status = c_string_create ("Cerver %s ON HOLD poll has failed!", cerver->info->name->str);
                     if (status) {
                         cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
                         free (status);
@@ -945,7 +947,7 @@ void *on_hold_poll (void *cerver_ptr) {
 
                 case 0: {
                     // #ifdef CERVER_DEBUG
-                    // char *status = c_string_create ("Cerver %s on hold poll timeout", cerver->info->name->str);
+                    // char *status = c_string_create ("Cerver %s ON HOLD poll timeout", cerver->info->name->str);
                     // if (status) {
                     //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                     //     free (status);
@@ -960,7 +962,7 @@ void *on_hold_poll (void *cerver_ptr) {
         }
 
         #ifdef CERVER_DEBUG
-        status = c_string_create ("Cerver %s on hold poll has stopped!", cerver->info->name->str);
+        status = c_string_create ("Cerver %s ON HOLD poll has stopped!", cerver->info->name->str);
         if (status) {
             cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
             free (status);
@@ -968,7 +970,7 @@ void *on_hold_poll (void *cerver_ptr) {
         #endif
     }
 
-    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle on hold clients on a NULL cerver!");
+    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle ON HOLD clients on a NULL cerver!");
 
     return NULL;
 
