@@ -11,7 +11,7 @@
 #include "cerver/game/player.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 #include "cerver/collections/avl.h"
 
 struct _Cerver;

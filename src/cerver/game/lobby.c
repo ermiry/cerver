@@ -24,7 +24,7 @@
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 #include "cerver/collections/htab.h"
 
 #include "cerver/utils/utils.h"

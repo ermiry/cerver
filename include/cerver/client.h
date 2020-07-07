@@ -8,7 +8,7 @@
 #include "cerver/types/estring.h"
 
 #include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -74,8 +74,8 @@ struct _Client {
     u64 uptime;
 
     // 16/06/2020 - custom packet handlers
-    volatile unsigned int num_handlers_alive;       // handlers currently alive
-    volatile unsigned int num_handlers_working;     // handlers currently working
+    unsigned int num_handlers_alive;       // handlers currently alive
+    unsigned int num_handlers_working;     // handlers currently working
     pthread_mutex_t *handlers_lock;
     struct _Handler *app_packet_handler;
     struct _Handler *app_error_packet_handler;

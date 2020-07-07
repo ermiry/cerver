@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/threads/bsem.h"
 

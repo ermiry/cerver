@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 static inline void list_element_delete (ListElement *le);
 

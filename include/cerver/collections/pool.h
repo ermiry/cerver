@@ -3,7 +3,7 @@
 
 #include <stdlib.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 typedef struct Pool {
 

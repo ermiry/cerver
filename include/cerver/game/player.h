@@ -10,7 +10,7 @@
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 struct _Cerver;
 struct _Client;

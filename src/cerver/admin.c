@@ -8,7 +8,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/admin.h"
 #include "cerver/cerver.h"
