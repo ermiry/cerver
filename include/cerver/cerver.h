@@ -225,6 +225,9 @@ struct _Cerver {
     struct _AdminCerver *admin;
     pthread_t admin_thread_id;
 
+    // 07/07/2020
+    DoubleList *events;
+
     CerverInfo *info;
     CerverStats *stats;
 

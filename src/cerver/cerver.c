@@ -15,7 +15,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 #include "cerver/collections/avl.h"
 #include "cerver/collections/pool.h"
 
@@ -27,6 +27,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/events.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -297,6 +298,8 @@ Cerver *cerver_new (void) {
 
         c->admin = NULL;
 
+        c->events = NULL;
+
         c->info = NULL;
         c->stats = NULL;
     }
@@ -359,6 +362,8 @@ void cerver_delete (void *ptr) {
         }
 
         admin_cerver_delete (cerver->admin);
+
+        dlist_delete (cerver->events);
 
         cerver_info_delete (cerver->info);
         cerver_stats_delete (cerver->stats);
@@ -1238,6 +1243,8 @@ Cerver *cerver_create (const CerverType type, const char *name,
             cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);
             cerver_set_poll_time_out (cerver, poll_timeout);
 
+            cerver->events = dlist_init (cerver_event_delete, NULL);
+
             if (!cerver_init (cerver)) {
                 char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
                 if (s) {
@@ -1991,7 +1998,6 @@ u8 cerver_start (Cerver *cerver) {
         if (!cerver_one_time_init (cerver)) {
             u8 errors = 0;
 
-            // cerver is not holding clients if there is not new connections
             if (cerver->auth_required) {
                 char *status = c_string_create ("Cerver %s requires authentication",
                     cerver->info->name->str);
@@ -2001,6 +2007,15 @@ u8 cerver_start (Cerver *cerver) {
                 }
 
                 errors |= cerver_auth_start (cerver);
+            }
+
+            if (cerver->use_sessions) {
+                char *status = c_string_create ("Cerver %s supports sessions",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_debug (status);
+                    free (status);
+                }
             }
 
             // start the admin cerver
