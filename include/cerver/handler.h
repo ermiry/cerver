@@ -22,6 +22,7 @@ struct _Client;
 struct _Connection;
 struct _Lobby;
 struct _Packet;
+struct _Admin;
 
 #pragma region handler
 
@@ -178,10 +179,15 @@ extern void cerver_receive_handle_buffer (void *receive_ptr);
 
 typedef struct CerverReceive {
 
-    struct _Cerver *cerver;
-    // i32 sock_fd;
-    struct _Socket *socket;
     ReceiveType receive_type;
+    
+    struct _Cerver *cerver;
+
+    struct _Socket *socket;
+    struct _Connection *connection;
+    struct _Client *client;
+    struct _Admin *admin;
+
     struct _Lobby *lobby;
 
 } CerverReceive;
