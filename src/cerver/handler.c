@@ -1032,7 +1032,7 @@ CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, 
 
 void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
 
-static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, ReceiveType receive_type,
+static void cerver_receive_handle_spare_packet (ReceiveHandle *receive_handle,
     SockReceive *sock_receive,
     size_t buffer_size, char **end, size_t *buffer_pos) {
 
@@ -1065,7 +1065,7 @@ static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, Rec
                 // check if we can handle the packet 
                 size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
                 if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-                    cerver_packet_select_handler (cerver, sock_fd, sock_receive->spare_packet, receive_type);
+                    cerver_packet_select_handler (receive_handle, sock_receive->spare_packet);
                     sock_receive->spare_packet = NULL;
                     sock_receive->missing_packet = 0;
                 }
@@ -1083,32 +1083,31 @@ static void cerver_receive_handle_spare_packet (Cerver *cerver, i32 sock_fd, Rec
 }
 
 // default cerver receive handler
-void cerver_receive_handle_buffer (void *receive_ptr) {
+void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 
-    if (receive_ptr) {
+    if (receive_handle_ptr) {
         // printf ("cerver_receive_handle_buffer ()\n");
-        ReceiveHandle *receive = (ReceiveHandle *) receive_ptr;
+        ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
 
-        Cerver *cerver = receive->cerver;
-        // i32 sock_fd = receive->sock_fd;
-        char *buffer = receive->buffer;
-        size_t buffer_size = receive->buffer_size;
-        i32 sock_fd = receive->socket->sock_fd;
-        // char *buffer = receive->socket->packet_buffer;
-        // size_t buffer_size = receive->socket->packet_buffer_size;
-        ReceiveType receive_type = receive->type;
-        Lobby *lobby = receive->lobby;
+        Cerver *cerver = receive_handle->cerver;
+        // i32 sock_fd = receive_handle->sock_fd;
+        char *buffer = receive_handle->buffer;
+        size_t buffer_size = receive_handle->buffer_size;
+        i32 sock_fd = receive_handle->socket->sock_fd;
+        // char *buffer = receive_handle->socket->packet_buffer;
+        // size_t buffer_size = receive_handle->socket->packet_buffer_size;
+        Lobby *lobby = receive_handle->lobby;
 
-        pthread_mutex_lock (receive->socket->read_mutex);
+        pthread_mutex_lock (receive_handle->socket->read_mutex);
 
-        SockReceive *sock_receive = sock_receive_get (cerver, sock_fd, receive_type);
+        SockReceive *sock_receive = receive_handle->connection ? receive_handle->connection->sock_receive : NULL;
         if (sock_receive) {
             if (buffer && (buffer_size > 0)) {
                 char *end = buffer;
                 size_t buffer_pos = 0;
 
                 cerver_receive_handle_spare_packet (
-                    cerver, sock_fd, receive_type,
+                    receive_handle,
                     sock_receive,
                     buffer_size, &end, &buffer_pos
                 );
@@ -1203,7 +1202,7 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
                                 // printf ("second buffer pos: %ld\n", buffer_pos);
 
                                 if (!sock_receive->spare_packet) {
-                                    cerver_packet_select_handler (cerver, sock_fd, packet, receive_type);
+                                    cerver_packet_select_handler (receive_handle, packet);
                                 }
                                     
                             }
@@ -1269,14 +1268,14 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
 
         // 28/05/2020 -- deleting the created buffer from cerver_receive ()
         // to correct handle both cases: using thpool and single threaded
-        if (buffer) free (receive->buffer);
+        if (buffer) free (receive_handle->buffer);
 
         // free (receive->socket->packet_buffer);
         // receive->socket->packet_buffer = NULL;
 
-        pthread_mutex_unlock (receive->socket->read_mutex);
+        pthread_mutex_unlock (receive_handle->socket->read_mutex);
 
-        receive_handle_delete (receive);
+        receive_handle_delete (receive_handle);
     }
 
 }
@@ -1416,7 +1415,7 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
         receive_handle->lobby = cr->lobby;
 
         receive_handle->buffer = packet_buffer;
-        receive_handle->buffer = rc;
+        receive_handle->buffer_size = rc;
 
         if (cr->cerver->thpool) {
             // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()

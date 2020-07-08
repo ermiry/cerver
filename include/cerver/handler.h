@@ -198,8 +198,7 @@ typedef struct CerverReceive {
 
 } CerverReceive;
 
-extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, struct _Socket *socket, 
-    ReceiveType receive_type, struct _Lobby *lobby);
+extern CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
 extern void cerver_receive_delete (void *ptr);
 
