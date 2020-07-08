@@ -1002,13 +1002,27 @@ static inline void cerver_receive_create_normal (CerverReceive *cr, Cerver *cerv
             }
         }
 
+        // for what ever reason we have a rogue connection
         else {
-            char *status = c_string_create ("cerver_receive_create () - RECEIVE_TYPE_NORMAL - no client with sock fd <%d>",
-                sock_fd);
-            if (status) {
-                cerver_log_error (status);
-                free (status);
+            // #ifdef CERVER_DEBUG
+            char *s = c_string_create (
+                "cerver_receive_create () - RECEIVE_TYPE_NORMAL - no client with sock fd <%d>",
+                sock_fd
+            );
+            if (s) {
+                cerver_log_error (s);
+                free (s);
             }
+            // #endif
+
+            // remove the sock fd from the cerver's main poll array
+            cerver_poll_unregister_sock_fd (cerver, sock_fd);
+
+            // try to remove the sock fd from the cerver's map
+            const void *key = &sock_fd;
+            htab_remove (cerver->client_sock_fd_map, key, sizeof (i32));
+
+            close (sock_fd);        // just close the socket
         }
     }
 
@@ -1022,13 +1036,23 @@ static inline void cerver_receive_create_on_hold (CerverReceive *cr, Cerver *cer
             cr->socket = cr->connection->socket;
         }
 
+        // for what ever reason we have a rogue connection
         else {
-            char *status = c_string_create ("cerver_receive_create () - RECEIVE_TYPE_ON_HOLD - no connection with sock fd <%d>",
-                sock_fd);
-            if (status) {
-                cerver_log_error (status);
-                free (status);
+            // #ifdef CERVER_DEBUG
+            char *s = c_string_create (
+                "cerver_receive_create () - RECEIVE_TYPE_ON_HOLD - no connection with sock fd <%d>",
+                sock_fd
+            );
+            if (s) {
+                cerver_log_error (s);
+                free (s);
             }
+            // #endif
+
+            // remove the sock fd from the cerver's on hold poll array
+            on_hold_poll_unregister_sock_fd (cerver, sock_fd);
+
+            close (sock_fd);        // just close the socket
         }
     }
 
@@ -1046,13 +1070,23 @@ static inline void cerver_receive_create_admin (CerverReceive *cr, Cerver *cerve
             }
         }
 
+        // for what ever reason we have a rogue connection
         else {
-            char *status = c_string_create ("cerver_receive_create () - RECEIVE_TYPE_ADMIN - no admin with sock fd <%d>",
-                sock_fd);
-            if (status) {
-                cerver_log_error (status);
-                free (status);
+            // #ifdef ADMIN_DEBUG
+            char *s = c_string_create (
+                "cerver_receive_create () - RECEIVE_TYPE_ADMIN - no admin with sock fd <%d>",
+                sock_fd
+            );
+            if (s) {
+                cerver_log_error (s);
+                free (s);
             }
+            // #endif
+
+            // remove the sock fd from the cerver's admin poll array
+            admin_cerver_poll_unregister_sock_fd (cerver->admin, sock_fd);
+
+            close (sock_fd);        // just close the socket
         }
     }
 
