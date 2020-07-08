@@ -548,7 +548,7 @@ void lobby_poll (void *ptr) {
 
     if (ptr) {
         CerverLobby *cerver_lobby = (CerverLobby *) ptr;
-        Cerver *cerver = cerver_lobby->cerver;
+        // Cerver *cerver = cerver_lobby->cerver;
         Lobby *lobby = cerver_lobby->lobby;
 
         char *s = c_string_create ("Lobby %s poll has started!", lobby->id->str);
@@ -589,14 +589,15 @@ void lobby_poll (void *ptr) {
 
                 if (lobby->players_fds[i].fd >= 0) {
                     // cerver_receive (cerver_receive_new (cerver, lobby->players_fds[i].fd, false, lobby));
-                    cerver_receive (
-                        cerver_receive_new (
-                            cerver, 
-                            socket_get_by_fd (cerver, lobby->players_fds[i].fd, RECEIVE_TYPE_NORMAL),
-                            RECEIVE_TYPE_NORMAL,
-                            NULL
-                        )
-                    );
+                    // FIXME: 07/07/2020 -- update with new CerverReceive structure
+                    // cerver_receive (
+                    //     cerver_receive_new (
+                    //         cerver, 
+                    //         socket_get_by_fd (cerver, lobby->players_fds[i].fd, RECEIVE_TYPE_NORMAL),
+                    //         RECEIVE_TYPE_NORMAL,
+                    //         NULL
+                    //     )
+                    // );
                     // if (thpool_add_work (cerver->thpool, lobby->handler, 
                     //     cerver_receive_new (cerver, lobby->players_fds[i].fd, false))) {
                     //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
