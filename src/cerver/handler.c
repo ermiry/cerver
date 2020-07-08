@@ -851,88 +851,45 @@ static void cerver_packet_handler (void *ptr) {
 
 }
 
-static void cerver_packet_select_handler (Cerver *cerver, i32 sock_fd,
-    Packet *packet, ReceiveType receive_type) {
+static void cerver_packet_select_handler (ReceiveHandle *receive_handle, Packet *packet) {
 
-    switch (receive_type) {
+    switch (receive_handle->type) {
         case RECEIVE_TYPE_NONE: break;
 
         case RECEIVE_TYPE_NORMAL: {
-            Client *client = client_get_by_sock_fd (cerver, sock_fd);
-            if (client) {
-                Connection *connection = connection_get_by_sock_fd_from_client (client, sock_fd);
-                packet->client = client;
-                packet->connection = connection;
+            packet->cerver = receive_handle->cerver;
+            packet->client = receive_handle->client;
+            packet->connection = receive_handle->connection;
 
-                packet->client->stats->n_packets_received += 1;
-                packet->client->stats->total_bytes_received += packet->packet_size;
-                packet->connection->stats->n_packets_received += 1;
-                packet->connection->stats->total_bytes_received += packet->packet_size;
+            packet->cerver->stats->client_n_packets_received += 1;
+            packet->client->stats->n_packets_received += 1;
+            packet->connection->stats->n_packets_received += 1;
 
-                cerver_packet_handler (packet);
-            } 
-
-            else {
-                // #ifdef CERVER_DEBUG
-                char *s = c_string_create ("Failed to get CLIENT associated with sock <%i>!", sock_fd);
-                if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CLIENT, s);
-                    free (s);
-                }
-                // #endif
-
-                packet_delete (packet);
-            }
+            cerver_packet_handler (packet);
         } break;
 
         case RECEIVE_TYPE_ON_HOLD: {
-            Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
-            if (connection) {
-                packet->connection = connection;
+            packet->cerver = receive_handle->cerver;
+            packet->connection = receive_handle->connection;
 
-                packet->connection->stats->n_packets_received += 1;
-                packet->connection->stats->total_bytes_received += packet->packet_size;
+            packet->cerver->stats->on_hold_n_packets_received += 1;
+            packet->connection->stats->n_packets_received += 1;
 
-                on_hold_packet_handler (packet);
-            }
-
-            else {
-                // #ifdef CERVER_DEBUG
-                char *s = c_string_create ("Failed to get ON HOLD connection associated with sock <%i>!",
-                    sock_fd);
-                if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                    free (s);
-                }
-                // #endif
-
-                packet_delete (packet);
-            }
+            on_hold_packet_handler (packet);
         } break;
 
         case RECEIVE_TYPE_ADMIN: {
-            Admin *admin = admin_get_by_sock_fd (cerver->admin, sock_fd);
-            if (admin) {
-                Connection *connection = connection_get_by_sock_fd_from_client (admin->client, sock_fd);
-                packet->connection = connection;
+            packet->cerver = receive_handle->cerver;
+            packet->connection = receive_handle->connection;
+            packet->client = receive_handle->admin->client;
 
-                admin->client->stats->n_packets_received += 1;
-                admin->client->stats->total_bytes_received += packet->packet_size;
-                packet->connection->stats->n_packets_received += 1;
-                packet->connection->stats->total_bytes_received += packet->packet_size;
+            packet->cerver->admin->stats->total_n_packets_received += 1;
 
-                admin_packet_handler (packet);
-            }
+            receive_handle->admin->client->stats->n_packets_received += 1;
 
-            else {
-                char *s = c_string_create ("Failed to get ADMIN associated with sock fd <%i>!", sock_fd);
-                if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, s);
-                    free (s);
-                }
+            packet->connection->stats->n_packets_received += 1;
 
-                packet_delete (packet);
-            }
+            admin_packet_handler (packet);
         } break;
 
         default: break;
