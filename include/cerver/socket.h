@@ -30,6 +30,4 @@ extern void *socket_create_empty (void);
 
 extern Socket *socket_create (int fd);
 
-extern Socket *socket_get_by_fd (struct _Cerver *cerver, int sock_fd, ReceiveType receive_type);
-
 #endif
