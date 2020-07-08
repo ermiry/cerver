@@ -1334,18 +1334,6 @@ void cerver_receive_handle_buffer (void *receive_ptr) {
 
 }
 
-// directly close the connection & push the socket to the cerver's pool
-static void cerver_receive_handle_rogue_socket (Cerver *cerver, Socket *socket) {
-
-    if (cerver && socket) {
-        close (socket->sock_fd);        // just close the socket
-        socket->sock_fd = -1;
-        cerver_sockets_pool_push (cerver, socket);
-    }
-
-}
-
-// FIXME: use new CerverReceive
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
 static void cerver_receive_handle_failed (void *cr_ptr) {
@@ -1367,81 +1355,15 @@ static void cerver_receive_handle_failed (void *cr_ptr) {
                             }
                         }
 
-                        // get to which client the connection is registered to
-                        Client *client = client_get_by_sock_fd (cr->cerver, cr->socket->sock_fd);
-                        if (client) {
-                            client_remove_connection_by_sock_fd (cr->cerver, client, cr->socket->sock_fd);
-                        } 
-
-                        // for what ever reason we have a rogue connection
-                        else {
-                            #ifdef CERVER_DEBUG
-                            char *s = c_string_create ("Sock fd <%d> is NOT registered to a client in cerver %s",
-                                cr->socket->sock_fd, cr->cerver->info->name->str);
-                            if (s) {
-                                cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER, s);
-                                free (s);
-                            }
-                            #endif
-
-                            // remove the sock fd from the cerver's main poll array
-                            cerver_poll_unregister_sock_fd (cr->cerver, cr->socket->sock_fd);
-
-                            // try to remove the sock fd from the cerver's map
-                            const void *key = &cr->socket->sock_fd;
-                            htab_remove (cr->cerver->client_sock_fd_map, key, sizeof (i32));
-
-                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
-                        }
+                        client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
                     } break;
 
                     case RECEIVE_TYPE_ON_HOLD: {
-                        Connection *connection = connection_get_by_sock_fd_from_on_hold (cr->cerver, cr->socket->sock_fd);
-                        if (connection) {
-                            on_hold_connection_drop (cr->cerver, connection);
-                        }
-
-                        // for what ever reason we have a rogue connection
-                        else {
-                            #ifdef CERVER_DEBUG
-                            char *s = c_string_create ("Sock fd %d is not associated with an on hold connection in cerver %s",
-                                cr->socket->sock_fd, cr->cerver->info->name->str);
-                            if (s) {
-                                cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
-                                free (s);
-                            }
-                            #endif
-
-                            // remove the sock fd from the cerver's on hold poll array
-                            on_hold_poll_unregister_sock_fd (cr->cerver, cr->socket->sock_fd);
-
-                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
-                        }
+                        on_hold_connection_drop (cr->cerver, cr->connection);
                     } break;
 
                     case RECEIVE_TYPE_ADMIN: {
-                        // get to which admin the connection belongs to
-                        Admin *admin = admin_get_by_sock_fd (cr->cerver->admin, cr->socket->sock_fd);
-                        if (admin) {
-                            admin_remove_connection_by_sock_fd (cr->cerver->admin, admin, cr->socket->sock_fd);
-                        }
-
-                        // for what ever reason we have a rogue connection
-                        else {
-                            #ifdef ADMIN_DEBUG
-                            char *s = c_string_create ("Sock fd <%d> is NOT registered to an admin in cerver %s",
-                                cr->socket->sock_fd, cr->cerver->info->name->str);
-                            if (s) {
-                                cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
-                                free (s);
-                            }
-                            #endif
-
-                            // remove the sock fd from the cerver's admin poll array
-                            admin_cerver_poll_unregister_sock_fd (cr->cerver->admin, cr->socket->sock_fd);
-
-                            cerver_receive_handle_rogue_socket (cr->cerver, cr->socket);
-                        }
+                        admin_remove_connection_by_sock_fd (cr->cerver->admin, cr->admin, cr->socket->sock_fd);
                     } break;
 
                     default: break;
