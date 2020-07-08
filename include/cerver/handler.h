@@ -162,13 +162,19 @@ extern void sock_receive_delete (void *sock_receive_ptr);
 
 typedef struct ReceiveHandle {
 
+    ReceiveType type;
+
     struct _Cerver *cerver;
-    // i32 sock_fd;
+
+    struct _Socket *socket;
+    struct _Connection *connection;
+    struct _Client *client;
+    struct _Admin *admin;
+
+    struct _Lobby *lobby;
+
     char *buffer;
     size_t buffer_size;
-    struct _Socket *socket;
-    ReceiveType receive_type;
-    struct _Lobby *lobby;
 
 } ReceiveHandle;
 
@@ -179,8 +185,8 @@ extern void cerver_receive_handle_buffer (void *receive_ptr);
 
 typedef struct CerverReceive {
 
-    ReceiveType receive_type;
-    
+    ReceiveType type;
+
     struct _Cerver *cerver;
 
     struct _Socket *socket;
