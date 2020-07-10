@@ -7,6 +7,8 @@
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
+#include <cerver/auth.h>
+#include <cerver/admin.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -17,7 +19,16 @@ typedef enum AppRequest {
 
 } AppRequest;
 
+typedef struct Credentials {
+
+	char username[64];
+	char password[64];
+
+} Credentials;
+
 static Cerver *my_cerver = NULL;
+
+#pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
@@ -31,10 +42,14 @@ static void end (int dummy) {
 
 }
 
+#pragma endregion
+
+#pragma region handler
+
 static void handle_test_request (Packet *packet) {
 
 	if (packet) {
-		cerver_log_debug ("Got a test message from client. Sending another one back...");
+		cerver_log_debug ("Got a test message from ADMIN. Sending another one back...");
 		
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -53,7 +68,7 @@ static void handle_test_request (Packet *packet) {
 
 }
 
-static void handler (void *data) {
+static void admin_handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
@@ -71,6 +86,106 @@ static void handler (void *data) {
 	}
 
 }
+
+#pragma endregion
+
+#pragma region auth
+
+static u8 my_auth_method_username (AuthMethod *auth_method, const char *username) {
+
+	u8 retval = 1;
+
+	if (username) {
+		if (strlen (username) > 0) {
+			if (!strcmp (username, "ermiry")) {
+				retval = 0;		// success
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - Username does not exists!");
+				auth_method->error_message = estring_new ("Username does not exists!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - Username is required!");
+			auth_method->error_message = estring_new ("Username is required!");
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 my_auth_method_password (AuthMethod *auth_method, const char *password) {
+	
+	u8 retval = 1;
+
+	if (password) {
+		if (strlen (password) > 0) {
+			if (!strcmp (password, "hola12")) {
+				retval = 0;		// success auth
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - Password is incorrect!");
+				auth_method->error_message = estring_new ("Password is incorrect!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - Password is required!");
+			auth_method->error_message = estring_new ("Password is required!");
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 my_auth_method (void *auth_method_ptr)  {
+
+	u8 retval = 1;
+
+	if (auth_method_ptr) {
+		AuthMethod *auth_method = (AuthMethod *) auth_method_ptr;
+		if (auth_method->auth_data) {
+			if (auth_method->auth_data->auth_data_size >= sizeof (Credentials)) {
+				Credentials *credentials = (Credentials *) auth_method->auth_data->auth_data;
+
+				printf ("\nReceived credentials: \n");
+				printf ("\tUsername: %s\n", credentials->username);
+				printf ("\tPassword: %s\n", credentials->password);
+
+				if (!my_auth_method_username (auth_method, credentials->username)) {
+					if (!my_auth_method_password (auth_method, credentials->password)) {
+						retval = 0;		// success
+					}
+				}
+			}
+
+			else {
+				cerver_log_error ("my_auth_method () - auth data is of wrong size!");
+				auth_method->error_message = estring_new ("Missing auth data!");
+			}
+		}
+
+		else {
+			cerver_log_error ("my_auth_method () - auth packet does not have auth data!");
+		}
+	}
+
+	else {
+		cerver_log_error ("my_auth_method () - NULL auth_method_ptr!");
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region main
 
 int main (void) {
 
@@ -94,9 +209,17 @@ int main (void) {
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
 
-		Handler *app_handler = handler_create (handler);
-		handler_set_direct_handle (app_handler, true);
-		cerver_set_app_handlers (my_cerver, app_handler, NULL);
+		/*** cerver auth configuration ***/
+		// authentication needs to be enabled to handle admins
+		cerver_set_auth (my_cerver, 2, NULL);
+
+		/*** admin configuration ***/
+		cerver_set_admin_enable (my_cerver);
+		admin_cerver_set_authenticate (my_cerver->admin, my_auth_method);
+
+		Handler *admin_app_handler = handler_create (admin_handler);
+		handler_set_direct_handle (admin_app_handler, true);
+		admin_cerver_set_app_handlers (my_cerver->admin, admin_app_handler, NULL);
 
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
@@ -120,3 +243,5 @@ int main (void) {
 	return 0;
 
 }
+
+#pragma endregion

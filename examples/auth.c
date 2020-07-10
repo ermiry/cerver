@@ -27,6 +27,8 @@ typedef struct Credentials {
 
 static Cerver *my_cerver = NULL;
 
+#pragma region end
+
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
 	
@@ -38,6 +40,10 @@ static void end (int dummy) {
 	exit (0);
 
 }
+
+#pragma endregion
+
+#pragma region handler
 
 static void handle_test_request (Packet *packet) {
 
@@ -79,6 +85,10 @@ static void handler (void *data) {
 	}
 
 }
+
+#pragma endregion
+
+#pragma region auth
 
 static u8 my_auth_method_username (AuthMethod *auth_method, const char *username) {
 
@@ -172,6 +182,10 @@ static u8 my_auth_method (void *auth_method_ptr)  {
 
 }
 
+#pragma endregion
+
+#pragma region main
+
 int main (void) {
 
 	srand (time (NULL));
@@ -223,3 +237,5 @@ int main (void) {
 	return 0;
 
 }
+
+#pragma endregion
