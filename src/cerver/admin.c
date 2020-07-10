@@ -710,6 +710,21 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
 
 }
 
+// unregisters an admin from the cerver & then deletes it
+// returns 0 on success, 1 on error
+u8 admin_cerver_drop_admin (AdminCerver *admin_cerver, Admin *admin) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        admin_cerver_unregister_admin (admin_cerver, admin);
+        admin_delete (admin);
+    }
+
+    return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start

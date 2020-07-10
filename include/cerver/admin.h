@@ -267,6 +267,10 @@ extern u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin);
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin);
 
+// unregisters an admin from the cerver & then deletes it
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_drop_admin (AdminCerver *admin_cerver, Admin *admin);
+
 #pragma endregion
 
 #pragma region start
