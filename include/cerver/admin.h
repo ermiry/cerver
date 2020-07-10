@@ -77,6 +77,8 @@ extern Admin *admin_new (void);
 
 extern void admin_delete (void *admin_ptr);
 
+extern Admin *admin_create (void);
+
 extern Admin *admin_create_with_client (struct _Client *client);
 
 extern int admin_comparator_by_id (const void *a, const void *b);
@@ -84,12 +86,16 @@ extern int admin_comparator_by_id (const void *a, const void *b);
 // sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
 extern void admin_set_data (Admin *admin, void *data, Action delete_data);
 
-extern Admin *admin_get_by_sock_fd (struct _AdminCerver *admin_cerver, i32 sock_fd);
+// gets an admin by a matching connection in its client with the specified sock fd
+extern Admin *admin_get_by_sock_fd (struct _AdminCerver *admin_cerver, const i32 sock_fd);
+
+// gets an admin by a matching client's session id
+extern Admin *admin_get_by_session_id (struct _AdminCerver *admin_cerver, const char *session_id);
 
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-extern u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_cerver, Admin *admin, i32 sock_fd);
+extern u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd);
 
 // sends a packet to the first connection of the specified admin
 // returns 0 on success, 1 on error
@@ -146,6 +152,8 @@ struct _AdminCerver {
 	bool app_packet_handler_delete_packet;
 	bool app_error_packet_handler_delete_packet;
 	bool custom_packet_handler_delete_packet;
+
+	bool check_packets;                     // enable / disbale packet checking
 
 	pthread_t update_thread_id;
     Action update;                          // method to be executed every tick
@@ -225,6 +233,13 @@ extern unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver
 
 // returns the total number of handlers currently working (handling a packet)
 extern unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver);
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+extern void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packets);
 
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick

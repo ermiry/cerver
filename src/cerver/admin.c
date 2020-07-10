@@ -581,6 +581,19 @@ unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver) {
 
 }
 
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packets) {
+
+    if (admin_cerver) {
+        admin_cerver->check_packets = check_packets;
+    }
+
+}
+
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
 // the update args will be passed to your method as a CerverUpdate & won't be deleted 
@@ -1240,7 +1253,7 @@ static void admin_app_packet_handler (Packet *packet) {
     if (packet) {
         if (packet->cerver->admin->app_packet_handler) {
             if (packet->cerver->admin->app_packet_handler->direct_handle) {
-                // printf ("app_packet_handler - direct handle!\n");
+                printf ("app_packet_handler - direct handle!\n");
                 packet->cerver->admin->app_packet_handler->handler (packet);
                 if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
             }
@@ -1365,7 +1378,12 @@ static void admin_custom_packet_handler (Packet *packet) {
 void admin_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (!packet_check (packet)) {
+        bool good = true;
+        if (packet->cerver->check_packets) {
+            good = packet_check (packet);
+        }
+
+        if (good) {
             switch (packet->header->packet_type) {
                 case APP_PACKET: admin_app_packet_handler (packet); break;
 
