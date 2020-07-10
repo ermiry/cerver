@@ -126,12 +126,25 @@ void admin_delete (void *admin_ptr) {
 
 }
 
+Admin *admin_create (void) {
+
+    Admin *admin = admin_new ();
+    if (admin) {
+        time_t rawtime = 0;
+        time (&rawtime);
+        admin->id = estring_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
+    }
+
+    return admin;
+
+}
+
 Admin *admin_create_with_client (Client *client) {
 
 	Admin *admin = NULL;
 
 	if (client) {
-		admin = admin_new ();
+		admin = admin_create ();
 		if (admin) admin->client = client;
 	}
 
