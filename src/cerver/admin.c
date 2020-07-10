@@ -16,6 +16,7 @@
 #include "cerver/connection.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
+#include "cerver/events.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/bsem.h"
@@ -265,9 +266,21 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
                         admin->client,
                         connection
                     )) {
+                        cerver_event_trigger (
+                            CERVER_EVENT_ADMIN_CLOSE_CONNECTION,
+                            admin_cerver->cerver,
+                            NULL, NULL
+                        );
+
                         // no connections left in admin, just remove and delete
                         admin_cerver_unregister_admin (admin_cerver, admin);
                         admin_delete (admin);
+
+                        cerver_event_trigger (
+                            CERVER_EVENT_ADMIN_DROPPED,
+                            admin_cerver->cerver,
+                            NULL, NULL
+                        );
 
                         retval = 0;
                     }
@@ -278,11 +291,19 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
                 connection = admin_connection_get_by_sock_fd (admin, sock_fd);
                 if (connection) {
                     if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
-                        retval = client_connection_drop (
+                        if (!client_connection_drop (
                             admin_cerver->cerver,
                             admin->client,
                             connection
-                        );
+                        )) {
+                            cerver_event_trigger (
+                                CERVER_EVENT_ADMIN_CLOSE_CONNECTION,
+                                admin_cerver->cerver,
+                                NULL, NULL
+                            );
+
+                            retval = 0;
+                        }
                     }
                 }
 
@@ -1373,6 +1394,7 @@ static void admin_custom_packet_handler (Packet *packet) {
 
 }
 
+// FIXME: handle client requests
 // FIXME: handle stats
 // handles a packet from an admin
 void admin_packet_handler (Packet *packet) {
