@@ -1423,6 +1423,12 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                 cerver->fds[cerver->current_n_fds].events = POLLIN;
                 cerver->current_n_fds++;
 
+                cerver_event_trigger (
+                    CERVER_EVENT_STARTED,
+                    cerver,
+                    NULL, NULL
+                );
+
                 cerver_poll (cerver);
 
                 retval = 0;
@@ -2335,6 +2341,12 @@ u8 cerver_teardown (Cerver *cerver) {
             free (status);
         }
         #endif
+
+        cerver_event_trigger (
+            CERVER_EVENT_TEARDOWN,
+            cerver,
+            NULL, NULL
+        );
 
         cerver_clean (cerver);
 
