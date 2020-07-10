@@ -18,6 +18,7 @@
 #include "cerver/packets.h"
 #include "cerver/handler.h"
 #include "cerver/auth.h"
+#include "cerver/events.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
@@ -496,6 +497,12 @@ static void cerver_request_packet_handler (Packet *packet) {
                     }
 
                     client_drop (packet->cerver, packet->client);
+
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_DISCONNECTED,
+                        packet->cerver,
+                        NULL, NULL
+                    );
                 } break;
 
                 default: {
@@ -1618,6 +1625,12 @@ static void cerver_register_new_connection (Cerver *cerver,
                 connection->active = true;
 
                 cerver_info_send_info_packet (cerver, NULL, connection);
+
+                cerver_event_trigger (
+                    CERVER_EVENT_ON_HOLD_CONNECTED,
+                    cerver,
+                    NULL, connection
+                );
             }
 
             else {
@@ -1647,6 +1660,12 @@ static void cerver_register_new_connection (Cerver *cerver,
                     connection->active = true;
 
                     cerver_info_send_info_packet (cerver, client, connection);
+
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_CONNECTED,
+                        cerver,
+                        NULL, connection
+                    );
                 }
             }
         }
