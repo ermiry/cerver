@@ -552,14 +552,13 @@ static void auth_try (Packet *packet) {
 
 }
 
-// FIXME: send auth packet
 static void admin_auth_try (Packet *packet) {
 
     if (packet) {
         if (packet->cerver->admin) {
             if (packet->cerver->admin->authenticate) {
                 Client *client = NULL;
-                if (!auth_try_common (packet, packet->cerver->admin->authenticate, &client)) {
+                if (!auth_try_common (packet, packet->cerver->admin->authenticate, &client, true)) {
                     // remove from on hold structures & poll array
                     on_hold_connection_remove (packet->cerver, packet->connection);
 
@@ -569,7 +568,29 @@ static void admin_auth_try (Packet *packet) {
                     if (client) {
                         // create a new admin with client and register it to the admin
                         Admin *admin = admin_create_with_client (client);
-                        if (admin_cerver_register_admin (packet->cerver->admin, admin)) {
+                        if (!admin_cerver_register_admin (packet->cerver->admin, admin)) {
+                            // if we are successfull, send success packet
+                            if (packet->cerver->use_sessions) {
+                                SToken token = { 0 };
+                                memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+                                
+                                auth_send_success_packet (
+                                    packet->cerver, 
+                                    client, packet->connection,
+                                    &token, sizeof (SToken)
+                                );
+                            }
+
+                            else {
+                                auth_send_success_packet (
+                                    packet->cerver, 
+                                    client, packet->connection,
+                                    NULL, 0
+                                );
+                            }
+                        }
+
+                        else {
                             char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
                                 packet->cerver->info->name->str);
                             if (status) {
@@ -594,8 +615,14 @@ static void admin_auth_try (Packet *packet) {
 
                     // added connection to client with matching id (token)
                     else {
-                        // register the new connection to the cerver admin's poll array
-                        admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
+                        Admin *admin = admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd);
+                        if (admin) {
+                            // register the new connection to the cerver admin's poll array
+                            admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
+
+                            // send success auth packet to client
+                            auth_send_success_packet (packet->cerver, admin->client, packet->connection, NULL, 0);
+                        }
                     }
                 }
             }
@@ -616,6 +643,13 @@ static void admin_auth_try (Packet *packet) {
         }
 
         else {
+            char *status = c_string_create ("admin_auth_try () - Cerver %s does NOT support ADMINS!",
+                packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_warning (status);
+                free (status);
+            }
+
             on_hold_connection_drop (packet->cerver, packet->connection);
         }
     }
