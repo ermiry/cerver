@@ -377,9 +377,6 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->current_n_fds = 0;
 		admin_cerver->poll_timeout = DEFAULT_ADMIN_POLL_TIMEOUT;
 
-		admin_cerver->on_admin_fail_connection = NULL;
-		admin_cerver->on_admin_success_connection = NULL;
-
 		admin_cerver->app_packet_handler = NULL;
 		admin_cerver->app_error_packet_handler = NULL;
 		admin_cerver->custom_packet_handler = NULL;
@@ -495,21 +492,6 @@ void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds) {
 void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout) {
 
 	if (admin_cerver) admin_cerver->poll_timeout = poll_timeout;
-
-}
-
-// sets an action to be performed when a new admin failed to authenticate
-void admin_cerver_set_on_fail_connection (AdminCerver *admin_cerver, Action on_fail_connection) {
-
-	if (admin_cerver) admin_cerver->on_admin_fail_connection = on_fail_connection;
-
-}
-
-// sets an action to be performed when a new admin authenticated successfully
-// a struct _OnAdminConnection will be passed as the argument
-void admin_cerver_set_on_success_connection (AdminCerver *admin_cerver, Action on_success_connection) {
-
-	if (admin_cerver) admin_cerver->on_admin_success_connection = on_success_connection;
 
 }
 

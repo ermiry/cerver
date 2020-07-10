@@ -133,12 +133,6 @@ struct _AdminCerver {
 	u32 poll_timeout;
 	pthread_mutex_t *poll_lock;
 
-	// action to be performed when a new admin fail to authenticate
-	Action on_admin_fail_connection;
-
-	// action to be performed when a new admin authenticated successfully
-	Action on_admin_success_connection;
-
 	// custom admin packet handlers
 	// these handlers will only be accessible for authenticated admins
 	struct _Handler *app_packet_handler;
@@ -198,13 +192,6 @@ extern void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds);
 
 // sets a custom poll time out to use for admins
 extern void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
-
-// sets an action to be performed when a new admin failed to authenticate
-extern void admin_cerver_set_on_fail_connection (AdminCerver *admin_cerver, Action on_fail_connection);
-
-// sets an action to be performed when a new admin authenticated successfully
-// a struct _OnAdminConnection will be passed as the argument
-extern void admin_cerver_set_on_success_connection (AdminCerver *admin_cerver, Action on_success_connection);
 
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 extern void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, 
