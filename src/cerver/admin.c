@@ -1349,7 +1349,7 @@ static void admin_app_packet_handler (Packet *packet) {
     if (packet) {
         if (packet->cerver->admin->app_packet_handler) {
             if (packet->cerver->admin->app_packet_handler->direct_handle) {
-                printf ("app_packet_handler - direct handle!\n");
+                // printf ("app_packet_handler - direct handle!\n");
                 packet->cerver->admin->app_packet_handler->handler (packet);
                 if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
             }
@@ -1469,7 +1469,6 @@ static void admin_custom_packet_handler (Packet *packet) {
 
 }
 
-// FIXME: handle stats
 // handles a packet from an admin
 void admin_packet_handler (Packet *packet) {
 
@@ -1482,21 +1481,39 @@ void admin_packet_handler (Packet *packet) {
         if (good) {
             switch (packet->header->packet_type) {
                 // handles a request made from the admin
-                case REQUEST_PACKET: 
+                case REQUEST_PACKET:
+                    packet->cerver->admin->stats->received_packets->n_request_packets += 1;
+                    packet->client->stats->received_packets->n_request_packets += 1;
+                    packet->connection->stats->received_packets->n_request_packets += 1; 
                     admin_cerver_request_packet_handler (packet); 
                     packet_delete (packet);
                     break;
 
-                case APP_PACKET: admin_app_packet_handler (packet); break;
+                case APP_PACKET:
+                    packet->cerver->admin->stats->received_packets->n_app_packets += 1;
+                    packet->client->stats->received_packets->n_app_packets += 1;
+                    packet->connection->stats->received_packets->n_app_packets += 1;
+                    admin_app_packet_handler (packet); 
+                    break;
 
-                case APP_ERROR_PACKET: admin_app_error_packet_handler (packet); break;
+                case APP_ERROR_PACKET: 
+                    packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
+                    packet->client->stats->received_packets->n_app_error_packets += 1;
+                    packet->connection->stats->received_packets->n_app_error_packets += 1;
+                    admin_app_error_packet_handler (packet); 
+                    break;
 
-                case CUSTOM_PACKET: admin_custom_packet_handler (packet); break;
+                case CUSTOM_PACKET: 
+                    packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
+                    packet->client->stats->received_packets->n_custom_packets += 1;
+                    packet->connection->stats->received_packets->n_custom_packets += 1;
+                    admin_custom_packet_handler (packet); 
+                    break;
 
                 default: {
-                    // packet->cerver->stats->received_packets->n_bad_packets += 1;
-                    // packet->client->stats->received_packets->n_bad_packets += 1;
-                    // packet->connection->stats->received_packets->n_bad_packets += 1;
+                    packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
+                    packet->client->stats->received_packets->n_bad_packets += 1;
+                    packet->connection->stats->received_packets->n_bad_packets += 1;
                     #ifdef ADMIN_DEBUG
                     char *s = c_string_create ("Got a packet of unknown type in cerver %s admin handler", 
                         packet->cerver->info->name->str);
