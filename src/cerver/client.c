@@ -10,7 +10,7 @@
 #include "cerver/types/estring.h"
 
 #include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -423,15 +423,19 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
     u8 retval = 1;
 
     if (cerver && client) {
+        #ifdef CLIENT_DEBUG
+        char *s = NULL;
+        #endif
         Connection *connection = NULL;
         switch (client->connections->size) {
             case 0: {
                 #ifdef CLIENT_DEBUG
-                char *s = c_string_create ("client_remove_connection_by_sock_fd () - Client with id " 
-                    "%ld does not have ANY connection - removing him from cerver...",
-                    client->id);
+                s = c_string_create (
+                    "client_remove_connection_by_sock_fd () - Client <%ld> does not have ANY connection - removing him from cerver...",
+                    client->id
+                );
                 if (s) {
-                    cerver_log_warning (s);
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_CLIENT, s);
                     free (s);
                 }
                 #endif
@@ -441,6 +445,17 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
             } break;
 
             case 1: {
+                #ifdef CLIENT_DEBUG
+                s = c_string_create (
+                    "client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!\n",
+                    client->id
+                );
+                if (s) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                    free (s);
+                }
+                #endif
+
                 connection = (Connection *) client->connections->start->data;
 
                 // remove the connection from cerver structures & poll array
@@ -461,6 +476,17 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
             } break;
 
             default: {
+                #ifdef CLIENT_DEBUG
+                s = c_string_create (
+                    "client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!\n",
+                    client->id, dlist_size (client->connections)
+                );
+                if (s) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                    free (s);
+                }
+                #endif
+
                 // search the connection in the client
                 connection = connection_get_by_sock_fd_from_client (client, sock_fd);
                 if (connection) {
@@ -780,7 +806,7 @@ Client *client_get_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 // searches the avl tree to get the client associated with the session id
 // the cerver must support sessions
-Client *client_get_by_session_id (Cerver *cerver, char *session_id) {
+Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
 
     Client *client = NULL;
 
