@@ -235,11 +235,48 @@ static void auth_failed (Cerver *cerver, Connection *connection, const char *err
 
 }
 
-// authenticate a new connection using a session token
-// if we find a client with that token, we register the connection to him;
-// if we don't find a client, the token is invalid
-// returns 0 on success, 1 on error
-static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
+static u8 auth_with_token_admin (const Packet *packet, const AuthData *auth_data) {
+
+    u8 retval = 1;
+
+    if (packet && auth_data) {
+        // if we get a token, we search for an admin with the same token
+        Admin *admin = admin_get_by_session_id (packet->cerver->admin, auth_data->token->str);
+
+        // if we found a client, register the new connection to him
+        if (admin) {
+            #ifdef AUTH_DEBUG
+            char *status = c_string_create ("Found an ADMIN with session id <%s> in cerver %s.",
+                auth_data->token->str, packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
+                free (status);
+            }
+            #endif
+
+            if (!connection_register_to_client (admin->client, packet->connection)) {
+                retval = 0;
+            }
+        }
+
+        else {
+            char *status = c_string_create ("Failed to get ADMIN with matching session id <%s> in cerver %s",
+                auth_data->token->str, packet->cerver->info->name->str);
+            if (status) {
+                cerver_log_error (status);
+                free (status);
+            }
+
+            // if not, the token is invalid!
+            auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 auth_with_token_normal (const Packet *packet, const AuthData *auth_data) {
 
     u8 retval = 1;
 
@@ -250,7 +287,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
         // if we found a client, register the new connection to him
         if (client) {
             #ifdef AUTH_DEBUG
-            char *status = c_string_create ("Found a client with session id <%s> in cerver %s.",
+            char *status = c_string_create ("Found a CLIENT with session id <%s> in cerver %s.",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
@@ -259,18 +296,12 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
             #endif
 
             if (!connection_register_to_client (client, packet->connection)) {
-                // register connection to cerver structures
-                connection_register_to_cerver (packet->cerver, client, packet->connection);
-
-                // add connection's sock fd to cerver's main poll array
-                connection_register_to_cerver_poll (packet->cerver, packet->connection);
-
                 retval = 0;
             }
         }
 
         else {
-            char *status = c_string_create ("Failed to get client with matching session id <%s> in cerver %s",
+            char *status = c_string_create ("Failed to get CLIENT with matching session id <%s> in cerver %s",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
                 cerver_log_error (status);
@@ -279,6 +310,28 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data) {
 
             // if not, the token is invalid!
             auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
+        }
+    }
+
+    return retval;
+
+}
+
+// authenticate a new connection using a session token
+// if we find a client with that token, we register the connection to him;
+// if we don't find a client, the token is invalid
+// returns 0 on success, 1 on error
+static u8 auth_with_token (const Packet *packet, const AuthData *auth_data, bool admin) {
+
+    u8 retval = 1;
+
+    if (packet && auth_data) {
+        if (admin) {
+            retval = auth_with_token_admin (packet, auth_data);
+        }
+
+        else {
+            retval = auth_with_token_normal (packet, auth_data);
         }
     }
 
@@ -362,7 +415,7 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 
 }
 
-static u8 auth_try_common (Packet *packet, delegate authenticate, Client **client) {
+static u8 auth_try_common (Packet *packet, delegate authenticate, Client **client, bool admin) {
 
     u8 retval = 1;
 
@@ -373,7 +426,7 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
             // check that the cerver supports sessions
             if (packet->cerver->use_sessions) {
                 if (auth_data->token) {
-                    retval = auth_with_token (packet, auth_data);
+                    retval = auth_with_token (packet, auth_data, admin);
                 }
 
                 else {
@@ -415,7 +468,7 @@ static void auth_try (Packet *packet) {
     if (packet) {
         if (packet->cerver->authenticate) {
             Client *client = NULL;
-            if (!auth_try_common (packet, packet->cerver->authenticate, &client)) {
+            if (!auth_try_common (packet, packet->cerver->authenticate, &client, false)) {
                 // remove from on hold structures & poll array
                 on_hold_connection_remove (packet->cerver, packet->connection);
 
@@ -472,6 +525,9 @@ static void auth_try (Packet *packet) {
                 // added connection to client with matching id (token)
                 else {
                     Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
+
+                    // add connection's sock fd to cerver's main poll array & to cerver structures
+                    connection_add_to_cerver (packet->cerver, match, packet->connection);
 
                     // send success auth packet to client
                     auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
