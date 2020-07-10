@@ -296,7 +296,9 @@ static u8 auth_with_token_normal (const Packet *packet, const AuthData *auth_dat
             #endif
 
             if (!connection_register_to_client (client, packet->connection)) {
-                retval = 0;
+                if (!connection_register_to_cerver (packet->cerver, client, packet->connection)) {
+                    retval = 0;
+                }
             }
         }
 
@@ -462,6 +464,8 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
 
 }
 
+// static void *auth_try_register_connection ()
+
 // try to authenticate a connection using the values he sent to use
 static void auth_try (Packet *packet) {
 
@@ -526,8 +530,8 @@ static void auth_try (Packet *packet) {
                 else {
                     Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
 
-                    // add connection's sock fd to cerver's main poll array & to cerver structures
-                    connection_add_to_cerver (packet->cerver, match, packet->connection);
+                    // add connection's sock fd to cerver's main poll array
+                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
 
                     // send success auth packet to client
                     auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
