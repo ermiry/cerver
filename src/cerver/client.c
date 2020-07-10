@@ -19,6 +19,7 @@
 #include "cerver/client.h"
 #include "cerver/connection.h"
 #include "cerver/packets.h"
+#include "cerver/events.h"
 
 #include "cerver/threads/thread.h"
 
@@ -467,9 +468,21 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
                     client,
                     connection
                 )) {
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+                        cerver,
+                        NULL, NULL
+                    );
+
                     // no connections left in client, just remove and delete
                     client_remove_from_cerver (cerver, client);
                     client_delete (client);
+
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_DROPPED,
+                        cerver,
+                        NULL, NULL
+                    );
 
                     retval = 0;
                 }
@@ -493,11 +506,19 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
                     // remove the connection from cerver structures & poll array
                     connection_remove_from_cerver (cerver, connection);
 
-                    retval = client_connection_drop (
+                    if (!client_connection_drop (
                         cerver,
                         client,
                         connection
-                    );
+                    )) {
+                        cerver_event_trigger (
+                            CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+                            cerver,
+                            NULL, NULL
+                        );
+
+                        retval = 0;
+                    }
                 }
 
                 else {
