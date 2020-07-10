@@ -15,6 +15,7 @@
 #include "cerver/client.h"
 #include "cerver/connection.h"
 #include "cerver/auth.h"
+#include "cerver/events.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -269,6 +270,12 @@ static u8 auth_with_token_admin (const Packet *packet, const AuthData *auth_data
 
             // if not, the token is invalid!
             auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
+
+            cerver_event_trigger (
+                CERVER_EVENT_ADMIN_FAILED_AUTH,
+                packet->cerver,
+                NULL, packet->connection
+            );
         }
     }
 
@@ -312,6 +319,12 @@ static u8 auth_with_token_normal (const Packet *packet, const AuthData *auth_dat
 
             // if not, the token is invalid!
             auth_failed (packet->cerver, packet->connection, "Session id is invalid!");
+
+            cerver_event_trigger (
+                CERVER_EVENT_CLIENT_FAILED_AUTH,
+                packet->cerver,
+                client, packet->connection
+            );
         }
     }
 
@@ -343,7 +356,7 @@ static u8 auth_with_token (const Packet *packet, const AuthData *auth_data, bool
 
 // calls the user defined method passing the auth data and creates a new client on success
 // returns 0 on success, 1 on error
-static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthData *auth_data, Client **client) {
+static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthData *auth_data, Client **client, bool admin) {
 
     u8 retval = 1;
 
@@ -377,6 +390,22 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
                 #endif
 
                 auth_failed (packet->cerver, packet->connection, auth_method->error_message->str);
+
+                if (admin) {
+                    cerver_event_trigger (
+                        CERVER_EVENT_ADMIN_FAILED_AUTH,
+                        packet->cerver,
+                        NULL, packet->connection
+                    );
+                }
+
+                else {
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_FAILED_AUTH,
+                        packet->cerver,
+                        NULL, packet->connection
+                    );
+                }
             }   
 
             auth_method_delete (auth_method);
@@ -433,13 +462,13 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
 
                 else {
                     // if not, we authenticate using the user defined method
-                    retval = auth_with_defined_method (packet, authenticate, auth_data, client);
+                    retval = auth_with_defined_method (packet, authenticate, auth_data, client, admin);
                 }
             }
 
             else {
                 // if not, we authenticate using the user defined method
-                retval = auth_with_defined_method (packet, authenticate, auth_data, client);
+                retval = auth_with_defined_method (packet, authenticate, auth_data, client, admin);
             }
 
             auth_data_delete (auth_data);
@@ -457,6 +486,22 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
             #endif
 
             auth_failed (packet->cerver, packet->connection, "Missing auth data!");
+
+            if (admin) {
+                cerver_event_trigger (
+                    CERVER_EVENT_ADMIN_FAILED_AUTH,
+                    packet->cerver,
+                    NULL, packet->connection
+                );
+            }
+
+            else {
+                cerver_event_trigger (
+                    CERVER_EVENT_CLIENT_FAILED_AUTH,
+                    packet->cerver,
+                    NULL, packet->connection
+                );
+            }
         }
     }
 
@@ -501,6 +546,18 @@ static void auth_try (Packet *packet) {
                                 NULL, 0
                             );
                         }
+
+                        cerver_event_trigger (
+                            CERVER_EVENT_CLIENT_SUCCESS_AUTH,
+                            packet->cerver,
+                            client, packet->connection
+                        );
+
+                        cerver_event_trigger (
+                            CERVER_EVENT_CLIENT_CONNECTED,
+                            packet->cerver,
+                            client, packet->connection
+                        );
                     }
 
                     else {
@@ -529,12 +586,19 @@ static void auth_try (Packet *packet) {
                 // added connection to client with matching id (token)
                 else {
                     Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
+                    if (match) {
+                        // add connection's sock fd to cerver's main poll array
+                        connection_register_to_cerver_poll (packet->cerver, packet->connection);
 
-                    // add connection's sock fd to cerver's main poll array
-                    connection_register_to_cerver_poll (packet->cerver, packet->connection);
+                        // send success auth packet to client
+                        auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
 
-                    // send success auth packet to client
-                    auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
+                        cerver_event_trigger (
+                            CERVER_EVENT_CLIENT_NEW_CONNECTION,
+                            packet->cerver,
+                            match, packet->connection
+                        );
+                    }
                 }
             }
         }
@@ -592,6 +656,12 @@ static void admin_auth_try (Packet *packet) {
                                     NULL, 0
                                 );
                             }
+
+                            cerver_event_trigger (
+                                CERVER_EVENT_ADMIN_CONNECTED,
+                                packet->cerver,
+                                client, packet->connection
+                            );
                         }
 
                         else {
@@ -626,6 +696,12 @@ static void admin_auth_try (Packet *packet) {
 
                             // send success auth packet to client
                             auth_send_success_packet (packet->cerver, admin->client, packet->connection, NULL, 0);
+
+                            cerver_event_trigger (
+                                CERVER_EVENT_ADMIN_NEW_CONNECTION,
+                                packet->cerver,
+                                client, packet->connection
+                            );
                         }
                     }
                 }
@@ -849,6 +925,12 @@ void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
 
         // we can now safely delete the connection
         connection_delete (connection);
+
+        cerver_event_trigger (
+            CERVER_EVENT_ON_HOLD_DROP,
+            cerver,
+            NULL, NULL
+        );
     }
 
 }
