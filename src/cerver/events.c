@@ -40,8 +40,8 @@ void cerver_event_data_delete (CerverEventData *event_data) {
 
 }
 
-static CerverEventData *cerver_event_data_create (Cerver *cerver,
-	Client *client, Connection *connection, 
+static CerverEventData *cerver_event_data_create (const Cerver *cerver,
+	const Client *client, const Connection *connection, 
 	CerverEvent *event) {
 
 	CerverEventData *event_data = cerver_event_data_new ();
@@ -96,7 +96,7 @@ void cerver_event_delete (void *event_ptr) {
 
 }
 
-static CerverEvent *cerver_event_get (Cerver *cerver, CerverEventType event_type, 
+static CerverEvent *cerver_event_get (const Cerver *cerver, CerverEventType event_type, 
     ListElement **le_ptr) {
 
     if (cerver) {
@@ -194,8 +194,8 @@ u8 cerver_event_unregister (Cerver *cerver, CerverEventType event_type) {
 }
 
 // triggers all the actions that are registred to an event
-void cerver_event_trigger (CerverEventType event_type, Cerver *cerver, 
-	Client *client, Connection *connection) {
+void cerver_event_trigger (const CerverEventType event_type, const Cerver *cerver, 
+	const Client *client, const Connection *connection) {
 
     if (client) {
         ListElement *le = NULL;
