@@ -249,7 +249,6 @@ Cerver *cerver_new (void) {
 
         c->clients = NULL;
         c->client_sock_fd_map = NULL;
-        c->on_client_connected = NULL;
 
         c->inactive_clients = false;
 
@@ -427,13 +426,6 @@ void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
 void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets) {
 
     if (cerver) cerver->sockets_pool_init = n_sockets;
-
-}
-
-// sets an action to be performed by the cerver when a new client connects
-void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected) {
-
-    if (cerver) cerver->on_client_connected = on_client_connected;
 
 }
 

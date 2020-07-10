@@ -1653,10 +1653,6 @@ static void cerver_register_new_connection (Cerver *cerver,
                 connection_register_to_client (client, connection);
 
                 if (!client_register_to_cerver ((Cerver *) cerver, client)) {
-                    // trigger cerver on client connected action
-                    if (cerver->on_client_connected) 
-                        cerver->on_client_connected (client);
-
                     connection->active = true;
 
                     cerver_info_send_info_packet (cerver, client, connection);

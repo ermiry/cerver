@@ -146,8 +146,6 @@ struct _Cerver {
 
     AVLTree *clients;                   // connected clients 
     Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
-    // action to be performed when a new client connects
-    Action on_client_connected;   
 
     // 17/06/2020 - ability to check for inactive clients
     // clients that have not been sent or received from a packet in x time
@@ -265,9 +263,6 @@ extern void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads);
 // sets the initial number of sockets to be created in the cerver's sockets pool
 // the defauult value is 10
 extern void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets);
-
-// sets an action to be performed by the cerver when a new client connects
-extern void cerver_set_on_client_connected  (Cerver *cerver, Action on_client_connected);
 
 // 17/06/2020
 // enables the ability to check for inactive clients - clients that have not been sent or received from a packet in x time
