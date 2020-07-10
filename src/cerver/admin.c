@@ -172,7 +172,7 @@ void admin_set_data (Admin *admin, void *data, Action delete_data) {
 
 }
 
-static Connection *admin_connection_get_by_sock_fd (Admin *admin, i32 sock_fd) {
+static Connection *admin_connection_get_by_sock_fd (Admin *admin, const i32 sock_fd) {
 
     Connection *retval = NULL;
 
@@ -191,7 +191,8 @@ static Connection *admin_connection_get_by_sock_fd (Admin *admin, i32 sock_fd) {
 
 }
 
-Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
+// gets an admin by a matching connection in its client with the specified sock fd
+Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd) {
 
 	Admin *retval = NULL;
 
@@ -208,10 +209,32 @@ Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
 
 }
 
+// gets an admin by a matching client's session id
+Admin *admin_get_by_session_id (AdminCerver *admin_cerver, const char *session_id) {
+
+	Admin *retval = NULL;
+
+	if (admin_cerver) {
+        Admin *admin = NULL;
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+            admin = (Admin *) le->data;
+            if (admin->client->session_id) {
+                if (!strcmp (admin->client->session_id->str, session_id)) {
+                    retval = (Admin *) le->data;
+                    break;
+                }
+            }
+		}
+	}
+
+	return retval;
+
+}
+
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, i32 sock_fd) {
+u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd) {
 
     u8 retval = 1;
 
@@ -813,7 +836,7 @@ static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
                 }
 
                 else {
-                    char *s = c_string_create ("Failed to start admin cerver %s app_packet_handler!",
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s app_packet_handler!",
                         admin_cerver->cerver->info->name->str);
                     if (s) {
                         cerver_log_error (s);
@@ -825,7 +848,7 @@ static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
 
         else {
 			#ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
+            char *s = c_string_create ("Admin cerver %s does not have an app_packet_handler",
 				admin_cerver->cerver->info->name->str);
 			if (s) {
 				cerver_log_warning (s);
@@ -858,7 +881,7 @@ static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
                 }
 
                 else {
-                    char *s = c_string_create ("Failed to start admin cerver %s app_error_packet_handler!",
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s app_error_packet_handler!",
                         admin_cerver->cerver->info->name->str);
                     if (s) {
                         cerver_log_error (s);
@@ -870,7 +893,7 @@ static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
 
         else {
 			#ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler",
+            char *s = c_string_create ("Admin cerver %s does not have an app_error_packet_handler",
 				admin_cerver->cerver->info->name->str);
 			if (s) {
 				cerver_log_warning (s);
@@ -903,7 +926,7 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
                 }
 
                 else {
-                    char *s = c_string_create ("Failed to start admin cerver %s custom_packet_handler!",
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s custom_packet_handler!",
                         admin_cerver->cerver->info->name->str);
                     if (s) {
                         cerver_log_error (s);
@@ -914,14 +937,14 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
         }
 
         else {
-			#ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s does not have a custom_packet_handler",
-				admin_cerver->cerver->info->name->str);
-			if (s) {
-				cerver_log_warning (s);
-				free (s);
-			}
-			#endif
+			// #ifdef ADMIN_DEBUG
+            // char *s = c_string_create ("Cerver %s does not have a custom_packet_handler",
+			// 	admin_cerver->cerver->info->name->str);
+			// if (s) {
+			// 	cerver_log_warning (s);
+			// 	free (s);
+			// }
+			// #endif
         }
     }
 
