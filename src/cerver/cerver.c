@@ -466,7 +466,7 @@ u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate) {
 
     u8 retval = 1;
 
-    if (cerver && authenticate) {
+    if (cerver) {
         cerver->auth_required = true;
         cerver->max_auth_tries = max_auth_tries;
         cerver->authenticate = authenticate;
