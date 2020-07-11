@@ -7,8 +7,13 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/cerver.h"
+#include "cerver/client.h"
+#include "cerver/connection.h"
 #include "cerver/errors.h"
 #include "cerver/packets.h"
+
+#include "cerver/threads/thread.h"
 
 static SError *error_serialize (Error *error);
 static inline void serror_delete (void *ptr);
@@ -27,7 +32,8 @@ static CerverErrorEventData *cerver_error_event_data_new (void) {
 		error_event_data->connection = NULL;
 
 		error_event_data->action_args = NULL;
-		error_event_data->delete_action_args = NULL;
+
+        error_event_data->error_message = NULL;
 	}
 
 	return error_event_data;
@@ -36,13 +42,20 @@ static CerverErrorEventData *cerver_error_event_data_new (void) {
 
 void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
-	if (error_event_data) free (error_event_data);
+	if (error_event_data) {
+        estring_delete (error_event_data->error_message);
+
+        free (error_event_data);
+    }
 
 }
 
-static CerverErrorEventData *cerver_error_event_data_create (const Cerver *cerver,
+static CerverErrorEventData *cerver_error_event_data_create (
+    const Cerver *cerver,
 	const Client *client, const Connection *connection, 
-	CerverErrorEvent *event) {
+	void *action_args,
+    const char *error_message
+) {
 
 	CerverErrorEventData *error_event_data = cerver_error_event_data_new ();
 	if (error_event_data) {
@@ -51,8 +64,9 @@ static CerverErrorEventData *cerver_error_event_data_create (const Cerver *cerve
 		error_event_data->client = client;
 		error_event_data->connection = connection;
 
-		error_event_data->action_args = event->action_args;
-		error_event_data->delete_action_args = event->delete_action_args;
+		error_event_data->action_args = action_args;
+
+        error_event_data->error_message = error_message ? estring_new (error_message) : NULL;
 	}
 
 	return error_event_data;
@@ -190,6 +204,49 @@ u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_ty
     }
 
     return retval;
+
+}
+
+// triggers all the actions that are registred to an error
+void cerver_error_event_trigger (const CerverErrorType error_type, 
+    const Cerver *cerver, 
+	const Client *client, const Connection *connection,
+    const char *error_message
+) {
+
+    if (client) {
+        ListElement *le = NULL;
+        CerverErrorEvent *error = cerver_error_event_get (cerver, error_type, &le);
+        if (error) {
+            // trigger the action
+            if (error->action) {
+                if (error->create_thread) {
+                    pthread_t thread_id = 0;
+                    thread_create_detachable (
+                        &thread_id,
+                        (void *(*)(void *)) error->action, 
+                        cerver_error_event_data_create (
+							cerver,
+                            client, connection,
+                            error->action_args,
+                            error_message
+                        )
+                    );
+                }
+
+                else {
+                    error->action (cerver_error_event_data_create (
+						cerver,
+                        client, connection, 
+                        error->action_args,
+                        error_message
+                    ));
+                }
+                
+                if (error->drop_after_trigger) cerver_error_event_pop (cerver->errors, le);
+            }
+        }
+    }
 
 }
 

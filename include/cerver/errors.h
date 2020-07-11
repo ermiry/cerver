@@ -52,14 +52,21 @@ extern void cerver_error_event_delete (void *event_ptr);
 // a newly allocated CerverErrorEventData structure will be passed to your method 
 // that should be free using the cerver_error_event_data_delete () method
 // returns 0 on success, 1 on error
-extern u8 cerver_error_event_register (Cerver *cerver, const CerverErrorType error_type, 
+extern u8 cerver_error_event_register (struct _Cerver *cerver, const CerverErrorType error_type, 
     Action action, void *action_args, Action delete_action_args, 
     bool create_thread, bool drop_after_trigger);
 
 // unregister the action associated with an error event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error
-extern u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
+extern u8 cerver_error_event_unregister (struct _Cerver *cerver, const CerverErrorType error_type);
+
+// triggers all the actions that are registred to an error
+extern void cerver_error_event_trigger (const CerverErrorType error_type, 
+    const struct _Cerver *cerver, 
+	const struct _Client *client, const struct _Connection *connection,
+    const char *error_message
+);
 
 #pragma endregion
 
@@ -74,7 +81,8 @@ typedef struct CerverErrorEventData {
 	const struct _Connection *connection;
 
 	void *action_args;                  // the action arguments
-	Action delete_action_args;
+
+	estring *error_message;
 
 } CerverErrorEventData;
 
