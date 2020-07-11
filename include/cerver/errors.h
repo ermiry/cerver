@@ -47,6 +47,20 @@ typedef struct CerverErrorEvent {
 
 extern void cerver_error_event_delete (void *event_ptr);
 
+// registers an action to be triggered when the specified error event occurs
+// if there is an existing action registered to an error event, it will be overrided
+// a newly allocated CerverErrorEventData structure will be passed to your method 
+// that should be free using the cerver_error_event_data_delete () method
+// returns 0 on success, 1 on error
+extern u8 cerver_error_event_register (Cerver *cerver, const CerverErrorType error_type, 
+    Action action, void *action_args, Action delete_action_args, 
+    bool create_thread, bool drop_after_trigger);
+
+// unregister the action associated with an error event
+// deletes the action args using the delete_action_args () if NOT NULL
+// returns 0 on success, 1 on error
+extern u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
+
 #pragma endregion
 
 #pragma region data

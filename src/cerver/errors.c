@@ -13,6 +13,8 @@
 static SError *error_serialize (Error *error);
 static inline void serror_delete (void *ptr);
 
+u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
+
 #pragma region data
 
 static CerverErrorEventData *cerver_error_event_data_new (void) {
@@ -40,7 +42,7 @@ void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
 static CerverErrorEventData *cerver_error_event_data_create (const Cerver *cerver,
 	const Client *client, const Connection *connection, 
-	CerverEvent *event) {
+	CerverErrorEvent *event) {
 
 	CerverErrorEventData *error_event_data = cerver_error_event_data_new ();
 	if (error_event_data) {
@@ -91,6 +93,103 @@ void cerver_error_event_delete (void *event_ptr) {
 
 		free (event);
 	}
+
+}
+
+static CerverErrorEvent *cerver_error_event_get (const Cerver *cerver, const CerverErrorType error_type, 
+    ListElement **le_ptr) {
+
+    if (cerver) {
+        if (cerver->errors) {
+            CerverErrorEvent *error = NULL;
+            for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
+                error = (CerverErrorEvent *) le->data;
+                if (error->type == error_type) {
+                    if (le_ptr) *le_ptr = le;
+                    return error;
+                } 
+            }
+        }
+    }
+
+    return NULL;
+
+}
+
+static void cerver_error_event_pop (DoubleList *list, ListElement *le) {
+
+    if (le) {
+        void *data = dlist_remove_element (list, le);
+        if (data) cerver_error_event_delete (data);
+    }
+
+}
+
+// registers an action to be triggered when the specified error event occurs
+// if there is an existing action registered to an error event, it will be overrided
+// a newly allocated CerverErrorEventData structure will be passed to your method 
+// that should be free using the cerver_error_event_data_delete () method
+// returns 0 on success, 1 on error
+u8 cerver_error_event_register (Cerver *cerver, const CerverErrorType error_type, 
+    Action action, void *action_args, Action delete_action_args, 
+    bool create_thread, bool drop_after_trigger) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        if (cerver->errors) {
+            CerverErrorEvent *error = cerver_error_event_new ();
+            if (error) {
+                error->type = error_type;
+
+                error->create_thread = create_thread;
+                error->drop_after_trigger = drop_after_trigger;
+
+                error->action = action;
+                error->action_args = action_args;
+                error->delete_action_args = delete_action_args;
+
+                // search if there is an action already registred for that error and remove it
+                (void) cerver_error_event_unregister (cerver, error_type);
+
+                if (!dlist_insert_after (
+                    cerver->errors, 
+                    dlist_end (cerver->errors),
+                    error
+                )) {
+                    retval = 0;
+                }
+            }
+        }
+    }
+
+    return retval;
+    
+}
+
+// unregister the action associated with an error event
+// deletes the action args using the delete_action_args () if NOT NULL
+// returns 0 on success, 1 on error
+u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        if (cerver->errors) {
+            CerverErrorEvent *error = NULL;
+            for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
+                error = (CerverErrorEvent *) le->data;
+                if (error->type == error_type) {
+                    cerver_error_event_delete (dlist_remove_element (cerver->errors, le));
+                    retval = 0;
+
+                    break;
+                }
+            }
+        }
+    }
+
+    return retval;
 
 }
 
