@@ -1,6 +1,7 @@
 #ifndef _CERVER_ERRORS_H_
 #define _CERVER_ERRORS_H_
 
+#include <stdbool.h>
 #include <time.h>
 
 #include "cerver/types/types.h"
@@ -11,27 +12,38 @@ struct _Client;
 struct _Packet;
 struct _Connection;
 
-// FIXME: refactor errors like in client!
-typedef enum ErrorType {
+typedef enum CerverErrorType {
 
-    ERR_NONE                    = 0,
+    CERVER_ERROR_NONE                    = 0,
 
-	// internal server error, like no memory
-	ERR_CERVER_ERROR            = 1, 
+	CERVER_ERROR_CERVER_ERROR            = 1, // sent to the client when the cerver has an internal error
 
-	ERR_FAILED_AUTH             = 2,  
+	CERVER_ERROR_FAILED_AUTH             = 2, // errors that is sent to the client when he failed to authenticate
 
-	ERR_CREATE_LOBBY            = 3,
-	ERR_JOIN_LOBBY              = 4,
-	ERR_LEAVE_LOBBY             = 5,
-	ERR_FIND_LOBBY              = 6,
+	CERVER_ERROR_CREATE_LOBBY            = 3, // failed to create a new game lobby
+	CERVER_ERROR_JOIN_LOBBY              = 4, // a client / player failed to join an existin lobby
+	CERVER_ERROR_LEAVE_LOBBY             = 5, // a player failed to leave from a lobby
+	CERVER_ERROR_FIND_LOBBY              = 6, // failed to find a game lobby for a player
 
-	ERR_GAME_INIT               = 7,
-	ERR_GAME_START              = 8,
+	CERVER_ERROR_GAME_INIT               = 7, // the game failed to init properly
+	CERVER_ERROR_GAME_START              = 8, // the game failed to start
 
-} ErrorType;
+} CerverErrorType;
 
 #pragma region error
+
+typedef struct CerverErrorEvent {
+
+	CerverErrorType type;
+
+	bool create_thread;                 // create a detachable thread to run action
+	bool drop_after_trigger;            // if we only want to trigger the event once 
+
+	Action action;                      // the action to be triggered
+	void *action_args;                  // the action arguments
+	Action delete_action_args;          // how to get rid of the data when deleting the listeners
+
+} CerverErrorEvent;
 
 // when a client error happens, it sets the appropaited msg (if any)
 // and an event is triggered
@@ -70,7 +82,7 @@ typedef struct SError {
 
     time_t timestamp;
     u32 error_type;
-    char msg[128];
+    char msg[ERROR_MESSAGE_LENGTH];
 
 } SError;
 

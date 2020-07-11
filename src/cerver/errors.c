@@ -1,8 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <time.h>
 
+#include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
 #include "cerver/errors.h"
@@ -10,6 +12,43 @@
 
 static SError *error_serialize (Error *error);
 static inline void serror_delete (void *ptr);
+
+#pragma region event
+
+static CerverErrorEvent *cerver_error_event_new (void) {
+
+	CerverErrorEvent *cerver_error_event = (CerverErrorEvent *) malloc (sizeof (CerverErrorEvent));
+	if (cerver_error_event) {
+		cerver_error_event->type = CERVER_ERROR_NONE;
+
+		cerver_error_event->create_thread = false;
+		cerver_error_event->drop_after_trigger = false;
+
+		cerver_error_event->action = NULL;
+		cerver_error_event->action_args = NULL;
+		cerver_error_event->delete_action_args = NULL;
+	}
+
+	return cerver_error_event;
+
+}
+
+void cerver_error_event_delete (void *event_ptr) {
+
+	if (event_ptr) {
+		CerverErrorEvent *event = (CerverErrorEvent *) event_ptr;
+		
+		if (event->action_args) {
+			if (event->delete_action_args)
+				event->delete_action_args (event->action_args);
+		}
+
+		free (event);
+	}
+
+}
+
+#pragma endregion
 
 #pragma region error
 
