@@ -13,6 +13,52 @@
 static SError *error_serialize (Error *error);
 static inline void serror_delete (void *ptr);
 
+#pragma region data
+
+static CerverErrorEventData *cerver_error_event_data_new (void) {
+
+	CerverErrorEventData *error_event_data = (CerverErrorEventData *) malloc (sizeof (CerverErrorEventData));
+	if (error_event_data) {
+		error_event_data->cerver = NULL;
+
+		error_event_data->client = NULL;
+		error_event_data->connection = NULL;
+
+		error_event_data->action_args = NULL;
+		error_event_data->delete_action_args = NULL;
+	}
+
+	return error_event_data;
+
+}
+
+void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
+
+	if (error_event_data) free (error_event_data);
+
+}
+
+static CerverErrorEventData *cerver_error_event_data_create (const Cerver *cerver,
+	const Client *client, const Connection *connection, 
+	CerverEvent *event) {
+
+	CerverErrorEventData *error_event_data = cerver_error_event_data_new ();
+	if (error_event_data) {
+		error_event_data->cerver = cerver;
+
+		error_event_data->client = client;
+		error_event_data->connection = connection;
+
+		error_event_data->action_args = event->action_args;
+		error_event_data->delete_action_args = event->delete_action_args;
+	}
+
+	return error_event_data;
+
+}
+
+#pragma endregion
+
 #pragma region event
 
 static CerverErrorEvent *cerver_error_event_new (void) {

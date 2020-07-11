@@ -30,7 +30,7 @@ typedef enum CerverErrorType {
 
 } CerverErrorType;
 
-#pragma region error
+#pragma region event
 
 typedef struct CerverErrorEvent {
 
@@ -44,6 +44,31 @@ typedef struct CerverErrorEvent {
 	Action delete_action_args;          // how to get rid of the data when deleting the listeners
 
 } CerverErrorEvent;
+
+extern void cerver_error_event_delete (void *event_ptr);
+
+#pragma endregion
+
+#pragma region data
+
+// structure that is passed to the user registered method
+typedef struct CerverErrorEventData {
+
+	const struct _Cerver *cerver;
+
+	const struct _Client *client;
+	const struct _Connection *connection;
+
+	void *action_args;                  // the action arguments
+	Action delete_action_args;
+
+} CerverErrorEventData;
+
+extern void cerver_error_event_data_delete (CerverErrorEventData *error_event_data);
+
+#pragma endregion
+
+#pragma region error
 
 // when a client error happens, it sets the appropaited msg (if any)
 // and an event is triggered
