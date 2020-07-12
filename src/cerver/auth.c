@@ -217,7 +217,7 @@ static void auth_failed (Cerver *cerver, Connection *connection, const char *err
 
     if (cerver && connection) {
         // send failed auth packet to client
-        Packet *error_packet = error_packet_generate (ERR_FAILED_AUTH, error_message);
+        Packet *error_packet = error_packet_generate (CERVER_ERROR_FAILED_AUTH, error_message);
         if (error_packet) {
             packet_set_network_values (error_packet, cerver, NULL, connection, NULL);
             packet_send (error_packet, 0, NULL, false);
@@ -569,7 +569,7 @@ static void auth_try (Packet *packet) {
                         }
 
                         // send an error packet to the client
-                        error_packet_generate_and_send (ERR_CERVER_ERROR, "Internal cerver error!",
+                        error_packet_generate_and_send (CERVER_ERROR_CERVER_ERROR, "Internal cerver error!",
                             packet->cerver, client, packet->connection);
 
                         // close the client's only connection and delete the client
@@ -673,7 +673,7 @@ static void admin_auth_try (Packet *packet) {
                             }
 
                             // send an error packet to the client
-                            error_packet_generate_and_send (ERR_CERVER_ERROR, "Internal cerver error!",
+                            error_packet_generate_and_send (CERVER_ERROR_CERVER_ERROR, "Internal cerver error!",
                                 packet->cerver, client, packet->connection);
 
                             // close the admin's client only connection and delete the admin
