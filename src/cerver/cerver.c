@@ -2403,6 +2403,149 @@ void cerver_report_delete (void *ptr) {
 
 }
 
+static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, Connection *connection) {
+
+    if (cerver_report && connection) {
+        if (cerver_report->auth_required) {
+            // #ifdef CLIENT_DEBUG
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver requires authentication.");
+            // #endif
+            if (connection->auth_data) {
+                #ifdef CLIENT_DEBUG
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Sending auth data to cerver...");
+                #endif
+
+                if (!connection->auth_packet) {
+                    if (!connection_generate_auth_packet (connection)) {
+                        char *status = c_string_create ("cerver_check_info () - Generated connection %s auth packet!",
+                            connection->name->str);
+                        if (status) {
+                            client_log_success (status);
+                            free (status);
+                        }
+                    }
+
+                    else {
+                        char *status = c_string_create ("cerver_check_info () - Failed to generate connection %s auth packet!",
+                            connection->name->str);
+                        if (status) {
+                            client_log_error (status);
+                            free (status);
+                        }
+                    }
+                }
+
+                if (connection->auth_packet) {
+                    packet_set_network_values (connection->auth_packet, NULL, connection);
+
+                    if (!packet_send (connection->auth_packet, 0, NULL, false)) {
+                        char *s = c_string_create ("cerver_check_info () - Sent connection %s auth packet!",
+                            connection->name->str);
+                        if (s) {
+                            client_log_success (s);
+                            free (s);
+                        }
+                    }
+
+                    else {
+                        char *s = c_string_create ("cerver_check_info () - Failed to send connection %s auth packet!",
+                            connection->name->str);
+                        if (s) {
+                            client_log_error (s);
+                            free (s);
+                        }
+                    }
+                }
+
+                if (cerver_report->uses_sessions) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver supports sessions.");
+                }
+            }
+
+            else {
+                char *s = c_string_create ("Connection %s does NOT have an auth packet!",
+                    connection->name->str);
+                if (s) {
+                    client_log_error (s);
+                    free (s);
+                }
+            }
+        }
+
+        else {
+            #ifdef CLIENT_DEBUG
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver does NOT require authentication.");
+            #endif
+        }
+    }
+
+}
+
+static u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection) {
+
+    u8 retval = 1;
+
+    if (cerver_report && connection) {
+        // FIXME:
+        // connection->cerver = cerver;
+
+        // #ifdef CLIENT_DEBUG
+        char *s = c_string_create ("Connected to cerver %s.", cerver_report->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+            free (s);
+        }
+        
+        switch (cerver_report->protocol) {
+            case PROTOCOL_TCP: 
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver using TCP protocol."); 
+                break;
+            case PROTOCOL_UDP: 
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver using UDP protocol.");
+                break;
+
+            default: 
+                cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "Cerver using unknown protocol."); 
+                break;
+        }
+        // #endif
+
+        if (cerver_report->use_ipv6) {
+            // #ifdef CLIENT_DEBUG
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver is configured to use ipv6");
+            // #endif
+        }
+
+        // #ifdef CLIENT_DEBUG
+        switch (cerver_report->type) {
+            case CUSTOM_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: CUSTOM");
+                break;
+            case FILE_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
+                break;
+            case WEB_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: WEB");
+                break;
+            case GAME_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
+                break;
+
+            default: 
+                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Cerver type: UNKNOWN"); 
+                break;
+        }
+        // #endif
+
+        cerver_report_check_info_handle_auth (cerver_report, connection);
+
+        retval = 0;
+    }
+
+    return retval;
+
+}
+
 #pragma endregion
 
 #pragma region serialization
@@ -2437,6 +2580,29 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
     }
 
     return scerver;
+
+}
+
+static CerverReport *cerver_deserialize (SCerver *scerver) {
+    
+    CerverReport *cerver_report = NULL;
+
+    if (scerver) {
+        cerver_report = cerver_report_new ();
+        if (cerver_report) {
+            cerver_report->type = scerver->type;
+            cerver_report->name = estring_new (scerver->name);
+
+            cerver_report->use_ipv6 = scerver->use_ipv6;
+            cerver_report->protocol = scerver->protocol;
+            cerver_report->port = scerver->port;
+
+            cerver_report->auth_required = scerver->auth_required;
+            cerver_report->uses_sessions = scerver->uses_sessions;
+        }
+    }
+
+    return cerver_report;
 
 }
 
