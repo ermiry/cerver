@@ -28,6 +28,7 @@
 #include "cerver/network.h"
 #include "cerver/packets.h"
 #include "cerver/events.h"
+#include "cerver/errors.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -298,6 +299,7 @@ Cerver *cerver_new (void) {
         c->admin = NULL;
 
         c->events = NULL;
+        c->errors = NULL;
 
         c->info = NULL;
         c->stats = NULL;
@@ -363,6 +365,7 @@ void cerver_delete (void *ptr) {
         admin_cerver_delete (cerver->admin);
 
         dlist_delete (cerver->events);
+        dlist_delete (cerver->errors);
 
         cerver_info_delete (cerver->info);
         cerver_stats_delete (cerver->stats);
@@ -1236,6 +1239,7 @@ Cerver *cerver_create (const CerverType type, const char *name,
             cerver_set_poll_time_out (cerver, poll_timeout);
 
             cerver->events = dlist_init (cerver_event_delete, NULL);
+            cerver->errors = dlist_init (cerver_error_event_delete, NULL);
 
             if (!cerver_init (cerver)) {
                 char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
