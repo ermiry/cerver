@@ -2420,7 +2420,7 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                         char *status = c_string_create ("cerver_check_info () - Generated connection %s auth packet!",
                             connection->name->str);
                         if (status) {
-                            client_log_success (status);
+                            cerver_log_success (status);
                             free (status);
                         }
                     }
@@ -2429,20 +2429,26 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                         char *status = c_string_create ("cerver_check_info () - Failed to generate connection %s auth packet!",
                             connection->name->str);
                         if (status) {
-                            client_log_error (status);
+                            cerver_log_error (status);
                             free (status);
                         }
                     }
                 }
 
                 if (connection->auth_packet) {
-                    packet_set_network_values (connection->auth_packet, NULL, connection);
+                    packet_set_network_values (
+                        connection->auth_packet, 
+                        NULL,
+                        NULL, 
+                        connection,
+                        NULL
+                    );
 
                     if (!packet_send (connection->auth_packet, 0, NULL, false)) {
                         char *s = c_string_create ("cerver_check_info () - Sent connection %s auth packet!",
                             connection->name->str);
                         if (s) {
-                            client_log_success (s);
+                            cerver_log_success (s);
                             free (s);
                         }
                     }
@@ -2451,7 +2457,7 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                         char *s = c_string_create ("cerver_check_info () - Failed to send connection %s auth packet!",
                             connection->name->str);
                         if (s) {
-                            client_log_error (s);
+                            cerver_log_error (s);
                             free (s);
                         }
                     }
@@ -2466,7 +2472,7 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                 char *s = c_string_create ("Connection %s does NOT have an auth packet!",
                     connection->name->str);
                 if (s) {
-                    client_log_error (s);
+                    cerver_log_error (s);
                     free (s);
                 }
             }
@@ -2481,13 +2487,12 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
 
 }
 
-static u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection) {
+u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection) {
 
     u8 retval = 1;
 
     if (cerver_report && connection) {
-        // FIXME:
-        // connection->cerver = cerver;
+        connection->cerver_report = cerver_report;
 
         // #ifdef CLIENT_DEBUG
         char *s = c_string_create ("Connected to cerver %s.", cerver_report->name->str);
@@ -2583,7 +2588,7 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
 
 }
 
-static CerverReport *cerver_deserialize (SCerver *scerver) {
+CerverReport *cerver_deserialize (SCerver *scerver) {
     
     CerverReport *cerver_report = NULL;
 

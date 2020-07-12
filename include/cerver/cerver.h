@@ -465,8 +465,7 @@ typedef struct _CerverReport CerverReport;
 
 extern void cerver_report_delete (void *ptr);
 
-// handles cerver type packets
-extern void client_cerver_packet_handler (struct _Packet *packet);
+extern u8 cerver_report_check_info (CerverReport *cerver_report, struct _Connection *connection);
 
 #pragma endregion
 
@@ -488,6 +487,8 @@ typedef struct SCerver {
     bool uses_sessions;
 
 } SCerver;
+
+extern CerverReport *cerver_deserialize (SCerver *scerver);
 
 // creates a cerver info packet ready to be sent
 extern struct _Packet *cerver_packet_generate (Cerver *cerver);
