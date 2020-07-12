@@ -1087,7 +1087,7 @@ static inline void on_hold_poll_handle_actual (Cerver *cerver, const u32 idx, Ce
     switch (cerver->hold_fds[idx].revents) {
         // A connection setup has been completed or new data arrived
         case POLLIN: {
-            printf ("on_hold_poll_handle () - Receive fd: %d\n", cerver->hold_fds[idx].fd);
+            // printf ("on_hold_poll_handle () - Receive fd: %d\n", cerver->hold_fds[idx].fd);
                 
             // if (cerver->thpool) {
                 // pthread_mutex_lock (socket->mutex);

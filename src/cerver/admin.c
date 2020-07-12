@@ -1667,7 +1667,7 @@ static inline void admin_poll_handle_actual (Cerver *cerver, const u32 idx, Cerv
     switch (cerver->admin->fds[idx].revents) {
         // A connection setup has been completed or new data arrived
         case POLLIN: {
-            printf ("admin_poll_handle () - Receive fd: %d\n", cerver->admin->fds[idx].fd);
+            // printf ("admin_poll_handle () - Receive fd: %d\n", cerver->admin->fds[idx].fd);
                 
             // if (cerver->thpool) {
                 // pthread_mutex_lock (socket->mutex);
