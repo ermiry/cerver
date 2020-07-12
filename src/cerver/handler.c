@@ -1660,7 +1660,7 @@ static void cerver_register_new_connection (Cerver *cerver,
                     cerver_event_trigger (
                         CERVER_EVENT_CLIENT_CONNECTED,
                         cerver,
-                        NULL, connection
+                        client, connection
                     );
                 }
             }
