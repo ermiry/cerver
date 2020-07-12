@@ -1627,6 +1627,58 @@ u8 client_teardown_async (Client *client) {
 
 #pragma region handler 
 
+// handles cerver type packets
+void client_cerver_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->data_size >= sizeof (RequestData)) {
+            char *end = (char *) packet->data;
+            RequestData *req = (RequestData *) (end);
+
+            switch (req->type) {
+                case CERVER_INFO: {
+                    #ifdef CLIENT_DEBUG
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver info packet.");
+                    #endif
+                    CerverReport *cerver = cerver_deserialize ((SCerver *) (end += sizeof (RequestData)));
+                    if (cerver_report_check_info (cerver, packet->connection))
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
+                } break;
+
+                // the cerves is going to be teardown, we have to disconnect
+                case CERVER_TEARDOWN:
+                    #ifdef CLIENT_DEBUG
+                    cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "---> Server teardown! <---");
+                    #endif
+                    client_got_disconnected (packet->client);
+                    cerver_event_trigger (
+                        CERVER_EVENT_CLIENT_DISCONNECTED,
+                        NULL,
+                        packet->client, NULL
+                    );
+                    break;
+
+                case CERVER_INFO_STATS:
+                    // #ifdef CLIENT_DEBUG
+                    // cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver stats packet.");
+                    // #endif
+                    break;
+
+                case CERVER_GAME_STATS:
+                    // #ifdef CLIENT_DEBUG
+                    // cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver game stats packet.");
+                    // #endif
+                    break;
+
+                default: 
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Unknown cerver type packet."); 
+                    break;
+            }
+        }
+    }
+
+}
+
 // 16/06/2020
 // handles a APP_PACKET packet type
 static void client_app_packet_handler (Packet *packet) {
