@@ -92,30 +92,28 @@ extern void cerver_error_event_data_delete (CerverErrorEventData *error_event_da
 
 #pragma region error
 
-// when a client error happens, it sets the appropaited msg (if any)
-// and an event is triggered
-typedef struct Error {
+typedef struct CerverError {
 
+	CerverErrorType type;
     time_t timestamp;
-    u32 error_type;
     estring *msg;
 
-} Error;
+} CerverError;
 
-extern Error *error_new (u32 error_type, const char *msg);
+extern CerverError *cerver_error_new (const CerverErrorType type, const char *msg);
 
-extern void error_delete (void *ptr);
+extern void cerver_error_delete (void *cerver_error_ptr);
 
 #pragma endregion
 
 #pragma region packets
 
 // creates an error packet ready to be sent
-extern struct _Packet *error_packet_generate (u32 error_type, const char *msg);
+extern struct _Packet *error_packet_generate (const CerverErrorType type, const char *msg);
 
 // creates and send a new error packet
 // returns 0 on success, 1 on error
-extern u8 error_packet_generate_and_send (u32 error_type, const char *msg,
+extern u8 error_packet_generate_and_send (const CerverErrorType type, const char *msg,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection);
 
 #pragma endregion

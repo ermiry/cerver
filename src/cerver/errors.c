@@ -15,7 +15,7 @@
 
 #include "cerver/threads/thread.h"
 
-static SError *error_serialize (Error *error);
+static SError *error_serialize (CerverError *error);
 static inline void serror_delete (void *ptr);
 
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
@@ -254,12 +254,12 @@ void cerver_error_event_trigger (const CerverErrorType error_type,
 
 #pragma region error
 
-Error *error_new (u32 error_type, const char *msg) {
+CerverError *cerver_error_new (const CerverErrorType type, const char *msg) {
 
-    Error *error = (Error *) malloc (sizeof (Error));
+    CerverError *error = (CerverError *) malloc (sizeof (CerverError));
     if (error) {
+        error->type = type;
         time (&error->timestamp);
-        error->error_type = error_type;
         error->msg = msg ? estring_new (msg) : NULL;
     }
 
@@ -267,10 +267,10 @@ Error *error_new (u32 error_type, const char *msg) {
 
 }
 
-void error_delete (void *ptr) {
+void cerver_error_delete (void *cerver_error_ptr) {
 
-    if (ptr) {
-        Error *error = (Error *) ptr;
+    if (cerver_error_ptr) {
+        CerverError *error = (CerverError *) cerver_error_ptr;
 
         estring_delete (error->msg);
         
@@ -284,11 +284,11 @@ void error_delete (void *ptr) {
 #pragma region packets
 
 // creates an error packet ready to be sent
-Packet *error_packet_generate (u32 error_type, const char *msg) {
+Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
     Packet *packet = NULL;
 
-    Error *error = error_new (error_type, msg);
+    CerverError *error = cerver_error_new (type, msg);
     if (error) {
         SError *serror = error_serialize (error);
         if (serror) {
@@ -298,7 +298,7 @@ Packet *error_packet_generate (u32 error_type, const char *msg) {
             serror_delete (serror);
         }
 
-        error_delete (error);
+        cerver_error_delete (error);
     }
 
     return packet;
@@ -337,14 +337,14 @@ static inline SError *serror_new (void) {
 
 static inline void serror_delete (void *ptr) { if (ptr) free (ptr); }
 
-static SError *error_serialize (Error *error) {
+static SError *error_serialize (CerverError *error) {
 
     SError *serror = NULL;
 
     if (error) {
         serror = serror_new ();
         serror->timestamp = error->timestamp;
-        serror->error_type = error->error_type;
+        serror->error_type = error->type;
         memset (serror->msg, 0, ERROR_MESSAGE_LENGTH);
         strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
     }
