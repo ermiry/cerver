@@ -466,7 +466,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
             case 1: {
                 #ifdef CLIENT_DEBUG
                 s = c_string_create (
-                    "client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!\n",
+                    "client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!",
                     client->id
                 );
                 if (s) {
@@ -509,7 +509,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
             default: {
                 #ifdef CLIENT_DEBUG
                 s = c_string_create (
-                    "client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!\n",
+                    "client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!",
                     client->id, dlist_size (client->connections)
                 );
                 if (s) {
