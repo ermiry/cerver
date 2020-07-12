@@ -13,7 +13,7 @@
 
 #include "cerver/threads/thread.h"
 
-u8 cerver_event_unregister (Cerver *cerver, CerverEventType event_type);
+u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type);
 
 #pragma region data
 
@@ -96,7 +96,7 @@ void cerver_event_delete (void *event_ptr) {
 
 }
 
-static CerverEvent *cerver_event_get (const Cerver *cerver, CerverEventType event_type, 
+static CerverEvent *cerver_event_get (const Cerver *cerver, const CerverEventType event_type, 
     ListElement **le_ptr) {
 
     if (cerver) {
@@ -130,7 +130,7 @@ static void cerver_event_pop (DoubleList *list, ListElement *le) {
 // a newly allocated CerverEventData structure will be passed to your method 
 // that should be free using the cerver_event_data_delete () method
 // returns 0 on success, 1 on error
-u8 cerver_event_register (Cerver *cerver, CerverEventType event_type, 
+u8 cerver_event_register (Cerver *cerver, const CerverEventType event_type, 
     Action action, void *action_args, Action delete_action_args, 
     bool create_thread, bool drop_after_trigger) {
 
@@ -170,7 +170,7 @@ u8 cerver_event_register (Cerver *cerver, CerverEventType event_type,
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error
-u8 cerver_event_unregister (Cerver *cerver, CerverEventType event_type) {
+u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type) {
 
     u8 retval = 1;
 

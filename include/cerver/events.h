@@ -62,14 +62,14 @@ extern void cerver_event_delete (void *event_ptr);
 // a newly allocated CerverEventData structure will be passed to your method 
 // that should be free using the cerver_event_data_delete () method
 // returns 0 on success, 1 on error
-extern u8 cerver_event_register (struct _Cerver *cerver, CerverEventType event_type, 
+extern u8 cerver_event_register (struct _Cerver *cerver, const CerverEventType event_type, 
 	Action action, void *action_args, Action delete_action_args, 
 	bool create_thread, bool drop_after_trigger);
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error
-extern u8 cerver_event_unregister (struct _Cerver *cerver, CerverEventType event_type);
+extern u8 cerver_event_unregister (struct _Cerver *cerver, const CerverEventType event_type);
 
 // triggers all the actions that are registred to an event
 extern void cerver_event_trigger (const CerverEventType event_type, const struct _Cerver *cerver, 
