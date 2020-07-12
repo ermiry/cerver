@@ -197,7 +197,7 @@ u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type) {
 void cerver_event_trigger (const CerverEventType event_type, const Cerver *cerver, 
 	const Client *client, const Connection *connection) {
 
-    if (client) {
+    if (cerver) {
         ListElement *le = NULL;
         CerverEvent *event = cerver_event_get (cerver, event_type, &le);
         if (event) {

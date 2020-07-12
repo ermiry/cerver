@@ -214,7 +214,7 @@ void cerver_error_event_trigger (const CerverErrorType error_type,
     const char *error_message
 ) {
 
-    if (client) {
+    if (cerver) {
         ListElement *le = NULL;
         CerverErrorEvent *error = cerver_error_event_get (cerver, error_type, &le);
         if (error) {
