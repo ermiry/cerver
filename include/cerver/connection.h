@@ -119,6 +119,9 @@ extern Connection *connection_create (const i32 sock_fd, const struct sockaddr_s
 // compare two connections by their socket fds
 extern int connection_comparator (const void *a, const void *b);
 
+// sets the connection's name, if it had a name before, it will be replaced
+extern void connection_set_name (Connection *connection, const char *name);
+
 // get from where the client is connecting
 extern void connection_get_values (Connection *connection);
 

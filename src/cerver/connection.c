@@ -178,6 +178,8 @@ Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
+        connection->name = estring_new ("no-name");
+
         connection->socket = (Socket *) socket_create_empty ();
         connection->sock_receive = sock_receive_new ();
         connection->stats = connection_stats_new ();
@@ -218,6 +220,16 @@ int connection_comparator (const void *a, const void *b) {
     }
 
     return -1;
+
+}
+
+// sets the connection's name, if it had a name before, it will be replaced
+void connection_set_name (Connection *connection, const char *name) {
+
+    if (connection) {
+        if (connection->name) estring_delete (connection->name);
+        connection->name = name ? estring_new (name) : NULL;
+    }
 
 }
 
