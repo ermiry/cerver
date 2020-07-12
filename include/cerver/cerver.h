@@ -450,7 +450,9 @@ extern u8 cerver_teardown (Cerver *cerver);
 struct _CerverReport {
     
     CerverType type;
+
     estring *name;
+    estring *welcome;
 
     bool use_ipv6;
     Protocol protocol;
@@ -471,19 +473,22 @@ extern u8 cerver_report_check_info (CerverReport *cerver_report, struct _Connect
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH            64
+#define S_CERVER_NAME_LENGTH                64
+#define S_CERVER_WELCOME_LENGTH             128
 
 // serialized cerver structure
 typedef struct SCerver {
+
+    CerverType type;
+
+    char name[S_CERVER_NAME_LENGTH];
+    char welcome[S_CERVER_WELCOME_LENGTH];
 
     bool use_ipv6;  
     Protocol protocol;
     u16 port; 
 
-    char name[S_CERVER_NAME_LENGTH];
-    CerverType type;
     bool auth_required;
-
     bool uses_sessions;
 
 } SCerver;

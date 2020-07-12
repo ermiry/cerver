@@ -2398,6 +2398,8 @@ void cerver_report_delete (void *ptr) {
 
         estring_delete (cerver_report->name);
 
+        estring_delete (cerver_report->welcome);
+
         free (cerver_report);
     }
 
@@ -2500,6 +2502,10 @@ u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection
             cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
             free (s);
         }
+
+        if (cerver_report->welcome) {
+            printf ("%s\n", cerver_report->welcome->str);
+        }
         
         switch (cerver_report->protocol) {
             case PROTOCOL_TCP: 
@@ -2573,12 +2579,17 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
     if (cerver) {
         scerver = scerver_new ();
         if (scerver) {
+            scerver->type = cerver->type;
+
+            strncpy (scerver->name, cerver->info->name->str, S_CERVER_NAME_LENGTH);
+
+            if (cerver->info->welcome_msg)
+                strncpy (scerver->welcome, cerver->info->welcome_msg->str, S_CERVER_WELCOME_LENGTH);
+
             scerver->use_ipv6 = cerver->use_ipv6;
             scerver->protocol = cerver->protocol;
             scerver->port = cerver->port;
 
-            strncpy (scerver->name, cerver->info->name->str, S_CERVER_NAME_LENGTH);
-            scerver->type = cerver->type;
             scerver->auth_required = cerver->auth_required;
             scerver->uses_sessions = cerver->use_sessions;
         }
@@ -2596,7 +2607,9 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
         cerver_report = cerver_report_new ();
         if (cerver_report) {
             cerver_report->type = scerver->type;
+
             cerver_report->name = estring_new (scerver->name);
+            if (strlen (scerver->welcome)) cerver_report->welcome = estring_new (scerver->welcome);
 
             cerver_report->use_ipv6 = scerver->use_ipv6;
             cerver_report->protocol = scerver->protocol;
