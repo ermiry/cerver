@@ -93,7 +93,8 @@ Connection *connection_new (void) {
 
     Connection *connection = (Connection *) malloc (sizeof (Connection));
     if (connection) {
-        // connection->sock_fd = -1;
+        connection->name = NULL;
+
         connection->socket = NULL;
         connection->port = 0;
         connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
@@ -104,16 +105,15 @@ Connection *connection_new (void) {
 
         connection->connected_timestamp = 0;
 
-        connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
-        connection->connected_to_cerver = false;
+        connection->cerver_report = NULL;
 
+        connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
         connection->active = false;
 
         connection->auth_tries = DEFAULT_AUTH_TRIES;
         connection->bad_packets = 0;
 
         connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
-        connection->cerver_report = NULL;
         connection->sock_receive = NULL;
 
         connection->update_thread_id = 0;
@@ -128,6 +128,13 @@ Connection *connection_new (void) {
         connection->receive_packets = true;
         connection->custom_receive = NULL;
         connection->custom_receive_args = NULL;
+
+        connection->authenticated = false;
+        connection->auth_data = NULL;
+        connection->auth_data_size = 0;
+        connection->delete_auth_data = NULL;
+        connection->admin_auth = false;
+        connection->auth_packet = NULL;
         
         connection->stats = NULL;
     }

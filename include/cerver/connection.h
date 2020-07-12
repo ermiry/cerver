@@ -55,6 +55,8 @@ extern void connection_stats_print (struct _Connection *connection);
 // a connection from a client
 struct _Connection {
 
+    estring *name;
+
     struct _Socket *socket;
     u16 port;
     Protocol protocol;
@@ -64,17 +66,16 @@ struct _Connection {
     struct sockaddr_storage address;
 
     time_t connected_timestamp;             // when the connection started
+    
+    struct _CerverReport *cerver_report;    // info about the cerver we are connecting to
 
     u32 max_sleep;
-    bool connected_to_cerver;
-
     bool active;
     
     u8 auth_tries;                          // remaining attempts to authenticate
     u8 bad_packets;                         // number of bad packets before being disconnected
 
     u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
-    struct _CerverReport *cerver_report;    // 01/01/2020 - info about the cerver we are connecting to
     struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
 
     pthread_t update_thread_id;
@@ -91,6 +92,13 @@ struct _Connection {
     bool receive_packets;                   // set if the connection will receive packets or not (default true)
     delegate custom_receive;                // custom receive method to handle incomming packets in the connection
     void *custom_receive_args;              // arguments to be passed to the custom receive method
+
+    bool authenticated;                     // the connection has been authenticated to the cerver
+    void *auth_data;                        // maybe auth credentials
+    size_t auth_data_size;
+    Action delete_auth_data;                // destroys the auth data when the connection ends
+    bool admin_auth;                        // attempt to connect as an admin
+    struct _Packet *auth_packet;
 
     ConnectionStats *stats;
 
