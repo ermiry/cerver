@@ -9,6 +9,7 @@
 #include <cerver/cerver.h>
 #include <cerver/auth.h>
 #include <cerver/sessions.h>
+#include <cerver/events.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -28,6 +29,8 @@ typedef struct Credentials {
 
 static Cerver *my_cerver = NULL;
 
+#pragma region end
+
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
 	
@@ -39,6 +42,10 @@ static void end (int dummy) {
 	exit (0);
 
 }
+
+#pragma endregion
+
+#pragma region handler
 
 static void handle_test_request (Packet *packet) {
 
@@ -80,6 +87,10 @@ static void handler (void *data) {
 	}
 
 }
+
+#pragma endregion
+
+#pragma region auth
 
 static u8 my_auth_method_username (AuthMethod *auth_method, const char *username) {
 
@@ -173,6 +184,126 @@ static u8 my_auth_method (void *auth_method_ptr)  {
 
 }
 
+#pragma endregion
+
+#pragma region events
+
+static void on_hold_connected (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nConenction %d is on hold in cerver %s!\n",
+			event_data->connection->socket->sock_fd,
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_hold_disconnected (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nAn on hold connection disconnected in cerver %s!\n", 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_hold_drop (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nAn on hold connection was dropped in cerver %s!\n", 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_client_success_auth (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nClient %ld authenticated connection with sock fd %d to cerver %s!\n\n",
+			event_data->client->id,
+			event_data->connection->socket->sock_fd, 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_client_failed_auth (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nClient failed to authenticate connection with sock fd %d to cerver %s!\n\n",
+			event_data->connection->socket->sock_fd, 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_client_connected (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+			event_data->client->id,
+			event_data->connection->socket->sock_fd, 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_client_new_connection (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nClient %ld new connection with sock fd %d to cerver %s!\n\n",
+			event_data->client->id,
+			event_data->connection->socket->sock_fd, 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_client_close_connection (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf (
+			"\nA client closed a connection to cerver %s!\n\n",
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region main
+
 int main (void) {
 
 	srand (time (NULL));
@@ -205,6 +336,62 @@ int main (void) {
 		cerver_set_auth (my_cerver, 2, my_auth_method);
 		cerver_set_sessions (my_cerver, session_default_generate_id);
 
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_ON_HOLD_CONNECTED,
+			on_hold_connected, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_ON_HOLD_DISCONNECTED,
+			on_hold_disconnected, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_ON_HOLD_DROPPED,
+			on_hold_drop, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_SUCCESS_AUTH,
+			on_client_success_auth, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_FAILED_AUTH,
+			on_client_failed_auth, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_CONNECTED,
+			on_client_connected, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_NEW_CONNECTION,
+			on_client_new_connection, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+			on_client_close_connection, NULL, NULL,
+			false, false
+		);
+
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
 				my_cerver->info->name->str);
@@ -227,3 +414,5 @@ int main (void) {
 	return 0;
 
 }
+
+#pragma endregion
