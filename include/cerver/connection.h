@@ -160,6 +160,23 @@ typedef struct ConnectionCustomReceiveData {
 // the method must return 0 on success & 1 on error
 extern void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args);
 
+// sets the connection auth data to send whenever the cerver requires authentication 
+// and a method to destroy it once the connection has ended,
+// if delete_auth_data is NULL, the auth data won't be deleted
+extern void connection_set_auth_data (Connection *connection, 
+    void *auth_data, size_t auth_data_size, Action delete_auth_data,
+    bool admin_auth);
+
+// removes the connection auth data using the connection's delete_auth_data method
+// if not such method, the data won't be deleted
+// the connection's auth data & delete method will be equal to NULL
+extern void connection_remove_auth_data (Connection *connection);
+
+// generates the connection auth packet to be send to the server
+// this is also generated automatically whenever the cerver ask for authentication
+// returns 0 on success, 1 on error
+extern u8 connection_generate_auth_packet (Connection *connection);
+
 // sets up the new connection values
 extern u8 connection_init (Connection *connection);
 

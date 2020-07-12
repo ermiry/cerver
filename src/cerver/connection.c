@@ -24,6 +24,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+void connection_remove_auth_data (Connection *connection);
+
 #pragma region stats
 
 ConnectionStats *connection_stats_new (void) {
@@ -148,6 +150,8 @@ void connection_delete (void *ptr) {
     if (ptr) {
         Connection *connection = (Connection *) ptr;
 
+        estring_delete (connection->name);
+
         socket_delete (connection->socket);
 
         if (connection->active) connection_end (connection);
@@ -155,10 +159,13 @@ void connection_delete (void *ptr) {
         estring_delete (connection->ip);
 
         cerver_report_delete (connection->cerver_report);
+
         sock_receive_delete (connection->sock_receive);
 
         if (connection->received_data && connection->received_data_delete)
             connection->received_data_delete (connection->received_data);
+
+        connection_remove_auth_data (connection);
 
         connection_stats_delete (connection->stats);
 
@@ -294,6 +301,70 @@ void connection_set_custom_receive (Connection *connection, delegate custom_rece
         connection->custom_receive_args = args;
         if (connection->custom_receive) connection->receive_packets = true;
     }
+
+}
+
+// sets the connection auth data to send whenever the cerver requires authentication 
+// and a method to destroy it once the connection has ended,
+// if delete_auth_data is NULL, the auth data won't be deleted
+void connection_set_auth_data (Connection *connection, 
+    void *auth_data, size_t auth_data_size, Action delete_auth_data,
+    bool admin_auth) {
+
+    if (connection && auth_data) {
+        connection_remove_auth_data (connection);
+
+        connection->auth_data = auth_data;
+        connection->auth_data_size = auth_data_size;
+        connection->delete_auth_data = delete_auth_data;
+        connection->admin_auth = admin_auth;
+    } 
+
+}
+
+// removes the connection auth data using the connection's delete_auth_data method
+// if not such method, the data won't be deleted
+// the connection's auth data & delete method will be equal to NULL
+void connection_remove_auth_data (Connection *connection) {
+
+    if (connection) {
+        if (connection->auth_data) {
+            if (connection->delete_auth_data) 
+                connection->delete_auth_data (connection->auth_data);
+        }
+
+        if (connection->auth_packet) {
+            packet_delete (connection->auth_packet);
+            connection->auth_packet = NULL;
+        }
+
+        connection->auth_data = NULL;
+        connection->auth_data_size = 0;
+        connection->delete_auth_data = NULL;
+    }
+
+}
+
+// generates the connection auth packet to be send to the server
+// this is also generated automatically whenever the cerver ask for authentication
+// returns 0 on success, 1 on error
+u8 connection_generate_auth_packet (Connection *connection) {
+
+    u8 retval = 1;
+
+    if (connection) {
+        if (connection->auth_data) {
+            connection->auth_packet = packet_generate_request (
+                AUTH_PACKET, 
+                connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH, 
+                connection->auth_data, connection->auth_data_size
+            );
+
+            if (connection->auth_packet) retval = 0;
+        }
+    }
+
+    return retval;
 
 }
 
