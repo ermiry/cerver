@@ -2376,6 +2376,35 @@ u8 cerver_teardown (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region report
+
+static CerverReport *cerver_report_new (void) {
+
+    CerverReport *cerver_report = (CerverReport *) malloc (sizeof (Cerver));
+    if (cerver_report) {
+        memset (cerver_report, 0, sizeof (CerverReport));
+
+        cerver_report->name = NULL;
+    }
+
+    return cerver_report;
+
+}
+
+void cerver_report_delete (void *ptr) {
+
+    if (ptr) {
+        CerverReport *cerver_report = (CerverReport *) ptr;
+
+        estring_delete (cerver_report->name);
+
+        free (cerver_report);
+    }
+
+}
+
+#pragma endregion
+
 #pragma region serialization
 
 static inline SCerver *scerver_new (void) {
@@ -2391,23 +2420,23 @@ static inline void scerver_delete (void *ptr) { if (ptr) free (ptr); }
 // srealizes the cerver 
 static SCerver *cerver_serliaze (Cerver *cerver) {
 
+    SCerver *scerver = NULL;
+
     if (cerver) {
-        SCerver *scerver = scerver_new ();
+        scerver = scerver_new ();
         if (scerver) {
             scerver->use_ipv6 = cerver->use_ipv6;
             scerver->protocol = cerver->protocol;
             scerver->port = cerver->port;
 
-            strncpy (scerver->name, cerver->info->name->str, 32);
+            strncpy (scerver->name, cerver->info->name->str, S_CERVER_NAME_LENGTH);
             scerver->type = cerver->type;
             scerver->auth_required = cerver->auth_required;
             scerver->uses_sessions = cerver->use_sessions;
         }
-
-        return scerver;
     }
 
-    return NULL;
+    return scerver;
 
 }
 
@@ -2431,55 +2460,6 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 #pragma endregion
 
 #pragma region report 
-
-static CerverReport *cerver_report_new (void) {
-
-    CerverReport *cerver_report = (CerverReport *) malloc (sizeof (Cerver));
-    if (cerver_report) {
-        memset (cerver_report, 0, sizeof (CerverReport));
-        cerver_report->ip = NULL;
-        cerver_report->name = NULL;
-        cerver_report->token = NULL;
-    }
-
-    return cerver_report;
-
-}
-
-void cerver_report_delete (void *ptr) {
-
-    if (ptr) {
-        CerverReport *cerver_report = (CerverReport *) ptr;
-
-        estring_delete (cerver_report->name);
-        estring_delete (cerver_report->ip);
-
-        free (cerver_report);
-    }
-
-}
-
-static CerverReport *cerver_report_deserialize (SCerverReport *scerver) {
-    
-    CerverReport *cerver = NULL;
-
-    if (scerver) {
-        cerver = cerver_report_new ();
-        if (cerver) {
-            cerver->use_ipv6 = scerver->use_ipv6;
-            cerver->protocol = scerver->protocol;
-            cerver->port = scerver->port;
-
-            cerver->name = estring_new (scerver->name);
-            cerver->type = scerver->type;
-            cerver->auth_required = scerver->auth_required;
-            cerver->uses_sessions = scerver->uses_sessions;
-        }
-    }
-
-    return cerver;
-
-}
 
 // compare the info the server sent us with the one we expected 
 // and ajust our connection values if necessary

@@ -414,17 +414,7 @@ extern u8 cerver_start (Cerver *cerver);
 
 #pragma endregion
 
-#pragma region end
-
-// disable socket I/O in both ways and stop any ongoing job
-// returns 0 on success, 1 on error
-extern u8 cerver_shutdown (Cerver *cerver);
-
-// teardown a server -> stop the server and clean all of its data
-// returns 0 on success, 1 on error
-extern u8 cerver_teardown (Cerver *cerver);
-
-#pragma endregion
+#pragma region update
 
 // aux structure for cerver update methods
 struct _CerverUpdate {
@@ -440,7 +430,49 @@ extern CerverUpdate *cerver_update_new (Cerver *cerver, void *args);
 
 extern void cerver_update_delete (void *cerver_update_ptr);
 
+#pragma endregion
+
+#pragma region end
+
+// disable socket I/O in both ways and stop any ongoing job
+// returns 0 on success, 1 on error
+extern u8 cerver_shutdown (Cerver *cerver);
+
+// teardown a server -> stop the server and clean all of its data
+// returns 0 on success, 1 on error
+extern u8 cerver_teardown (Cerver *cerver);
+
+#pragma endregion
+
+#pragma region report
+
+// information that we get from another cerver when connecting to it
+struct _CerverReport {
+    
+    CerverType type;
+    estring *name;
+
+    bool use_ipv6;
+    Protocol protocol;
+    u16 port;
+
+    bool auth_required;
+    bool uses_sessions;
+
+};
+
+typedef struct _CerverReport CerverReport;
+
+extern void cerver_report_delete (void *ptr);
+
+// handles cerver type packets
+extern void client_cerver_packet_handler (struct _Packet *packet);
+
+#pragma endregion
+
 #pragma region serialization
+
+#define S_CERVER_NAME_LENGTH            64
 
 // serialized cerver structure
 typedef struct SCerver {
@@ -449,7 +481,7 @@ typedef struct SCerver {
     Protocol protocol;
     u16 port; 
 
-    char name[32];
+    char name[S_CERVER_NAME_LENGTH];
     CerverType type;
     bool auth_required;
 
@@ -459,49 +491,6 @@ typedef struct SCerver {
 
 // creates a cerver info packet ready to be sent
 extern struct _Packet *cerver_packet_generate (Cerver *cerver);
-
-#pragma endregion
-
-#pragma region report
-
-// information that we get from another cerver when connecting to it
-struct _CerverReport {
-    
-    bool use_ipv6;  
-    Protocol protocol;
-    u16 port; 
-    estring *ip;
-
-    estring *name;
-    CerverType type;
-    bool auth_required;
-
-    bool uses_sessions;
-    struct _Token *token;
-
-};
-
-typedef struct _CerverReport CerverReport;
-
-extern void cerver_report_delete (void *ptr);
-
-// serialized cerver report structure
-typedef struct SCerverReport {
-
-    bool use_ipv6;  
-    Protocol protocol;
-    u16 port; 
-
-    char name[32];
-    CerverType type;
-    bool auth_required;
-
-    bool uses_sessions;
-
-} SCerverReport;
-
-// handles cerver type packets
-extern void client_cerver_packet_handler (struct _Packet *packet);
 
 #pragma endregion
 
