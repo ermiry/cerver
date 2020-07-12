@@ -45,12 +45,6 @@ static void my_game_packet_handler (void *data) {
 
 }
 
-static void my_game_on_client_connected (void *data) {
-
-	// an action to be executed every time a new client connects to the cerver
-
-}
-
 static void *arcade_game_start (void *data) {
 
 	// method to start the arcade game
@@ -101,8 +95,6 @@ int main (void) {
 			// 27/05/2020 - needed for this example!
 			handler_set_direct_handle (app_handler, true);
 			cerver_set_app_handlers (my_cerver, app_handler, NULL);
-
-			cerver_set_on_client_connected (my_cerver, my_game_on_client_connected);
 
 			/*** game configuration ***/
 			GameCerver *game_cerver = (GameCerver *) my_cerver->cerver_data;
