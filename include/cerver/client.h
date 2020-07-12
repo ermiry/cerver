@@ -142,6 +142,9 @@ extern int client_comparator_session_id (const void *a, const void *b);
 // returns 0 on success, 1 on error
 extern u8 client_disconnect (Client *client);
 
+// the client got disconnected from the cerver, so correctly clear our data
+extern void client_got_disconnected (Client *client);
+
 // drops a client form the cerver
 // unregisters the client from the cerver and the deletes him
 extern void client_drop (struct _Cerver *cerver, Client *client);

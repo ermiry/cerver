@@ -355,6 +355,24 @@ u8 client_disconnect (Client *client) {
 
 }
 
+// the client got disconnected from the cerver, so correctly clear our data
+void client_got_disconnected (Client *client) {
+
+    if (client) {
+        // close any ongoing connection
+        for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+            connection_end ((Connection *) le->data);
+        }
+
+        // dlist_reset (client->connections);
+
+        // reset client
+        client->running = false;
+        client->time_started = 0;
+    }
+
+}
+
 // drops a client form the cerver
 // unregisters the client from the cerver and the deletes him
 void client_drop (Cerver *cerver, Client *client) {
@@ -1421,7 +1439,7 @@ static void client_connection_terminate (Client *client, Connection *connection)
 
     if (connection) {
         if (connection->active) {
-            if (connection->connected_to_cerver) {
+            if (connection->cerver_report) {
                 // send a close connection packet
                 Packet *packet = packet_generate_request (REQUEST_PACKET, CLIENT_CLOSE_CONNECTION, NULL, 0);
                 if (packet) {
