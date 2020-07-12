@@ -87,9 +87,11 @@ int main (void) {
 	if (!my_game_init ()) {
 		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 		if (my_cerver) {
+			cerver_set_welcome_msg (my_cerver, "Welcome - Simple Game Cerver Example");
+
 			/*** cerver configuration ***/
-			cerver_set_receive_buffer_size (my_cerver, 16384);
-			// cerver_set_thpool_n_threads (my_cerver, 4);
+			cerver_set_receive_buffer_size (my_cerver, 4096);
+			cerver_set_thpool_n_threads (my_cerver, 4);
 
 			Handler *app_handler = handler_create (my_game_packet_handler);
 			// 27/05/2020 - needed for this example!

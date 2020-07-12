@@ -139,6 +139,8 @@ int main (void) {
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
+		cerver_set_welcome_msg (my_cerver, "Welcome - App & Custom Handlers Example");
+
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 

@@ -351,6 +351,8 @@ int main (void) {
 
 	client_cerver = cerver_create (CUSTOM_CERVER, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
+        cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Example");
+
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
