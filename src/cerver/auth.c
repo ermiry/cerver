@@ -927,7 +927,7 @@ void on_hold_connection_drop (const Cerver *cerver, Connection *connection) {
         connection_delete (connection);
 
         cerver_event_trigger (
-            CERVER_EVENT_ON_HOLD_DROP,
+            CERVER_EVENT_ON_HOLD_DROPPED,
             cerver,
             NULL, NULL
         );

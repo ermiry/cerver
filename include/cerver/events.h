@@ -18,7 +18,7 @@ typedef enum CerverEventType {
 
 	CERVER_EVENT_ON_HOLD_CONNECTED,   		// a connection has been put on hold
 	CERVER_EVENT_ON_HOLD_DISCONNECTED,  	// an on hold connection disconnected
-	CERVER_EVENT_ON_HOLD_DROP,   			// an on hold connection was dropped
+	CERVER_EVENT_ON_HOLD_DROPPED,   		// an on hold connection was dropped
 
 	CERVER_EVENT_CLIENT_SUCCESS_AUTH,  		// a client connection has successfully authenticated
 	CERVER_EVENT_CLIENT_FAILED_AUTH,   		// a client connection failed to authenticate
