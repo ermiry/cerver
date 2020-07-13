@@ -5,20 +5,90 @@
 #include <time.h>
 #include <signal.h>
 
+#include <cerver/types/estring.h>
+
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
+#include <cerver/time.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+static Cerver *my_cerver = NULL;
+
+#pragma region app
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+#define APP_MESSAGE_LEN			512
+
 typedef enum AppRequest {
 
-	TEST_MSG		= 0
+	TEST_MSG		= 0,
+	APP_MSG			= 1,
 
 } AppRequest;
 
-static Cerver *my_cerver = NULL;
+typedef struct AppData {
+
+	time_t timestamp;
+	size_t message_len;
+	char message[APP_MESSAGE_LEN];
+
+} AppData;
+
+static AppData *app_data_new (void) {
+
+	AppData *app_data = (AppData *) malloc (sizeof (AppData));
+	if (app_data) {
+		memset (app_data, 0, sizeof (AppData));
+	}
+
+	return app_data;
+
+}
+
+static void app_data_delete (void *app_data_ptr) {
+
+	if (app_data_ptr) free (app_data_ptr);
+
+}
+
+static AppData *app_data_create (const char *message) {
+
+	AppData *app_data = app_data_new ();
+	if (app_data) {
+		time (&app_data->timestamp);
+
+		if (message) {
+			app_data->message_len = strlen (message);
+			strncpy (app_data->message, message, APP_MESSAGE_LEN);
+		}
+	}
+
+	return app_data;
+
+}
+
+static void app_data_print (AppData *app_data) {
+
+	if (app_data) {
+		estring *date = timer_time_to_string (gmtime (&app_data->timestamp));
+		if (date) {
+			printf ("Timestamp: %s\n", date->str);
+			estring_delete (date);
+		}
+
+		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+	}
+
+}
+
+#pragma GCC diagnostic pop
+
+#pragma endregion
 
 #pragma region end
 
@@ -61,6 +131,19 @@ static void handle_test_request (Packet *packet) {
 
 }
 
+static void handle_app_message (Packet *packet) {
+
+	if (packet) {
+		char *end = packet->data;
+		end += sizeof (RequestData);
+
+		AppData *app_data = (AppData *) end;
+		app_data_print (app_data);
+		printf ("\n");
+	}
+
+}
+
 static void handler (void *data) {
 
 	if (data) {
@@ -70,6 +153,8 @@ static void handler (void *data) {
 
 			switch (req->type) {
 				case TEST_MSG: handle_test_request (packet); break;
+
+				case APP_MSG: handle_app_message (packet); break;
 
 				default: 
 					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
@@ -172,9 +257,9 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// DONT call - cerver_teardown () is called automatically if cerver_create () fails
 		// cerver_delete (client_cerver);
 	}
 
