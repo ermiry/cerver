@@ -23,6 +23,8 @@
 #include "cerver/utils/log.h"
 #endif
 
+#pragma region protocol
+
 static ProtocolID protocol_id = 0;
 static ProtocolVersion protocol_version = { 0, 0 };
 
@@ -33,6 +35,10 @@ void packets_set_protocol_id (ProtocolID proto_id) { protocol_id = proto_id; }
 ProtocolVersion packets_get_protocol_version (void) { return protocol_version; }
 
 void packets_set_protocol_version (ProtocolVersion version) { protocol_version = version; }
+
+#pragma endregion
+
+#pragma region types
 
 PacketsPerType *packets_per_type_new (void) {
 
@@ -61,7 +67,24 @@ void packets_per_type_print (PacketsPerType *packets_per_type) {
 
 }
 
-static PacketHeader *packet_header_new (PacketType packet_type, size_t packet_size) {
+#pragma endregion
+
+#pragma region header
+
+PacketHeader *packet_header_new (void) {
+
+    PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
+    if (header) {
+        memset (header, 0, sizeof (PacketHeader));
+    }
+
+    return header;
+
+}
+
+void packet_header_delete (PacketHeader *header) { if (header) free (header); }
+
+PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size) {
 
     PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
     if (header) {
@@ -105,7 +128,9 @@ u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {
 
 }
 
-static inline void packet_header_delete (PacketHeader *header) { if (header) free (header); }
+#pragma endregion
+
+#pragma region packets
 
 u8 packet_append_data (Packet *packet, void *data, size_t data_size);
 
@@ -364,7 +389,7 @@ u8 packet_generate (Packet *packet) {
         }   
 
         packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-        packet->header = packet_header_new (packet->packet_type, packet->packet_size);
+        packet->header = packet_header_create (packet->packet_type, packet->packet_size);
 
         // create the packet buffer to be sent
         packet->packet = malloc (packet->packet_size);
@@ -785,3 +810,5 @@ bool packet_check (Packet *packet) {
     return retval;
 
 }
+
+#pragma endregion
