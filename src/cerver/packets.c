@@ -449,31 +449,31 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
 
 // sends a packet directly using the tcp protocol and the packet sock fd
 // returns 0 on success, 1 on error
-static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+static u8 packet_send_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw) {
 
-    u8 retval = 0;
+    u8 retval = 1;
 
-    if (packet) {
-        pthread_mutex_lock (packet->connection->socket->write_mutex);
+    if (packet && connection) {
+        pthread_mutex_lock (connection->socket->write_mutex);
 
         ssize_t sent = 0;
         char *p = raw ? (char *) packet->data : (char *) packet->packet;
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
         while (packet_size > 0) {
-            sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
+            sent = send (connection->socket->sock_fd, p, packet_size, flags);
             if (sent < 0) {
-                retval = 1;
                 break;
             }
 
             p += sent;
             packet_size -= (size_t) sent;
+            retval = 0;
         }
 
         if (total_sent) *total_sent = (size_t) sent;
 
-        pthread_mutex_unlock (packet->connection->socket->write_mutex);
+        pthread_mutex_unlock (connection->socket->write_mutex);
     }
 
     return retval;
@@ -482,12 +482,12 @@ static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, 
 
 // sends a packet to the socket in two parts, first the header & then the data
 // returns 0 on success, 1 on error
-static u8 packet_send_split_tcp (const Packet *packet, int flags, size_t *total_sent) {
+static u8 packet_send_split_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent) {
 
     u8 retval = 1;
 
-    if (packet) {
-        pthread_mutex_lock (packet->connection->socket->write_mutex);
+    if (packet && connection) {
+        pthread_mutex_lock (connection->socket->write_mutex);
 
         size_t actual_sent = 0;
 
@@ -498,7 +498,7 @@ static u8 packet_send_split_tcp (const Packet *packet, int flags, size_t *total_
         size_t packet_size = sizeof (PacketHeader);
 
         while (packet_size > 0) {
-            sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
+            sent = send (connection->socket->sock_fd, p, packet_size, flags);
             if (sent < 0) {
                 fail = true;
                 break;
@@ -517,7 +517,7 @@ static u8 packet_send_split_tcp (const Packet *packet, int flags, size_t *total_
             packet_size = packet->data_size;
 
             while (packet_size > 0) {
-                sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
+                sent = send (connection->socket->sock_fd, p, packet_size, flags);
                 if (sent < 0) break;
                 p += sent;
                 actual_sent += (size_t) sent;
@@ -529,7 +529,7 @@ static u8 packet_send_split_tcp (const Packet *packet, int flags, size_t *total_
             retval = 0;
         }
 
-        pthread_mutex_unlock (packet->connection->socket->write_mutex);
+        pthread_mutex_unlock (connection->socket->write_mutex);
     }
 
     return retval;
@@ -646,8 +646,8 @@ static inline u8 packet_send_internal (const Packet *packet, int flags, size_t *
             case PROTOCOL_TCP: {
                 size_t sent = 0;
 
-                if (!(split ? packet_send_split_tcp (packet, flags, &sent)
-                    : packet_send_tcp (packet, flags, &sent, raw))) {
+                if (!(split ? packet_send_split_tcp (packet, connection, flags, &sent)
+                    : packet_send_tcp (packet, connection, flags, &sent, raw))) {
                     if (total_sent) *total_sent = sent;
 
                     packet_send_update_stats (
