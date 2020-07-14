@@ -307,12 +307,12 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
 // creates and send a new error packet
 // returns 0 on success, 1 on error
-u8 error_packet_generate_and_send (u32 error_type, const char *msg,
+u8 error_packet_generate_and_send (const CerverErrorType type, const char *msg,
     Cerver *cerver, Client *client, Connection *connection) {
 
     u8 retval = 1;
 
-    Packet *error_packet = error_packet_generate (error_type, msg);
+    Packet *error_packet = error_packet_generate (type, msg);
     if (error_packet) {
         packet_set_network_values (error_packet, cerver, client, connection, NULL);
         retval = packet_send (error_packet, 0, NULL, false);
