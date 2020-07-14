@@ -100,8 +100,6 @@ Admin *admin_new (void) {
 		admin->data = NULL;
 		admin->delete_data = NULL;
 
-		admin->authenticated = false;
-
 		admin->bad_packets = 0;
 	}
 
@@ -333,20 +331,22 @@ u8 admin_send_packet (Admin *admin, Packet *packet) {
 	u8 retval = 1;
 
 	if (admin && packet) {
-		if (admin->authenticated) {
-			// printf ("admin client: %ld -- sock fd: %d\n", admin->client->id, ((Connection *) dlist_start (admin->client->connections))->sock_fd);
+		// printf (
+        //     "admin client: %ld -- sock fd: %d\n", 
+        //     admin->client->id, 
+        //     ((Connection *) dlist_start (admin->client->connections))->socket->sock_fd
+        // );
 
-			packet_set_network_values (
-				packet, 
-				NULL, 
-				admin->client, 
-				(Connection *) dlist_start (admin->client->connections)->data, 
-				NULL
-			);
+        packet_set_network_values (
+            packet, 
+            NULL, 
+            admin->client, 
+            (Connection *) dlist_start (admin->client->connections)->data, 
+            NULL
+        );
 
-			retval = packet_send (packet, 0, NULL, false);
-			if (retval) cerver_log_error ("Failed to send packet to admin!");
-		}
+        retval = packet_send (packet, 0, NULL, false);
+        if (retval) cerver_log_error ("Failed to send packet to admin!");
 	}
 
 	return retval;
@@ -626,7 +626,7 @@ void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update,
 // returns the current number of connected admins
 u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver) {
 
-    return admin_cerver ? (u8) dlist_size (admin_cerver->admins) : 1; 
+    return admin_cerver ? (u8) dlist_size (admin_cerver->admins) : 0; 
 
 }
 

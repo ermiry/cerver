@@ -65,8 +65,6 @@ struct _Admin {
 	void *data;
 	Action delete_data;
 
-	bool authenticated;
-
 	u32 bad_packets;					// disconnect after a number of bad packets
 
 };
