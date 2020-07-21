@@ -664,6 +664,7 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
             dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
 
             admin_cerver->stats->current_connected_admins += 1;
+            admin_cerver->stats->total_n_admins += 1;
 
             #ifdef CERVER_STATS
             char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
@@ -1579,6 +1580,7 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             admin_cerver->current_n_fds++;
 
             admin_cerver->stats->current_connections++;
+            admin_cerver->stats->total_admin_connections++;
 
             #ifdef ADMIN_DEBUG
             char *s = c_string_create ("Added sock fd <%d> to cerver %s ADMIN poll, idx: %i", 
