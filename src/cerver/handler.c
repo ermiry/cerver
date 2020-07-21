@@ -1499,6 +1499,8 @@ void cerver_receive (void *ptr) {
 
                                 cerver_switch_receive_handle_failed (cr);
                             }
+
+                            free (packet_buffer);
                         } break;
 
                         case 0: {
@@ -1515,6 +1517,8 @@ void cerver_receive (void *ptr) {
                             // #endif
 
                             cerver_switch_receive_handle_failed (cr);
+
+                            free (packet_buffer);
                         } break;
 
                         default: {
