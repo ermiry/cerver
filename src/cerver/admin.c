@@ -663,6 +663,17 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
         )) {
             dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
 
+            admin_cerver->stats->current_connected_admins += 1;
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
+
             retval = 0;     // success
         }
     }
@@ -683,6 +694,17 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
             for (ListElement *le = dlist_start (admin->client->connections); le; le = le->next) {
                 admin_cerver_poll_unregister_connection (admin_cerver, (Connection *) le->data);
             }
+
+            admin_cerver->stats->current_connected_admins -= 1;
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
 
             retval = 0;
         }
