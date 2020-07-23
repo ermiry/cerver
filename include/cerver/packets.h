@@ -220,6 +220,7 @@ struct _Packet {
 	size_t data_size;
 	void *data;
 	char *data_end;
+	char *data_ptr;
 	bool data_ref;
 
 	// the actual packet to be sent

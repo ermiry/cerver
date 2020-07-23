@@ -188,6 +188,7 @@ Packet *packet_new (void) {
 
         packet->data_size = 0;
         packet->data = NULL;
+        packet->data_ptr = NULL;
         packet->data_end = NULL;
         packet->data_ref = false;
 
@@ -275,6 +276,9 @@ u8 packet_set_data (Packet *packet, void *data, size_t data_size) {
             packet->data_end = (char *) packet->data;
             packet->data_end += packet->data_size;
 
+            // point to the start of the data
+            packet->data_ptr = packet->data;
+
             retval = 0;
         }
     }
@@ -307,6 +311,9 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
                 packet->data = new_data;
                 packet->data_size = new_size;
 
+                // point to the start of the data
+                packet->data_ptr = packet->data;
+
                 retval = 0;
             }
 
@@ -328,6 +335,9 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
                 memcpy (packet->data, data, data_size);
                 packet->data_end = (char *) packet->data;
                 packet->data_end += packet->data_size;
+
+                // point to the start of the data
+                packet->data_ptr = packet->data;
 
                 retval = 0;
             }
