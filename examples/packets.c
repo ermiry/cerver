@@ -135,7 +135,6 @@ static void handle_app_message (Packet *packet) {
 
 	if (packet) {
 		char *end = packet->data;
-		end += sizeof (RequestData);
 
 		AppData *app_data = (AppData *) end;
 		app_data_print (app_data);
@@ -148,18 +147,15 @@ static void handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
 
-			switch (req->type) {
-				case TEST_MSG: handle_test_request (packet); break;
+		switch (packet->header->request_type) {
+			case TEST_MSG: handle_test_request (packet); break;
 
-				case APP_MSG: handle_app_message (packet); break;
+			case APP_MSG: handle_app_message (packet); break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+				break;
 		}
 	}
 

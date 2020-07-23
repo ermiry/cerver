@@ -60,19 +60,16 @@ static void my_app_handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a APP_PACKET test request!");
-					handle_test_request (packet, APP_PACKET); 
-					break;
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_PACKET test request!");
+				handle_test_request (packet, APP_PACKET); 
+				break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
+				break;
 		}
 	}
 
@@ -82,19 +79,16 @@ static void my_app_error_handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-					handle_test_request (packet, APP_ERROR_PACKET); 
-					break;
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
+				handle_test_request (packet, APP_ERROR_PACKET); 
+				break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				break;
 		}
 	}
 
@@ -104,19 +98,16 @@ static void my_custom_handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
+		
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
+				handle_test_request (packet, CUSTOM_PACKET); 
+				break;
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-					handle_test_request (packet, CUSTOM_PACKET); 
-					break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				break;
 		}
 	}
 
