@@ -84,15 +84,19 @@ PacketHeader *packet_header_new (void) {
 
 void packet_header_delete (PacketHeader *header) { if (header) free (header); }
 
-PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size) {
+PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type) {
 
     PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
     if (header) {
-        memset (header, 0, sizeof (PacketHeader));
         header->protocol_id = protocol_id;
         header->protocol_version = protocol_version;
+
         header->packet_type = packet_type;
         header->packet_size = packet_size;
+
+        header->handler_id = 0;
+
+        header->request_type = req_type;
     }
 
     return header;
@@ -146,7 +150,7 @@ Packet *packet_new (void) {
         packet->lobby = NULL;
 
         packet->packet_type = DONT_CHECK_TYPE;
-        packet->custom_type = NULL;
+        packet->req_type = 0;
 
         packet->data_size = 0;
         packet->data = NULL;
@@ -186,8 +190,6 @@ void packet_delete (void *ptr) {
         packet->client = NULL;
         packet->connection = NULL;
         packet->lobby = NULL;
-
-        estring_delete (packet->custom_type);
 
         if (!packet->data_ref) {
             if (packet->data) free (packet->data);
@@ -393,7 +395,7 @@ u8 packet_generate (Packet *packet) {
         }   
 
         packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-        packet->header = packet_header_create (packet->packet_type, packet->packet_size);
+        packet->header = packet_header_create (packet->packet_type, packet->packet_size, packet->req_type);
 
         // create the packet buffer to be sent
         packet->packet = malloc (packet->packet_size);
@@ -422,6 +424,7 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
     Packet *packet = packet_new ();
     if (packet) {
         packet->packet_type = packet_type;
+        packet->req_type = req_type;
 
         // if there is data, append it to the packet data buffer
         if (data) {

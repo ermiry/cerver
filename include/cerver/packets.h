@@ -112,7 +112,7 @@ struct _PacketHeader {
 	size_t packet_size;
 
 	u8 handler_id;
-	
+
 	u32 request_type;
 
 };
@@ -123,7 +123,7 @@ extern PacketHeader *packet_header_new (void);
 
 extern void packet_header_delete (PacketHeader *header);
 
-extern PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size);
+extern PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type);
 
 // prints an already existing PacketHeader. Mostly used for debugging
 extern void packet_header_print (PacketHeader *header);
@@ -197,7 +197,7 @@ struct _Packet {
 	struct _Lobby *lobby;
 
 	PacketType packet_type;
-	estring *custom_type;
+	u32 req_type;
 
 	// serilized data
 	size_t data_size;
