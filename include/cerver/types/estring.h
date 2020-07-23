@@ -11,21 +11,40 @@ typedef struct estring {
 } estring;
 
 extern estring *estring_new (const char *str);
-extern estring *estring_create (const char *format, ...);
+
 extern void estring_delete (void *str_ptr);
 
-extern void estring_copy (estring *to, estring *from);
-extern estring *estring_concat (estring *s1, estring *s2);
-
-extern void estring_to_upper (estring *str);
-extern void estring_to_lower (estring *str);
+extern estring *estring_create (const char *format, ...);
 
 extern int estring_compare (const estring *s1, const estring *s2);
+
 extern int estring_comparator (const void *a, const void *b);
 
-extern char **estring_split (estring *str, const char delim, int *n_tokens);
+extern void estring_copy (estring *to, estring *from);
 
-extern void estring_remove_char (estring *str, char garbage);
+extern void estring_replace (estring *old, const char *str);
+
+// concatenates two strings into a new one
+extern estring *estring_concat (estring *s1, estring *s2);
+
+// appends a char to the end of the string
+// reallocates the same string
+extern void estring_append_char (estring *s, const char c);
+
+// appends a c string at the end of the string
+// reallocates the same string
+extern void estring_append_c_string (estring *s, const char *c_str);
+
+extern void estring_to_upper (estring *string);
+
+extern void estring_to_lower (estring *string);
+
+extern char **estring_split (estring *string, const char delim, int *n_tokens);
+
+extern void estring_remove_char (estring *string, char garbage);
+
+// removes the last char from a string
+extern void estring_remove_last_char (estring *string);
 
 // check if a str (to_find) is inside str
 // returns 0 on exact match
