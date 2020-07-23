@@ -317,6 +317,17 @@ extern u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent
 extern u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
 
+// sends a packet in pieces, taking the header from the packet's field
+// sends each buffer as they are with they respective sizes
+// socket mutex will be locked for the entire operation
+// returns 0 on success, 1 on error
+extern u8 packet_send_pieces (
+    const Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces, 
+    int flags, 
+    size_t *total_sent
+);
+
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error

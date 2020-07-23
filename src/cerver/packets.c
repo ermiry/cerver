@@ -789,6 +789,85 @@ u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
 
 }
 
+static u8 packet_send_pieces_actual (
+    Socket *socket, 
+    char *data, size_t data_size, 
+    int flags, 
+    size_t *actual_sent
+) {
+
+    u8 retval = 0;
+
+    ssize_t sent = 0;
+    char *p = data;
+    while (data_size > 0) {
+        sent = send (socket->sock_fd, p, data_size, flags);
+        if (sent < 0) {
+            retval = 1;
+            break;
+        }
+
+        p += sent;
+        *actual_sent += (size_t) sent;
+        data_size -= (size_t) sent;
+    }
+
+    return retval;
+
+}
+
+// sends a packet in pieces, taking the header from the packet's field
+// sends each buffer as they are with they respective sizes
+// socket mutex will be locked for the entire operation
+// returns 0 on success, 1 on error
+u8 packet_send_pieces (
+    const Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces, 
+    int flags, 
+    size_t *total_sent
+) {
+
+    u8 retval = 1;
+
+    if (packet && pieces && sizes) {
+        pthread_mutex_lock (packet->connection->socket->write_mutex);
+
+        size_t actual_sent = 0;
+
+        // first send the header
+        if (!packet_send_pieces_actual (
+            packet->connection->socket,
+            (char *) packet->header, sizeof (PacketHeader),
+            flags,
+            &actual_sent
+        )) {
+            // send the pieces of data
+            for (u32 i = 0; i < n_pieces; i++) {
+                (void) packet_send_pieces_actual (
+                    packet->connection->socket,
+                    (char *) pieces[i], sizes[i],
+                    flags,
+                    &actual_sent
+                );
+            }
+
+            retval = 0;
+        }
+
+        packet_send_update_stats (
+            packet->packet_type, actual_sent,
+            packet->cerver, packet->client, packet->connection, packet->lobby
+        );
+
+        if (total_sent) *total_sent = actual_sent;
+
+        pthread_mutex_lock (packet->connection->socket->write_mutex);
+    }
+
+    return retval;
+
+}
+
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
