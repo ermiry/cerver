@@ -38,6 +38,45 @@ void packets_set_protocol_version (ProtocolVersion version) { protocol_version =
 
 #pragma endregion
 
+#pragma region version
+
+PacketVersion *packet_version_new (void) {
+
+    PacketVersion *version = (PacketVersion *) malloc (sizeof (PacketVersion));
+    if (version) {
+        version->protocol_id = 0;
+        version->protocol_version.minor = version->protocol_version.major = 0;
+    }
+
+    return version;
+
+}
+
+void packet_version_delete (PacketVersion *version) { if (version) free (version); }
+
+PacketVersion *packet_version_create (void) {
+
+    PacketVersion *version = (PacketVersion *) malloc (sizeof (PacketVersion));
+    if (version) {
+        version->protocol_id = protocol_id;
+        version->protocol_version = protocol_version;
+    }
+
+    return version;
+
+}
+
+void packet_version_print (PacketVersion *version) {
+
+    if (version) {
+        printf ("Protocol id: %d\n", version->protocol_id);
+        printf ("Protocol version: { %d - %d }\n", version->protocol_version.major, version->protocol_version.minor);        
+    }
+
+}
+
+#pragma endregion
+
 #pragma region types
 
 PacketsPerType *packets_per_type_new (void) {
@@ -88,9 +127,6 @@ PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, 
 
     PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
     if (header) {
-        header->protocol_id = protocol_id;
-        header->protocol_version = protocol_version;
-
         header->packet_type = packet_type;
         header->packet_size = packet_size;
 
@@ -106,8 +142,6 @@ PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, 
 void packet_header_print (PacketHeader *header) {
 
     if (header) {
-        printf ("Protocol id: %d\n", header->protocol_id);
-        printf ("Protocol version: { %d - %d }\n", header->protocol_version.major, header->protocol_version.minor);
         printf ("Packet type: %d\n", header->packet_type);
         printf ("Packet size: %ld\n", header->packet_size);
         printf ("Handler id: %d\n", header->handler_id);
