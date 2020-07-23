@@ -92,6 +92,7 @@ void packets_per_type_delete (void *ptr) { if (ptr) free (ptr); }
 void packets_per_type_print (PacketsPerType *packets_per_type) {
 
     if (packets_per_type) {
+        printf ("Cerver:            %ld\n", packets_per_type->n_cerver_packets);
         printf ("Error:             %ld\n", packets_per_type->n_error_packets);
         printf ("Auth:              %ld\n", packets_per_type->n_auth_packets);
         printf ("Request:           %ld\n", packets_per_type->n_request_packets);
@@ -615,7 +616,12 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     switch (packet_type) {
-        case CERVER_PACKET: break;
+        case CERVER_PACKET:
+            if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
+            if (client) client->stats->sent_packets->n_cerver_packets += 1;
+            connection->stats->sent_packets->n_cerver_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
+            break;
 
         case CLIENT_PACKET: break;
 
@@ -675,8 +681,14 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
             if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
             break;
 
-        case DONT_CHECK_TYPE:
-        default: break;
+        case DONT_CHECK_TYPE: break;
+
+        default: 
+            if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
+            if (client) client->stats->sent_packets->n_unknown_packets += 1;
+            connection->stats->sent_packets->n_unknown_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
+            break;
     }
 
 }
@@ -861,7 +873,7 @@ u8 packet_send_pieces (
 
         if (total_sent) *total_sent = actual_sent;
 
-        pthread_mutex_lock (packet->connection->socket->write_mutex);
+        pthread_mutex_unlock (packet->connection->socket->write_mutex);
     }
 
     return retval;

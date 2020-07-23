@@ -97,6 +97,7 @@ typedef enum PacketType {
 
 struct _PacketsPerType {
 
+	u64 n_cerver_packets;
 	u64 n_error_packets;
 	u64 n_auth_packets;
 	u64 n_request_packets;
