@@ -439,11 +439,8 @@ void sock_receive_delete (void *sock_receive_ptr) {
 static void cerver_request_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->data && (packet->data_size >= (sizeof (RequestData)))) {
-            char *end = (char *) packet->data;
-            RequestData *req_data = (RequestData *) end;
-
-            switch (req_data->type) {
+        if (packet->header) {
+            switch (packet->header->request_type) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
