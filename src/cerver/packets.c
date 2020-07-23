@@ -102,10 +102,12 @@ PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size) 
 void packet_header_print (PacketHeader *header) {
 
     if (header) {
-        printf ("protocol id: %d\n", header->protocol_id);
-        printf ("protocol version: { %d - %d }\n", header->protocol_version.major, header->protocol_version.minor);
-        printf ("packet type: %d\n", header->packet_type);
-        printf ("packet size: %ld\n", header->packet_size);
+        printf ("Protocol id: %d\n", header->protocol_id);
+        printf ("Protocol version: { %d - %d }\n", header->protocol_version.major, header->protocol_version.minor);
+        printf ("Packet type: %d\n", header->packet_type);
+        printf ("Packet size: %ld\n", header->packet_size);
+        printf ("Handler id: %d\n", header->handler_id);
+        printf ("Request type: %d\n", header->request_type);
     }
 
 }
@@ -138,19 +140,21 @@ Packet *packet_new (void) {
 
     Packet *packet = (Packet *) malloc (sizeof (Packet));
     if (packet) {
-        memset (packet, 0, sizeof (Packet));
         packet->cerver = NULL;
         packet->client = NULL;
         packet->connection = NULL;
         packet->lobby = NULL;
 
+        packet->packet_type = DONT_CHECK_TYPE;
         packet->custom_type = NULL;
 
+        packet->data_size = 0;
         packet->data = NULL;
         packet->data_end = NULL;
         packet->data_ref = false;
 
         packet->header = NULL;  
+        packet->packet_size = 0;
         packet->packet = NULL;
         packet->packet_ref = false;
     }
@@ -418,14 +422,6 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
     Packet *packet = packet_new ();
     if (packet) {
         packet->packet_type = packet_type;
-
-        // generate the request
-        packet->data = malloc (sizeof (RequestData));
-        ((RequestData *) packet->data)->type = req_type;
-
-        packet->data_size = sizeof (RequestData);
-        packet->data_end = (char *) packet->data;
-        packet->data_end += sizeof (RequestData);
 
         // if there is data, append it to the packet data buffer
         if (data) {
