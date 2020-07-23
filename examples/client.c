@@ -171,8 +171,6 @@ static int request_message (Client *client, Connection *connection) {
 
         char *end = (char *) packet->packet;
         PacketHeader *header = (PacketHeader *) end;
-        header->protocol_id = packets_get_protocol_id ();
-        header->protocol_version = packets_get_protocol_version ();
         header->packet_type = APP_PACKET;
         header->packet_size = packet_len;
         header->handler_id = 0;
