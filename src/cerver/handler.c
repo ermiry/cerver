@@ -709,7 +709,17 @@ static void cerver_packet_handler (void *ptr) {
 
         bool good = true;
         if (packet->cerver->check_packets) {
-            good = packet_check (packet);
+            // we expect the packet version in the packet's data
+            if (packet->data) {
+                packet->version = (PacketVersion *) packet->data_ptr;
+                packet->data_ptr += sizeof (PacketVersion);
+                good = packet_check (packet);
+            }
+
+            else {
+                cerver_log_error ("cerver_packet_handler () - No packet version to check!");
+                good = false;
+            }
         }
 
         if (good) {
