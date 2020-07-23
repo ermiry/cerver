@@ -191,7 +191,8 @@ Packet *packet_new (void) {
         packet->data_end = NULL;
         packet->data_ref = false;
 
-        packet->header = NULL;  
+        packet->header = NULL;
+        packet->version = NULL;
         packet->packet_size = 0;
         packet->packet = NULL;
         packet->packet_ref = false;
@@ -230,6 +231,8 @@ void packet_delete (void *ptr) {
         }
 
         packet_header_delete (packet->header);
+        packet_version_delete (packet->version);
+
         if (!packet->packet_ref) {
             if (packet->packet) free (packet->packet);
         }
@@ -818,25 +821,25 @@ bool packet_check (Packet *packet) {
     bool retval = false;
 
     if (packet) {
-        PacketHeader *header = packet->header;
+        if (packet->version) {
+            if (packet->version->protocol_id == protocol_id) {
+                if ((packet->version->protocol_version.major <= protocol_version.major)
+                    && (packet->version->protocol_version.minor >= protocol_version.minor)) {
+                    retval = true;
+                }
 
-        if (header->protocol_id == protocol_id) {
-            if ((header->protocol_version.major <= protocol_version.major)
-                && (header->protocol_version.minor >= protocol_version.minor)) {
-                retval = true;
+                else {
+                    #ifdef PACKETS_DEBUG
+                    cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+                    #endif
+                }
             }
 
             else {
                 #ifdef PACKETS_DEBUG
-                cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+                cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
                 #endif
             }
-        }
-
-        else {
-            #ifdef PACKETS_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
-            #endif
         }
     }
 

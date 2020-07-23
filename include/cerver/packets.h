@@ -224,6 +224,7 @@ struct _Packet {
 
 	// the actual packet to be sent
 	PacketHeader *header;
+	PacketVersion *version;
 	size_t packet_size;
 	void *packet;
 	bool packet_ref;
