@@ -28,6 +28,7 @@ typedef enum AppRequest {
 
 	TEST_MSG		= 0,
 	APP_MSG			= 1,
+	MULTI_MSG		= 2,
 
 } AppRequest;
 
@@ -135,7 +136,6 @@ static void handle_app_message (Packet *packet) {
 
 	if (packet) {
 		char *end = packet->data;
-		end += sizeof (RequestData);
 
 		AppData *app_data = (AppData *) end;
 		app_data_print (app_data);
@@ -144,22 +144,40 @@ static void handle_app_message (Packet *packet) {
 
 }
 
+static void handle_multi_message (Packet *packet) {
+
+	if (packet) {
+		cerver_log_debug ("MULTI message!");
+
+		char *end = packet->data;
+
+		AppData *app_data = NULL;
+		for (u32 i = 0; i < 5; i++) {
+			app_data = (AppData *) end;
+			printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+			printf ("\n");
+
+			end += sizeof (AppData);
+		}
+	}
+
+}
+
 static void handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
 
-			switch (req->type) {
-				case TEST_MSG: handle_test_request (packet); break;
+		switch (packet->header->request_type) {
+			case TEST_MSG: handle_test_request (packet); break;
 
-				case APP_MSG: handle_app_message (packet); break;
+			case APP_MSG: handle_app_message (packet); break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
+			case MULTI_MSG: handle_multi_message (packet); break;
+
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+				break;
 		}
 	}
 

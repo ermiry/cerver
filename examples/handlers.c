@@ -12,6 +12,15 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+typedef enum HandlersType {
+
+	HANDLERS_TYPE_NONE			= 0,
+
+	HANDLERS_TYPE_DIRECT		= 1,
+	HANDLERS_TYPE_QUEUE			= 2,
+
+} HandlersType;
+
 static Cerver *my_cerver = NULL;
 
 typedef enum AppRequest {
@@ -21,6 +30,8 @@ typedef enum AppRequest {
 	GET_MSG			= 1
 
 } AppRequest;
+
+#pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
@@ -33,6 +44,10 @@ static void end (int dummy) {
 	exit (0);
 
 }
+
+#pragma endregion
+
+#pragma region handlers
 
 static void handle_test_request (Packet *packet, PacketType packet_type) {
 
@@ -56,86 +71,136 @@ static void handle_test_request (Packet *packet, PacketType packet_type) {
 
 }
 
-static void my_app_handler (void *data) {
+#pragma endregion
 
-	if (data) {
-		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
+#pragma region queue
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a APP_PACKET test request!");
-					handle_test_request (packet, APP_PACKET); 
-					break;
+static void my_app_handler_queue (void *handler_data_ptr) {
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
-					break;
-			}
+	if (handler_data_ptr) {
+		HandlerData *handler_data = (HandlerData *) handler_data_ptr;
+		Packet *packet = handler_data->packet;
+
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_PACKET test request!");
+				handle_test_request (packet, APP_PACKET); 
+				break;
+
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
+				break;
 		}
 	}
 
 }
 
-static void my_app_error_handler (void *data) {
+static void my_app_error_handler_queue (void *handler_data_ptr) {
 
-	if (data) {
-		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
+	if (handler_data_ptr) {
+		HandlerData *handler_data = (HandlerData *) handler_data_ptr;
+		Packet *packet = handler_data->packet;
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-					handle_test_request (packet, APP_ERROR_PACKET); 
-					break;
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
+				handle_test_request (packet, APP_ERROR_PACKET); 
+				break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				break;
 		}
 	}
 
 }
 
-static void my_custom_handler (void *data) {
+static void my_custom_handler_queue (void *handler_data_ptr) {
 
-	if (data) {
-		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
+	if (handler_data_ptr) {
+		HandlerData *handler_data = (HandlerData *) handler_data_ptr;
+		Packet *packet = handler_data->packet;
+		
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
+				handle_test_request (packet, CUSTOM_PACKET); 
+				break;
 
-			switch (req->type) {
-				case TEST_MSG: 
-					cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-					handle_test_request (packet, CUSTOM_PACKET); 
-					break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
-					break;
-			}
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				break;
 		}
 	}
 
 }
 
-int main (void) {
+#pragma endregion
 
-	srand (time (NULL));
+#pragma region direct
 
-	// register to the quit signal
-	signal (SIGINT, end);
+static void my_app_handler_direct (void *data) {
 
-	printf ("\n");
-	cerver_version_print_full ();
-	printf ("\n");
+	if (data) {
+		Packet *packet = (Packet *) data;
 
-	cerver_log_debug ("App & Custom Handlers Example");
-	cerver_log_debug ("Testing correct handling of APP_PACKET, APP_ERROR_PACKET & CUSTOM_PACKET packet types");
-	printf ("\n");
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_PACKET test request!");
+				handle_test_request (packet, APP_PACKET); 
+				break;
+
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
+				break;
+		}
+	}
+
+}
+
+static void my_app_error_handler_direct (void *data) {
+
+	if (data) {
+		Packet *packet = (Packet *) data;
+
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
+				handle_test_request (packet, APP_ERROR_PACKET); 
+				break;
+
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				break;
+		}
+	}
+
+}
+
+static void my_custom_handler_direct (void *data) {
+
+	if (data) {
+		Packet *packet = (Packet *) data;
+		
+		switch (packet->header->request_type) {
+			case TEST_MSG: 
+				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
+				handle_test_request (packet, CUSTOM_PACKET); 
+				break;
+
+			default: 
+				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				break;
+		}
+	}
+
+}
+
+#pragma endregion
+
+#pragma region start
+
+static void start (HandlersType type) {
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
@@ -144,14 +209,45 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 
-		Handler *app_handler = handler_create (my_app_handler);
-		handler_set_direct_handle (app_handler, true);
+		Handler *app_handler = NULL;
+		Handler *app_error_handler = NULL;
+		Handler *app_custom_handler = NULL;
 
-		Handler *app_error_handler = handler_create (my_app_error_handler);
-		handler_set_direct_handle (app_error_handler, true);
+		switch (type) {
+			case HANDLERS_TYPE_NONE: break;
 
-		Handler *app_custom_handler = handler_create (my_custom_handler);
-		handler_set_direct_handle (app_custom_handler, true);
+			case HANDLERS_TYPE_DIRECT: {
+				printf ("\n");
+				cerver_log_debug ("Handlers to handle packets directly!");
+				printf ("\n");
+
+				app_handler = handler_create (my_app_handler_direct);
+				handler_set_direct_handle (app_handler, true);
+
+				app_error_handler = handler_create (my_app_error_handler_direct);
+				handler_set_direct_handle (app_error_handler, true);
+
+				app_custom_handler = handler_create (my_custom_handler_direct);
+				handler_set_direct_handle (app_custom_handler, true);
+			} break;
+
+			case HANDLERS_TYPE_QUEUE: {
+				printf ("\n");
+				cerver_log_debug ("Handlers to use job queue!");
+				printf ("\n");
+
+				app_handler = handler_create (my_app_handler_queue);
+				handler_set_direct_handle (app_handler, false);
+
+				app_error_handler = handler_create (my_app_error_handler_queue);
+				handler_set_direct_handle (app_error_handler, false);
+
+				app_custom_handler = handler_create (my_custom_handler_queue);
+				handler_set_direct_handle (app_custom_handler, false);
+			} break;
+
+			default: break;
+		}
 
 		cerver_set_app_handlers (my_cerver, app_handler, app_error_handler);
 		cerver_set_custom_handler (my_cerver, app_custom_handler);
@@ -175,6 +271,81 @@ int main (void) {
 		// cerver_delete (client_cerver);
 	}
 
+}
+
+#pragma endregion
+
+#pragma region main
+
+static void print_help (void) {
+
+	printf ("\n");
+	printf ("Usage: ./bin/handlers -t [type]\n");
+	printf ("-h       	Print this help\n");
+	printf ("-t [type]  Type to tun (d for direct / q for job queue)\n");
+	printf ("\n");
+
+}
+
+int main (int argc, char **argv) {
+
+	srand (time (NULL));
+
+	// register to the quit signal
+	signal (SIGINT, end);
+
+	printf ("\n");
+	cerver_version_print_full ();
+	printf ("\n");
+
+	cerver_log_debug ("App & Custom Handlers Example");
+	cerver_log_debug ("Testing correct handling of APP_PACKET, APP_ERROR_PACKET & CUSTOM_PACKET packet types");
+	printf ("\n");
+
+	char *type = NULL;
+	int j = 0;
+	if (argc > 1) {
+		const char *curr_arg = NULL;
+		for (int i = 1; i < argc; i++) {
+			curr_arg = argv[i];
+
+			if (!strcmp (curr_arg, "-h")) print_help ();
+			else if (!strcmp (curr_arg, "-t")) {
+				// get the type to run
+				j = i + 1;
+				if (j <= argc) {
+					type = argv[j];
+					i++;
+					// printf ("\nSelected type: %s\n", type->str);
+				}
+			}
+
+			else {
+				char *status = c_string_create ("Unknown argument: %s", curr_arg);
+				if (status) {
+					cerver_log_warning (status);
+					free (status);
+				}
+			}
+		}
+
+		if (type) {
+			if (!strcmp (type, "d")) start (HANDLERS_TYPE_DIRECT);
+			else if (!strcmp (type, "q")) start (HANDLERS_TYPE_QUEUE);
+			else {
+				char *status = c_string_create ("Unknown type: %s", type);
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+			}
+		}
+	}
+
+	else print_help ();
+
 	return 0;
 
 }
+
+#pragma endregion

@@ -423,13 +423,11 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 
     if (packet) {
         // check we have a big enough packet
-        if (packet->data_size > sizeof (RequestData)) {
+        if (packet->data_size > 0) {
             char *end = (char *) packet->data;
 
-            end += sizeof (RequestData);
-
             // check if we have a token
-            if (packet->data_size == (sizeof (RequestData) + sizeof (SToken))) {
+            if (packet->data_size == (sizeof (SToken))) {
                 SToken *s_token = (SToken *) (end);
                 auth_data = auth_data_create (s_token->token, NULL, 0);
             }
@@ -760,10 +758,8 @@ static void cerver_on_hold_handle_max_bad_packets (Cerver *cerver, Connection *c
 static void cerver_auth_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size > sizeof (RequestData)) {
-            RequestData *req = (RequestData *) (packet->data);
-
-            switch (req->type) {
+        if (packet->header && (packet->data_size > 0)) {
+            switch (packet->header->request_type) {
                 // the client sent use its data to authenticate itself
                 case AUTH_PACKET_TYPE_CLIENT_AUTH: auth_try (packet); break;
 
@@ -796,7 +792,17 @@ void on_hold_packet_handler (void *packet_ptr) {
 
         bool good = true;
         if (packet->cerver->on_hold_check_packets) {
-            good = packet_check (packet);
+            // we expect the packet version in the packet's data
+            if (packet->data) {
+                packet->version = (PacketVersion *) packet->data_ptr;
+                packet->data_ptr += sizeof (PacketVersion);
+                good = packet_check (packet);
+            }
+
+            else {
+                cerver_log_error ("on_hold_packet_handler () - No packet version to check!");
+                good = false;
+            }
         }
 
         if (good) {

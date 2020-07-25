@@ -235,9 +235,9 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 static void game_lobby_create (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (SStringS)) {
+        if (packet->data_size >= sizeof (SStringS)) {
             char *end = (char *) packet->data;
-            SStringS *stype = (SStringS *) (end += sizeof (RequestData));
+            SStringS *stype = (SStringS *) end;
 
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Client %ld requested to create a new lobby in cerver %s of type: %s",
@@ -461,9 +461,8 @@ static void game_lobby_join_search (Packet *packet, LobbyJoin *lj) {
 static void game_lobby_join (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (LobbyJoin)) {
+        if (packet->data_size >= sizeof (LobbyJoin)) {
             char *end = (char *) packet->data;
-            end += sizeof (RequestData);
             LobbyJoin *lj = (LobbyJoin *) end;
 
             // check if we have to search a lobby for the player
@@ -508,9 +507,8 @@ static void game_lobby_init (Packet *packet) {
 static void game_lobby_start (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (SStringS)) {
+        if (packet->data_size >= sizeof (SStringS)) {
             char *end = (char *) packet->data;
-            end += sizeof (RequestData);
             SStringS *lobby_id = (SStringS *) end;
 
             #ifdef CERVER_DEBUG
@@ -620,9 +618,8 @@ static void game_lobby_start (Packet *packet) {
 void game_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->data && (packet->data_size >= sizeof (RequestData))) {
-            RequestData *req = (RequestData *) (packet->data);
-            switch (req->type) {
+        if (packet->header) {
+            switch (packet->header->request_type) {
                 case GAME_LOBBY_CREATE: game_lobby_create (packet); break;
                 case GAME_LOBBY_JOIN: game_lobby_join (packet); break;
                 case GAME_LOBBY_LEAVE: game_lobby_leave (packet); break;

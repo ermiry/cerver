@@ -268,7 +268,7 @@ Cerver *cerver_new (void) {
         c->on_hold_poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->on_hold_poll_lock = NULL;
         c->on_hold_max_bad_packets = DEFAULT_ON_HOLD_MAX_BAD_PACKETS;
-        c->on_hold_check_packets = true;
+        c->on_hold_check_packets = false;
 
         c->use_sessions = false;
         c->session_id_generator = NULL;

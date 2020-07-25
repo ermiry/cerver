@@ -33,21 +33,21 @@
 
 static int unique_handler_id = 0;
 
-static HandlerData *handler_data_new (int handler_id, void *data, Packet *packet) {
+static HandlerData *handler_data_new (void) {
 
     HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
     if (handler_data) {
-        handler_data->handler_id = handler_id;
+        handler_data->handler_id = 0;
 
-        handler_data->data = data;
-        handler_data->packet = packet;
+        handler_data->data = NULL;
+        handler_data->packet = NULL;
     }
 
     return handler_data;
 
 }
 
-static inline void handler_data_delete (HandlerData *handler_data) { 
+static void handler_data_delete (HandlerData *handler_data) { 
 
     if (handler_data) free (handler_data);
     
@@ -166,6 +166,10 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 static void handler_do_while_cerver (Handler *handler) {
 
     if (handler) {
+        Job *job = NULL;
+        Packet *packet = NULL;
+        PacketType packet_type = DONT_CHECK_TYPE;
+        HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
 
@@ -175,17 +179,20 @@ static void handler_do_while_cerver (Handler *handler) {
                 pthread_mutex_unlock (handler->cerver->handlers_lock);
 
                 // read job from queue
-                Job *job = job_queue_pull (handler->job_queue);
+                job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    Packet *packet = (Packet *) job->args;
-                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+                    packet = (Packet *) job->args;
+                    packet_type = packet->header->packet_type;
+
+                    handler_data->handler_id = handler->id;
+                    handler_data->data = handler->data;
+                    handler_data->packet = packet;
 
                     handler->handler (handler_data);
 
-                    handler_data_delete (handler_data);
                     job_delete (job);
 
-                    switch (packet->header->packet_type) {
+                    switch (packet_type) {
                         case APP_PACKET: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
                         case APP_ERROR_PACKET: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
                         case CUSTOM_PACKET: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
@@ -199,6 +206,8 @@ static void handler_do_while_cerver (Handler *handler) {
                 pthread_mutex_unlock (handler->cerver->handlers_lock);
             }
         }
+
+        handler_data_delete (handler_data);
     }
 
 }
@@ -207,6 +216,9 @@ static void handler_do_while_cerver (Handler *handler) {
 static void handler_do_while_client (Handler *handler) {
 
     if (handler) {
+        Job *job = NULL;
+        Packet *packet = NULL;
+        HandlerData *handler_data = handler_data_new ();
         while (handler->client->running) {
             bsem_wait (handler->job_queue->has_jobs);
 
@@ -216,14 +228,16 @@ static void handler_do_while_client (Handler *handler) {
                 pthread_mutex_unlock (handler->client->handlers_lock);
 
                 // read job from queue
-                Job *job = job_queue_pull (handler->job_queue);
+                job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    Packet *packet = (Packet *) job->args;
-                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+                    packet = (Packet *) job->args;
+                    
+                    handler_data->handler_id = handler->id;
+                    handler_data->data = handler->data;
+                    handler_data->packet = packet;
 
                     handler->handler (handler_data);
 
-                    handler_data_delete (handler_data);
                     job_delete (job);
                     packet_delete (packet);
                 }
@@ -233,6 +247,8 @@ static void handler_do_while_client (Handler *handler) {
                 pthread_mutex_unlock (handler->client->handlers_lock);
             }
         }
+
+        handler_data_delete (handler_data);
     }
 
 }
@@ -241,6 +257,10 @@ static void handler_do_while_client (Handler *handler) {
 static void handler_do_while_admin (Handler *handler) {
 
     if (handler) {
+        Job *job = NULL;
+        Packet *packet = NULL;
+        PacketType packet_type = DONT_CHECK_TYPE;
+        HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
 
@@ -250,17 +270,20 @@ static void handler_do_while_admin (Handler *handler) {
                 pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 
                 // read job from queue
-                Job *job = job_queue_pull (handler->job_queue);
+                job = job_queue_pull (handler->job_queue);
                 if (job) {
-                    Packet *packet = (Packet *) job->args;
-                    HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
+                    packet = (Packet *) job->args;
+                    packet_type = packet->header->packet_type;
+
+                    handler_data->handler_id = handler->id;
+                    handler_data->data = handler->data;
+                    handler_data->packet = packet;
 
                     handler->handler (handler_data);
-
-                    handler_data_delete (handler_data);
+                    
                     job_delete (job);
 
-                    switch (packet->header->packet_type) {
+                    switch (packet_type) {
                         case APP_PACKET: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
                         case APP_ERROR_PACKET: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
                         case CUSTOM_PACKET: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
@@ -274,6 +297,8 @@ static void handler_do_while_admin (Handler *handler) {
                 pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
             }
         }
+
+        handler_data_delete (handler_data);
     }
 
 }
@@ -439,11 +464,8 @@ void sock_receive_delete (void *sock_receive_ptr) {
 static void cerver_request_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->data && (packet->data_size >= (sizeof (RequestData)))) {
-            char *end = (char *) packet->data;
-            RequestData *req_data = (RequestData *) end;
-
-            switch (req_data->type) {
+        if (packet->header) {
+            switch (packet->header->request_type) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
@@ -712,7 +734,17 @@ static void cerver_packet_handler (void *ptr) {
 
         bool good = true;
         if (packet->cerver->check_packets) {
-            good = packet_check (packet);
+            // we expect the packet version in the packet's data
+            if (packet->data) {
+                packet->version = (PacketVersion *) packet->data_ptr;
+                packet->data_ptr += sizeof (PacketVersion);
+                good = packet_check (packet);
+            }
+
+            else {
+                cerver_log_error ("cerver_packet_handler () - No packet version to check!");
+                good = false;
+            }
         }
 
         if (good) {
@@ -1499,6 +1531,8 @@ void cerver_receive (void *ptr) {
 
                                 cerver_switch_receive_handle_failed (cr);
                             }
+
+                            free (packet_buffer);
                         } break;
 
                         case 0: {
@@ -1515,6 +1549,8 @@ void cerver_receive (void *ptr) {
                             // #endif
 
                             cerver_switch_receive_handle_failed (cr);
+
+                            free (packet_buffer);
                         } break;
 
                         default: {

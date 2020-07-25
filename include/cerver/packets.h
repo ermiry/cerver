@@ -39,7 +39,6 @@ typedef struct ProtocolVersion {
 	
 } ProtocolVersion;
 
-
 // gets the current version set in your application
 extern ProtocolVersion packets_get_protocol_version (void);
 
@@ -48,6 +47,27 @@ extern ProtocolVersion packets_get_protocol_version (void);
 // If the versions of your packet don't match, it will be considered a bad packet
 // This value is only cheked if you enable packet checking for your cerver
 extern void packets_set_protocol_version (ProtocolVersion version);
+
+#pragma endregion
+
+#pragma region version
+
+struct _PacketVersion {
+
+	ProtocolID protocol_id;
+	ProtocolVersion protocol_version;
+
+};
+
+typedef struct _PacketVersion PacketVersion;
+
+extern PacketVersion *packet_version_new (void);
+
+extern void packet_version_delete (PacketVersion *version);
+
+extern PacketVersion *packet_version_create (void);
+
+extern void packet_version_print (PacketVersion *version);
 
 #pragma endregion
 
@@ -77,6 +97,7 @@ typedef enum PacketType {
 
 struct _PacketsPerType {
 
+	u64 n_cerver_packets;
 	u64 n_error_packets;
 	u64 n_auth_packets;
 	u64 n_request_packets;
@@ -105,13 +126,12 @@ extern void packets_per_type_print (PacketsPerType *packets_per_type);
 
 struct _PacketHeader {
 
-	ProtocolID protocol_id;
-	ProtocolVersion protocol_version;
 	PacketType packet_type;
 	size_t packet_size;
 
-	// 10/05/2020 -- select which app packet handler to use
 	u8 handler_id;
+
+	u32 request_type;
 
 };
 
@@ -121,7 +141,7 @@ extern PacketHeader *packet_header_new (void);
 
 extern void packet_header_delete (PacketHeader *header);
 
-extern PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size);
+extern PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type);
 
 // prints an already existing PacketHeader. Mostly used for debugging
 extern void packet_header_print (PacketHeader *header);
@@ -186,14 +206,6 @@ typedef enum GamePacketType {
 
 } GamePacketType;
 
-struct _RequestData {
-
-	u32 type;
-
-};
-
-typedef struct _RequestData RequestData;
-
 struct _Packet {
 
 	// the cerver and client the packet is from
@@ -203,16 +215,18 @@ struct _Packet {
 	struct _Lobby *lobby;
 
 	PacketType packet_type;
-	estring *custom_type;
+	u32 req_type;
 
 	// serilized data
 	size_t data_size;
 	void *data;
+	char *data_ptr;
 	char *data_end;
 	bool data_ref;
 
 	// the actual packet to be sent
 	PacketHeader *header;
+	PacketVersion *version;
 	size_t packet_size;
 	void *packet;
 	bool packet_ref;
@@ -303,6 +317,17 @@ extern u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent
 // returns 0 on success, 1 on error
 extern u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+
+// sends a packet in pieces, taking the header from the packet's field
+// sends each buffer as they are with they respective sizes
+// socket mutex will be locked for the entire operation
+// returns 0 on success, 1 on error
+extern u8 packet_send_pieces (
+    const Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces, 
+    int flags, 
+    size_t *total_sent
+);
 
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
