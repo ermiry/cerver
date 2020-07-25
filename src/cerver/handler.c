@@ -178,6 +178,8 @@ static void handler_do_while_cerver (Handler *handler) {
                 Job *job = job_queue_pull (handler->job_queue);
                 if (job) {
                     Packet *packet = (Packet *) job->args;
+                    PacketType packet_type = packet->header->packet_type;
+
                     HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
 
                     handler->handler (handler_data);
@@ -185,7 +187,7 @@ static void handler_do_while_cerver (Handler *handler) {
                     handler_data_delete (handler_data);
                     job_delete (job);
 
-                    switch (packet->header->packet_type) {
+                    switch (packet_type) {
                         case APP_PACKET: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
                         case APP_ERROR_PACKET: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
                         case CUSTOM_PACKET: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
@@ -253,6 +255,8 @@ static void handler_do_while_admin (Handler *handler) {
                 Job *job = job_queue_pull (handler->job_queue);
                 if (job) {
                     Packet *packet = (Packet *) job->args;
+                    PacketType packet_type = packet->header->packet_type;
+
                     HandlerData *handler_data = handler_data_new (handler->id, handler->data, packet);
 
                     handler->handler (handler_data);
@@ -260,7 +264,7 @@ static void handler_do_while_admin (Handler *handler) {
                     handler_data_delete (handler_data);
                     job_delete (job);
 
-                    switch (packet->header->packet_type) {
+                    switch (packet_type) {
                         case APP_PACKET: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
                         case APP_ERROR_PACKET: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
                         case CUSTOM_PACKET: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
