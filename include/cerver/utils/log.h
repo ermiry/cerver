@@ -31,7 +31,9 @@ typedef enum LogType {
 	LOG_PLAYER				= 12,
 
 	LOG_HANDLER				= 13,
-	LOG_ADMIN				= 14
+	LOG_ADMIN				= 14,
+
+	LOG_EVENT				= 15
 
 } LogType;
 
