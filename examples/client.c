@@ -332,7 +332,7 @@ int main (void) {
 	cerver_log_debug ("Cerver creates a new client that will use to make requests to another cerver");
 	printf ("\n");
 
-	client_cerver = cerver_create (CUSTOM_CERVER, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
+	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
         cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Example");
 
