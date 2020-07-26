@@ -46,17 +46,17 @@ int main (void) {
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_app_handlers (my_cerver, NULL, NULL);
 
-		if (!cerver_start (my_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start cerver!");
+		if (cerver_start (my_cerver)) {
+			cerver_log_error ("Failed to start cerver!");
+
+			cerver_delete (my_cerver);
 		}
 	}
 
 	else {
         cerver_log_error ("Failed to create cerver!");
-
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		
+		cerver_delete (my_cerver);
 	}
 
 	return 0;

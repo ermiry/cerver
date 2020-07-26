@@ -166,15 +166,22 @@ int main (int argc, char **argv) {
 
 		cerver_set_handle_recieved_buffer (web_cerver, app_handle_received_buffer);
 
-		if (!cerver_start (web_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start cerver!");
+		if (cerver_start (web_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				web_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (web_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
+
+		cerver_delete (web_cerver);
 	}
 
 	return 0;

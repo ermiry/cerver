@@ -267,8 +267,7 @@ static void start (HandlersType type) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+        cerver_delete (my_cerver);
 	}
 
 }
