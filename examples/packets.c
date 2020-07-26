@@ -5,20 +5,91 @@
 #include <time.h>
 #include <signal.h>
 
+#include <cerver/types/estring.h>
+
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
+#include <cerver/time.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+static Cerver *my_cerver = NULL;
+
+#pragma region app
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+#define APP_MESSAGE_LEN			512
+
 typedef enum AppRequest {
 
-	TEST_MSG		= 0
+	TEST_MSG		= 0,
+	APP_MSG			= 1,
+	MULTI_MSG		= 2,
 
 } AppRequest;
 
-static Cerver *my_cerver = NULL;
+typedef struct AppData {
+
+	time_t timestamp;
+	size_t message_len;
+	char message[APP_MESSAGE_LEN];
+
+} AppData;
+
+static AppData *app_data_new (void) {
+
+	AppData *app_data = (AppData *) malloc (sizeof (AppData));
+	if (app_data) {
+		memset (app_data, 0, sizeof (AppData));
+	}
+
+	return app_data;
+
+}
+
+static void app_data_delete (void *app_data_ptr) {
+
+	if (app_data_ptr) free (app_data_ptr);
+
+}
+
+static AppData *app_data_create (const char *message) {
+
+	AppData *app_data = app_data_new ();
+	if (app_data) {
+		time (&app_data->timestamp);
+
+		if (message) {
+			app_data->message_len = strlen (message);
+			strncpy (app_data->message, message, APP_MESSAGE_LEN);
+		}
+	}
+
+	return app_data;
+
+}
+
+static void app_data_print (AppData *app_data) {
+
+	if (app_data) {
+		estring *date = timer_time_to_string (gmtime (&app_data->timestamp));
+		if (date) {
+			printf ("Timestamp: %s\n", date->str);
+			estring_delete (date);
+		}
+
+		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+	}
+
+}
+
+#pragma GCC diagnostic pop
+
+#pragma endregion
 
 #pragma region end
 
@@ -61,13 +132,48 @@ static void handle_test_request (Packet *packet) {
 
 }
 
+static void handle_app_message (Packet *packet) {
+
+	if (packet) {
+		char *end = packet->data;
+
+		AppData *app_data = (AppData *) end;
+		app_data_print (app_data);
+		printf ("\n");
+	}
+
+}
+
+static void handle_multi_message (Packet *packet) {
+
+	if (packet) {
+		cerver_log_debug ("MULTI message!");
+
+		char *end = packet->data;
+
+		AppData *app_data = NULL;
+		for (u32 i = 0; i < 5; i++) {
+			app_data = (AppData *) end;
+			printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+			printf ("\n");
+
+			end += sizeof (AppData);
+		}
+	}
+
+}
+
 static void handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		
+
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
+
+			case APP_MSG: handle_app_message (packet); break;
+
+			case MULTI_MSG: handle_multi_message (packet); break;
 
 			default: 
 				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
@@ -80,27 +186,6 @@ static void handler (void *data) {
 #pragma endregion
 
 #pragma region events
-
-static void on_cever_started (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		printf ("\nCerver %s has started!\n", event_data->cerver->info->name->str);
-		printf ("Test Message: %s\n\n", ((estring *) event_data->action_args)->str);
-	}
-
-}
-
-static void on_cever_teardown (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		printf ("\nCerver %s is going to be destroyed!\n\n", event_data->cerver->info->name->str);
-	}
-
-}
 
 static void on_client_connected (void *event_data_ptr) {
 
@@ -145,14 +230,14 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Simple Test Message Example");
+	cerver_log_debug ("Packets Example");
 	printf ("\n");
-	cerver_log_debug ("Single app handler with direct handle option enabled");
+	cerver_log_debug ("We should always receive the same message no matter the method the client is using to send it");
 	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Packets Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
@@ -162,21 +247,6 @@ int main (void) {
 		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
-
-		estring *test = estring_new ("This is a test!");
-		cerver_event_register (
-			my_cerver, 
-			CERVER_EVENT_STARTED,
-			on_cever_started, test, estring_delete,
-			false, false
-		);
-
-		cerver_event_register (
-			my_cerver, 
-			CERVER_EVENT_TEARDOWN,
-			on_cever_teardown, NULL, NULL,
-			false, false
-		);
 
 		cerver_event_register (
 			my_cerver, 
@@ -205,9 +275,9 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// DONT call - cerver_teardown () is called automatically if cerver_create () fails
 		// cerver_delete (client_cerver);
 	}
 

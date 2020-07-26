@@ -1,265 +1,33 @@
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
 
+#include <time.h>
+#include <pthread.h>
 #include <poll.h>
-#include <errno.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/collections/dllist.h"
-
-#include "cerver/threads/thread.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/admin.h"
+#include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
-#include "cerver/errors.h"
 #include "cerver/handler.h"
-#include "cerver/network.h"
+#include "cerver/packets.h"
+#include "cerver/events.h"
+
+#include "cerver/threads/thread.h"
+#include "cerver/threads/bsem.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-#pragma region aux
+u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection);
+static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection);
 
-static AdminAppHandler *admin_app_handler_new (AdminCerver *admin_cerver, Packet *packet,
-	Admin *admin) {
-
-	AdminAppHandler *admin_app_handler = (AdminAppHandler *) malloc (sizeof (AdminAppHandler));
-	if (admin_app_handler) {
-		admin_app_handler->admin_cerver = admin_cerver;
-		admin_app_handler->packet = packet;
-		admin_app_handler->admin = admin;
-	}
-
-	return admin_app_handler;
-
-}
-
-static void admin_app_handler_delete (void *ptr) { if (ptr) free (ptr); }
-
-#pragma endregion
-
-#pragma region Admin Credentials
-
-static AdminCredentials *admin_credentials_new (void) {
-
-	AdminCredentials *credentials = (AdminCredentials *) malloc (sizeof (AdminCredentials));
-	if (credentials) {
-		credentials->username = NULL;
-		credentials->password = NULL;
-		credentials->logged_in = false;
-	}
-
-	return credentials;
-
-}
-
-static void admin_credentials_delete (void *credentials_ptr) {
-
-	if (credentials_ptr) {
-		AdminCredentials *credentials = (AdminCredentials *) credentials_ptr;
-
-		estring_delete (credentials->username);
-		estring_delete (credentials->password);
-
-		free (credentials);
-	}
-
-}
-
-#pragma endregion
-
-#pragma region Admin
-
-static Admin *admin_new (void) {
-
-	Admin *admin = (Admin *) malloc (sizeof (Admin));
-	if (admin) {
-		admin->id = NULL;
-
-		admin->client = NULL;
-
-		admin->data = NULL;
-		admin->delete_data = NULL;
-
-		admin->authenticated = false;
-		admin->credentials = NULL;
-	}
-
-	return admin;
-
-}
-
-static void admin_delete (void *admin_ptr) {
-
-	if (admin_ptr) {
-		Admin *admin = (Admin *) admin_ptr;
-
-		estring_delete (admin->id);
-
-		client_delete (admin->client);
-
-		if (admin->data) {
-			if (admin->delete_data) admin->delete_data (admin->data);
-		}
-
-		free (admin);
-	}
-
-}
-
-// create a new admin structures with the newly connected client data
-// this does not means that it has been authenticated as an admin
-static Admin *admin_create (Client *client) {
-
-	Admin *admin = NULL;
-
-	if (client) {
-		admin = admin_new ();
-		if (admin) {
-			admin->client = client;
-			admin->authenticated = false;
-		}
-	}
-
-	return admin;
-
-}
-
-// compares admins by their id
-int admin_comparator_by_id (const void *a, const void *b) {
-
-	if (a && b) return estring_comparator (((Admin *) a)->id, ((Admin *) b)->id);
-
-	else if (a && !b) return -1;
-	else if (!a && b) return 1;
-	return 0;
-
-}
-
-// sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
-void admin_set_data (Admin *admin, void *data, Action delete_data) {
-
-	if (admin) {
-		admin->data = data;
-		admin->delete_data = delete_data;
-	}
-
-}
-
-static Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
-
-	Admin *retval = NULL;
-
-	if (admin_cerver) {
-		// search the admin by sockfd
-		Admin *admin = NULL;
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-			admin = (Admin *) le->data;
-
-			// search in all the admin's connections
-			Connection *con = NULL;
-			for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
-				con = (Connection *) le_sub->data;
-				if (con->socket->sock_fd == sock_fd) {
-					retval = admin;
-					break;
-				}
-			}
-
-			if (retval) break;
-		}
-	}
-
-	return retval;
-
-}
-
-static Connection *admin_connection_get_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
-
-	Connection *retval = NULL;
-
-	if (admin_cerver) {
-		// search the admin by sockfd
-		Admin *admin = NULL;
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-			admin = (Admin *) le->data;
-
-			// search in all the admin's connections
-			Connection *con = NULL;
-			for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
-				con = (Connection *) le_sub->data;
-				if (con->socket->sock_fd == sock_fd) {
-					retval = con;
-					return retval;
-				}
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-// sends a packet to the specified admin
-// returns 0 on success, 1 on error
-u8 admin_send_packet (Admin *admin, Packet *packet) {
-
-	u8 retval = 1;
-
-	if (admin && packet) {
-		if (admin->authenticated) {
-			// printf ("admin client: %ld -- sock fd: %d\n", admin->client->id, ((Connection *) dlist_start (admin->client->connections))->sock_fd);
-
-			packet_set_network_values (packet, 
-				NULL, 
-				admin->client, 
-				(Connection *) dlist_start (admin->client->connections)->data, 
-				NULL);
-			retval = packet_send (packet, 0, NULL, false);
-			if (retval)
-				cerver_log_error ("Failed to send packet to admin!");
-		}
-	}
-
-
-	return retval;
-
-}
-
-// broadcasts a packet to all connected admins in an admin cerver
-// returns 0 on success, 1 on error
-u8 admin_broadcast_to_all (AdminCerver *admin_cerver, Packet *packet) {
-
-	u8 retval = 1;
-
-	if (admin_cerver && packet) {
-		// char *status = c_string_create ("Total admins connected: %ld", dlist_size (admin_cerver->admins));
-		// if (status) {
-		// 	cerver_log_debug (status);
-		// 	free (status);
-		// }
-
-		Admin *admin = NULL;
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-			admin = (Admin *) le->data;
-
-			admin_send_packet (admin, packet);
-		}
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-#pragma endregion
-
-#pragma region Admin Cerver Stats
+#pragma region stats
 
 static AdminCerverStats *admin_cerver_stats_new (void) {
 
@@ -285,191 +53,154 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 
 }
 
+void admin_cerver_stats_print (AdminCerverStats *stats) {
+
+    if (stats) {
+        printf ("threshold_time: %ld\n", stats->threshold_time);
+    
+        printf ("\n");
+        printf ("Total n receives done:                  %ld\n", stats->total_n_receives_done);
+        printf ("Total n packets received:               %ld\n", stats->total_n_packets_received);
+        printf ("Total bytes received:                   %ld\n", stats->total_bytes_received);
+
+        printf ("\n");
+        printf ("Total n packets sent:                   %ld\n", stats->total_n_packets_sent);
+        printf ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
+
+        printf ("\n");
+        printf ("Current connections:                    %ld\n", stats->current_connections);
+        printf ("Current connected admins:               %ld\n", stats->current_connected_admins);
+
+        printf ("\n");
+        printf ("Total n admins:                         %ld\n", stats->total_n_admins);
+        printf ("Unique admins:                          %ld\n", stats->unique_admins);
+        printf ("Total admin connections:                %ld\n", stats->total_admin_connections);
+
+        printf ("\nReceived packets:\n");
+        packets_per_type_print (stats->received_packets);
+
+        printf ("\nSent packets:\n");
+        packets_per_type_print (stats->sent_packets);
+    }
+
+}
+
 #pragma endregion
 
-#pragma region Admin Cerver
+#pragma region admin
 
-static AdminCerver *admin_cerver_new (void) {
+Admin *admin_new (void) {
 
-	AdminCerver *admin = (AdminCerver *) malloc (sizeof (AdminCerver));
+	Admin *admin = (Admin *) malloc (sizeof (Admin));
 	if (admin) {
-		memset (admin, 0, sizeof (AdminCerver));
+		admin->id = NULL;
 
-		admin->cerver = NULL;
+		admin->client = NULL;
 
-		admin->credentials = NULL;
+		admin->data = NULL;
+		admin->delete_data = NULL;
 
-		admin->admins = NULL;
-
-		admin->fds = NULL;
-
-		admin->on_admin_fail_connection = NULL;
-		admin->on_admin_success_connection = NULL;
-
-		admin->admin_packet_handler = NULL;
-		admin->admin_error_packet_handler = NULL;
-
-		admin->stats = NULL;
+		admin->bad_packets = 0;
 	}
 
 	return admin;
 
 }
 
-void admin_cerver_delete (void *admin_cerver_ptr) {
+void admin_delete (void *admin_ptr) {
 
-	if (admin_cerver_ptr) {
-		AdminCerver *admin = (AdminCerver *) admin_cerver_ptr;
+	if (admin_ptr) {
+		Admin *admin = (Admin *) admin_ptr;
 
-		dlist_delete (admin->credentials);
+		estring_delete (admin->id);
 
-		dlist_delete (admin->admins);
+		client_delete (admin->client);
 
-		if (admin->fds) free (admin->fds);
-
-		admin_cerver_stats_delete (admin->stats);
+		if (admin->data) {
+			if (admin->delete_data) admin->delete_data (admin->data);
+		}
 
 		free (admin);
 	}
 
 }
 
-// inits the admin cerver networking capabilities
-static u8 admin_cerver_network_init (AdminCerver *admin_cerver, u16 port, bool use_ipv6) {
+Admin *admin_create (void) {
 
-	if (admin_cerver) {
-		admin_cerver->port = port;
-		admin_cerver->use_ipv6 = use_ipv6;
+    Admin *admin = admin_new ();
+    if (admin) {
+        time_t rawtime = 0;
+        time (&rawtime);
+        admin->id = estring_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
+    }
 
-		// only TCP is supported
-		admin_cerver->sock = socket ((admin_cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-		if (admin_cerver->sock < 0) {
-			cerver_log_error ("Failed to create admin cerver socket!");
-			return 1;			// error
-		}
+    return admin;
 
-		// set the socket to non blocking mode
-		if (!sock_set_blocking (admin_cerver->sock, true)) {
-			cerver_log_error ("Failed to set admin cerver socket to non blocking mode!");
-			close (admin_cerver->sock);
-			return 1;			// error
-		}
+}
 
-		else {
-			#ifdef CERVER_DEBUG
-			cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Admin cerver socket set to non blocking mode.");
-			#endif
-		}
+Admin *admin_create_with_client (Client *client) {
 
-		memset (&admin_cerver->address, 0, sizeof (struct sockaddr_storage));
+	Admin *admin = NULL;
 
-		if (admin_cerver->use_ipv6) {
-			struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &admin_cerver->address;
-			addr->sin6_family = AF_INET6;
-			addr->sin6_addr = in6addr_any;
-			addr->sin6_port = htons (admin_cerver->port);
-		} 
-
-		else {
-			struct sockaddr_in *addr = (struct sockaddr_in *) &admin_cerver->address;
-			addr->sin_family = AF_INET;
-			addr->sin_addr.s_addr = INADDR_ANY;
-			addr->sin_port = htons (admin_cerver->port);
-		}
-
-		if ((bind (admin_cerver->sock, (const struct sockaddr *) &admin_cerver->address, sizeof (struct sockaddr_storage))) < 0) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Failed to bind admin cerver socket!");
-			close (admin_cerver->sock);
-			return 1;			// error
-		}  
-
-		return 0;       // success!!
+	if (client) {
+		admin = admin_create ();
+		if (admin) admin->client = client;
 	}
 
-	return 1;			// error
+	return admin;
 
 }
 
-static u8 admin_cerver_init_data_structures (AdminCerver *admin_cerver) {
+int admin_comparator_by_id (const void *a, const void *b) {
 
-	if (admin_cerver) {
-		admin_cerver->credentials = dlist_init (admin_credentials_delete, NULL);
-		if (!admin_cerver->credentials) {
-			#ifdef CERVER_DEBUG
-			cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Failed to init admins credentials dlist in admin cerver");
-			#endif
+	if (a && b) return strcmp (((Admin *) a)->id->str, ((Admin *) b)->id->str);
 
-			return 1;		// error
-		}
+	else if (a && !b) return -1;
+	else if (!a && b) return 1;
+	return 0;
 
-		admin_cerver->admins = dlist_init (admin_delete, admin_comparator_by_id);
-		if (!admin_cerver->admins) {
-			#ifdef CERVER_DEBUG
-			cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Failed to init admins dlist in admin cerver");
-			#endif
+}
 
-			return 1;		// error
-		}
+// sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
+void admin_set_data (Admin *admin, void *data, Action delete_data) {
 
-		return 0;			// success
+	if (admin) {
+		admin->data = data;
+		admin->delete_data = delete_data;
 	}
 
-	return 1;		// error
+}
+
+static Connection *admin_connection_get_by_sock_fd (Admin *admin, const i32 sock_fd) {
+
+    Connection *retval = NULL;
+
+    if (admin) {
+        Connection *connection = NULL;
+        for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
+            connection = (Connection *) le_sub->data;
+            if (connection->socket->sock_fd == sock_fd) {
+                retval = connection;
+                break;
+            }
+        }
+    }
+
+    return retval;
 
 }
 
-AdminCerver *admin_cerver_create (u16 port, bool use_ipv6) {
+// gets an admin by a matching connection in its client with the specified sock fd
+Admin *admin_get_by_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd) {
 
-	AdminCerver *admin_cerver = admin_cerver_new ();
+	Admin *retval = NULL;
+
 	if (admin_cerver) {
-		if (!admin_cerver_network_init (admin_cerver, port, use_ipv6)) {
-			if (!admin_cerver_init_data_structures (admin_cerver)) {
-				// set default values
-				admin_cerver->receive_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
-
-				admin_cerver->max_admins = DEFAULT_MAX_ADMINS;
-				admin_cerver->max_admin_connections = DEFAULT_MAX_ADMIN_CONNECTIONS;
-
-				admin_cerver->n_bad_packets_limit = DEFAULT_N_BAD_PACKETS_LIMIT;
-				admin_cerver->n_bad_packets_limit_auth = DEFAULT_N_BAD_PACKETS_LIMIT_AUTH;
-
-				admin_cerver->poll_timeout = DEFAULT_POLL_TIMEOUT;
-
-				admin_cerver->stats = admin_cerver_stats_new ();
-
-				return admin_cerver;
-			}
-		}
-
-		admin_cerver_delete (admin_cerver);
-		return NULL;		// error
-	}
-
-	return NULL;			// error
-
-}
-
-// sets a custom receive buffer size to use for admin handler
-void admin_cerver_set_receive_buffer_size (AdminCerver *admin_cerver, u32 receive_buffer_size) {
-
-	if (admin_cerver) admin_cerver->receive_buffer_size = receive_buffer_size;
-
-}
-
-// 24/01/2020 -- 11:20 -- register new admin credentials
-// returns 0 on success, 1 on error
-u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
-	const char *username, const char *password) {
-
-	u8 retval = 1;
-
-	if (admin_cerver && username && password) {
-		AdminCredentials *credentials = admin_credentials_new ();
-		if (credentials) {
-			credentials->username = estring_new (username);
-			credentials->password = estring_new (password);
-
-			retval = dlist_insert_after (admin_cerver->credentials, dlist_end (admin_cerver->credentials), credentials);
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+            if (admin_connection_get_by_sock_fd ((Admin *) le->data, sock_fd)) {
+                retval = (Admin *) le->data;
+                break;
+            }
 		}
 	}
 
@@ -477,7 +208,254 @@ u8 admin_cerver_register_admin_credentials (AdminCerver *admin_cerver,
 
 }
 
-// sets the max numbers of admins allowed concurrently
+// gets an admin by a matching client's session id
+Admin *admin_get_by_session_id (AdminCerver *admin_cerver, const char *session_id) {
+
+	Admin *retval = NULL;
+
+	if (admin_cerver) {
+        Admin *admin = NULL;
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+            admin = (Admin *) le->data;
+            if (admin->client->session_id) {
+                if (!strcmp (admin->client->session_id->str, session_id)) {
+                    retval = (Admin *) le->data;
+                    break;
+                }
+            }
+		}
+	}
+
+	return retval;
+
+}
+
+// removes the connection from the admin referred to by the sock fd
+// and also checks if there is another active connection in the admin, if not it will be dropped
+// returns 0 on success, 1 on error
+u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd) {
+
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        Connection *connection = NULL;
+        switch (admin->client->connections->size) {
+            case 0: {
+                #ifdef ADMIN_DEBUG
+                char *s = c_string_create ("admin_remove_connection_by_sock_fd () - Admin client with id " 
+                    "%ld does not have ANY connection - removing him from cerver...",
+                    admin->client->id);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                    free (s);
+                }
+                #endif
+                
+                admin_cerver_unregister_admin (admin_cerver, admin);
+                admin_delete (admin);
+            } break;
+
+            case 1: {
+                connection = (Connection *) admin->client->connections->start->data;
+                if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+                    // remove, close & delete the connection
+                    if (!client_connection_drop (
+                        admin_cerver->cerver,
+                        admin->client,
+                        connection
+                    )) {
+                        cerver_event_trigger (
+                            CERVER_EVENT_ADMIN_CLOSE_CONNECTION,
+                            admin_cerver->cerver,
+                            NULL, NULL
+                        );
+
+                        // no connections left in admin, just remove and delete
+                        admin_cerver_unregister_admin (admin_cerver, admin);
+                        admin_delete (admin);
+
+                        cerver_event_trigger (
+                            CERVER_EVENT_ADMIN_DROPPED,
+                            admin_cerver->cerver,
+                            NULL, NULL
+                        );
+
+                        retval = 0;
+                    }
+                }
+            } break;
+
+            default: {
+                connection = admin_connection_get_by_sock_fd (admin, sock_fd);
+                if (connection) {
+                    if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+                        if (!client_connection_drop (
+                            admin_cerver->cerver,
+                            admin->client,
+                            connection
+                        )) {
+                            cerver_event_trigger (
+                                CERVER_EVENT_ADMIN_CLOSE_CONNECTION,
+                                admin_cerver->cerver,
+                                NULL, NULL
+                            );
+
+                            retval = 0;
+                        }
+                    }
+                }
+
+                else {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("admin_remove_connection_by_sock_fd () - Admin client with id " 
+                        "%ld does not have a connection related to sock fd %d",
+                        admin->client->id, sock_fd);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                        free (s);
+                    }
+                    #endif
+                }
+            } break;
+        }
+    }
+
+    return retval;
+
+}
+
+// sends a packet to the first connection of the specified admin
+// returns 0 on success, 1 on error
+u8 admin_send_packet (Admin *admin, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin && packet) {
+		// printf (
+        //     "admin client: %ld -- sock fd: %d\n", 
+        //     admin->client->id, 
+        //     ((Connection *) dlist_start (admin->client->connections))->socket->sock_fd
+        // );
+
+        packet_set_network_values (
+            packet, 
+            NULL, 
+            admin->client, 
+            (Connection *) dlist_start (admin->client->connections)->data, 
+            NULL
+        );
+
+        retval = packet_send (packet, 0, NULL, false);
+        if (retval) cerver_log_error ("Failed to send packet to admin!");
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region main
+
+AdminCerver *admin_cerver_new (void) {
+
+	AdminCerver *admin_cerver = (AdminCerver *) malloc (sizeof (AdminCerver));
+	if (admin_cerver) {
+		admin_cerver->cerver = NULL;
+
+		admin_cerver->admins = NULL;
+
+        admin_cerver->authenticate = NULL;
+
+		admin_cerver->max_admins = DEFAULT_MAX_ADMINS;
+		admin_cerver->max_admin_connections = DEFAULT_MAX_ADMIN_CONNECTIONS;
+
+		admin_cerver->n_bad_packets_limit = DEFAULT_N_BAD_PACKETS_LIMIT;
+
+		admin_cerver->fds = NULL;
+		admin_cerver->max_n_fds = DEFAULT_ADMIN_MAX_N_FDS;
+		admin_cerver->current_n_fds = 0;
+		admin_cerver->poll_timeout = DEFAULT_ADMIN_POLL_TIMEOUT;
+
+		admin_cerver->app_packet_handler = NULL;
+		admin_cerver->app_error_packet_handler = NULL;
+		admin_cerver->custom_packet_handler = NULL;
+
+		admin_cerver->num_handlers_alive = 0;
+		admin_cerver->num_handlers_working = 0;
+		admin_cerver->handlers_lock = NULL;
+
+		admin_cerver->app_packet_handler_delete_packet = true;
+		admin_cerver->app_error_packet_handler_delete_packet = true;
+		admin_cerver->custom_packet_handler_delete_packet = true;
+
+        admin_cerver->update_thread_id = 0;
+        admin_cerver->update = NULL;
+        admin_cerver->update_args = NULL;
+        admin_cerver->update_ticks = DEFAULT_UPDATE_TICKS;
+
+        admin_cerver->update_interval_thread_id = 0;
+        admin_cerver->update_interval = NULL;
+        admin_cerver->update_interval_args = NULL;
+        admin_cerver->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
+
+		admin_cerver->stats = NULL;
+	}
+
+	return admin_cerver;
+
+}
+
+void admin_cerver_delete (AdminCerver *admin_cerver) {
+
+	if (admin_cerver) {
+		dlist_delete (admin_cerver->admins);
+
+		if (admin_cerver->fds) free (admin_cerver->fds);
+
+        if (admin_cerver->poll_lock) {
+            pthread_mutex_destroy (admin_cerver->poll_lock);
+            free (admin_cerver->poll_lock);
+        }
+
+		handler_delete (admin_cerver->app_packet_handler);
+        handler_delete (admin_cerver->app_error_packet_handler);
+        handler_delete (admin_cerver->custom_packet_handler);
+
+		if (admin_cerver->handlers_lock) {
+            pthread_mutex_destroy (admin_cerver->handlers_lock);
+            free (admin_cerver->handlers_lock);
+        }
+
+		admin_cerver_stats_delete (admin_cerver->stats);
+
+		free (admin_cerver);
+	}
+
+}
+
+AdminCerver *admin_cerver_create (void) {
+
+	AdminCerver *admin_cerver = admin_cerver_new ();
+	if (admin_cerver) {
+		admin_cerver->admins = dlist_init (admin_delete, admin_comparator_by_id);
+
+		admin_cerver->stats = admin_cerver_stats_new ();
+	}
+
+	return admin_cerver;
+
+}
+
+// sets the authentication methods to be used to successfully authenticate admin credentials
+// must return 0 on success, 1 on error
+void admin_cerver_set_authenticate (AdminCerver *admin_cerver, delegate authenticate) {
+
+    if (admin_cerver) admin_cerver->authenticate = authenticate;
+
+}
+
+// sets the max numbers of admins allowed at any given time
 void admin_cerver_set_max_admins (AdminCerver *admin_cerver, u8 max_admins) {
 
 	if (admin_cerver) admin_cerver->max_admins = max_admins;
@@ -495,13 +473,18 @@ void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u8 max_a
 // n_bad_packets_limit for NON auth admins
 // n_bad_packets_limit_auth for authenticated clients
 // -1 to use defaults (5 and 20)
-void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, 
-	i32 n_bad_packets_limit, i32 n_bad_packets_limit_auth) {
+void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, i32 n_bad_packets_limit) {
 
 	if (admin_cerver) {
 		admin_cerver->n_bad_packets_limit = n_bad_packets_limit > 0 ? n_bad_packets_limit : DEFAULT_N_BAD_PACKETS_LIMIT;
-		admin_cerver->n_bad_packets_limit_auth = n_bad_packets_limit_auth > 0 ? n_bad_packets_limit : DEFAULT_N_BAD_PACKETS_LIMIT_AUTH;
 	}
+
+}
+
+// sets the max number of poll fds for the admin cerver
+void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds) {
+
+	if (admin_cerver) admin_cerver->max_n_fds = max_n_fds;
 
 }
 
@@ -512,882 +495,1071 @@ void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout)
 
 }
 
-static OnAdminConnection *on_admin_connection_new (AdminCerver *admin_cerver, Admin *admin) {
+// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, Handler *app_handler, Handler *app_error_handler) {
 
-	OnAdminConnection *on_admin_connection = (OnAdminConnection *) malloc (sizeof (OnAdminConnection));
-	if (on_admin_connection) {
-		on_admin_connection->admin_cerver = admin_cerver;
-		on_admin_connection->admin = admin;
+    if (admin_cerver) {
+        admin_cerver->app_packet_handler = app_handler;
+        if (admin_cerver->app_packet_handler) {
+            admin_cerver->app_packet_handler->type = HANDLER_TYPE_ADMIN;
+            admin_cerver->app_packet_handler->cerver = admin_cerver->cerver;
+        }
+
+        admin_cerver->app_error_packet_handler = app_error_handler;
+        if (admin_cerver->app_error_packet_handler) {
+            admin_cerver->app_error_packet_handler->type = HANDLER_TYPE_ADMIN;
+            admin_cerver->app_error_packet_handler->cerver = admin_cerver->cerver;
+        }
+    }
+
+}
+
+// sets option to automatically delete APP_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
+
+    if (admin_cerver) admin_cerver->app_packet_handler_delete_packet = delete_packet;
+
+}
+
+// sets option to automatically delete APP_ERROR_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
+
+    if (admin_cerver) admin_cerver->app_error_packet_handler_delete_packet = delete_packet;
+
+}
+
+// sets a CUSTOM_PACKET packet type handler
+void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, Handler *custom_handler) {
+
+    if (admin_cerver) {
+        admin_cerver->custom_packet_handler = custom_handler;
+        if (admin_cerver->custom_packet_handler) {
+            admin_cerver->custom_packet_handler->type = HANDLER_TYPE_ADMIN;
+            admin_cerver->custom_packet_handler->cerver = admin_cerver->cerver;
+        }
+    }
+
+}
+
+// sets option to automatically delete CUSTOM_PACKET packets after use
+// if set to false, user must delete the packets manualy 
+// by the default, packets are deleted by cerver
+void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
+
+    if (admin_cerver) admin_cerver->custom_packet_handler_delete_packet = delete_packet;
+
+}
+
+// returns the total number of handlers currently alive (ready to handle packets)
+unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver) {
+
+    unsigned int retval = 0;
+
+    if (admin_cerver) {
+        pthread_mutex_lock (admin_cerver->handlers_lock);
+        retval = admin_cerver->num_handlers_alive;
+        pthread_mutex_unlock (admin_cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
+// returns the total number of handlers currently working (handling a packet)
+unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver) {
+
+    unsigned int retval = 0;
+
+    if (admin_cerver) {
+        pthread_mutex_lock (admin_cerver->handlers_lock);
+        retval = admin_cerver->num_handlers_working;
+        pthread_mutex_unlock (admin_cerver->handlers_lock);
+    }
+
+    return retval;
+
+}
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packets) {
+
+    if (admin_cerver) {
+        admin_cerver->check_packets = check_packets;
+    }
+
+}
+
+// sets a custom update function to be executed every n ticks
+// a new thread will be created that will call your method each tick
+// the update args will be passed to your method as a CerverUpdate & won't be deleted 
+void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps) {
+
+    if (admin_cerver) {
+        admin_cerver->update = update;
+        admin_cerver->update_args = update_args;
+        admin_cerver->update_ticks = fps;
+    }
+
+}
+
+// sets a custom update method to be executed every x seconds (in intervals)
+// a new thread will be created that will call your method every x seconds
+// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
+void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval) {
+
+    if (admin_cerver) {
+        admin_cerver->update_interval = update;
+        admin_cerver->update_interval_args = update_args;
+        admin_cerver->update_interval_secs = interval;
+    }
+
+}
+
+// returns the current number of connected admins
+u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver) {
+
+    return admin_cerver ? (u8) dlist_size (admin_cerver->admins) : 0; 
+
+}
+
+// broadcasts a packet to all connected admins in an admin cerver
+// returns 0 on success, 1 on error
+u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin_cerver && packet) {
+		u8 errors = 0;
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+			errors |= admin_send_packet ((Admin *) le->data, packet);
+		}
+
+		retval = errors;
 	}
 
-	return on_admin_connection;
+	return retval;
 
 }
 
-static inline void on_admin_connection_delete (void *ptr) { if (ptr) free (ptr); }
+// registers a newly created admin to the admin cerver structures (internal & poll)
+// this will allow the admin cerver to start handling admin's packets
+// returns 0 on success, 1 on error
+u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
 
-// sets and action to be performed when a new admin fail to authenticate
-void admin_cerver_set_on_fail_connection (AdminCerver *admin_cerver, Action on_fail_connection) {
+    u8 retval = 1;
 
-	if (admin_cerver) admin_cerver->on_admin_fail_connection = on_fail_connection;
+    if (admin_cerver && admin) {
+        if (!admin_cerver_poll_register_connection (
+            admin_cerver, 
+            (Connection *) dlist_start (admin->client->connections)->data
+        )) {
+            dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
+
+            admin_cerver->stats->current_connected_admins += 1;
+            admin_cerver->stats->total_n_admins += 1;
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
+
+            retval = 0;     // success
+        }
+    }
+
+    return retval;
 
 }
 
-// sets an action to be performed when a new admin authenticated successfully
-// a struct _OnAdminConnection will be passed as the argument
-void admin_cerver_set_on_success_connection (AdminCerver *admin_cerver, Action on_success_connection) {
+// unregisters an existing admin from the admin cerver structures (internal & poll)
+// returns 0 on success, 1 on error
+u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
 
-	if (admin_cerver) admin_cerver->on_admin_success_connection = on_success_connection;
+    u8 retval = 1;
+
+    if (admin_cerver && admin) {
+        if (dlist_remove (admin_cerver->admins, admin, NULL)) {
+            // unregister all his active connections from the poll array
+            for (ListElement *le = dlist_start (admin->client->connections); le; le = le->next) {
+                admin_cerver_poll_unregister_connection (admin_cerver, (Connection *) le->data);
+            }
+
+            admin_cerver->stats->current_connected_admins -= 1;
+
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
+
+            retval = 0;
+        }
+    }
+
+    return retval;
 
 }
 
-// sets customa admin packet handlers
-void admin_cerver_set_handlers (AdminCerver *admin_cerver, 
-	Action admin_packet_handler, Action admin_error_packet_handler) {
+// unregisters an admin from the cerver & then deletes it
+// returns 0 on success, 1 on error
+u8 admin_cerver_drop_admin (AdminCerver *admin_cerver, Admin *admin) {
 
-	if (admin_cerver) {
-		admin_cerver->admin_packet_handler = admin_packet_handler;
-		admin_cerver->admin_error_packet_handler = admin_error_packet_handler;
-	}
+    u8 retval = 1;
 
-}
+    if (admin_cerver && admin) {
+        admin_cerver_unregister_admin (admin_cerver, admin);
+        admin_delete (admin);
+    }
 
-// quick way to get the number of current authenticated admins
-u32 admin_cerver_get_current_auth_admins (AdminCerver *admin_cerver) {
-
-	return admin_cerver ? admin_cerver->stats->current_auth_n_connected_admins : 0;
+    return retval;
 
 }
 
 #pragma endregion
 
-#pragma region main
+#pragma region start
 
-static void admin_cerver_receive_handle_failed (AdminCerver *admin_cerver, i32 sock_fd);
+static void *admin_poll (void *cerver_ptr);
 
-static void admin_cerver_poll (AdminCerver *admin_cerver);
+// called in a dedicated thread only if a user method was set
+// executes methods every tick
+static void admin_cerver_update (void *args) {
 
-static u8 admin_cerver_before_start (AdminCerver *admin_cerver) {
+    if (args) {
+        AdminCerver *admin_cerver = (AdminCerver *) args;
+        
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver's %s admin_cerver_update () has started!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
 
-	u8 retval = 1;
+        CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_args);
 
-	if (admin_cerver) {
-		// initialize main pollfd structures
-		// 21/01/2020 -- plus ten as a healthy buffer for when we accept a new client and we are waiting for authentication
-		unsigned int admin_poll_n_fds = (admin_cerver->max_admins * admin_cerver->max_admin_connections) + 10;
-		admin_cerver->fds = (struct pollfd *) calloc (poll_n_fds / 2, sizeof (struct pollfd));
+        u32 time_per_frame = 1000000 / admin_cerver->update_ticks;
+        // printf ("time per frame: %d\n", time_per_frame);
+        u32 temp = 0;
+        i32 sleep_time = 0;
+        u64 delta_time = 0;
+
+        u64 delta_ticks = 0;
+        u32 fps = 0;
+        struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
+
+        while (admin_cerver->cerver->isRunning) {
+            clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+
+            // do stuff
+            if (admin_cerver->update) admin_cerver->update (cu);
+
+            // limit the fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+            temp = (middle.tv_nsec - start.tv_nsec) / 1000;
+            // printf ("temp: %d\n", temp);
+            sleep_time = time_per_frame - temp;
+            // printf ("sleep time: %d\n", sleep_time);
+            if (sleep_time > 0) {
+                usleep (sleep_time);
+            } 
+
+            // count fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+            delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
+            delta_ticks += delta_time;
+            fps++;
+            // printf ("delta ticks: %ld\n", delta_ticks);
+            if (delta_ticks >= 1000) {
+                // printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+                delta_ticks = 0;
+                fps = 0;
+            }
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef ADMIN_DEBUG
+        s = c_string_create ("Cerver's %s admin_cerver_update () has ended!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
+
+}
+
+// called in a dedicated thread only if a user method was set
+// executes methods every x seconds
+static void admin_cerver_update_interval (void *args) {
+
+    if (args) {
+        AdminCerver *admin_cerver = (AdminCerver *) args;
+        
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver's %s admin_cerver_update_interval () has started!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_interval_args);
+
+        while (admin_cerver->cerver->isRunning) {
+            if (admin_cerver->update_interval) admin_cerver->update_interval (cu);
+
+            sleep (admin_cerver->update_interval_secs);
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef ADMIN_DEBUG
+        s = c_string_create ("Cerver's %s admin_cerver_update_interval () has ended!",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
+
+}
+
+// inits admin cerver's internal structures & values
+static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
+
+    u8 retval = 1;
+
+    if (admin_cerver) {
+		admin_cerver->fds = (struct pollfd *) calloc (admin_cerver->max_n_fds, sizeof (struct pollfd));
 		if (admin_cerver->fds) {
-			memset (admin_cerver->fds, 0, sizeof (struct pollfd) * (poll_n_fds / 2));
-			// set all fds as available spaces
-			for (u32 i = 0; i < admin_poll_n_fds; i++) admin_cerver->fds[i].fd = -1;
+			memset (admin_cerver->fds, 0, sizeof (struct pollfd) * admin_cerver->max_n_fds);
 
-			admin_cerver->max_n_fds = admin_poll_n_fds;
+			for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
+				admin_cerver->fds[i].fd = -1;
+
 			admin_cerver->current_n_fds = 0;
 
-			retval = 0;     // success!!
-		}
-	}
+            admin_cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            pthread_mutex_init (admin_cerver->poll_lock, NULL);
 
-	return retval;
+            retval = 0;
+		}
+    }
+
+    return retval;
 
 }
 
-static void admin_cerver_update (void *);
-
-// start the admin cerver, this is ment to be called in a dedicated thread internally
-void *admin_cerver_start (void *args) {
-
-	if (args) {
-		AdminCerver *admin_cerver = (AdminCerver *) args;
-
-		if (!admin_cerver_before_start (admin_cerver)) {
-			if (!listen (admin_cerver->sock, ADMIN_CERVER_CONNECTION_QUEUE)) {
-				// set up the initial listening socket     
-				admin_cerver->fds[admin_cerver->current_n_fds].fd = admin_cerver->sock;
-				admin_cerver->fds[admin_cerver->current_n_fds].events = POLLIN;
-				admin_cerver->current_n_fds++;
-
-				admin_cerver->running = true;
-
-				// create a dedicated thread for admin cerver update method
-				if (thread_create_detachable (
-					&admin_cerver->update_thread_id,
-					(void *(*) (void *)) admin_cerver_update,
-					admin_cerver
-				)) {
-					cerver_log_error ("Failed to create admin_cerver_update () thread!");
-				}
-
-				admin_cerver_poll (admin_cerver);
-			}
-
-			else {
-				cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Failed to listen in admin cerver socket!");
-				close (admin_cerver->sock);
-			}
-		}
-
-		else {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "admin_cerver_before_start () failed!");
-			close (admin_cerver->sock);
-		}
-	}
-
-	return NULL;
-
-}
-
-static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection);
-
-// 22/01/2020 -- 09:18 
-// register a newly accepted and created client (inside a possible admin structure)
-// to the admin cerver's structures
-// we have not yet correctly checked for authentication, 
-// but we need this in order to get its packets
-// returns 0 on success, 1 on error
-static u8 admin_register_to_admin_cerver (AdminCerver *admin_cerver, Client *client) {
-
-	u8 retval = 1;
-
-	if (admin_cerver && client) {
-		// add the newly connected client as a possible admin
-		Admin *admin = admin_create (client);
-
-		// register to admin cerver poll
-		Connection *connection = (Connection *) dlist_start (client->connections)->data;
-		if (!admin_cerver_poll_register_connection (admin_cerver,
-				connection)) {
-
-			dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
-
-			// update stats general admin stats
-			admin_cerver->stats->current_active_admin_connections += 1;
-			admin_cerver->stats->current_n_connected_admins += 1;
-
-			// only if all operations have succeeded, we can move on
-			retval = 0;
-		}
-
-		else admin_delete (admin);
-	}
-
-	return retval;
-
-}
-
-static void admin_cerver_register_new_connection (AdminCerver *admin_cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
-
-	if (admin_cerver) {
-		bool done = false;
-
-		Client *client = NULL;
-		Connection *connection = connection_create (new_fd, client_address, PROTOCOL_TCP);
-		if (connection) {
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("New connection to admin from IP address: %s -- Port: %d", 
-                connection->ip->str, connection->port);
-			if (status) {
-            	cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
-				free (status);
-			}
-        	#endif
-
-			if (!connection->sock_receive) connection->sock_receive = sock_receive_new ();
-
-			client = client_create ();
-			if (client) {
-				connection_register_to_client (client, connection);
-
-				// TODO: 21/01/2020 -- 14:37 -- add support sessions for admins
-				if (!admin_register_to_admin_cerver (admin_cerver, client)) {
-					// everything has succeeded
-					// we can now listen for auth packets of possible admin, and handle them
-					time (&client->connected_timestamp);
-					done = true;
-					printf ("admin_cerver_register_new_connection () -- done!\n");
-				}
-			}
-		}
-
-		if (done) {
-			// send cerver info packet
-			packet_set_network_values (admin_cerver->cerver->info->cerver_info_packet, 
-				admin_cerver->cerver, client, connection, NULL);
-			if (packet_send (admin_cerver->cerver->info->cerver_info_packet, 0, NULL, false)) {
-				char *error = c_string_create ("Failed to send cerver %s info packet!", admin_cerver->cerver->info->name->str);
-				if (error) {
-					cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, error);
-					free (error);
-				}
-			}
-		}
-
-		else {
-			// send an error packet bad on any error
-			Packet *packet = error_packet_generate (ERR_CERVER_ERROR, "Internal cerver error");
-			if (packet) {
-				packet_send_to_sock_fd (packet, new_fd, 0, NULL, false);
-				packet_delete (packet);
-			}
-
-			// disconnect directly from the admin cerver
-			close (new_fd);
-		}
-	}
-
-}
-
-static void admin_cerver_accept (AdminCerver *admin_cerver) {
-
-	if (admin_cerver) {
-		// accept the new connection
-        struct sockaddr_storage client_address;
-        memset (&client_address, 0, sizeof (struct sockaddr_storage));
-        socklen_t socklen = sizeof (struct sockaddr_storage);
-
-		i32 new_fd = accept (admin_cerver->sock, (struct sockaddr *) &client_address, &socklen);
-        if (new_fd > 0) {
-            printf ("Accepted fd: %d in cerver %s admin\n", new_fd, admin_cerver->cerver->info->name->str);
-			admin_cerver_register_new_connection (admin_cerver,
-				new_fd, client_address);
-        } 
-
-        else {
-            // if we get EWOULDBLOCK, we have accepted all connections
-            if (errno != EWOULDBLOCK) {
-				char *status = c_string_create ("Accept failed in cerver %s admin poll", 
-					admin_cerver->cerver->info->name->str);
-				if (status) {
-					cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-					free (status);
-				}
-                perror ("Error");
-            } 
-        }
-	}
-
-}
-
-// an admin is trying to authenticate
-static void admin_auth_packet_handler (AdminCerver *admin_cerver, Admin *admin, Packet *packet) {
-
-	if (admin_cerver && admin && packet) {
-		bool success = false;
-		if (packet->data_size >= sizeof (SAdminCredentials)) {
-			char *end = (char *) packet->data;
-			SAdminCredentials *possible_credentials = (SAdminCredentials *) end;
-
-			// check that there are valid credentials
-			AdminCredentials *credentials;
-			for (ListElement *le = dlist_start (admin_cerver->credentials); le; le = le->next) {
-				credentials = (AdminCredentials *) le->data;
-
-				if (!strcmp (credentials->username->str, possible_credentials->username.str)) {
-					if (!strcmp (credentials->password->str, possible_credentials->password.str)) {
-						if (!credentials->logged_in) {
-							// handle success auth
-							credentials->logged_in = true;
-							admin->authenticated = true;
-							admin->credentials = credentials;
-							success = true;
-
-							// send auth succes packet
-							Packet *success_packet = packet_generate_request (AUTH_PACKET, SUCCESS_AUTH, NULL, 0);
-							if (success_packet) {
-								packet_set_network_values (success_packet, NULL, admin->client, packet->connection, NULL);
-								packet_send (success_packet, 0, NULL, false);
-								packet_delete (success_packet);
-							}
-
-							char *status = c_string_create ("Admin %s authenticated in cerver %s",
-								credentials->username->str, admin_cerver->cerver->info->name->str);
-							if (status) {
-								cerver_log_success (status);
-								free (status);
-							}
-
-							if (admin_cerver->on_admin_success_connection) {
-								OnAdminConnection *on_admin_connection = on_admin_connection_new (admin_cerver, admin);
-								admin_cerver->on_admin_success_connection (on_admin_connection);
-								on_admin_connection_delete (on_admin_connection);
-							}
-
-							// TODO: 27/01/2020 -- 12:23 -- update remaining stats values
-							admin_cerver->stats->current_auth_n_connected_admins += 1;
-							admin_cerver->stats->current_auth_active_admin_connections += 1;
-						}
-
-						else {
-							// FIXME: handle this!
-						}
-					}
-				}
-			}
-		}
-
-		// handle failed auth
-		if (!success) {
-			// TODO: save his ip for the blacklist
-				
-			// send a cerver disconnect packet
-			Packet *disconnect_packet = packet_generate_request (CLIENT_PACKET, CLIENT_DISCONNET, NULL, 0);
-			if (disconnect_packet) {
-				packet_set_network_values (disconnect_packet, 
-					NULL, 
-					admin->client, 
-					packet->connection,
-					NULL);
-				packet_send (disconnect_packet, 0, NULL, false);
-				packet_delete (disconnect_packet);
-			}
-
-			// drop the admin connection
-			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->socket->sock_fd);
-
-			if (admin_cerver->on_admin_fail_connection)
-				admin_cerver->on_admin_fail_connection (NULL);
-		}
-	}
-
-}
-
-// handles a packet of bad type
-static void admin_bad_type_packet_handler (AdminCerver *admin_cerver, Packet *packet,
-	Admin *admin, bool auth) {
-
-	if (admin_cerver && packet) {
-		if (auth) {
-			#ifdef CERVER_DEBUG
-				char *status = c_string_create ("Got a packet of unknown type in cerver %s admin handler.",
-					admin_cerver->cerver->info->name->str);
-				if (status) {
-					cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, status);
-					free (status);
-				}
-			#endif
-		}
-
-		else {
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Got a packet of unknown type in cerver %s admin handler from UNAUTHORIZED admin.",
-				admin_cerver->cerver->info->name->str);
-			if (status) {
-				cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, status);
-				free (status);
-			}
-			#endif
-		}
-
-		u32 limit = auth ? admin_cerver->n_bad_packets_limit_auth : admin_cerver->n_bad_packets_limit;
-
-		// 23/01/2020 -- 17:41 -- after a number of bad packets, disconnect
-		admin->bad_packets += 1;
-		if (admin->bad_packets >= limit) {
-			// send a cerver disconnect packet
-			Packet *packet = packet_generate_request (CLIENT_PACKET, CLIENT_DISCONNET, NULL, 0);
-			if (packet) {
-				packet_set_network_values (packet, 
-					NULL, 
-					admin->client, 
-					packet->connection,
-					NULL);
-				packet_send (packet, 0, NULL, false);
-				packet_delete (packet);
-			}
-
-			admin_cerver_receive_handle_failed (admin_cerver, packet->connection->socket->sock_fd);
-		}
-	}
-
-}
-
-// handles admin packet based on type
-static void admin_packet_handler (AdminCerver *admin_cerver, Packet *packet,
-	Admin *admin) {
-
-	if (admin_cerver && packet) {
-		switch (packet->header->packet_type) {
-			// handles an error from the client
-			case ERROR_PACKET: /*** TODO: ***/ break;
-
-			// handles authentication packets
-			case AUTH_PACKET: /*** TODO: ***/ break;
-
-			// handles a request made from the client
-			case REQUEST_PACKET: /*** TODO: ***/ break;
-
-			case APP_PACKET: 
-				if (admin_cerver->admin_packet_handler) {
-					AdminAppHandler *admin_app_handler = admin_app_handler_new (admin_cerver, packet, admin);
-					admin_cerver->admin_packet_handler (
-						admin_app_handler
-					);
-					admin_app_handler_delete (admin_app_handler);
-				}
-				break;
-			
-			case APP_ERROR_PACKET: 
-				if (admin_cerver->admin_error_packet_handler) {
-					AdminAppHandler *admin_app_handler = admin_app_handler_new (admin_cerver, packet, admin);
-					admin_cerver->admin_error_packet_handler (
-						admin_app_handler
-					);
-					admin_app_handler_delete (admin_app_handler);
-				}
-					
-				break;
-
-			// acknowledge the client we have received his test packet
-			case TEST_PACKET: {
-				#ifdef CERVER_DEBUG
-				char *status = c_string_create ("Got a test packet in cerver %s admin handler.", packet->cerver->info->name->str);
-				if (status) {
-					cerver_log_msg (stdout, LOG_DEBUG, LOG_PACKET, status);
-					free (status);
-				}
-				#endif
-
-				Packet *test_packet = packet_new ();
-				if (test_packet) {
-					packet_set_network_values (test_packet, 
-						NULL,
-						admin->client, 
-						packet->connection, 
-						packet->lobby);
-					test_packet->packet_type = TEST_PACKET;
-					packet_generate (test_packet);
-					if (packet_send (test_packet, 0, NULL, false)) {
-						char *status = c_string_create ("Failed to send error packet from cerver %s.", 
-							packet->cerver->info->name->str);
-						if (status) {
-							cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, status);
-							free (status);
-						}
-					}
-
-					packet_delete (test_packet);
-				}
-			} break;
-
-			default: {
-				admin_bad_type_packet_handler (admin_cerver, packet,
-					admin, true);
-			} break;
-		}
-	}
-
-}
-
-// select the packet handler based on admin auth status
-static void admin_select_packet_handler (AdminCerver *admin_cerver, i32 sock_fd, Packet *packet) {
-
-	if (admin_cerver && packet) {
-		packet->connection = admin_connection_get_by_sock_fd (admin_cerver, sock_fd);
-		// if (packet->connection) printf ("\nFound connection!\n");
-
-		Admin *admin = admin_get_by_sock_fd (admin_cerver, sock_fd);
-		if (admin->authenticated) {
-			admin_packet_handler (admin_cerver, packet,
-				admin);
-		}
-
-		else {
-			// we only want to handle specific packets from non auth admins
-			switch (packet->header->packet_type) {
-				// handles authentication packets
-				case AUTH_PACKET: 
-					admin_auth_packet_handler (admin_cerver, admin, packet);
-					break;
-
-				default: {
-					admin_bad_type_packet_handler (admin_cerver, packet,
-						admin, false);
-				} break;
-			}
-		}
-	}
-
-}
-
-static SockReceive *admin_cerver_receive_handle_spare_packet (AdminCerver *admin_cerver, i32 sock_fd,
-    size_t buffer_size, char **end, size_t *buffer_pos) {
-
-	SockReceive *sock_receive = NULL;
-
-	// get the sock receive from the correct admin
-	Connection *connection = admin_connection_get_by_sock_fd (admin_cerver, sock_fd);
-	if (connection) {
-		sock_receive = connection->sock_receive;
-
-		if (sock_receive) {
-			if (sock_receive->header) {
-				// copy the remaining header size
-				memcpy (sock_receive->header_end, (void *) *end, sock_receive->remaining_header);
-				sock_receive->complete_header = true;
-			}
-
-			else if (sock_receive->spare_packet) {
-				size_t copy_to_spare = 0;
-				if (sock_receive->missing_packet < buffer_size) 
-					copy_to_spare = sock_receive->missing_packet;
-
-				else copy_to_spare = buffer_size;
-
-				// append new data from buffer to the spare packet
-				if (copy_to_spare > 0) {
-					packet_append_data (sock_receive->spare_packet, (void *) *end, copy_to_spare);
-
-					// check if we can handle the packet 
-					size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-					if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-						// admin_packet_handler (admin_cerver, sock_fd, sock_receive->spare_packet);
-						admin_select_packet_handler (admin_cerver, sock_fd, sock_receive->spare_packet);
-						sock_receive->spare_packet = NULL;
-						sock_receive->missing_packet = 0;
-					}
-
-					else sock_receive->missing_packet -= copy_to_spare;
-
-					// offset for the buffer
-					if (copy_to_spare < buffer_size) *end += copy_to_spare;
-					*buffer_pos += copy_to_spare;
-				}
-			}
-		}
-
-		// drop bad connection
-		else {
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Sock fd: %d does not have an associated receive buffer in admin cerver %s.",
-				sock_fd, admin_cerver->cerver->info->name->str);
-			if (status) {
-				cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-				free (status);
-			}
-			#endif
-
-			admin_cerver_receive_handle_failed (admin_cerver, sock_fd);
-    	}
-	}
-
-	else {
-		char *status = c_string_create ("No connection associeted with socket %d in admin cerver %s!", 
-			sock_fd, admin_cerver->cerver->info->name->str);
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
-
-		admin_cerver_receive_handle_failed (admin_cerver, sock_fd);
-	}
-
-    return sock_receive;
-
-}
-
-// FIXME: 23/01/2018 -- 18:07 -- check packet header for correct values, to prevent an attack of packets, that wont pass to the handler
-static void admin_cerver_receive_handle_buffer (AdminCerver *admin_cerver, i32 sock_fd, char *buffer, size_t buffer_size) {
-
-	if (admin_cerver && buffer) {
-		if (buffer && (buffer_size > 0)) {
-            char *end = buffer;
-            size_t buffer_pos = 0;
-
-            SockReceive *sock_receive = admin_cerver_receive_handle_spare_packet (admin_cerver, sock_fd,
-                buffer_size, &end, &buffer_pos);
-
-			if (!sock_receive) return;
-
-            PacketHeader *header = NULL;
-            size_t packet_size = 0;
-            // char *packet_data = NULL;
-
-            size_t remaining_buffer_size = 0;
-            size_t packet_real_size = 0;
-            size_t to_copy_size = 0;
-
-            bool spare_header = false;
-
-            while (buffer_pos < buffer_size) {
-                remaining_buffer_size = buffer_size - buffer_pos;
-
-                if (sock_receive->complete_header) {
-                    packet_header_copy (&header, (PacketHeader *) sock_receive->header);
-
-                    end += sock_receive->remaining_header;
-                    buffer_pos += sock_receive->remaining_header;
-
-                    // reset sock header values
-                    free (sock_receive->header);
-                    sock_receive->header = NULL;
-                    sock_receive->header_end = NULL;
-                    sock_receive->complete_header = false;
-
-                    spare_header = true;
-                }
-
-                else if (remaining_buffer_size >= sizeof (PacketHeader)) {
-                    header = (PacketHeader *) end;
-                    end += sizeof (PacketHeader);
-                    buffer_pos += sizeof (PacketHeader);
-
-                    spare_header = false;
-                }
-
-                if (header) {
-                    // check the packet size
-                    packet_size = header->packet_size;
-                    if ((packet_size > 0) /* && (packet_size < 65536) */) {
-                        Packet *packet = packet_new ();
-                        if (packet) {
-                            packet_header_copy (&packet->header, header);
-                            packet->packet_size = header->packet_size;
-                            packet->cerver = admin_cerver->cerver;
-                            packet->lobby = NULL;
-
-                            if (spare_header) {
-                                free (header);
-                                header = NULL;
-                            }
-
-                            // check for packet size and only copy what is in the current buffer
-                            packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
-                            to_copy_size = 0;
-                            if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
-                                sock_receive->spare_packet = packet;
-
-                                if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
-                                else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-                                
-                                sock_receive->missing_packet = packet_real_size - to_copy_size;
-                            }
-
-                            else {
-                                to_copy_size = packet_real_size;
-                                packet_delete (sock_receive->spare_packet);
-                                sock_receive->spare_packet = NULL;
-                            } 
-
-                            packet_set_data (packet, (void *) end, to_copy_size);
-
-                            end += to_copy_size;
-                            buffer_pos += to_copy_size;
-
-                            if (!sock_receive->spare_packet) {
-								// admin_packet_handler (admin_cerver, sock_fd, packet);
-								admin_select_packet_handler (admin_cerver, sock_fd, packet);
-                            }
-                                
-                        }
-
-                        else {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, 
-                                "Failed to create a new packet in cerver_handle_receive_buffer ()");
-                        }
+static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
+
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_packet_handler) {
+            if (!admin_cerver->app_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->app_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s app_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
                     }
-
-                    else {
-                        char *status = c_string_create ("Got a packet of invalid size: %ld", packet_size);
-                        if (status) {
-                            cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, status); 
-                            free (status);
-                        }
-                        
-                        break;
-                    }
+                    #endif
                 }
 
                 else {
-                    if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
-
-                    else {
-                        // copy the piece of possible header that was cut of between recv ()
-                        sock_receive->header = malloc (sizeof (PacketHeader));
-                        memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
-
-                        sock_receive->header_end = (char *) sock_receive->header;
-                        sock_receive->header_end += remaining_buffer_size;
-
-                        // sock_receive->curr_header_pos = remaining_buffer_size;
-                        sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
-
-                        buffer_pos += remaining_buffer_size;
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s app_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
                     }
                 }
             }
         }
-	}
+
+        else {
+			#ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Admin cerver %s does not have an app_packet_handler",
+				admin_cerver->cerver->info->name->str);
+			if (s) {
+				cerver_log_warning (s);
+				free (s);
+			}
+			#endif
+        }
+    }
+
+    return retval;
 
 }
 
-static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection);
+static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
 
-// handles a failed recive from a connection associatd with a client
-// end the connection to prevent seg faults or signals for bad sock fd
-static void admin_cerver_receive_handle_failed (AdminCerver *admin_cerver, i32 sock_fd) {
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_error_packet_handler) {
+            if (!admin_cerver->app_error_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->app_error_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s app_error_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s app_error_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+			#ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Admin cerver %s does not have an app_error_packet_handler",
+				admin_cerver->cerver->info->name->str);
+			if (s) {
+				cerver_log_warning (s);
+				free (s);
+			}
+			#endif
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
+
+    u8 retval = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->custom_packet_handler) {
+            if (!admin_cerver->custom_packet_handler->direct_handle) {
+                if (!handler_start (admin_cerver->custom_packet_handler)) {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin cerver %s custom_packet_handler has started!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_success (s);
+                        free (s);
+                    }
+                    #endif
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to start ADMIN cerver %s custom_packet_handler!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+			// #ifdef ADMIN_DEBUG
+            // char *s = c_string_create ("Cerver %s does not have a custom_packet_handler",
+			// 	admin_cerver->cerver->info->name->str);
+			// if (s) {
+			// 	cerver_log_warning (s);
+			// 	free (s);
+			// }
+			// #endif
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Initializing cerver %s admin handlers...",
+            admin_cerver->cerver->info->name->str);
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+        #endif
+
+        admin_cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+        pthread_mutex_init (admin_cerver->handlers_lock, NULL);
+
+        errors |= admin_cerver_app_handler_start (admin_cerver);
+
+        errors |= admin_cerver_app_error_handler_start (admin_cerver);
+
+        errors |= admin_cerver_custom_handler_start (admin_cerver);
+
+        if (!errors) {
+            #ifdef ADMIN_DEBUG
+            s = c_string_create ("Done initializing cerver %s admin handlers!",
+                admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_debug (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_start_poll (Cerver *cerver) {
+
+	u8 retval = 1;
+
+	if (cerver) {
+		if (!thread_create_detachable (
+		    &cerver->admin_thread_id,
+		    admin_poll,
+		    cerver
+		)) {
+		    retval = 0;		// success
+		}
+
+		else {
+			char *s = c_string_create ("Failed to create admin_poll () thread in cerver %s!",
+		        cerver->info->name->str);
+		    if (s) {
+		        cerver_log_error (s);
+		        free (s);
+		    }
+		}
+	}
+
+	return retval;
+
+}
+
+u8 admin_cerver_start (AdminCerver *admin_cerver) {
+
+	u8 retval = 1;
 
 	if (admin_cerver) {
-		#ifdef CERVER_DEBUG
-		printf ("\nadmin_cerver_receive_handle_failed ()\n");
-		#endif
+		if (!admin_cerver_start_internal (admin_cerver)) {
+            if (admin_cerver->update) {
+                if (thread_create_detachable (
+                    &admin_cerver->update_thread_id,
+                    (void *(*) (void *)) admin_cerver_update,
+                    admin_cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s ADMIN UPDATE thread!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
 
-		Admin *admin = admin_get_by_sock_fd (admin_cerver, sock_fd);
-		if (admin) {
-			Connection *connection = connection_get_by_sock_fd_from_client (admin->client, sock_fd);
+            if (admin_cerver->update_interval) {
+                if (thread_create_detachable (
+                    &admin_cerver->update_interval_thread_id,
+                    (void *(*) (void *)) admin_cerver_update_interval,
+                    admin_cerver
+                )) {
+                    char *s = c_string_create ("Failed to create cerver %s ADMIN UPDATE INTERVAL thread!",
+                        admin_cerver->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
 
-			// remove from admin cerver poll
-			admin_cerver_poll_unregister_connection (admin_cerver, connection);
-
-			// end the connection
-			connection_end (connection);
-
-			// remove the connection from the admin client
-			dlist_remove (admin->client->connections, connection, NULL);
-			connection_delete (connection);
-
-			admin_cerver->stats->current_active_admin_connections -= 1;
-
-			// if the admin does not have any active connection, drop it
-            if (admin->client->connections->size <= 0) {
-				// remove the admin from the admin cerver
-				dlist_remove (admin_cerver->admins, admin, NULL);
-
-				if (admin->credentials) {
-					admin->credentials->logged_in = false;
-					char *status = c_string_create ("Admin %s logged out from cerver %s",
-						admin->credentials->username->str, admin_cerver->cerver->info->name->str);
-					if (status) {
-						cerver_log_success (status);
-						free (status);
-					}
+			if (!admin_cerver_handlers_start (admin_cerver)) {
+				if (!admin_cerver_start_poll (admin_cerver->cerver)) {
+					retval = 0;
 				}
+			}
 
-				admin_delete (admin);
-
-				admin_cerver->stats->current_n_connected_admins -= 1;
-
-				char *status = c_string_create ("Remaining connected admins in cerver %s: %ld", 
-					admin_cerver->cerver->info->name->str, dlist_size (admin_cerver->admins));
+			else {
+				char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin handlers!",
+					admin_cerver->cerver->info->name->str);
 				if (status) {
-					cerver_log_debug (status);
+					cerver_log_error (status);
 					free (status);
 				}
 			}
 		}
 
 		else {
-			// for whatever reason we have a rogue connection, so drop it
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Sock fd: %d is not registered to a client in cerver %s admin",
-				sock_fd, admin_cerver->cerver->info->name->str);
+			char *status = c_string_create ("admin_cerver_start () - failed to start cerver %s admin internal!",
+				admin_cerver->cerver->info->name->str);
 			if (status) {
-            	cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, status);
+				cerver_log_error (status);
 				free (status);
 			}
+		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region end
+
+static u8 admin_cerver_app_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_packet_handler) {
+            if (!admin_cerver->app_packet_handler->direct_handle) {
+                // stop app handler
+                bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_app_error_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->app_error_packet_handler) {
+            if (!admin_cerver->app_error_packet_handler->direct_handle) {
+                // stop app error handler
+                bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_custom_handler_destroy (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        if (admin_cerver->custom_packet_handler) {
+            if (!admin_cerver->custom_packet_handler->direct_handle) {
+                // stop custom handler
+                bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
+            }
+        }
+    }
+
+    return errors;
+
+}
+
+// correctly destroy admin cerver's custom handlers
+static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
+
+    u8 errors = 0;
+
+    if (admin_cerver) {
+        #ifdef ADMIN_DEBUG
+        char *status = c_string_create ("Stopping handlers in cerver %s admin...",
+            admin_cerver->cerver->info->name->str);
+        if (status) {
+            cerver_log_debug (status);
+            free (status);
+        }
+        #endif
+
+        errors |= admin_cerver_app_handler_destroy (admin_cerver);
+
+        errors |= admin_cerver_app_error_handler_destroy (admin_cerver);
+
+        errors |= admin_cerver_custom_handler_destroy (admin_cerver);
+
+        // poll remaining handlers
+        while (admin_cerver->num_handlers_alive) {
+            if (admin_cerver->app_packet_handler)
+                bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
+
+            if (admin_cerver->app_error_packet_handler)
+                bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
+
+            if (admin_cerver->custom_packet_handler)
+                bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
+            
+            sleep (1);
+        }
+    }
+
+    return errors;
+
+}
+
+static u8 admin_cerver_disconnect_admins (AdminCerver *admin_cerver) {
+
+	u8 errors = 0;
+
+	if (admin_cerver) {
+		if (dlist_size (admin_cerver->admins)) {
+			// send a cerver teardown packet to all clients connected to cerver
+            Packet *packet = packet_generate_request (CERVER_PACKET, CERVER_TEARDOWN, NULL, 0);
+            if (packet) {
+                errors |= admin_cerver_broadcast_to_admins (admin_cerver, packet);
+                packet_delete (packet);
+            }
+		}
+	}
+
+	return errors;
+
+}
+
+u8 admin_cerver_end (AdminCerver *admin_cerver) {
+
+	u8 errors = 0;
+
+	if (admin_cerver) {
+		char *status = NULL;
+
+		#ifdef ADMIN_DEBUG
+		status = c_string_create ("Staring cerver %s admin teardown...",
+			admin_cerver->cerver->info->name->str);
+		if (status) {
+			cerver_log_debug (status);
+			free (status);
+		}
+		#endif
+
+		errors |= admin_cerver_handlers_end (admin_cerver);
+
+		errors |= admin_cerver_disconnect_admins (admin_cerver);
+
+		status = c_string_create ("Cerver %s admin teardown was successful!",
+			admin_cerver->cerver->info->name->str);
+		if (status) {
+			cerver_log_success (status);
+			free (status);
+		}
+	}
+
+	return errors;
+
+}
+
+#pragma endregion
+
+#pragma region handler
+
+// handles a request made from the admin
+static void admin_cerver_request_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->header) {
+            switch (packet->header->request_type) {
+                // the client is going to close its current connection
+                // but will remain in the cerver if it has another connection active
+                // if not, it will be dropped
+                case CLIENT_CLOSE_CONNECTION: {
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Admin with client %ld requested to close the connection",
+                        packet->client->id);
+                    if (s) {
+                        cerver_log_debug (s);
+                        free (s);
+                    }
+                    #endif
+
+                    admin_remove_connection_by_sock_fd (
+                        packet->cerver->admin,
+                        admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd),
+                        packet->connection->socket->sock_fd
+                    );
+                } break;
+
+                // the client is going to disconnect and will close all of its active connections
+                // so drop it from the server
+                case CLIENT_DISCONNET: {
+                    admin_cerver_drop_admin (
+                        packet->cerver->admin,
+                        admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd)
+                    );
+
+                    cerver_event_trigger (
+                        CERVER_EVENT_ADMIN_DISCONNECTED,
+                        packet->cerver,
+                        NULL, NULL
+                    );
+                } break;
+
+                default: {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Got an unknown request in cerver %s",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                        free (s);
+                    }
+                    #endif
+                } break;
+            }
+        }
+    }
+
+}
+
+// handles an APP_PACKET packet type
+static void admin_app_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin->app_packet_handler) {
+            if (packet->cerver->admin->app_packet_handler->direct_handle) {
+                // printf ("app_packet_handler - direct handle!\n");
+                packet->cerver->admin->app_packet_handler->handler (packet);
+                if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->app_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an app_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
             #endif
-            close (sock_fd);        // just close the socket
-		}
-	}
+        }
+    }
 
 }
 
-// receive all incoming data from the socket
-static void amdin_cerver_receive (AdminCerver *admin_cerver, i32 sock_fd) {
+// handles an APP_ERROR_PACKET packet type
+static void admin_app_error_packet_handler (Packet *packet) {
 
-	if (admin_cerver && (sock_fd > -1)) {
-		char *buffer = (char *) calloc (admin_cerver->receive_buffer_size, sizeof (char));
-		if (buffer) {
-			ssize_t rc = recv (sock_fd, buffer, admin_cerver->receive_buffer_size, 0);
-			// ssize_t rc = read (sock_fd, buffer, admin_cerver->receive_buffer_size);
+    if (packet) {
+        if (packet->cerver->admin->app_error_packet_handler) {
+            if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
+                // printf ("app_error_packet_handler - direct handle!\n");
+                packet->cerver->admin->app_error_packet_handler->handler (packet);
+                if (packet->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet);
+            }
 
-			if (rc < 0) {
-				#ifdef CERVER_DEBUG
-				printf ("\n");
-				perror ("Error");
-				printf ("\n");
-				#endif
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->app_error_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
 
-				if (errno != EWOULDBLOCK) {     // no more data to read 
-					#ifdef CERVER_DEBUG 
-					char *status = c_string_create ("amdin_cerver_receive () - rc < 0 - sock fd: %d", sock_fd);
-					if (status) {
-						cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-						free (status);
-					}
-					perror ("Error ");
-					#endif
-
-					admin_cerver_receive_handle_failed (admin_cerver, sock_fd);
-				}
-			}
-
-			else if (rc == 0) {
-				// man recv -> steam socket perfomed an orderly shutdown
-				// but in dgram it might mean something?
-				// #ifdef CERVER_DEBUG
-				// char *status = c_string_create ("amdin_cerver_receive () - rc == 0 - sock fd: %d", sock_fd);
-				// if (status) {
-				// 	cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-				// 	free (status);
-				// }
-				
-				// printf ("\n");
-				// perror ("Error");
-				// printf ("\n");
-				// #endif
-
-				admin_cerver_receive_handle_failed (admin_cerver, sock_fd);
-			}
-
-			else {
-				// char *status = c_string_create ("Admin Cerver %s rc: %ld for sock fd: %d",
-				// 	admin_cerver->cerver->info->name->str, rc, sock_fd);
-				// if (status) {
-				// 	cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-				// 	free (status);
-				// }
-
-				// TODO: dedicated stats for authenticated admins
-				admin_cerver->stats->admin_receives_done += 1;
-				admin_cerver->stats->admin_bytes_received += rc;
-
-				admin_cerver->stats->total_n_receives_done += 1;
-				admin_cerver->stats->total_bytes_received += rc;
-
-				admin_cerver_receive_handle_buffer (admin_cerver, sock_fd,
-					buffer, rc);
-			}
-
-			free (buffer);
-		}
-
-		else {
-			#ifdef CERVER_DEBUG
-			cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-				"Failed to allocate a new buffer in amdin_cerver_receive ()!");
-			#endif
-			// break;
-		}
-	}
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an app_error_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+            #endif
+        }
+    }
 
 }
 
-// get a free index in the admin cerver poll strcuture
+// handles a CUSTOM_PACKET packet type
+static void admin_custom_packet_handler (Packet *packet) {
+
+    if (packet) {
+        if (packet->cerver->admin->custom_packet_handler) {
+            if (packet->cerver->admin->custom_packet_handler->direct_handle) {
+                // printf ("custom_packet_handler - direct handle!\n");
+                packet->cerver->admin->custom_packet_handler->handler (packet);
+                if (packet->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet);
+            }
+
+            else {
+                // add the packet to the handler's job queueu to be handled
+                // as soon as the handler is available
+                if (job_queue_push (
+                    packet->cerver->admin->custom_packet_handler->job_queue,
+                    job_create (NULL, packet)
+                )) {
+                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_error (s);
+                        free (s);
+                    }
+                }
+            }
+        }
+
+        else {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN does not have an custom_packet_handler!",
+                packet->cerver->info->name->str);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+            #endif
+        }
+    }
+
+}
+
+// handles a packet from an admin
+void admin_packet_handler (Packet *packet) {
+
+    if (packet) {
+        bool good = true;
+        if (packet->cerver->check_packets) {
+            // we expect the packet version in the packet's data
+            if (packet->data) {
+                packet->version = (PacketVersion *) packet->data_ptr;
+                packet->data_ptr += sizeof (PacketVersion);
+                good = packet_check (packet);
+            }
+
+            else {
+                cerver_log_error ("admin_packet_handler () - No packet version to check!");
+                good = false;
+            }
+        }
+
+        if (good) {
+            switch (packet->header->packet_type) {
+                // handles a request made from the admin
+                case REQUEST_PACKET:
+                    packet->cerver->admin->stats->received_packets->n_request_packets += 1;
+                    packet->client->stats->received_packets->n_request_packets += 1;
+                    packet->connection->stats->received_packets->n_request_packets += 1; 
+                    admin_cerver_request_packet_handler (packet); 
+                    packet_delete (packet);
+                    break;
+
+                case APP_PACKET:
+                    packet->cerver->admin->stats->received_packets->n_app_packets += 1;
+                    packet->client->stats->received_packets->n_app_packets += 1;
+                    packet->connection->stats->received_packets->n_app_packets += 1;
+                    admin_app_packet_handler (packet); 
+                    break;
+
+                case APP_ERROR_PACKET: 
+                    packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
+                    packet->client->stats->received_packets->n_app_error_packets += 1;
+                    packet->connection->stats->received_packets->n_app_error_packets += 1;
+                    admin_app_error_packet_handler (packet); 
+                    break;
+
+                case CUSTOM_PACKET: 
+                    packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
+                    packet->client->stats->received_packets->n_custom_packets += 1;
+                    packet->connection->stats->received_packets->n_custom_packets += 1;
+                    admin_custom_packet_handler (packet); 
+                    break;
+
+                default: {
+                    packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
+                    packet->client->stats->received_packets->n_bad_packets += 1;
+                    packet->connection->stats->received_packets->n_bad_packets += 1;
+                    #ifdef ADMIN_DEBUG
+                    char *s = c_string_create ("Got a packet of unknown type in cerver %s admin handler", 
+                        packet->cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, s);
+                        free (s);
+                    }
+                    #endif
+                    packet_delete (packet);
+                } break;
+            }
+        }
+    }
+
+}
+
+#pragma endregion
+
+#pragma region poll
+
+// get a free index in the admin cerver poll fds array
 static i32 admin_cerver_poll_get_free_idx (AdminCerver *admin_cerver) {
 
     if (admin_cerver) {
         for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
             if (admin_cerver->fds[i].fd == -1) return i;
 
-        return -1;
     }
-
-    return 0;
+    
+    return -1;
 
 }
 
-// get the idx of the connection sock fd in the cerver poll fds
+// get the idx of the connection sock fd in the admin cerver poll fds
 static i32 admin_cerver_poll_get_idx_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
 
     if (admin_cerver) {
@@ -1399,333 +1571,262 @@ static i32 admin_cerver_poll_get_idx_by_sock_fd (AdminCerver *admin_cerver, i32 
 
 }
 
-// regsiters a client connection to the admin cerver's poll structure
+// regsiters a client connection to the cerver's admin poll array
 // returns 0 on success, 1 on error
-static u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection) {
+u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection *connection) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (admin_cerver && connection) {
-		i32 idx = admin_cerver_poll_get_free_idx (admin_cerver);
-		if (idx > 0) {
-			admin_cerver->fds[idx].fd = connection->socket->sock_fd;
+    if (admin_cerver && connection) {
+        pthread_mutex_lock (admin_cerver->poll_lock);
+
+        i32 idx = admin_cerver_poll_get_free_idx (admin_cerver);
+        if (idx >= 0) {
+            admin_cerver->fds[idx].fd = connection->socket->sock_fd;
             admin_cerver->fds[idx].events = POLLIN;
             admin_cerver->current_n_fds++;
 
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Added new sock fd to cerver %s admin poll, idx: %i",
-				admin_cerver->cerver->info->name->str, idx);
-			if (status) {
-				cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, status);
-				free (status);
-			}
+            admin_cerver->stats->current_connections++;
+            admin_cerver->stats->total_admin_connections++;
+
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Added sock fd <%d> to cerver %s ADMIN poll, idx: %i", 
+                connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
+                free (s);
+            }
             #endif
 
-			printf ("admin_cerver_poll_register_connection () sock fd: %d\n", connection->socket->sock_fd);
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
 
             retval = 0;
-		}
+        }
 
-		else {
-			// admin cerver poll is full, no more connections allowed
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Poll from cerver %s admin is full!",
-				admin_cerver->cerver->info->name->str);
-			if (status) {
-				cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, status);
-				free (status);
-			}
+        else if (idx < 0) {
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Cerver %s ADMIN poll is full!", 
+                admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                free (s);
+            }
             #endif
-		}
-	}
+        }
 
-	return retval;
+        pthread_mutex_unlock (admin_cerver->poll_lock);
+    }
+
+    return retval;
 
 }
 
-// unregsiters a client connection from the admin cerver's poll structure
+// unregsiters a sock fd connection from the cerver's admin poll array
 // returns 0 on success, 1 on error
-static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection) {
+u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (admin_cerver && connection) {
-		i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, connection->socket->sock_fd);
-		if (idx > 0) {
-			admin_cerver->fds[idx].fd = -1;
+    if (admin_cerver) {
+        pthread_mutex_lock (admin_cerver->poll_lock);
+
+        i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, sock_fd);
+        if (idx >= 0) {
+            admin_cerver->fds[idx].fd = -1;
             admin_cerver->fds[idx].events = -1;
             admin_cerver->current_n_fds--;
 
-			#ifdef CERVER_DEBUG
-			char *status = c_string_create ("Removed sock fd from cerver %s admin poll, idx: %d",
-				admin_cerver->cerver->info->name->str, idx);
-			if (status) {
-				cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-				free (status);
-			}
+            admin_cerver->stats->current_connections--;
+
+            #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
+                sock_fd, admin_cerver->cerver->info->name->str, idx);
+            if (s) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
+                free (s);
+            }
             #endif
 
-			retval = 0;			// success
-		}
-	}
+            #ifdef CERVER_STATS
+            char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
+                admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
+            if (status) {
+                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                free (status);
+            }
+            #endif
 
-	return retval;
+            retval = 0;
+        }
 
-}
+        else {
+            // #ifdef ADMIN_DEBUG
+            char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
+                sock_fd, admin_cerver->cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_WARNING, LOG_ADMIN, s);
+                free (s);
+            }
+            // #endif
+        }
 
-static void admin_cerver_poll (AdminCerver *admin_cerver) {
+        pthread_mutex_unlock (admin_cerver->poll_lock);
+    }
 
-	if (admin_cerver) {
-		char *status = c_string_create ("Cerver %s admin handler has started!", 
-			admin_cerver->cerver->info->name->str);
-		if (status) {
-			cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
-			free (status);
-		}
-
-		int poll_retval = 0;
-
-		while (admin_cerver->cerver->isRunning && admin_cerver->running) {
-			poll_retval = poll (admin_cerver->fds, admin_cerver->max_n_fds, admin_cerver->poll_timeout);
-
-			// poll failed
-			if (poll_retval < 0) {
-				char *status = c_string_create ("Cerver %s admin poll has failed!", 
-					admin_cerver->cerver->info->name->str);
-				if (status) {
-					cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-					free (status);
-				}
-				
-				perror ("Error");
-				admin_cerver->running = false;
-				break;
-			}
-
-			// if poll has timed out, just continue to the next loop... 
-			if (poll_retval == 0) {
-				// #ifdef CERVER_DEBUG
-				// char *status = c_string_create ("Cerver %s admin poll timeout", 
-				// 	admin_cerver->cerver->info->name->str);
-				// if (status) {
-				// 	cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-				// 	free (status);
-				// }
-				// #endif
-				continue;
-			}
-
-			// one or more fd(s) are readable, need to determine which ones they are
-			for (u32 i = 0; i < admin_cerver->max_n_fds; i++) {
-				if (admin_cerver->fds[i].fd != -1) {
-					switch (admin_cerver->fds[i].revents) {
-						// A connection setup has been completed or new data arrived
-						case POLLIN: {
-							// accept incoming connections that are queued
-							if (i == 0) admin_cerver_accept (admin_cerver);
-
-							// not the cerver socket, so a connection fd must be readable
-							else amdin_cerver_receive (admin_cerver, admin_cerver->fds[i].fd);
-						} break;
-
-						// A disconnection request has been initiated by the other end
-						// or a connection is broken (SIGPIPE is also set when we try to write to it)
-						// or The other end has shut down one direction
-						case POLLHUP: 
-							admin_cerver_receive_handle_failed (admin_cerver, admin_cerver->fds[i].fd); 
-							break;
-
-						// An asynchronous error occurred
-						case POLLERR: 
-							admin_cerver_receive_handle_failed (admin_cerver, admin_cerver->fds[i].fd); 
-							break;
-
-						// Urgent data arrived. SIGURG is sent then.
-						case POLLPRI: {
-							/*** TODO: ***/
-						} break;
-
-						// 23/01/2020 -- 15:48 -- trying this
-						default: 
-							// admin_cerver_receive_handle_failed (admin_cerver, admin_cerver->fds[i].fd); 
-							break;
-					}
-				}
-			}
-		}
-	}
+    return retval;
 
 }
 
-static void admin_cerver_update (void *args) {
+// unregsiters a connection from the cerver's admin hold poll array
+// returns 0 on success, 1 on error
+static u8 admin_cerver_poll_unregister_connection (AdminCerver *admin_cerver, Connection *connection) {
 
-	if (args) {
-		AdminCerver *admin_cerver = (AdminCerver *) args;
-
-		// #ifdef CERVER_DEBUG
-		char *status = c_string_create ("The cerver %s admin update has started!",
-			admin_cerver->cerver->info->name->str);
-		if (status) {
-			cerver_log_success (status);
-			free (status);
-		}
-		// #endif
-
-		while (admin_cerver->cerver->isRunning && admin_cerver->running) {
-			// FIXME:
-			// check for timeouts in authentication
-			// TODO: create an ip blacklist to prevent attacks -- maybe read from a file
-			// check for inactivity timeout
-
-			sleep (10);
-		}
-	}
+    return (admin_cerver && connection) ?
+        admin_cerver_poll_unregister_sock_fd (admin_cerver, connection->socket->sock_fd) : 1;
 
 }
 
-#pragma endregion
+static inline void admin_poll_handle_actual (Cerver *cerver, const u32 idx, CerverReceive *cr) {
 
-#pragma region teardown 
+    switch (cerver->admin->fds[idx].revents) {
+        // A connection setup has been completed or new data arrived
+        case POLLIN: {
+            // printf ("admin_poll_handle () - Receive fd: %d\n", cerver->admin->fds[idx].fd);
+                
+            // if (cerver->thpool) {
+                // pthread_mutex_lock (socket->mutex);
 
-// disable socket I/O in both ways and stop any ongoing job
-static u8 admin_cerver_shutdown (AdminCerver *admin_cerver) {
+                // handle received packets using multiple threads
+                // if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
+                //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
+                //         cerver->info->name->str);
+                //     if (s) {
+                //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                //         free (s);
+                //     }
+                // }
 
-	u8 retval = 1;
+                // 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
+                // and the received buffer handler method is the one that is called 
+                // inside the thread pool - using this method we were able to get a correct behaviour
+                // however, we still may have room form improvement as we original though ->
+                // by performing reading also inside the thpool
+                // cerver_receive (cr);
 
-	if (admin_cerver) {
-		if (admin_cerver->running) {
-			admin_cerver->running = false;
+                // pthread_mutex_unlock (socket->mutex);
+            // }
 
-			// close the admin cerver socket
-			if (!close (admin_cerver->sock)) {
-				#ifdef CERVER_DEBUG
-				char *status = c_string_create ("The cerver %s admin socket has been closed.",
-					admin_cerver->cerver->info->name->str);
-                if (status) {
-					cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-					free (status);
-				}
-            	#endif
+            // else {
+                // handle all received packets in the same thread
+                cerver_receive (cr);
+            // }
+        } break;
 
-				retval = 0;
-			}
-
-			else {
-				char *status = c_string_create ("Failed to close cerver %s admin socket!",
-					admin_cerver->cerver->info->name->str);
-				if (status) {
-					cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, status);
-					free (status);
-				}
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-// send a final package to all admins, and then disconnect them from the cerver
-static u8 admin_cerver_disconnect_admins (AdminCerver *admin_cerver) {
-
-	u8 retval = 1;
-
-	if (admin_cerver) {
-		// check if we have conencted admins
-		if (admin_cerver->stats->current_auth_n_connected_admins > 0) {
-			// FIXME: prepare to send a final report on cerver stats
-
-			// send cerver teardown packet
-			Packet *report_packet = packet_generate_request (CERVER_PACKET, CERVER_INFO_STATS, NULL, 0);
-			if (report_packet) {
-				// send to admins
-				Admin *admin = NULL;
-				for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-					admin = (Admin *) le->data;
-
-					if (admin->authenticated) {
-						// send to their first connection
-						packet_set_network_values (report_packet, 
-							NULL,
-							admin->client,
-							(Connection *) dlist_start (admin->client->connections),
-							NULL);
-						packet_send (report_packet, 0, NULL, false);
-					}
-				}
-
-				packet_delete (report_packet);
-			}
-		}
-
-		// disconnect all the admins -- send a teardown packet and end connections
-		Packet *teardown_packet = packet_generate_request (CERVER_PACKET, CERVER_TEARDOWN, NULL, 0);
-		if (teardown_packet) {
-			// send to admins
-			Admin *admin = NULL;
-			for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-				admin = (Admin *) le->data;
-
-				// send to their first connection
-				packet_set_network_values (teardown_packet, 
-					NULL,
-					admin->client,
-					(Connection *) dlist_start (admin->client->connections),
-					NULL);
-				packet_send (teardown_packet, 0, NULL, false);
-
-				// end connections
-				Connection *connection = NULL;
-				for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
-					connection = (Connection *) le->data;
-					connection_end (connection);
-				}
-			}
-
-			packet_delete (teardown_packet);
-		}
-	}
-
-	return retval;
+        default: {
+            if (cerver->admin->fds[idx].revents != 0) {
+                // handle as failed any other signal
+                // to avoid hanging up at 100% or getting a segfault
+                cerver_switch_receive_handle_failed (cr);
+            }
+        } break;
+    }
 
 }
 
-// correctly stops the admin cerver, disconnects admins and free any memory used by admin cerver
-// returns 0 on success, 1 on any error
-u8 admin_cerver_teardown (AdminCerver *admin_cerver) {
+static inline void admin_poll_handle (Cerver *cerver) {
 
-	u8 retval = 1;
+    if (cerver) {
+        pthread_mutex_lock (cerver->admin->poll_lock);
 
-	if (admin_cerver) {
-		u8 errors = 0;
-		char *status = NULL;
+        // one or more fd(s) are readable, need to determine which ones they are
+        for (u32 idx = 0; idx < cerver->admin->max_n_fds; idx++) {
+            if (cerver->admin->fds[idx].fd != -1) {
+                CerverReceive *cr = cerver_receive_create (RECEIVE_TYPE_ADMIN, cerver, cerver->admin->fds[idx].fd);
+                if (cr) {
+                    admin_poll_handle_actual (cerver, idx, cr);
+                }
+            }
+        }
 
-		#ifdef CERVER_DEBUG
-		status = c_string_create ("Starting cerver %s admin teardown...", 
-			admin_cerver->cerver->info->name->str);
-		if (status) {
-			cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
-			free (status);
-		}
+        pthread_mutex_unlock (cerver->admin->poll_lock);
+    }
+
+}
+
+// handles packets from the admin clients
+static void *admin_poll (void *cerver_ptr) {
+
+    if (cerver_ptr) {
+        Cerver *cerver = (Cerver *) cerver_ptr;
+		AdminCerver *admin_cerver = cerver->admin;
+
+        char *status = c_string_create ("Cerver %s ADMIN poll has started!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_ADMIN, status);
+            free (status);
+        }
+
+        char *thread_name = c_string_create ("%s-admin", cerver->info->name->str);
+        if (thread_name) {
+            thread_set_name (thread_name);
+            free (thread_name);
+        }
+
+        int poll_retval = 0;
+        while (cerver->isRunning) {
+            poll_retval = poll (
+				admin_cerver->fds,
+				admin_cerver->max_n_fds,
+				admin_cerver->poll_timeout
+			);
+
+            switch (poll_retval) {
+                case -1: {
+                    char *status = c_string_create ("Cerver %s ADMIN poll has failed!", cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                        free (status);
+                    }
+
+                    perror ("Error");
+                    cerver->isRunning = false;
+                } break;
+
+                case 0: {
+                    // #ifdef ADMIN_DEBUG
+                    // char *status = c_string_create ("Cerver %s ADMIN poll timeout", cerver->info->name->str);
+                    // if (status) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
+                    //     free (status);
+                    // }
+                    // #endif
+                } break;
+
+                default: {
+                    admin_poll_handle (cerver);
+                } break;
+            }
+        }
+
+        #ifdef ADMIN_DEBUG
+        status = c_string_create ("Cerver %s ADMIN poll has stopped!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
+            free (status);
+        }
         #endif
+    }
 
-		// manage connected admins
-		errors |= admin_cerver_disconnect_admins (admin_cerver);
+    else cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, "Can't handle admins on a NULL cerver!");
 
-		// shutdown admin network
-		errors |= admin_cerver_shutdown (admin_cerver);
-
-		status = c_string_create ("Cerver %s admin teardown was successfull!",
-			admin_cerver->cerver->info->name->str);
-		if (status) {
-			cerver_log_success (status);
-			free (status);
-		}
-
-		retval = errors;
-	}
-
-	return retval;
+    return NULL;
 
 }
 

@@ -8,6 +8,7 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 
 #include "cerver/threads/jobs.h"
 
@@ -21,6 +22,19 @@ struct _Client;
 struct _Connection;
 struct _Lobby;
 struct _Packet;
+struct _Admin;
+
+#pragma region handler
+
+typedef enum HandlerType {
+
+    HANDLER_TYPE_NONE         = 0,
+
+    HANDLER_TYPE_CERVER       = 1,
+    HANDLER_TYPE_CLIENT       = 2,
+    HANDLER_TYPE_ADMIN        = 3,
+
+} HandlerType;
 
 // the strcuture that will be passed to the handler
 typedef struct HandlerData {
@@ -33,6 +47,9 @@ typedef struct HandlerData {
 } HandlerData;
 
 struct _Handler {
+
+    HandlerType type;
+    int unique_id;                  // added every time a new handler gets created
 
     int id;
     pthread_t thread_id;
@@ -65,7 +82,8 @@ struct _Handler {
     // the jobs (packets) that are waiting to be handled - passed as args to the handler method
     JobQueue *job_queue;
 
-    struct _Cerver *cerver;      // the cerver this handler belongs to
+    struct _Cerver *cerver;     // the cerver this handler belongs to
+    struct _Client *client;     // the client this handler belongs to
 
 };
 
@@ -108,22 +126,16 @@ extern void handler_set_direct_handle (Handler *handler, bool direct_handle);
 // called by internal cerver methods
 extern int handler_start (Handler *handler);
 
-typedef struct ReceiveHandle {
+#pragma endregion
 
-    struct _Cerver *cerver;
-    // i32 sock_fd;
-    char *buffer;
-    size_t buffer_size;
-    struct _Socket *socket;
-    bool on_hold;
-    struct _Lobby *lobby;
+#pragma region handlers
 
-} ReceiveHandle;
+// sends back a test packet to the client!
+extern void cerver_test_packet_handler (struct _Packet *packet);
 
-extern void receive_handle_delete (void *receive_ptr);
+#pragma endregion
 
-// default cerver receive handler
-extern void cerver_receive_handle_buffer (void *receive_ptr);
+#pragma region sock receive
 
 struct _SockReceive {
 
@@ -144,29 +156,60 @@ extern SockReceive *sock_receive_new (void);
 
 extern void sock_receive_delete (void *sock_receive_ptr);
 
-typedef struct CerverReceive {
+#pragma endregion
+
+#pragma region receive
+
+typedef struct ReceiveHandle {
+
+    ReceiveType type;
 
     struct _Cerver *cerver;
-    // i32 sock_fd;
+
     struct _Socket *socket;
-    bool on_hold;
+    struct _Connection *connection;
+    struct _Client *client;
+    struct _Admin *admin;
+
+    struct _Lobby *lobby;
+
+    char *buffer;
+    size_t buffer_size;
+
+} ReceiveHandle;
+
+extern void receive_handle_delete (void *receive_ptr);
+
+// default cerver receive handler
+extern void cerver_receive_handle_buffer (void *receive_ptr);
+
+typedef struct CerverReceive {
+
+    ReceiveType type;
+
+    struct _Cerver *cerver;
+
+    struct _Socket *socket;
+    struct _Connection *connection;
+    struct _Client *client;
+    struct _Admin *admin;
+
     struct _Lobby *lobby;
 
 } CerverReceive;
 
-// extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, 
-//     i32 sock_fd, bool on_hold, struct _Lobby *lobby);
-
-extern CerverReceive *cerver_receive_new (struct _Cerver *cerver, struct _Socket *socket, 
-    bool on_hold, Lobby *lobby);
+extern CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
 extern void cerver_receive_delete (void *ptr);
+
+extern void cerver_switch_receive_handle_failed (CerverReceive *cr);
 
 // receive all incoming data from the socket
 extern void cerver_receive (void *ptr);
 
-// sends back a test packet to the client!
-extern void cerver_test_packet_handler (struct _Packet *packet);
+#pragma endregion
+
+#pragma region poll
 
 // reallocs main cerver poll fds
 // returns 0 on success, 1 on error
@@ -178,17 +221,22 @@ extern i32 cerver_poll_get_free_idx (struct _Cerver *cerver);
 // get the idx of the connection sock fd in the cerver poll fds
 extern i32 cerver_poll_get_idx_by_sock_fd (struct _Cerver *cerver, i32 sock_fd);
 
-// regsiters a client connection to the cerver's main poll structure
+// regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
-extern u8 cerver_poll_register_connection (struct _Cerver *cerver, 
-    struct _Client *client, struct _Connection *connection);
+// returns 0 on success, 1 on error
+extern u8 cerver_poll_register_connection (struct _Cerver *cerver, struct _Connection *connection);
+
+// removes a sock fd from the cerver's main poll array
+// returns 0 on success, 1 on error
+extern u8 cerver_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
 
 // unregsiters a client connection from the cerver's main poll structure
-// and removes the map from the socket to the client
-u8 cerver_poll_unregister_connection (struct _Cerver *cerver, 
-    struct _Client *client, struct _Connection *connection);
+// returns 0 on success, 1 on error
+extern u8 cerver_poll_unregister_connection (struct _Cerver *cerver, struct _Connection *connection);
 
 // server poll loop to handle events in the registered socket's fds
 extern u8 cerver_poll (struct _Cerver *cerver);
+
+#pragma endregion
 
 #endif

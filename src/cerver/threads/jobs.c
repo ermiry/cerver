@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/bsem.h"

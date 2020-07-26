@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 static inline void list_element_delete (ListElement *le);
 
@@ -121,7 +121,7 @@ void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const
 
 void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
 
-size_t dlist_size (DoubleList *dlist) {
+size_t dlist_size (const DoubleList *dlist) {
 
 	size_t retval = 0;
 
@@ -137,7 +137,7 @@ size_t dlist_size (DoubleList *dlist) {
 
 }
 
-bool dlist_is_empty (DoubleList *dlist) { 
+bool dlist_is_empty (const DoubleList *dlist) { 
 	
 	bool retval = true;
 
@@ -153,7 +153,7 @@ bool dlist_is_empty (DoubleList *dlist) {
 	
 }
 
-bool dlist_is_not_empty (DoubleList *dlist) {
+bool dlist_is_not_empty (const DoubleList *dlist) {
 
 	bool retval = false;
 
@@ -330,7 +330,7 @@ void dlist_clear_or_delete (void *dlist_ptr) {
 // inserts the data in the double list BEFORE the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-int dlist_insert_before (DoubleList *dlist, ListElement *element, void *data) {
+int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *data) {
 
 	int retval = 1;
 
@@ -372,7 +372,7 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, void *data) {
 // inserts the data in the double list AFTER the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-int dlist_insert_after (DoubleList *dlist, ListElement *element, void *data) {
+int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *data) {
 
 	int retval = 1;
 
@@ -415,7 +415,7 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, void *data) {
 // inserts the data in the double list in the specified pos (0 indexed)
 // if the pos is greater than the current size, it will be added at the end
 // returns 0 on success, 1 on error
-int dlist_insert_at (DoubleList *dlist, void *data, unsigned int pos) {
+int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos) {
 
 	int retval = 1;
 
@@ -450,7 +450,7 @@ int dlist_insert_at (DoubleList *dlist, void *data, unsigned int pos) {
 // finds the data using the query and the list comparator and the removes it from the list
 // and returns the list element's data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-void *dlist_remove (DoubleList *dlist, void *query, int (*compare)(const void *one, const void *two)) {
+void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(const void *one, const void *two)) {
 
 	void *retval = NULL;
 
@@ -511,7 +511,7 @@ void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
 
 // removes the dlist element from the dlist at the specified index 
 // returns the data or NULL if index was invalid
-void *dlist_remove_at (DoubleList *dlist, unsigned int idx) {
+void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 
 	void *retval = NULL;
 
@@ -553,7 +553,7 @@ void *dlist_remove_at (DoubleList *dlist, unsigned int idx) {
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
 // returns 0 on success, 1 on error
-int dlist_traverse (DoubleList *dlist, void (*method)(void *list_element_data, void *method_args), void *method_args) {
+int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_data, void *method_args), void *method_args) {
 
 	int retval = 1;
 
@@ -576,7 +576,7 @@ int dlist_traverse (DoubleList *dlist, void (*method)(void *list_element_data, v
 // uses the list comparator to search using the data as the query
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // returns the double list's element data
-void *dlist_search (DoubleList *dlist, void *data, int (*compare)(const void *one, const void *two)) {
+void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(const void *one, const void *two)) {
 
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
@@ -597,7 +597,7 @@ void *dlist_search (DoubleList *dlist, void *data, int (*compare)(const void *on
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-ListElement *dlist_get_element (DoubleList *dlist, void *data, 
+ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
 	int (*compare)(const void *one, const void *two)) {
 
 	if (dlist && data) {
@@ -617,7 +617,7 @@ ListElement *dlist_get_element (DoubleList *dlist, void *data,
 }
 
 // traverses the dlist and returns the list element at the specified index
-ListElement *dlist_get_element_at (DoubleList *dlist, unsigned int idx) {
+ListElement *dlist_get_element_at (const DoubleList *dlist, const unsigned int idx) {
 
 	if (dlist) {
 		if (idx < dlist->size) {
@@ -637,7 +637,7 @@ ListElement *dlist_get_element_at (DoubleList *dlist, unsigned int idx) {
 }
 
 // traverses the dlist and returns the data of the list element at the specified index
-void *dlist_get_at (DoubleList *dlist, unsigned int idx) {
+void *dlist_get_at (const DoubleList *dlist, const unsigned int idx) {
 
 	if (dlist) {
 		if (idx < dlist->size) {
@@ -747,7 +747,7 @@ int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *t
 
 // returns a newly allocated array with the list elements inside it
 // data will not be copied, only the pointers, so the list will keep the original elements
-void **dlist_to_array (DoubleList *dlist, size_t *count) {
+void **dlist_to_array (const DoubleList *dlist, size_t *count) {
 
 	void **array = NULL;
 
@@ -775,7 +775,7 @@ void **dlist_to_array (DoubleList *dlist, size_t *count) {
 // creates the dlist's elements using the same data pointers as in the original dlist
 // be carefull which dlist you delete first, as the other should use dlist_clear first before delete
 // the new dlist's delete and comparator methods are set from the original
-DoubleList *dlist_copy (DoubleList *dlist) {
+DoubleList *dlist_copy (const DoubleList *dlist) {
 
 	DoubleList *copy = NULL;
 
@@ -801,7 +801,7 @@ DoubleList *dlist_copy (DoubleList *dlist) {
 	// and should return the same structure type as the original method that can be safely deleted
 	// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
-DoubleList *dlist_clone (DoubleList *dlist, void *(*clone) (const void *original)) {
+DoubleList *dlist_clone (const DoubleList *dlist, void *(*clone) (const void *original)) {
 
 	DoubleList *dlist_clone = NULL;
 

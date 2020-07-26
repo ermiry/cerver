@@ -40,8 +40,10 @@ int main (void) {
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
+		cerver_set_welcome_msg (my_cerver, "Welcome to cerver!");
+
 		/*** cerver configuration ***/
-		cerver_set_receive_buffer_size (my_cerver, 16384);
+		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_app_handlers (my_cerver, NULL, NULL);
 
 		if (!cerver_start (my_cerver)) {
@@ -51,10 +53,10 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+        cerver_log_error ("Failed to create cerver!");
 
-		cerver_delete (my_cerver);
+        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
+		// cerver_delete (client_cerver);
 	}
 
 	return 0;

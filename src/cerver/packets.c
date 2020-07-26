@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include <errno.h>
 #endif
 
@@ -19,9 +19,11 @@
 
 #include "cerver/game/lobby.h"
 
-#ifdef CERVER_DEBUG
+#ifdef PACKETS_DEBUG
 #include "cerver/utils/log.h"
 #endif
+
+#pragma region protocol
 
 static ProtocolID protocol_id = 0;
 static ProtocolVersion protocol_version = { 0, 0 };
@@ -33,6 +35,49 @@ void packets_set_protocol_id (ProtocolID proto_id) { protocol_id = proto_id; }
 ProtocolVersion packets_get_protocol_version (void) { return protocol_version; }
 
 void packets_set_protocol_version (ProtocolVersion version) { protocol_version = version; }
+
+#pragma endregion
+
+#pragma region version
+
+PacketVersion *packet_version_new (void) {
+
+    PacketVersion *version = (PacketVersion *) malloc (sizeof (PacketVersion));
+    if (version) {
+        version->protocol_id = 0;
+        version->protocol_version.minor = version->protocol_version.major = 0;
+    }
+
+    return version;
+
+}
+
+void packet_version_delete (PacketVersion *version) { if (version) free (version); }
+
+PacketVersion *packet_version_create (void) {
+
+    PacketVersion *version = (PacketVersion *) malloc (sizeof (PacketVersion));
+    if (version) {
+        version->protocol_id = protocol_id;
+        version->protocol_version = protocol_version;
+    }
+
+    return version;
+
+}
+
+void packet_version_print (PacketVersion *version) {
+
+    if (version) {
+        printf ("Protocol id: %d\n", version->protocol_id);
+        printf ("Protocol version: { %d - %d }\n", version->protocol_version.major, version->protocol_version.minor);        
+    }
+
+}
+
+#pragma endregion
+
+#pragma region types
 
 PacketsPerType *packets_per_type_new (void) {
 
@@ -47,6 +92,7 @@ void packets_per_type_delete (void *ptr) { if (ptr) free (ptr); }
 void packets_per_type_print (PacketsPerType *packets_per_type) {
 
     if (packets_per_type) {
+        printf ("Cerver:            %ld\n", packets_per_type->n_cerver_packets);
         printf ("Error:             %ld\n", packets_per_type->n_error_packets);
         printf ("Auth:              %ld\n", packets_per_type->n_auth_packets);
         printf ("Request:           %ld\n", packets_per_type->n_request_packets);
@@ -61,15 +107,33 @@ void packets_per_type_print (PacketsPerType *packets_per_type) {
 
 }
 
-static PacketHeader *packet_header_new (PacketType packet_type, size_t packet_size) {
+#pragma endregion
+
+#pragma region header
+
+PacketHeader *packet_header_new (void) {
 
     PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
     if (header) {
         memset (header, 0, sizeof (PacketHeader));
-        header->protocol_id = protocol_id;
-        header->protocol_version = protocol_version;
+    }
+
+    return header;
+
+}
+
+void packet_header_delete (PacketHeader *header) { if (header) free (header); }
+
+PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type) {
+
+    PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
+    if (header) {
         header->packet_type = packet_type;
         header->packet_size = packet_size;
+
+        header->handler_id = 0;
+
+        header->request_type = req_type;
     }
 
     return header;
@@ -79,10 +143,10 @@ static PacketHeader *packet_header_new (PacketType packet_type, size_t packet_si
 void packet_header_print (PacketHeader *header) {
 
     if (header) {
-        printf ("protocol id: %d\n", header->protocol_id);
-        printf ("protocol version: { %d - %d }\n", header->protocol_version.major, header->protocol_version.minor);
-        printf ("packet type: %d\n", header->packet_type);
-        printf ("packet size: %ld\n", header->packet_size);
+        printf ("Packet type: %d\n", header->packet_type);
+        printf ("Packet size: %ld\n", header->packet_size);
+        printf ("Handler id: %d\n", header->handler_id);
+        printf ("Request type: %d\n", header->request_type);
     }
 
 }
@@ -105,7 +169,9 @@ u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {
 
 }
 
-static inline void packet_header_delete (PacketHeader *header) { if (header) free (header); }
+#pragma endregion
+
+#pragma region packets
 
 u8 packet_append_data (Packet *packet, void *data, size_t data_size);
 
@@ -113,19 +179,23 @@ Packet *packet_new (void) {
 
     Packet *packet = (Packet *) malloc (sizeof (Packet));
     if (packet) {
-        memset (packet, 0, sizeof (Packet));
         packet->cerver = NULL;
         packet->client = NULL;
         packet->connection = NULL;
         packet->lobby = NULL;
 
-        packet->custom_type = NULL;
+        packet->packet_type = DONT_CHECK_TYPE;
+        packet->req_type = 0;
 
+        packet->data_size = 0;
         packet->data = NULL;
+        packet->data_ptr = NULL;
         packet->data_end = NULL;
         packet->data_ref = false;
 
-        packet->header = NULL;  
+        packet->header = NULL;
+        packet->version = NULL;
+        packet->packet_size = 0;
         packet->packet = NULL;
         packet->packet_ref = false;
     }
@@ -158,13 +228,13 @@ void packet_delete (void *ptr) {
         packet->connection = NULL;
         packet->lobby = NULL;
 
-        estring_delete (packet->custom_type);
-
         if (!packet->data_ref) {
             if (packet->data) free (packet->data);
         }
 
         packet_header_delete (packet->header);
+        packet_version_delete (packet->version);
+
         if (!packet->packet_ref) {
             if (packet->packet) free (packet->packet);
         }
@@ -207,6 +277,9 @@ u8 packet_set_data (Packet *packet, void *data, size_t data_size) {
             packet->data_end = (char *) packet->data;
             packet->data_end += packet->data_size;
 
+            // point to the start of the data
+            packet->data_ptr = (char *) packet->data;
+
             retval = 0;
         }
     }
@@ -239,11 +312,14 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
                 packet->data = new_data;
                 packet->data_size = new_size;
 
+                // point to the start of the data
+                packet->data_ptr = (char *) packet->data;
+
                 retval = 0;
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to realloc packet data!");
                 #endif
                 packet->data = NULL;
@@ -261,11 +337,14 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
                 packet->data_end = (char *) packet->data;
                 packet->data_end += packet->data_size;
 
+                // point to the start of the data
+                packet->data_ptr = (char *) packet->data;
+
                 retval = 0;
             }
 
             else {
-                #ifdef CERVER_DEBUG
+                #ifdef PACKETS_DEBUG
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to allocate packet data!");
                 #endif
                 packet->data = NULL;
@@ -364,7 +443,7 @@ u8 packet_generate (Packet *packet) {
         }   
 
         packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-        packet->header = packet_header_new (packet->packet_type, packet->packet_size);
+        packet->header = packet_header_create (packet->packet_type, packet->packet_size, packet->req_type);
 
         // create the packet buffer to be sent
         packet->packet = malloc (packet->packet_size);
@@ -393,14 +472,7 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
     Packet *packet = packet_new ();
     if (packet) {
         packet->packet_type = packet_type;
-
-        // generate the request
-        packet->data = malloc (sizeof (RequestData));
-        ((RequestData *) packet->data)->type = req_type;
-
-        packet->data_size = sizeof (RequestData);
-        packet->data_end = (char *) packet->data;
-        packet->data_end += sizeof (RequestData);
+        packet->req_type = req_type;
 
         // if there is data, append it to the packet data buffer
         if (data) {
@@ -422,46 +494,100 @@ Packet *packet_generate_request (PacketType packet_type, u32 req_type,
 
 }
 
-// TODO: check for errno appropierly
 // sends a packet directly using the tcp protocol and the packet sock fd
 // returns 0 on success, 1 on error
-static u8 packet_send_tcp (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+static u8 packet_send_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw) {
 
-    if (packet) {
-        ssize_t sent;
-        const char *p = raw ? (char *) packet->data : (char *) packet->packet;
+    u8 retval = 1;
+
+    if (packet && connection) {
+        pthread_mutex_lock (connection->socket->write_mutex);
+
+        ssize_t sent = 0;
+        char *p = raw ? (char *) packet->data : (char *) packet->packet;
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
         while (packet_size > 0) {
-            sent = send (packet->connection->socket->sock_fd, p, packet_size, flags);
-            if (sent < 0) return 1;
+            sent = send (connection->socket->sock_fd, p, packet_size, flags);
+            if (sent < 0) {
+                break;
+            }
+
             p += sent;
-            packet_size -= sent;
+            packet_size -= (size_t) sent;
+            retval = 0;
         }
 
-        if (total_sent) *total_sent = sent;
+        if (total_sent) *total_sent = (size_t) sent;
 
-        return 0;
+        pthread_mutex_unlock (connection->socket->write_mutex);
     }
 
-    return 1;
+    return retval;
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// returns 0 on success, 1 on error
+static u8 packet_send_split_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent) {
+
+    u8 retval = 1;
+
+    if (packet && connection) {
+        pthread_mutex_lock (connection->socket->write_mutex);
+
+        size_t actual_sent = 0;
+
+        // first send the header
+        bool fail = false;
+        ssize_t sent = 0;
+        char *p = (char *) packet->header;
+        size_t packet_size = sizeof (PacketHeader);
+
+        while (packet_size > 0) {
+            sent = send (connection->socket->sock_fd, p, packet_size, flags);
+            if (sent < 0) {
+                fail = true;
+                break;
+            }
+
+            p += sent;
+            actual_sent += (size_t) sent;
+            packet_size -= (size_t) sent;
+            fail = false;
+        }
+
+        // now send the data
+        if (!fail) {
+            sent = 0;
+            p = (char *) packet->data;
+            packet_size = packet->data_size;
+
+            while (packet_size > 0) {
+                sent = send (connection->socket->sock_fd, p, packet_size, flags);
+                if (sent < 0) break;
+                p += sent;
+                actual_sent += (size_t) sent;
+                packet_size -= (size_t) sent;
+            }
+
+            if (total_sent) *total_sent = actual_sent;
+
+            retval = 0;
+        }
+
+        pthread_mutex_unlock (connection->socket->write_mutex);
+    }
+
+    return retval;
 
 }
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-// TODO: correctly send an udp packet!!
 static u8 packet_send_udp (const void *packet, size_t packet_size) {
 
-    // ssize_t sent;
-    // const void *p = packet;
-    // while (packet_size > 0) {
-    //     sent = sendto (server->serverSock, begin, packetSize, 0, 
-    //         (const struct sockaddr *) &address, sizeof (struct sockaddr_storage));
-    //     if (sent <= 0) return -1;
-    //     p += sent;
-    //     packetSize -= sent;
-    // }
+    // TODO:
 
     return 0;
 
@@ -477,7 +603,7 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     if (client) {
-        client->stats->n_packets_send += 1;
+        client->stats->n_packets_sent += 1;
         client->stats->total_bytes_sent += sent;
     }
 
@@ -490,7 +616,12 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     switch (packet_type) {
-        case CERVER_PACKET: break;
+        case CERVER_PACKET:
+            if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
+            if (client) client->stats->sent_packets->n_cerver_packets += 1;
+            connection->stats->sent_packets->n_cerver_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
+            break;
 
         case CLIENT_PACKET: break;
 
@@ -550,45 +681,56 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
             if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
             break;
 
-        case DONT_CHECK_TYPE:
-        default: break;
+        case DONT_CHECK_TYPE: break;
+
+        default: 
+            if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
+            if (client) client->stats->sent_packets->n_unknown_packets += 1;
+            connection->stats->sent_packets->n_unknown_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
+            break;
     }
 
 }
 
-// sends a packet using its network values
-// raw flag to send a raw packet (only the data that was set to the packet, without any header)
-// returns 0 on success, 1 on error
-u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+static inline u8 packet_send_internal (const Packet *packet, int flags, size_t *total_sent, 
+    bool raw, bool split,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
 
     u8 retval = 1;
 
-    if (packet) {
-        switch (packet->connection->protocol) {
+    if (packet && connection) {
+        switch (connection->protocol) {
             case PROTOCOL_TCP: {
                 size_t sent = 0;
-                if (!packet_send_tcp (packet, flags, &sent, raw)) {
+
+                if (!(split ? packet_send_split_tcp (packet, connection, flags, &sent)
+                    : packet_send_tcp (packet, connection, flags, &sent, raw))) {
                     if (total_sent) *total_sent = sent;
-                    packet_send_update_stats (packet->packet_type, sent,
-                        packet->cerver, packet->client, packet->connection, packet->lobby);
+
+                    packet_send_update_stats (
+                        packet->packet_type, sent,
+                        cerver, client, connection, lobby
+                    );
 
                     retval = 0;
                 }
 
                 else {
-                    #ifdef CERVER_DEBUG
+                    #ifdef PACKETS_DEBUG
                     printf ("\n");
                     perror ("Error");
                     printf ("\n");
                     #endif
 
-                    if (packet->connection) packet->cerver->stats->sent_packets->n_bad_packets += 1;
-                    if (packet->client) packet->client->stats->sent_packets->n_bad_packets += 1;
-                    if (packet->connection) packet->connection->stats->sent_packets->n_bad_packets += 1;
+                    if (cerver) cerver->stats->sent_packets->n_bad_packets += 1;
+                    if (client) client->stats->sent_packets->n_bad_packets += 1;
+                    if (connection) connection->stats->sent_packets->n_bad_packets += 1;
 
                     if (total_sent) *total_sent = 0;
                 }
             } break;
+
             case PROTOCOL_UDP:
                 break;
 
@@ -600,59 +742,210 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 }
 
+// sends a packet using its network values
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+
+    return packet_send_internal (
+        packet, flags, total_sent, 
+        raw, false,
+        packet->cerver, packet->client, packet->connection, packet->lobby
+    );
+
+}
+
+// sends a packet to the specified destination
+// sets flags to 0
+// at least a packet & an active connection are required for this method to succeed
+// raw flag to send a raw packet (only the data that was set to the packet, without any header)
+// returns 0 on success, 1 on error
+u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+
+    return packet_send_internal (
+        packet, 0, total_sent, 
+        raw, false,
+        cerver, client, connection, lobby
+    );
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// this method can be useful when trying to forward a big received packet without the overhead of 
+// performing and additional copy to create a continuos data (packet) buffer
+// the socket's write mutex will be locked to ensure that the packet
+// is sent correctly and to avoid race conditions
+// returns 0 on success, 1 on error
+u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
+
+    return packet_send_internal (
+        packet, flags, total_sent, 
+        false, true,
+        packet->cerver, packet->client, packet->connection, packet->lobby
+    );
+
+}
+
+// sends a packet to the socket in two parts, first the header & then the data
+// works just as packet_send_split () but with the flags set to 0
+// returns 0 on success, 1 on error
+u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+
+    return packet_send_internal (
+        packet, 0, total_sent, 
+        false, true,
+        cerver, client, connection, lobby
+    );
+
+}
+
+static u8 packet_send_pieces_actual (
+    Socket *socket, 
+    char *data, size_t data_size, 
+    int flags, 
+    size_t *actual_sent
+) {
+
+    u8 retval = 0;
+
+    ssize_t sent = 0;
+    char *p = data;
+    while (data_size > 0) {
+        sent = send (socket->sock_fd, p, data_size, flags);
+        if (sent < 0) {
+            retval = 1;
+            break;
+        }
+
+        p += sent;
+        *actual_sent += (size_t) sent;
+        data_size -= (size_t) sent;
+    }
+
+    return retval;
+
+}
+
+// sends a packet in pieces, taking the header from the packet's field
+// sends each buffer as they are with they respective sizes
+// socket mutex will be locked for the entire operation
+// returns 0 on success, 1 on error
+u8 packet_send_pieces (
+    const Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces, 
+    int flags, 
+    size_t *total_sent
+) {
+
+    u8 retval = 1;
+
+    if (packet && pieces && sizes) {
+        pthread_mutex_lock (packet->connection->socket->write_mutex);
+
+        size_t actual_sent = 0;
+
+        // first send the header
+        if (!packet_send_pieces_actual (
+            packet->connection->socket,
+            (char *) packet->header, sizeof (PacketHeader),
+            flags,
+            &actual_sent
+        )) {
+            // send the pieces of data
+            for (u32 i = 0; i < n_pieces; i++) {
+                (void) packet_send_pieces_actual (
+                    packet->connection->socket,
+                    (char *) pieces[i], sizes[i],
+                    flags,
+                    &actual_sent
+                );
+            }
+
+            retval = 0;
+        }
+
+        packet_send_update_stats (
+            packet->packet_type, actual_sent,
+            packet->cerver, packet->client, packet->connection, packet->lobby
+        );
+
+        if (total_sent) *total_sent = actual_sent;
+
+        pthread_mutex_unlock (packet->connection->socket->write_mutex);
+    }
+
+    return retval;
+
+}
+
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-u8 packet_send_to_sock_fd (const Packet *packet, const i32 sock_fd, 
+u8 packet_send_to_socket (const Packet *packet, Socket *socket, 
     int flags, size_t *total_sent, bool raw) {
 
+    u8 retval = 0;
+
     if (packet) {
-        ssize_t sent;
+        ssize_t sent = 0;
         const char *p = raw ? (char *) packet->data : (char *) packet->packet;
         size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
+        pthread_mutex_lock (socket->write_mutex);
+
         while (packet_size > 0) {
-            sent = send (sock_fd, p, packet_size, flags);
-            if (sent < 0) return 1;
+            sent = send (socket->sock_fd, p, packet_size, flags);
+            if (sent < 0) {
+                retval = 1;
+                break;
+            };
+
             p += sent;
             packet_size -= sent;
         }
 
-        if (total_sent) *total_sent = sent;
+        if (total_sent) *total_sent = (size_t) sent;
 
-        return 0;
+        pthread_mutex_lock (socket->write_mutex);
     }
 
-    return 1;
+    return retval;
 
 }
 
 // check if packet has a compatible protocol id and a version
-// returns 0 on success, 1 on error
-u8 packet_check (Packet *packet) {
+// returns false on a bad packet
+bool packet_check (Packet *packet) {
 
-    u8 errors = 0;
+    bool retval = false;
 
     if (packet) {
-        PacketHeader *header = packet->header;
+        if (packet->version) {
+            if (packet->version->protocol_id == protocol_id) {
+                if ((packet->version->protocol_version.major <= protocol_version.major)
+                    && (packet->version->protocol_version.minor >= protocol_version.minor)) {
+                    retval = true;
+                }
 
-        if (header->protocol_id != protocol_id) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
-            #endif
-            errors |= 1;
-        }
+                else {
+                    #ifdef PACKETS_DEBUG
+                    cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
+                    #endif
+                }
+            }
 
-        if (header->protocol_version.major != protocol_version.major) {
-            #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with incompatible version.");
-            #endif
-            errors |= 1;
+            else {
+                #ifdef PACKETS_DEBUG
+                cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, "Packet with unknown protocol ID.");
+                #endif
+            }
         }
     }
 
-    else errors |= 1;
-
-    return errors;
+    return retval;
 
 }
+
+#pragma endregion

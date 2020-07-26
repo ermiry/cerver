@@ -73,6 +73,9 @@ AppData *app_data_create (int id, const char *msg) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 // method that will be used to create unique handler data
 void *app_data_copy (void *app_data_args_ptr) {
 
@@ -92,12 +95,11 @@ void *app_data_copy (void *app_data_args_ptr) {
 
 }
 
+#pragma GCC diagnostic pop
+
 static Cerver *my_cerver = NULL;
 
-AppData *app_data_0 = NULL;
-AppData *app_data_1 = NULL;
-AppData *app_data_2 = NULL;
-AppData *app_data_3 = NULL;
+AppData *app_data = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
@@ -106,25 +108,18 @@ static void end (int dummy) {
 		cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
 
-		app_data_delete (app_data_0);
-		app_data_delete (app_data_1);
-		app_data_delete (app_data_2);
-		app_data_delete (app_data_3);
+		app_data_delete (app_data);
 	} 
 
 	exit (0);
 
 }
 
-static void handle_test_request (Packet *packet, unsigned int handler_id) {
+static void handle_test_request (Packet *packet) {
 
 	if (packet) {
-		char *status = c_string_create ("Got a test message in handler <%d>! Sending another one back...", handler_id);
-		if (status) {
-			cerver_log_debug (status);
-			free (status);
-		}
-		
+		cerver_log_debug ("Got a TEST request from client! Sending another one back...");
+
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
@@ -142,14 +137,10 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 
 }
 
-static void handle_msg_request (Packet *packet, unsigned int handler_id, estring *msg) {
+static void handle_msg_request (Packet *packet, estring *msg) {
 
 	if (packet && msg) {
-		char *status = c_string_create ("Got a request for handler's <%d> message!", handler_id);
-		if (status) {
-			cerver_log_debug (status);
-			free (status);
-		}
+		cerver_log_debug ("Got an APP DATA request!");
 
 		printf ("%s - %d\n", msg->str, msg->len);
 
@@ -177,7 +168,7 @@ static void handle_msg_request (Packet *packet, unsigned int handler_id, estring
 
 }
 
-static void handler_cero (void *data) {
+static void app_packet_handler (void *data) {
 
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
@@ -186,75 +177,9 @@ static void handler_cero (void *data) {
 		Packet *packet = handler_data->packet;
 		if (packet) {
 			switch (packet->header->request_type) {
-				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
+				case TEST_MSG: handle_test_request (packet); break;
 
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
-		}
-	}
-
-}
-
-static void handler_one (void *data) {
-	
-	if (data) {
-		HandlerData *handler_data = (HandlerData *) data;
-
-		AppData *app_data = (AppData *) handler_data->data;
-		Packet *packet = handler_data->packet;
-		if (packet) {
-			switch (packet->header->request_type) {
-				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
-
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
-		}
-	}
-
-}
-
-static void handler_two (void *data) {
-	
-	if (data) {
-		HandlerData *handler_data = (HandlerData *) data;
-
-		AppData *app_data = (AppData *) handler_data->data;
-		Packet *packet = handler_data->packet;
-		if (packet) {
-			switch (packet->header->request_type) {
-				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
-
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
-		}
-	}
-
-}
-
-static void handler_three (void *data) {
-	
-	if (data) {
-		HandlerData *handler_data = (HandlerData *) data;
-
-		AppData *app_data = (AppData *) handler_data->data;
-		Packet *packet = handler_data->packet;
-		if (packet) {
-			switch (packet->header->request_type) {
-				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
-
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
+				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
 				default: 
 					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
@@ -276,46 +201,27 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Multiple app handlers example");
+	cerver_log_debug ("Requests Example");
 	printf ("\n");
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Multiple app handlers example");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Requests Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
-		// cerver_set_app_handlers (my_cerver, handler, NULL);
 
-		cerver_set_multiple_handlers (my_cerver, 4);
+		app_data = app_data_create (0, "Hello there!");
 
-		// create my app data
-		AppData *app_data_0 = app_data_create (0, "Hello there!");
-		AppData *app_data_1 = app_data_create (1, "See you later!");
-		AppData *app_data_2 = app_data_create (2, "Well done!");
-		AppData *app_data_3 = app_data_create (3, "Good morning!");
+		Handler *app_handler = handler_create (app_packet_handler);
+		// handler_set_direct_handle (app_handler, true);
+		// handler_set_data_create (app_handler, app_data_copy, app_data);
+		handler_set_data (app_handler, app_data);
+		handler_set_data_delete (app_handler, app_data_delete);
 
-		// create custom app handlers
-		Handler *handler_0 = handler_create_with_id (0, handler_cero);
-		Handler *handler_1 = handler_create_with_id (1, handler_one);
-		Handler *handler_2 = handler_create_with_id (2, handler_two);
-		Handler *handler_3 = handler_create_with_id (3, handler_three);
-
-		// register the handlers to be used by the cerver
-		cerver_handlers_add (my_cerver, handler_0);
-		handler_set_data_create (handler_0, app_data_copy, app_data_0);
-		handler_set_data_delete (handler_0, app_data_delete);
-		cerver_handlers_add (my_cerver, handler_1);
-		handler_set_data_create (handler_1, app_data_copy, app_data_1);
-		handler_set_data_delete (handler_1, app_data_delete);
-		cerver_handlers_add (my_cerver, handler_2);
-		handler_set_data_create (handler_2, app_data_copy, app_data_2);
-		handler_set_data_delete (handler_2, app_data_delete);
-		cerver_handlers_add (my_cerver, handler_3);
-		handler_set_data_create (handler_3, app_data_copy, app_data_3);
-		handler_set_data_delete (handler_3, app_data_delete);
-
+		cerver_set_app_handlers (my_cerver, app_handler, NULL);
+		
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
 				my_cerver->info->name->str);
@@ -334,7 +240,7 @@ int main (void) {
         // DONT call - cerver_teardown () is called automatically if cerver_create () fails
 		// cerver_delete (client_cerver);
 	}
-	
+
 	return 0;
 
 }

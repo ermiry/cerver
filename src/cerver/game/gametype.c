@@ -4,7 +4,7 @@
 
 #include "cerver/types/estring.h"
 #include "cerver/game/gametype.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 GameType *game_type_get_by_name (DoubleList *game_types, const char *name);
 

@@ -6,10 +6,12 @@
 #include <signal.h>
 
 #include <cerver/version.h>
-
 #include <cerver/cerver.h>
+
 #include <cerver/game/game.h>
 #include <cerver/game/gametype.h>
+
+#include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
 static Cerver *my_cerver = NULL;
@@ -40,12 +42,6 @@ static int my_game_init (void) {
 static void my_game_packet_handler (void *data) {
 
 	// method to handle APP_PACKET type packets that are specific for your application 
-
-}
-
-static void my_game_on_client_connected (void *data) {
-
-	// an action to be executed every time a new client connects to the cerver
 
 }
 
@@ -91,16 +87,16 @@ int main (void) {
 	if (!my_game_init ()) {
 		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 		if (my_cerver) {
+			cerver_set_welcome_msg (my_cerver, "Welcome - Simple Game Cerver Example");
+
 			/*** cerver configuration ***/
-			cerver_set_receive_buffer_size (my_cerver, 16384);
-			// cerver_set_thpool_n_threads (my_cerver, 4);
+			cerver_set_receive_buffer_size (my_cerver, 4096);
+			cerver_set_thpool_n_threads (my_cerver, 4);
 
 			Handler *app_handler = handler_create (my_game_packet_handler);
 			// 27/05/2020 - needed for this example!
 			handler_set_direct_handle (app_handler, true);
 			cerver_set_app_handlers (my_cerver, app_handler, NULL);
-
-			cerver_set_on_client_connected (my_cerver, my_game_on_client_connected);
 
 			/*** game configuration ***/
 			GameCerver *game_cerver = (GameCerver *) my_cerver->cerver_data;
@@ -112,15 +108,23 @@ int main (void) {
 			game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
 			game_type_register (game_cerver->game_types, arcade_game_type);
 
-			if (!cerver_start (my_cerver)) {
-				cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-					"Failed to start cerver!");
+			if (cerver_start (my_cerver)) {
+				char *s = c_string_create ("Failed to start %s!",
+					my_cerver->info->name->str);
+				if (s) {
+					cerver_log_error (s);
+					free (s);
+				}
+
+				cerver_delete (my_cerver);
 			}
 		}
 
 		else {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-				"Failed to create game cerver!");
+			cerver_log_error ("Failed to create cerver!");
+
+			// DONT call - cerver_teardown () is called automatically if cerver_create () fails
+			// cerver_delete (client_cerver);
 		}
 
 		my_game_end (0);
