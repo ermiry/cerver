@@ -1060,6 +1060,49 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 
 }
 
+// set cerver's socket blocking property based on cerver handler type
+static u8 cerver_network_init_block_socket (Cerver *cerver) {
+
+    u8 retval = 0;
+
+    switch (cerver->handler_type) {
+        case CERVER_HANDLER_TYPE_NONE: break;
+
+        case CERVER_HANDLER_TYPE_POLL: {
+            // set the socket to non blocking mode
+            if (sock_set_blocking (cerver->sock, cerver->blocking)) {
+                cerver->blocking = false;
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Cerver %s socket set to non blocking mode.", cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    free (status);
+                }
+                #endif
+            }
+
+            else {
+                char *status = c_string_create ("Failed to set cerver %s socket to non blocking mode!", cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
+
+                close (cerver->sock);
+
+                retval = 1;     // error
+            }
+        } break;
+
+        case CERVER_HANDLER_TYPE_THREADS: break;
+
+        default: break;
+    }
+
+    return retval;
+
+}
+
 // inits the cerver networking capabilities
 static u8 cerver_network_init (Cerver *cerver) {
 
@@ -1093,41 +1136,9 @@ static u8 cerver_network_init (Cerver *cerver) {
             }
             #endif
 
-            switch (cerver->handler_type) {
-                case CERVER_HANDLER_TYPE_NONE: break;
-
-                case CERVER_HANDLER_TYPE_POLL: {
-                    // set the socket to non blocking mode
-                    if (!sock_set_blocking (cerver->sock, cerver->blocking)) {
-                        char *status = c_string_create ("Failed to set cerver %s socket to non blocking mode!", cerver->info->name->str);
-                        if (status) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                            free (status);
-                        }
-
-                        close (cerver->sock);
-
-                        return 1;
-                    }
-
-                    else {
-                        cerver->blocking = false;
-                        #ifdef CERVER_DEBUG
-                        char *status = c_string_create ("Cerver %s socket set to non blocking mode.", cerver->info->name->str);
-                        if (status) {
-                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                            free (status);
-                        }
-                        #endif
-                    }
-                } break;
-
-                case CERVER_HANDLER_TYPE_THREADS: break;
-
-                default: break;
+            if (!cerver_network_init_block_socket (cerver)) {
+                retval = cerver_network_init_address (cerver);
             }
-
-            retval = cerver_network_init_address (cerver);
         }
 
         else {
