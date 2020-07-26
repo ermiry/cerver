@@ -94,7 +94,7 @@ u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *con
 
     if (cerver && connection) {
         switch (cerver->type) {
-            case WEB_CERVER: break;
+            case CERVER_TYPE_WEB: break;
 
             default: {
                 packet_set_network_values (
@@ -1145,13 +1145,16 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             cerver->current_n_fds = 0;
 
             switch (cerver->type) {
-                case CUSTOM_CERVER: break;
-                case FILE_CERVER: break;
-                case GAME_CERVER: {
+                case CERVER_TYPE_CUSTOM: break;
+
+                case CERVER_TYPE_GAME: {
                     cerver->cerver_data = game_new ();
                     cerver->delete_cerver_data = game_delete;
                 } break;
-                case WEB_CERVER: break;
+                
+                case CERVER_TYPE_WEB: break;
+
+                case CERVER_TYPE_FILE: break;
                 
                 default: break;
             }
@@ -1370,7 +1373,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
         errors |= cerver_one_time_init_thpool (cerver);
 
         // if we have a game cerver, we might wanna load game data -> set by cerver admin
-        if (cerver->type == GAME_CERVER) {
+        if (cerver->type == CERVER_TYPE_GAME) {
             GameCerver *game_data = (GameCerver *) cerver->cerver_data;
             game_data->cerver = cerver;
             if (game_data && game_data->load_game_data) {
@@ -1789,7 +1792,8 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
             
             else {
                 switch (cerver->type) {
-                    case WEB_CERVER: break;
+                    case CERVER_TYPE_WEB: break;
+                    case CERVER_TYPE_FILE: break;
 
                     default: {
                         char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
@@ -1839,7 +1843,8 @@ static u8 cerver_app_error_handler_start (Cerver *cerver) {
 
         else {
             switch (cerver->type) {
-                case WEB_CERVER: break;
+                case CERVER_TYPE_WEB: break;
+                case CERVER_TYPE_FILE: break;
 
                 default: {
                     char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler",
@@ -2216,9 +2221,9 @@ static void cerver_clean (Cerver *cerver) {
 
     if (cerver) {
         switch (cerver->type) {
-            case CUSTOM_CERVER: break;
-            case FILE_CERVER: break;
-            case GAME_CERVER: {
+            case CERVER_TYPE_CUSTOM: break;
+
+            case CERVER_TYPE_GAME: {
                 if (cerver->cerver_data) {
                     GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
@@ -2235,7 +2240,10 @@ static void cerver_clean (Cerver *cerver) {
                     cerver->cerver_data = NULL;
                 }
             } break;
-            case WEB_CERVER: break;
+
+            case CERVER_TYPE_WEB: break;
+
+            case CERVER_TYPE_FILE: break;
 
             default: break;
         }
@@ -2529,17 +2537,18 @@ u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection
 
         // #ifdef CLIENT_DEBUG
         switch (cerver_report->type) {
-            case CUSTOM_CERVER:
+            case CERVER_TYPE_CUSTOM:
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: CUSTOM");
                 break;
-            case FILE_CERVER:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
+
+            case CERVER_TYPE_GAME:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
                 break;
-            case WEB_CERVER:
+            case CERVER_TYPE_WEB:
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: WEB");
                 break;
-            case GAME_CERVER:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
+             case CERVER_TYPE_FILE:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
                 break;
 
             default: 

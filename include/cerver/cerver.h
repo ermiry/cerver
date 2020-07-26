@@ -51,10 +51,13 @@ struct _Handler;
 
 typedef enum CerverType {
 
-    CUSTOM_CERVER = 0,
-    FILE_CERVER,
-    GAME_CERVER,
-    WEB_CERVER, 
+    CERVER_TYPE_NONE            = 0,
+
+    CERVER_TYPE_CUSTOM          = 1,
+
+    CERVER_TYPE_GAME            = 2,
+    CERVER_TYPE_WEB             = 3,
+    CERVER_TYPE_FILE            = 4,
 
 } CerverType;
 
