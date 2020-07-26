@@ -231,6 +231,8 @@ Cerver *cerver_new (void) {
     if (c) {
         memset (c, 0, sizeof (Cerver));
 
+        c->sock = -1;
+
         c->protocol = PROTOCOL_TCP;         // default protocol
         c->use_ipv6 = false;
         c->connection_queue = DEFAULT_CONNECTION_QUEUE;
@@ -1019,8 +1021,49 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 
 #pragma endregion
 
+// inits the cerver's address & binds the socket to it
+static u8 cerver_network_init_address (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
+
+    if (cerver->use_ipv6) {
+        struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &cerver->address;
+        addr->sin6_family = AF_INET6;
+        addr->sin6_addr = in6addr_any;
+        addr->sin6_port = htons (cerver->port);
+    } 
+
+    else {
+        struct sockaddr_in *addr = (struct sockaddr_in *) &cerver->address;
+        addr->sin_family = AF_INET;
+        addr->sin_addr.s_addr = INADDR_ANY;
+        addr->sin_port = htons (cerver->port);
+    }
+
+    if (!bind (cerver->sock, (const struct sockaddr *) &cerver->address, sizeof (struct sockaddr_storage))) {
+        retval = 0;       // success!!
+    }
+
+    else {
+        char *status = c_string_create ("Failed to bind cerver %s socket!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+            free (status);
+        }
+
+        close (cerver->sock);
+    }
+
+    return retval;
+
+}
+
 // inits the cerver networking capabilities
 static u8 cerver_network_init (Cerver *cerver) {
+
+    u8 retval = 1;
 
     if (cerver) {
         // init the cerver with the selected protocol
@@ -1028,87 +1071,75 @@ static u8 cerver_network_init (Cerver *cerver) {
             case IPPROTO_TCP: 
                 cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
                 break;
+                
             case IPPROTO_UDP:
                 cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                 break;
 
-            default: cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Unkonw protocol type!"); return 1;
-        }
-        
-        if (cerver->sock < 0) {
-            char *status = c_string_create ("Failed to create cerver %s socket!", cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-
-            return 1;
+            default: cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Unknown protocol type!"); break;
         }
 
-        #ifdef CERVER_DEBUG
-        char *status = c_string_create ("Created cerver %s socket!", cerver->info->name->str);
-        if (status) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-            free (status);
-        }
-        #endif
-
-        // set the socket to non blocking mode
-        if (!sock_set_blocking (cerver->sock, cerver->blocking)) {
-            char *status = c_string_create ("Failed to set cerver %s socket to non blocking mode!", cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-
-            close (cerver->sock);
-
-            return 1;
-        }
-
-        else {
-            cerver->blocking = false;
+        if (cerver->sock >= 0) {
             #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Cerver %s socket set to non blocking mode.", cerver->info->name->str);
+            char *status = c_string_create (
+                "Created cerver %s socket - <%d>!", 
+                cerver->info->name->str,
+                cerver->sock
+            );
+
             if (status) {
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
                 free (status);
             }
             #endif
+
+            switch (cerver->handler_type) {
+                case CERVER_HANDLER_TYPE_NONE: break;
+
+                case CERVER_HANDLER_TYPE_POLL: {
+                    // set the socket to non blocking mode
+                    if (!sock_set_blocking (cerver->sock, cerver->blocking)) {
+                        char *status = c_string_create ("Failed to set cerver %s socket to non blocking mode!", cerver->info->name->str);
+                        if (status) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                            free (status);
+                        }
+
+                        close (cerver->sock);
+
+                        return 1;
+                    }
+
+                    else {
+                        cerver->blocking = false;
+                        #ifdef CERVER_DEBUG
+                        char *status = c_string_create ("Cerver %s socket set to non blocking mode.", cerver->info->name->str);
+                        if (status) {
+                            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                            free (status);
+                        }
+                        #endif
+                    }
+                } break;
+
+                case CERVER_HANDLER_TYPE_THREADS: break;
+
+                default: break;
+            }
+
+            retval = cerver_network_init_address (cerver);
         }
-
-        memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
-
-        if (cerver->use_ipv6) {
-            struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &cerver->address;
-            addr->sin6_family = AF_INET6;
-            addr->sin6_addr = in6addr_any;
-            addr->sin6_port = htons (cerver->port);
-        } 
 
         else {
-            struct sockaddr_in *addr = (struct sockaddr_in *) &cerver->address;
-            addr->sin_family = AF_INET;
-            addr->sin_addr.s_addr = INADDR_ANY;
-            addr->sin_port = htons (cerver->port);
-        }
-
-        if ((bind (cerver->sock, (const struct sockaddr *) &cerver->address, sizeof (struct sockaddr_storage))) < 0) {
-            char *status = c_string_create ("Failed to bind cerver %s socket!", cerver->info->name->str);
+            char *status = c_string_create ("Failed to create cerver %s socket!", cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
                 free (status);
             }
-
-            close (cerver->sock);
-
-            return 1;
-        }  
-
-        return 0;       // success!!
+        }
     }
 
-    return 1; 
+    return retval; 
 
 }
 
