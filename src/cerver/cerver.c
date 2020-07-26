@@ -1354,44 +1354,60 @@ static u8 cerver_one_time_init (Cerver *cerver) {
     u8 errors = 0;
 
     if (cerver) {
-        // 29/05/2020
-        errors |= cerver_sockets_pool_init (cerver);
-
-        // 28/05/2020
-        cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-        pthread_mutex_init (cerver->poll_lock, NULL);
-
-        // init the cerver thpool
-        errors |= cerver_one_time_init_thpool (cerver);
-
-        // if we have a game cerver, we might wanna load game data -> set by cerver admin
-        if (cerver->type == CERVER_TYPE_GAME) {
-            GameCerver *game_data = (GameCerver *) cerver->cerver_data;
-            game_data->cerver = cerver;
-            if (game_data && game_data->load_game_data) {
-                game_data->load_game_data (NULL);
-            }
-
-            else {
-                char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
-                    cerver->info->name->str);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
-                    free (s);
-                }
-            } 
-        }
-
-        cerver->info->cerver_info_packet = cerver_packet_generate (cerver);
-        if (!cerver->info->cerver_info_packet) {
-            char *s = c_string_create ("Failed to generate cerver %s info packet", 
-                cerver->info->name->str);
+        if (!cerver_init (cerver)) {
+            char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
                 free (s);
             }
 
-            errors |= 1;
+            // 29/05/2020
+            errors |= cerver_sockets_pool_init (cerver);
+
+            // 28/05/2020
+            cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+            pthread_mutex_init (cerver->poll_lock, NULL);
+
+            // init the cerver thpool
+            errors |= cerver_one_time_init_thpool (cerver);
+
+            // if we have a game cerver, we might wanna load game data -> set by cerver admin
+            if (cerver->type == CERVER_TYPE_GAME) {
+                GameCerver *game_data = (GameCerver *) cerver->cerver_data;
+                game_data->cerver = cerver;
+                if (game_data && game_data->load_game_data) {
+                    game_data->load_game_data (NULL);
+                }
+
+                else {
+                    char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
+                        free (s);
+                    }
+                } 
+            }
+
+            cerver->info->cerver_info_packet = cerver_packet_generate (cerver);
+            if (!cerver->info->cerver_info_packet) {
+                char *s = c_string_create ("Failed to generate cerver %s info packet", 
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    free (s);
+                }
+
+                errors |= 1;
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                free (s);
+            }
         }
     }
 
