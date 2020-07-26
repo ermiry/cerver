@@ -1071,7 +1071,7 @@ static u8 cerver_network_init (Cerver *cerver) {
             case IPPROTO_TCP: 
                 cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
                 break;
-                
+
             case IPPROTO_UDP:
                 cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                 break;
@@ -1276,15 +1276,20 @@ Cerver *cerver_create (const CerverType type, const char *name,
         cerver = cerver_new ();
         if (cerver) {
             cerver->type = type;
-            cerver->info = cerver_info_new ();
-            cerver->info->name = estring_new (name);
-            cerver->stats = cerver_stats_new ();
 
             cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);
+
+            cerver->handler_type = CERVER_HANDLER_TYPE_POLL;
+            
             cerver_set_poll_time_out (cerver, poll_timeout);
 
             cerver->events = dlist_init (cerver_event_delete, NULL);
             cerver->errors = dlist_init (cerver_error_event_delete, NULL);
+
+            cerver->info = cerver_info_new ();
+            cerver->info->name = estring_new (name);
+
+            cerver->stats = cerver_stats_new ();
         }
     }
 

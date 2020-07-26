@@ -131,6 +131,8 @@ extern void cerver_stats_print (struct _Cerver *cerver);
 // this is the generic cerver struct, used to create different server types
 struct _Cerver {
 
+    CerverType type;
+
     i32 sock;                           // server socket
     struct sockaddr_storage address;
 
@@ -143,7 +145,6 @@ struct _Cerver {
     bool isRunning;                     // the server is recieving and/or sending packetss
     bool blocking;                      // sokcet fd is blocking?
 
-    CerverType type;
     void *cerver_data;
     Action delete_cerver_data;
 
