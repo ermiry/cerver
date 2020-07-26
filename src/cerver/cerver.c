@@ -1642,133 +1642,6 @@ static u8 cerver_start_inactive (Cerver *cerver) {
 
 }
 
-CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
-
-    CerverUpdate *cu = (CerverUpdate *) malloc (sizeof (CerverUpdate));
-    if (cu) {
-        cu->cerver = cerver;
-        cu->args = args;
-    }
-
-    return cu;
-
-}
-
-void cerver_update_delete (void *cerver_update_ptr) {
-
-    if (cerver_update_ptr) free (cerver_update_ptr);
-
-}
-
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
-// executes methods every tick
-static void cerver_update (void *args) {
-
-    if (args) {
-        Cerver *cerver = (Cerver *) args;
-        
-        #ifdef CERVER_DEBUG
-        char *s = c_string_create ("Cerver's %s cerver_update () has started!",
-            cerver->info->name->str);
-        if (s) {
-            cerver_log_success (s);
-            free (s);
-        }
-        #endif
-
-        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_args);
-
-        u32 time_per_frame = 1000000 / cerver->update_ticks;
-        // printf ("time per frame: %d\n", time_per_frame);
-        u32 temp = 0;
-        i32 sleep_time = 0;
-        u64 delta_time = 0;
-
-        u64 delta_ticks = 0;
-        u32 fps = 0;
-        struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
-
-        while (cerver->isRunning) {
-            clock_gettime (CLOCK_MONOTONIC_RAW, &start);
-
-            // do stuff
-            if (cerver->update) cerver->update (cu);
-
-            // limit the fps
-            clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
-            temp = (middle.tv_nsec - start.tv_nsec) / 1000;
-            // printf ("temp: %d\n", temp);
-            sleep_time = time_per_frame - temp;
-            // printf ("sleep time: %d\n", sleep_time);
-            if (sleep_time > 0) {
-                usleep (sleep_time);
-            } 
-
-            // count fps
-            clock_gettime (CLOCK_MONOTONIC_RAW, &end);
-            delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
-            delta_ticks += delta_time;
-            fps++;
-            // printf ("delta ticks: %ld\n", delta_ticks);
-            if (delta_ticks >= 1000) {
-                // printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
-                delta_ticks = 0;
-                fps = 0;
-            }
-        }
-
-        cerver_update_delete (cu);
-
-        #ifdef CERVER_DEBUG
-        s = c_string_create ("Cerver's %s cerver_update () has ended!",
-            cerver->info->name->str);
-        if (s) {
-            cerver_log_success (s);
-            free (s);
-        }
-        #endif
-    }
-
-}
-
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
-// executes methods every x seconds
-static void cerver_update_interval (void *args) {
-
-    if (args) {
-        Cerver *cerver = (Cerver *) args;
-        
-        #ifdef CERVER_DEBUG
-        char *s = c_string_create ("Cerver's %s cerver_update_interval () has started!",
-            cerver->info->name->str);
-        if (s) {
-            cerver_log_success (s);
-            free (s);
-        }
-        #endif
-
-        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
-
-        while (cerver->isRunning) {
-            if (cerver->update_interval) cerver->update_interval (cu);
-
-            sleep (cerver->update_interval_secs);
-        }
-
-        cerver_update_delete (cu);
-
-        #ifdef CERVER_DEBUG
-        s = c_string_create ("Cerver's %s cerver_update_interval () has ended!",
-            cerver->info->name->str);
-        if (s) {
-            cerver_log_success (s);
-            free (s);
-        }
-        #endif
-    }
-
-}
-
 // 11/05/2020 -- start cerver's multiple app handlers
 static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
 
@@ -2199,6 +2072,137 @@ u8 cerver_start (Cerver *cerver) {
     }
 
     return retval;
+
+}
+
+#pragma endregion
+
+#pragma region update
+
+CerverUpdate *cerver_update_new (Cerver *cerver, void *args) {
+
+    CerverUpdate *cu = (CerverUpdate *) malloc (sizeof (CerverUpdate));
+    if (cu) {
+        cu->cerver = cerver;
+        cu->args = args;
+    }
+
+    return cu;
+
+}
+
+void cerver_update_delete (void *cerver_update_ptr) {
+
+    if (cerver_update_ptr) free (cerver_update_ptr);
+
+}
+
+// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// executes methods every tick
+static void cerver_update (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+        
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Cerver's %s cerver_update () has started!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_args);
+
+        u32 time_per_frame = 1000000 / cerver->update_ticks;
+        // printf ("time per frame: %d\n", time_per_frame);
+        u32 temp = 0;
+        i32 sleep_time = 0;
+        u64 delta_time = 0;
+
+        u64 delta_ticks = 0;
+        u32 fps = 0;
+        struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
+
+        while (cerver->isRunning) {
+            clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+
+            // do stuff
+            if (cerver->update) cerver->update (cu);
+
+            // limit the fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+            temp = (middle.tv_nsec - start.tv_nsec) / 1000;
+            // printf ("temp: %d\n", temp);
+            sleep_time = time_per_frame - temp;
+            // printf ("sleep time: %d\n", sleep_time);
+            if (sleep_time > 0) {
+                usleep (sleep_time);
+            } 
+
+            // count fps
+            clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+            delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
+            delta_ticks += delta_time;
+            fps++;
+            // printf ("delta ticks: %ld\n", delta_ticks);
+            if (delta_ticks >= 1000) {
+                // printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+                delta_ticks = 0;
+                fps = 0;
+            }
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Cerver's %s cerver_update () has ended!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
+
+}
+
+// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// executes methods every x seconds
+static void cerver_update_interval (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+        
+        #ifdef CERVER_DEBUG
+        char *s = c_string_create ("Cerver's %s cerver_update_interval () has started!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+
+        CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+
+        while (cerver->isRunning) {
+            if (cerver->update_interval) cerver->update_interval (cu);
+
+            sleep (cerver->update_interval_secs);
+        }
+
+        cerver_update_delete (cu);
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Cerver's %s cerver_update_interval () has ended!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_success (s);
+            free (s);
+        }
+        #endif
+    }
 
 }
 
