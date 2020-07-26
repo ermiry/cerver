@@ -5,7 +5,7 @@
 
 #include <sys/stat.h>
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/utils/json.h"
 

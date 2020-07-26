@@ -16,17 +16,31 @@ static inline void char_copy (char *to, char *from) {
 estring *estring_new (const char *str) {
 
     estring *s = (estring *) malloc (sizeof (estring));
-    if (str) {
-        memset (s, 0, sizeof (estring));
-
+    if (s) {
         if (str) {
             s->len = strlen (str);
             s->str = (char *) calloc (s->len + 1, sizeof (char));
-            char_copy (s->str, (char *) str);
+            if (s->str) char_copy (s->str, (char *) str);
         }
+
+        else {
+			s->len = 0;
+			s->str = NULL;
+		}
     }
 
     return s;
+
+}
+
+void estring_delete (void *str_ptr) {
+
+    if (str_ptr) {
+        estring *str = (estring *) str_ptr;
+
+        if (str->str) free (str->str);
+        free (str);
+    }
 
 }
 
@@ -59,59 +73,6 @@ estring *estring_create (const char *format, ...) {
 
 }
 
-void estring_delete (void *str_ptr) {
-
-    if (str_ptr) {
-        estring *str = (estring *) str_ptr;
-
-        if (str->str) free (str->str);
-        free (str);
-    }
-
-}
-
-void estring_copy (estring *to, estring *from) {
-
-    if (to && from) {
-        while (*from->str)
-            *to->str++ = *from->str++;
-
-        *to->str = '\0';
-        to->len = from->len;
-    }
-
-}
-
-estring *estring_concat (estring *s1, estring *s2) {
-
-    if (s1 && s2) {
-        estring *des = estring_new (NULL);
-        des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
-
-        while (*s1->str) *des->str++ = *s1->str++;
-        while (*s2->str) *des->str++ = *s2->str++;
-
-        *des->str = '\0';
-
-        des->len = s1->len + s2->len;
-    }
-
-    return NULL;
-
-}
-
-void estring_to_upper (estring *str) {
-
-    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
-
-}
-
-void estring_to_lower (estring *str) {
-
-    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
-
-}
-
 int estring_compare (const estring *s1, const estring *s2) { 
 
     if (s1 && s2) return strcmp (s1->str, s2->str); 
@@ -130,13 +91,102 @@ int estring_comparator (const void *a, const void *b) {
 
 }
 
+void estring_copy (estring *to, estring *from) {
+
+    if (to && from) {
+        while (*from->str)
+            *to->str++ = *from->str++;
+
+        *to->str = '\0';
+        to->len = from->len;
+    }
+
+}
+
+void estring_replace (estring *old, const char *str) {
+
+    if (old && str) {
+        if (old->str) free (old->str);
+        old->len = strlen (str);
+        old->str = (char *) calloc (old->len + 1, sizeof (char));
+		if (old->str) char_copy (old->str, (char *) str);
+    }
+
+}
+
+estring *estring_concat (estring *s1, estring *s2) {
+
+    estring *des = NULL;
+
+    if (s1 && s2) {
+        des = estring_new (NULL);
+        des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
+
+        while (*s1->str) *des->str++ = *s1->str++;
+        while (*s2->str) *des->str++ = *s2->str++;
+
+        *des->str = '\0';
+
+        des->len = s1->len + s2->len;
+    }
+
+    return des;
+
+}
+
+// appends a char to the end of the string
+// reallocates the same string
+void estring_append_char (estring *s, const char c) {
+
+    if (s) {
+        unsigned int new_len = s->len + 1;   
+
+        s->str = (char *) realloc (s->str, new_len);
+        if (s->str) {
+            char *des = s->str + (s->len);
+            *des = c;
+            s->len = new_len;
+        }
+    }
+
+}
+
+// appends a c string at the end of the string
+// reallocates the same string
+void estring_append_c_string (estring *s, const char *c_str) {
+
+    if (s && c_str) {
+        unsigned int new_len = s->len + strlen (c_str);
+
+        s->str = (char *) realloc (s->str, new_len);
+        if (s->str) {
+            char *des = s->str + (s->len);
+            char_copy (des, (char *) c_str);
+            s->len = new_len;
+        }
+    }
+
+}
+
+void estring_to_upper (estring *str) {
+
+    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
+
+}
+
+void estring_to_lower (estring *str) {
+
+    if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
+
+}
+
 char **estring_split (estring *str, const char delim, int *n_tokens) {
 
-    char **result = 0;
+    char **result = NULL;
     size_t count = 0;
     char *temp = str->str;
-    char *last = 0;
-    char dlm[2];
+    char *last = NULL;
+    char dlm[2] = { 0 };
     dlm[0] = delim;
     dlm[1] = 0;
 
@@ -183,6 +233,23 @@ void estring_remove_char (estring *str, char garbage) {
         if (*dst != garbage) dst++;
     }
     *dst = '\0';
+
+}
+
+// removes the last char from a string
+void estring_remove_last_char (estring *s) {
+
+    if (s) {
+        if (s->len > 0) {
+            unsigned int new_len = s->len - 1;
+
+            s->str = (char *) realloc (s->str, s->len);
+            if (s->str) {
+                s->str[s->len - 1] = '\0';
+                s->len = new_len;
+            }
+        }
+    }
 
 }
 

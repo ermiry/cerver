@@ -176,18 +176,14 @@ static void app_packet_handler (void *data) {
 		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
-			if (packet->data_size >= sizeof (RequestData)) {
-				RequestData *req = (RequestData *) (packet->data);
+			switch (packet->header->request_type) {
+				case TEST_MSG: handle_test_request (packet); break;
 
-				switch (req->type) {
-					case TEST_MSG: handle_test_request (packet); break;
+				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
-					case GET_MSG: handle_msg_request(packet, app_data->message); break;
-
-					default: 
-						cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-						break;
-				}
+				default: 
+					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					break;
 			}
 		}
 	}
@@ -210,6 +206,8 @@ int main (void) {
 
 	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
+		cerver_set_welcome_msg (my_cerver, "Welcome - Requests Example");
+
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);

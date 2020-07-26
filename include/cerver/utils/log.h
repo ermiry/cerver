@@ -3,15 +3,15 @@
 
 #include <stdio.h>
 
-#define COLOR_RED       "\x1b[31m"
-#define COLOR_GREEN     "\x1b[32m"
-#define COLOR_YELLOW    "\x1b[33m"
-#define COLOR_BLUE      "\x1b[34m"
-#define COLOR_MAGENTA   "\x1b[35m"
-#define COLOR_CYAN      "\x1b[36m"
-#define COLOR_RESET     "\x1b[0m"
+#define LOG_COLOR_RED       "\x1b[31m"
+#define LOG_COLOR_GREEN     "\x1b[32m"
+#define LOG_COLOR_YELLOW    "\x1b[33m"
+#define LOG_COLOR_BLUE      "\x1b[34m"
+#define LOG_COLOR_MAGENTA   "\x1b[35m"
+#define LOG_COLOR_CYAN      "\x1b[36m"
+#define LOG_COLOR_RESET     "\x1b[0m"
 
-typedef enum LogMsgType {
+typedef enum LogType {
 
 	LOG_NO_TYPE             = 0,
 
@@ -21,18 +21,21 @@ typedef enum LogMsgType {
 	LOG_DEBUG               = 4,
 	LOG_TEST                = 5,
 
-	LOG_CERVER,
-	LOG_CLIENT,
+	LOG_CERVER				= 6,
+	LOG_CLIENT				= 7,
 
-	LOG_REQ,
-	LOG_PACKET,
-	LOG_FILE,
-	LOG_GAME,
-	LOG_PLAYER,
+	LOG_REQ					= 8,
+	LOG_PACKET				= 9,
+	LOG_FILE				= 10,
+	LOG_GAME				= 11,
+	LOG_PLAYER				= 12,
 
-} LogMsgType;
+	LOG_HANDLER				= 13,
+	LOG_ADMIN				= 14
 
-extern void cerver_log_msg (FILE *__restrict __stream, LogMsgType firstType, LogMsgType secondType,
+} LogType;
+
+extern void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType second_type,
 	const char *msg);
 
 // prints a red error message to stderr

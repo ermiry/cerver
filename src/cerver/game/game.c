@@ -6,7 +6,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
@@ -235,9 +235,9 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 static void game_lobby_create (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (SStringS)) {
+        if (packet->data_size >= sizeof (SStringS)) {
             char *end = (char *) packet->data;
-            SStringS *stype = (SStringS *) (end += sizeof (RequestData));
+            SStringS *stype = (SStringS *) end;
 
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Client %ld requested to create a new lobby in cerver %s of type: %s",
@@ -285,7 +285,7 @@ static void game_lobby_create (Packet *packet) {
                     }
                     #endif
                     // send error packet to client
-                    Packet *error_packet = error_packet_generate (ERR_CREATE_LOBBY, "Cerver error while creating lobby!");
+                    Packet *error_packet = error_packet_generate (CERVER_ERROR_CREATE_LOBBY, "Cerver error while creating lobby!");
                     if (error_packet) {
                         packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                         packet_send (error_packet, 0, NULL, false);
@@ -304,7 +304,7 @@ static void game_lobby_create (Packet *packet) {
                     free (s);
                 }
                 #endif
-                Packet *error_packet = error_packet_generate (ERR_CREATE_LOBBY, "Bad game type!");
+                Packet *error_packet = error_packet_generate (CERVER_ERROR_CREATE_LOBBY, "Bad game type!");
                 if (error_packet) {
                     packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                     packet_send (error_packet, 0, NULL, false);
@@ -319,7 +319,7 @@ static void game_lobby_create (Packet *packet) {
                 "Failed to retreive game type to create lobby!");
             #endif
             // send error packet back to client
-            Packet *error_packet = error_packet_generate (ERR_CREATE_LOBBY, "No game type provided!");
+            Packet *error_packet = error_packet_generate (CERVER_ERROR_CREATE_LOBBY, "No game type provided!");
             if (error_packet) {
                 packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                 packet_send (error_packet, 0, NULL, false);
@@ -391,7 +391,7 @@ static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
                         free (s);
                     }
                     // #endif
-                    Packet *error_packet = error_packet_generate (ERR_JOIN_LOBBY, "Failed to join lobby!");
+                    Packet *error_packet = error_packet_generate (CERVER_ERROR_JOIN_LOBBY, "Failed to join lobby!");
                     if (error_packet) {
                         packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                         packet_send (error_packet, 0, NULL, false);
@@ -409,7 +409,7 @@ static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
                     free (s);
                 }
 
-                Packet *error_packet = error_packet_generate (ERR_JOIN_LOBBY, "Failed to join lobby!");
+                Packet *error_packet = error_packet_generate (CERVER_ERROR_JOIN_LOBBY, "Failed to join lobby!");
                 if (error_packet) {
                     packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                     packet_send (error_packet, 0, NULL, false);
@@ -428,7 +428,7 @@ static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
                 free (s);
             }
             #endif
-            Packet *error_packet = error_packet_generate (ERR_JOIN_LOBBY, "Not lobby found with id!");
+            Packet *error_packet = error_packet_generate (CERVER_ERROR_JOIN_LOBBY, "Not lobby found with id!");
             if (error_packet) {
                 packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                 packet_send (error_packet, 0, NULL, false);
@@ -461,9 +461,8 @@ static void game_lobby_join_search (Packet *packet, LobbyJoin *lj) {
 static void game_lobby_join (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (LobbyJoin)) {
+        if (packet->data_size >= sizeof (LobbyJoin)) {
             char *end = (char *) packet->data;
-            end += sizeof (RequestData);
             LobbyJoin *lj = (LobbyJoin *) end;
 
             // check if we have to search a lobby for the player
@@ -478,7 +477,7 @@ static void game_lobby_join (Packet *packet) {
                 "Failed to retreive info to join lobby!");
             #endif
             // send error packet back to client
-            Packet *error_packet = error_packet_generate (ERR_JOIN_LOBBY, "Failed to get lobby!");
+            Packet *error_packet = error_packet_generate (CERVER_ERROR_JOIN_LOBBY, "Failed to get lobby!");
             if (error_packet) {
                 packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                 packet_send (error_packet, 0, NULL, false);
@@ -508,9 +507,8 @@ static void game_lobby_init (Packet *packet) {
 static void game_lobby_start (Packet *packet) {
 
     if (packet) {
-        if (packet->data_size >= sizeof (RequestData) + sizeof (SStringS)) {
+        if (packet->data_size >= sizeof (SStringS)) {
             char *end = (char *) packet->data;
-            end += sizeof (RequestData);
             SStringS *lobby_id = (SStringS *) end;
 
             #ifdef CERVER_DEBUG
@@ -555,7 +553,7 @@ static void game_lobby_start (Packet *packet) {
                             free (s);
                         }
                         #endif
-                        Packet *error_packet = error_packet_generate (ERR_GAME_START, 
+                        Packet *error_packet = error_packet_generate (CERVER_ERROR_GAME_START, 
                             "Failed to start game in lobby!");
                         if (error_packet) {
                             packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
@@ -575,7 +573,7 @@ static void game_lobby_start (Packet *packet) {
                         free (s);
                     }
                     #endif
-                    Packet *error_packet = error_packet_generate (ERR_GAME_START, "You are not the lobby owner!");
+                    Packet *error_packet = error_packet_generate (CERVER_ERROR_GAME_START, "You are not the lobby owner!");
                     if (error_packet) {
                         packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                         packet_send (error_packet, 0, NULL, false);
@@ -594,7 +592,7 @@ static void game_lobby_start (Packet *packet) {
                     free (s);
                 }
                 #endif
-                Packet *error_packet = error_packet_generate (ERR_GAME_START, "Not lobby found with id!");
+                Packet *error_packet = error_packet_generate (CERVER_ERROR_GAME_START, "Not lobby found with id!");
                 if (error_packet) {
                     packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                     packet_send (error_packet, 0, NULL, false);
@@ -605,7 +603,7 @@ static void game_lobby_start (Packet *packet) {
 
         else {
             cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, "Failed to retreive info to start lobby!");
-            Packet *error_packet = error_packet_generate (ERR_GAME_START, "Failed to get lobby!");
+            Packet *error_packet = error_packet_generate (CERVER_ERROR_GAME_START, "Failed to get lobby!");
             if (error_packet) {
                 packet_set_network_values (error_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
                 packet_send (error_packet, 0, NULL, false);
@@ -620,9 +618,8 @@ static void game_lobby_start (Packet *packet) {
 void game_packet_handler (Packet *packet) {
 
     if (packet) {
-        if (packet->data && (packet->data_size >= sizeof (RequestData))) {
-            RequestData *req = (RequestData *) (packet->data);
-            switch (req->type) {
+        if (packet->header) {
+            switch (packet->header->request_type) {
                 case GAME_LOBBY_CREATE: game_lobby_create (packet); break;
                 case GAME_LOBBY_JOIN: game_lobby_join (packet); break;
                 case GAME_LOBBY_LEAVE: game_lobby_leave (packet); break;

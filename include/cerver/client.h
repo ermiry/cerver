@@ -8,7 +8,7 @@
 #include "cerver/types/estring.h"
 
 #include "cerver/collections/avl.h"
-#include "cerver/collections/dllist.h"
+#include "cerver/collections/dlist.h"
 
 #include "cerver/network.h"
 #include "cerver/cerver.h"
@@ -74,8 +74,8 @@ struct _Client {
     u64 uptime;
 
     // 16/06/2020 - custom packet handlers
-    volatile unsigned int num_handlers_alive;       // handlers currently alive
-    volatile unsigned int num_handlers_working;     // handlers currently working
+    unsigned int num_handlers_alive;       // handlers currently alive
+    unsigned int num_handlers_working;     // handlers currently working
     pthread_mutex_t *handlers_lock;
     struct _Handler *app_packet_handler;
     struct _Handler *app_error_packet_handler;
@@ -142,6 +142,9 @@ extern int client_comparator_session_id (const void *a, const void *b);
 // returns 0 on success, 1 on error
 extern u8 client_disconnect (Client *client);
 
+// the client got disconnected from the cerver, so correctly clear our data
+extern void client_got_disconnected (Client *client);
+
 // drops a client form the cerver
 // unregisters the client from the cerver and the deletes him
 extern void client_drop (struct _Cerver *cerver, Client *client);
@@ -149,15 +152,20 @@ extern void client_drop (struct _Cerver *cerver, Client *client);
 // adds a new connection to the end of the client to the client's connection list
 // without adding it to any other structure
 // returns 0 on success, 1 on error
-extern u8 client_add_connection (Client *client, Connection *connection);
+extern u8 client_connection_add (Client *client, struct _Connection *connection);
 
 // removes the connection from the client
-// and also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
-extern u8 client_remove_connection (struct _Cerver *cerver, Client *client, struct _Connection *connection);
+extern u8 client_connection_remove (Client *client, struct _Connection *connection);
 
-// removes the connection from the client referred to by the sock fd
-// and also checks if there is another active connection in the client, if not it will be dropped
+// closes the connection & then removes it from the client & finally deletes the connection
+// moves the socket to the cerver's socket pool
+// returns 0 on success, 1 on error
+extern u8 client_connection_drop (struct _Cerver *cerver, Client *client, struct _Connection *connection);
+
+// removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
+// and also remove the client & connection from the cerver's structures when needed
+// also checks if there is another active connection in the client, if not it will be dropped
 // returns 0 on success, 1 on error
 extern u8 client_remove_connection_by_sock_fd (struct _Cerver *cerver, Client *client, i32 sock_fd);
 
@@ -193,7 +201,7 @@ extern Client *client_get_by_sock_fd (struct _Cerver *cerver, i32 sock_fd);
 
 // searches the avl tree to get the client associated with the session id
 // the cerver must support sessions
-extern Client *client_get_by_session_id (struct _Cerver *cerver, char *session_id);
+extern Client *client_get_by_session_id (struct _Cerver *cerver, const char *session_id);
 
 // broadcast a packet to all clients inside an avl structure
 extern void client_broadcast_to_all_avl (AVLNode *node, struct _Cerver *cerver, 
@@ -237,7 +245,6 @@ extern unsigned int client_connect_to_cerver (Client *client, struct _Connection
 // connects a client to the host with the specified values in the connection
 // it can be a cerver or not
 // this is NOT a blocking method, a new thread will be created to wait for a connection to be established
-// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 on success connection thread creation, 1 on error
 extern unsigned int client_connect_async (Client *client, struct _Connection *connection);
@@ -245,7 +252,7 @@ extern unsigned int client_connect_async (Client *client, struct _Connection *co
 /*** requests ***/
 
 // when a client is already connected to the cerver, a request can be made to the cerver
-// and the result will be returned
+// the response will be handled by the client's handlers
 // this is a blocking method, as it will wait until a complete cerver response has been received
 // the response will be handled using the client's packet handler
 // this method only works if your response consists only of one packet
@@ -254,8 +261,8 @@ extern unsigned int client_connect_async (Client *client, struct _Connection *co
 extern unsigned int client_request_to_cerver (Client *client, struct _Connection *connection, struct _Packet *request);
 
 // when a client is already connected to the cerver, a request can be made to the cerver
-// the result will be placed inside the connection
-// this method will NOT block, instead EVENT_CONNECTION_DATA will be triggered
+// the response will be handled by the client's handlers
+// this method will NOT block
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // returns 0 on success request, 1 on error
@@ -285,9 +292,9 @@ extern u8 client_connect_and_start_async (Client *client, struct _Connection *co
 // terminates the connection & closes the socket
 // but does NOT destroy the current connection
 // returns 0 on success, 1 on error
-extern int client_connection_close (Client *client, Connection *connection);
+extern int client_connection_close (Client *client, struct _Connection *connection);
 
-// terminates and destroy a connection registered to a client
+// terminates and destroys a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error
 extern int client_connection_end (Client *client, struct _Connection *connection);

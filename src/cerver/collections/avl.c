@@ -422,7 +422,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 				}
 				
 				else {
-					void *data = data = (*parent)->id;
+					void *data = (*parent)->id;
 
 					if ((*parent)->left != NULL) {
 						AVLNode *p = (*parent)->left;

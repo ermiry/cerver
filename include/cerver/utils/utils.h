@@ -34,16 +34,17 @@ extern char *itoa (int i, char *b);
 
 /*** c strings ***/
 
+// copies a c string into another one previuosly allocated
+extern void c_string_copy (char *to, const char *from);
+
 // creates a new c string with the desired format, as in printf
 extern char *c_string_create (const char *format, ...);
 
 // splits a c string into tokens based on a delimiter
 extern char **c_string_split (char *string, const char delim, int *n_tokens);
 
-// copies a c string into another one previuosly allocated
-extern void c_string_copy (char *to, const char *from);
-
-// reverses a c string
+// revers a c string
+// returns a newly allocated c string
 extern char *c_string_reverse (char *str);
 
 // removes all ocurrances of a char from a string

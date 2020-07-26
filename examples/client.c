@@ -75,17 +75,14 @@ static void cerver_app_handler_direct (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
 
-			switch (req->type) {
-				case TEST_MSG: cerver_handle_test_request (packet); break;
+		switch (packet->header->request_type) {
+            case TEST_MSG: cerver_handle_test_request (packet); break;
 
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
-		}
+            default: 
+                cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+                break;
+        }
 	}
 
 }
@@ -99,24 +96,19 @@ static void client_app_handler_direct (void *packet_ptr) {
 	if (packet_ptr) {
         Packet *packet = (Packet *) packet_ptr;
         if (packet) {
-            if (packet->data_size >= sizeof (RequestData)) {
-                RequestData *req = (RequestData *) (packet->data);
+            switch (packet->header->request_type) {
+                case TEST_MSG: cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from cerver!"); break;
 
-                switch (req->type) {
-                    case TEST_MSG: cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from cerver!"); break;
+                case GET_MSG: {
+                    char *end = (char *) packet->data;
 
-                    case GET_MSG: {
-                        char *end = (char *) packet->data;
-                        end += sizeof (RequestData);
+                    AppMessage *app_message = (AppMessage *) end;
+                    printf ("%s - %d\n", app_message->message, app_message->len);
+                } break;
 
-                        AppMessage *app_message = (AppMessage *) end;
-                        printf ("%s - %d\n", app_message->message, app_message->len);
-                    } break;
-
-                    default: 
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Got an unknown app request.");
-                        break;
-                }
+                default: 
+                    cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Got an unknown app request.");
+                    break;
             }
         }
     }
@@ -130,19 +122,15 @@ static void client_app_handler (void *data) {
 
         // AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
-		if (packet->data_size >= sizeof (RequestData)) {
-			RequestData *req = (RequestData *) (packet->data);
+        switch (packet->header->request_type) {
+            case TEST_MSG: {
+                cerver_log_debug ("Got a test message from cerver!");
+            } break;
 
-			switch (req->type) {
-				case TEST_MSG: {
-                    cerver_log_debug ("Got a test message from cerver!");
-                } break;
-
-				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
-					break;
-			}
-		}
+            default: 
+                cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+                break;
+        }
 	}
 
 }
@@ -177,21 +165,16 @@ static int request_message (Client *client, Connection *connection) {
     // manually create a packet to send
     Packet *packet = packet_new ();
     if (packet) {
-        size_t packet_len = sizeof (PacketHeader) + sizeof (RequestData);
+        size_t packet_len = sizeof (PacketHeader);
         packet->packet = malloc (packet_len);
         packet->packet_size = packet_len;
 
         char *end = (char *) packet->packet;
         PacketHeader *header = (PacketHeader *) end;
-        header->protocol_id = packets_get_protocol_id ();
-        header->protocol_version = packets_get_protocol_version ();
         header->packet_type = APP_PACKET;
         header->packet_size = packet_len;
         header->handler_id = 0;
-
-        end += sizeof (PacketHeader);
-        RequestData *req_data = (RequestData *) end;
-        req_data->type = GET_MSG;
+        header->request_type = GET_MSG;
 
         printf ("Requesting to cerver...\n");
         if (client_request_to_cerver (client, connection, packet)) {
@@ -351,6 +334,8 @@ int main (void) {
 
 	client_cerver = cerver_create (CUSTOM_CERVER, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
+        cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Example");
+
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
