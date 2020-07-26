@@ -1254,25 +1254,6 @@ Cerver *cerver_create (const CerverType type, const char *name,
 
             cerver->events = dlist_init (cerver_event_delete, NULL);
             cerver->errors = dlist_init (cerver_error_event_delete, NULL);
-
-            if (!cerver_init (cerver)) {
-                char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, s);
-                    free (s);
-                }
-            }
-
-            else {
-                char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
-                if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                    free (s);
-                }
-
-                cerver_teardown (cerver);
-                cerver = NULL;
-            }
         }
     }
 
