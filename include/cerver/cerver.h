@@ -61,14 +61,23 @@ typedef enum CerverType {
 
 } CerverType;
 
+typedef enum CerverHandlerType {
+
+    CERVER_HANDLER_TYPE_NONE            = 0,
+
+    CERVER_HANDLER_TYPE_POLL            = 1, // handle connections using a single thread & poll ()
+    CERVER_HANDLER_TYPE_THREADS         = 2, // handle each new connection in a dedicated thread
+
+} CerverHandlerType;
+
 typedef struct CerverInfo {
 
     estring *name;
-    estring *welcome_msg;                            // this msg is sent to the client when it first connects
-    struct _Packet *cerver_info_packet;             // useful info that we can send to clients
+    estring *welcome_msg;                  // this msg is sent to the client when it first connects
+    struct _Packet *cerver_info_packet;    // useful info that we can send to clients
 
-    time_t time_started;                            // the actual time the cerver was started
-    u64 uptime;                                     // the seconds the cerver has been up
+    time_t time_started;                   // the actual time the cerver was started
+    u64 uptime;                            // the seconds the cerver has been up
 
 } CerverInfo;
 
@@ -157,6 +166,8 @@ struct _Cerver {
     u32 max_inactive_time;              // max secs allowed for a client to be inactive
     u32 check_inactive_interval;        // how often to check for inactive clients
     pthread_t inactive_thread_id;
+
+    CerverHandlerType handler_type;
 
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
@@ -274,6 +285,11 @@ extern void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
 extern void cerver_set_inactive_clients (Cerver *cerver, 
     u32 max_inactive_time, u32 check_inactive_interval);
+
+// sets the cerver handler type
+// the default type is to handle connections using the poll () which requires only one thread
+// if threads type is selected, a new thread will be created for each new connection
+extern void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type);
 
 // sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);

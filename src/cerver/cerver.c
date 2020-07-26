@@ -253,6 +253,8 @@ Cerver *cerver_new (void) {
 
         c->inactive_clients = false;
 
+        c->handler_type = CERVER_HANDLER_TYPE_NONE;
+
         c->fds = NULL;
         c->poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->poll_lock = NULL;
@@ -444,6 +446,15 @@ void cerver_set_inactive_clients (Cerver *cerver, u32 max_inactive_time, u32 che
         cerver->max_inactive_time = max_inactive_time ? max_inactive_time : DEFAULT_MAX_INACTIVE_TIME;
         cerver->check_inactive_interval = check_inactive_interval ? check_inactive_interval : DEFAULT_CHECK_INACTIVE_INTERVAL;
     }
+
+}
+
+// sets the cerver handler type
+// the default type is to handle connections using the poll () which requires only one thread
+// if threads type is selected, a new thread will be created for each new connection
+void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type) {
+
+    if (cerver) cerver->handler_type = handler_type;
 
 }
 
