@@ -247,7 +247,7 @@ static void on_client_success_auth (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"Client %ld authenticated connection with sock fd %d to cerver %s!\n\n",
+			"Client %ld authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
@@ -268,7 +268,7 @@ static void on_client_failed_auth (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"Client failed to authenticate connection with sock fd %d to cerver %s!\n\n",
+			"Client failed to authenticate connection with sock fd %d to cerver %s!\n",
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
