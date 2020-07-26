@@ -1021,6 +1021,93 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region create
+
+// returns a new cerver with the specified parameters
+Cerver *cerver_create (const CerverType type, const char *name, 
+    const u16 port, const Protocol protocol, bool use_ipv6,
+    u16 connection_queue, u32 poll_timeout) {
+
+    Cerver *cerver = NULL;
+
+    if (name) {
+        cerver = cerver_new ();
+        if (cerver) {
+            cerver->type = type;
+
+            cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);
+
+            cerver->handler_type = CERVER_HANDLER_TYPE_POLL;
+            
+            cerver_set_poll_time_out (cerver, poll_timeout);
+
+            cerver->events = dlist_init (cerver_event_delete, NULL);
+            cerver->errors = dlist_init (cerver_error_event_delete, NULL);
+
+            cerver->info = cerver_info_new ();
+            cerver->info->name = estring_new (name);
+
+            cerver->stats = cerver_stats_new ();
+        }
+    }
+
+    else {
+        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+            "A name is required to create a new cerver!");
+    } 
+
+    return cerver;
+
+}
+
+#pragma endregion
+
+#pragma region restart
+
+// teardowns the cerver and creates a fresh new one with the same parameters
+// returns 0 on success, 1 on error
+u8 cerver_restart (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        char *s = c_string_create ("Restarting the cerver %s...", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
+            free (s);
+        }
+
+        // FIXME:
+        // cerver_clean (cerver);      // clean the cerver's data structures
+
+        // if (!cerver_init (cerver)) {
+        //     char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
+        //     if (s) {
+        //         cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, s);
+        //         free (s);
+        //     }
+        // }
+
+        // else {
+        //     char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
+        //     if (s) {
+        //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+        //         free (s);
+        //     }
+
+        //     cerver_delete (cerver);
+        //     cerver = NULL;
+        // }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma region init
+
 // inits the cerver's address & binds the socket to it
 static u8 cerver_network_init_address (Cerver *cerver) {
 
@@ -1276,82 +1363,6 @@ static u8 cerver_init (Cerver *cerver) {
 
 }
 
-// returns a new cerver with the specified parameters
-Cerver *cerver_create (const CerverType type, const char *name, 
-    const u16 port, const Protocol protocol, bool use_ipv6,
-    u16 connection_queue, u32 poll_timeout) {
-
-    Cerver *cerver = NULL;
-
-    if (name) {
-        cerver = cerver_new ();
-        if (cerver) {
-            cerver->type = type;
-
-            cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);
-
-            cerver->handler_type = CERVER_HANDLER_TYPE_POLL;
-            
-            cerver_set_poll_time_out (cerver, poll_timeout);
-
-            cerver->events = dlist_init (cerver_event_delete, NULL);
-            cerver->errors = dlist_init (cerver_error_event_delete, NULL);
-
-            cerver->info = cerver_info_new ();
-            cerver->info->name = estring_new (name);
-
-            cerver->stats = cerver_stats_new ();
-        }
-    }
-
-    else {
-        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-            "A name is required to create a new cerver!");
-    } 
-
-    return cerver;
-
-}
-
-// teardowns the cerver and creates a fresh new one with the same parameters
-// returns 0 on success, 1 on error
-u8 cerver_restart (Cerver *cerver) {
-
-    u8 retval = 1;
-
-    if (cerver) {
-        char *s = c_string_create ("Restarting the cerver %s...", cerver->info->name->str);
-        if (s) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
-            free (s);
-        }
-
-        cerver_clean (cerver);      // clean the cerver's data structures
-
-        if (!cerver_init (cerver)) {
-            char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, s);
-                free (s);
-            }
-        }
-
-        else {
-            char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-                free (s);
-            }
-
-            cerver_delete (cerver);
-            cerver = NULL;
-        }
-    }
-
-    return retval;
-
-}
-
 static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
     u8 errors = 0;
@@ -1461,6 +1472,10 @@ static u8 cerver_one_time_init (Cerver *cerver) {
     return errors;
 
 }
+
+#pragma endregion
+
+#pragma region start
 
 static u8 cerver_start_tcp (Cerver *cerver) {
 
@@ -2186,6 +2201,8 @@ u8 cerver_start (Cerver *cerver) {
     return retval;
 
 }
+
+#pragma endregion
 
 #pragma region end
 
