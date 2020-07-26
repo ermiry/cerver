@@ -87,7 +87,7 @@ static void on_client_connected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"Client %ld connected with sock fd %d to cerver %s!\n\n",
+			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
