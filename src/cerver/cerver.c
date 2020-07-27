@@ -93,31 +93,25 @@ u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *con
     u8 retval = 1;
 
     if (cerver && connection) {
-        switch (cerver->type) {
-            case CERVER_TYPE_WEB: break;
+        packet_set_network_values (
+            cerver->info->cerver_info_packet, 
+            cerver, 
+            client, 
+            connection, 
+            NULL
+        );
 
-            default: {
-                packet_set_network_values (
-                    cerver->info->cerver_info_packet, 
-                    cerver, 
-                    client, 
-                    connection, 
-                    NULL
-                );
+        if (!packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
+            retval = 0;
+        }
 
-                if (!packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
-                    retval = 0;
-                }
-
-                else {
-                    char *s = c_string_create ("Failed to send cerver %s info packet!",
-                        cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
-                        free (s);
-                    }
-                }
-            } break;
+        else {
+            char *s = c_string_create ("Failed to send cerver %s info packet!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
+                free (s);
+            }
         }
     }
 
