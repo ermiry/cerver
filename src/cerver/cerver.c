@@ -1982,48 +1982,54 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
     u8 retval = 1;
 
-    if (cerver) {
-        if (!cerver->blocking) {
-            if (!listen (cerver->sock, cerver->connection_queue)) {
-                // register the cerver start time
-                time (&cerver->info->time_started);
+    switch (cerver->handler_type) {
+        case CERVER_HANDLER_TYPE_NONE: break;
 
-                // set up the initial listening socket     
-                cerver->fds[cerver->current_n_fds].fd = cerver->sock;
-                cerver->fds[cerver->current_n_fds].events = POLLIN;
-                cerver->current_n_fds++;
+        case CERVER_HANDLER_TYPE_POLL: {
+            if (!cerver->blocking) {
+                if (!listen (cerver->sock, cerver->connection_queue)) {
+                    // register the cerver start time
+                    time (&cerver->info->time_started);
 
-                cerver_event_trigger (
-                    CERVER_EVENT_STARTED,
-                    cerver,
-                    NULL, NULL
-                );
+                    // set up the initial listening socket     
+                    cerver->fds[cerver->current_n_fds].fd = cerver->sock;
+                    cerver->fds[cerver->current_n_fds].events = POLLIN;
+                    cerver->current_n_fds++;
 
-                cerver_poll (cerver);
+                    cerver_event_trigger (
+                        CERVER_EVENT_STARTED,
+                        cerver,
+                        NULL, NULL
+                    );
 
-                retval = 0;
+                    retval = cerver_poll (cerver);
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to listen in cerver %s socket!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        free (s);
+                    }
+
+                    close (cerver->sock);
+                }
             }
 
             else {
-                char *s = c_string_create ("Failed to listen in cerver %s socket!",
+                char *s = c_string_create ("Cerver %s socket is not set to non blocking!",
                     cerver->info->name->str);
                 if (s) {
                     cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
                     free (s);
                 }
-
-                close (cerver->sock);
             }
-        }
+        } break;
 
-        else {
-            char *s = c_string_create ("Cerver %s socket is not set to non blocking!",
-                cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                free (s);
-            }
-        }
+        case CERVER_HANDLER_TYPE_THREADS: break;
+
+        default: break;
     }
 
     return retval;
