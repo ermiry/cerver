@@ -1477,6 +1477,10 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 #pragma region start
 
+static void cerver_update (void *args);
+
+static void cerver_update_interval (void *args);
+
 static u8 cerver_start_tcp (Cerver *cerver) {
 
     u8 retval = 1;
@@ -1934,6 +1938,70 @@ static u8 cerver_auth_start (Cerver *cerver) {
 
 }
 
+static u8 cerver_update_start (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (!thread_create_detachable (
+        &cerver->update_thread_id,
+        (void *(*) (void *)) cerver_update,
+        cerver
+    )) {
+        char *s = c_string_create ("Created cerver %s UPDATE thread!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            free (s);
+        }
+
+        retval = 0;
+    }
+
+    else {
+        char *s = c_string_create ("Failed to create cerver %s UPDATE thread!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_error (s);
+            free (s);
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 cerver_update_interval_start (Cerver *cerver) {
+    
+    u8 retval = 1;
+
+    if (!thread_create_detachable (
+        &cerver->update_interval_thread_id,
+        (void *(*) (void *)) cerver_update_interval,
+        cerver
+    )) {
+        char *s = c_string_create ("Created cerver %s UPDATE INTERVAL thread!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            free (s);
+        }
+
+        retval = 0;
+    }
+
+    else {
+        char *s = c_string_create ("Failed to create cerver %s UPDATE INTERVAL thread!",
+            cerver->info->name->str);
+        if (s) {
+            cerver_log_error (s);
+            free (s);
+        }
+    }
+
+    return retval;
+
+}
+
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any) 
 // and any other processes that have been configured before
@@ -1988,37 +2056,11 @@ u8 cerver_start (Cerver *cerver) {
             }
 
             if (cerver->update) {
-                if (thread_create_detachable (
-                    &cerver->update_thread_id,
-                    (void *(*) (void *)) cerver_update,
-                    cerver
-                )) {
-                    char *s = c_string_create ("Failed to create cerver %s UPDATE thread!",
-                        cerver->info->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-
-                    errors |= 1;
-                }
+                errors |= cerver_update_start (cerver);
             }
 
             if (cerver->update_interval) {
-                if (thread_create_detachable (
-                    &cerver->update_interval_thread_id,
-                    (void *(*) (void *)) cerver_update_interval,
-                    cerver
-                )) {
-                    char *s = c_string_create ("Failed to create cerver %s UPDATE INTERVAL thread!",
-                        cerver->info->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-
-                    errors |= 1;
-                }
+                errors |= cerver_update_interval_start (cerver);
             }
 
             errors |= cerver_handlers_start (cerver);
