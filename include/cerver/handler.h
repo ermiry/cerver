@@ -239,4 +239,11 @@ extern u8 cerver_poll (struct _Cerver *cerver);
 
 #pragma endregion
 
+#pragma region threads
+
+// handle new connections in dedicated threads
+extern u8 cerver_threads (struct _Cerver *cerver);
+
+#pragma endregion
+
 #endif

@@ -1723,10 +1723,10 @@ static void cerver_register_new_connection (Cerver *cerver,
 }
 
 // accepst a new connection to the cerver
-static void cerver_accept (void *ptr) {
+static void cerver_accept (void *cerver_ptr) {
 
-    if (ptr) {
-        Cerver *cerver = (Cerver *) ptr;
+    if (cerver_ptr) {
+        Cerver *cerver = (Cerver *) cerver_ptr;
 
         // accept the new connection
         struct sockaddr_storage client_address;
@@ -2125,8 +2125,57 @@ u8 cerver_poll (Cerver *cerver) {
     }
 
     else {
-        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-            "Can't listen for connections on a NULL cerver!");
+        cerver_log_msg (
+            stderr, 
+            LOG_ERROR, LOG_CERVER, 
+            "Can't listen for connections on a NULL cerver!"
+        );
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma region threads
+
+// handle new connections in dedicated threads
+u8 cerver_threads (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        char *s = c_string_create ("Cerver %s ready in port %d!", cerver->info->name->str, cerver->port);
+        if (s) {
+            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+            free (s);
+        }
+        #ifdef CERVER_DEBUG
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections...");
+        #endif
+
+        while (cerver->isRunning) {
+            cerver_accept (cerver);
+        }
+
+        #ifdef CERVER_DEBUG
+        s = c_string_create ("Cerver %s accept thread has stopped!", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
+            free (s);
+        }
+        #endif
+
+        retval = 0;
+    }
+
+    else {
+        cerver_log_msg (
+            stderr, 
+            LOG_ERROR, LOG_CERVER, 
+            "Can't listen for connections on a NULL cerver!"
+        );
     }
 
     return retval;
