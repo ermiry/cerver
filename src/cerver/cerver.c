@@ -1481,163 +1481,44 @@ static void cerver_update (void *args);
 
 static void cerver_update_interval (void *args);
 
-static u8 cerver_start_tcp (Cerver *cerver) {
+// inits cerver's auth capabilities
+static u8 cerver_auth_start (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
-        if (!cerver->blocking) {
-            if (!listen (cerver->sock, cerver->connection_queue)) {
-                // register the cerver start time
-                time (&cerver->info->time_started);
+        cerver->auth_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
 
-                // set up the initial listening socket     
-                cerver->fds[cerver->current_n_fds].fd = cerver->sock;
-                cerver->fds[cerver->current_n_fds].events = POLLIN;
-                cerver->current_n_fds++;
+        cerver->max_on_hold_connections = poll_n_fds / 2;
+        cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
+        cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
+        if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
+            cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
+            if (cerver->hold_fds) {
+                memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
 
-                cerver_event_trigger (
-                    CERVER_EVENT_STARTED,
-                    cerver,
-                    NULL, NULL
-                );
+                for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
+                    cerver->hold_fds[i].fd = -1;
 
-                cerver_poll (cerver);
+                cerver->current_on_hold_nfds = 0;
+
+                cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+                pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
+
+                if (!thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
+                    retval = 0;
+                }
+
+                else {
+                    char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
+                        cerver->info->name->str);
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                        free (status);
+                    }
+                }
 
                 retval = 0;
-            }
-
-            else {
-                char *s = c_string_create ("Failed to listen in cerver %s socket!",
-                    cerver->info->name->str);
-                if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                    free (s);
-                }
-
-                close (cerver->sock);
-            }
-        }
-
-        else {
-            char *s = c_string_create ("Cerver %s socket is not set to non blocking!",
-                cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                free (s);
-            }
-        }
-    }
-
-    return retval;
-
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-
-static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
-
-#pragma GCC diagnostic pop
-
-static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
-
-    cerver_inactive_check (node->right, cerver, current_time);
-
-    // check for client inactivity
-    if (node->id) {
-        Client *client = (Client *) node->id;
-
-        if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
-            // TODO: the client should be dropped
-            char *s = c_string_create ("Client %ld has been inactive more than %d secs and should be dropped",
-                client->id, cerver->max_inactive_time);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
-            }
-        }
-    }
-
-    cerver_inactive_check (node->left, cerver, current_time);
-
-}
-
-// 17/06/2020 - thread to check for inactive clients
-static void *cerver_inactive_thread (void *args) {
-
-    if (args) {
-        Cerver *cerver = (Cerver *) args;
-
-        u32 count = 0;
-        while (cerver->isRunning) {
-            if (count == cerver->check_inactive_interval) {
-                count = 0;
-
-                char *s = c_string_create ("Checking for inactive clients in cerver %s...",
-                    cerver->info->name->str);
-                if (s) {
-                    cerver_log_debug (s);
-                    free (s);
-                }
-
-                time_t current_time = time (NULL);
-                cerver_inactive_check (cerver->clients->root, cerver, current_time);
-
-                s = c_string_create ("Done checking for inactive clients in cerver %s",
-                    cerver->info->name->str);
-                if (s) {
-                    cerver_log_debug (s);
-                    free (s);
-                }
-            }
-
-            sleep (1);
-            count++;
-        }
-    }
-
-    return NULL;
-
-}
-
-static u8 cerver_start_inactive (Cerver *cerver) {
-
-    u8 retval = 1;
-
-    if (cerver) {
-        char *s = c_string_create (
-            "Cerver %s is set to check for inactive clients with max time of <%d> secs every <%d> secs",
-            cerver->info->name->str,
-            cerver->max_inactive_time,
-            cerver->check_inactive_interval
-        );
-        if (s) {
-            cerver_log_debug (s);
-            free (s);
-        }
-
-        if (!thread_create_detachable (
-            &cerver->inactive_thread_id,
-            (void *(*) (void *)) cerver_inactive_thread,
-            cerver
-        )) {
-            char *s = c_string_create ("Created cerver %s INACTIVE thread!",
-                cerver->info->name->str);
-            if (s) {
-                cerver_log_success (s);
-                free (s);
-            }
-
-            retval = 0;
-        }
-
-        else {
-            char *s = c_string_create ("Failed to create cerver %s INACTIVE thread!",
-                cerver->info->name->str);
-            if (s) {
-                cerver_log_error (s);
-                free (s);
             }
         }
     }
@@ -1892,52 +1773,6 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 
 }
 
-// inits cerver's auth capabilities
-static u8 cerver_auth_start (Cerver *cerver) {
-
-    u8 retval = 1;
-
-    if (cerver) {
-        cerver->auth_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
-
-        cerver->max_on_hold_connections = poll_n_fds / 2;
-        cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
-        cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
-        if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
-            cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
-            if (cerver->hold_fds) {
-                memset (cerver->hold_fds, 0, sizeof (struct pollfd) * cerver->max_on_hold_connections);
-
-                for (u32 i = 0; i < cerver->max_on_hold_connections; i++)
-                    cerver->hold_fds[i].fd = -1;
-
-                cerver->current_on_hold_nfds = 0;
-
-                cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-                pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
-
-                if (!thread_create_detachable (&cerver->on_hold_poll_id, on_hold_poll, cerver)) {
-                    retval = 0;
-                }
-
-                else {
-                    char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
-                        cerver->info->name->str);
-                    if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
-                        free (status);
-                    }
-                }
-
-                retval = 0;
-            }
-        }
-    }
-
-    return retval;
-
-}
-
 static u8 cerver_update_start (Cerver *cerver) {
 
     u8 retval = 1;
@@ -1947,12 +1782,14 @@ static u8 cerver_update_start (Cerver *cerver) {
         (void *(*) (void *)) cerver_update,
         cerver
     )) {
+        #ifdef CERVER_DEBUG
         char *s = c_string_create ("Created cerver %s UPDATE thread!",
             cerver->info->name->str);
         if (s) {
             cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
             free (s);
         }
+        #endif
 
         retval = 0;
     }
@@ -1979,12 +1816,14 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
         (void *(*) (void *)) cerver_update_interval,
         cerver
     )) {
+        #ifdef CERVER_DEBUG
         char *s = c_string_create ("Created cerver %s UPDATE INTERVAL thread!",
             cerver->info->name->str);
         if (s) {
             cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
             free (s);
         }
+        #endif
 
         retval = 0;
     }
@@ -2002,6 +1841,171 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 }
 
+static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
+
+    cerver_inactive_check (node->right, cerver, current_time);
+
+    // check for client inactivity
+    if (node->id) {
+        Client *client = (Client *) node->id;
+
+        if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
+            // TODO: the client should be dropped
+            char *s = c_string_create ("Client %ld has been inactive more than %d secs and should be dropped",
+                client->id, cerver->max_inactive_time);
+            if (s) {
+                cerver_log_warning (s);
+                free (s);
+            }
+        }
+    }
+
+    cerver_inactive_check (node->left, cerver, current_time);
+
+}
+
+// 17/06/2020 - thread to check for inactive clients
+static void *cerver_inactive_thread (void *args) {
+
+    if (args) {
+        Cerver *cerver = (Cerver *) args;
+
+        u32 count = 0;
+        while (cerver->isRunning) {
+            if (count == cerver->check_inactive_interval) {
+                count = 0;
+
+                char *s = c_string_create ("Checking for inactive clients in cerver %s...",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+
+                time_t current_time = time (NULL);
+                cerver_inactive_check (cerver->clients->root, cerver, current_time);
+
+                s = c_string_create ("Done checking for inactive clients in cerver %s",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+            }
+
+            sleep (1);
+            count++;
+        }
+    }
+
+    return NULL;
+
+}
+
+static u8 cerver_start_inactive (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        char *s = c_string_create (
+            "Cerver %s is set to check for inactive clients with max time of <%d> secs every <%d> secs",
+            cerver->info->name->str,
+            cerver->max_inactive_time,
+            cerver->check_inactive_interval
+        );
+        if (s) {
+            cerver_log_debug (s);
+            free (s);
+        }
+
+        if (!thread_create_detachable (
+            &cerver->inactive_thread_id,
+            (void *(*) (void *)) cerver_inactive_thread,
+            cerver
+        )) {
+            char *s = c_string_create ("Created cerver %s INACTIVE thread!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_success (s);
+                free (s);
+            }
+
+            retval = 0;
+        }
+
+        else {
+            char *s = c_string_create ("Failed to create cerver %s INACTIVE thread!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_error (s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+static u8 cerver_start_tcp (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        if (!cerver->blocking) {
+            if (!listen (cerver->sock, cerver->connection_queue)) {
+                // register the cerver start time
+                time (&cerver->info->time_started);
+
+                // set up the initial listening socket     
+                cerver->fds[cerver->current_n_fds].fd = cerver->sock;
+                cerver->fds[cerver->current_n_fds].events = POLLIN;
+                cerver->current_n_fds++;
+
+                cerver_event_trigger (
+                    CERVER_EVENT_STARTED,
+                    cerver,
+                    NULL, NULL
+                );
+
+                cerver_poll (cerver);
+
+                retval = 0;
+            }
+
+            else {
+                char *s = c_string_create ("Failed to listen in cerver %s socket!",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    free (s);
+                }
+
+                close (cerver->sock);
+            }
+        }
+
+        else {
+            char *s = c_string_create ("Cerver %s socket is not set to non blocking!",
+                cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                free (s);
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
+
+#pragma GCC diagnostic pop
+
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any) 
 // and any other processes that have been configured before
@@ -2015,6 +2019,8 @@ u8 cerver_start (Cerver *cerver) {
 
         if (!cerver_one_time_init (cerver)) {
             u8 errors = 0;
+
+            errors |= cerver_handlers_start (cerver);
 
             if (cerver->auth_required) {
                 char *status = c_string_create ("Cerver %s requires authentication",
@@ -2048,13 +2054,6 @@ u8 cerver_start (Cerver *cerver) {
                 errors |= admin_cerver_start (cerver->admin);
             } 
 
-            // 17/06/2020
-            // check for inactive will be handled in its own thread
-            // to avoid messing with other dedicated update threads timings
-            if (cerver->inactive_clients) {
-                errors |= cerver_start_inactive (cerver);
-            }
-
             if (cerver->update) {
                 errors |= cerver_update_start (cerver);
             }
@@ -2063,7 +2062,12 @@ u8 cerver_start (Cerver *cerver) {
                 errors |= cerver_update_interval_start (cerver);
             }
 
-            errors |= cerver_handlers_start (cerver);
+            // 17/06/2020
+            // check for inactive will be handled in its own thread
+            // to avoid messing with other dedicated update threads timings
+            if (cerver->inactive_clients) {
+                errors |= cerver_start_inactive (cerver);
+            }
 
             if (!errors) {
                 switch (cerver->protocol) {
