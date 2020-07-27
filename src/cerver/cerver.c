@@ -537,8 +537,6 @@ u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const voi
             cerver->session_id_generator = session_id_generator;
             cerver->use_sessions = true;
 
-            avl_set_comparator (cerver->clients, client_comparator_session_id);
-
             retval = 0;
         }
     }
@@ -1041,6 +1039,8 @@ Cerver *cerver_create (const CerverType type, const char *name,
             
             cerver_set_poll_time_out (cerver, poll_timeout);
 
+            cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
+
             cerver->events = dlist_init (cerver_event_delete, NULL);
             cerver->errors = dlist_init (cerver_error_event_delete, NULL);
 
@@ -1241,72 +1241,102 @@ static u8 cerver_network_init (Cerver *cerver) {
 
 }
 
+static u8 cerver_init_poll_fds (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    cerver->fds = (struct pollfd *) calloc (poll_n_fds, sizeof (struct pollfd));
+    if (cerver->fds) {
+        memset (cerver->fds, 0, sizeof (struct pollfd) * poll_n_fds);
+        // set all fds as available spaces
+        for (u32 i = 0; i < poll_n_fds; i++) cerver->fds[i].fd = -1;
+
+        cerver->max_n_fds = poll_n_fds;
+        cerver->current_n_fds = 0;
+
+        retval = 0;     // success!!
+    }
+
+    else {
+        #ifdef CERVER_DEBUG
+        char *status = c_string_create ("Failed to allocate cerver %s main fds!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+            free (status);
+        }
+        #endif
+    }
+
+    return retval;
+
+}
+
 static u8 cerver_init_data_structures (Cerver *cerver) {
 
     u8 retval = 1;
 
     if (cerver) {
-        cerver->clients = avl_init (client_comparator_client_id, client_delete);
-        if (!cerver->clients) {
+        cerver->clients = avl_init (
+            cerver->use_sessions ? client_comparator_session_id : client_comparator_client_id, 
+            client_delete
+        );
+
+        if (cerver->clients) {
+            cerver->client_sock_fd_map = htab_create (poll_n_fds, NULL, NULL);
+            if (cerver->client_sock_fd_map) {
+                u8 errors = 0;
+
+                // init cerver type based values
+                switch (cerver->type) {
+                    case CERVER_TYPE_CUSTOM: break;
+
+                    case CERVER_TYPE_GAME: {
+                        cerver->cerver_data = game_new ();
+                        cerver->delete_cerver_data = game_delete;
+                    } break;
+                    
+                    case CERVER_TYPE_WEB: break;
+
+                    case CERVER_TYPE_FILE: break;
+                    
+                    default: break;
+                }
+
+                // init cerver handler type based values
+                switch (cerver->handler_type) {
+                    case CERVER_HANDLER_TYPE_NONE: break;
+
+                    case CERVER_HANDLER_TYPE_POLL: {
+                        // initialize main pollfd structures
+                        errors |= cerver_init_poll_fds (cerver);
+                    } break;
+
+                    case CERVER_HANDLER_TYPE_THREADS: break;
+
+                    default: break;
+                }
+
+                retval = errors;
+            }
+
+            else {
+                #ifdef CERVER_DEBUG
+                char *status = c_string_create ("Failed to init clients sock fd map in cerver %s",
+                    cerver->info->name->str);
+                if (status) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    free (status);
+                }
+                #endif
+            }
+        }
+
+        else {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Failed to init clients avl in cerver %s",
                 cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-            #endif
-
-            return 1;
-        }
-
-        cerver->client_sock_fd_map = htab_create (poll_n_fds, NULL, NULL);
-        if (!cerver->client_sock_fd_map) {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to init clients sock fd map in cerver %s",
-                cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
-                free (status);
-            }
-            #endif
-
-            return 1;
-        }
-
-        // initialize main pollfd structures
-        cerver->fds = (struct pollfd *) calloc (poll_n_fds, sizeof (struct pollfd));
-        if (cerver->fds) {
-            memset (cerver->fds, 0, sizeof (struct pollfd) * poll_n_fds);
-            // set all fds as available spaces
-            for (u32 i = 0; i < poll_n_fds; i++) cerver->fds[i].fd = -1;
-
-            cerver->max_n_fds = poll_n_fds;
-            cerver->current_n_fds = 0;
-
-            switch (cerver->type) {
-                case CERVER_TYPE_CUSTOM: break;
-
-                case CERVER_TYPE_GAME: {
-                    cerver->cerver_data = game_new ();
-                    cerver->delete_cerver_data = game_delete;
-                } break;
-                
-                case CERVER_TYPE_WEB: break;
-
-                case CERVER_TYPE_FILE: break;
-                
-                default: break;
-            }
-
-            retval = 0;     // success!!
-        }
-
-        else {
-            #ifdef CERVER_DEBUG
-            char *status = c_string_create ("Failed to allocate cerver %s main fds!", cerver->info->name->str);
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
                 free (status);
             }
             #endif
@@ -1329,12 +1359,13 @@ static u8 cerver_init (Cerver *cerver) {
 
         if (!cerver_network_init (cerver)) {
             if (!cerver_init_data_structures (cerver)) {
-                // set the default receive handler
-                cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
-
                 #ifdef CERVER_DEBUG
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, 
-                    "Done initializing cerver data structures and values!");
+                char *s = c_string_create ("Done initializing cerver %s network values & data structures!",
+                    cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                    free (s);
+                }
                 #endif
 
                 retval = 0;     // success!!
