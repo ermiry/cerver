@@ -1631,59 +1631,62 @@ static Connection *cerver_connection_create (Cerver *cerver,
 
 }
 
-static void cerver_register_new_connection (Cerver *cerver, 
-    const i32 new_fd, const struct sockaddr_storage client_address) {
+// if the cerver requires auth, we put the connection on hold
+static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connection *connection) {
 
-    Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
-    if (connection) {
+    u8 retval = 1;
+
+    if (!on_hold_connection (cerver, connection)) {
         #ifdef CERVER_DEBUG
-        char *s = c_string_create ("New connection from IP address: %s -- Port: %d", 
-            connection->ip->str, connection->port);
-        if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
-            free (s);
+        char *status = c_string_create ("Connection is on hold on cerver %s!", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+            free (status);
         }
         #endif
 
-        // if the cerver requires auth, we put the connection on hold
-        if (cerver->auth_required) {
-            if (!on_hold_connection (cerver, connection)) {
-                #ifdef CERVER_DEBUG
-                char *status = c_string_create ("Connection is on hold on cerver %s!", cerver->info->name->str);
-                if (status) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-                    free (status);
-                }
-                #endif
+        cerver->stats->total_on_hold_connections += 1;
 
-                cerver->stats->total_on_hold_connections += 1;
+        connection->active = true;
 
-                connection->active = true;
+        cerver_info_send_info_packet (cerver, NULL, connection);
 
-                cerver_info_send_info_packet (cerver, NULL, connection);
+        cerver_event_trigger (
+            CERVER_EVENT_ON_HOLD_CONNECTED,
+            cerver,
+            NULL, connection
+        );
 
-                cerver_event_trigger (
-                    CERVER_EVENT_ON_HOLD_CONNECTED,
-                    cerver,
-                    NULL, connection
-                );
-            }
+        retval = 0;
+    }
 
-            else {
-                char *status = c_string_create ("Failed to put connection on hold in cerver %s",
-                    cerver->info->name->str);
-                if (status) {
-                    cerver_log_error (status);
-                    free (status);
-                }
-
-                // drop the connection
-                connection_end (connection);
-            }
+    else {
+        char *status = c_string_create ("Failed to put connection on hold in cerver %s",
+            cerver->info->name->str);
+        if (status) {
+            cerver_log_error (status);
+            free (status);
         }
 
-        // if not, we create a new client and we register the connection
-        else {
+        // drop the connection
+        connection_end (connection);
+    }
+
+    return retval;
+
+}
+
+static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *connection) {
+
+    u8 retval = 1;
+
+    switch (cerver->type) {
+        case CERVER_TYPE_WEB: {
+            // TODO: handle connection in dedicated thread
+        } break;
+        
+        default: {
+            // TODO: handle any error
             Client *client = client_create ();
             if (client) {
                 connection_register_to_client (client, connection);
@@ -1698,26 +1701,67 @@ static void cerver_register_new_connection (Cerver *cerver,
                         cerver,
                         client, connection
                     );
+
+                    switch (cerver->handler_type) {
+                        case CERVER_HANDLER_TYPE_NONE: break;
+
+                        case CERVER_HANDLER_TYPE_POLL: break;
+
+                        case CERVER_HANDLER_TYPE_THREADS: 
+                            // TODO: handle connection in dedicated thread 
+                            break;
+
+                        default: break;
+                    }
                 }
             }
-        }
+        } break;
+    }
 
-        #ifdef CERVER_DEBUG
-        s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
+    return retval;
+
+}
+
+static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connection *connection) {
+
+    return cerver->auth_required ? 
+        cerver_register_new_connection_auth_required (cerver, connection) :
+        cerver_register_new_connection_normal (cerver, connection);
+
+}
+
+static void cerver_register_new_connection (Cerver *cerver, 
+    const i32 new_fd, const struct sockaddr_storage client_address) {
+
+    Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
+    if (connection) {
+        // #ifdef CERVER_DEBUG
+        char *s = c_string_create ("New connection from IP address: %s -- Port: %d", 
+            connection->ip->str, connection->port);
         if (s) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
             free (s);
         }
-        #endif
+        // #endif
+
+        if (!cerver_register_new_connection_select (cerver, connection)) {
+            #ifdef CERVER_DEBUG
+            s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
+            if (s) {
+                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                free (s);
+            }
+            #endif
+        }
     }
 
     else {
-        #ifdef CERVER_DEBUG
+        // #ifdef CERVER_DEBUG
         cerver_log_msg (
             stdout, LOG_ERROR, LOG_CLIENT, 
-            "cerver_register_new_connection () failed to create a new connection!"
+            "cerver_register_new_connection () - failed to create a new connection!"
         );
-        #endif
+        // #endif
     }
 
 }
@@ -1728,11 +1772,11 @@ static void cerver_accept (void *cerver_ptr) {
     if (cerver_ptr) {
         Cerver *cerver = (Cerver *) cerver_ptr;
 
-        // accept the new connection
         struct sockaddr_storage client_address;
         memset (&client_address, 0, sizeof (struct sockaddr_storage));
         socklen_t socklen = sizeof (struct sockaddr_storage);
 
+        // accept the new connection
         i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
         if (new_fd > 0) {
             printf ("Accepted fd: %d\n", new_fd);
