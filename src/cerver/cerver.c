@@ -2018,8 +2018,10 @@ static u8 cerver_start_tcp (Cerver *cerver) {
             }
 
             else {
-                char *s = c_string_create ("Cerver %s socket is not set to non blocking!",
-                    cerver->info->name->str);
+                char *s = c_string_create (
+                    "Can't start cerver %s in CERVER_HANDLER_TYPE_POLL - socket is NOT set to non blocking!",
+                    cerver->info->name->str
+                );
                 if (s) {
                     cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
                     free (s);
@@ -2027,7 +2029,44 @@ static u8 cerver_start_tcp (Cerver *cerver) {
             }
         } break;
 
-        case CERVER_HANDLER_TYPE_THREADS: break;
+        case CERVER_HANDLER_TYPE_THREADS: {
+            if (cerver->blocking) {
+                if (!listen (cerver->sock, cerver->connection_queue)) {
+                    // register the cerver start time
+                    time (&cerver->info->time_started);
+
+                    cerver_event_trigger (
+                        CERVER_EVENT_STARTED,
+                        cerver,
+                        NULL, NULL
+                    );
+
+                    retval = cerver_threads (cerver);
+                }
+
+                else {
+                    char *s = c_string_create ("Failed to listen in cerver %s socket!",
+                        cerver->info->name->str);
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        free (s);
+                    }
+
+                    close (cerver->sock);
+                }
+            }
+
+            else {
+                char *s = c_string_create (
+                    "Can't start cerver %s in CERVER_HANDLER_TYPE_THREADS - socket is NOT blocking!",
+                    cerver->info->name->str
+                );
+                if (s) {
+                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    free (s);
+                }
+            }
+        } break;
 
         default: break;
     }
