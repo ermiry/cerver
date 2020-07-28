@@ -715,7 +715,13 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
     u8 errors = 0;
 
     if (cerver && connection) {
-        errors |= connection_unregister_from_cerver_poll (cerver, connection);
+        switch (cerver->handler_type) {
+            case CERVER_HANDLER_TYPE_POLL: 
+                errors |= connection_unregister_from_cerver_poll (cerver, connection);
+                break;
+
+            default: break;
+        }
         
         errors |= connection_unregister_from_cerver (cerver, connection);
     }
