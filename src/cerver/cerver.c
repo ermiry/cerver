@@ -1068,50 +1068,6 @@ Cerver *cerver_create (const CerverType type, const char *name,
 
 #pragma endregion
 
-#pragma region restart
-
-// teardowns the cerver and creates a fresh new one with the same parameters
-// returns 0 on success, 1 on error
-u8 cerver_restart (Cerver *cerver) {
-
-    u8 retval = 1;
-
-    if (cerver) {
-        char *s = c_string_create ("Restarting the cerver %s...", cerver->info->name->str);
-        if (s) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
-            free (s);
-        }
-
-        // FIXME:
-        // cerver_clean (cerver);      // clean the cerver's data structures
-
-        // if (!cerver_init (cerver)) {
-        //     char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
-        //     if (s) {
-        //         cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, s);
-        //         free (s);
-        //     }
-        // }
-
-        // else {
-        //     char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
-        //     if (s) {
-        //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
-        //         free (s);
-        //     }
-
-        //     cerver_delete (cerver);
-        //     cerver = NULL;
-        // }
-    }
-
-    return retval;
-
-}
-
-#pragma endregion
-
 #pragma region init
 
 // inits the cerver's address & binds the socket to it
@@ -2197,6 +2153,50 @@ u8 cerver_start (Cerver *cerver) {
             cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
             free (s);
         }
+    }
+
+    return retval;
+
+}
+
+#pragma endregion
+
+#pragma region restart
+
+// teardowns the cerver and creates a fresh new one with the same parameters
+// returns 0 on success, 1 on error
+u8 cerver_restart (Cerver *cerver) {
+
+    u8 retval = 1;
+
+    if (cerver) {
+        char *s = c_string_create ("Restarting the cerver %s...", cerver->info->name->str);
+        if (s) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, s);
+            free (s);
+        }
+
+        // FIXME:
+        // cerver_clean (cerver);      // clean the cerver's data structures
+
+        // if (!cerver_init (cerver)) {
+        //     char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
+        //     if (s) {
+        //         cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, s);
+        //         free (s);
+        //     }
+        // }
+
+        // else {
+        //     char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
+        //     if (s) {
+        //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+        //         free (s);
+        //     }
+
+        //     cerver_delete (cerver);
+        //     cerver = NULL;
+        // }
     }
 
     return retval;

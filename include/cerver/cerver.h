@@ -434,15 +434,19 @@ extern Cerver *cerver_create (const CerverType type, const char *name,
     const u16 port, const Protocol protocol, bool use_ipv6,
     u16 connection_queue, u32 poll_timeout);
 
-// teardowns the cerver and creates a fresh new one with the same parameters
-// returns 0 on success, 1 on error
-extern u8 cerver_restart (Cerver *cerver);
-
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any) 
 // and any other processes that have been configured before
 // returns 0 on success, 1 on error
 extern u8 cerver_start (Cerver *cerver);
+
+#pragma endregion
+
+#pragma region restart
+
+// teardowns the cerver and creates a fresh new one with the same parameters
+// returns 0 on success, 1 on error
+extern u8 cerver_restart (Cerver *cerver);
 
 #pragma endregion
 
