@@ -748,6 +748,32 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
 }
 
+static void client_register_to_cerver_internal (Cerver *cerver, Client *client) {
+
+    avl_insert_node (cerver->clients, client);
+
+    char *s = NULL;
+    #ifdef CLIENT_DEBUG
+    s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
+    if (s) {
+        cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+        free (s);
+    }
+    #endif
+    
+    cerver->stats->total_n_clients++;
+    cerver->stats->current_n_connected_clients++;
+    #ifdef CERVER_STATS
+    s = c_string_create ("Connected clients to cerver %s: %i.", 
+        cerver->info->name->str, cerver->stats->current_n_connected_clients);
+    if (s) {
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+        free (s);
+    }
+    #endif
+
+}
+
 // registers a client to the cerver --> add it to cerver's structures
 // registers all of the current active client connections to the cerver poll
 // returns 0 on success, 1 on error
@@ -756,32 +782,26 @@ u8 client_register_to_cerver (Cerver *cerver, Client *client) {
     u8 retval = 1;
 
     if (cerver && client) {
-        if (!client_register_connections_to_cerver (cerver, client) 
-            && !client_register_connections_to_cerver_poll (cerver, client)) {
-            // register the client to the cerver client's
-            avl_insert_node (cerver->clients, client);
+        if (!client_register_connections_to_cerver (cerver, client)) {
+            switch (cerver->handler_type) {
+                case CERVER_HANDLER_TYPE_NONE: break;
 
-            char *s = NULL;
-            #ifdef CLIENT_DEBUG
-            s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
-                free (s);
-            }
-            #endif
-            
-            cerver->stats->total_n_clients++;
-            cerver->stats->current_n_connected_clients++;
-            #ifdef CERVER_STATS
-            s = c_string_create ("Connected clients to cerver %s: %i.", 
-                cerver->info->name->str, cerver->stats->current_n_connected_clients);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                free (s);
-            }
-            #endif
+                case CERVER_HANDLER_TYPE_POLL: {
+                    if (!client_register_connections_to_cerver_poll (cerver, client)) {
+                        client_register_to_cerver_internal (cerver, client);
 
-            retval = 0;
+                        retval = 0;
+                    }
+                } break;
+
+                case CERVER_HANDLER_TYPE_THREADS: {
+                    client_register_to_cerver_internal (cerver, client);
+
+                    retval = 0;
+                } break;
+
+                default: break;
+            }
         }
     }
 
