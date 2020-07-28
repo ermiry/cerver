@@ -1806,12 +1806,11 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
         } break;
         
         default: {
-            // TODO: handle any error
             Client *client = client_create ();
             if (client) {
-                connection_register_to_client (client, connection);
+                (void) connection_register_to_client (client, connection);
 
-                if (!client_register_to_cerver ((Cerver *) cerver, client)) {
+                if (!client_register_to_cerver (cerver, client)) {
                     connection->active = true;
 
                     cerver_info_send_info_packet (cerver, client, connection);
@@ -1825,14 +1824,40 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
                     switch (cerver->handler_type) {
                         case CERVER_HANDLER_TYPE_NONE: break;
 
-                        case CERVER_HANDLER_TYPE_POLL: break;
+                        case CERVER_HANDLER_TYPE_POLL: 
+                            // nothing to be done, as connection will be handled by poll ()
+                            // after being registered to the cerver
+                            break;
 
-                        case CERVER_HANDLER_TYPE_THREADS: 
-                            // TODO: handle connection in dedicated thread 
+                        case CERVER_HANDLER_TYPE_THREADS:
+                            // TODO: option to create a new thread on its own 
+                            // handle connection in dedicated thread
+                            if (!thpool_add_work (
+                                cerver, 
+                                cerver_receive_threads, 
+                                cerver_receive_create_full (
+                                    RECEIVE_TYPE_NORMAL,
+                                    cerver,
+                                    client, connection
+                                ))) {
+                                retval = 0;     // success
+                            }
                             break;
 
                         default: break;
                     }
+                }
+            }
+
+            else {
+                char *status = c_string_create (
+                    "cerver_register_new_connection_normal () - Failed to create new client for new connection with sock fd <%d>!",
+                    connection->socket->sock_fd
+                );
+
+                if (status) {
+                    cerver_log_error (status);
+                    free (status);
                 }
             }
         } break;
@@ -1872,6 +1897,11 @@ static void cerver_register_new_connection (Cerver *cerver,
                 free (s);
             }
             #endif
+        }
+
+        else {
+            // internal server error - failed to handle the new connection
+            // TODO:
         }
     }
 
