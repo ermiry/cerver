@@ -251,6 +251,8 @@ Cerver *cerver_new (void) {
 
         c->handler_type = CERVER_HANDLER_TYPE_NONE;
 
+        c->handle_detachable_threads = false;
+
         c->fds = NULL;
         c->poll_timeout = DEFAULT_POLL_TIMEOUT;
         c->poll_lock = NULL;
@@ -451,6 +453,16 @@ void cerver_set_inactive_clients (Cerver *cerver, u32 max_inactive_time, u32 che
 void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type) {
 
     if (cerver) cerver->handler_type = handler_type;
+
+}
+
+// set the ability to handle new connections if cerver handler type is CERVER_HANDLER_TYPE_THREADS
+// by only creating new detachable threads for each connection
+// by default, this option is turned off to also use the thpool
+// if cerver is of type CERVER_TYPE_WEB, the thpool will be used more often as connections have a shorter life
+void cerver_set_handle_detachable_threads (Cerver *cerver, bool active) {
+
+    if (cerver) cerver->handle_detachable_threads = active;
 
 }
 

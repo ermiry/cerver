@@ -170,6 +170,12 @@ struct _Cerver {
 
     CerverHandlerType handler_type;
 
+    // if set & CERVER_HANDLER_TYPE_THREADS, connections will be handled
+    // by creating a new detachable thread each time, if not,
+    // the thpoll will be used instead; if the thpool is full or unavailable, 
+    // a detachable thread will be created anyway
+    bool handle_detachable_threads;
+
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
     u16 current_n_fds;                  // n of active fds in the pollfd array
@@ -291,6 +297,12 @@ extern void cerver_set_inactive_clients (Cerver *cerver,
 // the default type is to handle connections using the poll () which requires only one thread
 // if threads type is selected, a new thread will be created for each new connection
 extern void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type);
+
+// set the ability to handle new connections if cerver handler type is CERVER_HANDLER_TYPE_THREADS
+// by only creating new detachable threads for each connection
+// by default, this option is turned off to also use the thpool
+// if cerver is of type CERVER_TYPE_WEB, the thpool will be used more often as connections have a shorter life
+extern void cerver_set_handle_detachable_threads (Cerver *cerver, bool active);
 
 // sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
