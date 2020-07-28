@@ -43,6 +43,12 @@ extern unsigned int thpool_get_num_threads_alive (Thpool *thpool);
 // gets the current number of threads that are busy working in a job
 extern unsigned int thpool_get_num_threads_working (Thpool *thpool);
 
+// returns true if the thpool does NOT have any working thread
+extern bool thpool_is_empty (Thpool *thpool);
+
+// returns true if the thpool has ALL its threads working
+extern bool thpool_is_full (Thpool *thpool);
+
 // adds a work to the thpool's job queue
 // it will be executed once it is the next in line and a thread is free
 extern int thpool_add_work (Thpool *thpool, void (*work) (void *), void *args);
