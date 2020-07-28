@@ -1058,8 +1058,11 @@ Cerver *cerver_create (const CerverType type, const char *name,
     }
 
     else {
-        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-            "A name is required to create a new cerver!");
+        cerver_log_msg (
+            stderr, 
+            LOG_ERROR, LOG_NO_TYPE, 
+            "A name is required to create a new cerver!"
+        );
     } 
 
     return cerver;
