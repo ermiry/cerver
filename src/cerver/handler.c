@@ -1718,6 +1718,14 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 }
 
+// we expect only one request to be sent, so keep reading the socket until no more data is left,
+// and then handle the complete buffer
+static void *cerver_receive_http (void *cerver_receive_ptr) {
+
+    return NULL;
+
+}
+
 #pragma endregion
 
 #pragma region accept
@@ -1802,6 +1810,7 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
             free (status);
         }
 
+        // FIXME: just return an error to be handled by parent
         // drop the connection
         connection_end (connection);
     }
@@ -1815,8 +1824,36 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
     u8 retval = 1;
 
     switch (cerver->type) {
+        // handle connection in dedicated thread
         case CERVER_TYPE_WEB: {
-            // TODO: handle connection in dedicated thread
+            CerverReceive *cr = cerver_receive_create_full (
+                RECEIVE_TYPE_NORMAL,
+                cerver,
+                NULL, connection
+            );
+
+            if (cr) {
+                if (thpool_is_full (cerver->thpool)) {
+                    pthread_t thread_id = 0;
+                    if (!thread_create_detachable (
+                        &thread_id,
+                        cerver_receive_http,
+                        cr
+                    )) {
+                        retval = 0;     // success
+                    }
+                }
+
+                else {
+                    if (!thpool_add_work (
+                        cerver->thpool, 
+                        (void (*) (void *)) cerver_receive_http, 
+                        cr
+                    )) {
+                        retval = 0;     // success
+                    }
+                }
+            }
         } break;
         
         default: {
