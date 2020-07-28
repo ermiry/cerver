@@ -1468,6 +1468,8 @@ static inline void cerver_receive_success_receive_handle (CerverReceive *cr, ssi
                     // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
                     // receive_handle_delete (receive);
                 }
+
+                cerver_receive_delete (cr);
             } break;
 
             case CERVER_HANDLER_TYPE_THREADS: 
@@ -1542,8 +1544,6 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
             cerver_receive_success_receive_handle (cr, rc, packet_buffer);
             break;
     }
-
-    cerver_receive_delete (cr);
 
 }
 
@@ -1707,10 +1707,12 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
                 free (status);
             }
         }
-    } while (rc > 0);
+    } while ((rc > 0) && (cr->socket->sock_fd > 0));
 
-    // the connection has ended
-    client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
+    // check if the connection has already ended
+    if (cr->socket->sock_fd > 0) {
+        client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
+    }
 
     cerver_receive_delete (cr);
 
@@ -1948,12 +1950,24 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
         cerver_receive_threads,
         cr
     )) {
+        #ifdef HANDLER_DEBUG
+        char *status = c_string_create (
+            "Created detachable thread for sock fd <%d> connection",
+            cr->connection->socket->sock_fd
+        );
+
+        if (status) {
+            cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+            free (status);
+        }
+        #endif
+
         retval = 0;     // success
     }
 
     else {
         char *status = c_string_create (
-            "cerver_register_new_connection_normal_default () - Failed to create detachable thread for new connection with sock fd <%d>!",
+            "cerver_register_new_connection_normal_default () - Failed to create detachable thread for sock fd <%d> connection!",
             cr->connection->socket->sock_fd
         );
 
@@ -1994,8 +2008,10 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
                 case CERVER_HANDLER_TYPE_POLL: 
                     // nothing to be done, as connection will be handled by poll ()
                     // after being registered to the cerver
+                    retval = 0;     // success
                     break;
 
+                // TODO: log additinal info
                 // handle connection in dedicated thread
                 case CERVER_HANDLER_TYPE_THREADS: {
                     CerverReceive *cr = cerver_receive_create_full (
@@ -2007,12 +2023,12 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
                     if (cr) {
                         // create a new detachable thread directly
                         if (cerver->handle_detachable_threads) {
-                            cerver_register_new_connection_normal_default_create_detachable (cr);
+                            retval = cerver_register_new_connection_normal_default_create_detachable (cr);
                         }
 
                         else {
                             if (thpool_is_full (cerver->thpool)) {
-                                cerver_register_new_connection_normal_default_create_detachable (cr);
+                                retval = cerver_register_new_connection_normal_default_create_detachable (cr);
                             }
 
                             else {
@@ -2059,11 +2075,11 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
 
     switch (cerver->type) {
         case CERVER_TYPE_WEB: {
-            cerver_register_new_connection_normal_web (cerver, connection);
+            retval = cerver_register_new_connection_normal_web (cerver, connection);
         } break;
         
         default: {
-            cerver_register_new_connection_normal_default (cerver, connection);
+            retval = cerver_register_new_connection_normal_default (cerver, connection);
         } break;
     }
 
