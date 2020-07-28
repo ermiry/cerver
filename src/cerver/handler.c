@@ -1502,10 +1502,10 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 }
 
 // receive all incoming data from the socket
-void cerver_receive (void *ptr) {
+void cerver_receive (void *cerver_receive_ptr) {
 
-    if (ptr) {
-        CerverReceive *cr = (CerverReceive *) ptr;
+    if (cerver_receive_ptr) {
+        CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
         if (cr->cerver && cr->socket) {
             if (cr->socket > 0) {
@@ -1520,12 +1520,16 @@ void cerver_receive (void *ptr) {
                             // no more data to read 
                             if (errno != EWOULDBLOCK) {
                                 #ifdef CERVER_DEBUG 
-                                char *s = c_string_create ("cerver_receive () - rc < 0 - sock fd: %d", 
-                                    cr->socket->sock_fd);
+                                char *s = c_string_create (
+                                    "cerver_receive () - rc < 0 - sock fd: %d", 
+                                    cr->socket->sock_fd
+                                );
+
                                 if (s) {
                                     cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
                                     free (s);
                                 }
+
                                 perror ("Error ");
                                 #endif
 
@@ -1538,15 +1542,19 @@ void cerver_receive (void *ptr) {
                         case 0: {
                             // man recv -> steam socket perfomed an orderly shutdown
                             // but in dgram it might mean something?
-                            // #ifdef CERVER_DEBUG
-                            // char *s = c_string_create ("cerver_recieve () - rc == 0 - sock fd: %d",
-                            //     cr->socket->sock_fd);
-                            // if (s) {
-                            //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                            //     free (s);
-                            // }
-                            // // perror ("Error ");
-                            // #endif
+                            #ifdef CERVER_DEBUG
+                            char *s = c_string_create (
+                                "cerver_recieve () - rc == 0 - sock fd: %d",
+                                cr->socket->sock_fd
+                            );
+
+                            if (s) {
+                                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                                free (s);
+                            }
+                            
+                            // perror ("Error ");
+                            #endif
 
                             cerver_switch_receive_handle_failed (cr);
 
@@ -1564,11 +1572,15 @@ void cerver_receive (void *ptr) {
                 }
 
                 else {
-                    #ifdef CERVER_DEBUG
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, 
-                        "Failed to allocate a new packet buffer!");
-                    #endif
-                    // break;
+                    char *status = c_string_create (
+                        "cerver_receive () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+                        cr->connection->socket->sock_fd
+                    );
+
+                    if (status) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_HANDLER, status);
+                        free (status);
+                    }
                 }
             }
 
@@ -1582,6 +1594,7 @@ void cerver_receive (void *ptr) {
             cerver_receive_delete (cr);
         }
     }
+
 }
 
 static void *cerver_receive_threads (void *cerver_receive_ptr) {
