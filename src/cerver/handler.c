@@ -1456,44 +1456,56 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
         receive_handle->buffer = packet_buffer;
         receive_handle->buffer_size = rc;
 
-        if (cr->cerver->thpool) {
-            // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
-            // and it seems to be working as expected
-            if (!thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive_handle)) {
-                // char *s = c_string_create ("Added %s cr->cerver->handle_received_buffer () to thpool!",
-                //     cr->cerver->info->name->str);
-                // if (s) {
-                //     cerver_log_debug (s);
-                //     free (s);
-                // }
-            }
+        switch (receive_handle->cerver->handler_type) {
+            case CERVER_HANDLER_TYPE_NONE: break;
 
-            else {
-                char *s = c_string_create (
-                    "Failed to add %s cr->cerver->handle_received_buffer () to thpool!",
-                    cr->cerver->info->name->str
-                );
-                if (s) {
-                    cerver_log_error (s);
-                    free (s);
+            case CERVER_HANDLER_TYPE_POLL: {
+                if (cr->cerver->thpool) {
+                    // 28/05/2020 -- 02:37 -- added thpool here instead of cerver_poll ()
+                    // and it seems to be working as expected
+                    if (!thpool_add_work (cr->cerver->thpool, cr->cerver->handle_received_buffer, receive_handle)) {
+                        // char *s = c_string_create ("Added %s cr->cerver->handle_received_buffer () to thpool!",
+                        //     cr->cerver->info->name->str);
+                        // if (s) {
+                        //     cerver_log_debug (s);
+                        //     free (s);
+                        // }
+                    }
+
+                    else {
+                        char *s = c_string_create (
+                            "Failed to add %s cr->cerver->handle_received_buffer () to thpool!",
+                            cr->cerver->info->name->str
+                        );
+                        if (s) {
+                            cerver_log_error (s);
+                            free (s);
+                        }
+                    }
+
+                    // char *status = c_string_create ("Cerver %s active thpool threads: %d", 
+                    //     cr->cerver->info->name->str,
+                    //     thpool_get_num_threads_working (cr->cerver->thpool)
+                    // );
+                    // if (status) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     free (status);
+                    // }
                 }
-            }
 
-            // char *status = c_string_create ("Cerver %s active thpool threads: %d", 
-            //     cr->cerver->info->name->str,
-            //     thpool_get_num_threads_working (cr->cerver->thpool)
-            // );
-            // if (status) {
-            //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
-            //     free (status);
-            // }
-        }
+                else {
+                    cr->cerver->handle_received_buffer (receive_handle);
 
-        else {
-            cr->cerver->handle_received_buffer (receive_handle);
+                    // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
+                    // receive_handle_delete (receive);
+                }
+            } break;
 
-            // 28/05/2020 -- called from inside cerver_receive_handle_buffer ()
-            // receive_handle_delete (receive);
+            case CERVER_HANDLER_TYPE_THREADS: 
+                cr->cerver->handle_received_buffer (receive_handle);
+                break;
+
+            default: break;
         }
     }
 
@@ -1552,7 +1564,7 @@ void cerver_receive (void *cerver_receive_ptr) {
                                 cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
                                 free (s);
                             }
-                            
+
                             // perror ("Error ");
                             #endif
 
