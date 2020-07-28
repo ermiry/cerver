@@ -446,14 +446,6 @@ extern u8 cerver_start (Cerver *cerver);
 
 #pragma endregion
 
-#pragma region restart
-
-// teardowns the cerver and creates a fresh new one with the same parameters
-// returns 0 on success, 1 on error
-extern u8 cerver_restart (Cerver *cerver);
-
-#pragma endregion
-
 #pragma region update
 
 // aux structure for cerver update methods
