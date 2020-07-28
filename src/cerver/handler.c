@@ -1823,7 +1823,6 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
     u8 retval = 1;
 
-    // FIXME: delete on failure
     CerverReceive *cr = cerver_receive_create_full (
         RECEIVE_TYPE_NORMAL,
         cerver,
@@ -1843,6 +1842,7 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
             else {
                 cerver_log_error ("cerver_register_new_connection_normal_web () - failed to create detachable thread!");
+                cerver_receive_delete (cr);
             }
         }
 
@@ -1853,6 +1853,10 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
                 cr
             )) {
                 retval = 0;     // success
+            }
+
+            else {
+                cerver_receive_delete (cr);
             }
         }
     }
@@ -1884,6 +1888,8 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
             cerver_log_error (status);
             free (status);
         }
+
+        cerver_receive_delete (cr);
     }
 
     return retval;
@@ -1919,30 +1925,35 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
                 // handle connection in dedicated thread
                 case CERVER_HANDLER_TYPE_THREADS: {
-                    // FIXME: delete on failure
                     CerverReceive *cr = cerver_receive_create_full (
                         RECEIVE_TYPE_NORMAL,
                         cerver,
                         client, connection
                     );
-
-                    // create a new detachable thread directly
-                    if (cerver->handle_detachable_threads) {
-                        cerver_register_new_connection_normal_default_create_detachable (cr);
-                    }
-
-                    else {
-                        if (thpool_is_full (cerver->thpool)) {
+                    
+                    if (cr) {
+                        // create a new detachable thread directly
+                        if (cerver->handle_detachable_threads) {
                             cerver_register_new_connection_normal_default_create_detachable (cr);
                         }
 
                         else {
-                            if (!thpool_add_work (
-                                cerver->thpool, 
-                                (void (*) (void *)) cerver_receive_threads, 
-                                cr
-                            )) {
-                                retval = 0;     // success
+                            if (thpool_is_full (cerver->thpool)) {
+                                cerver_register_new_connection_normal_default_create_detachable (cr);
+                            }
+
+                            else {
+                                if (!thpool_add_work (
+                                    cerver->thpool, 
+                                    (void (*) (void *)) cerver_receive_threads, 
+                                    cr
+                                )) {
+                                    retval = 0;     // success
+                                }
+
+                                else {
+                                    cerver_receive_delete (cr);
+                                }
                             }
                         }
                     }
