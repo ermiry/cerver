@@ -1629,7 +1629,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 
 }
 
-static void cerver_receive_threads (void *cerver_receive_ptr) {
+static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
     if (cerver_receive_ptr) {
         CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
@@ -1699,6 +1699,8 @@ static void cerver_receive_threads (void *cerver_receive_ptr) {
 
         cerver_receive_delete (cr);
     }
+
+    return NULL;
 
 }
 
@@ -1827,20 +1829,46 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
                             // after being registered to the cerver
                             break;
 
-                        case CERVER_HANDLER_TYPE_THREADS:
-                            // TODO: option to create a new thread on its own 
+                        case CERVER_HANDLER_TYPE_THREADS: {
+                            CerverReceive *cr = cerver_receive_create_full (
+                                RECEIVE_TYPE_NORMAL,
+                                cerver,
+                                client, connection
+                            );
+
+                            // create a new detachable thread directly
+                            if (cerver->handle_detachable_threads) {
+                                pthread_t thread_id = 0;
+                                if (!thread_create_detachable (
+                                    &thread_id,
+                                    cerver_receive_threads,
+                                    cr
+                                )) {
+                                    retval = 0;     // success
+                                }
+
+                                else {
+                                    char *status = c_string_create (
+                                        "cerver_register_new_connection_normal () - Failed to create detachable thread for new connection with sock fd <%d>!",
+                                        connection->socket->sock_fd
+                                    );
+
+                                    if (status) {
+                                        cerver_log_error (status);
+                                        free (status);
+                                    }
+                                }
+                            }
+
                             // handle connection in dedicated thread
                             if (!thpool_add_work (
                                 cerver->thpool, 
-                                cerver_receive_threads, 
-                                cerver_receive_create_full (
-                                    RECEIVE_TYPE_NORMAL,
-                                    cerver,
-                                    client, connection
-                                ))) {
+                                (void (*) (void *)) cerver_receive_threads, 
+                                cr
+                            )) {
                                 retval = 0;     // success
                             }
-                            break;
+                        } break;
 
                         default: break;
                     }
