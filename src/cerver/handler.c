@@ -23,6 +23,8 @@
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
 
+#include "cerver/http/http.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
@@ -1537,7 +1539,7 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
     switch (cr->cerver->type) {
         case CERVER_TYPE_WEB:
-            // FIXME: handle http request
+            http_receive_handle (cr, rc, packet_buffer);
             break;
 
         default: 
@@ -1720,6 +1722,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 }
 
+// FIXME: 28/07/2020 - 14:08 - will handle the buffer each recv () 
 // we expect only one request to be sent, so keep reading the socket until no more data is left,
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
