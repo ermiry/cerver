@@ -487,6 +487,24 @@ void connection_end (Connection *connection) {
 
 }
 
+void connection_drop (Cerver *cerver, Connection *connection) {
+
+    if (connection) {
+        // close the socket
+        connection_end (connection);
+
+        if (cerver) {
+            // move the socket to the cerver's socket pool to avoid destroying it
+            // to handle if any other thread is waiting to access the socket's mutex
+            cerver_sockets_pool_push (cerver, connection->socket);
+            connection->socket = NULL;
+        }
+
+        connection_delete (connection);
+    }
+
+}
+
 // gets the connection from the on hold connections map in cerver
 Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 sock_fd) {
 

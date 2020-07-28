@@ -415,15 +415,7 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
 
     if (cerver && client && connection) {
         if (dlist_remove (client->connections, connection, NULL)) {
-            // close the socket
-            connection_end (connection);
-
-            // move the socket to the cerver's socket pool to avoid destroying it
-            // to handle if any other thread is waiting to access the socket's mutex
-            cerver_sockets_pool_push (cerver, connection->socket);
-            connection->socket = NULL;
-
-            connection_delete (connection);
+            connection_drop (cerver, connection);
 
             retval = 0;
         }
