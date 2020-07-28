@@ -1906,12 +1906,26 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
     if (cr) {
         if (thpool_is_full (cerver->thpool)) {
+            #ifdef HANDLER_DEBUG
+            char *status = c_string_create (
+                "Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
+                cerver->info->name->str, connection->socket->sock_fd
+            );
+
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                free (status);
+            }
+            #endif
+
             pthread_t thread_id = 0;
             if (!thread_create_detachable (
                 &thread_id,
                 cerver_receive_http,
                 cr
             )) {
+                
+
                 retval = 0;     // success
             }
 
@@ -1927,6 +1941,30 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
                 (void (*) (void *)) cerver_receive_http, 
                 cr
             )) {
+                #ifdef HANDLER_DEBUG
+                char *status = c_string_create (
+                    "Added work for sock fd <%d> connection to the thpool!",
+                    connection->socket->sock_fd
+                );
+
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                    free (status);
+                }
+
+                status = c_string_create (
+                    "Cerver %s thpool - %d / %d threads working",
+                    cerver->info->name->str,
+                    thpool_get_num_threads_working (cerver->thpool),
+                    cerver->thpool->num_threads_alive
+                );
+
+                if (status) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                    free (status);
+                }
+                #endif
+
                 retval = 0;     // success
             }
 
@@ -2011,7 +2049,6 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
                     retval = 0;     // success
                     break;
 
-                // TODO: log additinal info
                 // handle connection in dedicated thread
                 case CERVER_HANDLER_TYPE_THREADS: {
                     CerverReceive *cr = cerver_receive_create_full (
@@ -2028,6 +2065,18 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
                         else {
                             if (thpool_is_full (cerver->thpool)) {
+                                #ifdef HANDLER_DEBUG
+                                char *status = c_string_create (
+                                    "Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
+                                    cerver->info->name->str, connection->socket->sock_fd
+                                );
+
+                                if (status) {
+                                    cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                                    free (status);
+                                }
+                                #endif
+
                                 retval = cerver_register_new_connection_normal_default_create_detachable (cr);
                             }
 
@@ -2037,6 +2086,30 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
                                     (void (*) (void *)) cerver_receive_threads, 
                                     cr
                                 )) {
+                                    #ifdef HANDLER_DEBUG
+                                    char *status = c_string_create (
+                                        "Added work for sock fd <%d> connection to the thpool!",
+                                        connection->socket->sock_fd
+                                    );
+
+                                    if (status) {
+                                        cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                                        free (status);
+                                    }
+
+                                    status = c_string_create (
+                                        "Cerver %s thpool - %d / %d threads working",
+                                        cerver->info->name->str,
+                                        thpool_get_num_threads_working (cerver->thpool),
+                                        cerver->thpool->num_threads_alive
+                                    );
+
+                                    if (status) {
+                                        cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, status);
+                                        free (status);
+                                    }
+                                    #endif
+
                                     retval = 0;     // success
                                 }
 

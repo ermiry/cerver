@@ -1350,9 +1350,19 @@ static u8 cerver_init (Cerver *cerver) {
     int retval = 1;
 
     if (cerver) {
-        #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Initializing cerver...");
-        #endif
+        char *status = c_string_create ("Initializing cerver %s...", cerver->info->name->str);
+        if (status) {
+            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            free (status);
+        }
+
+        estring *cerver_type = cerver_type_to_string (cerver->type);
+        printf ("%s\n", cerver_type->str);
+        estring_delete (cerver_type);
+
+        estring *cerver_handler_type = cerver_handler_type_to_string (cerver->handler_type);
+        printf ("%s\n", cerver_handler_type->str);
+        estring_delete (cerver_handler_type);
 
         if (!cerver_network_init (cerver)) {
             if (!cerver_init_data_structures (cerver)) {
