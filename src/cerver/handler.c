@@ -1809,10 +1809,6 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
             cerver_log_error (status);
             free (status);
         }
-
-        // FIXME: just return an error to be handled by parent
-        // drop the connection
-        connection_end (connection);
     }
 
     return retval;
@@ -2030,9 +2026,19 @@ static void cerver_register_new_connection (Cerver *cerver,
             #endif
         }
 
+        // internal server error - failed to handle the new connection
         else {
-            // internal server error - failed to handle the new connection
-            // TODO:
+            char *status = c_string_create (
+                "cerver_register_new_connection () - internal error - dropping sock fd <%d> connection...",
+                connection->socket->sock_fd
+            );
+
+            if (status) {
+                cerver_log_error (status);
+                free (status);
+            }
+
+            connection_drop (cerver, connection);
         }
     }
 
