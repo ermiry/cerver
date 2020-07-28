@@ -1584,6 +1584,81 @@ void cerver_receive (void *ptr) {
     }
 }
 
+static void *cerver_receive_threads (void *cerver_receive_ptr) {
+
+    if (cerver_receive_ptr) {
+        CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+        char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+        if (packet_buffer) {
+            ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+
+            switch (rc) {
+                case -1: {
+                    #ifdef CERVER_DEBUG 
+                    char *s = c_string_create (
+                        "cerver_receive_threads () - rc < 0 - sock fd: %d", 
+                        cr->socket->sock_fd
+                    );
+                    
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        free (s);
+                    }
+
+                    perror ("Error ");
+                    #endif
+
+                    cerver_switch_receive_handle_failed (cr);
+
+                    free (packet_buffer);
+                } break;
+
+                case 0: {
+                    // #ifdef CERVER_DEBUG
+                    // char *s = c_string_create (
+                    //     "cerver_receive_threads () - rc == 0 - sock fd: %d",
+                    //     cr->socket->sock_fd
+                    // );
+
+                    // if (s) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                    //     free (s);
+                    // }
+
+                    // perror ("Error ");
+                    // #endif
+
+                    cerver_switch_receive_handle_failed (cr);
+
+                    free (packet_buffer);
+                } break;
+
+                default: {
+                    cerver_receive_success (cr, rc, packet_buffer);
+                } break;
+            }
+        }
+
+        else {
+            char *status = c_string_create (
+                "cerver_receive_threads () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+                cr->connection->socket->sock_fd
+            );
+
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_HANDLER, status);
+                free (status);
+            }
+        }
+
+        cerver_receive_delete (cr);
+    }
+
+    return NULL;
+
+}
+
 #pragma endregion
 
 #pragma region accept
