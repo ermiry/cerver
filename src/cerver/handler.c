@@ -1722,6 +1722,83 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
+    CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+    ssize_t rc = 0;
+    do {
+        char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+        if (packet_buffer) {
+            rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+
+            switch (rc) {
+                case -1: {
+                    #ifdef CERVER_DEBUG 
+                    char *s = c_string_create (
+                        "cerver_receive_http () - rc < 0 - sock fd: %d", 
+                        cr->socket->sock_fd
+                    );
+                    
+                    if (s) {
+                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        free (s);
+                    }
+
+                    perror ("Error ");
+                    #endif
+                } break;
+
+                case 0: {
+                    // #ifdef CERVER_DEBUG
+                    // char *s = c_string_create (
+                    //     "cerver_receive_threads () - rc == 0 - sock fd: %d",
+                    //     cr->socket->sock_fd
+                    // );
+
+                    // if (s) {
+                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                    //     free (s);
+                    // }
+
+                    // perror ("Error ");
+                    // #endif
+                } break;
+
+                default: {
+                    cerver_receive_success (cr, rc, packet_buffer);
+                } break;
+            }
+
+            free (packet_buffer);
+        }
+
+        else {
+            char *status = c_string_create (
+                "cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+                cr->connection->socket->sock_fd
+            );
+
+            if (status) {
+                cerver_log_msg (stderr, LOG_ERROR, LOG_HANDLER, status);
+                free (status);
+            }
+        }
+    } while (rc > 0);
+
+    char *status = c_string_create (
+        "cerver_receive_http () - loop has ended - dropping sock fd <%d> connection...",
+        cr->connection->socket->sock_fd
+    );
+
+    if (status) {
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+        free (status);
+    }
+
+    // the connection has ended
+    connection_drop (cr->cerver, cr->connection);
+
+    cerver_receive_delete (cr);
+
     return NULL;
 
 }
