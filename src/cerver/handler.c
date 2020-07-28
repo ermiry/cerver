@@ -1823,6 +1823,7 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
     u8 retval = 1;
 
+    // FIXME: delete on failure
     CerverReceive *cr = cerver_receive_create_full (
         RECEIVE_TYPE_NORMAL,
         cerver,
@@ -1860,6 +1861,35 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
 }
 
+static u8 cerver_register_new_connection_normal_default_create_detachable (CerverReceive *cr) {
+
+    u8 retval = 1;
+
+    pthread_t thread_id = 0;
+    if (!thread_create_detachable (
+        &thread_id,
+        cerver_receive_threads,
+        cr
+    )) {
+        retval = 0;     // success
+    }
+
+    else {
+        char *status = c_string_create (
+            "cerver_register_new_connection_normal_default () - Failed to create detachable thread for new connection with sock fd <%d>!",
+            cr->connection->socket->sock_fd
+        );
+
+        if (status) {
+            cerver_log_error (status);
+            free (status);
+        }
+    }
+
+    return retval;
+
+}
+
 static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connection *connection) {
 
     u8 retval = 1;
@@ -1889,6 +1919,7 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
                 // handle connection in dedicated thread
                 case CERVER_HANDLER_TYPE_THREADS: {
+                    // FIXME: delete on failure
                     CerverReceive *cr = cerver_receive_create_full (
                         RECEIVE_TYPE_NORMAL,
                         cerver,
@@ -1897,44 +1928,23 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
                     // create a new detachable thread directly
                     if (cerver->handle_detachable_threads) {
-                        pthread_t thread_id = 0;
-                        if (!thread_create_detachable (
-                            &thread_id,
-                            cerver_receive_threads,
-                            cr
-                        )) {
-                            retval = 0;     // success
-                        }
-
-                        else {
-                            char *status = c_string_create (
-                                "cerver_register_new_connection_normal () - Failed to create detachable thread for new connection with sock fd <%d>!",
-                                connection->socket->sock_fd
-                            );
-
-                            if (status) {
-                                cerver_log_error (status);
-                                free (status);
-                            }
-                        }
+                        cerver_register_new_connection_normal_default_create_detachable (cr);
                     }
 
                     else {
                         if (thpool_is_full (cerver->thpool)) {
-
+                            cerver_register_new_connection_normal_default_create_detachable (cr);
                         }
 
                         else {
-
+                            if (!thpool_add_work (
+                                cerver->thpool, 
+                                (void (*) (void *)) cerver_receive_threads, 
+                                cr
+                            )) {
+                                retval = 0;     // success
+                            }
                         }
-                    }
-
-                    if (!thpool_add_work (
-                        cerver->thpool, 
-                        (void (*) (void *)) cerver_receive_threads, 
-                        cr
-                    )) {
-                        retval = 0;     // success
                     }
                 } break;
 
@@ -1945,7 +1955,7 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
     else {
         char *status = c_string_create (
-            "cerver_register_new_connection_normal () - Failed to create new client for new connection with sock fd <%d>!",
+            "cerver_register_new_connection_normal_default () - Failed to create new client for new connection with sock fd <%d>!",
             connection->socket->sock_fd
         );
 
