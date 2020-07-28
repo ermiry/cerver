@@ -294,6 +294,40 @@ unsigned int thpool_get_num_threads_working (Thpool *thpool) {
 
 }
 
+// returns true if the thpool does NOT have any working thread
+bool thpool_is_empty (Thpool *thpool) {
+
+	bool retval = false;
+
+	if (thpool) {
+		pthread_mutex_lock (thpool->mutex);
+
+		retval = (thpool->num_threads_working == 0);
+		
+		pthread_mutex_unlock (thpool->mutex);
+	}
+
+	return retval;
+
+}
+
+// returns true if the thpool has ALL its threads working
+bool thpool_is_full (Thpool *thpool) {
+
+	bool retval = false;
+
+	if (thpool) {
+		pthread_mutex_lock (thpool->mutex);
+
+		retval = (thpool->num_threads_working == thpool->num_threads_alive);
+		
+		pthread_mutex_unlock (thpool->mutex);
+	}
+
+	return retval;
+
+}
+
 // adds a work to the thpool's job queue
 // it will be executed once it is the next in line and a thread is free
 int thpool_add_work (Thpool *thpool, void (*work) (void *), void *args) {

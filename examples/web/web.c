@@ -158,7 +158,7 @@ int main (int argc, char **argv) {
 	cerver_log_debug ("Simple Web Cerver Example");
 	printf ("\n");
 
-	web_cerver = cerver_create (WEB_CERVER, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 1000);
+	web_cerver = cerver_create (CERVER_TYPE_WEB, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 1000);
 	if (web_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (web_cerver, 4096);
@@ -166,15 +166,22 @@ int main (int argc, char **argv) {
 
 		cerver_set_handle_recieved_buffer (web_cerver, app_handle_received_buffer);
 
-		if (!cerver_start (web_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start cerver!");
+		if (cerver_start (web_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				web_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (web_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
+
+		cerver_delete (web_cerver);
 	}
 
 	return 0;

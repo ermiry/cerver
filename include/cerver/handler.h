@@ -198,9 +198,14 @@ typedef struct CerverReceive {
 
 } CerverReceive;
 
+extern void cerver_receive_delete (void *ptr);
+
 extern CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
-extern void cerver_receive_delete (void *ptr);
+extern CerverReceive *cerver_receive_create_full (ReceiveType receive_type, 
+    struct _Cerver *cerver, 
+    struct _Client *client, struct _Connection *connection
+);
 
 extern void cerver_switch_receive_handle_failed (CerverReceive *cr);
 
@@ -236,6 +241,13 @@ extern u8 cerver_poll_unregister_connection (struct _Cerver *cerver, struct _Con
 
 // server poll loop to handle events in the registered socket's fds
 extern u8 cerver_poll (struct _Cerver *cerver);
+
+#pragma endregion
+
+#pragma region threads
+
+// handle new connections in dedicated threads
+extern u8 cerver_threads (struct _Cerver *cerver);
 
 #pragma endregion
 

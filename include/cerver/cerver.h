@@ -51,21 +51,39 @@ struct _Handler;
 
 typedef enum CerverType {
 
-    CUSTOM_CERVER = 0,
-    FILE_CERVER,
-    GAME_CERVER,
-    WEB_CERVER, 
+    CERVER_TYPE_NONE            = 0,
+
+    CERVER_TYPE_CUSTOM          = 1,
+
+    CERVER_TYPE_GAME            = 2,
+    CERVER_TYPE_WEB             = 3,
+    CERVER_TYPE_FILE            = 4,
 
 } CerverType;
+
+extern estring *cerver_type_to_string (CerverType type);
+
+typedef enum CerverHandlerType {
+
+    CERVER_HANDLER_TYPE_NONE            = 0,
+
+    CERVER_HANDLER_TYPE_POLL            = 1, // handle connections using a single thread & poll ()
+    CERVER_HANDLER_TYPE_THREADS         = 2, // handle each new connection in a dedicated thread
+
+} CerverHandlerType;
+
+extern estring *cerver_handler_type_to_string (CerverHandlerType type);
+
+#pragma region info
 
 typedef struct CerverInfo {
 
     estring *name;
-    estring *welcome_msg;                            // this msg is sent to the client when it first connects
-    struct _Packet *cerver_info_packet;             // useful info that we can send to clients
+    estring *welcome_msg;                  // this msg is sent to the client when it first connects
+    struct _Packet *cerver_info_packet;    // useful info that we can send to clients
 
-    time_t time_started;                            // the actual time the cerver was started
-    u64 uptime;                                     // the seconds the cerver has been up
+    time_t time_started;                   // the actual time the cerver was started
+    u64 uptime;                            // the seconds the cerver has been up
 
 } CerverInfo;
 
@@ -77,6 +95,10 @@ extern u8 cerver_set_welcome_msg (struct _Cerver *cerver, const char *msg);
 // retuns 0 on success, 1 on error
 extern u8 cerver_info_send_info_packet (struct _Cerver *cerver, 
     struct _Client *client, struct _Connection *connection);
+
+#pragma endregion
+
+#pragma region stats
 
 typedef struct CerverStats {
 
@@ -116,8 +138,14 @@ extern void cerver_stats_set_threshold_time (struct _Cerver *cerver, time_t thre
 // prints the cerver stats
 extern void cerver_stats_print (struct _Cerver *cerver);
 
+#pragma endregion
+
+#pragma region main
+
 // this is the generic cerver struct, used to create different server types
 struct _Cerver {
+
+    CerverType type;
 
     i32 sock;                           // server socket
     struct sockaddr_storage address;
@@ -131,7 +159,6 @@ struct _Cerver {
     bool isRunning;                     // the server is recieving and/or sending packetss
     bool blocking;                      // sokcet fd is blocking?
 
-    CerverType type;
     void *cerver_data;
     Action delete_cerver_data;
 
@@ -154,6 +181,14 @@ struct _Cerver {
     u32 max_inactive_time;              // max secs allowed for a client to be inactive
     u32 check_inactive_interval;        // how often to check for inactive clients
     pthread_t inactive_thread_id;
+
+    CerverHandlerType handler_type;
+
+    // if set & CERVER_HANDLER_TYPE_THREADS, connections will be handled
+    // by creating a new detachable thread each time, if not,
+    // the thpoll will be used instead; if the thpool is full or unavailable, 
+    // a detachable thread will be created anyway
+    bool handle_detachable_threads;
 
     struct pollfd *fds;
     u32 max_n_fds;                      // current max n fds in pollfd
@@ -233,8 +268,6 @@ struct _Cerver {
 
 typedef struct _Cerver Cerver;
 
-#pragma region main
-
 extern Cerver *cerver_new (void);
 
 extern void cerver_delete (void *ptr);
@@ -271,6 +304,17 @@ extern void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
 extern void cerver_set_inactive_clients (Cerver *cerver, 
     u32 max_inactive_time, u32 check_inactive_interval);
+
+// sets the cerver handler type
+// the default type is to handle connections using the poll () which requires only one thread
+// if threads type is selected, a new thread will be created for each new connection
+extern void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type);
+
+// set the ability to handle new connections if cerver handler type is CERVER_HANDLER_TYPE_THREADS
+// by only creating new detachable threads for each connection
+// by default, this option is turned off to also use the thpool
+// if cerver is of type CERVER_TYPE_WEB, the thpool will be used more often as connections have a shorter life
+extern void cerver_set_handle_detachable_threads (Cerver *cerver, bool active);
 
 // sets the cerver poll timeout in ms
 extern void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout);
@@ -395,16 +439,16 @@ extern unsigned int cerver_get_n_handlers_working (Cerver *cerver);
 
 #pragma endregion
 
-#pragma region start
+#pragma region create
 
 // returns a new cerver with the specified parameters
 extern Cerver *cerver_create (const CerverType type, const char *name, 
     const u16 port, const Protocol protocol, bool use_ipv6,
     u16 connection_queue, u32 poll_timeout);
 
-// teardowns the cerver and creates a fresh new one with the same parameters
-// returns 0 on success, 1 on error
-extern u8 cerver_restart (Cerver *cerver);
+#pragma endregion
+
+#pragma region start
 
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any) 

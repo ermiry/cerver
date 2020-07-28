@@ -190,6 +190,8 @@ extern int connection_connect (Connection *connection);
 // ends a client connection
 extern void connection_end (Connection *connection);
 
+extern void connection_drop (struct _Cerver *cerver, Connection *connection);
+
 // gets the connection from the on hold connections map in cerver
 extern Connection *connection_get_by_sock_fd_from_on_hold (struct _Cerver *cerver, const i32 sock_fd);
 

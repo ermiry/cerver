@@ -204,7 +204,7 @@ int main (void) {
 	cerver_log_debug ("Requests Example");
 	printf ("\n");
 
-	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 8007, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Requests Example");
 
@@ -237,8 +237,7 @@ int main (void) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		cerver_delete (my_cerver);
 	}
 
 	return 0;

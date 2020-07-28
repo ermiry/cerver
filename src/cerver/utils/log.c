@@ -29,6 +29,8 @@ static char *log_get_msg_type (LogType type) {
 			case LOG_HANDLER: strcpy (retval, "[HANDLER]"); break;
 			case LOG_ADMIN: strcpy (retval, "[ADMIN]"); break;
 
+			case LOG_EVENT: strcpy (retval, "[EVENT]"); break;
+
 			default: break;
 		}
 	}
@@ -86,6 +88,8 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 					case LOG_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s" LOG_COLOR_RESET, message); break;
 
 					case LOG_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s" LOG_COLOR_RESET, message); break;
+
+					case LOG_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET, message); break;
 
 					default: fprintf (__stream, "%s", message); break;
 				}
