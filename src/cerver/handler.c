@@ -943,6 +943,8 @@ CerverReceive *cerver_receive_new (void) {
 
 }
 
+void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
+
 static inline void cerver_receive_create_normal (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
 
     if (cr) {
@@ -1069,7 +1071,25 @@ CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, 
 
 }
 
-void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
+CerverReceive *cerver_receive_create_full (ReceiveType receive_type, 
+    Cerver *cerver, 
+    Client *client, Connection *connection
+) {
+
+    CerverReceive *cr = cerver_receive_new ();
+    if (cr) {
+        cr->type = receive_type;
+
+        cr->cerver = cerver;
+
+        cr->socket = connection ? connection->socket : NULL;
+        cr->connection = connection;
+        cr->client = client;
+    }
+
+    return cr;
+
+}
 
 static void cerver_receive_handle_spare_packet (ReceiveHandle *receive_handle,
     SockReceive *sock_receive,
