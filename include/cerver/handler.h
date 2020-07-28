@@ -203,8 +203,8 @@ extern void cerver_receive_delete (void *ptr);
 extern CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
 extern CerverReceive *cerver_receive_create_full (ReceiveType receive_type, 
-    Cerver *cerver, 
-    Client *client, Connection *connection
+    struct _Cerver *cerver, 
+    struct _Client *client, struct _Connection *connection
 );
 
 extern void cerver_switch_receive_handle_failed (CerverReceive *cr);

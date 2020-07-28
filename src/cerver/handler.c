@@ -1629,7 +1629,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 
 }
 
-static void *cerver_receive_threads (void *cerver_receive_ptr) {
+static void cerver_receive_threads (void *cerver_receive_ptr) {
 
     if (cerver_receive_ptr) {
         CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
@@ -1699,8 +1699,6 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
         cerver_receive_delete (cr);
     }
-
-    return NULL;
 
 }
 
@@ -1833,7 +1831,7 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
                             // TODO: option to create a new thread on its own 
                             // handle connection in dedicated thread
                             if (!thpool_add_work (
-                                cerver, 
+                                cerver->thpool, 
                                 cerver_receive_threads, 
                                 cerver_receive_create_full (
                                     RECEIVE_TYPE_NORMAL,
