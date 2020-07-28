@@ -61,6 +61,8 @@ typedef enum CerverType {
 
 } CerverType;
 
+extern estring *cerver_type_to_string (CerverType type);
+
 typedef enum CerverHandlerType {
 
     CERVER_HANDLER_TYPE_NONE            = 0,
@@ -69,6 +71,10 @@ typedef enum CerverHandlerType {
     CERVER_HANDLER_TYPE_THREADS         = 2, // handle each new connection in a dedicated thread
 
 } CerverHandlerType;
+
+extern estring *cerver_handler_type_to_string (CerverHandlerType type);
+
+#pragma region info
 
 typedef struct CerverInfo {
 
@@ -89,6 +95,10 @@ extern u8 cerver_set_welcome_msg (struct _Cerver *cerver, const char *msg);
 // retuns 0 on success, 1 on error
 extern u8 cerver_info_send_info_packet (struct _Cerver *cerver, 
     struct _Client *client, struct _Connection *connection);
+
+#pragma endregion
+
+#pragma region stats
 
 typedef struct CerverStats {
 
@@ -127,6 +137,10 @@ extern void cerver_stats_set_threshold_time (struct _Cerver *cerver, time_t thre
 
 // prints the cerver stats
 extern void cerver_stats_print (struct _Cerver *cerver);
+
+#pragma endregion
+
+#pragma region main
 
 // this is the generic cerver struct, used to create different server types
 struct _Cerver {
@@ -253,8 +267,6 @@ struct _Cerver {
 };
 
 typedef struct _Cerver Cerver;
-
-#pragma region main
 
 extern Cerver *cerver_new (void);
 

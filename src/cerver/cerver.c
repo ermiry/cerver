@@ -38,6 +38,40 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+estring *cerver_type_to_string (CerverType type) {
+
+    estring *retval = NULL;
+
+    switch (type) {
+        case CERVER_TYPE_CUSTOM: retval = estring_new ("Cerver type: CUSTOM"); break;
+
+        case CERVER_TYPE_GAME: retval = estring_new ("Cerver type: GAME"); break;
+        case CERVER_TYPE_WEB: retval = estring_new ("Cerver type: WEB"); break;
+        case CERVER_TYPE_FILE: retval = estring_new ("Cerver type: FILE"); break;
+
+        default: retval = estring_new ("Cerver type: UNKNOWN"); break;
+    }
+
+    return retval;
+
+}
+
+estring *cerver_handler_type_to_string (CerverHandlerType type) {
+
+    estring *retval = NULL;
+
+    switch (type) {
+        case CERVER_HANDLER_TYPE_POLL: retval = estring_new ("Cerver handler type: POLL"); break;
+
+        case CERVER_HANDLER_TYPE_THREADS: retval = estring_new ("Cerver handler type: THREADS"); break;
+
+        default: retval = estring_new ("Cerver handler type: NONE"); break;
+    }
+
+    return retval;
+
+}
+
 #pragma region info
 
 static CerverInfo *cerver_info_new (void) {
