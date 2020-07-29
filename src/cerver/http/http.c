@@ -7,11 +7,8 @@
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
-#include "cerver/http/parser.h"
-#include "cerver/http/json.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
-#include "cerver/http/response.h"
 
 #include "cerver/utils/utils.h"
 
@@ -63,10 +60,38 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region routes
+
+void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
+
+	if (http_cerver && route) {
+		dlist_insert_after (http_cerver->routes, dlist_end (http_cerver->routes), route);
+	}
+
+}
+
+void http_cerver_set_catch_all_route (HttpCerver *http_cerver, 
+	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)) {
+
+	if (http_cerver && catch_all_route) {
+		http_cerver->default_handler = catch_all_route;
+	}
+
+}
+
+#pragma endregion
+
+#pragma region handler
+
 static int http_receive_handle_url (http_parser *parser, const char *at, size_t length) {
 
-	printf ("\n%s\n\n", at);
-	printf ("%.*s\n", (int) length, at);
+	// printf ("\n%s\n\n", at);
+	// printf ("%.*s\n", (int) length, at);
+
+	HttpRequest *request = (HttpRequest *) parser->data;
+	request->url = estring_new (NULL);
+	request->url->str = c_string_create ("%.*s", (int) length, at);
+	request->url->len = length;
 
 	return 0;
 
@@ -180,10 +205,6 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 				route->handler (cr, request);
 				break;
 			}
-
-			else {
-				// TODO:
-			}
 		}
 
 		else {
@@ -273,30 +294,6 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	http_request_delete (request);
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Web cerver works!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
-	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
-		http_respponse_delete (res);
-	}
-
-	// Packet *packet = packet_new ();
-	// packet_set_data (packet, response->str, response->len);
-
-	// if (!packet_send_to_socket (packet, cr->socket, 0, NULL, true)) {
-	// 	printf ("\nsent response!\n");
-	// }
-
 	connection_end (cr->connection);
 
 	// packet_delete (packet);
@@ -307,3 +304,5 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	printf ("http_receive_handle () - end!\n");
 
 }
+
+#pragma endregion

@@ -5,6 +5,7 @@
 
 #include "cerver/handler.h"
 
+#include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
 struct _Cerver;
@@ -23,12 +24,29 @@ struct _HttpCerver {
 
 typedef struct _HttpCerver HttpCerver;
 
+#pragma region main
+
 extern HttpCerver *http_cerver_new (void);
 
 extern void http_cerver_delete (void *http_cerver_ptr);
 
 extern HttpCerver *http_cerver_create (struct _Cerver *cerver);
 
+#pragma endregion
+
+#pragma region routes
+
+extern void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route);
+
+extern void http_cerver_set_catch_all_route (HttpCerver *http_cerver, 
+	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request));
+
+#pragma endregion
+
+#pragma region handler
+
 extern void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer);
+
+#pragma endregion
 
 #endif
