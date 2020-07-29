@@ -1498,53 +1498,53 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
     cr->cerver->stats->total_n_receives_done += 1;
     cr->cerver->stats->total_bytes_received += rc;
 
-    if (cr->lobby) {
-        cr->lobby->stats->n_receives_done += 1;
-        cr->lobby->stats->bytes_received += rc;
-    }
-
-    switch (cr->type) {
-        case RECEIVE_TYPE_NORMAL: {
-            cr->cerver->stats->client_receives_done += 1;
-            cr->cerver->stats->client_bytes_received += rc;
-
-            cr->client->stats->n_receives_done += 1;
-            cr->client->stats->total_bytes_received += rc;
-
-            cr->connection->stats->n_receives_done += 1;
-            cr->connection->stats->total_bytes_received += rc;
-        } break;
-
-        case RECEIVE_TYPE_ON_HOLD: {
-            cr->cerver->stats->on_hold_receives_done += 1;
-            cr->cerver->stats->on_hold_bytes_received += rc;
-
-            cr->connection->stats->n_receives_done += 1;
-            cr->connection->stats->total_bytes_received += rc;
-        } break;
-
-        case RECEIVE_TYPE_ADMIN: {
-            cr->cerver->admin->stats->total_n_receives_done += 1;
-            cr->cerver->admin->stats->total_bytes_received += rc;
-
-            cr->client->stats->n_receives_done += 1;
-            cr->client->stats->total_bytes_received += rc;
-
-            cr->connection->stats->n_receives_done += 1;
-            cr->connection->stats->total_bytes_received += rc;
-        } break;
-
-        default: break;
-    }
-
     switch (cr->cerver->type) {
         case CERVER_TYPE_WEB:
             http_receive_handle (cr, rc, packet_buffer);
             break;
 
-        default: 
+        default: {
+            if (cr->lobby) {
+                cr->lobby->stats->n_receives_done += 1;
+                cr->lobby->stats->bytes_received += rc;
+            }
+
+            switch (cr->type) {
+                case RECEIVE_TYPE_NORMAL: {
+                    cr->cerver->stats->client_receives_done += 1;
+                    cr->cerver->stats->client_bytes_received += rc;
+
+                    cr->client->stats->n_receives_done += 1;
+                    cr->client->stats->total_bytes_received += rc;
+
+                    cr->connection->stats->n_receives_done += 1;
+                    cr->connection->stats->total_bytes_received += rc;
+                } break;
+
+                case RECEIVE_TYPE_ON_HOLD: {
+                    cr->cerver->stats->on_hold_receives_done += 1;
+                    cr->cerver->stats->on_hold_bytes_received += rc;
+
+                    cr->connection->stats->n_receives_done += 1;
+                    cr->connection->stats->total_bytes_received += rc;
+                } break;
+
+                case RECEIVE_TYPE_ADMIN: {
+                    cr->cerver->admin->stats->total_n_receives_done += 1;
+                    cr->cerver->admin->stats->total_bytes_received += rc;
+
+                    cr->client->stats->n_receives_done += 1;
+                    cr->client->stats->total_bytes_received += rc;
+
+                    cr->connection->stats->n_receives_done += 1;
+                    cr->connection->stats->total_bytes_received += rc;
+                } break;
+
+                default: break;
+            }
+
             cerver_receive_success_receive_handle (cr, rc, packet_buffer);
-            break;
+        } break;
     }
 
 }
@@ -1927,8 +1927,6 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
                 cerver_receive_http,
                 cr
             )) {
-                
-
                 retval = 0;     // success
             }
 
@@ -2184,6 +2182,8 @@ static void cerver_register_new_connection (Cerver *cerver,
             free (s);
         }
         // #endif
+
+        connection->active = true;
 
         if (!cerver_register_new_connection_select (cerver, connection)) {
             #ifdef CERVER_DEBUG
