@@ -59,4 +59,6 @@ extern HttpRequest *http_request_new (void);
 
 extern void http_request_delete (HttpRequest *http_request);
 
+extern void http_request_headers_print (HttpRequest *http_request);
+
 #endif
