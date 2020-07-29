@@ -8,6 +8,7 @@
 #include "cerver/http/http_parser.h"
 #include "cerver/http/parser.h"
 #include "cerver/http/json.h"
+#include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 
@@ -98,6 +99,90 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 }
 
+DoubleList *routes;
+
+static void http_receive_handle_select_children (CerverReceive *cr, HttpRequest *request) {
+
+}
+
+// select the route that will handle the request
+static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request) {
+
+	// split the real url variables from the query
+	// TODO:
+
+	bool match = false;
+
+	// search top level routes at the start of the url
+	HttpRoute *route = NULL;
+	for (ListElement *le = dlist_start (routes); le; le = le->next) {
+		route = (HttpRoute *) le->data;
+
+		if (route->route->len == request->url->len) {
+			if (!strcmp (route->route->str, request->url->str)) {
+				// we have a direct match
+				match = true;
+				route->handler (cr, request);
+				break;
+			}
+
+			else {
+				// TODO:
+			}
+		}
+
+		else {
+			// TODO: handle only /
+			char *start_sub = strstr (request->url->str, route->route->str);
+			if (start_sub) {
+				// match and still some path left
+				char *end_sub = start_sub + route->route->len;
+
+				unsigned int n_tokens = 0;
+				char *token = NULL;
+				char *rest = end_sub;
+				while ((token = __strtok_r (rest, "/", &rest))) {
+					printf ("%s\n", token);
+
+					// if (n_tokens == route->n_toknes) {
+					// 	for (unsigned int i = 0; i < route->n_routes; i++) {
+					// 		for (unsigned int j = 0; j < route->n_routes; j++) {
+					// 			if (route->routes[i][j] == '*') {
+					// 				route->params->id = token;
+					// 			}
+
+					// 			else if (!strcmp (token, route->routes[i][j])) {
+
+					// 			}
+								
+					// 		}
+					// 	}
+					// }
+
+					
+				}
+			}
+
+			else {
+				// no match in this route, continue to the next one...
+			}
+		}
+	}
+
+	// catch all mismatches and handle with user defined route
+	if (!match) {
+		char *status = c_string_create ("No matching route for url %s", request->url);
+		if (status) {
+			cerver_log_warning (status);
+			free (status);
+		}
+
+		// handle with default route
+		// TODO:
+	}
+
+}
+
 void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	http_parser *parser = malloc (sizeof (http_parser));
@@ -128,7 +213,8 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	// http_request_headers_print (request);
 
-	// TODO: select method handler
+	// select method handler
+	http_receive_handle_select (cr, request);
 
 	http_request_delete (request);
 
