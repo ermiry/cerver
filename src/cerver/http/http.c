@@ -87,7 +87,13 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
 
-	printf ("\nbody: %s\n", at);
+	// printf ("Body: %.*s", (int) length, at);
+
+	HttpRequest *request = (HttpRequest *) parser->data;
+	request->body = estring_new (NULL);
+	request->body->str = c_string_create ("%.*s", (int) length, at);
+	request->body->len = length;
+
 	return 0;
 
 }
@@ -114,11 +120,15 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
 
-	printf ("method: %s\n", http_method_str (parser->method));
-
 	printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
 
-	http_request_headers_print (request);
+	// printf ("Method: %s\n", http_method_str (parser->method));
+
+	request->method = parser->method;
+
+	// http_request_headers_print (request);
+
+	// TODO: select method handler
 
 	http_request_delete (request);
 

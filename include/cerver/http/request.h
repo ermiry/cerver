@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_REQUEST_H_
 #define _CERVER_HTTP_REQUEST_H_
 
+#include "cerver/types/estring.h"
+
 typedef enum RequestMethod {
 
 	REQUEST_METHOD_DELETE								= 0,
@@ -48,9 +50,13 @@ typedef enum RequestHeader {
 
 typedef struct HttpRequest {
 
+	RequestMethod method;
+
 	estring *url;
+
 	RequestHeader next_header;
 	estring *headers[REQUEST_HEADERS_SIZE];
+	
 	estring *body;
 
 } HttpRequest;
