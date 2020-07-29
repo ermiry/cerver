@@ -3,6 +3,8 @@
 
 #include "cerver/types/estring.h"
 
+#include "cerver/collections/dlist.h"
+
 typedef enum RequestMethod {
 
 	REQUEST_METHOD_DELETE								= 0,
@@ -54,6 +56,8 @@ typedef struct HttpRequest {
 
 	estring *url;
 
+	DoubleList *params;
+
 	RequestHeader next_header;
 	estring *headers[REQUEST_HEADERS_SIZE];
 	
@@ -64,6 +68,8 @@ typedef struct HttpRequest {
 extern HttpRequest *http_request_new (void);
 
 extern void http_request_delete (HttpRequest *http_request);
+
+extern HttpRequest *http_request_create (void);
 
 extern void http_request_headers_print (HttpRequest *http_request);
 
