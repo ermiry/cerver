@@ -8,18 +8,62 @@
 #include "cerver/http/http_parser.h"
 #include "cerver/http/parser.h"
 #include "cerver/http/json.h"
+#include "cerver/http/request.h"
 #include "cerver/http/response.h"
+
+#include "cerver/utils/utils.h"
 
 static int http_receive_handle_url (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("\nurl: %s\n", at);
+	printf ("\n%s\n\n", at);
+	printf ("%.*s\n", (int) length, at);
+
 	return 0;
+
+}
+
+static inline int http_receive_handle_header_field_handle (const char *header) {
+
+	if (!strcmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
+	if (!strcmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
+	if (!strcmp ("Accept-Encoding", header)) return REQUEST_HEADER_ACCEPT_ENCODING;
+	if (!strcmp ("Accept-Language", header)) return REQUEST_HEADER_ACCEPT_LANGUAGE;
+
+	if (!strcmp ("Access-Control-Request-Headers", header)) return REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS;
+
+	if (!strcmp ("Authorization", header)) return REQUEST_HEADER_AUTHORIZATION;
+
+	if (!strcmp ("Cache-Control", header)) return REQUEST_HEADER_CACHE_CONTROL;
+
+	if (!strcmp ("Connection", header)) return REQUEST_HEADER_CONNECTION;
+
+	if (!strcmp ("Content-Length", header)) return REQUEST_HEADER_CONTENT_LENGTH;
+	if (!strcmp ("Content-Type", header)) return REQUEST_HEADER_CONTENT_TYPE;
+
+	if (!strcmp ("Cookie", header)) return REQUEST_HEADER_COOKIE;
+
+	if (!strcmp ("Date", header)) return REQUEST_HEADER_DATE;
+
+	if (!strcmp ("Expect", header)) return REQUEST_HEADER_EXPECT;
+
+	if (!strcmp ("Host", header)) return REQUEST_HEADER_HOST;
+
+	if (!strcmp ("Proxy-Authorization", header)) return REQUEST_HEADER_PROXY_AUTHORIZATION;
+
+	if (!strcmp ("User-Agent", header)) return REQUEST_HEADER_USER_AGENT;
+
+	return REQUEST_HEADER_INVALID;		// no known header
 
 }
 
 static int http_receive_handle_header_field (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("\nheader field: %s\n", at);
+	char header[32] = { 0 };
+	snprintf (header, 32, "%.*s", (int) length, at);
+	// printf ("\nheader field: /%s/\n", header);
+
+	((HttpRequest *) parser->data)->next_header = http_receive_handle_header_field_handle (header);
+
 	return 0;
 
 }
@@ -27,13 +71,23 @@ static int http_receive_handle_header_field (http_parser *parser, const char *at
 static int http_receive_handle_header_value (http_parser *parser, const char *at, size_t length) {
 
 	// printf ("\nheader value: %s\n", at);
+
+	HttpRequest *request = (HttpRequest *) parser->data;
+	if (request->next_header != REQUEST_HEADER_INVALID) {
+		request->headers[request->next_header] = estring_new (NULL);
+		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
+		request->headers[request->next_header]->len = length;
+	}
+
+	// request->next_header = REQUEST_HEADER_INVALID;
+
 	return 0;
 
 }
 
 static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("\nbody: %s\n", at);
+	printf ("\nbody: %s\n", at);
 	return 0;
 
 }
@@ -55,9 +109,18 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	settings.on_chunk_header = NULL;
 	settings.on_chunk_complete = NULL;
 
+	HttpRequest *request = http_request_new ();
+	parser->data = request;
+
 	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
 
+	printf ("method: %s\n", http_method_str (parser->method));
+
 	printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
+
+	http_request_headers_print (request);
+
+	http_request_delete (request);
 
 	HttpResponse *res = NULL;
 
