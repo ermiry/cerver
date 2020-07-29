@@ -908,7 +908,7 @@ u8 packet_send_to_socket (const Packet *packet, Socket *socket,
 
         if (total_sent) *total_sent = (size_t) sent;
 
-        pthread_mutex_lock (socket->write_mutex);
+        pthread_mutex_unlock (socket->write_mutex);
     }
 
     return retval;
