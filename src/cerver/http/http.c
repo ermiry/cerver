@@ -5,6 +5,7 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/parser.h"
 #include "cerver/http/json.h"
@@ -13,6 +14,54 @@
 #include "cerver/http/response.h"
 
 #include "cerver/utils/utils.h"
+
+static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
+
+#pragma region http
+
+HttpCerver *http_cerver_new (void) {
+
+	HttpCerver *http_cerver = (HttpCerver *) malloc (sizeof (HttpCerver));
+	if (http_cerver) {
+		http_cerver->cerver = NULL;
+
+		http_cerver->routes = NULL;
+
+		http_cerver->default_handler = NULL;
+	}
+
+	return http_cerver;
+
+}
+
+void http_cerver_delete (void *http_cerver_ptr) {
+
+	if (http_cerver_ptr) {
+		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
+
+		dlist_delete (http_cerver->routes);
+
+		free (http_cerver_ptr);
+	}
+
+}
+
+HttpCerver *http_cerver_create (Cerver *cerver) {
+
+	HttpCerver *http_cerver = http_cerver_new ();
+	if (http_cerver) {
+		http_cerver->cerver = cerver;
+
+		http_cerver->routes = dlist_init (http_route_delete, NULL);
+
+		http_cerver->default_handler = http_receive_handle_default_route;
+	}
+
+	return http_cerver;
+
+}
+
+#pragma endregion
 
 static int http_receive_handle_url (http_parser *parser, const char *at, size_t length) {
 
@@ -99,7 +148,11 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 }
 
-DoubleList *routes;
+static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request) {
+
+	// FIXME:
+
+}
 
 static void http_receive_handle_select_children (CerverReceive *cr, HttpRequest *request) {
 
@@ -108,6 +161,8 @@ static void http_receive_handle_select_children (CerverReceive *cr, HttpRequest 
 // select the route that will handle the request
 static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request) {
 
+	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+
 	// split the real url variables from the query
 	// TODO:
 
@@ -115,7 +170,7 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 	// search top level routes at the start of the url
 	HttpRoute *route = NULL;
-	for (ListElement *le = dlist_start (routes); le; le = le->next) {
+	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
 		route = (HttpRoute *) le->data;
 
 		if (route->route->len == request->url->len) {
