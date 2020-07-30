@@ -38,6 +38,13 @@ extern HttpRoute *http_route_new (void);
 
 extern void http_route_delete (void *route_ptr);
 
-extern HttpRoute *http_route_create (const char *actual_route);
+extern int http_route_comparator_by_n_tokens (const void *a, const void *b);
+
+extern HttpRoute *http_route_create (const char *actual_route, 
+	void (*handler)(CerverReceive *cr, HttpRequest *request));
+
+extern void http_route_init (HttpRoute *route);
+
+extern void http_route_child_add (HttpRoute *parent, HttpRoute *child);
 
 #endif

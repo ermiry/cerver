@@ -60,7 +60,11 @@ HttpRoute *http_route_new (void) {
 		route->actual = NULL;
 		route->route = NULL;
 
+		route->n_tokens = 0;
+
 		route->children = NULL;
+
+		route->routes_tokens = NULL;
 
 		route->handler = NULL;
 	}
@@ -80,18 +84,73 @@ void http_route_delete (void *route_ptr) {
 
 		dlist_delete (route->children);
 
+		dlist_delete (route->routes_tokens);
+
 		free (route_ptr);
 	}
 
 }
 
-HttpRoute *http_route_create (const char *actual_route) {
+int http_route_comparator_by_n_tokens (const void *a, const void *b) {
+
+	return ((HttpRoute *) a)->n_tokens - ((HttpRoute *) b)->n_tokens;
+
+}
+
+HttpRoute *http_route_create (const char *actual_route, 
+	void (*handler)(CerverReceive *cr, HttpRequest *request)) {
 
 	HttpRoute *route = http_route_new ();
 	if (route) {
-		route->actual = actual_route ? estring_new (actual_route) : NULL;
+		route->actual = estring_new (actual_route);
+
+		// by default, all routes are top level when they are created
+		route->base = estring_new ("/");
+		route->route = estring_create ("/%s", actual_route);
+
+		route->children = dlist_init (http_route_delete, NULL);
+
+		route->handler = handler;
 	}
 
 	return route;
+
+}
+
+void http_route_init (HttpRoute *route) {
+
+	if (route) {
+		if (route->children) {
+			// route->n_routes = route->children->size;
+			// route->routes = (char ***) calloc (route->n_routes, sizeof (char **));
+			// route->routes_lens = (unsigned int *) calloc (route->n_routes, sizeof (unsigned int));
+			// if (route->routes && route->routes_lens) {
+			// 	unsigned int idx = 0;
+			// 	HttpRoute *child = NULL;
+			// 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+			// 		child = (HttpRoute *) le->data;
+
+			// 		route->routes[idx] = c_string_split (child->actual->str, '/', &route->routes_lens[idx]);
+
+			// 		idx += 1;
+			// 	}
+			// }
+		}
+	}
+
+}
+
+void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
+
+	if (parent && child) {
+		dlist_insert_after (parent->children, dlist_end (parent->children), child);
+
+		// refactor child paths
+		estring_delete (child->base);
+		child->base = estring_new (parent->route->str);
+
+		estring_delete (child->route);
+		child->route = estring_create ("%s/%s", child->base->str, child->actual->str);
+	}
 
 }
