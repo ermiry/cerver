@@ -33,6 +33,8 @@
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
 
+#include "cerver/http/http.h"
+
 #include "cerver/game/game.h"
 
 #include "cerver/utils/log.h"
@@ -1073,6 +1075,25 @@ Cerver *cerver_create (const CerverType type, const char *name,
 
             cerver_set_network_values (cerver, port, protocol, use_ipv6, connection_queue);
 
+            // init cerver type based values
+            switch (cerver->type) {
+                case CERVER_TYPE_CUSTOM: break;
+
+                case CERVER_TYPE_GAME: {
+                    cerver->cerver_data = game_new ();
+                    cerver->delete_cerver_data = game_delete;
+                } break;
+                
+                case CERVER_TYPE_WEB: {
+                    // cerver->cerver_data = http_cerver_create (cerver);
+                    // cerver->delete_cerver_data = http_cerver_delete;
+                } break;
+
+                case CERVER_TYPE_FILE: break;
+                
+                default: break;
+            }
+
             cerver->handler_type = CERVER_HANDLER_TYPE_POLL;
             
             cerver_set_poll_time_out (cerver, poll_timeout);
@@ -1282,22 +1303,6 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             cerver->client_sock_fd_map = htab_create (poll_n_fds, NULL, NULL);
             if (cerver->client_sock_fd_map) {
                 u8 errors = 0;
-
-                // init cerver type based values
-                switch (cerver->type) {
-                    case CERVER_TYPE_CUSTOM: break;
-
-                    case CERVER_TYPE_GAME: {
-                        cerver->cerver_data = game_new ();
-                        cerver->delete_cerver_data = game_delete;
-                    } break;
-                    
-                    case CERVER_TYPE_WEB: break;
-
-                    case CERVER_TYPE_FILE: break;
-                    
-                    default: break;
-                }
 
                 // init cerver handler type based values
                 switch (cerver->handler_type) {
