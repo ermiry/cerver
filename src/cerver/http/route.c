@@ -9,6 +9,49 @@
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
+#include "cerver/utils/utils.h"
+
+#pragma region tokens
+
+static HttpRoutesTokens *http_routes_tokens_new (void) {
+
+	HttpRoutesTokens *http_routes_tokens = (HttpRoutesTokens *) malloc (sizeof (HttpRoutesTokens));
+	if (http_routes_tokens) {
+		http_routes_tokens->id = 0;
+		http_routes_tokens->n_routes = 0;
+		http_routes_tokens->routes = NULL;
+	}
+
+	return http_routes_tokens;
+
+}
+
+static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
+
+	if (http_routes_tokens_ptr) {
+		HttpRoutesTokens *http_routes_tokens = (HttpRoutesTokens *) http_routes_tokens_ptr;
+
+		if (http_routes_tokens->routes) {
+			for (unsigned int i = 0; i < http_routes_tokens->n_routes; i++) {
+				if (http_routes_tokens->routes[i]) {
+					for (unsigned int j = 0; j < http_routes_tokens->id; j++) {
+						if (http_routes_tokens->routes[i][j]) free (http_routes_tokens->routes[i][j]);
+					}
+
+					free (http_routes_tokens->routes[i]);
+				}
+			}
+
+			free (http_routes_tokens->routes);
+		}
+
+		free (http_routes_tokens_ptr);
+	}
+
+}
+
+#pragma endregion
+
 HttpRoute *http_route_new (void) {
 
 	HttpRoute *route = (HttpRoute *) malloc (sizeof (HttpRoute));
