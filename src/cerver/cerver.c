@@ -1472,22 +1472,34 @@ static u8 cerver_one_time_init (Cerver *cerver) {
             // init the cerver thpool
             errors |= cerver_one_time_init_thpool (cerver);
 
-            // if we have a game cerver, we might wanna load game data -> set by cerver admin
-            if (cerver->type == CERVER_TYPE_GAME) {
-                GameCerver *game_data = (GameCerver *) cerver->cerver_data;
-                game_data->cerver = cerver;
-                if (game_data && game_data->load_game_data) {
-                    game_data->load_game_data (NULL);
-                }
+            // perform one time init methods by cerver type
+            switch (cerver->type) {
+                case CERVER_TYPE_CUSTOM: break;
 
-                else {
-                    char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
-                        cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
-                        free (s);
+                case CERVER_TYPE_GAME: {
+                    GameCerver *game_data = (GameCerver *) cerver->cerver_data;
+                    game_data->cerver = cerver;
+                    if (game_data && game_data->load_game_data) {
+                        game_data->load_game_data (NULL);
                     }
-                } 
+
+                    else {
+                        char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
+                            cerver->info->name->str);
+                        if (s) {
+                            cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
+                            free (s);
+                        }
+                    }
+                } break;
+                
+                case CERVER_TYPE_WEB: {
+                    // http_cerver_init ((HttpCerver *) cerver->cerver_data);
+                } break;
+
+                case CERVER_TYPE_FILE: break;
+                
+                default: break;
             }
 
             cerver->info->cerver_info_packet = cerver_packet_generate (cerver);
