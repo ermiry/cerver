@@ -32,6 +32,8 @@ extern void http_cerver_delete (void *http_cerver_ptr);
 
 extern HttpCerver *http_cerver_create (struct _Cerver *cerver);
 
+extern void http_cerver_init (HttpCerver *http_cerver);
+
 #pragma endregion
 
 #pragma region routes

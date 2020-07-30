@@ -58,6 +58,17 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 }
 
+void http_cerver_init (HttpCerver *http_cerver) {
+
+	if (http_cerver) {
+		// init top level routes
+		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+			http_route_init ((HttpRoute *) le->data);
+		}
+	}
+
+}
+
 #pragma endregion
 
 #pragma region routes
