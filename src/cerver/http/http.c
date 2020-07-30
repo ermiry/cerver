@@ -219,34 +219,35 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 		}
 
 		else {
-			// TODO: handle only /
+			// if (route->children->size) {
+
+			// }
+
+			printf ("request->url->str: %s\n", request->url->str);
 			char *start_sub = strstr (request->url->str, route->route->str);
 			if (start_sub) {
 				// match and still some path left
-				char *end_sub = start_sub + route->route->len;
+				char *end_sub = request->url->str + route->route->len;
 
-				unsigned int n_tokens = 0;
+				printf ("first end_sub: %s\n", end_sub);
+
+				unsigned int n_tokens = c_string_count_tokens (end_sub, '/');
+				n_tokens -= 1;
+
+				printf ("n tokens: %d\n", n_tokens);
+				printf ("second end_sub: %s\n", end_sub);
+
 				char *token = NULL;
 				char *rest = end_sub;
+				unsigned int idx = 0;
+				unsigned int sub_idx = 0;
 				while ((token = __strtok_r (rest, "/", &rest))) {
 					printf ("%s\n", token);
 
-					// if (n_tokens == route->n_toknes) {
-					// 	for (unsigned int i = 0; i < route->n_routes; i++) {
-					// 		for (unsigned int j = 0; j < route->n_routes; j++) {
-					// 			if (route->routes[i][j] == '*') {
-					// 				route->params->id = token;
-					// 			}
+					// TODO:
 
-					// 			else if (!strcmp (token, route->routes[i][j])) {
-
-					// 			}
-								
-					// 		}
-					// 	}
-					// }
-
-					
+					idx += 1;
+					sub_idx += 1;
 				}
 			}
 
