@@ -1649,7 +1649,6 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
     CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
-    i32 sock_fd = cr->socket->sock_fd;
     ssize_t rc = 0;
     do {
         char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
