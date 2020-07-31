@@ -45,7 +45,9 @@ extern char *c_string_create (const char *format, ...);
 extern size_t c_string_count_tokens (const char *original, const char delim);
 
 // splits a c string into tokens based on a delimiter
-extern char **c_string_split (char *string, const char delim, int *n_tokens);
+// the original string won't be affected
+// this method is thread safe as it uses __strtok_r () instead of the regular strtok ()
+extern char **c_string_split (const char *original, const char delim, size_t *n_tokens);
 
 // revers a c string
 // returns a newly allocated c string
