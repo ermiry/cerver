@@ -152,27 +152,25 @@ char *c_string_create (const char *format, ...) {
 }
 
 // get how many tokens will be extracted by counting the number of apperances of the delim
-unsigned int c_string_count_tokens (char *original, const char delim) {
+// the original string won't be affected
+size_t c_string_count_tokens (const char *original, const char delim) {
 
-	unsigned int count = 0;
+	size_t count = 0;
 
 	if (original) {
-		char *temp = original;
-		char *last = NULL;
+		char *temp = (char *) original;
+		char last = '\0';
 
-		// count how many elements will be extracted
 		while (*temp) {
 			if (delim == *temp) {
-				count++;
-				last = temp;
+				if (last != delim) count++;
 			}
 
+			last = *temp;
 			temp++;
 		}
 
-		count += last < (original + strlen (original) - 1);
-
-		// count++;
+		if (last == delim) count--;
 	}
 
 	return count;
@@ -180,51 +178,33 @@ unsigned int c_string_count_tokens (char *original, const char delim) {
 }
 
 // splits a c string into tokens based on a delimiter
-char **c_string_split (char *original, const char delim, unsigned int *n_tokens) {
+// the original string won't be affected
+// this method is thread safe as it uses __strtok_r () instead of the regular strtok ()
+char **c_string_split (const char *original, const char delim, size_t *n_tokens) {
 
 	char **result = NULL;
 
 	if (original) {
-		char *string = (char *) calloc (strlen (original) + 1, sizeof (char));
+		char *string = strdup (original);
 		if (string) {
-			c_string_copy (string, original);
-
-			size_t count = 0;
-			char *temp = string;
-			char *last = NULL;
-			char dlm[2];
-			dlm[0] = delim;
-			dlm[1] = 0;
-
-			// count how many elements will be extracted
-			while (*temp) {
-				if (delim == *temp) {
-					count++;
-					last = temp;
-				}
-
-				temp++;
-			}
-
-			count += last < (string + strlen (string) - 1);
-
-			count++;
+			size_t count = c_string_count_tokens (original, delim);
 
 			result = (char **) calloc (count, sizeof (char *));
-			if (n_tokens) *n_tokens = count;
-
 			if (result) {
+				if (n_tokens) *n_tokens = count;
+
 				size_t idx = 0;
-				char *token = strtok (string, dlm);
 
-				while (token) {
-					// assert (idx < count);
-					*(result + idx++) = strdup (token);
-					token = strtok (0, dlm);
+				char dlm[2];
+				dlm[0] = delim;
+				dlm[1] = '\0';
+
+				char *token = NULL;
+				char *rest = string;
+				while ((token = __strtok_r (rest, dlm, &rest))) {
+					result[idx] = strdup (token);
+					idx++;
 				}
-
-				// assert (idx == count - 1);
-				*(result + idx) = 0;
 			}
 
 			free (string);
