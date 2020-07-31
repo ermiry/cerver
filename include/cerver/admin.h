@@ -57,6 +57,8 @@ extern void admin_cerver_stats_print (AdminCerverStats *stats);
 
 struct _Admin {
 
+	struct _AdminCerver *admin_cerver;
+
 	estring *id;						// unique admin identifier
 
 	struct _Client *client;				// network values for the admin

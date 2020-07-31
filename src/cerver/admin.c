@@ -56,6 +56,7 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 void admin_cerver_stats_print (AdminCerverStats *stats) {
 
     if (stats) {
+        printf ("\nAdmin stats: \n");
         printf ("threshold_time: %ld\n", stats->threshold_time);
     
         printf ("\n");
@@ -81,6 +82,40 @@ void admin_cerver_stats_print (AdminCerverStats *stats) {
 
         printf ("\nSent packets:\n");
         packets_per_type_print (stats->sent_packets);
+    }
+
+}
+
+static void admin_cerver_packet_send_update_stats (AdminCerverStats *stats,
+    PacketType packet_type, size_t sent) {
+
+    stats->total_n_packets_sent += 1;
+    stats->total_bytes_sent += sent;
+
+    switch (packet_type) {
+        case CERVER_PACKET: stats->sent_packets->n_cerver_packets += 1; break;
+
+        case CLIENT_PACKET: break;
+
+        case ERROR_PACKET: stats->sent_packets->n_error_packets += 1; break;
+
+        case AUTH_PACKET: stats->sent_packets->n_auth_packets += 1; break;
+
+        case REQUEST_PACKET: stats->sent_packets->n_request_packets += 1; break;
+
+        case GAME_PACKET: stats->sent_packets->n_game_packets += 1; break;
+
+        case APP_PACKET: stats->sent_packets->n_app_packets += 1; break;
+
+        case APP_ERROR_PACKET: stats->sent_packets->n_app_error_packets += 1; break;
+
+        case CUSTOM_PACKET: stats->sent_packets->n_custom_packets += 1; break;
+
+        case TEST_PACKET: stats->sent_packets->n_test_packets += 1; break;
+
+        case DONT_CHECK_TYPE: break;
+
+        default: stats->sent_packets->n_unknown_packets += 1; break;
     }
 
 }
@@ -345,8 +380,87 @@ u8 admin_send_packet (Admin *admin, Packet *packet) {
             NULL
         );
 
-        retval = packet_send (packet, 0, NULL, false);
-        if (retval) cerver_log_error ("Failed to send packet to admin!");
+        size_t sent = 0;
+        if (!packet_send (packet, 0, &sent, false)) {
+            // printf ("admin_send_packet () - Sent to admin: %ld\n", sent);
+
+            admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
+
+            retval = 0;
+        }
+
+        else {
+            cerver_log_error ("Failed to send packet to admin!");
+        }
+	}
+
+	return retval;
+
+}
+
+// sends a packet to the first connection of the specified admin using packet_send_to_split ()
+// returns 0 on success, 1 on error
+u8 admin_send_packet_split (Admin *admin, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin && packet) {
+		size_t sent = 0;
+        if (!packet_send_to_split (
+            packet, &sent,
+            NULL,
+            admin->client, 
+			(Connection *) dlist_start (admin->client->connections)->data,
+            NULL
+        )) {
+            // printf ("admin_send_packet_split () - Sent to admin: %ld\n", sent);
+
+            admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
+
+            retval = 0;
+        }
+
+        else {
+            cerver_log_error ("admin_send_packet_split () - Failed to send packet!");
+        } 
+	}
+
+	return retval;
+
+}
+
+// sends a packet in pieces to the first connection of the specified admin
+// returns 0 on success, 1 on error
+u8 admin_send_packet_pieces (Admin *admin, Packet *packet,
+    void **pieces, size_t *sizes, u32 n_pieces) {
+
+	u8 retval = 1;
+
+	if (admin && packet) {
+        packet_set_network_values (
+            packet, 
+            NULL, 
+            admin->client, 
+            (Connection *) dlist_start (admin->client->connections)->data, 
+            NULL
+        );
+
+        size_t sent = 0;
+        if (!packet_send_pieces (
+            packet,
+            pieces, sizes, n_pieces,
+            0, &sent 
+        )) {
+            printf ("admin_send_packet_pieces () - Sent to admin: %ld\n", sent);
+
+            admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
+            
+            retval = 0;
+        }
+
+        else {
+            cerver_log_error ("admin_send_packet_in_pieces () - Failed to send packet!");
+        }
 	}
 
 	return retval;
