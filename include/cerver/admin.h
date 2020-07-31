@@ -35,12 +35,11 @@ struct _AdminCerverStats {
 	u64 total_n_packets_sent;                       // total number of packets that were sent
 	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
-	u64 current_connections;      					// all of the current auth active connections for all current clients
-	u64 current_connected_admins;            		// the current number of auth admins connected 
+	u64 current_connections;      					// all of the current active connections from all the admins (registered in the poll array)
+	u64 current_connected_admins;            		// the current number of auth admins connected (unique clients)
 
-	u64 total_n_admins;                            	// the total amount of clients that were registered to the cerver (no auth required)
-	u64 unique_admins;                             	// n unique clients connected in a threshold time (check used authentication)
-	u64 total_admin_connections;                   	// the total amount of client connections that have been done to the cerver
+	u64 total_admin_connections;                   	// the total amount of admin connections that have been done to the cerver
+	u64 total_n_admins;                            	// the total amount of admins that were registered to the cerver
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;

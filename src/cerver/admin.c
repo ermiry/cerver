@@ -57,7 +57,7 @@ void admin_cerver_stats_print (AdminCerverStats *stats) {
 
     if (stats) {
         printf ("\nAdmin stats: \n");
-        printf ("threshold_time: %ld\n", stats->threshold_time);
+        printf ("Threshold_time: %ld\n", stats->threshold_time);
     
         printf ("\n");
         printf ("Total n receives done:                  %ld\n", stats->total_n_receives_done);
@@ -73,9 +73,8 @@ void admin_cerver_stats_print (AdminCerverStats *stats) {
         printf ("Current connected admins:               %ld\n", stats->current_connected_admins);
 
         printf ("\n");
-        printf ("Total n admins:                         %ld\n", stats->total_n_admins);
-        printf ("Unique admins:                          %ld\n", stats->unique_admins);
         printf ("Total admin connections:                %ld\n", stats->total_admin_connections);
+        printf ("Total n admins:                         %ld\n", stats->total_n_admins);
 
         printf ("\nReceived packets:\n");
         packets_per_type_print (stats->received_packets);
