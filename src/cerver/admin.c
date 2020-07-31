@@ -128,6 +128,8 @@ Admin *admin_new (void) {
 
 	Admin *admin = (Admin *) malloc (sizeof (Admin));
 	if (admin) {
+        admin->admin_cerver = NULL;
+
 		admin->id = NULL;
 
 		admin->client = NULL;
@@ -763,6 +765,46 @@ u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, Packet *packet) 
 
 }
 
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_to_split ()
+// returns 0 on success, 1 on error
+u8 admin_cerver_broadcast_to_admins_split (AdminCerver *admin_cerver, Packet *packet) {
+
+	u8 retval = 1;
+
+	if (admin_cerver && packet) {
+		u8 errors = 0;
+
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+			errors |= admin_send_packet_split ((Admin *) le->data, packet);
+		}
+
+		retval = errors;
+	}
+
+	return retval;
+
+}
+
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
+// returns 0 on success, 1 on error
+u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces) {
+
+	u8 retval = 1;
+
+	if (admin_cerver && packet) {
+		u8 errors = 0;
+		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+			errors |= admin_send_packet_pieces ((Admin *) le->data, packet, pieces, sizes, n_pieces);
+		}
+
+		retval = errors;
+	}
+
+	return retval;
+
+}
+
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
 // returns 0 on success, 1 on error
@@ -776,6 +818,8 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
             (Connection *) dlist_start (admin->client->connections)->data
         )) {
             dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
+
+            admin->admin_cerver = admin_cerver;
 
             admin_cerver->stats->current_connected_admins += 1;
             admin_cerver->stats->total_n_admins += 1;
@@ -809,6 +853,8 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
             for (ListElement *le = dlist_start (admin->client->connections); le; le = le->next) {
                 admin_cerver_poll_unregister_connection (admin_cerver, (Connection *) le->data);
             }
+
+            admin->admin_cerver = NULL;
 
             admin_cerver->stats->current_connected_admins -= 1;
 

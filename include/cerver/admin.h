@@ -101,6 +101,15 @@ extern u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_cerver,
 // returns 0 on success, 1 on error
 extern u8 admin_send_packet (Admin *admin, struct _Packet *packet);
 
+// sends a packet to the first connection of the specified admin using packet_send_to_split ()
+// returns 0 on success, 1 on error
+extern u8 admin_send_packet_split (Admin *admin, struct _Packet *packet);
+
+// sends a packet in pieces to the first connection of the specified admin
+// returns 0 on success, 1 on error
+extern u8 admin_send_packet_pieces (Admin *admin, struct _Packet *packet,
+    void **pieces, size_t *sizes, u32 n_pieces);
+
 #pragma endregion
 
 #pragma region main
@@ -244,6 +253,15 @@ extern u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver);
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 extern u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
+
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_to_split ()
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_broadcast_to_admins_split (AdminCerver *admin_cerver, struct _Packet *packet);
+
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
+// returns 0 on success, 1 on error
+extern u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, struct _Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces);
 
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
