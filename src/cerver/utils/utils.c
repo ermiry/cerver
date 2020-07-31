@@ -151,6 +151,32 @@ char *c_string_create (const char *format, ...) {
 
 }
 
+// get how many tokens will be extracted by counting the number of apperances of the delim
+// the original string won't be affected
+size_t c_string_count_tokens (const char *original, const char delim) {
+
+	size_t count = 0;
+
+	if (original) {
+		char *temp = (char *) original;
+		char last = '\0';
+
+		while (*temp) {
+			if (delim == *temp) {
+				if (last != delim) count++;
+			}
+
+			last = *temp;
+			temp++;
+		}
+
+		if (last == delim) count--;
+	}
+
+	return count;
+
+}
+
 // splits a c string into tokens based on a delimiter
 char **c_string_split (char *original, const char delim, int *n_tokens) {
 
