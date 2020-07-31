@@ -51,7 +51,7 @@ extern char **c_string_split (const char *original, const char delim, size_t *n_
 
 // revers a c string
 // returns a newly allocated c string
-extern char *c_string_reverse (char *str);
+extern char *c_string_reverse (const char *str);
 
 // removes all ocurrances of a char from a string
 extern void c_string_remove_char (char *string, char garbage);

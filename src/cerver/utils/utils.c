@@ -217,22 +217,23 @@ char **c_string_split (const char *original, const char delim, size_t *n_tokens)
 
 // revers a c string
 // returns a newly allocated c string
-char *c_string_reverse (char *str) {
+char *c_string_reverse (const char *str) {
 
 	char *reverse = NULL;
 
 	if (str) {
 		size_t len = strlen (str);
-		reverse = (char *) calloc (len, sizeof (char));
+		reverse = (char *) calloc (len + 1, sizeof (char));
+		if (reverse) {
+			size_t end = len - 1;
+			size_t begin = 0;
+			for (; begin < len; begin++) {
+				reverse[begin] = str[end];
+				end--;
+			}
 
-		size_t end = len - 1;
-		size_t begin = 0;
-		for ( ; begin < len; begin++) {
-			reverse[begin] = str[end];
-			end--;
+			reverse[begin] = '\0';
 		}
-
-		reverse[begin] = '\0';
 	}
 
 	return reverse;
