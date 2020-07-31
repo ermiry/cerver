@@ -40,12 +40,18 @@ extern void c_string_copy (char *to, const char *from);
 // creates a new c string with the desired format, as in printf
 extern char *c_string_create (const char *format, ...);
 
-// splits a c string into tokens based on a delimiter
-extern char **c_string_split (char *string, const char delim, int *n_tokens);
+// get how many tokens will be extracted by counting the number of apperances of the delim
+// the original string won't be affected
+extern size_t c_string_count_tokens (const char *original, const char delim);
 
-// revers a c string
+// splits a c string into tokens based on a delimiter
+// the original string won't be affected
+// this method is thread safe as it uses __strtok_r () instead of the regular strtok ()
+extern char **c_string_split (const char *original, const char delim, size_t *n_tokens);
+
+// reverse a c string
 // returns a newly allocated c string
-extern char *c_string_reverse (char *str);
+extern char *c_string_reverse (const char *str);
 
 // removes all ocurrances of a char from a string
 extern void c_string_remove_char (char *string, char garbage);
