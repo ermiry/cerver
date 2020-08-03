@@ -1657,19 +1657,21 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
             switch (rc) {
                 case -1: {
-                    #ifdef CERVER_DEBUG 
-                    char *s = c_string_create (
-                        "cerver_receive_threads () - rc < 0 - sock fd: %d", 
-                        cr->socket->sock_fd
-                    );
-                    
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                        free (s);
-                    }
+                    if (cr->socket->sock_fd > -1) {
+                        #ifdef CERVER_DEBUG 
+                        char *s = c_string_create (
+                            "cerver_receive_threads () - rc < 0 - sock fd: %d", 
+                            cr->socket->sock_fd
+                        );
+                        
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                            free (s);
+                        }
 
-                    perror ("Error ");
-                    #endif
+                        perror ("Error ");
+                        #endif
+                    }
 
                     free (packet_buffer);
                 } break;
@@ -1729,6 +1731,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
     CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
+    i32 sock_fd = cr->socket->sock_fd;
     ssize_t rc = 0;
     do {
         char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
@@ -1737,19 +1740,21 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
             switch (rc) {
                 case -1: {
-                    #ifdef CERVER_DEBUG 
-                    char *s = c_string_create (
-                        "cerver_receive_http () - rc < 0 - sock fd: %d", 
-                        cr->socket->sock_fd
-                    );
-                    
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                        free (s);
-                    }
+                    if (cr->socket->sock_fd > -1) {
+                        #ifdef CERVER_DEBUG 
+                        char *s = c_string_create (
+                            "cerver_receive_http () - rc < 0 - sock fd: %d", 
+                            cr->socket->sock_fd
+                        );
+                        
+                        if (s) {
+                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                            free (s);
+                        }
 
-                    perror ("Error ");
-                    #endif
+                        perror ("Error ");
+                        #endif
+                    }
                 } break;
 
                 case 0: {
@@ -1791,7 +1796,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
     char *status = c_string_create (
         "cerver_receive_http () - loop has ended - dropping sock fd <%d> connection...",
-        cr->connection->socket->sock_fd
+        sock_fd
     );
 
     if (status) {
