@@ -5,36 +5,130 @@
 #include <time.h>
 #include <signal.h>
 
-#include <bson/bson.h>
-
-#include <cerver/types/types.h>
-#include <cerver/types/estring.h>
-#include <cerver/collections/dlist.h>
-
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
 
-#include <cerver/http/parser.h>
+#include <cerver/http/http.h>
+#include <cerver/http/route.h>
 #include <cerver/http/json.h>
+#include <cerver/http/request.h>
 #include <cerver/http/response.h>
 
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-Cerver *web_cerver = NULL;
+Cerver *api_cerver = NULL;
+
+#pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 	
-	if (web_cerver) {
-		cerver_stats_print (web_cerver);
-		cerver_teardown (web_cerver);
+	if (api_cerver) {
+		cerver_stats_print (api_cerver);
+		cerver_teardown (api_cerver);
 	} 
 
 	exit (0);
 
 }
+
+#pragma endregion
+
+#pragma region users
+
+// api/users
+static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_new ("Users route works!");
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
+// api/users/login
+static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_new ("Users login!");
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
+// api/users/register
+static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_new ("Users register!");
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
+// *
+static void catch_all_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_new ("Cerver API implementation!");
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region start
 
 int main (int argc, char **argv) {
 
@@ -47,26 +141,54 @@ int main (int argc, char **argv) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Simple Web Cerver Example");
+	cerver_log_debug ("Cerver Web API Example");
 	printf ("\n");
 
-	web_cerver = cerver_create (CERVER_TYPE_WEB, "web-cerver", 7010, PROTOCOL_TCP, false, 2, 1000);
-	if (web_cerver) {
+	api_cerver = cerver_create (CERVER_TYPE_WEB, "api-cerver", 8080, PROTOCOL_TCP, false, 2, 1000);
+	if (api_cerver) {
 		/*** cerver configuration ***/
-		cerver_set_receive_buffer_size (web_cerver, 4096);
-		cerver_set_thpool_n_threads (web_cerver, 4);
+		cerver_set_receive_buffer_size (api_cerver, 4096);
+		cerver_set_thpool_n_threads (api_cerver, 4);
+		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);
 
-		if (!cerver_start (web_cerver)) {
-			cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE,
-				"Failed to start cerver!");
+		/*** web cerver configuration ***/
+		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
+
+		// register top level routes
+		// /api/users
+		HttpRoute *users_route = http_route_create ("api/users", main_users_handler);
+		http_cerver_route_register (http_cerver, users_route);
+
+		// register users child routes
+		HttpRoute *users_login_route = http_route_create ("login", users_login_handler);
+		http_route_child_add (users_route, users_login_route);
+
+		HttpRoute *users_register_route = http_route_create ("register", users_register_handler);
+		http_route_child_add (users_route, users_register_route);
+
+		// add a catch all route
+		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
+
+		if (cerver_start (api_cerver)) {
+			char *s = c_string_create ("Failed to start %s!",
+				api_cerver->info->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+
+			cerver_delete (api_cerver);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
-			"Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
+
+		cerver_delete (api_cerver);
 	}
 
 	return 0;
 
 }
+
+#pragma endregion
