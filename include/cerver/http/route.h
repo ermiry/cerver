@@ -13,6 +13,14 @@
 
 struct _HttpRoute;
 
+typedef enum HttpRouteAuthType {
+
+	HTTP_ROUTE_AUTH_TYPE_NONE		= 0,
+
+	HTTP_ROUTE_AUTH_TYPE_BEARER		= 1,	// we expect a bearer token in the authorization header
+
+} HttpRouteAuthType;
+
 typedef struct HttpRoutesTokens {
 
 	unsigned int id;
@@ -36,6 +44,8 @@ struct _HttpRoute {
 
 	HttpRoutesTokens **routes_tokens;
 
+	HttpRouteAuthType auth_type;
+
 	void (*handler)(CerverReceive *cr, HttpRequest *request);
 
 };
@@ -54,5 +64,8 @@ extern HttpRoute *http_route_create (const char *actual_route,
 extern void http_route_init (HttpRoute *route);
 
 extern void http_route_child_add (HttpRoute *parent, HttpRoute *child);
+
+// enables authentication for the selected route
+extern void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);
 
 #endif

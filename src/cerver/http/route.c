@@ -72,6 +72,8 @@ HttpRoute *http_route_new (void) {
 
 		route->routes_tokens = NULL;
 
+		route->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
+
 		route->handler = NULL;
 	}
 
@@ -212,6 +214,13 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 		estring_delete (child->route);
 		child->route = estring_create ("%s/%s", child->base->str, child->actual->str);
 	}
+
+}
+
+// enables authentication for the selected route
+void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type) {
+
+	if (route) route->auth_type = auth_type;
 
 }
 

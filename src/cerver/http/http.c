@@ -7,8 +7,11 @@
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
+#include "cerver/http/json.h"
+#include "cerver/http/jwt/jwt.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
+#include "cerver/http/response.h"
 
 #include "cerver/utils/utils.h"
 
@@ -307,7 +310,50 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 	// we have found a route!
 	if (match) {
-		found->handler (cr, request);
+		switch (found->auth_type) {
+			// no authentication, handle the request directly
+			case HTTP_ROUTE_AUTH_TYPE_NONE: found->handler (cr, request); break;
+
+			// handle authentication with bearer token
+			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
+				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
+					// get the bearer token
+					printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
+
+					char *token = request->headers[REQUEST_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
+
+					printf ("\nToken -> %s\n", token);
+
+					// FIXME:
+					// char decoded[2048] = { 0 };
+					// int decoded_len = 0;
+					// // char *decoded = jwt_b64_decode (token, &decoded_len);
+					// // int decoded_len = base64_decode (decoded, token);
+
+					// printf ("\nDecoded (%d) -> %s\n\n", decoded_len, decoded);
+
+					found->handler (cr, request);
+				}
+
+				// no authentication header was provided
+				else {
+					estring *error = estring_new ("Failed to authenticate!");
+					JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
+					size_t json_len;
+					char *json = json_create_with_one_pair (jkvp, &json_len);
+					// json_key_value_delete (jkvp);
+					HttpResponse *res = http_response_create (400, NULL, 0, json, json_len);
+
+					if (res) {
+						// send the response to the client
+						http_response_compile (res);
+						printf ("Response: %s\n", res->res);
+						http_response_send_to_socket (res, cr->socket->sock_fd);
+						http_respponse_delete (res);
+					}
+				}
+			} break;
+		}
 	}
 
 	// catch all mismatches and handle with cath all route
