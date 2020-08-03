@@ -188,22 +188,23 @@ char **c_string_split (const char *original, const char delim, size_t *n_tokens)
 		char *string = strdup (original);
 		if (string) {
 			size_t count = c_string_count_tokens (original, delim);
+			if (count) {
+				result = (char **) calloc (count, sizeof (char *));
+				if (result) {
+					if (n_tokens) *n_tokens = count;
 
-			result = (char **) calloc (count, sizeof (char *));
-			if (result) {
-				if (n_tokens) *n_tokens = count;
+					size_t idx = 0;
 
-				size_t idx = 0;
+					char dlm[2];
+					dlm[0] = delim;
+					dlm[1] = '\0';
 
-				char dlm[2];
-				dlm[0] = delim;
-				dlm[1] = '\0';
-
-				char *token = NULL;
-				char *rest = string;
-				while ((token = __strtok_r (rest, dlm, &rest))) {
-					result[idx] = strdup (token);
-					idx++;
+					char *token = NULL;
+					char *rest = string;
+					while ((token = __strtok_r (rest, dlm, &rest))) {
+						result[idx] = strdup (token);
+						idx++;
+					}
 				}
 			}
 
