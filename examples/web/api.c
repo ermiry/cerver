@@ -104,6 +104,50 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// api/users/:id
+static void users_info_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_create ("User %s info!", request->params[0]->str);
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
+// api/users/:id/profile
+static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = NULL;
+
+	estring *test = estring_create ("User %s profile!", request->params[0]->str);
+	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
+	size_t json_len;
+	char *json = json_create_with_one_pair (jkvp, &json_len);
+	// json_key_value_delete (jkvp);
+	res = http_response_create (200, NULL, 0, json, json_len);
+
+	if (res) {
+		// send the response to the client
+		http_response_compile (res);
+		printf ("Response: %s\n", res->res);
+		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_respponse_delete (res);
+	}
+
+}
+
 // *
 static void catch_all_handler (CerverReceive *cr, HttpRequest *request) {
 
@@ -165,6 +209,12 @@ int main (int argc, char **argv) {
 
 		HttpRoute *users_register_route = http_route_create ("register", users_register_handler);
 		http_route_child_add (users_route, users_register_route);
+
+		HttpRoute *users_info_route = http_route_create (":id", users_info_handler);
+		http_route_child_add (users_route, users_info_route);
+
+		HttpRoute *users_profile_route = http_route_create (":id/profile", users_profile_handler);
+		http_route_child_add (users_route, users_profile_route);
 
 		// add a catch all route
 		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
