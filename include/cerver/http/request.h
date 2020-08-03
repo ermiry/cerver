@@ -47,6 +47,8 @@ typedef enum RequestHeader {
 
 } RequestHeader;
 
+#define REQUEST_PARAMS_SIZE				8
+
 #define REQUEST_HEADERS_SIZE			16
 #define REQUEST_HEADER_INVALID			16
 
@@ -56,7 +58,8 @@ typedef struct HttpRequest {
 
 	estring *url;
 
-	DoubleList *params;
+	unsigned int n_params;
+	estring *params[REQUEST_PARAMS_SIZE];
 
 	RequestHeader next_header;
 	estring *headers[REQUEST_HEADERS_SIZE];

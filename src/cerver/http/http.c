@@ -239,25 +239,47 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 							// match all url tokens with existing route tokens
 							bool fail = false;
 							for (unsigned int main_idx = 0; main_idx < routes_tokens->n_routes; main_idx++) {
-								// printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
+								printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
 
 								if (routes_tokens->tokens[main_idx]) {
 									fail = false;
+									printf ("routes_tokens->id: %d\n", routes_tokens->id);
 									for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
-										if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
-											fail = true;
-											break;
+										printf ("%s\n", routes_tokens->tokens[main_idx][sub_idx]);
+										if (routes_tokens->tokens[main_idx][sub_idx][0] != '*') {
+											if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
+												printf ("fail!\n");
+												fail = true;
+												break;
+											}
+										}
+
+										else {
+											printf ("*\n");
 										}
 									}
 
 									if (!fail) {
 										// we have found our route!
 										match = true;
+
+										// get route params
+										for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
+											if (routes_tokens->tokens[main_idx][sub_idx][0] == '*') {
+												request->params[request->n_params] = estring_new (tokens[sub_idx]);
+												request->n_params++;
+											}
+										}
+
 										routes_tokens->routes[main_idx]->handler (cr, request);
 										break;
 									}
 								}
 							}
+						}
+
+						else {
+							printf ("\nno routes!\n");
 						}
 
 						for (size_t i = 0; i < n_tokens; i++) if (tokens[i]) free (tokens[i]);

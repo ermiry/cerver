@@ -14,7 +14,10 @@ HttpRequest *http_request_new (void) {
 
 		http_request->url = NULL;
 
-		http_request->params = NULL;
+		http_request->n_params = 0;
+
+		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
+			http_request->params[i] = NULL;
 
 		http_request->next_header = REQUEST_HEADER_INVALID;
 
@@ -33,6 +36,9 @@ void http_request_delete (HttpRequest *http_request) {
 	if (http_request) {
 		estring_delete (http_request->url);
 
+		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
+			estring_delete (http_request->params[i]);
+
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
 			estring_delete (http_request->headers[i]);
 
@@ -45,12 +51,7 @@ void http_request_delete (HttpRequest *http_request) {
 
 HttpRequest *http_request_create (void) {
 
-	HttpRequest *request = http_request_new ();
-	if (request) {
-		request->params = dlist_init (estring_delete, estring_comparator);
-	}
-
-	return request;
+	return http_request_new ();
 
 }
 

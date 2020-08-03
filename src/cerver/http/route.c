@@ -155,6 +155,19 @@ void http_route_init (HttpRoute *route) {
 					child->n_tokens = 1;
 				}
 
+				printf ("%s -> n_tokens: %ld\n", child->actual->str, child->n_tokens);
+
+				// check if route params have been setup
+				for (unsigned int i = 0; i < child->n_tokens; i++) {
+					if (c_string_count_tokens (child->tokens[i], ':')) {
+						free (child->tokens[i]);
+
+						child->tokens[i] = (char *) calloc (2, sizeof (char));
+						child->tokens[i][0] = '*';
+						child->tokens[i][1] = '\0';
+					}
+				}
+
 				route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
 			}
 
@@ -175,6 +188,7 @@ void http_route_init (HttpRoute *route) {
 					child = (HttpRoute *) le->data;
 
 					if (child->n_tokens == n_tokens) {
+						// printf ("%s\n", child->actual->str);
 						route->routes_tokens[n_tokens - 1]->routes[idx] = child;
 						route->routes_tokens[n_tokens - 1]->tokens[idx] = child->tokens;
 						idx++;
