@@ -190,10 +190,6 @@ static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *r
 
 }
 
-static void http_receive_handle_select_children (CerverReceive *cr, HttpRequest *request) {
-
-}
-
 // select the route that will handle the request
 static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request) {
 
@@ -204,9 +200,13 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 	bool match = false;
 
+	size_t n_tokens = 0;
+	char **tokens = NULL;
+
 	// search top level routes at the start of the url
 	HttpRoute *route = NULL;
-	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+	ListElement *le = dlist_start (http_cerver->routes);
+	while (!match && le) {
 		route = (HttpRoute *) le->data;
 
 		if (route->route->len == request->url->len) {
@@ -219,54 +219,68 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 		}
 
 		else {
-			// if (route->children->size) {
+			if (route->children->size) {
+				printf ("request->url->str: %s\n", request->url->str);
+				char *start_sub = strstr (request->url->str, route->route->str);
+				if (start_sub) {
+					// match and still some path left
+					char *end_sub = request->url->str + route->route->len;
 
-			// }
+					printf ("first end_sub: %s\n", end_sub);
 
-			printf ("request->url->str: %s\n", request->url->str);
-			char *start_sub = strstr (request->url->str, route->route->str);
-			if (start_sub) {
-				// match and still some path left
-				char *end_sub = request->url->str + route->route->len;
+					tokens = c_string_split (end_sub, '/', &n_tokens);
 
-				printf ("first end_sub: %s\n", end_sub);
+					printf ("n tokens: %ld\n", n_tokens);
+					printf ("second end_sub: %s\n", end_sub);
 
-				unsigned int n_tokens = c_string_count_tokens (end_sub, '/');
-				n_tokens -= 1;
+					if (tokens) {
+						HttpRoutesTokens *routes_tokens = route->routes_tokens[n_tokens - 1];
+						if (routes_tokens->n_routes) {
+							// match all url tokens with existing route tokens
+							bool fail = false;
+							for (unsigned int main_idx = 0; main_idx < routes_tokens->n_routes; main_idx++) {
+								// printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
 
-				printf ("n tokens: %d\n", n_tokens);
-				printf ("second end_sub: %s\n", end_sub);
+								if (routes_tokens->tokens[main_idx]) {
+									fail = false;
+									for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
+										if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
+											fail = true;
+											break;
+										}
+									}
 
-				char *token = NULL;
-				char *rest = end_sub;
-				unsigned int idx = 0;
-				unsigned int sub_idx = 0;
-				while ((token = __strtok_r (rest, "/", &rest))) {
-					printf ("%s\n", token);
+									if (!fail) {
+										// we have found our route!
+										match = true;
+										routes_tokens->routes[main_idx]->handler (cr, request);
+										break;
+									}
+								}
+							}
+						}
 
-					// TODO:
-
-					idx += 1;
-					sub_idx += 1;
+						for (size_t i = 0; i < n_tokens; i++) if (tokens[i]) free (tokens[i]);
+						free (tokens);
+						tokens = NULL;
+					}
 				}
 			}
-
-			else {
-				// no match in this route, continue to the next one...
-			}
 		}
+
+		le = le->next;
 	}
 
 	// catch all mismatches and handle with user defined route
 	if (!match) {
-		char *status = c_string_create ("No matching route for url %s", request->url);
+		char *status = c_string_create ("No matching route for url %s", request->url->str);
 		if (status) {
 			cerver_log_warning (status);
 			free (status);
 		}
 
 		// handle with default route
-		// TODO:
+		http_cerver->default_handler (cr, request);
 	}
 
 }
