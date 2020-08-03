@@ -159,18 +159,26 @@ size_t c_string_count_tokens (const char *original, const char delim) {
 
 	if (original) {
 		char *temp = (char *) original;
-		char last = '\0';
+		char prev = '\0';
+		char *last = NULL;
 
 		while (*temp) {
 			if (delim == *temp) {
-				if (last != delim) count++;
+				if (prev != delim) count++;
+				last = temp;
 			}
 
-			last = *temp;
+			prev = *temp;
 			temp++;
 		}
 
-		if (last == delim) count--;
+		// don't count if the delim is the last char of the string
+		if (prev == delim) count--;
+
+		// check if we have info between delims
+		if (original[0] == delim && count) count--;
+
+		if (last) count += (last < temp);
 	}
 
 	return count;
