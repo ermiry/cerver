@@ -19,7 +19,6 @@
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
-#include "cerver/utils/json.h"
 
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
@@ -299,21 +298,4 @@ int file_send (const char *filename, int sock_fd) {
 
     return retval;
 
-}
-
-json_value *file_json_parse (const char *filename) {
-
-    json_value *value = NULL;
-
-    if (filename) {
-        int file_size;
-        char *file_contents = file_read (filename, &file_size);
-        json_char *json = (json_char *) file_contents;
-        value = json_parse (json, file_size);
-
-        free (file_contents);
-    }
-
-    return value;
-    
 }
