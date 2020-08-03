@@ -9,30 +9,38 @@
 
 #include "cerver/http/request.h"
 
+#define DEFAULT_ROUTES_TOKENS_SIZE				16
+
+struct _HttpRoute;
+
 typedef struct HttpRoutesTokens {
 
 	unsigned int id;
 	unsigned int n_routes;
-	char ***routes;
+	struct _HttpRoute **routes;
+	char ***tokens;
 
 } HttpRoutesTokens;
 
-typedef struct HttpRoute {
+struct _HttpRoute {
 
 	// eg. /api/users/login
 	estring *base;				// base route - / for top level - "/api/users"
 	estring *actual;			// the actual route "login"
 	estring *route;				// the complete route "/api/users/login"
 
-	unsigned int n_tokens;
+	size_t n_tokens;
+	char **tokens;
 
 	DoubleList *children;		// children routes of a top level one
 
-	DoubleList *routes_tokens;
+	HttpRoutesTokens **routes_tokens;
 
 	void (*handler)(CerverReceive *cr, HttpRequest *request);
 
-} HttpRoute;
+};
+
+typedef struct _HttpRoute HttpRoute;
 
 extern HttpRoute *http_route_new (void);
 

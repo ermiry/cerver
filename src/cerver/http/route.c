@@ -20,6 +20,7 @@ static HttpRoutesTokens *http_routes_tokens_new (void) {
 		http_routes_tokens->id = 0;
 		http_routes_tokens->n_routes = 0;
 		http_routes_tokens->routes = NULL;
+		http_routes_tokens->tokens = NULL;
 	}
 
 	return http_routes_tokens;
@@ -31,18 +32,20 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 	if (http_routes_tokens_ptr) {
 		HttpRoutesTokens *http_routes_tokens = (HttpRoutesTokens *) http_routes_tokens_ptr;
 
-		if (http_routes_tokens->routes) {
+		if (http_routes_tokens->routes) free (http_routes_tokens->routes);
+
+		if (http_routes_tokens->tokens) {
 			for (unsigned int i = 0; i < http_routes_tokens->n_routes; i++) {
-				if (http_routes_tokens->routes[i]) {
+				if (http_routes_tokens->tokens[i]) {
 					for (unsigned int j = 0; j < http_routes_tokens->id; j++) {
-						if (http_routes_tokens->routes[i][j]) free (http_routes_tokens->routes[i][j]);
+						if (http_routes_tokens->tokens[i][j]) free (http_routes_tokens->tokens[i][j]);
 					}
 
-					free (http_routes_tokens->routes[i]);
+					free (http_routes_tokens->tokens[i]);
 				}
 			}
 
-			free (http_routes_tokens->routes);
+			free (http_routes_tokens->tokens);
 		}
 
 		free (http_routes_tokens_ptr);
@@ -51,6 +54,8 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 }
 
 #pragma endregion
+
+#pragma region route
 
 HttpRoute *http_route_new (void) {
 
@@ -61,6 +66,7 @@ HttpRoute *http_route_new (void) {
 		route->route = NULL;
 
 		route->n_tokens = 0;
+		route->tokens = NULL;
 
 		route->children = NULL;
 
@@ -82,9 +88,18 @@ void http_route_delete (void *route_ptr) {
 		estring_delete (route->actual);
 		estring_delete (route->route);
 
+		// 03/08/2020 - deleted in http_routes_tokens_delete ()
+		// free (route->tokens);
+
 		dlist_delete (route->children);
 
-		dlist_delete (route->routes_tokens);
+		if (route->routes_tokens) {
+			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+				if (route->routes_tokens[i]) http_routes_tokens_delete (route->routes_tokens[i]);
+			}
+
+			free (route->routes_tokens);
+		}
 
 		free (route_ptr);
 	}
@@ -121,20 +136,51 @@ void http_route_init (HttpRoute *route) {
 
 	if (route) {
 		if (route->children) {
-			// route->n_routes = route->children->size;
-			// route->routes = (char ***) calloc (route->n_routes, sizeof (char **));
-			// route->routes_lens = (unsigned int *) calloc (route->n_routes, sizeof (unsigned int));
-			// if (route->routes && route->routes_lens) {
-			// 	unsigned int idx = 0;
-			// 	HttpRoute *child = NULL;
-			// 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-			// 		child = (HttpRoute *) le->data;
+			route->routes_tokens = (HttpRoutesTokens **) calloc (DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *));
 
-			// 		route->routes[idx] = c_string_split (child->actual->str, '/', &route->routes_lens[idx]);
+			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+				route->routes_tokens[i] = http_routes_tokens_new ();
+				route->routes_tokens[i]->id = i + 1;
+			}
 
-			// 		idx += 1;
-			// 	}
-			// }
+			// prepare children routes
+			HttpRoute *child = NULL;
+			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+				child = (HttpRoute *) le->data;
+
+				child->tokens = c_string_split (child->actual->str, '/', &child->n_tokens);
+				if (!child->tokens) {
+					child->tokens = (char **) calloc (1, sizeof (char *));
+					child->tokens[0] = strdup (child->actual->str);
+					child->n_tokens = 1;
+				}
+
+				route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
+			}
+
+			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+				route->routes_tokens[i]->routes = (HttpRoute **) calloc (route->routes_tokens[i]->n_routes, sizeof (HttpRoute));
+				route->routes_tokens[i]->tokens = (char ***) calloc (route->routes_tokens[i]->n_routes, sizeof (char **));
+
+				for (unsigned int route_idx = 0; route_idx < route->routes_tokens[i]->n_routes; route_idx++) {
+					route->routes_tokens[i]->routes[route_idx] = NULL;
+					route->routes_tokens[i]->tokens[route_idx] = NULL;
+				}
+			}
+
+			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+				unsigned int n_tokens = i + 1;
+				unsigned int idx = 0;
+				for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+					child = (HttpRoute *) le->data;
+
+					if (child->n_tokens == n_tokens) {
+						route->routes_tokens[n_tokens - 1]->routes[idx] = child;
+						route->routes_tokens[n_tokens - 1]->tokens[idx] = child->tokens;
+						idx++;
+					}
+				}
+			}
 		}
 	}
 
@@ -154,3 +200,5 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 	}
 
 }
+
+#pragma endregion
