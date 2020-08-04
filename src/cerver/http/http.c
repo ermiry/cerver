@@ -93,8 +93,9 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 		printf ("\n%s\n", http_cerver->jwt_public_key->str);
 
 		char *status = c_string_create (
-			"Loaded cerver's %s http jwt PRIVATE key!",
-			http_cerver->cerver->info->name->str
+			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
+			http_cerver->cerver->info->name->str,
+			http_cerver->jwt_private_key->len
 		);
 
 		if (status) {
@@ -135,8 +136,9 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 		printf ("\n%s\n", http_cerver->jwt_public_key->str);
 
 		char *status = c_string_create (
-			"Loaded cerver's %s http jwt PUBLIC key!",
-			http_cerver->cerver->info->name->str
+			"Loaded cerver's %s http jwt PUBLIC key (size %ld)!",
+			http_cerver->cerver->info->name->str,
+			http_cerver->jwt_public_key->len
 		);
 
 		if (status) {
@@ -484,6 +486,11 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 							if (!jwt_validate(jwt, jwt_valid)) {
 								fprintf(stderr, "JWT is authentic! sub: %s\n", jwt_get_grant(jwt, "sub"));
 								cerver_log_success ("Done!");
+
+								if (found->decode_data) {
+									request->decoded_data = found->decode_data (jwt->grants);
+									request->delete_decoded_data = found->delete_decoded_data;
+								}
 
 								found->handler (cr, request);
 							}

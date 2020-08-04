@@ -46,6 +46,9 @@ struct _HttpRoute {
 
 	HttpRouteAuthType auth_type;
 
+	void *(*decode_data)(void *);
+	void (*delete_decoded_data)(void *);
+
 	void (*handler)(CerverReceive *cr, HttpRequest *request);
 
 };
@@ -67,5 +70,10 @@ extern void http_route_child_add (HttpRoute *parent, HttpRoute *child);
 
 // enables authentication for the selected route
 extern void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);
+
+// sets the method to be used to decode incoming data from jwt & a method to delete it after use
+// if no delete method is set, data won't be freed
+extern void http_route_set_decode_data (HttpRoute *route, 
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *));
 
 #endif

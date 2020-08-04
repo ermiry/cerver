@@ -63,6 +63,10 @@ typedef struct HttpRequest {
 
 	RequestHeader next_header;
 	estring *headers[REQUEST_HEADERS_SIZE];
+
+	// decoded data from jwt
+	void *decoded_data;
+	void (*delete_decoded_data)(void *);
 	
 	estring *body;
 

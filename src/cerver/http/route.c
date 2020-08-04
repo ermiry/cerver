@@ -74,6 +74,9 @@ HttpRoute *http_route_new (void) {
 
 		route->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
 
+		route->decode_data = NULL;
+		route->delete_decoded_data = NULL;
+
 		route->handler = NULL;
 	}
 
@@ -221,6 +224,18 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type) {
 
 	if (route) route->auth_type = auth_type;
+
+}
+
+// sets the method to be used to decode incoming data from jwt & a method to delete it after use
+// if no delete method is set, data won't be freed
+void http_route_set_decode_data (HttpRoute *route, 
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)) {
+
+	if (route) {
+		route->decode_data = decode_data;
+		route->delete_decoded_data = delete_decoded_data;
+	}
 
 }
 

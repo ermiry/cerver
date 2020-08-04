@@ -23,6 +23,9 @@ HttpRequest *http_request_new (void) {
 
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;
+
+		http_request->decoded_data = NULL;
+		http_request->delete_decoded_data = NULL;
 		
 		http_request->body = NULL;
 	}
@@ -41,6 +44,11 @@ void http_request_delete (HttpRequest *http_request) {
 
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
 			estring_delete (http_request->headers[i]);
+
+		if (http_request->decoded_data) {
+			if (http_request->delete_decoded_data) 
+				http_request->delete_decoded_data (http_request->decoded_data);
+		}
 
 		estring_delete (http_request->body);
 
