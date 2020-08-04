@@ -1085,8 +1085,8 @@ Cerver *cerver_create (const CerverType type, const char *name,
                 } break;
                 
                 case CERVER_TYPE_WEB: {
-                    // cerver->cerver_data = http_cerver_create (cerver);
-                    // cerver->delete_cerver_data = http_cerver_delete;
+                    cerver->cerver_data = http_cerver_create (cerver);
+                    cerver->delete_cerver_data = http_cerver_delete;
                 } break;
 
                 case CERVER_TYPE_FILE: break;
@@ -1494,7 +1494,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
                 } break;
                 
                 case CERVER_TYPE_WEB: {
-                    // http_cerver_init ((HttpCerver *) cerver->cerver_data);
+                    http_cerver_init ((HttpCerver *) cerver->cerver_data);
                 } break;
 
                 case CERVER_TYPE_FILE: break;
@@ -2463,7 +2463,10 @@ static void cerver_clean (Cerver *cerver) {
                 }
             } break;
 
-            case CERVER_TYPE_WEB: break;
+            case CERVER_TYPE_WEB: {
+                http_cerver_delete (cerver->cerver_data);
+                cerver->cerver_data = NULL;
+            } break;
 
             case CERVER_TYPE_FILE: break;
 
