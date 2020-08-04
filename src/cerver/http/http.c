@@ -8,10 +8,11 @@
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/json.h"
-#include "cerver/http/jwt/jwt.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
+#include "cerver/http/jwt/jwt.h"
+#include "cerver/http/jwt/alg.h"
 
 #include "cerver/utils/utils.h"
 
@@ -28,6 +29,14 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->routes = NULL;
 
 		http_cerver->default_handler = NULL;
+
+		http_cerver->jwt_alg = JWT_ALG_NONE;
+
+		http_cerver->jwt_opt_key_name = NULL;
+		http_cerver->jwt_private_key = NULL;
+
+		http_cerver->jwt_opt_pub_key_name = NULL;
+		http_cerver->jwt_public_key = NULL;
 	}
 
 	return http_cerver;
@@ -40,6 +49,12 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
 
 		dlist_delete (http_cerver->routes);
+
+		estring_delete (http_cerver->jwt_opt_key_name);
+		estring_delete (http_cerver->jwt_private_key);
+
+		estring_delete (http_cerver->jwt_opt_pub_key_name);
+		estring_delete (http_cerver->jwt_public_key);
 
 		free (http_cerver_ptr);
 	}
@@ -55,6 +70,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
 		http_cerver->default_handler = http_receive_handle_default_route;
+
+		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
 	}
 
 	return http_cerver;
@@ -90,6 +107,32 @@ void http_cerver_set_catch_all_route (HttpCerver *http_cerver,
 	if (http_cerver && catch_all_route) {
 		http_cerver->default_handler = catch_all_route;
 	}
+
+}
+
+#pragma endregion
+
+#pragma region auth
+
+// sets the jwt algorithm used for encoding & decoding jwt tokens
+// the default value is JWT_ALG_HS256
+void http_cerver_auth_set_jwt_algorithm (HttpCerver *http_cerver, jwt_alg_t jwt_alg) {
+
+	if (http_cerver) http_cerver->jwt_alg = jwt_alg;
+
+}
+
+// sets the filename from where the jwt private key will be loaded
+void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_cerver, const char *filename) {
+
+	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? estring_new (filename) : NULL;
+
+}
+
+// sets the filename from where the jwt public key will be loaded
+void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename) {
+
+	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? estring_new (filename) : NULL;
 
 }
 
