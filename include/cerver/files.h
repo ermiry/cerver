@@ -27,7 +27,7 @@ extern FILE *file_open_as_file (const char *filename,
 
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
-extern char *file_read (const char *filename, int *file_size);
+extern char *file_read (const char *filename, size_t *file_size);
 
 // opens a file
 // returns fd on success, -1 on error

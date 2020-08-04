@@ -204,12 +204,12 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
 
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
-char *file_read (const char *filename, int *file_size) {
+char *file_read (const char *filename, size_t *file_size) {
 
     char *file_contents = NULL;
 
     if (filename) {
-        struct stat filestatus;
+        struct stat filestatus = { 0 };
         FILE *fp = file_open_as_file (filename, "rt", &filestatus);
         if (fp) {
             *file_size = filestatus.st_size;
