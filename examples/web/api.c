@@ -14,6 +14,7 @@
 #include <cerver/http/json.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
+#include <cerver/http/json/json.h>
 #include <cerver/http/jwt/alg.h>
 
 #include <cerver/utils/utils.h>
@@ -38,6 +39,106 @@ void end (int dummy) {
 #pragma endregion
 
 #pragma region users
+
+typedef struct User {
+
+	estring *id;
+	estring *name;
+	estring *username;
+	estring *role;
+	time_t iat;
+
+} User;
+
+static User *user_new (void) {
+
+	User *user = (User *) malloc (sizeof (User));
+	if (user) {
+		user->id = NULL;
+		user->name = NULL;
+		user->username = NULL;
+		user->role = NULL;
+		user->iat = 0;
+	}
+
+	return user;
+
+}
+
+static void user_delete (void *user_ptr) {
+
+	if (user_ptr) {
+		User *user = (User *) user_ptr;
+
+		estring_delete (user->id);
+		estring_delete (user->name);
+		estring_delete (user->username);
+		estring_delete (user->role);
+
+		free (user_ptr);
+
+		printf ("user_delete () - User has been deleted!\n");
+	}
+
+}
+
+static void user_print (User *user) {
+
+	if (user) {
+		printf ("id: %s\n", user->id->str);
+		printf ("name: %s\n", user->name->str);
+		printf ("username: %s\n", user->username->str);
+		printf ("role: %s\n", user->role->str);
+	}
+
+}
+
+// {
+//   "id": "5eb2b13f0051f70011e9d3af",
+//   "name": "Erick Salas",
+//   "username": "erick",
+//   "role": "god",
+//   "iat": 1596532954
+// }
+static void *user_parse_from_json (void *user_json_ptr) {
+
+	json_t *user_json = (json_t *) user_json_ptr;
+
+	User *user = user_new ();
+	if (user) {
+		const char *id = NULL;
+		const char *name = NULL;
+		const char *username = NULL;
+		const char *role = NULL;
+
+		if (!json_unpack (
+			user_json,
+			"{s:s, s:s, s:s, s:s, s:i}",
+			"id", &id,
+			"name", &name,
+			"username", &username,
+			"role", &role,
+			"iat", &user->iat
+		)) {
+			user->id = estring_new (id);
+			user->name = estring_new (name);
+			user->username = estring_new (username);
+			user->role = estring_new (role);
+
+			user_print (user);
+		}
+
+		else {
+			cerver_log_error ("user_parse_from_json () - json_unpack () has failed!");
+
+			user_delete (user);
+			user = NULL;
+		}
+	}
+
+	return user;
+
+}
 
 // api/users
 static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
@@ -105,34 +206,14 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
-// api/users/:id
-static void users_info_handler (CerverReceive *cr, HttpRequest *request) {
-
-	HttpResponse *res = NULL;
-
-	estring *test = estring_create ("User %s info!", request->params[0]->str);
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
-	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
-		http_respponse_delete (res);
-	}
-
-}
-
-// api/users/:id/profile
+// api/users/profile
 static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
 
+	User *user = (User *) request->decoded_data;
+
 	HttpResponse *res = NULL;
 
-	estring *test = estring_create ("User %s profile!", request->params[0]->str);
+	estring *test = estring_create ("%s profile!", user->name->str);
 	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
 	size_t json_len;
 	char *json = json_create_with_one_pair (jkvp, &json_len);
@@ -214,11 +295,9 @@ int main (int argc, char **argv) {
 		HttpRoute *users_register_route = http_route_create ("register", users_register_handler);
 		http_route_child_add (users_route, users_register_route);
 
-		HttpRoute *users_info_route = http_route_create (":id", users_info_handler);
-		http_route_set_auth (users_info_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-		http_route_child_add (users_route, users_info_route);
-
-		HttpRoute *users_profile_route = http_route_create (":id/profile", users_profile_handler);
+		HttpRoute *users_profile_route = http_route_create ("profile", users_profile_handler);
+		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
 		http_route_child_add (users_route, users_profile_route);
 
 		// add a catch all route
