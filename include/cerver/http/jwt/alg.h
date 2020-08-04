@@ -1,8 +1,8 @@
-#ifndef JWT_ALG_H
-#define JWT_ALG_H
+#ifndef _CERVER_HTTP_JWT_ALG_H_
+#define _CERVER_HTTP_JWT_ALG_H_
 
-/** JWT algorithm types. */
-typedef enum jwt_alg {
+typedef enum jwt_alg_t {
+
 	JWT_ALG_NONE = 0,
 	JWT_ALG_HS256,
 	JWT_ALG_HS384,
@@ -14,8 +14,11 @@ typedef enum jwt_alg {
 	JWT_ALG_ES384,
 	JWT_ALG_ES512,
 	JWT_ALG_TERM
+
 } jwt_alg_t;
 
-#define JWT_ALG_INVAL JWT_ALG_TERM
+#define JWT_ALG_INVAL 		JWT_ALG_TERM
+
+#define JWT_DEFAULT_ALG		JWT_ALG_HS256
 
 #endif
