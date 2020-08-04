@@ -1,341 +1,104 @@
-#include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
-#include "cerver/utils/base64.h"
+/* ASCII table */
+/* aaaack but it's fast and const should make it shared text page. */
+static const unsigned char pr2six[256] = {
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 62, 64, 64, 64, 63,
+    52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 64, 64, 64, 64, 64, 64,
+    64,  0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,
+    15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 64, 64, 64, 64, 64,
+    64, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+    41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64,
+    64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64
+};
 
-static char base64_low6 (unsigned char c) {
+int base64_decode (char *bufplain, const char *bufcoded) {
 
-	unsigned char tc = c & 0x3F;
-	if (tc < 26) {
-		return tc + 'A';
-	} else if (tc < 52) {
-		return tc - 26 + 'a';
-	} else if (tc < 62) {
-		return tc - 52 + '0';
-	} else if (tc == 62) {
-		return '+';
-	} else {
-		return '/';
-	}
-	
+    int nbytesdecoded = 0;
+    register const unsigned char *bufin = NULL;
+    register unsigned char *bufout = NULL;
+    register int nprbytes = 0;
+
+    bufin = (const unsigned char *) bufcoded;
+    while (pr2six[*(bufin++)] <= 63);
+    nprbytes = (bufin - (const unsigned char *) bufcoded) - 1;
+    nbytesdecoded = ((nprbytes + 3) / 4) * 3;
+
+    bufout = (unsigned char *) bufplain;
+    bufin = (const unsigned char *) bufcoded;
+
+    while (nprbytes > 4) {
+		*(bufout++) =
+			(unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+		*(bufout++) =
+			(unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+		*(bufout++) =
+			(unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+		bufin += 4;
+		nprbytes -= 4;
+    }
+
+    /* Note: (nprbytes == 1) would be an error, so just ingore that case */
+    if (nprbytes > 1) {
+    *(bufout++) =
+        (unsigned char) (pr2six[*bufin] << 2 | pr2six[bufin[1]] >> 4);
+    }
+    if (nprbytes > 2) {
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[1]] << 4 | pr2six[bufin[2]] >> 2);
+    }
+    if (nprbytes > 3) {
+    *(bufout++) =
+        (unsigned char) (pr2six[bufin[2]] << 6 | pr2six[bufin[3]]);
+    }
+
+    *(bufout++) = '\0';
+    nbytesdecoded -= (4 - nprbytes) & 3;
+
+    return nbytesdecoded;
+
 }
 
-static unsigned char low6_base64(char c) {
+static const char basis_64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-	if ('A' <= c && c <= 'Z') {
-		return c - 'A';
-	} else if ('a' <= c && c <= 'z') {
-		return 26 + c - 'a';
-	} else if ('0' <= c && c <= '9') {
-		return 52 + c - '0';
-	} else if (c == '+') {
-		return 62;
-	} else if (c == '/') {
-		return 63;
-	} else {
-		return 0xC0;
-	}
+int base64_encode (char *encoded, const char *string, int len) {
 
-}
+    int i = 0;
+    char *p = encoded;
+    for (i = 0; i < len - 2; i += 3) {
+		*p++ = basis_64[(string[i] >> 2) & 0x3F];
+		*p++ = basis_64[((string[i] & 0x3) << 4) |
+						((int) (string[i + 1] & 0xF0) >> 4)];
+		*p++ = basis_64[((string[i + 1] & 0xF) << 2) |
+						((int) (string[i + 2] & 0xC0) >> 6)];
+		*p++ = basis_64[string[i + 2] & 0x3F];
+    }
 
-char *base64_encode (size_t* enclen, size_t len, unsigned char* data) {
-
-	unsigned short state = 0;
-	size_t i = 0;
-	size_t j = 0;
-	char* result = (char*)malloc((4 * ceil(len / 3.0)) + 1);
-	if (result == NULL) {
-		*enclen = 0;
-		return (char*)NULL;
-	}
-
-	for (i = 0; i < len; i++) {
-		unsigned char c = data[i];
-		unsigned char tc;
-		switch (state) {
-		case 0:
-			result[j++] = base64_low6(c >> 2);
-			state = (c & 0x03) + 1;
-			break;
-		case 1:
-			result[j++] = (c >> 4) + 'A';
-			state = (c & 0x0F) + 5;
-			break;
-		case 2:
-			tc = c >> 4;
-			if (tc < 10) {
-				result[j++] = tc + 'Q';
-			} else {
-				result[j++] = tc - 10 + 'a';
-			}
-			state = (c & 0x0F) + 5;
-			break;
-		case 3:
-			result[j++] = (c >> 4) + 'g';
-			state = (c & 0x0F) + 5;
-			break;
-		case 4:
-			tc = c >> 4;
-			if (tc < 4) {
-				result[j++] = tc + 'w';
-			} else if (tc < 14) {
-				result[j++] = tc - 4 + '0';
-			} else if (tc == 14) {
-				result[j++] = '+';
-			} else {
-				result[j++] = '/';
-			}
-			state = (c & 0x0F) + 5;
-			break;
-		case 5:
-			result[j++] = (c >> 6) + 'A';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 6:
-			result[j++] = (c >> 6) + 'E';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 7:
-			result[j++] = (c >> 6) + 'I';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 8:
-			result[j++] = (c >> 6) + 'M';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 9:
-			result[j++] = (c >> 6) + 'Q';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 10:
-			result[j++] = (c >> 6) + 'U';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 11:
-			if (c < 0x80) {
-				result[j++] = (c >> 6) + 'Y';
-			} else {
-				result[j++] = (c >> 6) - 2 + 'a';
-			}
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 12:
-			result[j++] = (c >> 6) + 'c';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 13:
-			result[j++] = (c >> 6) + 'g';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 14:
-			result[j++] = (c >> 6) + 'k';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 15:
-			result[j++] = (c >> 6) + 'o';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 16:
-			result[j++] = (c >> 6) + 's';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 17:
-			result[j++] = (c >> 6) + 'w';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 18:
-			result[j++] = (c >> 6) + '0';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 19:
-			result[j++] = (c >> 6) + '4';
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
-		case 20:
-			if (c < 0x80) {
-				result[j++] = (c >> 6) + '8';
-			} else if (c >= 0xC0) {
-				result[j++] = '/';
-			} else {
-				result[j++] = '+';
-			}
-			result[j++] = base64_low6(c);
-			state = 0;
-			break;
+    if (i < len) {
+		*p++ = basis_64[(string[i] >> 2) & 0x3F];
+		if (i == (len - 1)) {
+			*p++ = basis_64[((string[i] & 0x3) << 4)];
+			*p++ = '=';
 		}
-	}
-	switch (state) {
-	case 1:
-		result[j++] = 'A';
-		result[j++] = '=';
-		result[j++] = '=';
-		break;
-	case 2:
-		result[j++] = 'Q';
-		result[j++] = '=';
-		result[j++] = '=';
-		break;
-	case 3:
-		result[j++] = 'g';
-		result[j++] = '=';
-		result[j++] = '=';
-		break;
-	case 4:
-		result[j++] = 'w';
-		result[j++] = '=';
-		result[j++] = '=';
-		break;
-	case 5:
-		result[j++] = 'A';
-		result[j++] = '=';
-		break;
-	case 6:
-		result[j++] = 'E';
-		result[j++] = '=';
-		break;
-	case 7:
-		result[j++] = 'I';
-		result[j++] = '=';
-		break;
-	case 8:
-		result[j++] = 'M';
-		result[j++] = '=';
-		break;
-	case 9:
-		result[j++] = 'Q';
-		result[j++] = '=';
-		break;
-	case 10:
-		result[j++] = 'U';
-		result[j++] = '=';
-		break;
-	case 11:
-		result[j++] = 'Y';
-		result[j++] = '=';
-		break;
-	case 12:
-		result[j++] = 'c';
-		result[j++] = '=';
-		break;
-	case 13:
-		result[j++] = 'g';
-		result[j++] = '=';
-		break;
-	case 14:
-		result[j++] = 'k';
-		result[j++] = '=';
-		break;
-	case 15:
-		result[j++] = 'o';
-		result[j++] = '=';
-		break;
-	case 16:
-		result[j++] = 's';
-		result[j++] = '=';
-		break;
-	case 17:
-		result[j++] = 'w';
-		result[j++] = '=';
-		break;
-	case 18:
-		result[j++] = '0';
-		result[j++] = '=';
-		break;
-	case 19:
-		result[j++] = '4';
-		result[j++] = '=';
-		break;
-	case 20:
-		result[j++] = '8';
-		result[j++] = '=';
-		break;
-	}
-
-	result[j++] = '\0';
-	*enclen = j;
-	return result;
-}
-
-unsigned char *base64_decode (size_t* declen, size_t len, char* data) {
-
-	size_t reallen = strnlen(data, len);
-	size_t reslen;
-	unsigned char* result;
-	size_t i = 0;
-	size_t j = 0;
-	unsigned char prevchar = 0x00;
-
-	if ((reallen % 4) != 0) {
-		*declen = 0;
-		return (unsigned char*)NULL;
-	}
-
-	reslen = (reallen / 4) * 3;
-
-	if (data[reallen - 1] == '=') {
-		reallen--;
-		reslen--;
-		if (data[reallen - 1] == '=') {
-			reallen--;
-			reslen--;
-			if ((low6_base64(data[reallen - 1]) & 0x0F) != 0) {
-				*declen = 0;
-				return (unsigned char*)NULL;
-			}
-		} else if ((low6_base64(data[reallen - 1]) & 0x03) != 0) {
-			*declen = 0;
-			return (unsigned char*)NULL;
+		else {
+			*p++ = basis_64[((string[i] & 0x3) << 4) |
+							((int) (string[i + 1] & 0xF0) >> 4)];
+			*p++ = basis_64[((string[i + 1] & 0xF) << 2)];
 		}
-	}
+		*p++ = '=';
+    }
 
-	result = (unsigned char*)malloc(reslen);
-	if (result == NULL) {
-		*declen = 0;
-		return (unsigned char*)NULL;
-	}
+    *p++ = '\0';
 
-	for (i = 0; i < reallen; i++) {
-		unsigned char c = low6_base64(data[i]);
-		if (c > 0x3F) {
-			*declen = 0;
-			return (unsigned char*)NULL;
-		}
-
-		switch (i % 4) {
-		case 0:
-			prevchar = c;
-			break;
-		case 1:
-			result[j++] = (prevchar << 2) | (c >> 4);
-			prevchar = c;
-			break;
-		case 2:
-			result[j++] = (prevchar << 4) | (c >> 2);
-			prevchar = c;
-			break;
-		case 3:
-			result[j++] = (prevchar << 6) | c;
-			break;
-		}
-	}
-
-	*declen = j;
-	return result;
+    return p - encoded;
 
 }
