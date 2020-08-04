@@ -325,7 +325,6 @@ void *jwt_b64_decode(const char *src, int *ret_len)
 
 	/* Decode based on RFC-4648 URI safe encoding. */
 	len = (int)strlen(src);
-	printf ("len: %d\n", len);
 	new = alloca(len + 4);
 	if (!new)
 		return NULL;

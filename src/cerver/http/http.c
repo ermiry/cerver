@@ -4,6 +4,7 @@
 
 #include "cerver/handler.h"
 #include "cerver/packets.h"
+#include "cerver/files.h"
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
@@ -85,6 +86,13 @@ void http_cerver_init (HttpCerver *http_cerver) {
 		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
 			http_route_init ((HttpRoute *) le->data);
 		}
+
+		// load keys
+		int keylen = 0;
+		char *key = file_read (http_cerver->jwt_opt_pub_key_name->str, &keylen);
+		http_cerver->jwt_public_key = estring_new (key);
+
+		printf ("\n%s\n", http_cerver->jwt_public_key->str);
 	}
 
 }
@@ -367,15 +375,36 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 					printf ("\nToken -> %s\n", token);
 
-					// FIXME:
-					// char decoded[2048] = { 0 };
-					// int decoded_len = 0;
-					// // char *decoded = jwt_b64_decode (token, &decoded_len);
-					// // int decoded_len = base64_decode (decoded, token);
+					jwt_t *jwt = NULL;
+					jwt_valid_t *jwt_valid = NULL;
+					if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
+						jwt_valid->hdr = 1;
+						jwt_valid->now = time (NULL);
 
-					// printf ("\nDecoded (%d) -> %s\n\n", decoded_len, decoded);
+						int ret = jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len);
+						if (!ret) {
+							fprintf(stdout, "jwt decoded successfully!\n");
 
-					found->handler (cr, request);
+							if (!jwt_validate(jwt, jwt_valid)) {
+								fprintf(stderr, "JWT is authentic! sub: %s\n", jwt_get_grant(jwt, "sub"));
+								cerver_log_success ("Done!");
+
+								found->handler (cr, request);
+							}
+
+							else {
+								fprintf(stderr, "jwt failed to validate: %08x\n", jwt_valid_get_status(jwt_valid));
+							}
+
+							jwt_free(jwt);
+						}
+
+						else {
+							fprintf(stderr, "invalid jwt\n");
+						}
+					}
+
+					jwt_valid_free(jwt_valid);
 				}
 
 				// no authentication header was provided

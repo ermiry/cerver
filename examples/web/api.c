@@ -14,6 +14,7 @@
 #include <cerver/http/json.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
+#include <cerver/http/jwt/alg.h>
 
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
@@ -198,6 +199,9 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
 
+		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+
 		// register top level routes
 		// /api/users
 		HttpRoute *users_route = http_route_create ("api/users", main_users_handler);
@@ -211,6 +215,7 @@ int main (int argc, char **argv) {
 		http_route_child_add (users_route, users_register_route);
 
 		HttpRoute *users_info_route = http_route_create (":id", users_info_handler);
+		http_route_set_auth (users_info_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
 		http_route_child_add (users_route, users_info_route);
 
 		HttpRoute *users_profile_route = http_route_create (":id/profile", users_profile_handler);
