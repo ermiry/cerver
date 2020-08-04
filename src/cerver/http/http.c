@@ -79,6 +79,106 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 }
 
+static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerver) {
+
+	unsigned int retval = 1;
+
+	size_t private_keylen = 0;
+	char *private_key = file_read (http_cerver->jwt_opt_key_name->str, &private_keylen);
+	if (private_key) {
+		http_cerver->jwt_private_key = estring_new (NULL);
+		http_cerver->jwt_private_key->str = private_key;
+		http_cerver->jwt_private_key->len = private_keylen;
+
+		printf ("\n%s\n", http_cerver->jwt_public_key->str);
+
+		char *status = c_string_create (
+			"Loaded cerver's %s http jwt PRIVATE key!",
+			http_cerver->cerver->info->name->str
+		);
+
+		if (status) {
+			cerver_log_success (status);
+			free (status);
+		}
+
+		retval = 0;
+	}
+
+	else {
+		char *status = c_string_create (
+			"Failed to load cerver's %s http jwt PRIVATE key!",
+			http_cerver->cerver->info->name->str
+		);
+
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
+	}
+
+	return retval;
+
+}
+
+static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerver) {
+
+	unsigned int retval = 1;
+
+	size_t public_keylen = 0;
+	char *public_key = file_read (http_cerver->jwt_opt_pub_key_name->str, &public_keylen);
+	if (public_key) {
+		http_cerver->jwt_public_key = estring_new (NULL);
+		http_cerver->jwt_public_key->str = public_key;
+		http_cerver->jwt_public_key->len = public_keylen;
+
+		printf ("\n%s\n", http_cerver->jwt_public_key->str);
+
+		char *status = c_string_create (
+			"Loaded cerver's %s http jwt PUBLIC key!",
+			http_cerver->cerver->info->name->str
+		);
+
+		if (status) {
+			cerver_log_success (status);
+			free (status);
+		}
+
+		retval = 0;
+	}
+
+	else {
+		char *status = c_string_create (
+			"Failed to load cerver's %s http jwt PUBLIC key!",
+			http_cerver->cerver->info->name->str
+		);
+
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
+	}
+
+	return retval;
+
+}
+
+static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
+
+	unsigned int errors = 0 ;
+
+	if (http_cerver->jwt_opt_key_name) {
+		errors |= http_cerver_init_load_jwt_private_key (http_cerver);
+	}
+
+	if (http_cerver->jwt_opt_pub_key_name) {
+		errors |= http_cerver_init_load_jwt_public_key (http_cerver);
+	}
+
+	return errors;
+
+}
+
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
@@ -87,12 +187,8 @@ void http_cerver_init (HttpCerver *http_cerver) {
 			http_route_init ((HttpRoute *) le->data);
 		}
 
-		// load keys
-		int keylen = 0;
-		char *key = file_read (http_cerver->jwt_opt_pub_key_name->str, &keylen);
-		http_cerver->jwt_public_key = estring_new (key);
-
-		printf ("\n%s\n", http_cerver->jwt_public_key->str);
+		// load jwt keys
+		(void) http_cerver_init_load_jwt_keys (http_cerver);
 	}
 
 }
