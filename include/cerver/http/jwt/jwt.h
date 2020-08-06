@@ -13,8 +13,6 @@
 
 #include "cerver/config.h"
 
-#include "cerver/http/json/json.h"
-
 #include "cerver/http/jwt/alg.h"
 
 #define JWT_EXPORT                     extern
@@ -36,13 +34,15 @@ typedef void *(*jwt_malloc_t)(size_t);
 typedef void *(*jwt_realloc_t)(void *, size_t);
 typedef void (*jwt_free_t)(void *);
 
+struct json_t;
+
 struct jwt {
 
 	jwt_alg_t alg;
 	unsigned char *key;
 	int key_len;
-	json_t *grants;
-	json_t *headers;
+	struct json_t *grants;
+	struct json_t *headers;
 
 };
 
@@ -53,7 +53,7 @@ struct jwt_valid {
 	jwt_alg_t alg;
 	time_t now;
 	int hdr;
-	json_t *req_grants;
+	struct json_t *req_grants;
 	unsigned int status;
    
 };

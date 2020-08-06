@@ -15,8 +15,8 @@
  * by hand.
  */
 
-#ifndef JANSSON_CONFIG_H
-#define JANSSON_CONFIG_H
+#ifndef _CERVER_HTTP_JSON_CONFIG_H_
+#define _CERVER_HTTP_JSON_CONFIG_H_
 
 /* If your compiler supports the inline keyword in C, JSON_INLINE is
    defined to `inline', otherwise empty. In C++, the inline is always
