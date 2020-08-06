@@ -1,3 +1,6 @@
+#ifndef _CERVER_HTTP_JWT_CONFIG_H_
+#define _CERVER_HTTP_JWT_CONFIG_H_
+
 /* libjwt/config.h.  Generated from config.h.in by configure.  */
 /* libjwt/config.h.in.  Generated from configure.ac by autoheader.  */
 
@@ -63,3 +66,5 @@
 
 /* Version number of package */
 #define VERSION "1.12.0"
+
+#endif

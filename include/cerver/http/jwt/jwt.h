@@ -5,65 +5,60 @@
    License, v. 2.0. If a copy of the MPL was not distributed with this
    file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/**
- * @file jwt.h
- * @brief JWT C Library
- */
-
-#ifndef JWT_H
-#define JWT_H
+#ifndef _CERVER_HTTP_JWT_H_
+#define _CERVER_HTTP_JWT_H_
 
 #include <stdio.h>
 #include <time.h>
 
-#include "cerver/http/jwt/private.h"
+#include "cerver/config.h"
+
+#include "cerver/http/json/json.h"
+
 #include "cerver/http/jwt/alg.h"
 
-#ifdef _MSC_VER
-
-	#define DEPRECATED(func) __declspec(deprecated) func
-
-	#define alloca _alloca
-	#define strcasecmp _stricmp
-	#define strdup _strdup
-
-	#ifdef JWT_DLL_CONFIG
-		#ifdef JWT_BUILD_SHARED_LIBRARY
-			#define JWT_EXPORT __declspec(dllexport)
-		#else
-			#define JWT_EXPORT __declspec(dllimport)
-		#endif
-	#else
-		#define JWT_EXPORT
-	#endif
-
-#else
-
-	#define DEPRECATED(func) func __attribute__ ((deprecated))
-	#define JWT_EXPORT
-
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define JWT_EXPORT                     extern
 
 /** JWT Validation exception types. These are bit values. */
-#define JWT_VALIDATION_SUCCESS		0x0000
-#define JWT_VALIDATION_ERROR		0x0001	/* General failures */
-#define JWT_VALIDATION_ALG_MISMATCH	0x0002
-#define JWT_VALIDATION_EXPIRED		0x0004
-#define JWT_VALIDATION_TOO_NEW		0x0008
-#define JWT_VALIDATION_ISS_MISMATCH	0x0010
-#define JWT_VALIDATION_SUB_MISMATCH	0x0020
-#define JWT_VALIDATION_AUD_MISMATCH	0x0040
-#define JWT_VALIDATION_GRANT_MISSING	0x0080
-#define JWT_VALIDATION_GRANT_MISMATCH	0x0100
+#define JWT_VALIDATION_SUCCESS		   		0x0000
+#define JWT_VALIDATION_ERROR		      	0x0001	/* General failures */
+#define JWT_VALIDATION_ALG_MISMATCH	   		0x0002
+#define JWT_VALIDATION_EXPIRED		   		0x0004
+#define JWT_VALIDATION_TOO_NEW		   		0x0008
+#define JWT_VALIDATION_ISS_MISMATCH 		0x0010
+#define JWT_VALIDATION_SUB_MISMATCH	   		0x0020
+#define JWT_VALIDATION_AUD_MISMATCH	   		0x0040
+#define JWT_VALIDATION_GRANT_MISSING		0x0080
+#define JWT_VALIDATION_GRANT_MISMATCH		0x0100
 
 /** JWT Memory allocation overrides */
 typedef void *(*jwt_malloc_t)(size_t);
 typedef void *(*jwt_realloc_t)(void *, size_t);
 typedef void (*jwt_free_t)(void *);
+
+struct jwt {
+
+	jwt_alg_t alg;
+	unsigned char *key;
+	int key_len;
+	json_t *grants;
+	json_t *headers;
+
+};
+
+typedef struct jwt jwt_t;
+
+struct jwt_valid {
+
+	jwt_alg_t alg;
+	time_t now;
+	int hdr;
+	json_t *req_grants;
+	unsigned int status;
+   
+};
+
+typedef struct jwt_valid jwt_valid_t;
 
 /**
  * @defgroup jwt_new JWT Object Creation
@@ -118,7 +113,7 @@ JWT_EXPORT int jwt_new(jwt_t **jwt);
  *     performed.
  */
 JWT_EXPORT int jwt_decode(jwt_t **jwt, const char *token,
-	                 const unsigned char *key, int key_len);
+					 const unsigned char *key, int key_len);
 
 /**
  * Free a JWT object and any other resources it is using.
@@ -910,8 +905,4 @@ JWT_EXPORT int jwt_valid_set_headers(jwt_valid_t *jwt_valid, int hdr);
 
 /** @} */
 
-#ifdef __cplusplus
-}
 #endif
-
-#endif /* JWT_H */

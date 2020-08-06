@@ -13,6 +13,7 @@
 
 #include "cerver/http/json/json.h"
 
+#include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/config.h"
 
@@ -21,6 +22,14 @@
 static jwt_malloc_t pfn_malloc = NULL;
 static jwt_realloc_t pfn_realloc = NULL;
 static jwt_free_t pfn_free = NULL;
+
+extern int jwt_sign_sha_hmac (jwt_t *jwt, char **out, unsigned int *len, const char *str);
+
+extern int jwt_verify_sha_hmac (jwt_t *jwt, const char *head, const char *sig);
+
+extern int jwt_sign_sha_pem (jwt_t *jwt, char **out, unsigned int *len, const char *str);
+
+extern int jwt_verify_sha_pem (jwt_t *jwt, const char *head, const char *sig_b64);
 
 void *jwt_malloc(size_t size)
 {

@@ -16,8 +16,15 @@
 #include <openssl/buffer.h>
 #include <openssl/pem.h>
 
+#include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/config.h"
+
+extern void *jwt_malloc (size_t size);
+extern void jwt_freemem (void *ptr);
+
+extern void jwt_base64uri_encode (char *str);
+extern void *jwt_b64_decode (const char *src, int *ret_len);
 
 /* Routines to support crypto in LibJWT using OpenSSL. */
 
