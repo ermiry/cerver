@@ -1,28 +1,86 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sys/types.h>
-#include <sys/socket.h>
-
 #include "cerver/types/estring.h"
 
+#include "cerver/http/status.h"
 #include "cerver/http/response.h"
 #include "cerver/http/json.h"
 
-// TODO: get the size fo this when we start the server!!
 const char *default_header = "HTTP/1.1 200 OK\r\n\n";
 
 HttpResponse *http_response_new (void) {
 
     HttpResponse *res = (HttpResponse *) malloc (sizeof (HttpResponse));
     if (res) {
-        memset (res, 0, sizeof (HttpResponse));
-        res->data = NULL;
+        res->status = HTTP_STATUS_OK;
+
         res->header = NULL;
+        res->header_len = 0;
+
+        res->data = NULL;
+        res->data_len = 0;
+
         res->res = NULL;
+        res->res_len = 0;
     } 
 
     return res;
+
+}
+
+void http_respponse_delete (HttpResponse *res) {
+
+    if (res) {
+        if (res->header) free (res->header);
+        if (res->data) free (res->data);
+        if (res->res) free (res->res);
+
+        free (res);
+    }
+
+}
+
+// sets the http response's status code to be set in the header when compilling
+void http_response_set_status (HttpResponse *res, http_status status) {
+
+    if (res) res->status = status;
+
+}
+
+// sets the response's header, it will replace the existing one
+// the data will be deleted when the response gets deleted
+void http_response_set_header (HttpResponse *res, void *header, size_t header_len) {
+
+    if (res) {
+        if (res->header) {
+            free (res->header);
+            res->header = NULL;
+        } 
+
+        if (header) {
+            res->header = header;
+            res->header_len = header_len;
+        }
+    }
+
+}
+
+// sets the response's data (body), it will replace the existing one
+// the data will be deleted when the response gets deleted
+void http_response_set_data (HttpResponse *res, void *data, size_t data_len) {
+
+    if (res) {
+        if (res->data) {
+            free (res->data);
+            res->data = NULL;
+        }
+
+        if (data) {
+            res->data = data;
+            res->data_len = data_len;
+        }
+    }
 
 }
 
@@ -55,18 +113,6 @@ HttpResponse *http_response_create (unsigned int status, const char *header, siz
     }
 
     return res;
-
-}
-
-void http_respponse_delete (HttpResponse *res) {
-
-    if (res) {
-        if (res->data) free (res->data);
-        if (res->header) free (res->header);
-        if (res->res) free (res->res);
-
-        free (res);
-    }
 
 }
 
