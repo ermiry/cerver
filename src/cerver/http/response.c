@@ -8,7 +8,7 @@
 
 #include "cerver/http/status.h"
 #include "cerver/http/response.h"
-#include "cerver/http/json.h"
+#include "cerver/http/json/json.h"
 
 #include "cerver/utils/utils.h"
 
@@ -198,20 +198,60 @@ u8 http_response_send (HttpResponse *res, Cerver *cerver, Connection *connection
 
 }
 
-// HttpResponse *http_response_json_error (const char *error_msg) {
+static HttpResponse *http_response_json_internal (http_status status, const char *key, const char *value) {
 
-// 	HttpResponse *res = NULL;
+	HttpResponse *res = http_response_new ();
+	if (res) {
+		res->status = status;
 
-// 	if (error_msg) {
-// 		estring *error = estring_new (error_msg);
-// 		JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
-// 		size_t json_len;
-// 		char *json = json_create_with_one_pair (jkvp, &json_len);
-// 		json_key_value_delete (jkvp);
-// 		res = http_response_create (200, NULL, 0, json, json_len);
-// 		free (json);        // we copy the data into the response
-// 	}
+		res->header = c_string_create (
+			"HTTP/1.1 %d %s\r\n\n", 
+			res->status, http_status_str (res->status)
+		);
 
-// 	return res;
+		res->header_len = strlen ((const char *) res->header);
 
-// }
+		// body
+		json_t *json = json_pack ("{s:s}", key, value);
+		if (json) {
+			char *json_str = json_dumps (json, 0);
+			if (json_str) {
+				res->data = json_str;
+				res->data_len = strlen (json_str);
+			}
+
+			json_delete (json);
+		}
+
+		(void) http_response_compile (res);
+	}
+
+	return res;
+
+}
+
+// creates an http response with the defined status code ready to be sent 
+// and a data (body) with a json message of type { msg: "your message" }
+HttpResponse *http_response_json_msg (http_status status, const char *msg) {
+
+	return msg ? http_response_json_internal (status, "msg", msg) : NULL;
+
+}
+
+// creates an http response with the defined status code ready to be sent 
+// and a data (body) with a json message of type { error: "your error message" }
+HttpResponse *http_response_json_error (http_status status, const char *error_msg) {
+
+	return error_msg ? http_response_json_internal (status, "error", error_msg) : NULL;
+
+}
+
+void http_response_print (HttpResponse *res) {
+
+	if (res) {
+		if (res->res) {
+			printf ("\nResponse: %.*s\n\n", (int) res->res_len, (char *) res->res);
+		}
+	}
+
+}
