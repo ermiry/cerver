@@ -11,7 +11,6 @@
 
 #include <cerver/http/http.h>
 #include <cerver/http/route.h>
-#include <cerver/http/json.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 
@@ -40,20 +39,10 @@ void end (int dummy) {
 
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Test route works!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Test route works!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
@@ -61,20 +50,10 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Hola route works!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Hola route works!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
@@ -82,20 +61,10 @@ void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
 void adios_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Adios route works!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Adios route works!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
