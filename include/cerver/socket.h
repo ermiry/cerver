@@ -4,6 +4,7 @@
 #include <pthread.h>
 
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 #include "cerver/receive.h"
 
 struct _Cerver;
@@ -22,12 +23,12 @@ struct _Socket {
 
 typedef struct _Socket Socket;
 
-extern Socket *socket_new (void);
+CERVER_PUBLIC Socket *socket_new (void);
 
-extern void socket_delete (void *socket_ptr);
+CERVER_PUBLIC void socket_delete (void *socket_ptr);
 
-extern void *socket_create_empty (void);
+CERVER_PUBLIC void *socket_create_empty (void);
 
-extern Socket *socket_create (int fd);
+CERVER_PUBLIC Socket *socket_create (int fd);
 
 #endif

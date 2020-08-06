@@ -7,9 +7,10 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/network.h"
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 #include "cerver/client.h"
+#include "cerver/network.h"
 
 #include "cerver/game/lobby.h"
 
@@ -24,13 +25,13 @@ struct _Lobby;
 typedef u32 ProtocolID;
 
 // gets the current protocol id set in your application
-extern ProtocolID packets_get_protocol_id (void);
+CERVER_EXPORT ProtocolID packets_get_protocol_id (void);
 
 // Sets the protocol id that this cerver will use for its packets. 
 // The protocol id is a unique number that you can set to only accept packets that are comming from your application
 // If the protocol id coming from the cerver don't match your application's, it will be considered a bad packet
 // This value is only cheked if you enable packet checking for your cerver
-extern void packets_set_protocol_id (ProtocolID protocol_id);
+CERVER_EXPORT void packets_set_protocol_id (ProtocolID protocol_id);
 
 typedef struct ProtocolVersion {
 
@@ -40,13 +41,13 @@ typedef struct ProtocolVersion {
 } ProtocolVersion;
 
 // gets the current version set in your application
-extern ProtocolVersion packets_get_protocol_version (void);
+CERVER_EXPORT ProtocolVersion packets_get_protocol_version (void);
 
 // Sets the protocol version for the cerver. 
 // The version is an identifier to help you manage different versions of your deployed applications
 // If the versions of your packet don't match, it will be considered a bad packet
 // This value is only cheked if you enable packet checking for your cerver
-extern void packets_set_protocol_version (ProtocolVersion version);
+CERVER_EXPORT void packets_set_protocol_version (ProtocolVersion version);
 
 #pragma endregion
 
@@ -61,13 +62,13 @@ struct _PacketVersion {
 
 typedef struct _PacketVersion PacketVersion;
 
-extern PacketVersion *packet_version_new (void);
+CERVER_PUBLIC PacketVersion *packet_version_new (void);
 
-extern void packet_version_delete (PacketVersion *version);
+CERVER_PUBLIC void packet_version_delete (PacketVersion *version);
 
-extern PacketVersion *packet_version_create (void);
+CERVER_PUBLIC PacketVersion *packet_version_create (void);
 
-extern void packet_version_print (PacketVersion *version);
+CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 
 #pragma endregion
 
@@ -114,11 +115,11 @@ struct _PacketsPerType {
 
 typedef struct _PacketsPerType PacketsPerType;
 
-extern PacketsPerType *packets_per_type_new (void);
+CERVER_PUBLIC PacketsPerType *packets_per_type_new (void);
 
-extern void packets_per_type_delete (void *ptr);
+CERVER_PUBLIC void packets_per_type_delete (void *ptr);
 
-extern void packets_per_type_print (PacketsPerType *packets_per_type);
+CERVER_PUBLIC void packets_per_type_print (PacketsPerType *packets_per_type);
 
 #pragma endregion
 
@@ -137,18 +138,18 @@ struct _PacketHeader {
 
 typedef struct _PacketHeader PacketHeader;
 
-extern PacketHeader *packet_header_new (void);
+CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
-extern void packet_header_delete (PacketHeader *header);
+CERVER_PUBLIC void packet_header_delete (PacketHeader *header);
 
-extern PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type);
+CERVER_PUBLIC PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type);
 
 // prints an already existing PacketHeader. Mostly used for debugging
-extern void packet_header_print (PacketHeader *header);
+CERVER_PUBLIC void packet_header_print (PacketHeader *header);
 
 // allocates space for the dest packet header and copies the data from source
 // returns 0 on success, 1 on error
-extern u8 packet_header_copy (PacketHeader **dest, PacketHeader *source);
+CERVER_PUBLIC u8 packet_header_copy (PacketHeader **dest, PacketHeader *source);
 
 #pragma endregion
 
@@ -236,72 +237,72 @@ struct _Packet {
 typedef struct _Packet Packet;
 
 // allocates a new empty packet
-extern Packet *packet_new (void);
+CERVER_PUBLIC Packet *packet_new (void);
 
 // correctly deletes a packet and all of its data
-extern void packet_delete (void *ptr);
+CERVER_PUBLIC void packet_delete (void *ptr);
 
 // creates a new packet with the option to pass values directly
 // data is copied into packet buffer and can be safely freed
-extern Packet *packet_create (PacketType type, void *data, size_t data_size);
+CERVER_EXPORT Packet *packet_create (PacketType type, void *data, size_t data_size);
 
 // sets the packet destinatary to whom this packet is going to be sent
-extern void packet_set_network_values (Packet *packet, struct _Cerver *cerver, 
+CERVER_EXPORT void packet_set_network_values (Packet *packet, struct _Cerver *cerver, 
 	struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
 
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
-extern u8 packet_set_data (Packet *packet, void *data, size_t data_size);
+CERVER_EXPORT u8 packet_set_data (Packet *packet, void *data, size_t data_size);
 
 // appends the data to the end if the packet already has data
 // if the packet is empty, creates a new buffer
 // it creates a new copy of the data and the original can be safely freed
 // this does not work if the data has been set using a reference
 // returns 0 on success, 1 on error
-extern u8 packet_append_data (Packet *packet, void *data, size_t data_size);
+CERVER_EXPORT u8 packet_append_data (Packet *packet, void *data, size_t data_size);
 
 // sets a reference to a data buffer to send
 // data will not be copied into the packet and will not be freed after use
 // this method is usefull for example if you just want to send a raw json packet to a non-cerver
 // use this method with packet_send () with the raw flag on
 // returns 0 on success, 1 on error
-extern u8 packet_set_data_ref (Packet *packet, void *data, size_t data_size);
+CERVER_EXPORT u8 packet_set_data_ref (Packet *packet, void *data, size_t data_size);
 
 // sets a packet's packet by copying the passed data, so you will be able to free your data
 // this data is expected to already contain a header, otherwise, send with raw flag
 // deletes the previuos packet's packet
 // returns 0 on succes, 1 on error
-extern u8 packet_set_packet (Packet *packet, void *data, size_t data_size);
+CERVER_EXPORT u8 packet_set_packet (Packet *packet, void *data, size_t data_size);
 
 // sets a reference to a data buffer to send as the packet
 // data will not be copied into the packet and will not be freed after use
 // usefull when you need to generate your own cerver type packet by hand
 // returns 0 on success, 1 on error
-extern u8 packet_set_packet_ref (Packet *packet, void *data, size_t packet_size);
+CERVER_EXPORT u8 packet_set_packet_ref (Packet *packet, void *data, size_t packet_size);
 
 // prepares the packet to be ready to be sent
 // WARNING: dont call this method if you have set the packet directly
 // returns 0 on success, 1 on error
-extern u8 packet_generate (Packet *packet);
+CERVER_EXPORT u8 packet_generate (Packet *packet);
 
 // generates a simple request packet of the requested type reday to be sent, 
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
-extern Packet *packet_generate_request (PacketType packet_type, u32 req_type, 
+CERVER_EXPORT Packet *packet_generate_request (PacketType packet_type, u32 req_type, 
 	void *data, size_t data_size);
 
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-extern u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
+CERVER_EXPORT u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
 
 // sends a packet to the specified destination
 // sets flags to 0
 // at least a packet & an active connection are required for this method to succeed
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-extern u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
+CERVER_EXPORT u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
 
 // sends a packet to the socket in two parts, first the header & then the data
@@ -310,19 +311,19 @@ extern u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
 // the socket's write mutex will be locked to ensure that the packet
 // is sent correctly and to avoid race conditions
 // returns 0 on success, 1 on error
-extern u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent);
+CERVER_EXPORT u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent);
 
 // sends a packet to the socket in two parts, first the header & then the data
 // works just as packet_send_split () but with the flags set to 0
 // returns 0 on success, 1 on error
-extern u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
+CERVER_EXPORT u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
     struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
 
 // sends a packet in pieces, taking the header from the packet's field
 // sends each buffer as they are with they respective sizes
 // socket mutex will be locked for the entire operation
 // returns 0 on success, 1 on error
-extern u8 packet_send_pieces (
+CERVER_EXPORT u8 packet_send_pieces (
     const Packet *packet, 
     void **pieces, size_t *sizes, u32 n_pieces, 
     int flags, 
@@ -332,12 +333,12 @@ extern u8 packet_send_pieces (
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-extern u8 packet_send_to_socket (const Packet *packet, struct _Socket *socket, 
+CERVER_EXPORT u8 packet_send_to_socket (const Packet *packet, struct _Socket *socket, 
     int flags, size_t *total_sent, bool raw);
 
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet
-extern bool packet_check (Packet *packet);
+CERVER_EXPORT bool packet_check (Packet *packet);
 
 #pragma endregion
 

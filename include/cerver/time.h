@@ -10,30 +10,32 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
+#include "cerver/config.h"
+
 typedef struct timespec TimeSpec;
 
-extern void timespec_delete (void *timespec_ptr);
+CERVER_EXPORT void timespec_delete (void *timespec_ptr);
 
-extern TimeSpec *timer_get_timespec (void);
+CERVER_EXPORT TimeSpec *timer_get_timespec (void);
 
-extern double timer_elapsed_time (TimeSpec *start, TimeSpec *end);
+CERVER_EXPORT double timer_elapsed_time (TimeSpec *start, TimeSpec *end);
 
-extern void timer_sleep_for_seconds (double seconds);
+CERVER_EXPORT void timer_sleep_for_seconds (double seconds);
 
-extern struct tm *timer_get_gmt_time (void);
+CERVER_EXPORT struct tm *timer_get_gmt_time (void);
 
-extern struct tm *timer_get_local_time (void);
+CERVER_EXPORT struct tm *timer_get_local_time (void);
 
 // returns a string representing the 24h time 
-extern estring *timer_time_to_string (struct tm *timeinfo);
+CERVER_EXPORT estring *timer_time_to_string (struct tm *timeinfo);
 
 // returns a string with day/month/year
-extern estring *timer_date_to_string (struct tm *timeinfo);
+CERVER_EXPORT estring *timer_date_to_string (struct tm *timeinfo);
 
 // returns a string with day/month/year - 24h time
-extern estring *timer_date_and_time_to_string (struct tm *timeinfo);
+CERVER_EXPORT estring *timer_date_and_time_to_string (struct tm *timeinfo);
 
 // returns a string representing the time with custom format
-extern estring *timer_time_to_string_custom (struct tm *timeinfo, const char *format);
+CERVER_EXPORT estring *timer_time_to_string_custom (struct tm *timeinfo, const char *format);
 
 #endif
