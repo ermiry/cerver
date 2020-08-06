@@ -6,9 +6,10 @@
 #include "cerver/types/types.h"
 #include "cerver/types/estring.h"
 
-#include "cerver/packets.h"
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 #include "cerver/client.h"
+#include "cerver/packets.h"
 
 #define DEFAULT_AUTH_TRIES                  3
 #define DEFAULT_ON_HOLD_MAX_BAD_PACKETS     3
@@ -52,7 +53,7 @@ typedef struct _AuthMethod AuthMethod;
 #pragma region handler
 
 // handles an packet from an on hold connection
-extern void on_hold_packet_handler (void *packet_ptr);
+CERVER_PRIVATE void on_hold_packet_handler (void *packet_ptr);
 
 #pragma endregion
 
@@ -61,10 +62,10 @@ extern void on_hold_packet_handler (void *packet_ptr);
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess or failed authentication
 // returns 0 on success, 1 on error
-extern u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connection);
+CERVER_PRIVATE u8 on_hold_connection (struct _Cerver *cerver, struct _Connection *connection);
 
 // closes the on hold connection and removes it from the cerver
-extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
+CERVER_PRIVATE void on_hold_connection_drop (const struct _Cerver *cerver, struct _Connection *connection);
 
 #pragma endregion
 
@@ -72,10 +73,10 @@ extern void on_hold_connection_drop (const struct _Cerver *cerver, struct _Conne
 
 // removed a sock fd from the cerver's on hold poll array
 // returns 0 on success, 1 on error
-extern u8 on_hold_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
+CERVER_PRIVATE u8 on_hold_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
 
 // handles packets from the on hold clients until they authenticate
-extern void *on_hold_poll (void *cerver_ptr);
+CERVER_PRIVATE void *on_hold_poll (void *cerver_ptr);
 
 #pragma endregion
 
