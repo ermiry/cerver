@@ -3,7 +3,8 @@ SLIB		:= libcerver.so
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
-CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
+
+# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 OPENSSL		:= -lssl -lcrypto
 
@@ -22,7 +23,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
-LIB         := $(PTHREAD) $(MATH) $(CMONGO) $(OPENSSL)
+LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
@@ -85,7 +86,7 @@ examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./example
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/packets.c -o ./examples/bin/packets -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/threads.c -o ./examples/bin/threads -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c $(CMONGO) -o ./examples/bin/web -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/api.c -o ./examples/bin/api -l cerver
 
 .PHONY: all clean examples
