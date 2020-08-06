@@ -3,18 +3,6 @@
 
 #include "cerver/collections/dlist.h"
 
-struct phr_header {
-
-	const char *name;
-	size_t name_len;
-	const char *value;
-	size_t value_len;
-	
-};
-
-extern int phr_parse_request (const char *buf_start, size_t len, const char **method, size_t *method_len, const char **path,
-	size_t *path_len, int *minor_version, struct phr_header *headers, size_t *num_headers, size_t last_len);
-
 /*** Query ***/
 
 typedef struct KeyValuePair { char *key, *value; } KeyValuePair;
