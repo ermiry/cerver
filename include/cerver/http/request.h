@@ -5,6 +5,8 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
+
 typedef enum RequestMethod {
 
 	REQUEST_METHOD_DELETE								= 0,
@@ -72,12 +74,12 @@ typedef struct HttpRequest {
 
 } HttpRequest;
 
-extern HttpRequest *http_request_new (void);
+CERVER_PUBLIC HttpRequest *http_request_new (void);
 
-extern void http_request_delete (HttpRequest *http_request);
+CERVER_PUBLIC void http_request_delete (HttpRequest *http_request);
 
-extern HttpRequest *http_request_create (void);
+CERVER_PUBLIC HttpRequest *http_request_create (void);
 
-extern void http_request_headers_print (HttpRequest *http_request);
+CERVER_PUBLIC void http_request_headers_print (HttpRequest *http_request);
 
 #endif

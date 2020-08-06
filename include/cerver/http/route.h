@@ -5,6 +5,7 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
 #include "cerver/handler.h"
 
 #include "cerver/http/request.h"
@@ -55,25 +56,27 @@ struct _HttpRoute {
 
 typedef struct _HttpRoute HttpRoute;
 
-extern HttpRoute *http_route_new (void);
+CERVER_PUBLIC HttpRoute *http_route_new (void);
 
-extern void http_route_delete (void *route_ptr);
+CERVER_PUBLIC void http_route_delete (void *route_ptr);
 
-extern int http_route_comparator_by_n_tokens (const void *a, const void *b);
+CERVER_PUBLIC int http_route_comparator_by_n_tokens (const void *a, const void *b);
 
-extern HttpRoute *http_route_create (const char *actual_route, 
+// creates a new route that can be registered to be sued by an http cerver
+CERVER_EXPORT HttpRoute *http_route_create (const char *actual_route, 
 	void (*handler)(CerverReceive *cr, HttpRequest *request));
 
-extern void http_route_init (HttpRoute *route);
+CERVER_PRIVATE void http_route_init (HttpRoute *route);
 
-extern void http_route_child_add (HttpRoute *parent, HttpRoute *child);
+// registers a route as a child of a parent route
+CERVER_EXPORT void http_route_child_add (HttpRoute *parent, HttpRoute *child);
 
 // enables authentication for the selected route
-extern void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);
+CERVER_EXPORT void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
 // if no delete method is set, data won't be freed
-extern void http_route_set_decode_data (HttpRoute *route, 
+CERVER_EXPORT void http_route_set_decode_data (HttpRoute *route, 
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *));
 
 #endif
