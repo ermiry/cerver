@@ -16,6 +16,7 @@
 #include "cerver/collections/htab.h"
 #include "cerver/collections/pool.h"
 
+#include "cerver/config.h"
 #include "cerver/admin.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -24,10 +25,6 @@
 #include "cerver/threads/thpool.h"
 
 #include "cerver/game/game.h"
-
-#define CERVER_EXPORT                       extern      // to be used in user's application
-#define CERVER_PRIVATE                      extern      // to be used by internal cerver methods
-#define CERVER_PUBLIC                       extern      // safe to access as a user but not recommended
 
 #define DEFAULT_CONNECTION_QUEUE            7
 
