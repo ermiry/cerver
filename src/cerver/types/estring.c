@@ -182,46 +182,58 @@ void estring_to_lower (estring *str) {
 
 char **estring_split (estring *str, const char delim, int *n_tokens) {
 
-    char **result = NULL;
+	char **result = NULL;
 
 	if (str) {
-		char *string = strdup (str->str);
-		if (string) {
-			// count tokens
-			size_t count = 0;
-			char *temp = (char *) str->str;
-			char last = '\0';
+		if (str->len > 1) {
+			char *string = strdup (str->str);
+			if (string) {
+				size_t count = 0;
 
-			while (*temp) {
-				if (delim == *temp) {
-					if (last != delim) count++;
+				char *temp = (char *) str->str;
+				char prev = '\0';
+				char *last = NULL;
+
+				while (*temp) {
+					if (delim == *temp) {
+						if (prev != delim) count++;
+						last = temp;
+					}
+
+					prev = *temp;
+					temp++;
 				}
 
-				last = *temp;
-				temp++;
-			}
+				// don't count if the delim is the last char of the string
+				if (prev == delim) count--;
 
-			if (last == delim) count--;
+				// check if we have info between delims
+				if (str->str[0] == delim && count) count--;
 
-			result = (char **) calloc (count, sizeof (char *));
-			if (result) {
-				if (n_tokens) *n_tokens = count;
+				if (last) count += (last < temp);
 
-				size_t idx = 0;
+				if (count) {
+					result = (char **) calloc (count, sizeof (char *));
+					if (result) {
+						if (n_tokens) *n_tokens = count;
 
-				char dlm[2];
-				dlm[0] = delim;
-				dlm[1] = '\0';
+						size_t idx = 0;
 
-				char *token = NULL;
-				char *rest = string;
-				while ((token = __strtok_r (rest, dlm, &rest))) {
-					result[idx] = strdup (token);
-					idx++;
+						char dlm[2];
+						dlm[0] = delim;
+						dlm[1] = '\0';
+
+						char *token = NULL;
+						char *rest = string;
+						while ((token = __strtok_r (rest, dlm, &rest))) {
+							result[idx] = strdup (token);
+							idx++;
+						}
+					}
 				}
-			}
 
-			free (string);
+				free (string);
+			}
 		}
 	}
 
