@@ -8,7 +8,6 @@
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
-#include "cerver/http/json.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
@@ -338,7 +337,12 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request) {
 
-	// FIXME:
+	HttpResponse *res = http_response_json_msg (200, "HTTP Cerver!");
+	if (res) {
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
 
 }
 
@@ -512,18 +516,10 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 				// no authentication header was provided
 				else {
-					estring *error = estring_new ("Failed to authenticate!");
-					JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
-					size_t json_len;
-					char *json = json_create_with_one_pair (jkvp, &json_len);
-					// json_key_value_delete (jkvp);
-					HttpResponse *res = http_response_create (400, NULL, 0, json, json_len);
-
+					HttpResponse *res = http_response_json_error (400, "Failed to authenticate!");
 					if (res) {
-						// send the response to the client
-						http_response_compile (res);
-						printf ("Response: %s\n", res->res);
-						http_response_send_to_socket (res, cr->socket->sock_fd);
+						http_response_print (res);
+						http_response_send (res, cr->cerver, cr->connection);
 						http_respponse_delete (res);
 					}
 				}
