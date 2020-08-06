@@ -11,7 +11,6 @@
 
 #include <cerver/http/http.h>
 #include <cerver/http/route.h>
-#include <cerver/http/json.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/json/json.h>
@@ -143,20 +142,10 @@ static void *user_parse_from_json (void *user_json_ptr) {
 // api/users
 static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Users route works!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Users route works!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
@@ -165,20 +154,10 @@ static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
 // api/users/login
 static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Users login!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Users login!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
@@ -187,20 +166,10 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 // api/users/register
 static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Users register!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Users register!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
@@ -211,42 +180,26 @@ static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
 
 	User *user = (User *) request->decoded_data;
 
-	HttpResponse *res = NULL;
+	char *message = c_string_create ("%s profile!", user->name->str);
 
-	estring *test = estring_create ("%s profile!", user->name->str);
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, message);
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
+
+	free (message);
 
 }
 
 // *
 static void catch_all_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = NULL;
-
-	estring *test = estring_new ("Cerver API implementation!");
-	JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
-	size_t json_len;
-	char *json = json_create_with_one_pair (jkvp, &json_len);
-	// json_key_value_delete (jkvp);
-	res = http_response_create (200, NULL, 0, json, json_len);
-
+	HttpResponse *res = http_response_json_msg (200, "Cerver API implementation!");
 	if (res) {
-		// send the response to the client
-		http_response_compile (res);
-		printf ("Response: %s\n", res->res);
-		http_response_send_to_socket (res, cr->socket->sock_fd);
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
 
