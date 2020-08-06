@@ -12,6 +12,8 @@
 
 struct _Cerver;
 
+typedef struct KeyValuePair { char *key, *value; } KeyValuePair;
+
 struct _HttpCerver {
 
     struct _Cerver *cerver;
@@ -69,6 +71,16 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_
 
 // sets the filename from where the jwt public key will be loaded
 CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename);
+
+#pragma endregion
+
+#pragma region parser
+
+// parses a url query into key value pairs for better manipulation
+CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (const char *first, const char *last);
+
+// gets the matching value for the requested key from a list of pairs
+CERVER_PUBLIC const char *http_query_pairs_get_value (DoubleList *pairs, const char *key);
 
 #pragma endregion
 
