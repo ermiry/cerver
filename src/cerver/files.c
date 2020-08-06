@@ -306,7 +306,7 @@ json_value *file_json_parse (const char *filename) {
     json_value *value = NULL;
 
     if (filename) {
-        int file_size;
+        size_t file_size = 0;
         char *file_contents = file_read (filename, &file_size);
         json_char *json = (json_char *) file_contents;
         value = json_parse (json, file_size);
