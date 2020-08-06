@@ -36,9 +36,10 @@ extern void http_response_set_header (HttpResponse *res, void *header, size_t he
 // the data will be deleted when the response gets deleted
 extern void http_response_set_data (HttpResponse *res, void *data, size_t data_len);
 
-// creates a new response model with the requested values
-extern HttpResponse *http_response_create (unsigned int status, const char *header, size_t header_len, 
-	const char *data, size_t data_len);
+// creates a new http response with the specified status code
+// ability to set the response's data (body); it will be copied to the response
+// and the original data can be safely deleted 
+extern HttpResponse *http_response_create (http_status status, const void *data, size_t data_len);
 
 // merges the response header and the data into the final response
 extern void http_response_compile (HttpResponse *res);
