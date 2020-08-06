@@ -1,11 +1,13 @@
 #ifndef _CERVER_INPUT_H_
 #define _CERVER_INPUT_H_
 
-extern void input_clean_stdin (void);
+#include "cerver/config.h"
+
+CERVER_EXPORT void input_clean_stdin (void);
 
 // returns a newly allocated c string
-extern char *input_get_line (void);
+CERVER_EXPORT char *input_get_line (void);
 
-extern unsigned int input_password (char *password);
+CERVER_EXPORT unsigned int input_password (char *password);
 
 #endif

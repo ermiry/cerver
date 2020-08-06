@@ -15,12 +15,12 @@ typedef struct SessionData {
 
 } SessionData;
 
-extern SessionData *session_data_new (Packet *packet, struct _AuthData *auth_data, Client *client);
+CERVER_PRIVATE SessionData *session_data_new (Packet *packet, struct _AuthData *auth_data, Client *client);
 
-extern void session_data_delete (void *ptr);
+CERVER_PRIVATE void session_data_delete (void *ptr);
 
 // create a unique session id for each client based on the current time
-extern void *session_default_generate_id (const void *session_data);
+CERVER_PRIVATE void *session_default_generate_id (const void *session_data);
 
 #pragma region serialization
 
