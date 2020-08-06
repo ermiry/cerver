@@ -3,8 +3,10 @@
 
 #include <stddef.h>
 
-extern int base64_encode (char *encoded, const char *string, int len);
+#include "cerver/config.h"
 
-extern int base64_decode (char *bufplain, const char *bufcoded);
+CERVER_PUBLIC int base64_encode (char *encoded, const char *string, int len);
+
+CERVER_PUBLIC int base64_decode (char *bufplain, const char *bufcoded);
 
 #endif
