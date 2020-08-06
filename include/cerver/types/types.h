@@ -1,10 +1,6 @@
 #ifndef _CERVER_TYPES_H_
 #define _CERVER_TYPES_H_
 
-#define EXIT_FAILURE    1
-
-#define THREAD_OK       0
-
 #include <stdint.h>
 
 typedef uint8_t u8;
@@ -17,22 +13,16 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-typedef unsigned char asciiChar;
+typedef unsigned char uchar;
+typedef unsigned char ascii_char;
 
 // takes no argument and returns a value (int)
 typedef u8 (*Func)(void);
+
 // takes an argument and does not return a value
 typedef void (*Action)(void *);
+
 // takes an argument and returns a value (int)
 typedef u8 (*delegate)(void *);
-
-// TODO: handle different data lengths
-typedef enum ValueType {
-
-    VALUE_TYPE_INT,
-    VALUE_TYPE_DOUBLE,
-    VALUE_TYPE_STRING,
-
-} ValueType;
 
 #endif
