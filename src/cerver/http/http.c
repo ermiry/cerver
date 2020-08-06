@@ -426,6 +426,76 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 
 }
 
+static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
+
+	HttpResponse *res = http_response_json_error (400, "Failed to authenticate!");
+	if (res) {
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+}
+
+static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, CerverReceive *cr, 
+	HttpRoute *found, HttpRequest *request) {
+
+	// get the bearer token
+	printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
+
+	char *token = request->headers[REQUEST_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
+
+	printf ("\nToken -> %s\n", token);
+
+	jwt_t *jwt = NULL;
+	jwt_valid_t *jwt_valid = NULL;
+	if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
+		jwt_valid->hdr = 1;
+		jwt_valid->now = time (NULL);
+
+		int ret = jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len);
+		if (!ret) {
+			cerver_log_debug ("JWT decoded successfully!");
+
+			if (!jwt_validate (jwt, jwt_valid)) {
+				cerver_log_success ("JWT is authentic!");
+
+				if (found->decode_data) {
+					request->decoded_data = found->decode_data (jwt->grants);
+					request->delete_decoded_data = found->delete_decoded_data;
+				}
+
+				found->handler (cr, request);
+			}
+
+			else {
+				char *status = c_string_create (
+					"Failed to validate JWT: %08x", 
+					jwt_valid_get_status(jwt_valid)
+				);
+
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+
+				http_receive_handle_select_failed_auth (cr);
+			}
+
+			jwt_free(jwt);
+		}
+
+		else {
+			cerver_log_error ("Invalid JWT!");
+
+			http_receive_handle_select_failed_auth (cr);
+		}
+	}
+
+	jwt_valid_free (jwt_valid);
+
+}
+
 // select the route that will handle the request
 static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request) {
 
@@ -470,58 +540,12 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					// get the bearer token
-					printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
-
-					char *token = request->headers[REQUEST_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
-
-					printf ("\nToken -> %s\n", token);
-
-					jwt_t *jwt = NULL;
-					jwt_valid_t *jwt_valid = NULL;
-					if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
-						jwt_valid->hdr = 1;
-						jwt_valid->now = time (NULL);
-
-						int ret = jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len);
-						if (!ret) {
-							fprintf(stdout, "jwt decoded successfully!\n");
-
-							if (!jwt_validate(jwt, jwt_valid)) {
-								fprintf(stderr, "JWT is authentic! sub: %s\n", jwt_get_grant(jwt, "sub"));
-								cerver_log_success ("Done!");
-
-								if (found->decode_data) {
-									request->decoded_data = found->decode_data (jwt->grants);
-									request->delete_decoded_data = found->delete_decoded_data;
-								}
-
-								found->handler (cr, request);
-							}
-
-							else {
-								fprintf(stderr, "jwt failed to validate: %08x\n", jwt_valid_get_status(jwt_valid));
-							}
-
-							jwt_free(jwt);
-						}
-
-						else {
-							fprintf(stderr, "invalid jwt\n");
-						}
-					}
-
-					jwt_valid_free(jwt_valid);
+					http_receive_handle_select_auth_bearer (http_cerver, cr, found, request);
 				}
 
 				// no authentication header was provided
 				else {
-					HttpResponse *res = http_response_json_error (400, "Failed to authenticate!");
-					if (res) {
-						http_response_print (res);
-						http_response_send (res, cr->cerver, cr->connection);
-						http_respponse_delete (res);
-					}
+					http_receive_handle_select_failed_auth (cr);
 				}
 			} break;
 		}
