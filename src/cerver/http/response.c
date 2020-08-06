@@ -1,13 +1,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cerver/types/types.h"
 #include "cerver/types/estring.h"
+
+#include "cerver/cerver.h"
 
 #include "cerver/http/status.h"
 #include "cerver/http/response.h"
 #include "cerver/http/json.h"
 
-const char *default_header = "HTTP/1.1 200 OK\r\n\n";
+#include "cerver/utils/utils.h"
 
 HttpResponse *http_response_new (void) {
 
@@ -107,36 +110,108 @@ HttpResponse *http_response_create (unsigned int status, const void *data, size_
 }
 
 // merge the response header and the data into the final response
-void http_response_compile (HttpResponse *res) {
+// returns 0 on success, 1 on error
+u8 http_response_compile (HttpResponse *res) {
+
+	u8 retval = 1;
 
 	if (res) {
-		if (res->header) {
-			res->res_len = res->header_len;
-			if (res->data) res->res_len += res->data_len;
+		if (!res->header) {
+			res->header = c_string_create (
+				"HTTP/1.1 %d %s\r\n\n", 
+				res->status, http_status_str (res->status)
+			);
 
-			res->res = (char *) calloc (res->res_len, sizeof (char));
-			memcpy (res->res, res->header, res->res_len);
+			res->header_len = strlen ((const char *) res->header);
+		}
 
-			if (res->data) strcat (res->res, res->data);
+		// compile into a continous buffer
+		if (res->res) {
+			free (res->res);
+			res->res = NULL;
+			res->res_len = 0;
+		}
+
+		res->res_len = res->header_len + res->data_len;
+		res->res = malloc (res->res_len);
+		if (res->res) {
+			char *end = res->res;
+			memcpy (end, res->header, res->header_len);
+
+			if (res->data) {
+				end += res->header_len;
+				memcpy (end, res->data, res->data_len);
+			}
+
+			retval = 0;
 		}
 	}
 
+	return retval;
+
 }
 
-HttpResponse *http_response_json_error (const char *error_msg) {
+static u8 http_response_send_actual (
+    Socket *socket, 
+    char *data, size_t data_size
+) {
 
-	HttpResponse *res = NULL;
+    u8 retval = 0;
 
-	if (error_msg) {
-		estring *error = estring_new (error_msg);
-		JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
-		size_t json_len;
-		char *json = json_create_with_one_pair (jkvp, &json_len);
-		json_key_value_delete (jkvp);
-		res = http_response_create (200, NULL, 0, json, json_len);
-		free (json);        // we copy the data into the response
+    ssize_t sent = 0;
+    char *p = data;
+    while (data_size > 0) {
+        sent = send (socket->sock_fd, p, data_size, 0);
+        if (sent < 0) {
+            retval = 1;
+            break;
+        }
+
+        p += sent;
+        // *actual_sent += (size_t) sent;
+        data_size -= (size_t) sent;
+    }
+
+    return retval;
+
+}
+
+// sends a response to the connection's socket
+// returns 0 on success, 1 on error
+u8 http_response_send (HttpResponse *res, Cerver *cerver, Connection *connection) {
+
+	u8 retval = 1;
+
+	if (res && connection) {
+		if (res->res) {
+			if (!http_response_send_actual (
+				connection->socket,
+				res->res, res->res_len
+			)) {
+				cerver->stats->total_bytes_sent += res->res_len;
+				connection->stats->total_bytes_sent += res->res_len; 
+			}
+		}
 	}
 
-	return res;
+	return retval;
 
 }
+
+// HttpResponse *http_response_json_error (const char *error_msg) {
+
+// 	HttpResponse *res = NULL;
+
+// 	if (error_msg) {
+// 		estring *error = estring_new (error_msg);
+// 		JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
+// 		size_t json_len;
+// 		char *json = json_create_with_one_pair (jkvp, &json_len);
+// 		json_key_value_delete (jkvp);
+// 		res = http_response_create (200, NULL, 0, json, json_len);
+// 		free (json);        // we copy the data into the response
+// 	}
+
+// 	return res;
+
+// }
