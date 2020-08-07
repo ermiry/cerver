@@ -77,7 +77,8 @@ HttpRoute *http_route_new (void) {
 		route->decode_data = NULL;
 		route->delete_decoded_data = NULL;
 
-		route->handler = NULL;
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++)
+			route->handlers[i] = NULL;
 	}
 
 	return route;
@@ -117,8 +118,12 @@ int http_route_comparator_by_n_tokens (const void *a, const void *b) {
 
 }
 
-HttpRoute *http_route_create (const char *actual_route, 
-	void (*handler)(CerverReceive *cr, HttpRequest *request)) {
+// creates a new route that can be registered to be sued by an http cerver
+HttpRoute *http_route_create ( 
+	RequestMethod method, 
+	const char *actual_route, 
+	HttpHandler handler
+) {
 
 	HttpRoute *route = http_route_new ();
 	if (route) {
@@ -130,7 +135,7 @@ HttpRoute *http_route_create (const char *actual_route,
 
 		route->children = dlist_init (http_route_delete, NULL);
 
-		route->handler = handler;
+		route->handlers[method] = handler;
 	}
 
 	return route;

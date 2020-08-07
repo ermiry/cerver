@@ -10,6 +10,7 @@
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
+#include "cerver/http/method.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
@@ -458,6 +459,7 @@ const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
 
 }
 
+// FIXME:
 static char *http_strip_path_from_query (char *str) {
 
 	char *query = NULL;
@@ -494,6 +496,48 @@ static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *r
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
+	}
+
+}
+
+// catch all mismatches and handle with cath all route
+static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request) {
+
+	char *status = c_string_create (
+		"No matching route for %s %s",
+		http_method_str (request->method),
+		request->url->str
+	);
+
+	if (status) {
+		cerver_log_warning (status);
+		free (status);
+	}
+
+	// handle with default route
+	http_cerver->default_handler (cr, request);
+
+}
+
+// handles an actual route match & selects the right handler based on the request's method
+static void http_receive_handle_match (
+	HttpCerver *http_cerver, CerverReceive *cr, 
+	HttpRequest *request, 
+	HttpRoute *found
+) {
+
+	if (request->method < HTTP_HANDLERS_COUNT) {
+		if (found->handlers[request->method]) {
+			found->handlers[request->method] (cr, request);
+		}
+
+		else {
+			http_receive_handle_catch_all (http_cerver, cr, request);
+		}
+	}
+
+	else {
+		http_receive_handle_catch_all (http_cerver, cr, request);
 	}
 
 }
@@ -617,7 +661,12 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 					request->delete_decoded_data = found->delete_decoded_data;
 				}
 
-				found->handler (cr, request);
+				http_receive_handle_match (
+					http_cerver,
+					cr,
+					request,
+					found
+				);
 			}
 
 			else {
@@ -687,7 +736,14 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 	if (match) {
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
-			case HTTP_ROUTE_AUTH_TYPE_NONE: found->handler (cr, request); break;
+			case HTTP_ROUTE_AUTH_TYPE_NONE: {
+				http_receive_handle_match (
+					http_cerver,
+					cr,
+					request,
+					found
+				);
+			} break;
 
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
@@ -703,16 +759,8 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 		}
 	}
 
-	// catch all mismatches and handle with cath all route
 	else {
-		char *status = c_string_create ("No matching route for url %s", request->url->str);
-		if (status) {
-			cerver_log_warning (status);
-			free (status);
-		}
-
-		// handle with default route
-		http_cerver->default_handler (cr, request);
+		http_receive_handle_catch_all (http_cerver, cr, request);
 	}
 
 }

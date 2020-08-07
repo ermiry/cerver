@@ -31,6 +31,10 @@ typedef struct HttpRoutesTokens {
 
 } HttpRoutesTokens;
 
+#define HTTP_HANDLERS_COUNT					5
+
+typedef void (*HttpHandler)(CerverReceive *cr, HttpRequest *request);
+
 struct _HttpRoute {
 
 	// eg. /api/users/login
@@ -50,7 +54,7 @@ struct _HttpRoute {
 	void *(*decode_data)(void *);
 	void (*delete_decoded_data)(void *);
 
-	void (*handler)(CerverReceive *cr, HttpRequest *request);
+	HttpHandler handlers[HTTP_HANDLERS_COUNT];
 
 };
 
@@ -63,8 +67,11 @@ CERVER_PUBLIC void http_route_delete (void *route_ptr);
 CERVER_PUBLIC int http_route_comparator_by_n_tokens (const void *a, const void *b);
 
 // creates a new route that can be registered to be sued by an http cerver
-CERVER_EXPORT HttpRoute *http_route_create (const char *actual_route, 
-	void (*handler)(CerverReceive *cr, HttpRequest *request));
+CERVER_EXPORT HttpRoute *http_route_create ( 
+	RequestMethod method, 
+	const char *actual_route, 
+	HttpHandler handler
+);
 
 CERVER_PRIVATE void http_route_init (HttpRoute *route);
 
