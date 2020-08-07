@@ -238,17 +238,17 @@ int main (int argc, char **argv) {
 
 		// register top level routes
 		// /api/users
-		HttpRoute *users_route = http_route_create ("api/users", main_users_handler);
+		HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
 		http_cerver_route_register (http_cerver, users_route);
 
 		// register users child routes
-		HttpRoute *users_login_route = http_route_create ("login", users_login_handler);
+		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_GET, "login", users_login_handler);
 		http_route_child_add (users_route, users_login_route);
 
-		HttpRoute *users_register_route = http_route_create ("register", users_register_handler);
+		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_GET, "register", users_register_handler);
 		http_route_child_add (users_route, users_register_route);
 
-		HttpRoute *users_profile_route = http_route_create ("profile", users_profile_handler);
+		HttpRoute *users_profile_route = http_route_create (REQUEST_METHOD_GET, "profile", users_profile_handler);
 		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
 		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
 		http_route_child_add (users_route, users_profile_route);

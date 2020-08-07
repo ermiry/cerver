@@ -99,15 +99,15 @@ int main (int argc, char **argv) {
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
 		// /test
-		HttpRoute *test_route = http_route_create ("test", test_handler);
+		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
 
 		// /hola
-		HttpRoute *hola_route = http_route_create ("hola", hola_handler);
+		HttpRoute *hola_route = http_route_create (REQUEST_METHOD_GET, "hola", hola_handler);
 		http_cerver_route_register (http_cerver, hola_route);
 
 		// /adios
-		HttpRoute *adios_route = http_route_create ("adios", adios_handler);
+		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
 		http_cerver_route_register (http_cerver, adios_route);
 
 		if (cerver_start (web_cerver)) {
