@@ -75,61 +75,7 @@ typedef struct http_parser_settings http_parser_settings;
 typedef int (*http_data_cb) (http_parser*, const char *at, size_t length);
 typedef int (*http_cb) (http_parser*);
 
-/* Request Methods */
-#define HTTP_METHOD_MAP(XX)         \
-	XX(0,  DELETE,      DELETE)       \
-	XX(1,  GET,         GET)          \
-	XX(2,  HEAD,        HEAD)         \
-	XX(3,  POST,        POST)         \
-	XX(4,  PUT,         PUT)          \
-	/* pathological */                \
-	XX(5,  CONNECT,     CONNECT)      \
-	XX(6,  OPTIONS,     OPTIONS)      \
-	XX(7,  TRACE,       TRACE)        \
-	/* WebDAV */                      \
-	XX(8,  COPY,        COPY)         \
-	XX(9,  LOCK,        LOCK)         \
-	XX(10, MKCOL,       MKCOL)        \
-	XX(11, MOVE,        MOVE)         \
-	XX(12, PROPFIND,    PROPFIND)     \
-	XX(13, PROPPATCH,   PROPPATCH)    \
-	XX(14, SEARCH,      SEARCH)       \
-	XX(15, UNLOCK,      UNLOCK)       \
-	XX(16, BIND,        BIND)         \
-	XX(17, REBIND,      REBIND)       \
-	XX(18, UNBIND,      UNBIND)       \
-	XX(19, ACL,         ACL)          \
-	/* subversion */                  \
-	XX(20, REPORT,      REPORT)       \
-	XX(21, MKACTIVITY,  MKACTIVITY)   \
-	XX(22, CHECKOUT,    CHECKOUT)     \
-	XX(23, MERGE,       MERGE)        \
-	/* upnp */                        \
-	XX(24, MSEARCH,     M-SEARCH)     \
-	XX(25, NOTIFY,      NOTIFY)       \
-	XX(26, SUBSCRIBE,   SUBSCRIBE)    \
-	XX(27, UNSUBSCRIBE, UNSUBSCRIBE)  \
-	/* RFC-5789 */                    \
-	XX(28, PATCH,       PATCH)        \
-	XX(29, PURGE,       PURGE)        \
-	/* CalDAV */                      \
-	XX(30, MKCALENDAR,  MKCALENDAR)   \
-	/* RFC-2068, section 19.6.1.2 */  \
-	XX(31, LINK,        LINK)         \
-	XX(32, UNLINK,      UNLINK)       \
-	/* icecast */                     \
-	XX(33, SOURCE,      SOURCE)       \
-
-enum http_method
-	{
-#define XX(num, name, string) HTTP_##name = num,
-	HTTP_METHOD_MAP(XX)
-#undef XX
-	};
-
-
 enum http_parser_type { HTTP_REQUEST, HTTP_RESPONSE, HTTP_BOTH };
-
 
 /* Flag values for http_parser.flags field */
 enum flags
@@ -334,9 +280,6 @@ size_t http_parser_execute (
  * If you are the client, close the connection.
  */
 CERVER_EXPORT int http_should_keep_alive (const http_parser *parser);
-
-/* Returns a string version of the HTTP method. */
-CERVER_EXPORT const char *http_method_str (enum http_method m);
 
 /* Return a string name of the given error */
 CERVER_EXPORT const char *http_errno_name (enum http_errno err);

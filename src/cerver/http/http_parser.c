@@ -24,6 +24,10 @@
 #include <string.h>
 #include <limits.h>
 
+#include "cerver/config.h"
+
+#include "cerver/http/status.h"
+#include "cerver/http/method.h"
 #include "cerver/http/http_parser.h"
 
 static uint32_t max_header_size = HTTP_MAX_HEADER_SIZE;
@@ -32,22 +36,10 @@ static uint32_t max_header_size = HTTP_MAX_HEADER_SIZE;
 # define ULLONG_MAX ((uint64_t) -1) /* 2^64-1 */
 #endif
 
-#ifndef MIN
-# define MIN(a,b) ((a) < (b) ? (a) : (b))
-#endif
-
-#ifndef ARRAY_SIZE
-# define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-#endif
-
 #ifndef BIT_AT
 # define BIT_AT(a, i)                                                \
   (!!((unsigned int) (a)[(unsigned int) (i) >> 3] &                  \
    (1 << ((unsigned int) (i) & 7))))
-#endif
-
-#ifndef ELEM_AT
-# define ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
 #endif
 
 #define SET_ERRNO(e)                                                 \
@@ -170,14 +162,6 @@ do {                                                                 \
 #define CHUNKED "chunked"
 #define KEEP_ALIVE "keep-alive"
 #define CLOSE "close"
-
-
-static const char *method_strings[] =
-  {
-#define XX(num, name, string) #string,
-  HTTP_METHOD_MAP(XX)
-#undef XX
-  };
 
 
 /* Tokens as defined by rfc 2616. Also lowercases them.
@@ -2202,12 +2186,6 @@ http_should_keep_alive (const http_parser *parser)
   }
 
   return !http_message_needs_eof(parser);
-}
-
-const char *
-http_method_str (enum http_method m)
-{
-  return ELEM_AT(method_strings, m, "<unknown>");
 }
 
 void
