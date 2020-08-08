@@ -13,6 +13,9 @@ HttpRequest *http_request_new (void) {
 		http_request->method = REQUEST_METHOD_GET;
 
 		http_request->url = NULL;
+		http_request->query = NULL;
+
+		http_request->query_params = NULL;
 
 		http_request->n_params = 0;
 
@@ -28,6 +31,8 @@ HttpRequest *http_request_new (void) {
 		http_request->delete_decoded_data = NULL;
 		
 		http_request->body = NULL;
+		
+		http_request->body_values = NULL;
 	}
 
 	return http_request;
@@ -38,6 +43,9 @@ void http_request_delete (HttpRequest *http_request) {
 
 	if (http_request) {
 		estring_delete (http_request->url);
+		estring_delete (http_request->query);
+
+		dlist_delete (http_request->query_params);
 
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 			estring_delete (http_request->params[i]);
@@ -51,6 +59,8 @@ void http_request_delete (HttpRequest *http_request) {
 		}
 
 		estring_delete (http_request->body);
+
+		dlist_delete (http_request->body_values);
 
 		free (http_request);
 	}

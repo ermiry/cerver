@@ -59,6 +59,10 @@ typedef struct HttpRequest {
 	RequestMethod method;
 
 	estring *url;
+	estring *query;
+
+	// parsed query params (key-value pairs)
+	DoubleList *query_params;
 
 	unsigned int n_params;
 	estring *params[REQUEST_PARAMS_SIZE];
@@ -71,6 +75,9 @@ typedef struct HttpRequest {
 	void (*delete_decoded_data)(void *);
 	
 	estring *body;
+	
+	// body key-value pairs parsed from x-www-form-urlencoded data
+	DoubleList *body_values;
 
 } HttpRequest;
 
