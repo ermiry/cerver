@@ -92,6 +92,8 @@ CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (const char *first, const 
 // gets the matching value for the requested key from a list of pairs
 CERVER_PUBLIC const char *http_query_pairs_get_value (DoubleList *pairs, const char *key);
 
+CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
+
 #pragma endregion
 
 #pragma region handler

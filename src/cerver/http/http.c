@@ -386,11 +386,107 @@ static estring *http_strip_path_from_query (const char *url, size_t url_len) {
 		query->len = url_len - idx;
 		query->str = (char *) calloc (query->len, sizeof (char));
 		char *from = (char *) url;
-		from += idx;
+		from += (idx + 1);
 		c_string_n_copy (query->str, from, query->len);
 	}
 
 	return query;
+
+}
+
+DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
+
+	DoubleList *pairs = NULL;
+
+	if (first && last) {
+		pairs = dlist_init (key_value_pair_delete, NULL);
+
+		const char *walk = first;
+		const char *keyFirst = first;
+		const char *keyAfter = NULL;
+		const char *valueFirst = NULL;
+		const char *valueAfter = NULL;
+
+		for (; walk < last; walk++) {
+			switch (*walk) {
+				case '&': {
+					if (valueFirst != NULL) valueAfter = walk;
+					else keyAfter = walk;
+
+					dlist_insert_after (
+						pairs, 
+						dlist_end (pairs), 
+						key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter)
+					);
+				
+					if (walk + 1 < last) keyFirst = walk + 1;
+					else keyFirst = NULL;
+					
+					keyAfter = NULL;
+					valueFirst = NULL;
+					valueAfter = NULL;
+				} break;
+
+				case '=': {
+					if (keyAfter == NULL) {
+						keyAfter = walk;
+						if (walk + 1 <= last) {
+							valueFirst = walk + 1;
+							valueAfter = walk + 1;
+						}
+					}
+				} break;
+
+				default: break;
+			}
+		}
+
+		if (valueFirst != NULL) valueAfter = walk;
+		else keyAfter = walk;
+
+		dlist_insert_after (
+			pairs, 
+			dlist_end (pairs),
+			key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter)
+		);
+	}
+
+	return pairs;
+
+}
+
+const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
+
+	const char *value = NULL;
+
+	if (pairs && key) {
+		KeyValuePair *kvp = NULL;
+		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+			kvp = (KeyValuePair *) le->data;
+			if (!strcmp (kvp->key, key)) {
+				value = kvp->value;
+				break;
+			}
+		}
+	}
+
+	return value;
+
+}
+
+void http_query_pairs_print (DoubleList *pairs) {
+
+	if (pairs) {
+		unsigned int idx = 1;
+		KeyValuePair *kv = NULL;
+		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+			kv = (KeyValuePair *) le->data;
+
+			printf ("[%d] - %s = %s\n", idx, kv->key, kv->value);
+
+			idx++;
+		}
+	}
 
 }
 
@@ -451,7 +547,7 @@ static int http_receive_handle_header_field (http_parser *parser, const char *at
 
 	char header[32] = { 0 };
 	snprintf (header, 32, "%.*s", (int) length, at);
-	// printf ("\nheader field: /%s/\n", header);
+	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	((HttpRequest *) parser->data)->next_header = http_receive_handle_header_field_handle (header);
 
@@ -461,7 +557,7 @@ static int http_receive_handle_header_field (http_parser *parser, const char *at
 
 static int http_receive_handle_header_value (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("\nheader value: %s\n", at);
+	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
 	HttpRequest *request = (HttpRequest *) parser->data;
 	if (request->next_header != REQUEST_HEADER_INVALID) {
@@ -478,88 +574,16 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("Body: %.*s", (int) length, at);
+	printf ("Body: %.*s", (int) length, at);
 
 	HttpRequest *request = (HttpRequest *) parser->data;
 	request->body = estring_new (NULL);
 	request->body->str = c_string_create ("%.*s", (int) length, at);
 	request->body->len = length;
 
+	printf ("%s", url_decode (request->body->str));
+
 	return 0;
-
-}
-
-DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
-
-	DoubleList *pairs = NULL;
-
-	if (first && last) {
-		pairs = dlist_init (key_value_pair_delete, NULL);
-
-		const char *walk = first;
-		const char *keyFirst = first;
-		const char *keyAfter = NULL;
-		const char *valueFirst = NULL;
-		const char *valueAfter = NULL;
-
-		for (; walk < last; walk++) {
-			switch (*walk) {
-				case '&': {
-					if (valueFirst != NULL) valueAfter = walk;
-					else keyAfter = walk;
-
-					KeyValuePair *kvp = key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter);
-					if (kvp) dlist_insert_after (pairs, dlist_end (pairs), kvp);
-				
-					if (walk + 1 < last) keyFirst = walk + 1;
-					else keyFirst = NULL;
-					
-					keyAfter = NULL;
-					valueFirst = NULL;
-					valueAfter = NULL;
-				} break;
-
-				case '=': {
-					if (keyAfter == NULL) {
-						keyAfter = walk;
-						if (walk + 1 <= last) {
-							valueFirst = walk + 1;
-							valueAfter = walk + 1;
-						}
-					}
-				} break;
-
-				default: break;
-			}
-		}
-
-		if (valueFirst != NULL) valueAfter = walk;
-		else keyAfter = walk;
-
-		KeyValuePair *kvp = key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter);
-		if (kvp) dlist_insert_after (pairs, dlist_end (pairs), kvp);
-	}
-
-	return pairs;
-
-}
-
-const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
-
-	const char *value = NULL;
-
-	if (pairs) {
-		KeyValuePair *kvp = NULL;
-		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
-			kvp = (KeyValuePair *) le->data;
-			if (!strcmp (kvp->key, key)) {
-				value = kvp->value;
-				break;
-			}
-		}
-	}
-
-	return value;
 
 }
 
@@ -606,6 +630,25 @@ static void http_receive_handle_match (
 
 	if (request->method < HTTP_HANDLERS_COUNT) {
 		if (found->handlers[request->method]) {
+			// parse query values
+			if (request->query) {
+				request->query_params = http_parse_query_into_pairs (
+					request->query->str, 
+					(char *) request->query->str + request->query->len
+				);
+
+				http_query_pairs_print (request->query_params);
+			}
+
+			// handle body based on header
+			if (request->body) {
+				if (request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
+					if (!strcmp ("application/x-www-form-urlencoded", request->headers[REQUEST_HEADER_CONTENT_TYPE]->str)) {
+						// TODO:
+					}
+				}
+			}
+
 			found->handlers[request->method] (cr, request);
 		}
 
