@@ -1,5 +1,8 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
+#include <ctype.h>
 #include <time.h>
 
 #include "cerver/types/types.h"
@@ -21,6 +24,18 @@
 #include "cerver/utils/log.h"
 
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
+
+#pragma region utils
+
+static const char hex[] = "0123456789abcdef";
+
+// converts a hex character to its integer value
+static const char from_hex (const char ch) { return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10; }
+
+// converts an integer value to its hex character
+static const char to_hex (const char code) { return hex[code & 15]; }
+
+#pragma endregion
 
 #pragma region kv
 
@@ -288,6 +303,62 @@ void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_cerver, const 
 void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename) {
 
 	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? estring_new (filename) : NULL;
+
+}
+
+#pragma endregion
+
+#pragma region url
+
+// returns a newly allocated url-encoded version of str that should be deleted after use
+char *url_encode (const char *str) {
+
+	char *pstr = (char *) str, *buf = malloc (strlen (str) * 3 + 1), *pbuf = buf;
+
+	if (buf) {
+		while (*pstr) {
+			if (isalnum (*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
+				*pbuf++ = *pstr;
+
+			else if (*pstr == ' ') *pbuf++ = '+';
+
+			else *pbuf++ = '%', *pbuf++ = to_hex (*pstr >> 4), *pbuf++ = to_hex (*pstr & 15);
+
+			pstr++;
+		}
+
+		*pbuf = '\0';
+	}
+
+	return buf;
+
+}
+
+// returns a newly allocated url-decoded version of str that should be deleted after use
+char *url_decode (const char *str) {
+
+	char *pstr = (char *) str, *buf = malloc (strlen (str) + 1), *pbuf = buf;
+
+	if (buf) {
+		while (*pstr) {
+			if (*pstr == '%') {
+				if (pstr[1] && pstr[2]) {
+					*pbuf++ = from_hex (pstr[1]) << 4 | from_hex (pstr[2]);
+					pstr += 2;
+				}
+			}
+			
+			else if (*pstr == '+') *pbuf++ = ' ';
+			
+			else *pbuf++ = *pstr;
+
+			pstr++;
+		}
+
+		*pbuf = '\0';
+	}
+
+	return buf;
 
 }
 
