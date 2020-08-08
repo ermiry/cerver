@@ -366,15 +366,48 @@ char *url_decode (const char *str) {
 
 #pragma region parser
 
+static estring *http_strip_path_from_query (const char *url, size_t url_len) {
+
+	estring *query = NULL;
+
+	unsigned int idx = 0;
+	bool found = false;
+	while (idx < url_len) {
+		if (url[idx] == '?') {
+			found = true;
+			break;
+		}
+
+		idx++;
+	}
+
+	if (found) {
+		query = estring_new (NULL);
+		query->len = url_len - idx;
+		query->str = (char *) calloc (query->len, sizeof (char));
+		char *from = (char *) url;
+		from += idx;
+		c_string_n_copy (query->str, from, query->len);
+	}
+
+	return query;
+
+}
+
 static int http_receive_handle_url (http_parser *parser, const char *at, size_t length) {
 
-	// printf ("\n%s\n\n", at);
-	// printf ("%.*s\n", (int) length, at);
+	// printf ("url: %.*s\n", (int) length, at);
 
 	HttpRequest *request = (HttpRequest *) parser->data;
+
+	request->query = http_strip_path_from_query (at, length);
+	if (request->query) printf ("query: %s\n", request->query->str);
+	
 	request->url = estring_new (NULL);
-	request->url->str = c_string_create ("%.*s", (int) length, at);
-	request->url->len = length;
+	request->url->len = request->query ? length - request->query->len : length;
+	request->url->str = c_string_create ("%.*s", (int) request->url->len, at);
+
+	printf ("path: %s\n", request->url->str);
 
 	return 0;
 
@@ -527,32 +560,6 @@ const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
 	}
 
 	return value;
-
-}
-
-// FIXME:
-static char *http_strip_path_from_query (char *str) {
-
-	char *query = NULL;
-
-	if (str) {
-		unsigned int len = strlen (str);
-		unsigned int idx = 0;
-		for (; idx < len; idx++) {
-			if (str[idx] == '?') break;
-		} 
-		
-		idx++;
-		int newlen = len - idx;
-		query = (char *) calloc (newlen, sizeof (char));
-		int j = 0;
-		for (unsigned int i = idx; i < len; i++) {
-			query[j] = str[i];
-			j++;
-		} 
-	}
-
-	return query;
 
 }
 
