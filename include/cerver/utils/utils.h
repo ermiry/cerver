@@ -39,6 +39,9 @@ CERVER_PUBLIC char *itoa (int i, char *b);
 // copies a c string into another one previuosly allocated
 CERVER_PUBLIC void c_string_copy (char *to, const char *from);
 
+// copies n bytes from a c string into another one previuosly allocated
+CERVER_PUBLIC void c_string_n_copy (char *to, const char *from, size_t n);
+
 // creates a new c string with the desired format, as in printf
 CERVER_PUBLIC char *c_string_create (const char *format, ...);
 

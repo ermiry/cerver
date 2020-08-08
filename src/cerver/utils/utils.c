@@ -123,6 +123,20 @@ void c_string_copy (char *to, const char *from) {
 
 }
 
+// copies n bytes from a c string into another one previuosly allocated
+void c_string_n_copy (char *to, const char *from, size_t n) {
+
+	if (to && from) {
+		while (*from && n) {
+			*to++ = *from++;
+			n--;
+		}
+		
+		*to = '\0';
+	}
+
+}
+
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
