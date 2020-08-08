@@ -139,7 +139,7 @@ static void *user_parse_from_json (void *user_json_ptr) {
 
 }
 
-// api/users
+// GET api/users
 static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Users route works!");
@@ -151,7 +151,7 @@ static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
-// api/users/login
+// POST api/users/login
 static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Users login!");
@@ -163,7 +163,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
-// api/users/register
+// POST api/users/register
 static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Users register!");
@@ -175,7 +175,7 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
-// api/users/profile
+// GET api/users/profile
 static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
 
 	User *user = (User *) request->decoded_data;
@@ -237,17 +237,20 @@ int main (int argc, char **argv) {
 		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
 
 		// register top level routes
-		// /api/users
+		// GET /api/users
 		HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
 		http_cerver_route_register (http_cerver, users_route);
 
 		// register users child routes
-		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_GET, "login", users_login_handler);
+		// POST api/users/login
+		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
 		http_route_child_add (users_route, users_login_route);
 
-		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_GET, "register", users_register_handler);
+		// POST api/users/register
+		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_POST, "register", users_register_handler);
 		http_route_child_add (users_route, users_register_route);
 
+		// GET api/users/profile
 		HttpRoute *users_profile_route = http_route_create (REQUEST_METHOD_GET, "profile", users_profile_handler);
 		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
 		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
