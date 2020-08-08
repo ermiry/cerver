@@ -50,45 +50,21 @@
 # define HTTP_MAX_HEADER_SIZE (80*1024)
 #endif
 
-typedef struct http_parser http_parser;
-typedef struct http_parser_settings http_parser_settings;
-
-
-/* Callbacks should return non-zero to indicate an error. The parser will
- * then halt execution.
- *
- * The one exception is on_headers_complete. In a HTTP_RESPONSE parser
- * returning '1' from on_headers_complete will tell the parser that it
- * should not expect a body. This is used when receiving a response to a
- * HEAD request which may contain 'Content-Length' or 'Transfer-Encoding:
- * chunked' headers that indicate the presence of a body.
- *
- * Returning `2` from on_headers_complete will tell parser that it should not
- * expect neither a body nor any futher responses on this connection. This is
- * useful for handling responses to a CONNECT request which may not contain
- * `Upgrade` or `Connection: upgrade` headers.
- *
- * http_data_cb does not return data chunks. It will be called arbitrarily
- * many times for each string. E.G. you might get 10 callbacks for "on_url"
- * each providing just a few characters more data.
- */
-typedef int (*http_data_cb) (http_parser*, const char *at, size_t length);
-typedef int (*http_cb) (http_parser*);
-
 enum http_parser_type { HTTP_REQUEST, HTTP_RESPONSE, HTTP_BOTH };
 
 /* Flag values for http_parser.flags field */
-enum flags
-	{ F_CHUNKED               = 1 << 0
-	, F_CONNECTION_KEEP_ALIVE = 1 << 1
-	, F_CONNECTION_CLOSE      = 1 << 2
-	, F_CONNECTION_UPGRADE    = 1 << 3
-	, F_TRAILING              = 1 << 4
-	, F_UPGRADE               = 1 << 5
-	, F_SKIPBODY              = 1 << 6
-	, F_CONTENTLENGTH         = 1 << 7
-	};
+enum flags {
 
+	F_CHUNKED               = 1 << 0,
+	F_CONNECTION_KEEP_ALIVE = 1 << 1,
+	F_CONNECTION_CLOSE      = 1 << 2,
+	F_CONNECTION_UPGRADE    = 1 << 3,
+	F_TRAILING              = 1 << 4,
+	F_UPGRADE               = 1 << 5,
+	F_SKIPBODY              = 1 << 6,
+	F_CONTENTLENGTH         = 1 << 7,
+
+};
 
 /* Map for errno-related constants
  *
@@ -149,35 +125,54 @@ enum http_errno {
 };
 #undef HTTP_ERRNO_GEN
 
-
 /* Get an http_errno value from an http_parser */
 #define HTTP_PARSER_ERRNO(p)            ((enum http_errno) (p)->http_errno)
 
+struct http_parser;
+
+/* Callbacks should return non-zero to indicate an error. The parser will
+ * then halt execution.
+ *
+ * The one exception is on_headers_complete. In a HTTP_RESPONSE parser
+ * returning '1' from on_headers_complete will tell the parser that it
+ * should not expect a body. This is used when receiving a response to a
+ * HEAD request which may contain 'Content-Length' or 'Transfer-Encoding:
+ * chunked' headers that indicate the presence of a body.
+ *
+ * Returning `2` from on_headers_complete will tell parser that it should not
+ * expect neither a body nor any futher responses on this connection. This is
+ * useful for handling responses to a CONNECT request which may not contain
+ * `Upgrade` or `Connection: upgrade` headers.
+ *
+ * http_data_cb does not return data chunks. It will be called arbitrarily
+ * many times for each string. E.G. you might get 10 callbacks for "on_url"
+ * each providing just a few characters more data.
+ */
+typedef int (*http_data_cb) (struct http_parser *, const char *at, size_t length);
+typedef int (*http_cb) (struct http_parser *);
 
 struct http_parser {
 
 	/** PRIVATE **/
-	unsigned int type : 2;         /* enum http_parser_type */
-	unsigned int flags : 8;       /* F_* values from 'flags' enum; semi-public */
-	unsigned int state : 7;        /* enum state from http_parser.c */
-	unsigned int header_state : 7; /* enum header_state from http_parser.c */
-	unsigned int index : 5;        /* index into current matcher */
-	unsigned int uses_transfer_encoding : 1; /* Transfer-Encoding header is present */
-	unsigned int allow_chunked_length : 1; /* Allow headers with both
-																					* `Content-Length` and
-																					* `Transfer-Encoding: chunked` set */
+	unsigned int type : 2;         				/* enum http_parser_type */
+	unsigned int flags : 8;       				/* F_* values from 'flags' enum; semi-public */
+	unsigned int state : 7;        				/* enum state from http_parser.c */
+	unsigned int header_state : 7; 				/* enum header_state from http_parser.c */
+	unsigned int index : 5;        				/* index into current matcher */
+	unsigned int uses_transfer_encoding : 1; 	/* Transfer-Encoding header is present */
+	unsigned int allow_chunked_length : 1; 		/* Allow headers with both
+												* `Content-Length` and
+												* `Transfer-Encoding: chunked` set */
 	unsigned int lenient_http_headers : 1;
 
-	uint32_t nread;          /* # bytes read in various scenarios */
-	uint64_t content_length; /* # bytes in body. `(uint64_t) -1` (all bits one)
-														* if no Content-Length header.
-														*/
+	uint32_t nread;          			/* # bytes read in various scenarios */
+	uint64_t content_length; 			/* # bytes in body. `(uint64_t) -1` (all bits one) if no Content-Length header. */
 
 	/** READ-ONLY **/
 	unsigned short http_major;
 	unsigned short http_minor;
-	unsigned int status_code : 16; /* responses only */
-	unsigned int method : 8;       /* requests only */
+	unsigned int status_code : 16; 		/* responses only */
+	unsigned int method : 8;       		/* requests only */
 	unsigned int http_errno : 7;
 
 	/* 1 = Upgrade header was present and the parser has exited because of that.
@@ -192,6 +187,7 @@ struct http_parser {
 
 };
 
+typedef struct http_parser http_parser;
 
 struct http_parser_settings {
 
@@ -211,6 +207,8 @@ struct http_parser_settings {
 
 };
 
+typedef struct http_parser_settings http_parser_settings;
+
 enum http_parser_url_fields {
 
 	UF_SCHEMA           = 0,
@@ -224,7 +222,6 @@ enum http_parser_url_fields {
 
 };
 
-
 /* Result structure for http_parser_parse_url().
  *
  * Callers should index into field_data[] with UF_* values iff field_set
@@ -233,6 +230,7 @@ enum http_parser_url_fields {
  * a uint16_t.
  */
 struct http_parser_url {
+
 	uint16_t field_set;           /* Bitmask of (1 << UF_*) values */
 	uint16_t port;                /* Converted UF_PORT string */
 
@@ -240,8 +238,8 @@ struct http_parser_url {
 		uint16_t off;               /* Offset into buffer in which field starts */
 		uint16_t len;               /* Length of run in buffer */
 	} field_data[UF_MAX];
-};
 
+};
 
 /* Returns the library version. Bits 16-23 contain the major version number,
  * bits 8-15 the minor version number and bits 0-7 the patch level.
@@ -253,25 +251,22 @@ struct http_parser_url {
  *   unsigned patch = version & 255;
  *   printf("http_parser v%u.%u.%u\n", major, minor, patch);
  */
-unsigned long http_parser_version (void);
+CERVER_PUBLIC unsigned long http_parser_version (void);
 
-void http_parser_init (http_parser *parser, enum http_parser_type type);
-
+CERVER_PUBLIC void http_parser_init (http_parser *parser, enum http_parser_type type);
 
 /* Initialize http_parser_settings members to 0
  */
-void http_parser_settings_init (http_parser_settings *settings);
-
+CERVER_PUBLIC void http_parser_settings_init (http_parser_settings *settings);
 
 /* Executes the parser. Returns number of parsed bytes. Sets
  * `parser->http_errno` on error. */
-size_t http_parser_execute (
+CERVER_PUBLIC size_t http_parser_execute (
 	http_parser *parser,
 	const http_parser_settings *settings,
 	const char *data,
 	size_t len
 );
-
 
 /* If http_should_keep_alive() in the on_headers_complete or
  * on_message_complete callback returns 0, then this should be
