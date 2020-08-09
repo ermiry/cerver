@@ -605,8 +605,6 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 	request->body->str = c_string_create ("%.*s", (int) length, at);
 	request->body->len = length;
 
-	printf ("%s", http_url_decode (request->body->str));
-
 	return 0;
 
 }
@@ -656,19 +654,40 @@ static void http_receive_handle_match (
 		if (found->handlers[request->method]) {
 			// parse query values
 			if (request->query) {
-				request->query_params = http_parse_query_into_pairs (
-					request->query->str, 
-					(char *) request->query->str + request->query->len
-				);
+				char *real_query = http_url_decode (request->query->str);
 
-				http_query_pairs_print (request->query_params);
+				if (real_query) {
+					request->query_params = http_parse_query_into_pairs (
+						real_query, 
+						real_query + request->query->len
+					);
+
+					// printf ("Query: %s\n", request->query->str);
+					// printf ("Real Query: %s\n", real_query);
+					// http_query_pairs_print (request->query_params);
+
+					free (real_query);
+				}
 			}
 
 			// handle body based on header
 			if (request->body) {
 				if (request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
 					if (!strcmp ("application/x-www-form-urlencoded", request->headers[REQUEST_HEADER_CONTENT_TYPE]->str)) {
-						// TODO:
+						char *real_body = http_url_decode (request->body->str);
+
+						if (real_body) {
+							request->body_values = http_parse_query_into_pairs (
+								real_body,
+								real_body + request->body->len
+							);
+
+							// printf ("Body: %s\n", request->body->str);
+							// printf ("Real Body: %s\n", real_body);
+							// http_query_pairs_print (request->body_values);
+
+							free (real_body);
+						}
 					}
 				}
 			}
