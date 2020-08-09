@@ -172,7 +172,7 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 		http_cerver->jwt_private_key->str = private_key;
 		http_cerver->jwt_private_key->len = private_keylen;
 
-		printf ("\n%s\n", http_cerver->jwt_private_key->str);
+		// printf ("\n%s\n", http_cerver->jwt_private_key->str);
 
 		char *status = c_string_create (
 			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
@@ -215,7 +215,7 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 		http_cerver->jwt_public_key->str = public_key;
 		http_cerver->jwt_public_key->len = public_keylen;
 
-		printf ("\n%s\n", http_cerver->jwt_public_key->str);
+		// printf ("\n%s\n", http_cerver->jwt_public_key->str);
 
 		char *status = c_string_create (
 			"Loaded cerver's %s http jwt PUBLIC key (size %ld)!",
@@ -555,13 +555,13 @@ static int http_receive_handle_url (http_parser *parser, const char *at, size_t 
 	HttpRequest *request = (HttpRequest *) parser->data;
 
 	request->query = http_strip_path_from_query (at, length);
-	if (request->query) printf ("query: %s\n", request->query->str);
+	// if (request->query) printf ("query: %s\n", request->query->str);
 	
 	request->url = str_new (NULL);
 	request->url->len = request->query ? length - request->query->len : length;
 	request->url->str = c_string_create ("%.*s", (int) request->url->len, at);
 
-	printf ("path: %s\n", request->url->str);
+	// printf ("path: %s\n", request->url->str);
 
 	return 0;
 
@@ -747,18 +747,18 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 	size_t n_tokens = 0;
 	char **tokens = NULL;
 
-	printf ("request->url->str: %s\n", request->url->str);
+	// printf ("request->url->str: %s\n", request->url->str);
 	char *start_sub = strstr (request->url->str, route->route->str);
 	if (start_sub) {
 		// match and still some path left
 		char *end_sub = request->url->str + route->route->len;
 
-		printf ("first end_sub: %s\n", end_sub);
+		// printf ("first end_sub: %s\n", end_sub);
 
 		tokens = c_string_split (end_sub, '/', &n_tokens);
 
-		printf ("n tokens: %ld\n", n_tokens);
-		printf ("second end_sub: %s\n", end_sub);
+		// printf ("n tokens: %ld\n", n_tokens);
+		// printf ("second end_sub: %s\n", end_sub);
 
 		if (tokens) {
 			HttpRoutesTokens *routes_tokens = route->routes_tokens[n_tokens - 1];
@@ -766,16 +766,16 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 				// match all url tokens with existing route tokens
 				bool fail = false;
 				for (unsigned int main_idx = 0; main_idx < routes_tokens->n_routes; main_idx++) {
-					printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
+					// printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
 
 					if (routes_tokens->tokens[main_idx]) {
 						fail = false;
-						printf ("routes_tokens->id: %d\n", routes_tokens->id);
+						// printf ("routes_tokens->id: %d\n", routes_tokens->id);
 						for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
 							printf ("%s\n", routes_tokens->tokens[main_idx][sub_idx]);
 							if (routes_tokens->tokens[main_idx][sub_idx][0] != '*') {
 								if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
-									printf ("fail!\n");
+									// printf ("fail!\n");
 									fail = true;
 									break;
 								}
@@ -808,7 +808,7 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 			}
 
 			else {
-				printf ("\nno routes!\n");
+				// printf ("\nno routes!\n");
 			}
 
 			for (size_t i = 0; i < n_tokens; i++) if (tokens[i]) free (tokens[i]);
@@ -835,11 +835,11 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 	HttpRoute *found, HttpRequest *request) {
 
 	// get the bearer token
-	printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
+	// printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
 
 	char *token = request->headers[REQUEST_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
 
-	printf ("\nToken -> %s\n", token);
+	// printf ("\nToken -> %s\n", token);
 
 	jwt_t *jwt = NULL;
 	jwt_valid_t *jwt_valid = NULL;
@@ -982,7 +982,7 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
 
-	printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
+	// printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
 
 	// printf ("Method: %s\n", http_method_str (parser->method));
 
@@ -999,7 +999,7 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 
 	free (parser);
 
-	printf ("http_receive_handle () - end!\n");
+	// printf ("http_receive_handle () - end!\n");
 
 }
 

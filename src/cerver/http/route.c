@@ -165,7 +165,7 @@ void http_route_init (HttpRoute *route) {
 					child->n_tokens = 1;
 				}
 
-				printf ("%s -> n_tokens: %ld\n", child->actual->str, child->n_tokens);
+				// printf ("%s -> n_tokens: %ld\n", child->actual->str, child->n_tokens);
 
 				// check if route params have been setup
 				for (unsigned int i = 0; i < child->n_tokens; i++) {
