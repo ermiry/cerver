@@ -188,10 +188,27 @@ u8 http_response_send (HttpResponse *res, Cerver *cerver, Connection *connection
 				connection->socket,
 				res->res, res->res_len
 			)) {
-				cerver->stats->total_bytes_sent += res->res_len;
+				if (cerver) cerver->stats->total_bytes_sent += res->res_len;
 				connection->stats->total_bytes_sent += res->res_len; 
 			}
 		}
+	}
+
+	return retval;
+
+}
+
+// creates & sends a response to the connection's socket
+// returns 0 on success, 1 on error
+u8 http_response_create_and_send (unsigned int status, const void *data, size_t data_len,
+	Cerver *cerver, Connection *connection) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_create (status, data, data_len);
+	if (res) {
+		retval = http_response_send (res, cerver, connection);
+		http_respponse_delete (res);
 	}
 
 	return retval;
