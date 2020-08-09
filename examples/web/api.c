@@ -41,10 +41,10 @@ void end (int dummy) {
 
 typedef struct User {
 
-	estring *id;
-	estring *name;
-	estring *username;
-	estring *role;
+	String *id;
+	String *name;
+	String *username;
+	String *role;
 	time_t iat;
 
 } User;
@@ -69,10 +69,10 @@ static void user_delete (void *user_ptr) {
 	if (user_ptr) {
 		User *user = (User *) user_ptr;
 
-		estring_delete (user->id);
-		estring_delete (user->name);
-		estring_delete (user->username);
-		estring_delete (user->role);
+		str_delete (user->id);
+		str_delete (user->name);
+		str_delete (user->username);
+		str_delete (user->role);
 
 		free (user_ptr);
 
@@ -119,10 +119,10 @@ static void *user_parse_from_json (void *user_json_ptr) {
 			"role", &role,
 			"iat", &user->iat
 		)) {
-			user->id = estring_new (id);
-			user->name = estring_new (name);
-			user->username = estring_new (username);
-			user->role = estring_new (role);
+			user->id = str_new (id);
+			user->name = str_new (name);
+			user->username = str_new (username);
+			user->role = str_new (role);
 
 			user_print (user);
 		}

@@ -30,7 +30,7 @@ typedef enum AppRequest {
 typedef struct AppData {
 
 	int id;
-	estring *message;
+	String *message;
 
 } AppData;
 
@@ -64,7 +64,7 @@ void app_data_delete (void *app_data_ptr) {
 	if (app_data_ptr) {
 		AppData *app_data = (AppData *) app_data_ptr;
 
-		estring_delete (app_data->message);
+		str_delete (app_data->message);
 
 		free (app_data);
 	}
@@ -76,7 +76,7 @@ AppData *app_data_create (int id, const char *msg) {
 	AppData *app_data = app_data_new ();
 	if (app_data) {
 		app_data->id = id;
-		app_data->message = estring_new (msg);
+		app_data->message = str_new (msg);
 	}
 
 	return app_data;
@@ -94,7 +94,7 @@ void *app_data_copy (void *app_data_args_ptr) {
 		handler_data = app_data_new ();
 		if (handler_data) {
 			handler_data->id = app_data->id;
-			handler_data->message = estring_new (app_data->message->str);
+			handler_data->message = str_new (app_data->message->str);
 		}
 	}
 
@@ -153,7 +153,7 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 
 }
 
-static void handle_msg_request (Packet *packet, unsigned int handler_id, estring *msg) {
+static void handle_msg_request (Packet *packet, unsigned int handler_id, String *msg) {
 
 	if (packet && msg) {
 		char *status = c_string_create ("Got a request for handler's <%d> message!", handler_id);

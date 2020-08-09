@@ -101,13 +101,13 @@ static u8 my_auth_method_username (AuthMethod *auth_method, const char *username
 
 			else {
 				cerver_log_error ("my_auth_method () - Username does not exists!");
-				auth_method->error_message = estring_new ("Username does not exists!");
+				auth_method->error_message = str_new ("Username does not exists!");
 			}
 		}
 
 		else {
 			cerver_log_error ("my_auth_method () - Username is required!");
-			auth_method->error_message = estring_new ("Username is required!");
+			auth_method->error_message = str_new ("Username is required!");
 		}
 	}
 
@@ -127,13 +127,13 @@ static u8 my_auth_method_password (AuthMethod *auth_method, const char *password
 
 			else {
 				cerver_log_error ("my_auth_method () - Password is incorrect!");
-				auth_method->error_message = estring_new ("Password is incorrect!");
+				auth_method->error_message = str_new ("Password is incorrect!");
 			}
 		}
 
 		else {
 			cerver_log_error ("my_auth_method () - Password is required!");
-			auth_method->error_message = estring_new ("Password is required!");
+			auth_method->error_message = str_new ("Password is required!");
 		}
 	}
 
@@ -164,7 +164,7 @@ static u8 my_auth_method (void *auth_method_ptr)  {
 
 			else {
 				cerver_log_error ("my_auth_method () - auth data is of wrong size!");
-				auth_method->error_message = estring_new ("Missing auth data!");
+				auth_method->error_message = str_new ("Missing auth data!");
 			}
 		}
 
