@@ -311,7 +311,7 @@ void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const c
 #pragma region url
 
 // returns a newly allocated url-encoded version of str that should be deleted after use
-char *url_encode (const char *str) {
+char *htpp_url_encode (const char *str) {
 
 	char *pstr = (char *) str, *buf = malloc (strlen (str) * 3 + 1), *pbuf = buf;
 
@@ -335,7 +335,7 @@ char *url_encode (const char *str) {
 }
 
 // returns a newly allocated url-decoded version of str that should be deleted after use
-char *url_decode (const char *str) {
+char *htpp_url_decode (const char *str) {
 
 	char *pstr = (char *) str, *buf = malloc (strlen (str) + 1), *pbuf = buf;
 

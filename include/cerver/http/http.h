@@ -77,10 +77,10 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_c
 #pragma region url
 
 // returns a newly allocated url-encoded version of str that should be deleted after use
-CERVER_PUBLIC char *url_encode (const char *str);
+CERVER_PUBLIC char *htpp_url_encode (const char *str);
 
 // returns a newly allocated url-decoded version of str that should be deleted after use
-CERVER_PUBLIC char *url_decode (const char *str);
+CERVER_PUBLIC char *htpp_url_decode (const char *str);
 
 #pragma endregion
 
