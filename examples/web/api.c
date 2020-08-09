@@ -5,6 +5,10 @@
 #include <time.h>
 #include <signal.h>
 
+#include <cerver/types/string.h>
+
+#include <cerver/collections/dlist.h>
+
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
@@ -19,7 +23,9 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-Cerver *api_cerver = NULL;
+static DoubleList *users = NULL;
+
+static Cerver *api_cerver = NULL;
 
 #pragma region end
 
@@ -30,6 +36,8 @@ void end (int dummy) {
 		cerver_stats_print (api_cerver);
 		cerver_teardown (api_cerver);
 	} 
+
+	dlist_delete (users);
 
 	exit (0);
 
@@ -44,6 +52,7 @@ typedef struct User {
 	String *id;
 	String *name;
 	String *username;
+	String *password;
 	String *role;
 	time_t iat;
 
@@ -56,6 +65,7 @@ static User *user_new (void) {
 		user->id = NULL;
 		user->name = NULL;
 		user->username = NULL;
+		user->password = NULL;
 		user->role = NULL;
 		user->iat = 0;
 	}
@@ -72,12 +82,19 @@ static void user_delete (void *user_ptr) {
 		str_delete (user->id);
 		str_delete (user->name);
 		str_delete (user->username);
+		str_delete (user->password);
 		str_delete (user->role);
 
 		free (user_ptr);
 
 		printf ("user_delete () - User has been deleted!\n");
 	}
+
+}
+
+static int user_comparator (const void *a, const void *b) {
+
+	return strcmp (((User *) a)->username->str, ((User *) b)->username->str);
 
 }
 
@@ -151,14 +168,100 @@ static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+static User *user_get_by_username (const char *username) {
+
+	User *retval = NULL;
+
+	for (ListElement *le = dlist_start (users); le; le = le->next) {
+		if (!strcmp (((User *) le->data)->username->str, username)) {
+			retval = (User *) le->data;
+			break;
+		}
+	}
+
+	return retval;
+
+}
+
 // POST api/users/login
 static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Users login!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
-		http_respponse_delete (res);
+	// get the user values from the request
+	const String *username = http_query_pairs_get_value (request->body_values, "username");
+	const String *password = http_query_pairs_get_value (request->body_values, "password");
+
+	if (username && password) {
+		// get user by username
+		User *user = user_get_by_username (username->str);
+		if (user) {
+			if (!strcmp (user->password->str, password->str)) {
+				// printf ("\nPasswords match!\n");
+
+				DoubleList *payload = dlist_init (key_value_pair_delete, NULL);
+				dlist_insert_after (payload, dlist_end (payload), key_value_pair_create ("id", user->id->str));
+				dlist_insert_after (payload, dlist_end (payload), key_value_pair_create ("name", user->name->str));
+				dlist_insert_after (payload, dlist_end (payload), key_value_pair_create ("username", user->username->str));
+				dlist_insert_after (payload, dlist_end (payload), key_value_pair_create ("role", user->role->str));
+
+				// generate & send back auth token
+				char *token = http_cerver_auth_generate_jwt ((HttpCerver *) cr->cerver->cerver_data, payload);
+				if (token) {
+					char *bearer = c_string_create ("Bearer %s", token);
+					json_t *json = json_pack ("{s:s}", "token", bearer);
+					char *json_str = json_dumps (json, 0);
+
+					HttpResponse *res = http_response_create (200, json_str, strlen (json_str));
+					if (res) {
+						http_response_compile (res);
+						http_response_print (res);
+						http_response_send (res, cr->cerver, cr->connection);
+						http_respponse_delete (res);
+					}
+
+					free (json_str);
+					free (bearer);
+					free (token);
+				}
+
+				else {
+					HttpResponse *res = http_response_json_error (500, "Internal error!");
+					if (res) {
+						http_response_print (res);
+						http_response_send (res, cr->cerver, cr->connection);
+						http_respponse_delete (res);
+					}
+				}
+
+				dlist_delete (payload);
+			}
+
+			else {
+				HttpResponse *res = http_response_json_error (400, "Password is incorrect!");
+				if (res) {
+					http_response_print (res);
+					http_response_send (res, cr->cerver, cr->connection);
+					http_respponse_delete (res);
+				}
+			}
+		}
+
+		else {
+			HttpResponse *res = http_response_json_error (404, "User not found!");
+			if (res) {
+				http_response_print (res);
+				http_response_send (res, cr->cerver, cr->connection);
+				http_respponse_delete (res);
+			}
+		}
+	}
+
+	else {
+		HttpResponse *res = http_response_json_error (400, "Missing user values!");
+		if (res) {
+			http_response_print (res);
+			http_response_send (res, cr->cerver, cr->connection);
+			http_respponse_delete (res);
+		}
 	}
 
 }
@@ -166,11 +269,53 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 // POST api/users/register
 static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Users register!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
-		http_respponse_delete (res);
+	// get the user values from the request
+	const String *name = http_query_pairs_get_value (request->body_values, "name");
+	const String *username = http_query_pairs_get_value (request->body_values, "username");
+	const String *password = http_query_pairs_get_value (request->body_values, "password");
+
+	if (name && username && password) {
+		// register a new user
+		User *user = user_new ();
+		if (user) {
+			user->id = str_create ("%ld", time (NULL));
+			user->name = str_new (name->str);
+			user->username = str_new (username->str);
+			user->password = str_new (password->str);
+			user->role = str_new ("common");
+
+			dlist_insert_after (users, dlist_end (users), user);
+
+			printf ("\n");
+			user_print (user);
+			cerver_log_success ("Created a new user!");
+			printf ("\n");
+
+			HttpResponse *res = http_response_json_msg (200, "Created a new user!");
+			if (res) {
+				http_response_print (res);
+				http_response_send (res, cr->cerver, cr->connection);
+				http_respponse_delete (res);
+			}
+		}
+
+		else {
+			HttpResponse *res = http_response_json_error (500, "Internal error!");
+			if (res) {
+				http_response_print (res);
+				http_response_send (res, cr->cerver, cr->connection);
+				http_respponse_delete (res);
+			}
+		}
+	}
+
+	else {
+		HttpResponse *res = http_response_json_error (400, "Missing user values!");
+		if (res) {
+			http_response_print (res);
+			http_response_send (res, cr->cerver, cr->connection);
+			http_respponse_delete (res);
+		}
 	}
 
 }
@@ -223,6 +368,8 @@ int main (int argc, char **argv) {
 	cerver_log_debug ("Cerver Web API Example");
 	printf ("\n");
 
+	users = dlist_init (user_delete, user_comparator);
+
 	api_cerver = cerver_create (CERVER_TYPE_WEB, "api-cerver", 8080, PROTOCOL_TCP, false, 2, 1000);
 	if (api_cerver) {
 		/*** cerver configuration ***/
@@ -234,6 +381,7 @@ int main (int argc, char **argv) {
 		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
 
 		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
 		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
 
 		// register top level routes
