@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_H_
 #define _CERVER_HTTP_H_
 
+#include "cerver/types/string.h"
+
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
@@ -12,7 +14,18 @@
 
 struct _Cerver;
 
-typedef struct KeyValuePair { char *key, *value; } KeyValuePair;
+typedef struct KeyValuePair { 
+
+    String *key;
+    String *value;
+
+} KeyValuePair;
+
+CERVER_PUBLIC KeyValuePair *key_value_pair_new (void);
+
+CERVER_PUBLIC void key_value_pair_delete (void *kvp_ptr);
+
+CERVER_PUBLIC KeyValuePair *key_value_pair_create (const char *key, const char *value);
 
 struct _HttpCerver {
 

@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/handler.h"
 #include "cerver/packets.h"
@@ -37,9 +38,9 @@ static const char to_hex (const char code) { return hex[code & 15]; }
 
 #pragma endregion
 
-#pragma region kv
+#pragma region kvp
 
-static KeyValuePair *key_value_pair_new (void) {
+KeyValuePair *key_value_pair_new (void) {
 
 	KeyValuePair *kvp = (KeyValuePair *) malloc (sizeof (KeyValuePair));
 	if (kvp) kvp->key = kvp->value = NULL;
@@ -47,33 +48,50 @@ static KeyValuePair *key_value_pair_new (void) {
 
 }
 
-static void key_value_pair_delete (void *ptr) {
+void key_value_pair_delete (void *kvp_ptr) {
 
-	if (ptr) {
-		KeyValuePair *kvp = (KeyValuePair *) ptr;
-		if (kvp->key) free (kvp->key);
-		if (kvp->value) free (kvp->value);
+	if (kvp_ptr) {
+		KeyValuePair *kvp = (KeyValuePair *) kvp_ptr;
+
+		if (kvp->key) str_delete (kvp->key);
+		if (kvp->value) str_delete (kvp->value);
 
 		free (kvp);
 	}
 
 }
 
-static KeyValuePair *key_value_pair_create (const char *keyFirst, const char *keyAfter, 
-	const char *valueFirst, const char *valueAfter) {
+KeyValuePair *key_value_pair_create (const char *key, const char *value) {
+
+	KeyValuePair *kvp = key_value_pair_new ();
+	if (kvp) {
+		kvp->key = key ? str_new (key) : NULL;
+		kvp->value = value ? str_new (value) : NULL;
+	}
+
+	return kvp;
+
+}
+
+static KeyValuePair *key_value_pair_create_pieces (
+	const char *key_first, const char *key_after, 
+	const char *value_first, const char *value_after
+) {
 
 	KeyValuePair *kvp = NULL;
 
-	if (keyFirst && keyAfter && valueFirst && valueAfter) {
-		const int keyLen = (int) (keyAfter - keyFirst);
-		const int valueLen = (int) (valueAfter - valueFirst);
-
+	if (key_first && key_after && value_first && value_after) {
 		kvp = key_value_pair_new ();
 		if (kvp) {
-			kvp->key = (char *) calloc (keyLen + 1, sizeof (char));
-			memcpy (kvp->key, keyFirst, keyLen * sizeof (char));
-			kvp->value = (char *) calloc (valueLen + 1, sizeof (char));
-			memcpy (kvp->value, valueFirst, valueLen * sizeof (char));
+			kvp->key = str_new (NULL);
+			kvp->key->len = key_after - key_first;
+			kvp->key->str = (char *) calloc (kvp->key->len + 1, sizeof (char));
+			memcpy (kvp->key->str, key_first, kvp->key->len);
+
+			kvp->value = str_new (NULL);
+			kvp->value->len = value_after - value_first;
+			kvp->value->str = (char *) calloc (kvp->value->len + 1, sizeof (char));
+			memcpy (kvp->value->str, value_first, kvp->value->len);
 		}
 	}
 
@@ -402,37 +420,40 @@ DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
 		pairs = dlist_init (key_value_pair_delete, NULL);
 
 		const char *walk = first;
-		const char *keyFirst = first;
-		const char *keyAfter = NULL;
-		const char *valueFirst = NULL;
-		const char *valueAfter = NULL;
+		const char *key_first = first;
+		const char *key_after = NULL;
+		const char *value_first = NULL;
+		const char *value_after = NULL;
 
 		for (; walk < last; walk++) {
 			switch (*walk) {
 				case '&': {
-					if (valueFirst != NULL) valueAfter = walk;
-					else keyAfter = walk;
+					if (value_first != NULL) value_after = walk;
+					else key_after = walk;
 
 					dlist_insert_after (
 						pairs, 
 						dlist_end (pairs), 
-						key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter)
+						key_value_pair_create_pieces (
+							key_first, key_after, 
+							value_first, value_after
+						)
 					);
 				
-					if (walk + 1 < last) keyFirst = walk + 1;
-					else keyFirst = NULL;
+					if (walk + 1 < last) key_first = walk + 1;
+					else key_first = NULL;
 					
-					keyAfter = NULL;
-					valueFirst = NULL;
-					valueAfter = NULL;
+					key_after = NULL;
+					value_first = NULL;
+					value_after = NULL;
 				} break;
 
 				case '=': {
-					if (keyAfter == NULL) {
-						keyAfter = walk;
+					if (key_after == NULL) {
+						key_after = walk;
 						if (walk + 1 <= last) {
-							valueFirst = walk + 1;
-							valueAfter = walk + 1;
+							value_first = walk + 1;
+							value_after = walk + 1;
 						}
 					}
 				} break;
@@ -441,13 +462,16 @@ DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
 			}
 		}
 
-		if (valueFirst != NULL) valueAfter = walk;
-		else keyAfter = walk;
+		if (value_first != NULL) value_after = walk;
+		else key_after = walk;
 
 		dlist_insert_after (
 			pairs, 
 			dlist_end (pairs),
-			key_value_pair_create (keyFirst, keyAfter, valueFirst, valueAfter)
+			key_value_pair_create_pieces (
+				key_first, key_after, 
+				value_first, value_after
+			)
 		);
 	}
 
@@ -463,8 +487,8 @@ const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
 		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kvp = (KeyValuePair *) le->data;
-			if (!strcmp (kvp->key, key)) {
-				value = kvp->value;
+			if (!strcmp (kvp->key->str, key)) {
+				value = kvp->value->str;
 				break;
 			}
 		}
@@ -482,7 +506,7 @@ void http_query_pairs_print (DoubleList *pairs) {
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kv = (KeyValuePair *) le->data;
 
-			printf ("[%d] - %s = %s\n", idx, kv->key, kv->value);
+			printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
 
 			idx++;
 		}
