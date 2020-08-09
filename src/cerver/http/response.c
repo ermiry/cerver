@@ -207,7 +207,10 @@ u8 http_response_create_and_send (unsigned int status, const void *data, size_t 
 
 	HttpResponse *res = http_response_create (status, data, data_len);
 	if (res) {
-		retval = http_response_send (res, cerver, connection);
+		if (!http_response_compile (res)) {
+			retval = http_response_send (res, cerver, connection);
+		}
+		
 		http_respponse_delete (res);
 	}
 
