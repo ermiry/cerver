@@ -172,7 +172,7 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 		http_cerver->jwt_private_key->str = private_key;
 		http_cerver->jwt_private_key->len = private_keylen;
 
-		printf ("\n%s\n", http_cerver->jwt_public_key->str);
+		printf ("\n%s\n", http_cerver->jwt_private_key->str);
 
 		char *status = c_string_create (
 			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
@@ -328,19 +328,33 @@ void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const c
 // returns a newly allocated string that should be deleted after use
 char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values) {
 
+	char *token = NULL;
+
 	jwt_t *jwt = NULL;
 	if (!jwt_new (&jwt)) {
 		time_t iat = time (NULL);
 
-		
+		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (values); le; le = le->next) {
-			// grant = (String *) le->data;
-
-			// jwt_add_grant (jwt, )
+			kvp = (KeyValuePair *) le->data;
+			jwt_add_grant (jwt, kvp->key->str, kvp->value->str);
 		}
 
 		jwt_add_grant_int (jwt, "iat", iat);
+
+		if (!jwt_set_alg (
+			jwt, 
+			http_cerver->jwt_alg, 
+			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_private_key->len
+		)) {
+			token = jwt_encode_str (jwt);
+		}
+
+		jwt_free (jwt);
 	}
+
+	return token;
 
 }
 
@@ -499,16 +513,16 @@ DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
 
 }
 
-const char *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
 
-	const char *value = NULL;
+	const String *value = NULL;
 
 	if (pairs && key) {
 		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kvp = (KeyValuePair *) le->data;
 			if (!strcmp (kvp->key->str, key)) {
-				value = kvp->value->str;
+				value = kvp->value;
 				break;
 			}
 		}

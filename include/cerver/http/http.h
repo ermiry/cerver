@@ -71,6 +71,10 @@ CERVER_EXPORT void http_cerver_route_register (HttpCerver *http_cerver, HttpRout
 CERVER_EXPORT void http_cerver_set_catch_all_route (HttpCerver *http_cerver, 
 	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request));
 
+// generates and signs a jwt token that is ready to be sent
+// returns a newly allocated string that should be deleted after use
+CERVER_EXPORT char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values);
+
 #pragma endregion
 
 #pragma region auth
@@ -103,7 +107,7 @@ CERVER_PUBLIC char *http_url_decode (const char *str);
 CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (const char *first, const char *last);
 
 // gets the matching value for the requested key from a list of pairs
-CERVER_PUBLIC const char *http_query_pairs_get_value (DoubleList *pairs, const char *key);
+CERVER_PUBLIC const String *http_query_pairs_get_value (DoubleList *pairs, const char *key);
 
 CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 
