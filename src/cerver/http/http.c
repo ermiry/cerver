@@ -324,6 +324,26 @@ void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const c
 
 }
 
+// generates and signs a jwt token that is ready to be sent
+// returns a newly allocated string that should be deleted after use
+char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values) {
+
+	jwt_t *jwt = NULL;
+	if (!jwt_new (&jwt)) {
+		time_t iat = time (NULL);
+
+		
+		for (ListElement *le = dlist_start (values); le; le = le->next) {
+			// grant = (String *) le->data;
+
+			// jwt_add_grant (jwt, )
+		}
+
+		jwt_add_grant_int (jwt, "iat", iat);
+	}
+
+}
+
 #pragma endregion
 
 #pragma region url
@@ -962,9 +982,6 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	http_request_delete (request);
 
 	connection_end (cr->connection);
-
-	// packet_delete (packet);
-	// str_delete (response);
 
 	free (parser);
 
