@@ -1,7 +1,7 @@
 #ifndef _CERVER_HTTP_REQUEST_H_
 #define _CERVER_HTTP_REQUEST_H_
 
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -58,23 +58,23 @@ typedef struct HttpRequest {
 
 	RequestMethod method;
 
-	estring *url;
-	estring *query;
+	String *url;
+	String *query;
 
 	// parsed query params (key-value pairs)
 	DoubleList *query_params;
 
 	unsigned int n_params;
-	estring *params[REQUEST_PARAMS_SIZE];
+	String *params[REQUEST_PARAMS_SIZE];
 
 	RequestHeader next_header;
-	estring *headers[REQUEST_HEADERS_SIZE];
+	String *headers[REQUEST_HEADERS_SIZE];
 
 	// decoded data from jwt
 	void *decoded_data;
 	void (*delete_decoded_data)(void *);
 	
-	estring *body;
+	String *body;
 	
 	// body key-value pairs parsed from x-www-form-urlencoded data
 	DoubleList *body_values;

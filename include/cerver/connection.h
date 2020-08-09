@@ -4,7 +4,7 @@
 #include <stdbool.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
 #include "cerver/config.h"
@@ -56,14 +56,14 @@ CERVER_PUBLIC void connection_stats_print (struct _Connection *connection);
 // a connection from a client
 struct _Connection {
 
-    estring *name;
+    String *name;
 
     struct _Socket *socket;
     u16 port;
     Protocol protocol;
     bool use_ipv6;
 
-    estring *ip;
+    String *ip;
     struct sockaddr_storage address;
 
     time_t connected_timestamp;             // when the connection started

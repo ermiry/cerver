@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/http/request.h"
 
@@ -42,23 +42,23 @@ HttpRequest *http_request_new (void) {
 void http_request_delete (HttpRequest *http_request) {
 
 	if (http_request) {
-		estring_delete (http_request->url);
-		estring_delete (http_request->query);
+		str_delete (http_request->url);
+		str_delete (http_request->query);
 
 		dlist_delete (http_request->query_params);
 
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
-			estring_delete (http_request->params[i]);
+			str_delete (http_request->params[i]);
 
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
-			estring_delete (http_request->headers[i]);
+			str_delete (http_request->headers[i]);
 
 		if (http_request->decoded_data) {
 			if (http_request->delete_decoded_data) 
 				http_request->delete_decoded_data (http_request->decoded_data);
 		}
 
-		estring_delete (http_request->body);
+		str_delete (http_request->body);
 
 		dlist_delete (http_request->body_values);
 
@@ -77,7 +77,7 @@ void http_request_headers_print (HttpRequest *http_request) {
 
 	if (http_request) {
 		char *null = "NULL";
-		estring *header = NULL;
+		String *header = NULL;
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++) {
 			header = http_request->headers[i];
 

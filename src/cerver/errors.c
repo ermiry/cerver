@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
@@ -43,7 +43,7 @@ static CerverErrorEventData *cerver_error_event_data_new (void) {
 void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
 	if (error_event_data) {
-        estring_delete (error_event_data->error_message);
+        str_delete (error_event_data->error_message);
 
         free (error_event_data);
     }
@@ -66,7 +66,7 @@ static CerverErrorEventData *cerver_error_event_data_create (
 
 		error_event_data->action_args = action_args;
 
-        error_event_data->error_message = error_message ? estring_new (error_message) : NULL;
+        error_event_data->error_message = error_message ? str_new (error_message) : NULL;
 	}
 
 	return error_event_data;
@@ -260,7 +260,7 @@ CerverError *cerver_error_new (const CerverErrorType type, const char *msg) {
     if (error) {
         error->type = type;
         time (&error->timestamp);
-        error->msg = msg ? estring_new (msg) : NULL;
+        error->msg = msg ? str_new (msg) : NULL;
     }
 
     return error;
@@ -272,7 +272,7 @@ void cerver_error_delete (void *cerver_error_ptr) {
     if (cerver_error_ptr) {
         CerverError *error = (CerverError *) cerver_error_ptr;
 
-        estring_delete (error->msg);
+        str_delete (error->msg);
         
         free (error);
     }

@@ -7,7 +7,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
@@ -136,9 +136,9 @@ void client_delete (void *ptr) {
     if (ptr) {
         Client *client = (Client *) ptr;
 
-        estring_delete (client->session_id);
+        str_delete (client->session_id);
 
-        estring_delete (client->name);
+        str_delete (client->name);
 
         dlist_delete (client->connections);
 
@@ -179,7 +179,7 @@ Client *client_create (void) {
         client->id = next_client_id;
         next_client_id += 1;
 
-        client->name = estring_new ("no-name");
+        client->name = str_new ("no-name");
 
         time (&client->connected_timestamp);
 
@@ -218,8 +218,8 @@ Client *client_create_with_connection (Cerver *cerver,
 void client_set_name (Client *client, const char *name) {
 
     if (client) {
-        if (client->name) estring_delete (client->name);
-        client->name = name ? estring_new (name) : NULL;
+        if (client->name) str_delete (client->name);
+        client->name = name ? str_new (name) : NULL;
     }
 
 }
@@ -251,8 +251,8 @@ char *client_get_identifier (Client *client, bool *is_name) {
 void client_set_session_id (Client *client, const char *session_id) {
 
     if (client) {
-        if (client->session_id) estring_delete (client->session_id);
-        client->session_id = session_id ? estring_new (session_id) : NULL;
+        if (client->session_id) str_delete (client->session_id);
+        client->session_id = session_id ? str_new (session_id) : NULL;
     }
 
 }
@@ -328,7 +328,7 @@ int client_comparator_client_id (const void *a, const void *b) {
 // compare clients based on their session ids
 int client_comparator_session_id (const void *a, const void *b) {
 
-    if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && b) return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
     if (a && !b) return -1;
     if (!a && b) return 1;
 

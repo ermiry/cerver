@@ -7,7 +7,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -57,7 +57,7 @@ CERVER_PUBLIC void admin_cerver_stats_print (AdminCerverStats *stats);
 
 struct _Admin {
 
-	estring *id;						// unique admin identifier
+	String *id;						// unique admin identifier
 
 	struct _Client *client;				// network values for the admin
 

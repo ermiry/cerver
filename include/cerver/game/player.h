@@ -2,7 +2,7 @@
 #define _CERVER_GAME_PLAYER_H_
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
 #include "cerver/packets.h"
@@ -19,7 +19,7 @@ struct _Lobby;
 
 struct _Player {
 
-	estring *id;
+	String *id;
 
 	struct _Client *client;		// client network data associated to this player
 

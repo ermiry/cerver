@@ -1,7 +1,7 @@
 #ifndef _CERVER_HTTP_ROUTE_H_
 #define _CERVER_HTTP_ROUTE_H_
 
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -38,9 +38,9 @@ typedef void (*HttpHandler)(CerverReceive *cr, HttpRequest *request);
 struct _HttpRoute {
 
 	// eg. /api/users/login
-	estring *base;				// base route - / for top level - "/api/users"
-	estring *actual;			// the actual route "login"
-	estring *route;				// the complete route "/api/users/login"
+	String *base;				// base route - / for top level - "/api/users"
+	String *actual;			// the actual route "login"
+	String *route;				// the complete route "/api/users/login"
 
 	size_t n_tokens;
 	char **tokens;

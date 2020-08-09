@@ -27,11 +27,11 @@ struct _HttpCerver {
     // auth
     jwt_alg_t jwt_alg;
 
-    estring *jwt_opt_key_name;          // jwt private key filename
-    estring *jwt_private_key;           // jwt actual private key
+    String *jwt_opt_key_name;          // jwt private key filename
+    String *jwt_private_key;           // jwt actual private key
 
-    estring *jwt_opt_pub_key_name;      // jwt public key filename
-    estring *jwt_public_key;            // jwt actual public key
+    String *jwt_opt_pub_key_name;      // jwt public key filename
+    String *jwt_public_key;            // jwt actual public key
 
 };
 
@@ -77,10 +77,10 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_c
 #pragma region url
 
 // returns a newly allocated url-encoded version of str that should be deleted after use
-CERVER_PUBLIC char *htpp_url_encode (const char *str);
+CERVER_PUBLIC char *http_url_encode (const char *str);
 
 // returns a newly allocated url-decoded version of str that should be deleted after use
-CERVER_PUBLIC char *htpp_url_decode (const char *str);
+CERVER_PUBLIC char *http_url_decode (const char *str);
 
 #pragma endregion
 

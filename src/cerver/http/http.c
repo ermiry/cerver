@@ -115,11 +115,11 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		dlist_delete (http_cerver->routes);
 
-		estring_delete (http_cerver->jwt_opt_key_name);
-		estring_delete (http_cerver->jwt_private_key);
+		str_delete (http_cerver->jwt_opt_key_name);
+		str_delete (http_cerver->jwt_private_key);
 
-		estring_delete (http_cerver->jwt_opt_pub_key_name);
-		estring_delete (http_cerver->jwt_public_key);
+		str_delete (http_cerver->jwt_opt_pub_key_name);
+		str_delete (http_cerver->jwt_public_key);
 
 		free (http_cerver_ptr);
 	}
@@ -150,7 +150,7 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 	size_t private_keylen = 0;
 	char *private_key = file_read (http_cerver->jwt_opt_key_name->str, &private_keylen);
 	if (private_key) {
-		http_cerver->jwt_private_key = estring_new (NULL);
+		http_cerver->jwt_private_key = str_new (NULL);
 		http_cerver->jwt_private_key->str = private_key;
 		http_cerver->jwt_private_key->len = private_keylen;
 
@@ -193,7 +193,7 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 	size_t public_keylen = 0;
 	char *public_key = file_read (http_cerver->jwt_opt_pub_key_name->str, &public_keylen);
 	if (public_key) {
-		http_cerver->jwt_public_key = estring_new (NULL);
+		http_cerver->jwt_public_key = str_new (NULL);
 		http_cerver->jwt_public_key->str = public_key;
 		http_cerver->jwt_public_key->len = public_keylen;
 
@@ -295,14 +295,14 @@ void http_cerver_auth_set_jwt_algorithm (HttpCerver *http_cerver, jwt_alg_t jwt_
 // sets the filename from where the jwt private key will be loaded
 void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_cerver, const char *filename) {
 
-	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? estring_new (filename) : NULL;
+	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
 
 }
 
 // sets the filename from where the jwt public key will be loaded
 void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename) {
 
-	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? estring_new (filename) : NULL;
+	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
 
 }
 
@@ -311,7 +311,7 @@ void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const c
 #pragma region url
 
 // returns a newly allocated url-encoded version of str that should be deleted after use
-char *htpp_url_encode (const char *str) {
+char *http_url_encode (const char *str) {
 
 	char *pstr = (char *) str, *buf = malloc (strlen (str) * 3 + 1), *pbuf = buf;
 
@@ -335,7 +335,7 @@ char *htpp_url_encode (const char *str) {
 }
 
 // returns a newly allocated url-decoded version of str that should be deleted after use
-char *htpp_url_decode (const char *str) {
+char *http_url_decode (const char *str) {
 
 	char *pstr = (char *) str, *buf = malloc (strlen (str) + 1), *pbuf = buf;
 
@@ -366,9 +366,9 @@ char *htpp_url_decode (const char *str) {
 
 #pragma region parser
 
-static estring *http_strip_path_from_query (const char *url, size_t url_len) {
+static String *http_strip_path_from_query (const char *url, size_t url_len) {
 
-	estring *query = NULL;
+	String *query = NULL;
 
 	unsigned int idx = 0;
 	bool found = false;
@@ -382,7 +382,7 @@ static estring *http_strip_path_from_query (const char *url, size_t url_len) {
 	}
 
 	if (found) {
-		query = estring_new (NULL);
+		query = str_new (NULL);
 		query->len = url_len - idx;
 		query->str = (char *) calloc (query->len, sizeof (char));
 		char *from = (char *) url;
@@ -499,7 +499,7 @@ static int http_receive_handle_url (http_parser *parser, const char *at, size_t 
 	request->query = http_strip_path_from_query (at, length);
 	if (request->query) printf ("query: %s\n", request->query->str);
 	
-	request->url = estring_new (NULL);
+	request->url = str_new (NULL);
 	request->url->len = request->query ? length - request->query->len : length;
 	request->url->str = c_string_create ("%.*s", (int) request->url->len, at);
 
@@ -561,7 +561,7 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 	HttpRequest *request = (HttpRequest *) parser->data;
 	if (request->next_header != REQUEST_HEADER_INVALID) {
-		request->headers[request->next_header] = estring_new (NULL);
+		request->headers[request->next_header] = str_new (NULL);
 		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
 		request->headers[request->next_header]->len = length;
 	}
@@ -577,11 +577,11 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 	printf ("Body: %.*s", (int) length, at);
 
 	HttpRequest *request = (HttpRequest *) parser->data;
-	request->body = estring_new (NULL);
+	request->body = str_new (NULL);
 	request->body->str = c_string_create ("%.*s", (int) length, at);
 	request->body->len = length;
 
-	printf ("%s", url_decode (request->body->str));
+	printf ("%s", http_url_decode (request->body->str));
 
 	return 0;
 
@@ -716,7 +716,7 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 							// get route params
 							for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
 								if (routes_tokens->tokens[main_idx][sub_idx][0] == '*') {
-									request->params[request->n_params] = estring_new (tokens[sub_idx]);
+									request->params[request->n_params] = str_new (tokens[sub_idx]);
 									request->n_params++;
 								}
 							}
@@ -924,7 +924,7 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	connection_end (cr->connection);
 
 	// packet_delete (packet);
-	// estring_delete (response);
+	// str_delete (response);
 
 	free (parser);
 

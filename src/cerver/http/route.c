@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -90,9 +90,9 @@ void http_route_delete (void *route_ptr) {
 	if (route_ptr) {
 		HttpRoute *route = (HttpRoute *) route_ptr;
 
-		estring_delete (route->base);
-		estring_delete (route->actual);
-		estring_delete (route->route);
+		str_delete (route->base);
+		str_delete (route->actual);
+		str_delete (route->route);
 
 		// 03/08/2020 - deleted in http_routes_tokens_delete ()
 		// free (route->tokens);
@@ -127,11 +127,11 @@ HttpRoute *http_route_create (
 
 	HttpRoute *route = http_route_new ();
 	if (route) {
-		route->actual = estring_new (actual_route);
+		route->actual = str_new (actual_route);
 
 		// by default, all routes are top level when they are created
-		route->base = estring_new ("/");
-		route->route = estring_create ("/%s", actual_route);
+		route->base = str_new ("/");
+		route->route = str_create ("/%s", actual_route);
 
 		route->children = dlist_init (http_route_delete, NULL);
 
@@ -216,11 +216,11 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 		dlist_insert_after (parent->children, dlist_end (parent->children), child);
 
 		// refactor child paths
-		estring_delete (child->base);
-		child->base = estring_new (parent->route->str);
+		str_delete (child->base);
+		child->base = str_new (parent->route->str);
 
-		estring_delete (child->route);
-		child->route = estring_create ("%s/%s", child->base->str, child->actual->str);
+		str_delete (child->route);
+		child->route = str_create ("%s/%s", child->base->str, child->actual->str);
 	}
 
 }

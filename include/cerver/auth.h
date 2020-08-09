@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
 #include "cerver/config.h"
@@ -20,7 +20,7 @@ struct _Connection;
 // the auth data stripped from the packet
 struct _AuthData {
 
-    estring *token;
+    String *token;
 
     void *auth_data;
     size_t auth_data_size;
@@ -44,7 +44,7 @@ struct _AuthMethod {
 
     // a user message that can be sent to the connection when teh auth has failed
     // in a generated ERR_FAILED_AUTH packet
-    estring *error_message;
+    String *error_message;
 
 };
 

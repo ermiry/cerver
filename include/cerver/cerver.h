@@ -10,7 +10,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/htab.h"
@@ -64,7 +64,7 @@ typedef enum CerverType {
 
 } CerverType;
 
-CERVER_EXPORT estring *cerver_type_to_string (CerverType type);
+CERVER_EXPORT String *cerver_type_to_string (CerverType type);
 
 typedef enum CerverHandlerType {
 
@@ -75,14 +75,14 @@ typedef enum CerverHandlerType {
 
 } CerverHandlerType;
 
-CERVER_EXPORT estring *cerver_handler_type_to_string (CerverHandlerType type);
+CERVER_EXPORT String *cerver_handler_type_to_string (CerverHandlerType type);
 
 #pragma region info
 
 typedef struct CerverInfo {
 
-    estring *name;
-    estring *welcome_msg;                  // this msg is sent to the client when it first connects
+    String *name;
+    String *welcome_msg;                  // this msg is sent to the client when it first connects
     struct _Packet *cerver_info_packet;    // useful info that we can send to clients
 
     time_t time_started;                   // the actual time the cerver was started
@@ -500,8 +500,8 @@ struct _CerverReport {
     
     CerverType type;
 
-    estring *name;
-    estring *welcome;
+    String *name;
+    String *welcome;
 
     bool use_ipv6;
     Protocol protocol;
