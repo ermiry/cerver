@@ -120,6 +120,9 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
+
+		http_cerver->n_cath_all_requests = 0;
+		http_cerver->n_failed_auth_requests = 0;
 	}
 
 	return http_cerver;
@@ -355,6 +358,66 @@ char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values
 	}
 
 	return token;
+
+}
+
+#pragma endregion
+
+#pragma region stats
+
+static size_t http_cerver_stats_get_children_routes (HttpCerver *http_cerver, size_t *handlers) {
+
+	size_t count = 0;
+
+	unsigned int i = 0;
+	HttpRoute *route = NULL;
+	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+		route = (HttpRoute *) le->data;
+		
+		// main route handlers
+		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (route->handlers[i]) *handlers += 1;
+		}
+
+		count += route->children->size;
+
+		HttpRoute *child = NULL;
+		for (ListElement *child_le = dlist_start (route->children); child_le; child_le = child_le->next) {
+			child = (HttpRoute *) child_le->data;
+
+			for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+				if (child->handlers[i]) *handlers += 1;
+			}
+		}
+	}
+
+	return count;
+
+}
+
+// print number of routes & handlers
+void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
+
+	if (http_cerver) {
+		printf ("Main routes: %ld\n", http_cerver->routes->size);
+
+		size_t total_handlers = 0;
+		size_t children_routes = http_cerver_stats_get_children_routes (http_cerver, &total_handlers);
+
+		printf ("Children routes: %ld\n", children_routes);
+		printf ("Total handlers: %ld\n", total_handlers);
+	}
+
+}
+
+// print all http cerver stats, general & by route
+void http_cerver_all_stats_print (HttpCerver *http_cerver) {
+
+	if (http_cerver) {
+		http_cerver_routes_stats_print (http_cerver);
+
+		// TODO:
+	}
 
 }
 
@@ -632,7 +695,7 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
 
-	printf ("Body: %.*s", (int) length, at);
+	// printf ("Body: %.*s", (int) length, at);
 
 	HttpRequest *request = (HttpRequest *) parser->data;
 	request->body = str_new (NULL);
@@ -674,6 +737,8 @@ static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceiv
 
 	// handle with default route
 	http_cerver->default_handler (cr, request);
+
+	http_cerver->n_cath_all_requests += 1;
 
 }
 
@@ -727,6 +792,8 @@ static void http_receive_handle_match (
 			}
 
 			found->handlers[request->method] (cr, request);
+
+			found->n_requests[request->method] += 1;
 		}
 
 		else {
@@ -879,6 +946,8 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 				}
 
 				http_receive_handle_select_failed_auth (cr);
+
+				http_cerver->n_failed_auth_requests += 1;
 			}
 
 			jwt_free(jwt);
@@ -886,8 +955,8 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 
 		else {
 			cerver_log_error ("Invalid JWT!");
-
 			http_receive_handle_select_failed_auth (cr);
+			http_cerver->n_failed_auth_requests += 1;
 		}
 	}
 
@@ -949,6 +1018,7 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 				// no authentication header was provided
 				else {
 					http_receive_handle_select_failed_auth (cr);
+					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
 		}
@@ -980,6 +1050,7 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	HttpRequest *request = http_request_new ();
 	parser->data = request;
 
+	// FIXME: handle error
 	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
 
 	// printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);

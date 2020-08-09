@@ -77,8 +77,10 @@ HttpRoute *http_route_new (void) {
 		route->decode_data = NULL;
 		route->delete_decoded_data = NULL;
 
-		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++)
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
+			route->n_requests[i] = 0;
+		}
 	}
 
 	return route;

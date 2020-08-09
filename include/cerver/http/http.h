@@ -46,6 +46,10 @@ struct _HttpCerver {
     String *jwt_opt_pub_key_name;      // jwt public key filename
     String *jwt_public_key;            // jwt actual public key
 
+    // stats
+    size_t n_cath_all_requests;        // failed to match a route
+    size_t n_failed_auth_requests;     // failed to auth with private route 
+
 };
 
 typedef struct _HttpCerver HttpCerver;
@@ -88,6 +92,16 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_
 
 // sets the filename from where the jwt public key will be loaded
 CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename);
+
+#pragma endregion
+
+#pragma region stats
+
+// print number of routes & handlers
+CERVER_PUBLIC void http_cerver_routes_stats_print (HttpCerver *http_cerver);
+
+// print all http cerver stats, general & by route
+CERVER_PUBLIC void http_cerver_all_stats_print (HttpCerver *http_cerver);
 
 #pragma endregion
 

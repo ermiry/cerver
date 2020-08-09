@@ -39,7 +39,7 @@ struct _HttpRoute {
 
 	// eg. /api/users/login
 	String *base;				// base route - / for top level - "/api/users"
-	String *actual;			// the actual route "login"
+	String *actual;				// the actual route "login"
 	String *route;				// the complete route "/api/users/login"
 
 	size_t n_tokens;
@@ -55,6 +55,9 @@ struct _HttpRoute {
 	void (*delete_decoded_data)(void *);
 
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
+
+	// stats
+	size_t n_requests[HTTP_HANDLERS_COUNT];
 
 };
 
