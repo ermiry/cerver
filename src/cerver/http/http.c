@@ -866,9 +866,6 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
 
-	// split the real url variables from the query
-	// TODO:
-
 	bool match = false;
 	HttpRoute *found = NULL;
 
