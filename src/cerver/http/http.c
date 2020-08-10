@@ -1089,19 +1089,39 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 	HttpRequest *request = http_request_new ();
 	parser->data = request;
 
-	// FIXME: handle error
 	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
+	if (n_parsed != rc) {
+		char *status = c_string_create (
+			"http_parser_execute () failed - n parsed %ld / received %ld",
+			n_parsed, rc
+		);
 
-	// printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
 
-	// printf ("Method: %s\n", http_method_str (parser->method));
+		// send back error message
+		HttpResponse *res = http_response_json_error (500, "Internal error!");
+		if (res) {
+			// http_response_print (res);
+			http_response_send (res, cr->cerver, cr->connection);
+			http_respponse_delete (res);
+		}
+	}
 
-	request->method = parser->method;
+	else {
+		// printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
 
-	// http_request_headers_print (request);
+		// printf ("Method: %s\n", http_method_str (parser->method));
 
-	// select method handler
-	http_receive_handle_select (cr, request);
+		request->method = parser->method;
+
+		// http_request_headers_print (request);
+
+		// select method handler
+		http_receive_handle_select (cr, request);
+	}
 
 	http_request_delete (request);
 
