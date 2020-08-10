@@ -4,7 +4,23 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/config.h"
+
 #include "cerver/http/request.h"
+
+static const char *request_method_strings[] = {
+
+	#define XX(num, name, string) #string,
+	REQUEST_METHOD_MAP(XX)
+	#undef XX
+
+};
+
+const char *http_request_method_str (RequestMethod m) {
+
+  return ELEM_AT (request_method_strings, m, "Unknown");
+
+}
 
 HttpRequest *http_request_new (void) {
 

@@ -7,15 +7,23 @@
 
 #include "cerver/config.h"
 
+#define REQUEST_METHOD_MAP(XX)			\
+	XX(0,  DELETE,      DELETE)       	\
+	XX(1,  GET,         GET)          	\
+	XX(2,  HEAD,        HEAD)         	\
+	XX(3,  POST,        POST)         	\
+	XX(4,  PUT,         PUT)          	\
+
 typedef enum RequestMethod {
 
-	REQUEST_METHOD_DELETE								= 0,
-	REQUEST_METHOD_GET									= 1,
-	REQUEST_METHOD_HEAD									= 2,
-	REQUEST_METHOD_POST									= 3,
-	REQUEST_METHOD_PUT									= 4,
+	#define XX(num, name, string) REQUEST_METHOD_##name = num,
+	REQUEST_METHOD_MAP(XX)
+	#undef XX
 
 } RequestMethod;
+
+// returns a string version of the HTTP request method
+CERVER_PUBLIC const char *http_request_method_str (RequestMethod m);
 
 typedef enum RequestHeader {
 
