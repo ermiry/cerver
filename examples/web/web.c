@@ -26,6 +26,9 @@ void end (int dummy) {
 	
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
+		printf ("\nHTTP Cerver stats:\n");
+		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+		printf ("\n");
 		cerver_teardown (web_cerver);
 	} 
 
