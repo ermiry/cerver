@@ -2,10 +2,6 @@
 
 #include "cerver/config.h"
 
-#ifndef ELEM_AT
-# define ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
-#endif
-
 const char *method_strings[] = {
 
 	#define XX(num, name, string) #string,
