@@ -25,7 +25,7 @@ Cerver *web_cerver = NULL;
 void end (int dummy) {
 	
 	if (web_cerver) {
-		cerver_stats_print (web_cerver);
+		cerver_stats_print (web_cerver, false, false);
 		cerver_teardown (web_cerver);
 	} 
 

@@ -33,7 +33,10 @@ static Cerver *api_cerver = NULL;
 void end (int dummy) {
 	
 	if (api_cerver) {
-		cerver_stats_print (api_cerver);
+		cerver_stats_print (api_cerver, false, false);
+		printf ("\nHTTP Cerver stats:\n");
+		http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
+		printf ("\n");
 		cerver_teardown (api_cerver);
 	} 
 

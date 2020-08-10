@@ -190,7 +190,7 @@ void cerver_stats_set_threshold_time (Cerver *cerver, time_t threshold_time) {
 
 }
 
-void cerver_stats_print (Cerver *cerver) {
+void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
     if (cerver) {
         if (cerver->stats) {
@@ -225,11 +225,15 @@ void cerver_stats_print (Cerver *cerver) {
             printf ("Unique clients:                            %ld\n", cerver->stats->unique_clients);
             printf ("Total client connections:                  %ld\n", cerver->stats->total_client_connections);
 
-            printf ("\nReceived packets:\n");
-            packets_per_type_print (cerver->stats->received_packets);
+            if (received) {
+                printf ("\nReceived packets:\n");
+                packets_per_type_print (cerver->stats->received_packets);
+            }
 
-            printf ("\nSent packets:\n");
-            packets_per_type_print (cerver->stats->sent_packets);
+            if (sent) {
+                printf ("\nSent packets:\n");
+                packets_per_type_print (cerver->stats->sent_packets);
+            }
         }
 
         else {
