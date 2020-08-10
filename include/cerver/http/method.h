@@ -60,6 +60,6 @@ typedef enum http_method http_method;
 CERVER_PUBLIC const char *method_strings[];
 
 // returns a string version of the HTTP method
-CERVER_EXPORT const char *http_method_str (enum http_method m);
+CERVER_PUBLIC const char *http_method_str (enum http_method m);
 
 #endif
