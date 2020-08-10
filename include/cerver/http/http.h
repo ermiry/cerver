@@ -100,6 +100,9 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_c
 // print number of routes & handlers
 CERVER_PUBLIC void http_cerver_routes_stats_print (HttpCerver *http_cerver);
 
+// print route's stats
+CERVER_PUBLIC void http_cerver_route_stats_print (HttpRoute *route);
+
 // print all http cerver stats, general & by route
 CERVER_PUBLIC void http_cerver_all_stats_print (HttpCerver *http_cerver);
 

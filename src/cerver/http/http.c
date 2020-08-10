@@ -410,13 +410,52 @@ void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
 
 }
 
+// print route's stats
+void http_cerver_route_stats_print (HttpRoute *route) {
+
+	if (route) {
+		unsigned int i = 0;
+
+		printf ("\t%s:\n", route->route->str);
+		
+		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (route->handlers[i]) 
+				printf ("\t\t%s\t%ld\n", http_request_method_str ((RequestMethod) i), route->n_requests[i]);
+		}
+
+		if (route->children->size) {
+			printf ("\t%ld children: \n", route->children->size);
+
+			HttpRoute *child = NULL;
+			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+				child = (HttpRoute *) le->data;
+
+				printf ("\t\t%s:\n", child->actual->str);
+
+				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+					if (child->handlers[i]) 
+						printf ("\t\t\t%s\t%ld\n", http_request_method_str ((RequestMethod) i), child->n_requests[i]);
+				}
+			}
+		}
+
+		else {
+			printf ("\tNo children\n");
+		}
+	}
+
+}
+
 // print all http cerver stats, general & by route
 void http_cerver_all_stats_print (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		http_cerver_routes_stats_print (http_cerver);
 
-		// TODO:
+		// print stats by route
+		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+			http_cerver_route_stats_print ((HttpRoute *) le->data);
+		}
 	}
 
 }
