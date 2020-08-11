@@ -250,7 +250,7 @@ static HttpResponse *http_response_json_internal (http_status status, const char
 
 }
 
-// creates an http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 HttpResponse *http_response_json_msg (http_status status, const char *msg) {
 
@@ -258,11 +258,45 @@ HttpResponse *http_response_json_msg (http_status status, const char *msg) {
 
 }
 
-// creates an http response with the defined status code ready to be sent 
+// creates and sends a http json message response with the defined status code & message
+// returns 0 on success, 1 on error
+u8 http_response_json_msg_send (CerverReceive *cr, unsigned int status, const char *msg) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_json_msg (status, msg);
+	if (res) {
+		// http_response_print (res);
+		retval = http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+	return retval;
+
+}
+
+// creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { error: "your error message" }
 HttpResponse *http_response_json_error (http_status status, const char *error_msg) {
 
 	return error_msg ? http_response_json_internal (status, "error", error_msg) : NULL;
+
+}
+
+// creates and sends a http json error response with the defined status code & message
+// returns 0 on success, 1 on error
+u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const char *error_msg) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_json_error (status, error_msg);
+	if (res) {
+		// http_response_print (res);
+		retval = http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+	return retval;
 
 }
 

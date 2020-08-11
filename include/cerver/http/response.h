@@ -54,13 +54,21 @@ CERVER_EXPORT u8 http_response_send (HttpResponse *res, struct _Cerver *cerver, 
 CERVER_EXPORT u8 http_response_create_and_send (unsigned int status, const void *data, size_t data_len,
 	struct _Cerver *cerver, struct _Connection *connection);
 
-// creates an http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 CERVER_EXPORT HttpResponse *http_response_json_msg (http_status status, const char *msg);
 
-// creates an http response with the defined status code ready to be sent 
+// creates and sends a http json message response with the defined status code & message
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_msg_send (CerverReceive *cr, unsigned int status, const char *msg);
+
+// creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { error: "your error message" }
 CERVER_EXPORT HttpResponse *http_response_json_error (http_status status, const char *error_msg);
+
+// creates and sends a http json error response with the defined status code & message
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const char *error_msg);
 
 CERVER_PUBLIC void http_response_print (HttpResponse *res);
 
