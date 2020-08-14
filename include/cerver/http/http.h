@@ -8,6 +8,7 @@
 #include "cerver/config.h"
 #include "cerver/handler.h"
 
+#include "cerver/http/http_parser.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/jwt/alg.h"
@@ -131,6 +132,18 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 #pragma endregion
 
 #pragma region handler
+
+typedef struct HttpReceive {
+
+	http_parser *parser;
+	http_parser_settings settings;
+	HttpRequest *request;
+
+} HttpReceive;
+
+CERVER_PRIVATE HttpReceive *http_receive_new (void);
+
+CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
 
 CERVER_PRIVATE void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer);
 

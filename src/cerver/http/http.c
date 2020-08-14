@@ -749,6 +749,44 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 #pragma region handler
 
+HttpReceive *http_receive_new (void) {
+
+	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
+	if (http_receive) {
+		http_receive->parser = malloc (sizeof (http_parser));
+		http_parser_init (http_receive->parser, HTTP_REQUEST);
+
+		http_receive->settings.on_message_begin = NULL;
+		http_receive->settings.on_url = http_receive_handle_url;
+		http_receive->settings.on_status = NULL;
+		http_receive->settings.on_header_field = http_receive_handle_header_field;
+		http_receive->settings.on_header_value = http_receive_handle_header_value;
+		http_receive->settings.on_headers_complete = NULL;
+		http_receive->settings.on_body = http_receive_handle_body;
+		http_receive->settings.on_message_complete = NULL;
+		http_receive->settings.on_chunk_header = NULL;
+		http_receive->settings.on_chunk_complete = NULL;
+
+		http_receive->request = http_request_new ();
+		http_receive->parser->data = http_receive->request;
+	}
+
+	return http_receive;
+
+}
+
+void http_receive_delete (HttpReceive *http_receive) {
+
+	if (http_receive) {
+		http_request_delete (http_receive->request);
+
+		free (http_receive->parser);
+
+		free (http_receive);
+	}
+
+}
+
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "HTTP Cerver!");
