@@ -808,7 +808,7 @@ static char *http_mpart_get_boundary (const char *content_type) {
 
 	DoubleList *attributes = http_mpart_attributes_parse (end);
 	if (attributes) {
-		key_value_pairs_print (attributes);
+		// key_value_pairs_print (attributes);
 
 		const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
 		if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
@@ -820,7 +820,76 @@ static char *http_mpart_get_boundary (const char *content_type) {
 
 }
 
+static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) {
+
+	// create a new multipart structure to handle new data
+	HttpRequest *request = ((HttpReceive *) parser->data)->request;
+
+	request->current_part = http_multi_part_new ();
+	dlist_insert_after (
+		request->multi_parts, 
+		dlist_end (request->multi_parts), 
+		request->current_part
+	);
+
+	return 0;
+
+}
+
+// Content-Disposition: form-data; name="mirary"; filename="M.jpg"
+// Content-Type: image/jpeg
+static inline int http_receive_handle_mpart_header_field_handle (const char *header) {
+
+	if (!strcmp ("Content-Disposition", header)) return MULTI_PART_HEADER_CONTENT_DISPOSITION;
+	if (!strcmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
+	if (!strcmp ("Content-Type", header)) return MULTI_PART_HEADER_CONTENT_TYPE;
+
+	return MULTI_PART_HEADER_INVALID;		// no known header
+
+}
+
+static int http_receive_handle_mpart_header_field (multipart_parser *parser, const char *at, size_t length) {
+
+	char header[32] = { 0 };
+	snprintf (header, 32, "%.*s", (int) length, at);
+	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
+
+	(((HttpReceive *) parser->data)->request)->current_part->next_header = http_receive_handle_mpart_header_field_handle (header);
+
+	return 0;
+
+}
+
+static int http_receive_handle_mpart_header_value (multipart_parser *parser, const char *at, size_t length) {
+
+	// printf ("\nHeader value: %.*s\n", (int) length, at);
+
+	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
+		multi_part->headers[multi_part->next_header] = str_new (NULL);
+		multi_part->headers[multi_part->next_header]->str = c_string_create ("%.*s", (int) length, at);
+		multi_part->headers[multi_part->next_header]->len = length;
+	}
+
+	// multi_part->next_header = MULTI_PART_HEADER_INVALID;
+
+	return 0;
+
+}
+
+static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
+
+	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+
+	http_multi_part_headers_print (multi_part);
+
+	return 0;
+
+}
+
 static int http_receive_handle_mpart_body (http_parser *parser, const char *at, size_t length) {
+
+	(void) multipart_parser_execute (((HttpReceive *) parser->data)->mpart_parser, at, length);
 
 	return 0;
 
@@ -855,7 +924,6 @@ HttpReceive *http_receive_new (void) {
 		http_receive->settings.on_chunk_complete = NULL;
 
 		http_receive->mpart_parser = NULL;
-		// http_receive->mpart_settings
 
 		http_receive->request = http_request_new ();
 
@@ -870,9 +938,11 @@ HttpReceive *http_receive_new (void) {
 void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
+		free (http_receive->parser);
+
 		http_request_delete (http_receive->request);
 
-		free (http_receive->parser);
+		if (http_receive->mpart_parser) free (http_receive->mpart_parser);
 
 		free (http_receive);
 	}
@@ -1212,7 +1282,23 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 			char *boundary = http_mpart_get_boundary (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str);
 			if (boundary) {
 				// printf ("\n%s\n", boundary);
-				// http_receive->settings.on_body = http_receive_handle_mpart_body;
+				http_receive->settings.on_body = http_receive_handle_mpart_body;
+
+				http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
+				http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
+				http_receive->mpart_settings.on_part_data = NULL;
+
+				http_receive->mpart_settings.on_part_data_begin = http_receive_handle_mpart_part_data_begin;
+				http_receive->mpart_settings.on_headers_complete = http_receive_handle_mpart_headers_completed;
+				http_receive->mpart_settings.on_part_data_end = NULL;
+				http_receive->mpart_settings.on_body_end = NULL;
+
+				http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
+				http_receive->mpart_parser->data = http_receive;
+
+				http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
+
+				free (boundary);
 			}
 
 			else {
