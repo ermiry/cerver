@@ -9,11 +9,14 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/http_parser.h"
+#include "cerver/http/multipart.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
+
+#pragma region kvp
 
 typedef struct KeyValuePair { 
 
@@ -27,6 +30,12 @@ CERVER_PUBLIC KeyValuePair *key_value_pair_new (void);
 CERVER_PUBLIC void key_value_pair_delete (void *kvp_ptr);
 
 CERVER_PUBLIC KeyValuePair *key_value_pair_create (const char *key, const char *value);
+
+CERVER_PUBLIC const String *key_value_pairs_get_value (DoubleList *pairs, const char *key);
+
+CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
+
+#pragma endregion
 
 struct _HttpCerver {
 
@@ -139,6 +148,9 @@ typedef struct HttpReceive {
 
 	http_parser *parser;
 	http_parser_settings settings;
+
+    multipart_parser *mpart_parser;
+    multipart_parser_settings mpart_settings;
     
 	HttpRequest *request;
 

@@ -14,6 +14,7 @@
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
+#include "cerver/http/multipart.h"
 #include "cerver/http/method.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
@@ -96,6 +97,41 @@ static KeyValuePair *key_value_pair_create_pieces (
 	}
 
 	return kvp;
+
+}
+
+const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
+
+	const String *value = NULL;
+
+	if (pairs && key) {
+		KeyValuePair *kvp = NULL;
+		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+			kvp = (KeyValuePair *) le->data;
+			if (!strcmp (kvp->key->str, key)) {
+				value = kvp->value;
+				break;
+			}
+		}
+	}
+
+	return value;
+
+}
+
+void key_value_pairs_print (DoubleList *pairs) {
+
+	if (pairs) {
+		unsigned int idx = 1;
+		KeyValuePair *kv = NULL;
+		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
+			kv = (KeyValuePair *) le->data;
+
+			printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
+
+			idx++;
+		}
+	}
 
 }
 
@@ -617,36 +653,13 @@ DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
 
 const String *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
 
-	const String *value = NULL;
-
-	if (pairs && key) {
-		KeyValuePair *kvp = NULL;
-		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
-			kvp = (KeyValuePair *) le->data;
-			if (!strcmp (kvp->key->str, key)) {
-				value = kvp->value;
-				break;
-			}
-		}
-	}
-
-	return value;
+	return key_value_pairs_get_value (pairs, key);
 
 }
 
 void http_query_pairs_print (DoubleList *pairs) {
 
-	if (pairs) {
-		unsigned int idx = 1;
-		KeyValuePair *kv = NULL;
-		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
-			kv = (KeyValuePair *) le->data;
-
-			printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
-
-			idx++;
-		}
-	}
+	key_value_pairs_print (pairs);
 
 }
 
