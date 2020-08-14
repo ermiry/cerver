@@ -321,6 +321,40 @@ char *c_string_remove_sub (char *str, const char *sub) {
 
 }
 
+// removes any white space from the string
+char *c_string_trim (char *str) {
+
+	while (isspace (*str)) str++;
+
+	if (*str == 0) return str;
+
+	char *end = str + strlen (str) - 1;
+	while (end > str && isspace (*end)) end--;
+
+	*(end + 1) = 0;
+
+	return str;
+
+}
+
+static inline bool is_quote(char c) { return (c == '"' || c == '\''); }
+
+// removes quotes from string
+char *c_string_strip_quotes (char *str) {
+
+	while (is_quote (*str)) str++;
+
+	if (*str == 0) return str;
+
+	char *end = str + strlen(str) - 1;
+	while (end > str && is_quote (*end)) end--;
+
+	*(end + 1) = 0;
+
+	return str;
+
+}
+
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
 char *c_string_create_with_ptrs (char *first, char *last) {

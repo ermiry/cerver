@@ -65,6 +65,12 @@ CERVER_PUBLIC void c_string_remove_char (char *string, char garbage);
 // returns a newly allocated copy of the original str but withput the sub
 CERVER_PUBLIC char *c_string_remove_sub (char *str, const char *sub);
 
+// removes any white space from the string
+CERVER_PUBLIC char *c_string_trim (char *str);
+
+// removes quotes from string
+CERVER_PUBLIC char *c_string_strip_quotes (char *str);
+
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
 CERVER_PUBLIC char *c_string_create_with_ptrs (char *first, char *last);
