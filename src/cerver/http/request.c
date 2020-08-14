@@ -6,6 +6,7 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/request.h"
 
 static const char *request_method_strings[] = {
@@ -143,6 +144,13 @@ MultiPart *http_multi_part_new (void) {
 		multi_part->next_header = 0;
 		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
 			multi_part->headers[i] = NULL;
+
+		multi_part->params = dlist_init (key_value_pair_delete, NULL);
+
+		multi_part->name = NULL;
+		multi_part->filename = NULL;
+
+		multi_part->fd = -1;
 	}
 
 	return multi_part;
@@ -156,6 +164,8 @@ void http_multi_part_delete (void *multi_part_ptr) {
 
 		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
 			str_delete (multi_part->headers[i]);
+
+		dlist_delete (multi_part->params);
 
 		free (multi_part_ptr);
 	}

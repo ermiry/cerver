@@ -877,11 +877,74 @@ static int http_receive_handle_mpart_header_value (multipart_parser *parser, con
 
 }
 
+
+int str_starts_with(const char *str, const char *substr) {
+  if ((str == NULL) || (substr == NULL)) return 0;
+  return strncmp(str, substr, strlen(substr)) == 0;
+}
+
 static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
 	http_multi_part_headers_print (multi_part);
+
+	if (str_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+		char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
+		end += strlen ("form-data;");
+
+		multi_part->params = http_mpart_attributes_parse (end);
+		// key_value_pairs_print (multi_part->params);
+
+		multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
+		multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+
+		if (multi_part->filename) {
+			// FIXME: ability to set an uploads path!
+			char *path = c_string_create ("/home/ermiry/Documents/ermiry/cApps/cerver/%s", multi_part->filename->str);
+			printf ("path: %s\n", path);
+			multi_part->fd = open (multi_part->filename->str, O_CREAT | O_WRONLY, 0777);
+			printf ("opened: %d\n", multi_part->fd);
+			perror ("Error");
+		}
+	}
+
+	return 0;
+
+}
+
+static int http_receive_handle_mpart_data (multipart_parser *parser, const char *at, size_t length) {
+
+	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+
+	// printf ("fd %d - filename %s - bytes %ld\n", multi_part->fd, multi_part->filename->str, length);
+
+	if (multi_part->fd != -1) {
+		// FIXME: handle errors!
+		ssize_t ret = write (multi_part->fd, at, length);
+		switch (ret) {
+			case -1: {
+				// cerver_log_error ("Error writting to file!");
+				// perror ("Error");
+			} break;
+
+			default: 
+				printf ("wrote %ld!\n", ret);
+				break;
+		}
+	}
+
+	return 0;
+
+}
+
+static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
+
+	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+
+	if (multi_part->fd != -1) {
+		close (multi_part->fd);
+	}
 
 	return 0;
 
@@ -1286,11 +1349,11 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 				http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
 				http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
-				http_receive->mpart_settings.on_part_data = NULL;
+				http_receive->mpart_settings.on_part_data = http_receive_handle_mpart_data;
 
 				http_receive->mpart_settings.on_part_data_begin = http_receive_handle_mpart_part_data_begin;
 				http_receive->mpart_settings.on_headers_complete = http_receive_handle_mpart_headers_completed;
-				http_receive->mpart_settings.on_part_data_end = NULL;
+				http_receive->mpart_settings.on_part_data_end = http_receive_handle_mpart_data_end;
 				http_receive->mpart_settings.on_body_end = NULL;
 
 				http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);

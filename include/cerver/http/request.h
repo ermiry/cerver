@@ -76,6 +76,14 @@ typedef struct MultiPart {
 	RequestHeader next_header;
 	String *headers[MULTI_PART_HEADERS_SIZE];
 
+	DoubleList *params;
+
+	// taken from params - do not delete
+	const String *name;
+	const String *filename;
+
+	int fd;
+
 } MultiPart;
 
 CERVER_PUBLIC MultiPart *http_multi_part_new (void);
