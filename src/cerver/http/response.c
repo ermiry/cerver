@@ -330,19 +330,20 @@ static HttpResponse *http_response_json_internal (http_status status, const char
 		}
 
 		// header
-		http_response_add_header (res, RESPONSE_HEADER_CONTENT_TYPE, "application/json");
+		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_TYPE, "application/json");
 
-		char json_len[16] = { 0 };
-		snprintf (json_len, 16, "%ld", res->data_len);
-		http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
+		// char json_len[16] = { 0 };
+		// snprintf (json_len, 16, "%ld", res->data_len);
+		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
-		// res->header = c_string_create (
-		// 	"HTTP/1.1 %d %s\nServer: Cerver/%s\nContent-Type: application/json\n\n", 
-		// 	res->status, http_status_str (res->status),
-		// 	CERVER_VERSION
-		// );
+		res->header = c_string_create (
+			"HTTP/1.1 %d %s\nServer: Cerver/%s\nContent-Type: application/json\nContent-Length: %ld\n\n", 
+			res->status, http_status_str (res->status),
+			CERVER_VERSION,
+			res->data_len
+		);
 
-		// res->header_len = strlen ((const char *) res->header);
+		res->header_len = strlen ((const char *) res->header);
 
 		(void) http_response_compile (res);
 	}
