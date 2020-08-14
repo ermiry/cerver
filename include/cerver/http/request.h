@@ -57,10 +57,34 @@ typedef enum RequestHeader {
 
 } RequestHeader;
 
-#define REQUEST_PARAMS_SIZE				8
-
 #define REQUEST_HEADERS_SIZE			16
 #define REQUEST_HEADER_INVALID			16
+
+typedef enum MultiPartHeader {
+
+	MULTI_PART_HEADER_CONTENT_DISPOSITION				= 0,
+	MULTI_PART_HEADER_CONTENT_LENGTH					= 1,
+	MULTI_PART_HEADER_CONTENT_TYPE						= 2,
+
+} MultiPartHeader;
+
+#define MULTI_PART_HEADERS_SIZE				4
+#define MULTI_PART_HEADER_INVALID			4
+
+typedef struct MultiPart {
+
+	RequestHeader next_header;
+	String *headers[MULTI_PART_HEADERS_SIZE];
+
+} MultiPart;
+
+CERVER_PUBLIC MultiPart *http_multi_part_new (void);
+
+CERVER_PUBLIC void http_multi_part_delete (void *multi_part_ptr);
+
+CERVER_PUBLIC void http_multi_part_headers_print (MultiPart *mpart);
+
+#define REQUEST_PARAMS_SIZE				8
 
 typedef struct HttpRequest {
 
