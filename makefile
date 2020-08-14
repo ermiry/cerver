@@ -49,7 +49,8 @@ directories:
 	@mkdir -p $(BUILDDIR)
 
 clean:
-	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
+	@$(RM) -rf $(BUILDDIR) 
+	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf ./examples/bin
 
 # pull in dependency info for *existing* .o files
@@ -88,5 +89,6 @@ examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./example
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/api.c -o ./examples/bin/api -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/upload.c -o ./examples/bin/upload -l cerver
 
 .PHONY: all clean examples
