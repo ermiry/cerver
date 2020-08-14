@@ -135,8 +135,11 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 
 typedef struct HttpReceive {
 
+    CerverReceive *cr;
+
 	http_parser *parser;
 	http_parser_settings settings;
+    
 	HttpRequest *request;
 
 } HttpReceive;
@@ -145,7 +148,10 @@ CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
 
-CERVER_PRIVATE void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer);
+CERVER_PRIVATE void http_receive_handle (
+    HttpReceive *http_receive, 
+    ssize_t rc, char *packet_buffer
+);
 
 #pragma endregion
 

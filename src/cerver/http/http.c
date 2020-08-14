@@ -654,7 +654,7 @@ static int http_receive_handle_url (http_parser *parser, const char *at, size_t 
 
 	// printf ("url: %.*s\n", (int) length, at);
 
-	HttpRequest *request = (HttpRequest *) parser->data;
+	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 
 	request->query = http_strip_path_from_query (at, length);
 	// if (request->query) printf ("query: %s\n", request->query->str);
@@ -709,7 +709,7 @@ static int http_receive_handle_header_field (http_parser *parser, const char *at
 	snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	((HttpRequest *) parser->data)->next_header = http_receive_handle_header_field_handle (header);
+	(((HttpReceive *) parser->data)->request)->next_header = http_receive_handle_header_field_handle (header);
 
 	return 0;
 
@@ -719,7 +719,7 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
-	HttpRequest *request = (HttpRequest *) parser->data;
+	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 	if (request->next_header != REQUEST_HEADER_INVALID) {
 		request->headers[request->next_header] = str_new (NULL);
 		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
@@ -736,7 +736,7 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 	// printf ("Body: %.*s", (int) length, at);
 
-	HttpRequest *request = (HttpRequest *) parser->data;
+	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 	request->body = str_new (NULL);
 	request->body->str = c_string_create ("%.*s", (int) length, at);
 	request->body->len = length;
@@ -749,10 +749,14 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 #pragma region handler
 
+static int http_receive_handle_message_completed (http_parser *parser);
+
 HttpReceive *http_receive_new (void) {
 
 	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
 	if (http_receive) {
+		http_receive->cr = NULL;
+
 		http_receive->parser = malloc (sizeof (http_parser));
 		http_parser_init (http_receive->parser, HTTP_REQUEST);
 
@@ -763,12 +767,14 @@ HttpReceive *http_receive_new (void) {
 		http_receive->settings.on_header_value = http_receive_handle_header_value;
 		http_receive->settings.on_headers_complete = NULL;
 		http_receive->settings.on_body = http_receive_handle_body;
-		http_receive->settings.on_message_complete = NULL;
+		http_receive->settings.on_message_complete = http_receive_handle_message_completed;
 		http_receive->settings.on_chunk_header = NULL;
 		http_receive->settings.on_chunk_complete = NULL;
 
 		http_receive->request = http_request_new ();
-		http_receive->parser->data = http_receive->request;
+
+		// http_receive->parser->data = http_receive->request;
+		http_receive->parser->data = http_receive;
 	}
 
 	return http_receive;
@@ -1107,27 +1113,32 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 }
 
-void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
+static int http_receive_handle_message_completed (http_parser *parser) {
 
-	http_parser *parser = malloc (sizeof (http_parser));
-	http_parser_init (parser, HTTP_REQUEST);
+	// printf ("\non message complete!\n");
 
-	http_parser_settings settings = { 0 };
-	settings.on_message_begin = NULL;
-	settings.on_url = http_receive_handle_url;
-	settings.on_status = NULL;
-	settings.on_header_field = http_receive_handle_header_field;
-	settings.on_header_value = http_receive_handle_header_value;
-	settings.on_headers_complete = NULL;
-	settings.on_body = http_receive_handle_body;
-	settings.on_message_complete = NULL;
-	settings.on_chunk_header = NULL;
-	settings.on_chunk_complete = NULL;
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	HttpRequest *request = http_request_new ();
-	parser->data = request;
+	// printf ("Method: %s\n", http_method_str (parser->method));
+	http_receive->request->method = http_receive->parser->method;
 
-	size_t n_parsed = http_parser_execute (parser, &settings, packet_buffer, rc);
+	// http_request_headers_print (request);
+
+	// select method handler
+	http_receive_handle_select (http_receive->cr, http_receive->request);
+
+	connection_end (http_receive->cr->connection);
+
+	return 0;
+
+}
+
+void http_receive_handle (
+	HttpReceive *http_receive, 
+	ssize_t rc, char *packet_buffer
+) {
+
+	size_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
 	if (n_parsed != rc) {
 		char *status = c_string_create (
 			"http_parser_execute () failed - n parsed %ld / received %ld",
@@ -1143,29 +1154,12 @@ void http_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
 		HttpResponse *res = http_response_json_error (500, "Internal error!");
 		if (res) {
 			// http_response_print (res);
-			http_response_send (res, cr->cerver, cr->connection);
+			http_response_send (res, http_receive->cr->cerver, http_receive->cr->connection);
 			http_respponse_delete (res);
 		}
+
+		connection_end (http_receive->cr->connection);
 	}
-
-	else {
-		// printf ("\nn parsed %ld / received %ld\n", n_parsed, rc);
-
-		// printf ("Method: %s\n", http_method_str (parser->method));
-
-		request->method = parser->method;
-
-		// http_request_headers_print (request);
-
-		// select method handler
-		http_receive_handle_select (cr, request);
-	}
-
-	http_request_delete (request);
-
-	connection_end (cr->connection);
-
-	free (parser);
 
 	// printf ("http_receive_handle () - end!\n");
 
