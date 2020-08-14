@@ -47,6 +47,9 @@ HttpRequest *http_request_new (void) {
 		http_request->delete_decoded_data = NULL;
 		
 		http_request->body = NULL;
+
+		http_request->current_part = NULL;
+		http_request->multi_parts = NULL;
 		
 		http_request->body_values = NULL;
 	}
@@ -75,6 +78,8 @@ void http_request_delete (HttpRequest *http_request) {
 		}
 
 		str_delete (http_request->body);
+
+		dlist_delete (http_request->multi_parts);
 
 		dlist_delete (http_request->body_values);
 

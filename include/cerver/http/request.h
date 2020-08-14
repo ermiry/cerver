@@ -107,6 +107,9 @@ typedef struct HttpRequest {
 	void (*delete_decoded_data)(void *);
 	
 	String *body;
+
+	MultiPart *current_part;
+	DoubleList *multi_parts;
 	
 	// body key-value pairs parsed from x-www-form-urlencoded data
 	DoubleList *body_values;
