@@ -748,6 +748,7 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
 
 	// printf ("Body: %.*s", (int) length, at);
+	// printf ("%.*s", (int) length, at);
 
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 	request->body = str_new (NULL);
@@ -760,7 +761,76 @@ static int http_receive_handle_body (http_parser *parser, const char *at, size_t
 
 #pragma endregion
 
+#pragma region mpart
+
+static inline bool is_multipart (const char *content, const char *type) {
+
+	return !strncmp (content, type, strlen (type)) ? true : false;
+
+}
+
+static DoubleList *http_mpart_attributes_parse (char *str) {
+
+	DoubleList *attributes = dlist_init (key_value_pair_delete, NULL);
+
+	char *pair, *name, *value;
+	char *header_str = strdup (str);
+	char *original = header_str;
+
+	while (isspace (*header_str)) header_str++;
+
+	while ((pair = strsep (&header_str, ";")) && pair != NULL) {
+		name = strsep (&pair, "=");
+		value = strsep (&pair, "=");
+
+		dlist_insert_after (
+			attributes, 
+			dlist_end (attributes), 
+			key_value_pair_create (
+				c_string_trim (name),
+				c_string_trim (c_string_strip_quotes (value))
+			)
+		);
+	}
+
+	free (original);
+
+	return attributes;
+
+}
+
+static char *http_mpart_get_boundary (const char *content_type) {
+
+	char *retval = NULL;
+
+	char *end = (char *) content_type;
+	end += strlen ("multipart/form-data;");
+
+	DoubleList *attributes = http_mpart_attributes_parse (end);
+	if (attributes) {
+		key_value_pairs_print (attributes);
+
+		const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
+		if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
+
+		dlist_delete (attributes);
+	}
+
+	return retval;
+
+}
+
+static int http_receive_handle_mpart_body (http_parser *parser, const char *at, size_t length) {
+
+	return 0;
+
+}
+
+#pragma endregion
+
 #pragma region handler
+
+static int http_receive_handle_headers_completed (http_parser *parser);
 
 static int http_receive_handle_message_completed (http_parser *parser);
 
@@ -778,11 +848,14 @@ HttpReceive *http_receive_new (void) {
 		http_receive->settings.on_status = NULL;
 		http_receive->settings.on_header_field = http_receive_handle_header_field;
 		http_receive->settings.on_header_value = http_receive_handle_header_value;
-		http_receive->settings.on_headers_complete = NULL;
+		http_receive->settings.on_headers_complete = http_receive_handle_headers_completed;
 		http_receive->settings.on_body = http_receive_handle_body;
 		http_receive->settings.on_message_complete = http_receive_handle_message_completed;
 		http_receive->settings.on_chunk_header = NULL;
 		http_receive->settings.on_chunk_complete = NULL;
+
+		http_receive->mpart_parser = NULL;
+		// http_receive->mpart_settings
 
 		http_receive->request = http_request_new ();
 
@@ -1126,9 +1199,35 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 
 }
 
+static int http_receive_handle_headers_completed (http_parser *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	http_request_headers_print (http_receive->request);
+
+	// check if we are going to get any file(s)
+	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
+		if (is_multipart (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, "multipart/form-data")) {
+			// printf ("\nis multipart!\n");
+			char *boundary = http_mpart_get_boundary (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str);
+			if (boundary) {
+				// printf ("\n%s\n", boundary);
+				// http_receive->settings.on_body = http_receive_handle_mpart_body;
+			}
+
+			else {
+				cerver_log_error ("Failed to get multipart boundary!");
+			}
+		}
+	}
+
+	return 0;
+
+}
+
 static int http_receive_handle_message_completed (http_parser *parser) {
 
-	// printf ("\non message complete!\n");
+	printf ("\non message complete!\n");
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
