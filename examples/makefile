@@ -36,7 +36,8 @@ directories:
 	@mkdir -p $(BUILDDIR)
 
 clean:
-	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
+	@$(RM) -rf $(BUILDDIR) 
+	@$(RM) -rf $(TARGETDIR)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
