@@ -3,7 +3,5 @@
 bin
 objs
 
+uploads
 keys
-
-examples/web/node_modules
-examples/web/package-lock.json
