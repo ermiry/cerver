@@ -182,46 +182,62 @@ void estring_to_lower (estring *str) {
 
 char **estring_split (estring *str, const char delim, int *n_tokens) {
 
-    char **result = NULL;
-    size_t count = 0;
-    char *temp = str->str;
-    char *last = NULL;
-    char dlm[2] = { 0 };
-    dlm[0] = delim;
-    dlm[1] = 0;
+	char **result = NULL;
 
-    // count how many elements will be extracted
-    while (*temp) {
-        if (delim == *temp) {
-            count++;
-            last = temp;
-        }
+	if (str) {
+		if (str->len > 1) {
+			char *string = strdup (str->str);
+			if (string) {
+				size_t count = 0;
 
-        temp++;
-    }
+				char *temp = (char *) str->str;
+				char prev = '\0';
+				char *last = NULL;
 
-    count += last < (str->str + strlen (str->str) - 1);
+				while (*temp) {
+					if (delim == *temp) {
+						if (prev != delim) count++;
+						last = temp;
+					}
 
-    count++;
+					prev = *temp;
+					temp++;
+				}
 
-    result = (char **) calloc (count, sizeof (char *));
-    *n_tokens = count;
+				// don't count if the delim is the last char of the string
+				if (prev == delim) count--;
 
-    if (result) {
-        size_t idx = 0;
-        char *token = strtok (str->str, dlm);
+				// check if we have info between delims
+				if (str->str[0] == delim && count) count--;
 
-        while (token) {
-            // assert (idx < count);
-            *(result + idx++) = strdup (token);
-            token = strtok (0, dlm);
-        }
+				if (last) count += (last < temp);
 
-        // assert (idx == count - 1);
-        *(result + idx) = 0;
-    }
+				if (count) {
+					result = (char **) calloc (count, sizeof (char *));
+					if (result) {
+						if (n_tokens) *n_tokens = count;
 
-    return result;
+						size_t idx = 0;
+
+						char dlm[2];
+						dlm[0] = delim;
+						dlm[1] = '\0';
+
+						char *token = NULL;
+						char *rest = string;
+						while ((token = __strtok_r (rest, dlm, &rest))) {
+							result[idx] = strdup (token);
+							idx++;
+						}
+					}
+				}
+
+				free (string);
+			}
+		}
+	}
+
+	return result;
 
 }
 

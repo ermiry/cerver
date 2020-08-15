@@ -159,18 +159,26 @@ size_t c_string_count_tokens (const char *original, const char delim) {
 
 	if (original) {
 		char *temp = (char *) original;
-		char last = '\0';
+		char prev = '\0';
+		char *last = NULL;
 
 		while (*temp) {
 			if (delim == *temp) {
-				if (last != delim) count++;
+				if (prev != delim) count++;
+				last = temp;
 			}
 
-			last = *temp;
+			prev = *temp;
 			temp++;
 		}
 
-		if (last == delim) count--;
+		// don't count if the delim is the last char of the string
+		if (prev == delim) count--;
+
+		// check if we have info between delims
+		if (original[0] == delim && count) count--;
+
+		if (last) count += (last < temp);
 	}
 
 	return count;
@@ -185,29 +193,32 @@ char **c_string_split (const char *original, const char delim, size_t *n_tokens)
 	char **result = NULL;
 
 	if (original) {
-		char *string = strdup (original);
-		if (string) {
-			size_t count = c_string_count_tokens (original, delim);
+		if (strlen (original) > 1) {
+			char *string = strdup (original);
+			if (string) {
+				size_t count = c_string_count_tokens (original, delim);
+				if (count) {
+					result = (char **) calloc (count, sizeof (char *));
+					if (result) {
+						if (n_tokens) *n_tokens = count;
 
-			result = (char **) calloc (count, sizeof (char *));
-			if (result) {
-				if (n_tokens) *n_tokens = count;
+						size_t idx = 0;
 
-				size_t idx = 0;
+						char dlm[2];
+						dlm[0] = delim;
+						dlm[1] = '\0';
 
-				char dlm[2];
-				dlm[0] = delim;
-				dlm[1] = '\0';
-
-				char *token = NULL;
-				char *rest = string;
-				while ((token = __strtok_r (rest, dlm, &rest))) {
-					result[idx] = strdup (token);
-					idx++;
+						char *token = NULL;
+						char *rest = string;
+						while ((token = __strtok_r (rest, dlm, &rest))) {
+							result[idx] = strdup (token);
+							idx++;
+						}
+					}
 				}
-			}
 
-			free (string);
+				free (string);
+			}
 		}
 	}
 
@@ -215,7 +226,7 @@ char **c_string_split (const char *original, const char delim, size_t *n_tokens)
 
 }
 
-// reverse a c string
+// revers a c string
 // returns a newly allocated c string
 char *c_string_reverse (const char *str) {
 
