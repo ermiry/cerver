@@ -8,6 +8,7 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
+#include <cerver/files.h>
 
 #include <cerver/http/http.h>
 #include <cerver/http/route.h>
@@ -78,6 +79,9 @@ int main (int argc, char **argv) {
 
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+
+		(void) files_create_dir ("uploads", 0777);
+		http_cerver_set_uploads_path (http_cerver, "uploads");
 
 		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
