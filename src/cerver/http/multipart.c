@@ -27,6 +27,7 @@ MultiPart *http_multi_part_new (void) {
 		multi_part->filename = NULL;
 
 		multi_part->fd = -1;
+		multi_part->saved_filename = NULL;
 	}
 
 	return multi_part;
@@ -42,6 +43,8 @@ void http_multi_part_delete (void *multi_part_ptr) {
 			str_delete (multi_part->headers[i]);
 
 		dlist_delete (multi_part->params);
+
+		str_delete (multi_part->saved_filename);
 
 		free (multi_part_ptr);
 	}

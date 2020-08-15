@@ -34,6 +34,7 @@ typedef struct MultiPart {
 	const String *filename;
 
 	int fd;
+	String *saved_filename;		// how the file got saved (uploads path + filename)
 
 } MultiPart;
 

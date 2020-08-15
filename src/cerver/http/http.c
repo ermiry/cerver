@@ -898,7 +898,8 @@ static int http_receive_handle_mpart_header_value (multipart_parser *parser, con
 
 static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 
-	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	MultiPart *multi_part = (http_receive)->request->current_part;
 
 	http_multi_part_headers_print (multi_part);
 
@@ -913,12 +914,43 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 		multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
 
 		if (multi_part->filename) {
-			// FIXME: ability to set an uploads path!
-			char *path = c_string_create ("/home/ermiry/Documents/ermiry/cApps/cerver/%s", multi_part->filename->str);
-			printf ("path: %s\n", path);
-			multi_part->fd = open (multi_part->filename->str, O_CREAT | O_WRONLY, 0777);
-			printf ("opened: %d\n", multi_part->fd);
-			perror ("Error");
+			if (http_receive->http_cerver->uploads_path) {
+				char *filename = c_string_create (
+					"%s/%s", 
+					http_receive->http_cerver->uploads_path->str, multi_part->filename->str
+				);
+
+				multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
+				switch (multi_part->fd) {
+					case -1: {
+						char *status = c_string_create ("Failed to open %s filename to save multipart file!", filename);
+						if (status) {
+							cerver_log_error (status);
+							free (status);
+						}
+
+						perror ("Error");
+
+						free (filename);
+					} break;
+
+					default: {
+						char *status = c_string_create ("Opened %s to save multipart file!", filename);
+						if (status) {
+							cerver_log_debug (status);
+							free (status);
+						}
+
+						multi_part->saved_filename = str_new (NULL);
+						multi_part->saved_filename->str = filename;
+						multi_part->saved_filename->len = strlen (filename);
+					} break;
+				}
+			}
+
+			else {
+				cerver_log_error ("Can't save multipart file - no uploads path!");
+			}
 		}
 	}
 
@@ -985,6 +1017,8 @@ HttpReceive *http_receive_new (void) {
 	if (http_receive) {
 		http_receive->cr = NULL;
 
+		http_receive->http_cerver = NULL;
+
 		http_receive->parser = malloc (sizeof (http_parser));
 		http_parser_init (http_receive->parser, HTTP_REQUEST);
 
@@ -1014,6 +1048,10 @@ HttpReceive *http_receive_new (void) {
 void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
+		http_receive->cr = NULL;
+
+		http_receive->http_cerver = NULL;
+
 		free (http_receive->parser);
 
 		http_request_delete (http_receive->request);
