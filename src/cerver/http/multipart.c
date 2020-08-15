@@ -8,7 +8,67 @@
 #include <ctype.h>
 #include <stdarg.h>
 
+#include "cerver/http/http.h"
 #include "cerver/http/multipart.h"
+
+#pragma region parts
+
+MultiPart *http_multi_part_new (void) {
+
+	MultiPart *multi_part = (MultiPart *) malloc (sizeof (MultiPart));
+	if (multi_part) {
+		multi_part->next_header = 0;
+		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
+			multi_part->headers[i] = NULL;
+
+		multi_part->params = dlist_init (key_value_pair_delete, NULL);
+
+		multi_part->name = NULL;
+		multi_part->filename = NULL;
+
+		multi_part->fd = -1;
+	}
+
+	return multi_part;
+
+}
+
+void http_multi_part_delete (void *multi_part_ptr) {
+
+	if (multi_part_ptr) {
+		MultiPart *multi_part = (MultiPart *) multi_part_ptr;
+
+		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
+			str_delete (multi_part->headers[i]);
+
+		dlist_delete (multi_part->params);
+
+		free (multi_part_ptr);
+	}
+
+}
+
+void http_multi_part_headers_print (MultiPart *mpart) {
+
+	if (mpart) {
+		char *null = "NULL";
+		String *header = NULL;
+		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++) {
+			header = mpart->headers[i];
+
+			switch (i) {
+				case MULTI_PART_HEADER_CONTENT_DISPOSITION		: printf ("Content-Disposition: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_LENGTH			: printf ("Content-Length: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_TYPE				: printf ("Content-Type: %s\n", header ? header->str : null); break;
+			}
+		}
+	}
+
+}
+
+#pragma endregion
+
+#pragma region parser
 
 // static void multipart_log(const char * format, ...) {
 // 	#ifdef DEBUG_MULTIPART
@@ -280,3 +340,5 @@ size_t multipart_parser_execute(multipart_parser *p, const char *buf, size_t len
 	return len;
 
 }
+
+#pragma endregion
