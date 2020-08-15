@@ -157,6 +157,8 @@ typedef struct HttpReceive {
 
     CerverReceive *cr;
 
+    HttpCerver *http_cerver;
+
 	http_parser *parser;
 	http_parser_settings settings;
 
