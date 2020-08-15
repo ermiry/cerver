@@ -47,6 +47,9 @@ struct _HttpCerver {
     // catch all route (/*)
     void (*default_handler)(CerverReceive *cr, HttpRequest *request);
 
+    // uploads
+    String *uploads_path;              // default uploads path
+
     // auth
     jwt_alg_t jwt_alg;
 
@@ -88,6 +91,14 @@ CERVER_EXPORT void http_cerver_set_catch_all_route (HttpCerver *http_cerver,
 // generates and signs a jwt token that is ready to be sent
 // returns a newly allocated string that should be deleted after use
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values);
+
+#pragma endregion
+
+#pragma region uploads
+
+// sets the default uploads path where any multipart file request will be saved
+// this method will replace the previous value with the new one
+CERVER_EXPORT void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_path);
 
 #pragma endregion
 

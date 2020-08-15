@@ -149,6 +149,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->default_handler = NULL;
 
+		http_cerver->uploads_path = NULL;
+
 		http_cerver->jwt_alg = JWT_ALG_NONE;
 
 		http_cerver->jwt_opt_key_name = NULL;
@@ -171,6 +173,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
 
 		dlist_delete (http_cerver->routes);
+
+		str_delete (http_cerver->uploads_path);
 
 		str_delete (http_cerver->jwt_opt_key_name);
 		str_delete (http_cerver->jwt_private_key);
@@ -333,6 +337,21 @@ void http_cerver_set_catch_all_route (HttpCerver *http_cerver,
 
 	if (http_cerver && catch_all_route) {
 		http_cerver->default_handler = catch_all_route;
+	}
+
+}
+
+#pragma endregion
+
+#pragma region uploads
+
+// sets the default uploads path where any multipart file request will be saved
+// this method will replace the previous value with the new one
+void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_path) {
+
+	if (http_cerver) {
+		if (http_cerver->uploads_path) str_delete (http_cerver->uploads_path);
+		http_cerver->uploads_path = uploads_path ? str_new (uploads_path) : NULL;
 	}
 
 }
