@@ -46,7 +46,8 @@ directories:
 	@mkdir -p $(BUILDDIR)
 
 clean:
-	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
+	@$(RM) -rf $(BUILDDIR) 
+	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf ./examples/bin
 
 # pull in dependency info for *existing* .o files
