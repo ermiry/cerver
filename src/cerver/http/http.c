@@ -877,19 +877,13 @@ static int http_receive_handle_mpart_header_value (multipart_parser *parser, con
 
 }
 
-
-int str_starts_with(const char *str, const char *substr) {
-  if ((str == NULL) || (substr == NULL)) return 0;
-  return strncmp(str, substr, strlen(substr)) == 0;
-}
-
 static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
 	http_multi_part_headers_print (multi_part);
 
-	if (str_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+	if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
 		char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
 		end += strlen ("form-data;");
 

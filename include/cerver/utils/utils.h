@@ -71,6 +71,9 @@ CERVER_PUBLIC char *c_string_trim (char *str);
 // removes quotes from string
 CERVER_PUBLIC char *c_string_strip_quotes (char *str);
 
+// returns true if the string starts with the selected sub string
+CERVER_PUBLIC bool c_string_starts_with (const char *str, const char *substr);
+
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
 CERVER_PUBLIC char *c_string_create_with_ptrs (char *first, char *last);
