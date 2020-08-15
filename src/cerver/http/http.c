@@ -999,7 +999,7 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		http_request_delete (http_receive->request);
 
-		if (http_receive->mpart_parser) free (http_receive->mpart_parser);
+		if (http_receive->mpart_parser) multipart_parser_free (http_receive->mpart_parser);
 
 		free (http_receive);
 	}
