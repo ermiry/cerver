@@ -139,6 +139,48 @@ void http_request_headers_print (HttpRequest *http_request) {
 
 }
 
+// searches the request's multi parts values for a file with matching key
+// returns a constant Stirng that should not be deleted if found, NULL if not match
+const String *http_request_multi_parts_get_file (HttpRequest *http_request, const char *key) {
+
+	if (http_request && key) {
+		MultiPart *mpart = NULL;
+		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+			mpart = (MultiPart *) le->data;
+
+			if (mpart->filename) {
+				if (!strcmp (mpart->filename->str, key)) {
+					return mpart->filename;
+				}
+			}
+		}
+	}
+
+	return NULL;
+
+}
+
+// searches the request's multi parts values for a value with matching key
+// returns a constant Stirng that should not be deleted if found, NULL if not match
+const String *http_request_multi_parts_get_value (HttpRequest *http_request, const char *key) {
+
+	if (http_request && key) {
+		MultiPart *mpart = NULL;
+		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+			mpart = (MultiPart *) le->data;
+
+			if (mpart->value) {
+				if (!strcmp (mpart->value->str, key)) {
+					return mpart->value;
+				}
+			}
+		}
+	}
+
+	return NULL;
+
+}
+
 void http_request_multi_parts_print (HttpRequest *http_request) {
 
 	if (http_request) {
