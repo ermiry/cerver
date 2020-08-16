@@ -88,6 +88,8 @@ typedef struct HttpRequest {
 
 	MultiPart *current_part;
 	DoubleList *multi_parts;
+	u8 n_files;
+	u8 n_values;
 	
 	// body key-value pairs parsed from x-www-form-urlencoded data
 	DoubleList *body_values;
@@ -101,5 +103,7 @@ CERVER_PUBLIC void http_request_delete (HttpRequest *http_request);
 CERVER_PUBLIC HttpRequest *http_request_create (void);
 
 CERVER_PUBLIC void http_request_headers_print (HttpRequest *http_request);
+
+CERVER_PUBLIC void http_request_multi_parts_print (HttpRequest *http_request);
 
 #endif

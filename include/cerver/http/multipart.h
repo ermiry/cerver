@@ -36,6 +36,8 @@ typedef struct MultiPart {
 	int fd;
 	String *saved_filename;		// how the file got saved (uploads path + filename)
 
+	String *value;
+
 } MultiPart;
 
 CERVER_PUBLIC MultiPart *http_multi_part_new (void);
@@ -43,6 +45,8 @@ CERVER_PUBLIC MultiPart *http_multi_part_new (void);
 CERVER_PUBLIC void http_multi_part_delete (void *multi_part_ptr);
 
 CERVER_PUBLIC void http_multi_part_headers_print (MultiPart *mpart);
+
+CERVER_PUBLIC void http_multi_part_print (MultiPart *mpart);
 
 #pragma endregion
 

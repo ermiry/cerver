@@ -51,6 +51,8 @@ HttpRequest *http_request_new (void) {
 
 		http_request->current_part = NULL;
 		http_request->multi_parts = NULL;
+		http_request->n_files = 0;
+		http_request->n_values = 0;
 		
 		http_request->body_values = NULL;
 	}
@@ -133,6 +135,22 @@ void http_request_headers_print (HttpRequest *http_request) {
 				case REQUEST_HEADER_USER_AGENT						: printf ("User-Agent: %s\n", header ? header->str : null); break;
 			}
 		}
+	}
+
+}
+
+void http_request_multi_parts_print (HttpRequest *http_request) {
+
+	if (http_request) {
+		printf ("\nHTTP request multi part values: \n");
+		printf ("n files: %d\n", http_request->n_files);
+		printf ("n values: %d\n", http_request->n_values);
+
+		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+			http_multi_part_print ((MultiPart *) le->data);
+		}
+
+		printf ("\n");
 	}
 
 }

@@ -28,6 +28,8 @@ MultiPart *http_multi_part_new (void) {
 
 		multi_part->fd = -1;
 		multi_part->saved_filename = NULL;
+
+		multi_part->value = NULL;
 	}
 
 	return multi_part;
@@ -45,6 +47,8 @@ void http_multi_part_delete (void *multi_part_ptr) {
 		dlist_delete (multi_part->params);
 
 		str_delete (multi_part->saved_filename);
+
+		str_delete (multi_part->value);
 
 		free (multi_part_ptr);
 	}
@@ -64,6 +68,20 @@ void http_multi_part_headers_print (MultiPart *mpart) {
 				case MULTI_PART_HEADER_CONTENT_LENGTH			: printf ("Content-Length: %s\n", header ? header->str : null); break;
 				case MULTI_PART_HEADER_CONTENT_TYPE				: printf ("Content-Type: %s\n", header ? header->str : null); break;
 			}
+		}
+	}
+
+}
+
+void http_multi_part_print (MultiPart *mpart) {
+
+	if (mpart) {
+		if (mpart->filename) {
+			printf ("FILE: %s - %s -> %s\n", mpart->name->str, mpart->filename->str, mpart->saved_filename->str);
+		}
+
+		else {
+			printf ("VALUE: %s - %s\n", mpart->name->str, mpart->value->str);
 		}
 	}
 
