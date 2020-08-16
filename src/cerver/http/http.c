@@ -971,13 +971,18 @@ static int http_receive_handle_mpart_data (multipart_parser *parser, const char 
 	// printf ("fd %d - filename %s - bytes %ld\n", multi_part->fd, multi_part->filename->str, length);
 
 	if (multi_part->fd != -1) {
-		switch (write (multi_part->fd, at, length)) {
+		multi_part->n_reads += 1;
+
+		ssize_t wrote = write (multi_part->fd, at, length);
+		switch (wrote) {
 			case -1: {
 				cerver_log_error ("http_receive_handle_mpart_data () - Error writting to file!");
 				perror ("Error");
 			} break;
 
-			default: break;
+			default: 
+				multi_part->total_wrote += wrote;
+				break;
 		}
 	}
 

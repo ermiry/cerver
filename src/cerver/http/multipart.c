@@ -28,6 +28,8 @@ MultiPart *http_multi_part_new (void) {
 
 		multi_part->fd = -1;
 		multi_part->saved_filename = NULL;
+		multi_part->n_reads = 0;
+		multi_part->total_wrote = 0;
 
 		multi_part->value = NULL;
 	}

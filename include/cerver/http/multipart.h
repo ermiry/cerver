@@ -35,6 +35,8 @@ typedef struct MultiPart {
 
 	int fd;
 	String *saved_filename;		// how the file got saved (uploads path + filename)
+	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
+	u32 total_wrote;			// the total ammount of bytes wrote to the file
 
 	String *value;
 
