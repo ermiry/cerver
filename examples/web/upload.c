@@ -41,9 +41,24 @@ void end (int dummy) {
 
 #pragma region routes
 
+// GET /test
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Test route works!");
+	if (res) {
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+}
+
+// POST /upload
+void upload_handler (CerverReceive *cr, HttpRequest *request) {
+
+	http_request_multi_parts_print (request);
+
+	HttpResponse *res = http_response_json_msg (200, "Upload route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -86,6 +101,10 @@ int main (int argc, char **argv) {
 		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
+
+		// POST /upload
+		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
+		http_cerver_route_register (http_cerver, upload_route);
 
 		if (cerver_start (web_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
