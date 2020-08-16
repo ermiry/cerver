@@ -914,6 +914,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 		multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
 
 		if (multi_part->filename) {
+			http_receive->request->n_files += 1;
+
 			if (http_receive->http_cerver->uploads_path) {
 				char *filename = c_string_create (
 					"%s/%s", 
@@ -952,6 +954,10 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				cerver_log_error ("Can't save multipart file - no uploads path!");
 			}
 		}
+
+		else {
+			http_receive->request->n_values += 1;
+		}
 	}
 
 	return 0;
@@ -965,18 +971,19 @@ static int http_receive_handle_mpart_data (multipart_parser *parser, const char 
 	// printf ("fd %d - filename %s - bytes %ld\n", multi_part->fd, multi_part->filename->str, length);
 
 	if (multi_part->fd != -1) {
-		// FIXME: handle errors!
-		ssize_t ret = write (multi_part->fd, at, length);
-		switch (ret) {
+		switch (write (multi_part->fd, at, length)) {
 			case -1: {
-				// cerver_log_error ("Error writting to file!");
-				// perror ("Error");
+				cerver_log_error ("http_receive_handle_mpart_data () - Error writting to file!");
+				perror ("Error");
 			} break;
 
-			default: 
-				printf ("wrote %ld!\n", ret);
-				break;
+			default: break;
 		}
+	}
+
+	else {
+		// printf ("|%.*s|\n", (int) length, at);
+		multi_part->value = str_create ("%.*s", (int) length, at);
 	}
 
 	return 0;

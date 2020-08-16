@@ -37,6 +37,8 @@ CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
 
 #pragma endregion
 
+#pragma region main
+
 struct _HttpCerver {
 
     struct _Cerver *cerver;
@@ -66,8 +68,6 @@ struct _HttpCerver {
 };
 
 typedef struct _HttpCerver HttpCerver;
-
-#pragma region main
 
 CERVER_PRIVATE HttpCerver *http_cerver_new (void);
 
