@@ -7,6 +7,9 @@
 #include <sys/prctl.h>
 
 #include "cerver/types/types.h"
+
+#include "cerver/threads/thread.h"
+
 #include "cerver/utils/log.h"
 
 // creates a custom detachable thread (will go away on its own upon completion)
