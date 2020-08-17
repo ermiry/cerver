@@ -2059,7 +2059,6 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
                             connection->full_packet = true;
                             client_packet_handler (packet);
                         }
-                            
                     }
 
                     else {
@@ -2083,11 +2082,6 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
                 if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
 
                 else {
-                    // handle part of a new header
-                    // #ifdef CLIENT_DEBUG
-                    // cerver_log_debug ("Handle part of a new header...");
-                    // #endif
-
                     // copy the piece of possible header that was cut of between recv ()
                     sock_receive->header = malloc (sizeof (PacketHeader));
                     memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
@@ -2104,6 +2098,8 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
                     buffer_pos += remaining_buffer_size;
                 }
             }
+
+            header = NULL;
         }
     }
 
