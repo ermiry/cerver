@@ -5,7 +5,7 @@
 #include <time.h>
 #include <signal.h>
 
-#include <cerver/types/String.h>
+#include <cerver/types/string.h>
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
