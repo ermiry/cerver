@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 
 #include "cerver/http/response.h"
 #include "cerver/http/json.h"

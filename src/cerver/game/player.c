@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 
 #include "cerver/client.h"
 #include "cerver/packets.h"

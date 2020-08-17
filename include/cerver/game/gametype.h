@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 #include "cerver/collections/dlist.h"
 
 struct _GameType {

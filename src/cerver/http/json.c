@@ -3,7 +3,7 @@
 
 #include <bson/bson.h>
 
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 #include "cerver/collections/dlist.h"
 
 #include "cerver/http/json.h"

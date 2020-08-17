@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 #include "cerver/game/gametype.h"
 #include "cerver/collections/dlist.h"
 

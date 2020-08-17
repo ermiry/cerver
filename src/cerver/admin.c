@@ -6,7 +6,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/String.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
