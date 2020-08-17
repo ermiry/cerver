@@ -97,7 +97,7 @@ static void on_cever_started (void *event_data_ptr) {
 			free (status);
 		}
 
-		printf ("Test Message: %s\n\n", ((estring *) event_data->action_args)->str);
+		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
 	}
 
 }
@@ -194,11 +194,11 @@ int main (void) {
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
-		estring *test = estring_new ("This is a test!");
+		String *test = str_new ("This is a test!");
 		cerver_event_register (
 			my_cerver, 
 			CERVER_EVENT_STARTED,
-			on_cever_started, test, estring_delete,
+			on_cever_started, test, str_delete,
 			false, false
 		);
 

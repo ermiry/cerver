@@ -8,7 +8,7 @@
 #include <bson/bson.h>
 
 #include <cerver/types/types.h>
-#include <cerver/types/estring.h>
+#include <cerver/types/String.h>
 #include <cerver/collections/dlist.h>
 
 #include <cerver/version.h>
@@ -53,7 +53,7 @@ static void app_main_handler (ReceiveHandle *receive, DoubleList *pairs) {
 
 		// handle the action
 		if (!strcmp (action, "test")) {
-			estring *test = estring_new ("Web cerver works!");
+			String *test = str_new ("Web cerver works!");
 			JsonKeyValue *jkvp = json_key_value_create ("msg", test, VALUE_TYPE_STRING);
 			size_t json_len;
 			char *json = json_create_with_one_pair (jkvp, &json_len);

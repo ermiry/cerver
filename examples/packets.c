@@ -5,7 +5,7 @@
 #include <time.h>
 #include <signal.h>
 
-#include <cerver/types/estring.h>
+#include <cerver/types/String.h>
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
@@ -76,10 +76,10 @@ static AppData *app_data_create (const char *message) {
 static void app_data_print (AppData *app_data) {
 
 	if (app_data) {
-		estring *date = timer_time_to_string (gmtime (&app_data->timestamp));
+		String *date = timer_time_to_string (gmtime (&app_data->timestamp));
 		if (date) {
 			printf ("Timestamp: %s\n", date->str);
-			estring_delete (date);
+			str_delete (date);
 		}
 
 		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
