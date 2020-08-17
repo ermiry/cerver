@@ -6,7 +6,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -112,7 +112,7 @@ void admin_delete (void *admin_ptr) {
 	if (admin_ptr) {
 		Admin *admin = (Admin *) admin_ptr;
 
-		estring_delete (admin->id);
+		str_delete (admin->id);
 
 		client_delete (admin->client);
 
@@ -131,7 +131,7 @@ Admin *admin_create (void) {
     if (admin) {
         time_t rawtime = 0;
         time (&rawtime);
-        admin->id = estring_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
+        admin->id = str_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
     }
 
     return admin;

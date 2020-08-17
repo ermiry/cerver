@@ -4,13 +4,13 @@
 #include <stdlib.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/collections/dlist.h"
 
 typedef struct JsonKeyValue {
 
-    estring *key;
+    String *key;
     void *value;
     ValueType valueType;
 

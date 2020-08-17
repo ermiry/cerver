@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/collections/dlist.h"
 #include "cerver/collections/htab.h"
@@ -71,7 +71,7 @@ struct _Lobby {
 
 	struct _Cerver *cerver;				// the cerver the lobby belongs to
 
-	estring *id;							// lobby unique id - generated using the creation timestamp
+	String *id;							// lobby unique id - generated using the creation timestamp
 	time_t creation_time_stamp;
 
 	Htab *sock_fd_player_map;           // maps a socket fd to a player

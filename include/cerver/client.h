@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
@@ -55,12 +55,12 @@ struct _Client {
     time_t connected_timestamp;
     
     // 16/06/2020 - abiility to add a name to a client
-    estring *name;
+    String *name;
 
     DoubleList *connections;
 
     // multiple connections can be associated with the same client using the same session id
-    estring *session_id;
+    String *session_id;
 
     time_t last_activity;   // the last time the client sent / receive data
 

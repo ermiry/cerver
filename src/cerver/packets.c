@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/network.h"
 #include "cerver/packets.h"

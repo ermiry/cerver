@@ -5,7 +5,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/config.h"
 
@@ -84,7 +84,7 @@ typedef struct CerverErrorEventData {
 
 	void *action_args;                  // the action arguments
 
-	estring *error_message;
+	String *error_message;
 
 } CerverErrorEventData;
 
@@ -98,7 +98,7 @@ typedef struct CerverError {
 
 	CerverErrorType type;
     time_t timestamp;
-    estring *msg;
+    String *msg;
 
 } CerverError;
 

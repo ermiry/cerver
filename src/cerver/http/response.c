@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/http/response.h"
 #include "cerver/http/json.h"
@@ -104,7 +104,7 @@ HttpResponse *http_response_json_error (const char *error_msg) {
     HttpResponse *res = NULL;
 
     if (error_msg) {
-        estring *error = estring_new (error_msg);
+        String *error = str_new (error_msg);
         JsonKeyValue *jkvp = json_key_value_create ("error", error, VALUE_TYPE_STRING);
         size_t json_len;
         char *json = json_create_with_one_pair (jkvp, &json_len);

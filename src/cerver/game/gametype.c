@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 #include "cerver/game/gametype.h"
 #include "cerver/collections/dlist.h"
 
@@ -34,7 +34,7 @@ GameType *game_type_create (const char *name, void *data, void (*delete_data)(vo
     if (name) {
         type = game_type_new ();
         if (type) {
-            type->name = estring_new (name);
+            type->name = str_new (name);
             type->data = data;
             type->delete_data = delete_data;
             type->start = start;
@@ -54,7 +54,7 @@ void game_type_delete (void *ptr) {
 
     if (ptr) {
         GameType *type = (GameType *) ptr;
-        estring_delete (type->name);
+        str_delete (type->name);
         if (type->delete_data) type->delete_data (type->data);
         else free (type->data);
 

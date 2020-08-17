@@ -3,7 +3,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/socket.h"
 #include "cerver/network.h"
@@ -53,7 +53,7 @@ static AuthData *auth_data_create (const char *token, void *data, size_t auth_da
 
     AuthData *auth_data = auth_data_new ();
     if (auth_data) {
-        auth_data->token = token ? estring_new (token) : NULL;
+        auth_data->token = token ? str_new (token) : NULL;
         if (data) {
             auth_data->auth_data = malloc (auth_data_size);
             if (auth_data->auth_data) {
@@ -75,7 +75,7 @@ static AuthData *auth_data_create (const char *token, void *data, size_t auth_da
 static void auth_data_delete (AuthData *auth_data) {
 
     if (auth_data) {
-        estring_delete (auth_data->token);
+        str_delete (auth_data->token);
         if (auth_data->auth_data) free (auth_data->auth_data);
         free (auth_data);
     }
@@ -115,7 +115,7 @@ static AuthMethod *auth_method_create (Packet *packet, AuthData *auth_data) {
 static void auth_method_delete (AuthMethod *auth_method) {
 
     if (auth_method) {
-        estring_delete (auth_method->error_message);
+        str_delete (auth_method->error_message);
 
         free (auth_method);
     }

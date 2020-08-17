@@ -13,7 +13,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 
 #include "cerver/collections/dlist.h"
 #include "cerver/collections/avl.h"
@@ -40,34 +40,34 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-estring *cerver_type_to_string (CerverType type) {
+String *cerver_type_to_string (CerverType type) {
 
-    estring *retval = NULL;
+    String *retval = NULL;
 
     switch (type) {
-        case CERVER_TYPE_CUSTOM: retval = estring_new ("Cerver type: CUSTOM"); break;
+        case CERVER_TYPE_CUSTOM: retval = str_new ("Cerver type: CUSTOM"); break;
 
-        case CERVER_TYPE_GAME: retval = estring_new ("Cerver type: GAME"); break;
-        case CERVER_TYPE_WEB: retval = estring_new ("Cerver type: WEB"); break;
-        case CERVER_TYPE_FILE: retval = estring_new ("Cerver type: FILE"); break;
+        case CERVER_TYPE_GAME: retval = str_new ("Cerver type: GAME"); break;
+        case CERVER_TYPE_WEB: retval = str_new ("Cerver type: WEB"); break;
+        case CERVER_TYPE_FILE: retval = str_new ("Cerver type: FILE"); break;
 
-        default: retval = estring_new ("Cerver type: UNKNOWN"); break;
+        default: retval = str_new ("Cerver type: UNKNOWN"); break;
     }
 
     return retval;
 
 }
 
-estring *cerver_handler_type_to_string (CerverHandlerType type) {
+String *cerver_handler_type_to_string (CerverHandlerType type) {
 
-    estring *retval = NULL;
+    String *retval = NULL;
 
     switch (type) {
-        case CERVER_HANDLER_TYPE_POLL: retval = estring_new ("Cerver handler type: POLL"); break;
+        case CERVER_HANDLER_TYPE_POLL: retval = str_new ("Cerver handler type: POLL"); break;
 
-        case CERVER_HANDLER_TYPE_THREADS: retval = estring_new ("Cerver handler type: THREADS"); break;
+        case CERVER_HANDLER_TYPE_THREADS: retval = str_new ("Cerver handler type: THREADS"); break;
 
-        default: retval = estring_new ("Cerver handler type: NONE"); break;
+        default: retval = str_new ("Cerver handler type: NONE"); break;
     }
 
     return retval;
@@ -93,8 +93,8 @@ static CerverInfo *cerver_info_new (void) {
 static void cerver_info_delete (CerverInfo *cerver_info) {
 
     if (cerver_info) {
-        estring_delete (cerver_info->name);
-        estring_delete (cerver_info->welcome_msg);
+        str_delete (cerver_info->name);
+        str_delete (cerver_info->welcome_msg);
         packet_delete (cerver_info->cerver_info_packet);
 
         free (cerver_info);
@@ -110,8 +110,8 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
     if (cerver) {
         if (cerver->info) {
-            estring_delete (cerver->info->welcome_msg);
-            cerver->info->welcome_msg = msg ? estring_new (msg) : NULL;
+            str_delete (cerver->info->welcome_msg);
+            cerver->info->welcome_msg = msg ? str_new (msg) : NULL;
             retval = 0;
         }
     }
@@ -1104,7 +1104,7 @@ Cerver *cerver_create (const CerverType type, const char *name,
             cerver->errors = dlist_init (cerver_error_event_delete, NULL);
 
             cerver->info = cerver_info_new ();
-            cerver->info->name = estring_new (name);
+            cerver->info->name = str_new (name);
 
             cerver->stats = cerver_stats_new ();
         }
@@ -1361,13 +1361,13 @@ static u8 cerver_init (Cerver *cerver) {
             free (status);
         }
 
-        estring *cerver_type = cerver_type_to_string (cerver->type);
+        String *cerver_type = cerver_type_to_string (cerver->type);
         printf ("%s\n", cerver_type->str);
-        estring_delete (cerver_type);
+        str_delete (cerver_type);
 
-        estring *cerver_handler_type = cerver_handler_type_to_string (cerver->handler_type);
+        String *cerver_handler_type = cerver_handler_type_to_string (cerver->handler_type);
         printf ("%s\n", cerver_handler_type->str);
-        estring_delete (cerver_handler_type);
+        str_delete (cerver_handler_type);
 
         if (!cerver_network_init (cerver)) {
             if (!cerver_init_data_structures (cerver)) {
@@ -2626,9 +2626,9 @@ void cerver_report_delete (void *ptr) {
     if (ptr) {
         CerverReport *cerver_report = (CerverReport *) ptr;
 
-        estring_delete (cerver_report->name);
+        str_delete (cerver_report->name);
 
-        estring_delete (cerver_report->welcome);
+        str_delete (cerver_report->welcome);
 
         free (cerver_report);
     }
@@ -2839,8 +2839,8 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
         if (cerver_report) {
             cerver_report->type = scerver->type;
 
-            cerver_report->name = estring_new (scerver->name);
-            if (strlen (scerver->welcome)) cerver_report->welcome = estring_new (scerver->welcome);
+            cerver_report->name = str_new (scerver->name);
+            if (strlen (scerver->welcome)) cerver_report->welcome = str_new (scerver->welcome);
 
             cerver_report->use_ipv6 = scerver->use_ipv6;
             cerver_report->protocol = scerver->protocol;

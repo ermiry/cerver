@@ -3,7 +3,7 @@
 
 #include <bson/bson.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/String.h"
 #include "cerver/collections/dlist.h"
 
 #include "cerver/http/json.h"
@@ -28,7 +28,7 @@ JsonKeyValue *json_key_value_create (const char *key, const void *value, ValueTy
     if (key && value) {
         jkvp = (JsonKeyValue *) malloc (sizeof (JsonKeyValue));
         if (jkvp) {
-            jkvp->key = estring_new (key);
+            jkvp->key = str_new (key);
             jkvp->value = (void *) value;
             jkvp->valueType = value_type;
         }
@@ -43,8 +43,8 @@ void json_key_value_delete (void *ptr) {
     if (ptr) {
         JsonKeyValue *jkvp = (JsonKeyValue *) ptr;
 
-        if (jkvp->key) estring_delete (jkvp->key);
-        if (jkvp->valueType == VALUE_TYPE_STRING) estring_delete ((estring *) jkvp->key);
+        if (jkvp->key) str_delete (jkvp->key);
+        if (jkvp->valueType == VALUE_TYPE_STRING) str_delete ((String *) jkvp->key);
 
         free (jkvp);
     }
@@ -58,7 +58,7 @@ static void json_append_value (bson_t *doc, const JsonKeyValue *jkvp) {
             case VALUE_TYPE_INT: bson_append_int32 (doc, jkvp->key->str, jkvp->key->len, *(int32_t *) jkvp->value); break;
             case VALUE_TYPE_DOUBLE: bson_append_double (doc, jkvp->key->str, jkvp->key->len, *(double *) jkvp->value); break;
             case VALUE_TYPE_STRING: {
-                estring *str = (estring *) jkvp->value;
+                String *str = (String *) jkvp->value;
                 bson_append_utf8 (doc, jkvp->key->str, jkvp->key->len, str->str, str->len);
             } 
             break;
