@@ -4,7 +4,7 @@
 #include <ctype.h>
 #include <stdarg.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 static inline void char_copy (char *to, char *from) {
 
@@ -13,9 +13,9 @@ static inline void char_copy (char *to, char *from) {
 
 }
 
-estring *estring_new (const char *str) {
+String *str_new (const char *str) {
 
-    estring *s = (estring *) malloc (sizeof (estring));
+    String *s = (String *) malloc (sizeof (String));
     if (s) {
         if (str) {
             s->len = strlen (str);
@@ -33,10 +33,10 @@ estring *estring_new (const char *str) {
 
 }
 
-void estring_delete (void *str_ptr) {
+void str_delete (void *str_ptr) {
 
     if (str_ptr) {
-        estring *str = (estring *) str_ptr;
+        String *str = (String *) str_ptr;
 
         if (str->str) free (str->str);
         free (str);
@@ -44,9 +44,9 @@ void estring_delete (void *str_ptr) {
 
 }
 
-estring *estring_create (const char *format, ...) {
+String *str_create (const char *format, ...) {
 
-    estring *s = NULL;
+    String *s = NULL;
 
     if (format) {
         char *fmt = strdup (format);
@@ -63,7 +63,7 @@ estring *estring_create (const char *format, ...) {
         vsnprintf (str, len + 1, fmt, argp);
         va_end (argp);
 
-        s = estring_new (str);
+        s = str_new (str);
 
         free (str);
         free (fmt);
@@ -73,7 +73,7 @@ estring *estring_create (const char *format, ...) {
 
 }
 
-int estring_compare (const estring *s1, const estring *s2) { 
+int str_compare (const String *s1, const String *s2) { 
 
     if (s1 && s2) return strcmp (s1->str, s2->str); 
     else if (s1 && !s2) return -1;
@@ -82,16 +82,16 @@ int estring_compare (const estring *s1, const estring *s2) {
     
 }
 
-int estring_comparator (const void *a, const void *b) {
+int str_comparator (const void *a, const void *b) {
 
-    if (a && b) return strcmp (((estring *) a)->str, ((estring *) b)->str);
+    if (a && b) return strcmp (((String *) a)->str, ((String *) b)->str);
     else if (a && !b) return -1;
     else if (!a && b) return 1;
     return 0;
 
 }
 
-void estring_copy (estring *to, estring *from) {
+void str_copy (String *to, String *from) {
 
     if (to && from) {
         while (*from->str)
@@ -103,7 +103,7 @@ void estring_copy (estring *to, estring *from) {
 
 }
 
-void estring_replace (estring *old, const char *str) {
+void str_replace (String *old, const char *str) {
 
     if (old && str) {
         if (old->str) free (old->str);
@@ -114,12 +114,12 @@ void estring_replace (estring *old, const char *str) {
 
 }
 
-estring *estring_concat (estring *s1, estring *s2) {
+String *str_concat (String *s1, String *s2) {
 
-    estring *des = NULL;
+    String *des = NULL;
 
     if (s1 && s2) {
-        des = estring_new (NULL);
+        des = str_new (NULL);
         des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
 
         while (*s1->str) *des->str++ = *s1->str++;
@@ -136,7 +136,7 @@ estring *estring_concat (estring *s1, estring *s2) {
 
 // appends a char to the end of the string
 // reallocates the same string
-void estring_append_char (estring *s, const char c) {
+void str_append_char (String *s, const char c) {
 
     if (s) {
         unsigned int new_len = s->len + 1;   
@@ -153,7 +153,7 @@ void estring_append_char (estring *s, const char c) {
 
 // appends a c string at the end of the string
 // reallocates the same string
-void estring_append_c_string (estring *s, const char *c_str) {
+void str_append_c_string (String *s, const char *c_str) {
 
     if (s && c_str) {
         unsigned int new_len = s->len + strlen (c_str);
@@ -168,19 +168,19 @@ void estring_append_c_string (estring *s, const char *c_str) {
 
 }
 
-void estring_to_upper (estring *str) {
+void str_to_upper (String *str) {
 
     if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = toupper (str->str[i]);
 
 }
 
-void estring_to_lower (estring *str) {
+void str_to_lower (String *str) {
 
     if (str) for (unsigned int i = 0; i < str->len; i++) str->str[i] = tolower (str->str[i]);
 
 }
 
-char **estring_split (estring *str, const char delim, int *n_tokens) {
+char **str_split (String *str, const char delim, int *n_tokens) {
 
 	char **result = NULL;
 
@@ -241,7 +241,7 @@ char **estring_split (estring *str, const char delim, int *n_tokens) {
 
 }
 
-void estring_remove_char (estring *str, char garbage) {
+void str_remove_char (String *str, char garbage) {
 
     char *src, *dst;
     for (src = dst = str->str; *src != '\0'; src++) {
@@ -253,7 +253,7 @@ void estring_remove_char (estring *str, char garbage) {
 }
 
 // removes the last char from a string
-void estring_remove_last_char (estring *s) {
+void str_remove_last_char (String *s) {
 
     if (s) {
         if (s->len > 0) {
@@ -269,7 +269,7 @@ void estring_remove_last_char (estring *s) {
 
 }
 
-int estring_contains (estring *str, char *to_find) {
+int str_contains (String *str, char *to_find) {
 
     unsigned int slen = str->len;
     unsigned int tFlen = strlen (to_find);
@@ -298,7 +298,7 @@ int estring_contains (estring *str, char *to_find) {
 /*** serialization ***/
 
 // returns a ptr to a serialized str
-void *estring_selialize (estring *str, SStringSize size) {
+void *str_selialize (String *str, SStringSize size) {
 
     void *retval = NULL;
 
