@@ -4,9 +4,9 @@ SLIB		:= libcerver.so
 PTHREAD 	:= -l pthread
 MATH		:= -lm
 
-# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
+OPENSSL		:= -l ssl -l crypto
 
-OPENSSL		:= -lssl -lcrypto
+# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D HANDLER_DEBUG -D PACKETS_DEBUG -D AUTH_DEBUG -D ADMIN_DEBUG
