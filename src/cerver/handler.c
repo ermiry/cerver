@@ -1312,6 +1312,8 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
                             buffer_pos += remaining_buffer_size;
                         }
                     }
+
+                    header = NULL;
                 }
             }
         }
