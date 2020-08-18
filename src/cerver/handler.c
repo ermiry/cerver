@@ -1154,7 +1154,7 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
         // i32 sock_fd = receive_handle->sock_fd;
         char *buffer = receive_handle->buffer;
         size_t buffer_size = receive_handle->buffer_size;
-        i32 sock_fd = receive_handle->socket->sock_fd;
+        // i32 sock_fd = receive_handle->socket->sock_fd;
         // char *buffer = receive_handle->socket->packet_buffer;
         // size_t buffer_size = receive_handle->socket->packet_buffer_size;
         Lobby *lobby = receive_handle->lobby;
@@ -1321,7 +1321,7 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
         else {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Sock fd: %d does not have an associated sock_receive in cerver %s.",
-                sock_fd, cerver->info->name->str);
+                receive_handle->socket->sock_fd, cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
                 free (status);

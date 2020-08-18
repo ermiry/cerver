@@ -201,8 +201,8 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
                 dlist_get_element (game_cerver->current_lobbys, lobby, NULL));
 
         if (lobby_data) {
-            Lobby *l = (Lobby *) lobby_data;
             #ifdef CERVER_DEBUG
+            Lobby *l = (Lobby *) lobby_data;
             char *status = c_string_create ("Unregistered lobby %s from cerver %s", 
                 l->id->str, game_cerver->cerver->info->name->str);
             if (status) {

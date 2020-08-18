@@ -712,9 +712,8 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
         if (client_data) {
             retval = (Client *) client_data;
 
-            char *s = NULL;
             #ifdef CLIENT_DEBUG
-            s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
+            char *s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
                 free (s);
@@ -723,11 +722,11 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
             cerver->stats->current_n_connected_clients--;
             #ifdef CERVER_STATS
-            s = c_string_create ("Connected clients to cerver %s: %i.", 
+            char *status = c_string_create ("Connected clients to cerver %s: %i.", 
                 cerver->info->name->str, cerver->stats->current_n_connected_clients);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                free (s);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
             }
             #endif
         }
@@ -752,9 +751,8 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
 
     avl_insert_node (cerver->clients, client);
 
-    char *s = NULL;
     #ifdef CLIENT_DEBUG
-    s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
+    char *s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
     if (s) {
         cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
         free (s);
@@ -763,12 +761,13 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
     
     cerver->stats->total_n_clients++;
     cerver->stats->current_n_connected_clients++;
+
     #ifdef CERVER_STATS
-    s = c_string_create ("Connected clients to cerver %s: %i.", 
+    char *status = c_string_create ("Connected clients to cerver %s: %i.", 
         cerver->info->name->str, cerver->stats->current_n_connected_clients);
-    if (s) {
-        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-        free (s);
+    if (status) {
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+        free (status);
     }
     #endif
 

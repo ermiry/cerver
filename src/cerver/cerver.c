@@ -899,10 +899,8 @@ static u8 cerver_multiple_app_handlers_destroy (Cerver *cerver) {
 
     if (cerver) {
         if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
-            char *status = NULL;
-
             #ifdef CERVER_DEBUG
-            status = c_string_create ("Stopping multiple app handlers in cerver %s...",
+            char *status = c_string_create ("Stopping multiple app handlers in cerver %s...",
                 cerver->info->name->str);
             if (status) {
                 cerver_log_debug (status);
@@ -2518,10 +2516,8 @@ static void cerver_clean (Cerver *cerver) {
         }
         
         if (cerver->thpool) {
-            char *status = NULL;
-
             #ifdef CERVER_DEBUG
-            status = c_string_create ("Cerver %s active thpool threads: %i", 
+            char *status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
                 thpool_get_num_threads_working (cerver->thpool)
             );
