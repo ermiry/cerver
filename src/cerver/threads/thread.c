@@ -12,6 +12,8 @@
 
 #include "cerver/utils/log.h"
 
+#pragma region threads
+
 // creates a custom detachable thread (will go away on its own upon completion)
 // returns 0 on success, 1 on error
 u8 thread_create_detachable (pthread_t *thread, void *(*work) (void *), void *args) {
@@ -45,3 +47,57 @@ int thread_set_name (const char *name) {
     return prctl (PR_SET_NAME, name);
 
 }
+
+#pragma endregion
+
+#pragma region mutex
+
+// allocates & initializes a new mutex that should be deleted after use
+pthread_mutex_t *pthread_mutex_new (void) {
+
+    pthread_mutex_t *mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+    if (mutex) {
+        pthread_mutex_init (mutex, NULL);
+    }
+
+    return mutex;
+
+}
+
+// destroys & frees an allocated mutex
+void pthread_mutex_delete (pthread_mutex_t *mutex) {
+
+    if (mutex) {
+        pthread_mutex_destroy (mutex);
+        free (mutex);
+    }
+
+}
+
+#pragma endregion
+
+#pragma region cond
+
+// allocates & initializes a new cond that should be deleted after use
+pthread_cond_t *pthread_cond_new (void) {
+
+    pthread_cond_t *cond = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
+    if (cond) {
+        pthread_cond_init (cond, NULL);
+    }
+
+    return cond;
+
+}
+
+// destroys & frees an allocated cond
+void pthread_cond_delete (pthread_cond_t *cond) {
+
+    if (cond) {
+        pthread_cond_destroy (cond);
+        free (cond);
+    }
+
+}
+
+#pragma endregion
