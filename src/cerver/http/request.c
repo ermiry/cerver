@@ -196,3 +196,11 @@ void http_request_multi_parts_print (HttpRequest *http_request) {
 	}
 
 }
+
+// search request's body values for matching value by key
+// returns a constant String that should not be deleted if match, NULL if not found
+const String *http_request_body_get_value (HttpRequest *http_request, const char *key) {
+
+	return key_value_pairs_get_value (http_request->body_values, key);
+
+}

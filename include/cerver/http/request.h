@@ -114,4 +114,8 @@ CERVER_EXPORT const String *http_request_multi_parts_get_value (HttpRequest *htt
 
 CERVER_PUBLIC void http_request_multi_parts_print (HttpRequest *http_request);
 
+// search request's body values for matching value by key
+// returns a constant String that should not be deleted if match, NULL if not found
+CERVER_EXPORT const String *http_request_body_get_value (HttpRequest *http_request, const char *key);
+
 #endif
