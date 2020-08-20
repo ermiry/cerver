@@ -37,6 +37,9 @@ extern char *itoa (int i, char *b);
 // copies a c string into another one previuosly allocated
 extern void c_string_copy (char *to, const char *from);
 
+// copies n bytes from a c string into another one previuosly allocated
+extern void c_string_n_copy (char *to, const char *from, size_t n);
+
 // creates a new c string with the desired format, as in printf
 extern char *c_string_create (const char *format, ...);
 
@@ -59,6 +62,15 @@ extern void c_string_remove_char (char *string, char garbage);
 // removes the exact sub string from the main one
 // returns a newly allocated copy of the original str but withput the sub
 extern char *c_string_remove_sub (char *str, const char *sub);
+
+// removes any white space from the string
+extern char *c_string_trim (char *str);
+
+// removes quotes from string
+extern char *c_string_strip_quotes (char *str);
+
+// returns true if the string starts with the selected sub string
+extern bool c_string_starts_with (const char *str, const char *substr);
 
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error

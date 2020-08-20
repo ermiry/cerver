@@ -123,6 +123,20 @@ void c_string_copy (char *to, const char *from) {
 
 }
 
+// copies n bytes from a c string into another one previuosly allocated
+void c_string_n_copy (char *to, const char *from, size_t n) {
+
+	if (to && from) {
+		while (*from && n) {
+			*to++ = *from++;
+			n--;
+		}
+		
+		*to = '\0';
+	}
+
+}
+
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
@@ -305,6 +319,47 @@ char *c_string_remove_sub (char *str, const char *sub) {
 	
 	return retval;
 
+}
+
+// removes any white space from the string
+char *c_string_trim (char *str) {
+
+	while (isspace (*str)) str++;
+
+	if (*str == 0) return str;
+
+	char *end = str + strlen (str) - 1;
+	while (end > str && isspace (*end)) end--;
+
+	*(end + 1) = 0;
+
+	return str;
+
+}
+
+static inline bool is_quote (char c) { return (c == '"' || c == '\''); }
+
+// removes quotes from string
+char *c_string_strip_quotes (char *str) {
+
+	while (is_quote (*str)) str++;
+
+	if (*str == 0) return str;
+
+	char *end = str + strlen(str) - 1;
+	while (end > str && is_quote (*end)) end--;
+
+	*(end + 1) = 0;
+
+	return str;
+
+}
+
+// returns true if the string starts with the selected sub string
+bool c_string_starts_with (const char *str, const char *substr) {
+
+	return (str && substr) ? strncmp (str, substr, strlen (substr)) == 0 : false;
+	
 }
 
 // creates a newly allocated string using the data between the two pointers of the SAME string
