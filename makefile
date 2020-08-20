@@ -3,7 +3,6 @@ SLIB		:= libcerver.so
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
-CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D HANDLER_DEBUG -D PACKETS_DEBUG -D AUTH_DEBUG -D ADMIN_DEBUG
@@ -20,7 +19,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
-LIB         := $(PTHREAD) $(MATH) $(CMONGO)
+LIB         := $(PTHREAD) $(MATH)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
@@ -70,7 +69,7 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./examples/multi.c ./examples/requests.c ./examples/client.c ./examples/auth.c ./examples/sessions.c ./examples/admin.c ./examples/packets.c ./examples/game.c ./examples/web/web.c
+examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./examples/multi.c ./examples/requests.c ./examples/client.c ./examples/auth.c ./examples/sessions.c ./examples/admin.c ./examples/packets.c ./examples/game.c
 	@mkdir -p ./examples/bin
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
@@ -83,6 +82,5 @@ examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./example
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/admin.c -o ./examples/bin/admin -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/packets.c -o ./examples/bin/packets -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c $(CMONGO) -o ./examples/bin/web -l cerver
 
 .PHONY: all clean examples
