@@ -383,7 +383,7 @@ int client_comparator_client_id (const void *a, const void *b) {
 // compare clients based on their session ids
 int client_comparator_session_id (const void *a, const void *b) {
 
-    if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && b) return strcmp (((Client *) a)->session_id->str, ((Client *) b)->session_id->str);
     if (a && !b) return -1;
     if (!a && b) return 1;
 
@@ -821,9 +821,12 @@ u8 client_register_to_cerver (Cerver *cerver, Client *client) {
         if (!client_register_connections_to_cerver (cerver, client) 
             && !client_register_connections_to_cerver_poll (cerver, client)) {
             // register the client to the cerver client's
-            avl_insert_node (cerver->clients, client);
+            (void) avl_insert_node (cerver->clients, client);
 
+            #if defined (CLIENT_DEBUG) || defined (CERVER_STATS)
             char *s = NULL;
+            #endif
+
             #ifdef CLIENT_DEBUG
             s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
             if (s) {
@@ -909,7 +912,7 @@ Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
         if (client_query) {
             client_set_session_id (client_query, session_id);
 
-            void *data = avl_get_node_data (cerver->clients, client_query, NULL);
+            void *data = avl_get_node_data_safe (cerver->clients, client_query, NULL);
             if (data) client = (Client *) data;     // found
 
             client_delete (client_query);
