@@ -14,6 +14,8 @@ INCDIR      := include
 BUILDDIR    := objs
 TARGETDIR   := bin
 
+EXAMDIR		:= examples
+
 SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
@@ -25,6 +27,8 @@ INCDEP      := -I $(INCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
+
+EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 
 # all: directories $(TARGET)
 all: directories $(SLIB)
@@ -70,7 +74,7 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./examples/multi.c ./examples/requests.c ./examples/auth.c ./examples/sessions.c ./examples/admin.c ./examples/packets.c ./examples/game.c ./examples/client/client.c
+examples: $(EXAMPLES)
 	@mkdir -p ./examples/bin
 	@mkdir -p ./examples/bin/client
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
@@ -84,5 +88,6 @@ examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./example
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/packets.c -o ./examples/bin/packets -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/client.c -o ./examples/bin/client/client -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/auth.c -o ./examples/bin/client/auth -l cerver
 
 .PHONY: all clean examples
