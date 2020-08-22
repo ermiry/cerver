@@ -1137,7 +1137,7 @@ static void http_receive_handle_match (
 			// handle body based on header
 			if (request->body) {
 				if (request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
-					if (!strcmp ("application/x-www-form-urlencoded", request->headers[REQUEST_HEADER_CONTENT_TYPE]->str)) {
+					if (!strncmp ("application/x-www-form-urlencoded", request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, 33)) {
 						char *real_body = http_url_decode (request->body->str);
 
 						if (real_body) {
