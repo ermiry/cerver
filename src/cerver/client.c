@@ -141,6 +141,8 @@ Client *client_new (void) {
         client->app_error_packet_handler = NULL;
         client->custom_packet_handler = NULL;
 
+        client->check_packets = false;
+
         client->lock = NULL;
 
         client->events = NULL;
@@ -330,6 +332,19 @@ void client_set_custom_handler (Client *client, Handler *custom_handler) {
             client->custom_packet_handler->type = HANDLER_TYPE_CLIENT;
             client->custom_packet_handler->client = client;
         }
+    }
+
+}
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+void client_set_check_packets (Client *client, bool check_packets) {
+
+    if (client) {
+        client->check_packets = check_packets;
     }
 
 }
@@ -1687,7 +1702,7 @@ unsigned int client_connect (Client *client, Connection *connection) {
 
     if (client && connection) {
         if (!connection_connect (connection)) {
-            // client_event_trigger (client, EVENT_CONNECTED);
+            client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
             // connection->connected = true;
             connection->active = true;
             time (&connection->connected_timestamp);
@@ -2354,7 +2369,22 @@ static void client_packet_handler (void *data) {
         Packet *packet = (Packet *) data;
         packet->client->stats->n_packets_received += 1;
 
-        // if (!packet_check (packet)) {
+        bool good = true;
+        if (packet->client->check_packets) {
+            // we expect the packet version in the packet's data
+            if (packet->data) {
+                packet->version = (PacketVersion *) packet->data_ptr;
+                packet->data_ptr += sizeof (PacketVersion);
+                good = packet_check (packet);
+            }
+
+            else {
+                client_log_error ("client_packet_handler () - No packet version to check!");
+                good = false;
+            }
+        }
+
+        if (good) {
             switch (packet->header->packet_type) {
                 // handles cerver type packets
                 case CERVER_PACKET:
@@ -2424,7 +2454,7 @@ static void client_packet_handler (void *data) {
                     packet_delete (packet);
                     break;
             }
-        // }
+        }
     }
 
 }

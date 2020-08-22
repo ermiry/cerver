@@ -88,6 +88,8 @@ struct _Client {
     struct _Handler *app_error_packet_handler;
     struct _Handler *custom_packet_handler;
 
+    bool check_packets;              // enable / disbale packet checking
+
     // 17/06/2020 - general client lock
     pthread_mutex_t *lock;
 
@@ -139,6 +141,13 @@ CERVER_EXPORT void client_set_app_handlers (Client *client,
 
 // sets a CUSTOM_PACKET packet type handler
 CERVER_EXPORT void client_set_custom_handler (Client *client, struct _Handler *custom_handler);
+
+// set whether to check or not incoming packets
+// check packet's header protocol id & version compatibility
+// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// packets size must be cheked in individual methods (handlers)
+// by default, this option is turned off
+CERVER_EXPORT void client_set_check_packets (Client *client, bool check_packets);
 
 // compare clients based on their client ids
 CERVER_PUBLIC int client_comparator_client_id (const void *a, const void *b);
@@ -408,14 +417,14 @@ CERVER_EXPORT struct _Connection *client_connection_create (
 
 // registers an existing connection to a client
 // retuns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_register (Client *client, struct _Connection *connection);
+CLIENT_EXPORT int client_connection_register (Client *client, struct _Connection *connection);
 
 // unregister an exitsing connection from the client
 // returns 0 on success, 1 on error or if the connection does not belong to the client
-CERVER_EXPORT int client_connection_unregister (Client *client, struct _Connection *connection);
+CLIENT_EXPORT int client_connection_unregister (Client *client, struct _Connection *connection);
 
 // performs a receive in the connection's socket to get a complete packet & handle it
-CERVER_EXPORT void client_connection_get_next_packet (Client *client, struct _Connection *connection);
+CLIENT_EXPORT void client_connection_get_next_packet (Client *client, struct _Connection *connection);
 
 /*** connect ***/
 
