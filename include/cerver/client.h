@@ -406,6 +406,17 @@ CERVER_EXPORT struct _Connection *client_connection_create (
     Protocol protocol, bool use_ipv6
 );
 
+// registers an existing connection to a client
+// retuns 0 on success, 1 on error
+CERVER_EXPORT int client_connection_register (Client *client, struct _Connection *connection);
+
+// unregister an exitsing connection from the client
+// returns 0 on success, 1 on error or if the connection does not belong to the client
+CERVER_EXPORT int client_connection_unregister (Client *client, struct _Connection *connection);
+
+// performs a receive in the connection's socket to get a complete packet & handle it
+CERVER_EXPORT void client_connection_get_next_packet (Client *client, struct _Connection *connection);
+
 /*** connect ***/
 
 // connects a client to the host with the specified values in the connection

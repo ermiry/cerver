@@ -1400,6 +1400,8 @@ u8 client_error_trigger (const ClientErrorType error_type,
 
 #pragma region client
 
+unsigned int client_receive (Client *client, Connection *connection);
+
 static u8 client_app_handler_start (Client *client) {
 
     u8 retval = 0;
@@ -1624,6 +1626,52 @@ Connection *client_connection_create (
 
 }
 
+// registers an existing connection to a client
+// retuns 0 on success, 1 on error
+int client_connection_register (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        retval =  dlist_insert_after (
+            client->connections, 
+            dlist_end (client->connections), 
+            connection
+        );
+    }
+
+    return retval;
+
+}
+
+// unregister an exitsing connection from the client
+// returns 0 on success, 1 on error or if the connection does not belong to the client
+int client_connection_unregister (Client *client, Connection *connection) {
+
+    int retval = 1;
+
+    if (client && connection) {
+        if (dlist_remove (client->connections, connection, NULL)) {
+            retval = 0;
+        }
+    }
+
+    return retval;
+
+}
+
+// performs a receive in the connection's socket to get a complete packet & handle it
+void client_connection_get_next_packet (Client *client, Connection *connection) {
+
+    if (client && connection) {
+        connection->full_packet = false;
+        while (!connection->full_packet) {
+            (void) client_receive (client, connection);
+        }
+    }
+
+}
+
 #pragma endregion
 
 #pragma region connect
@@ -1744,10 +1792,7 @@ unsigned int client_request_to_cerver (Client *client, Connection *connection, P
             // printf ("Request to cerver: %ld\n", sent);
 
             // receive the data directly
-            connection->full_packet = false;
-            while (!connection->full_packet) {
-                client_receive (client, connection);
-            }
+            client_connection_get_next_packet (client, connection);
 
             retval = 0;
         }
@@ -2128,10 +2173,9 @@ static void client_cerver_packet_handle_info (Packet *packet) {
         cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver info packet.");
         #endif
 
-        // FIXME:
-        CerverReport *cerver = cerver_deserialize ((SCerver *) end);
-        // if (cerver_report_check_info (cerver, packet->client, packet->connection))
-        //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
+        CerverReport *cerver_report = cerver_deserialize ((SCerver *) end);
+        if (cerver_report_check_info (cerver_report, packet->client, packet->connection))
+            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
     }
 
 }
