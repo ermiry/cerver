@@ -703,33 +703,33 @@ static int http_receive_handle_url (http_parser *parser, const char *at, size_t 
 
 static inline int http_receive_handle_header_field_handle (const char *header) {
 
-	if (!strcmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
-	if (!strcmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
-	if (!strcmp ("Accept-Encoding", header)) return REQUEST_HEADER_ACCEPT_ENCODING;
-	if (!strcmp ("Accept-Language", header)) return REQUEST_HEADER_ACCEPT_LANGUAGE;
+	if (!strcasecmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
+	if (!strcasecmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
+	if (!strcasecmp ("Accept-Encoding", header)) return REQUEST_HEADER_ACCEPT_ENCODING;
+	if (!strcasecmp ("Accept-Language", header)) return REQUEST_HEADER_ACCEPT_LANGUAGE;
 
-	if (!strcmp ("Access-Control-Request-Headers", header)) return REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS;
+	if (!strcasecmp ("Access-Control-Request-Headers", header)) return REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS;
 
-	if (!strcmp ("Authorization", header)) return REQUEST_HEADER_AUTHORIZATION;
+	if (!strcasecmp ("Authorization", header)) return REQUEST_HEADER_AUTHORIZATION;
 
-	if (!strcmp ("Cache-Control", header)) return REQUEST_HEADER_CACHE_CONTROL;
+	if (!strcasecmp ("Cache-Control", header)) return REQUEST_HEADER_CACHE_CONTROL;
 
-	if (!strcmp ("Connection", header)) return REQUEST_HEADER_CONNECTION;
+	if (!strcasecmp ("Connection", header)) return REQUEST_HEADER_CONNECTION;
 
-	if (!strcmp ("Content-Length", header)) return REQUEST_HEADER_CONTENT_LENGTH;
-	if (!strcmp ("Content-Type", header)) return REQUEST_HEADER_CONTENT_TYPE;
+	if (!strcasecmp ("Content-Length", header)) return REQUEST_HEADER_CONTENT_LENGTH;
+	if (!strcasecmp ("Content-Type", header)) return REQUEST_HEADER_CONTENT_TYPE;
 
-	if (!strcmp ("Cookie", header)) return REQUEST_HEADER_COOKIE;
+	if (!strcasecmp ("Cookie", header)) return REQUEST_HEADER_COOKIE;
 
-	if (!strcmp ("Date", header)) return REQUEST_HEADER_DATE;
+	if (!strcasecmp ("Date", header)) return REQUEST_HEADER_DATE;
 
-	if (!strcmp ("Expect", header)) return REQUEST_HEADER_EXPECT;
+	if (!strcasecmp ("Expect", header)) return REQUEST_HEADER_EXPECT;
 
-	if (!strcmp ("Host", header)) return REQUEST_HEADER_HOST;
+	if (!strcasecmp ("Host", header)) return REQUEST_HEADER_HOST;
 
-	if (!strcmp ("Proxy-Authorization", header)) return REQUEST_HEADER_PROXY_AUTHORIZATION;
+	if (!strcasecmp ("Proxy-Authorization", header)) return REQUEST_HEADER_PROXY_AUTHORIZATION;
 
-	if (!strcmp ("User-Agent", header)) return REQUEST_HEADER_USER_AGENT;
+	if (!strcasecmp ("User-Agent", header)) return REQUEST_HEADER_USER_AGENT;
 
 	return REQUEST_HEADER_INVALID;		// no known header
 
