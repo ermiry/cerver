@@ -7,7 +7,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
@@ -29,6 +29,25 @@
 unsigned int client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
+
+#pragma region aux
+
+static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
+
+    ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
+    if (cc) {
+        cc->connection_thread_id = 0;   
+        cc->client = client;
+        cc->connection = connection;
+    }
+
+    return cc;
+
+}
+
+void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
+
+#pragma endregion
 
 #pragma region stats
 
@@ -124,6 +143,8 @@ Client *client_new (void) {
 
         client->lock = NULL;
 
+        client->events = NULL;
+
         client->stats = NULL;   
     }
 
@@ -136,9 +157,9 @@ void client_delete (void *ptr) {
     if (ptr) {
         Client *client = (Client *) ptr;
 
-        estring_delete (client->session_id);
+        str_delete (client->session_id);
 
-        estring_delete (client->name);
+        str_delete (client->name);
 
         dlist_delete (client->connections);
 
@@ -162,6 +183,8 @@ void client_delete (void *ptr) {
             free (client->lock);
         }
 
+        dlist_delete (client->events);
+
         client_stats_delete (client->stats);
 
         free (client);
@@ -179,7 +202,7 @@ Client *client_create (void) {
         client->id = next_client_id;
         next_client_id += 1;
 
-        client->name = estring_new ("no-name");
+        client->name = str_new ("no-name");
 
         time (&client->connected_timestamp);
 
@@ -218,8 +241,8 @@ Client *client_create_with_connection (Cerver *cerver,
 void client_set_name (Client *client, const char *name) {
 
     if (client) {
-        if (client->name) estring_delete (client->name);
-        client->name = name ? estring_new (name) : NULL;
+        if (client->name) str_delete (client->name);
+        client->name = name ? str_new (name) : NULL;
     }
 
 }
@@ -251,8 +274,8 @@ char *client_get_identifier (Client *client, bool *is_name) {
 void client_set_session_id (Client *client, const char *session_id) {
 
     if (client) {
-        if (client->session_id) estring_delete (client->session_id);
-        client->session_id = session_id ? estring_new (session_id) : NULL;
+        if (client->session_id) str_delete (client->session_id);
+        client->session_id = session_id ? str_new (session_id) : NULL;
     }
 
 }
@@ -328,7 +351,7 @@ int client_comparator_client_id (const void *a, const void *b) {
 // compare clients based on their session ids
 int client_comparator_session_id (const void *a, const void *b) {
 
-    if (a && b) return estring_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+    if (a && b) return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
     if (a && !b) return -1;
     if (!a && b) return 1;
 
@@ -415,15 +438,7 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
 
     if (cerver && client && connection) {
         if (dlist_remove (client->connections, connection, NULL)) {
-            // close the socket
-            connection_end (connection);
-
-            // move the socket to the cerver's socket pool to avoid destroying it
-            // to handle if any other thread is waiting to access the socket's mutex
-            cerver_sockets_pool_push (cerver, connection->socket);
-            connection->socket = NULL;
-
-            connection_delete (connection);
+            connection_drop (cerver, connection);
 
             retval = 0;
         }
@@ -720,9 +735,8 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
         if (client_data) {
             retval = (Client *) client_data;
 
-            char *s = NULL;
             #ifdef CLIENT_DEBUG
-            s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
+            char *s = c_string_create ("Unregistered a client from cerver %s.", cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
                 free (s);
@@ -731,11 +745,11 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
             cerver->stats->current_n_connected_clients--;
             #ifdef CERVER_STATS
-            s = c_string_create ("Connected clients to cerver %s: %i.", 
+            char *status = c_string_create ("Connected clients to cerver %s: %i.", 
                 cerver->info->name->str, cerver->stats->current_n_connected_clients);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                free (s);
+            if (status) {
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                free (status);
             }
             #endif
         }
@@ -756,6 +770,32 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
 }
 
+static void client_register_to_cerver_internal (Cerver *cerver, Client *client) {
+
+    avl_insert_node (cerver->clients, client);
+
+    #ifdef CLIENT_DEBUG
+    char *s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
+    if (s) {
+        cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+        free (s);
+    }
+    #endif
+    
+    cerver->stats->total_n_clients++;
+    cerver->stats->current_n_connected_clients++;
+
+    #ifdef CERVER_STATS
+    char *status = c_string_create ("Connected clients to cerver %s: %i.", 
+        cerver->info->name->str, cerver->stats->current_n_connected_clients);
+    if (status) {
+        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+        free (status);
+    }
+    #endif
+
+}
+
 // registers a client to the cerver --> add it to cerver's structures
 // registers all of the current active client connections to the cerver poll
 // returns 0 on success, 1 on error
@@ -764,32 +804,26 @@ u8 client_register_to_cerver (Cerver *cerver, Client *client) {
     u8 retval = 1;
 
     if (cerver && client) {
-        if (!client_register_connections_to_cerver (cerver, client) 
-            && !client_register_connections_to_cerver_poll (cerver, client)) {
-            // register the client to the cerver client's
-            avl_insert_node (cerver->clients, client);
+        if (!client_register_connections_to_cerver (cerver, client)) {
+            switch (cerver->handler_type) {
+                case CERVER_HANDLER_TYPE_NONE: break;
 
-            char *s = NULL;
-            #ifdef CLIENT_DEBUG
-            s = c_string_create ("Registered a new client to cerver %s.", cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
-                free (s);
-            }
-            #endif
-            
-            cerver->stats->total_n_clients++;
-            cerver->stats->current_n_connected_clients++;
-            #ifdef CERVER_STATS
-            s = c_string_create ("Connected clients to cerver %s: %i.", 
-                cerver->info->name->str, cerver->stats->current_n_connected_clients);
-            if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                free (s);
-            }
-            #endif
+                case CERVER_HANDLER_TYPE_POLL: {
+                    if (!client_register_connections_to_cerver_poll (cerver, client)) {
+                        client_register_to_cerver_internal (cerver, client);
 
-            retval = 0;
+                        retval = 0;
+                    }
+                } break;
+
+                case CERVER_HANDLER_TYPE_THREADS: {
+                    client_register_to_cerver_internal (cerver, client);
+
+                    retval = 0;
+                } break;
+
+                default: break;
+            }
         }
     }
 
@@ -892,22 +926,240 @@ void client_broadcast_to_all_avl (AVLNode *node, Cerver *cerver, Packet *packet)
 
 #pragma endregion
 
-#pragma region aux
+#pragma region events
 
-static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
+u8 client_event_unregister (Client *client, ClientEventType event_type);
 
-    ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
-    if (cc) {
-        cc->connection_thread_id = 0;   
-        cc->client = client;
-        cc->connection = connection;
+static ClientEventData *client_event_data_new (void) {
+
+    ClientEventData *event_data = (ClientEventData *) malloc (sizeof (ClientEventData));
+    if (event_data) {
+        event_data->client = NULL;
+        event_data->connection = NULL;
+
+        event_data->response_data = NULL;
+        event_data->delete_response_data = NULL;
+
+        event_data->action_args = NULL;
+        event_data->delete_action_args = NULL;
     }
 
-    return cc;
+    return event_data;
 
 }
 
-void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
+void client_event_data_delete (ClientEventData *event_data) {
+
+    if (event_data) free (event_data);
+
+}
+
+static ClientEventData *client_event_data_create (const Client *client, const Connection *connection, 
+    ClientEvent *event) {
+
+    ClientEventData *event_data = client_event_data_new ();
+    if (event_data) {
+        event_data->client = client;
+        event_data->connection = connection;
+
+        event_data->response_data = event->response_data;
+        event_data->delete_response_data = event->delete_response_data;
+
+        event_data->action_args = event->action_args;
+        event_data->delete_action_args = event->delete_action_args;
+    }
+
+    return event_data;
+
+}
+
+static ClientEvent *client_event_new (void) {
+
+    ClientEvent *event = (ClientEvent *) malloc (sizeof (ClientEvent));
+    if (event) {
+        event->type = CLIENT_EVENT_NONE;
+
+        event->create_thread = false;
+        event->drop_after_trigger = false;
+
+        event->request_type = 0;
+        event->response_data = NULL;
+        event->delete_response_data = NULL;
+
+        event->action = NULL;
+        event->action_args = NULL;
+        event->delete_action_args = NULL;
+    }
+
+    return event;
+
+}
+
+static void client_event_delete (void *ptr) {
+
+    if (ptr) {
+        ClientEvent *event = (ClientEvent *) ptr;
+
+        if (event->response_data) {
+            if (event->delete_response_data) 
+                event->delete_response_data (event->response_data);
+        }
+        
+        if (event->action_args) {
+            if (event->delete_action_args)
+                event->delete_action_args (event->action_args);
+        }
+
+        free (event);
+    }
+
+}
+
+static ClientEvent *client_event_get (const Client *client, const ClientEventType event_type, 
+    ListElement **le_ptr) {
+
+    if (client) {
+        if (client->events) {
+            ClientEvent *event = NULL;
+            for (ListElement *le = dlist_start (client->events); le; le = le->next) {
+                event = (ClientEvent *) le->data;
+                if (event->type == event_type) {
+                    if (le_ptr) *le_ptr = le;
+                    return event;
+                } 
+            }
+        }
+    }
+
+    return NULL;
+
+}
+
+static void client_event_pop (DoubleList *list, ListElement *le) {
+
+    if (le) {
+        void *data = dlist_remove_element (list, le);
+        if (data) client_event_delete (data);
+    }
+
+}
+
+// registers an action to be triggered when the specified event occurs
+// if there is an existing action registered to an event, it will be overrided
+// a newly allocated ClientEventData structure will be passed to your method 
+// that should be free using the client_event_data_delete () method
+// returns 0 on success, 1 on error
+u8 client_event_register (Client *client, const ClientEventType event_type, 
+    Action action, void *action_args, Action delete_action_args, 
+    bool create_thread, bool drop_after_trigger) {
+
+    u8 retval = 1;
+
+    if (client) {
+        if (client->events) {
+            ClientEvent *event = client_event_new ();
+            if (event) {
+                event->type = event_type;
+
+                event->create_thread = create_thread;
+                event->drop_after_trigger = drop_after_trigger;
+
+                event->action = action;
+                event->action_args = action_args;
+                event->delete_action_args = delete_action_args;
+
+                // search if there is an action already registred for that event and remove it
+                (void) client_event_unregister (client, event_type);
+
+                if (!dlist_insert_after (
+                    client->events, 
+                    dlist_end (client->events),
+                    event
+                )) {
+                    retval = 0;
+                }
+            }
+        }
+    }
+
+    return retval;
+    
+}
+
+// unregister the action associated with an event
+// deletes the action args using the delete_action_args () if NOT NULL
+// returns 0 on success, 1 on error
+u8 client_event_unregister (Client *client, const ClientEventType event_type) {
+
+    u8 retval = 1;
+
+    if (client) {
+        if (client->events) {
+            ClientEvent *event = NULL;
+            for (ListElement *le = dlist_start (client->events); le; le = le->next) {
+                event = (ClientEvent *) le->data;
+                if (event->type == event_type) {
+                    client_event_delete (dlist_remove_element (client->events, le));
+                    retval = 0;
+
+                    break;
+                }
+            }
+        }
+    }
+
+    return retval;
+
+}
+
+void client_event_set_response (Client *client, const ClientEventType event_type,
+    void *response_data, Action delete_response_data) {
+
+    if (client) {
+        ClientEvent *event = client_event_get (client, event_type, NULL);
+        if (event) {
+            event->response_data = response_data;
+            event->delete_response_data = delete_response_data;
+        }
+    }
+
+} 
+
+// triggers all the actions that are registred to an event
+void client_event_trigger (const ClientEventType event_type, 
+    const Client *client, const Connection *connection) {
+
+    if (client) {
+        ListElement *le = NULL;
+        ClientEvent *event = client_event_get (client, event_type, &le);
+        if (event) {
+            // trigger the action
+            if (event->action) {
+                if (event->create_thread) {
+                    pthread_t thread_id = 0;
+                    thread_create_detachable (
+                        &thread_id,
+                        (void *(*)(void *)) event->action, 
+                        client_event_data_create (
+                            client, connection,
+                            event
+                        )
+                    );
+                }
+
+                else {
+                    event->action (client_event_data_create (
+                        client, connection, 
+                        event
+                    ));
+                }
+                
+                if (event->drop_after_trigger) client_event_pop (client->events, le);
+            }
+        }
+    }
+
+}
 
 #pragma endregion
 
@@ -1116,8 +1368,11 @@ static u8 client_start (Client *client) {
 }
 
 // creates a new connection that is ready to connect and registers it to the client
-Connection *client_connection_create (Client *client,
-    const char *ip_address, u16 port, Protocol protocol, bool use_ipv6) {
+Connection *client_connection_create (
+    Client *client,
+    const char *ip_address, u16 port, 
+    Protocol protocol, bool use_ipv6
+) {
 
     Connection *connection = NULL;
 
@@ -1133,6 +1388,8 @@ Connection *client_connection_create (Client *client,
     return connection;
 
 }
+
+#pragma endregion
 
 #pragma region connect
 
@@ -1636,9 +1893,10 @@ static void client_cerver_packet_handle_info (Packet *packet) {
         cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Received a cerver info packet.");
         #endif
 
+        // FIXME:
         CerverReport *cerver = cerver_deserialize ((SCerver *) end);
-        if (cerver_report_check_info (cerver, packet->connection))
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
+        // if (cerver_report_check_info (cerver, packet->client, packet->connection))
+        //     cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to correctly check cerver info!");
     }
 
 }
