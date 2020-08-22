@@ -175,7 +175,7 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
                 char *session_id = (char *) packet->cerver->session_id_generator (session_data);
                 if (session_id) {
                     #ifdef AUTH_DEBUG
-                    char *s = c_string_create ("Generated client <%ld> session id: %s", 
+                    char *s = c_string_create ("Generated client <%ld> session id: <%s>", 
                         client->id, session_id);
                     if (s) {
                         cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
@@ -428,8 +428,8 @@ static AuthData *auth_strip_auth_data (Packet *packet) {
 
             // check if we have a token
             if (packet->data_size == (sizeof (SToken))) {
-                SToken *s_token = (SToken *) (end);
-                auth_data = auth_data_create (s_token->token, NULL, 0);
+                // SToken *s_token = (SToken *) (end);
+                auth_data = auth_data_create (end, NULL, 0);
             }
 
             // we have custom data credentials
@@ -529,6 +529,7 @@ static void auth_try (Packet *packet) {
                         if (packet->cerver->use_sessions) {
                             SToken token = { 0 };
                             memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+                            token.token[strlen (token.token)] = '\0';
                             
                             auth_send_success_packet (
                                 packet->cerver, 

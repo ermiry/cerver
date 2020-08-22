@@ -24,7 +24,7 @@ extern void *session_default_generate_id (const void *session_data);
 
 #pragma region serialization
 
-#define TOKEN_SIZE         64
+#define TOKEN_SIZE         256
 
 // serialized session id - token
 struct _SToken {

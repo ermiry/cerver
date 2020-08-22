@@ -2405,7 +2405,10 @@ void cerver_report_delete (void *ptr) {
 
 }
 
-static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, Connection *connection) {
+static void cerver_report_check_info_handle_auth (
+    CerverReport *cerver_report,
+    Client *client, Connection *connection
+) {
 
     if (cerver_report && connection) {
         if (cerver_report->auth_required) {
@@ -2453,6 +2456,8 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                             cerver_log_success (s);
                             free (s);
                         }
+
+                        client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
                     }
 
                     else {
@@ -2489,14 +2494,17 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
 
 }
 
-u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection) {
+u8 cerver_report_check_info (
+    CerverReport *cerver_report, 
+    Client *client, Connection *connection
+) {
 
     u8 retval = 1;
 
     if (cerver_report && connection) {
         connection->cerver_report = cerver_report;
 
-        // #ifdef CLIENT_DEBUG
+        #ifdef CLIENT_DEBUG
         char *s = c_string_create ("Connected to cerver %s.", cerver_report->name->str);
         if (s) {
             cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
@@ -2519,36 +2527,37 @@ u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection
                 cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "Cerver using unknown protocol."); 
                 break;
         }
-        // #endif
+        #endif
 
         if (cerver_report->use_ipv6) {
-            // #ifdef CLIENT_DEBUG
+            #ifdef CLIENT_DEBUG
             cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver is configured to use ipv6");
-            // #endif
+            #endif
         }
 
-        // #ifdef CLIENT_DEBUG
+        #ifdef CLIENT_DEBUG
         switch (cerver_report->type) {
             case CUSTOM_CERVER:
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: CUSTOM");
                 break;
-            case FILE_CERVER:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
+
+            case GAME_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
                 break;
             case WEB_CERVER:
                 cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: WEB");
                 break;
-            case GAME_CERVER:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
+             case FILE_CERVER:
+                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
                 break;
 
             default: 
                 cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Cerver type: UNKNOWN"); 
                 break;
         }
-        // #endif
+        #endif
 
-        cerver_report_check_info_handle_auth (cerver_report, connection);
+        cerver_report_check_info_handle_auth (cerver_report, client, connection);
 
         retval = 0;
     }
