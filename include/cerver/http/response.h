@@ -36,6 +36,7 @@ typedef struct HttpResponse {
 
 	void *data;
 	size_t data_len;
+	bool data_ref;
 
 	void *res;
 	size_t res_len;
@@ -63,10 +64,20 @@ CERVER_EXPORT u8 http_response_add_header (HttpResponse *res, ResponseHeader typ
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (HttpResponse *res, void *data, size_t data_len);
 
+// sets a reference to a data buffer to send
+// data will not be copied into the response and will not be freed after use
+// this method is similar to packet_set_data_ref ()
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_set_data_ref (HttpResponse *res, void *data, size_t data_size);
+
 // creates a new http response with the specified status code
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted 
 CERVER_EXPORT HttpResponse *http_response_create (http_status status, const void *data, size_t data_len);
+
+// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
+// ready to be sent from the request
+CERVER_PUBLIC void http_response_compile_header (HttpResponse *res);
 
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error
@@ -75,6 +86,12 @@ CERVER_EXPORT u8 http_response_compile (HttpResponse *res);
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send (HttpResponse *res, struct _Cerver *cerver, struct _Connection *connection);
+
+// expects a response with an already created header and data
+// as this method will send both parts withput the need of a continuos response buffer
+// use this for maximun efficiency
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_send_split (HttpResponse *res, struct _Cerver *cerver, struct _Connection *connection);
 
 // creates & sends a response to the connection's socket
 // returns 0 on success, 1 on error

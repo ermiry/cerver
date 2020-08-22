@@ -40,6 +40,7 @@ HttpResponse *http_response_new (void) {
 
 		res->data = NULL;
 		res->data_len = 0;
+		res->data_ref = false;
 
 		res->res = NULL;
 		res->res_len = 0;
@@ -56,7 +57,11 @@ void http_respponse_delete (HttpResponse *res) {
 			str_delete (res->headers[i]);
 
 		if (res->header) free (res->header);
-		if (res->data) free (res->data);
+
+		if (!res->data_ref) {
+			if (res->data) free (res->data);
+		}
+
 		if (res->res) free (res->res);
 
 		free (res);
@@ -125,6 +130,30 @@ void http_response_set_data (HttpResponse *res, void *data, size_t data_len) {
 
 }
 
+// sets a reference to a data buffer to send
+// data will not be copied into the response and will not be freed after use
+// this method is similar to packet_set_data_ref ()
+// returns 0 on success, 1 on error
+u8 http_response_set_data_ref (HttpResponse *res, void *data, size_t data_size) {
+
+	u8 retval = 1;
+
+	if (res && data) {
+		if (!res->data_ref) {
+			if (res->data) free (res->data);
+		}
+
+		res->data = data;
+		res->data_len = data_size;
+		res->data_ref = true;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // creates a new http response with the specified status code
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted 
@@ -147,7 +176,9 @@ HttpResponse *http_response_create (unsigned int status, const void *data, size_
 
 }
 
-static void http_response_compile_header (HttpResponse *res) {
+// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
+// ready to be sent from the request
+void http_response_compile_header (HttpResponse *res) {
 
 	if (res->n_headers) {
 		char *main_header = c_string_create (
@@ -245,27 +276,27 @@ u8 http_response_compile (HttpResponse *res) {
 }
 
 static u8 http_response_send_actual (
-    Socket *socket, 
-    char *data, size_t data_size
+	Socket *socket, 
+	char *data, size_t data_size
 ) {
 
-    u8 retval = 0;
+	u8 retval = 0;
 
-    ssize_t sent = 0;
-    char *p = data;
-    while (data_size > 0) {
-        sent = send (socket->sock_fd, p, data_size, 0);
-        if (sent < 0) {
-            retval = 1;
-            break;
-        }
+	ssize_t sent = 0;
+	char *p = data;
+	while (data_size > 0) {
+		sent = send (socket->sock_fd, p, data_size, 0);
+		if (sent < 0) {
+			retval = 1;
+			break;
+		}
 
-        p += sent;
-        // *actual_sent += (size_t) sent;
-        data_size -= (size_t) sent;
-    }
+		p += sent;
+		// *actual_sent += (size_t) sent;
+		data_size -= (size_t) sent;
+	}
 
-    return retval;
+	return retval;
 
 }
 
@@ -283,6 +314,40 @@ u8 http_response_send (HttpResponse *res, Cerver *cerver, Connection *connection
 			)) {
 				if (cerver) cerver->stats->total_bytes_sent += res->res_len;
 				connection->stats->total_bytes_sent += res->res_len; 
+
+				retval = 0;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// expects a response with an already created header and data
+// as this method will send both parts withput the need of a continuos response buffer
+// use this for maximun efficiency
+// returns 0 on success, 1 on error
+u8 http_response_send_split (HttpResponse *res, Cerver *cerver, Connection *connection) {
+
+	u8 retval = 1;
+
+	if (res && connection) {
+		if (res->header && res->data) {
+			if (!http_response_send_actual (
+				connection->socket,
+				res->header, res->header_len
+			)) {
+				if (!http_response_send_actual (
+					connection->socket,
+					res->data, res->data_len
+				)) {
+					size_t total_size = res->header_len + res->data_len;
+					if (cerver) cerver->stats->total_bytes_sent += total_size;
+					connection->stats->total_bytes_sent += total_size;
+
+					retval = 0;
+				}
 			}
 		}
 	}
