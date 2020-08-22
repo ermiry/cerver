@@ -28,6 +28,9 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+static void client_event_delete (void *ptr);
+static void client_error_delete (void *client_error_ptr);
+
 unsigned int client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
@@ -216,6 +219,9 @@ Client *client_create (void) {
 
         client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
         pthread_mutex_init (client->lock, NULL);
+
+        client->events = dlist_init (client_event_delete, NULL);
+        client->errors =  dlist_init (client_error_delete, NULL);
 
         client->stats = client_stats_new ();
     }
