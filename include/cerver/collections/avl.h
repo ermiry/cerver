@@ -49,7 +49,8 @@ extern bool avl_is_empty (AVLTree *tree);
 extern void *avl_get_node_data (AVLTree *tree, void *id, Comparator comparator);
 
 // inserts a new node in the tree
-extern void avl_insert_node (AVLTree *tree, void *data);
+// returns 0 on success, 1 on error
+extern unsigned int avl_insert_node (AVLTree *tree, void *data);
 
 // removes a node from the tree associated iwth the data
 extern void *avl_remove_node (AVLTree *tree, void *data);
