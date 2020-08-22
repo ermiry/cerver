@@ -161,7 +161,9 @@ unsigned int avl_insert_node (AVLTree *tree, void *data) {
 
 		pthread_mutex_lock (tree->mutex);
 
-		retval = avl_insert_node_r (&(tree->root), tree->comparator, data, &flag);
+		if (!avl_insert_node_r (&(tree->root), tree->comparator, data, &flag)) {
+			tree->size++;
+		}
 
 		pthread_mutex_unlock (tree->mutex);
 	}
@@ -181,6 +183,7 @@ void *avl_remove_node (AVLTree *tree, void *data) {
 		pthread_mutex_lock (tree->mutex);
 
 		retval = avl_remove_node_r (tree, &tree->root, tree->comparator, data, &flag);
+		if (retval) tree->size--;
 
 		pthread_mutex_unlock (tree->mutex);
 	}
@@ -296,6 +299,7 @@ static void avl_balance_fix (AVLNode *parent, int dependency) {
 			parent->left->balance  = -1;
 			parent->right->balance = 0;
 			break;
+
 		default: break;
 	}
 
@@ -308,7 +312,8 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 
 	switch ((*parent)->balance) {
 		case 0: *flag = 0; break;
-		case -2:
+
+		case -2: {
 			if ((*parent)->left->balance == -1) {
 				avl_right_rotation (parent);
 				(*parent)->balance = 0;
@@ -317,14 +322,15 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 			
 			else {
 				if ((*parent)->left->right) {
-					int balance = (*parent)->left->right->balance;
 					avl_left_rotation (&(*parent)->left);
 					avl_right_rotation (parent);
-					avl_balance_fix (*parent, balance);
+					avl_balance_fix (*parent, (*parent)->left->right->balance);
 				}
 			}
+
 			*flag = 0;
-			break;
+		} break;
+
 		default: break;
 	}
 
@@ -337,7 +343,8 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 
 	switch ((*parent)->balance) {
 		case 0: *flag = 0; break;
-		case 2:
+
+		case 2: {
 			if ((*parent)->right->balance == 1) {
 				avl_left_rotation (parent);
 				(*parent)->balance = 0;
@@ -346,14 +353,15 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 			
 			else {
 				if ((*parent)->right->left) {
-					int balance = (*parent)->right->left->balance;
 					avl_right_rotation (&(*parent)->right);
 					avl_left_rotation (parent);
-					avl_balance_fix (*parent, balance);
+					avl_balance_fix (*parent, (*parent)->right->left->balance);
 				}
 			}
+
 			*flag = 0;
-			break;
+		} break;
+
 		default: break;
 	}
 }
@@ -365,32 +373,36 @@ static void avl_treat_left_reduction (AVLNode **parent, char *flag) {
 
 	switch ((*parent)->balance) {
 		case 1: *flag = 0; break;
-		case 2:
+
+		case 2: {
 			if ((*parent)->right) {
-				short shortCut = (*parent)->right->balance;
-				switch (shortCut) {
+				short shortcut = (*parent)->right->balance;
+				switch (shortcut) {
 					case 1:
 						avl_left_rotation (parent);
 						(*parent)->balance = 0;
 						(*parent)->left->balance = 0;
 						*flag = 1;
 						break;
+
 					case 0:
 						avl_left_rotation (parent);
 						(*parent)->balance = -1;
 						(*parent)->left->balance = 1;
 						*flag = 0;
 						break;
+
 					case -1:
-						shortCut = (*parent)->right->left->balance;
+						shortcut = (*parent)->right->left->balance;
 						avl_right_rotation (&(*parent)->right);
 						avl_left_rotation (parent);
-						avl_balance_fix (*parent, shortCut);
+						avl_balance_fix (*parent, shortcut);
 						*flag = 1;
 						break;
 				}
 			}
-			break;
+		} break;
+
 		default: break;
 	}
 
@@ -403,10 +415,11 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 
 	switch ((*parent)->balance){
 		case -1: *flag = 0; break;
-		case -2:
+
+		case -2: {
 			if ((*parent)->left) {
-				short shortCut = (*parent)->left->balance;
-				switch (shortCut) {
+				short shortcut = (*parent)->left->balance;
+				switch (shortcut) {
 					case -1:
 						avl_right_rotation (parent);
 						(*parent)->balance = 0;
@@ -420,15 +433,16 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 						*flag = 0;
 						break;
 					case 1:
-						shortCut = (*parent)->left->right->balance;
+						shortcut = (*parent)->left->right->balance;
 						avl_left_rotation (&(*parent)->left);
 						avl_right_rotation (parent);
-						avl_balance_fix (*parent, shortCut);
+						avl_balance_fix (*parent, shortcut);
 						*flag  = 1;
 						break;
 				}
 			}
-			break;
+		} break;
+
 		default: break;
 	}
 
@@ -460,6 +474,7 @@ static unsigned int avl_insert_node_r (AVLNode **parent, Comparator comparator, 
 			if (*flag == 1) avl_treat_right_insertion (&(*parent), flag);
 		}
 
+		// old
 		// switch (comparator ((*parent)->id, id)) {
 		// 	// go left
 		// 	case 1:
@@ -542,9 +557,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 			return data;
 		}
 
-
-
-
+		// old
 		// switch (comparator ((*parent)->id, id)) {
 		// 	case 1: {
 		// 		void *data = avl_remove_node_r (tree, &(*parent)->left, comparator, id, flag);

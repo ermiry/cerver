@@ -62,7 +62,8 @@ extern void *avl_get_node_data_safe (AVLTree *tree, void *id, Comparator compara
 // returns 0 on success, 1 on error
 extern unsigned int avl_insert_node (AVLTree *tree, void *data);
 
-// removes a node from the tree associated iwth the data
+// removes a node from the tree associated with the data
+// the node's data is returned if removed from tree (if it was found)
 extern void *avl_remove_node (AVLTree *tree, void *data);
 
 // removes all nodes from an avl tree, the node nada is only destroyed if a destroy method is set
