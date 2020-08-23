@@ -11,6 +11,7 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
 #include "cerver/cerver.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
@@ -35,12 +36,11 @@ struct _AdminCerverStats {
 	u64 total_n_packets_sent;                       // total number of packets that were sent
 	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
-	u64 current_connections;      					// all of the current auth active connections for all current clients
-	u64 current_connected_admins;            		// the current number of auth admins connected 
+	u64 current_connections;      					// all of the current active connections from all the admins (registered in the poll array)
+	u64 current_connected_admins;            		// the current number of auth admins connected (unique clients)
 
-	u64 total_n_admins;                            	// the total amount of clients that were registered to the cerver (no auth required)
-	u64 unique_admins;                             	// n unique clients connected in a threshold time (check used authentication)
-	u64 total_admin_connections;                   	// the total amount of client connections that have been done to the cerver
+	u64 total_admin_connections;                   	// the total amount of admin connections that have been done to the cerver
+	u64 total_n_admins;                            	// the total amount of admins that were registered to the cerver
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -49,13 +49,15 @@ struct _AdminCerverStats {
 
 typedef struct _AdminCerverStats AdminCerverStats;
 
-CERVER_PUBLIC void admin_cerver_stats_print (AdminCerverStats *stats);
+extern void admin_cerver_stats_print (AdminCerverStats *stats);
 
 #pragma endregion
 
 #pragma region admin
 
 struct _Admin {
+
+	struct _AdminCerver *admin_cerver;
 
 	String *id;						// unique admin identifier
 
@@ -98,6 +100,15 @@ CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_
 // sends a packet to the first connection of the specified admin
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 admin_send_packet (Admin *admin, struct _Packet *packet);
+
+// sends a packet to the first connection of the specified admin using packet_send_to_split ()
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 admin_send_packet_split (Admin *admin, struct _Packet *packet);
+
+// sends a packet in pieces to the first connection of the specified admin
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 admin_send_packet_pieces (Admin *admin, struct _Packet *packet,
+    void **pieces, size_t *sizes, u32 n_pieces);
 
 #pragma endregion
 
@@ -150,11 +161,14 @@ struct _AdminCerver {
 	pthread_t update_thread_id;
     Action update;                          // method to be executed every tick
     void *update_args;                      // args to pass to custom update method
+	void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
     u8 update_ticks;                        // like fps
 
     pthread_t update_interval_thread_id;
     Action update_interval;                 // the actual method to execute every x seconds
     void *update_interval_args;             // args to pass to the update method
+	// method to delete update interval args at cerver teardown
+    void (*delete_update_interval_args)(void *);
     u32 update_interval_secs;               // the interval in seconds
 
 	struct _AdminCerverStats *stats;
@@ -228,13 +242,23 @@ CERVER_EXPORT void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bo
 
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
-// the update args will be passed to your method as a CerverUpdate & won't be deleted 
-CERVER_EXPORT void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps);
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+CERVER_EXPORT void admin_cerver_set_update (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u8 fps
+);
 
 // sets a custom update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
-// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
-CERVER_EXPORT void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval);
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+CERVER_EXPORT void admin_cerver_set_update_interval (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u32 interval
+);
 
 // returns the current number of connected admins
 CERVER_EXPORT u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver);
@@ -242,6 +266,15 @@ CERVER_EXPORT u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver);
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
+
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_to_split ()
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_split (AdminCerver *admin_cerver, struct _Packet *packet);
+
+// broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, struct _Packet *packet, 
+    void **pieces, size_t *sizes, u32 n_pieces);
 
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
