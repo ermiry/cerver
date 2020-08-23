@@ -418,8 +418,8 @@ int main (void) {
 		cerver_set_admin_enable (my_cerver);
 		admin_cerver_set_authenticate (my_cerver->admin, my_auth_method);
 
-		// admin_cerver_set_update (my_cerver->admin, admin_update_thread, NULL, 10);
-		// admin_cerver_set_update_interval (my_cerver->admin, admin_update_internal_thread, NULL, 1);
+		// admin_cerver_set_update (my_cerver->admin, admin_update_thread, NULL, NULL, 10);
+		// admin_cerver_set_update_interval (my_cerver->admin, admin_update_internal_thread, NULL, NULL, 1);
 
 		Handler *admin_app_handler = handler_create (admin_handler);
 		handler_set_direct_handle (admin_app_handler, true);
