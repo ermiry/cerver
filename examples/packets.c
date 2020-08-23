@@ -5,7 +5,7 @@
 #include <time.h>
 #include <signal.h>
 
-#include <cerver/types/estring.h>
+#include <cerver/types/string.h>
 
 #include <cerver/version.h>
 #include <cerver/cerver.h>
@@ -76,10 +76,10 @@ static AppData *app_data_create (const char *message) {
 static void app_data_print (AppData *app_data) {
 
 	if (app_data) {
-		estring *date = timer_time_to_string (gmtime (&app_data->timestamp));
+		String *date = timer_time_to_string (gmtime (&app_data->timestamp));
 		if (date) {
 			printf ("Timestamp: %s\n", date->str);
-			estring_delete (date);
+			str_delete (date);
 		}
 
 		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
@@ -97,7 +97,7 @@ static void app_data_print (AppData *app_data) {
 static void end (int dummy) {
 	
 	if (my_cerver) {
-		cerver_stats_print (my_cerver);
+		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
 	} 
 
@@ -235,7 +235,7 @@ int main (void) {
 	cerver_log_debug ("We should always receive the same message no matter the method the client is using to send it");
 	printf ("\n");
 
-	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Packets Example");
 
@@ -277,8 +277,7 @@ int main (void) {
 	else {
 		cerver_log_error ("Failed to create cerver!");
 
-		// DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		cerver_delete (my_cerver);
 	}
 
 	return 0;

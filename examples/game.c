@@ -20,7 +20,7 @@ static Cerver *my_cerver = NULL;
 static void my_game_end (int dummy) {
 	
 	if (my_cerver) {
-		cerver_stats_print (my_cerver);
+		cerver_stats_print (my_cerver, true, true);
 		printf ("\nGame Stats:\n");
 		game_cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
@@ -85,7 +85,7 @@ int main (void) {
 	printf ("\n");
 
 	if (!my_game_init ()) {
-		my_cerver = cerver_create (GAME_CERVER, "game-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+		my_cerver = cerver_create (CERVER_TYPE_GAME, "game-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 		if (my_cerver) {
 			cerver_set_welcome_msg (my_cerver, "Welcome - Simple Game Cerver Example");
 
@@ -123,8 +123,7 @@ int main (void) {
 		else {
 			cerver_log_error ("Failed to create cerver!");
 
-			// DONT call - cerver_teardown () is called automatically if cerver_create () fails
-			// cerver_delete (client_cerver);
+			cerver_delete (my_cerver);
 		}
 
 		my_game_end (0);

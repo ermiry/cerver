@@ -8,6 +8,7 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
+#include <cerver/events.h>
 
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
@@ -37,7 +38,7 @@ typedef enum AppRequest {
 static void end (int dummy) {
 	
 	if (my_cerver) {
-		cerver_stats_print (my_cerver);
+		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
 	} 
 
@@ -198,11 +199,55 @@ static void my_custom_handler_direct (void *data) {
 
 #pragma endregion
 
+#pragma region events
+
+static void on_client_connected (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		char *status = c_string_create (
+			"Client %ld connected with sock fd %d to cerver %s!\n",
+			event_data->client->id,
+			event_data->connection->socket->sock_fd, 
+			event_data->cerver->info->name->str
+		);
+
+		if (status) {
+			printf ("\n");
+			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			free (status);
+		}
+	}
+
+}
+
+static void on_client_close_connection (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		char *status = c_string_create (
+			"A client closed a connection to cerver %s!\n",
+			event_data->cerver->info->name->str
+		);
+
+		if (status) {
+			printf ("\n");
+			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			free (status);
+		}
+	}
+
+}
+
+#pragma endregion
+
 #pragma region start
 
 static void start (HandlersType type) {
 
-	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - App & Custom Handlers Example");
 
@@ -252,6 +297,20 @@ static void start (HandlersType type) {
 		cerver_set_app_handlers (my_cerver, app_handler, app_error_handler);
 		cerver_set_custom_handler (my_cerver, app_custom_handler);
 
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_CONNECTED,
+			on_client_connected, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+			on_client_close_connection, NULL, NULL,
+			false, false
+		);
+
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
 				my_cerver->info->name->str);
@@ -267,8 +326,7 @@ static void start (HandlersType type) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+        cerver_delete (my_cerver);
 	}
 
 }
