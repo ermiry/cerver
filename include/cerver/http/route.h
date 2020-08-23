@@ -14,6 +14,14 @@
 
 struct _HttpRoute;
 
+typedef enum HttpRouteModifier {
+
+	HTTP_ROUTE_MODIFIER_NONE		= 0,
+
+	HTTP_ROUTE_MODIFIER_WEB_SOCKET	= 1,	// enables web socket connections on this route
+
+} HttpRouteModifier;
+
 typedef enum HttpRouteAuthType {
 
 	HTTP_ROUTE_AUTH_TYPE_NONE		= 0,
@@ -49,6 +57,8 @@ struct _HttpRoute {
 
 	HttpRoutesTokens **routes_tokens;
 
+	HttpRouteModifier modifier;
+
 	HttpRouteAuthType auth_type;
 
 	void *(*decode_data)(void *);
@@ -80,6 +90,9 @@ CERVER_PRIVATE void http_route_init (HttpRoute *route);
 
 // registers a route as a child of a parent route
 CERVER_EXPORT void http_route_child_add (HttpRoute *parent, HttpRoute *child);
+
+// sets a modifier for the selected route
+CERVER_EXPORT void http_route_set_modifier (HttpRoute *route, HttpRouteModifier modifier);
 
 // enables authentication for the selected route
 CERVER_EXPORT void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);

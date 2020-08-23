@@ -72,6 +72,8 @@ HttpRoute *http_route_new (void) {
 
 		route->routes_tokens = NULL;
 
+		route->modifier = HTTP_ROUTE_MODIFIER_NONE;
+
 		route->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
 
 		route->decode_data = NULL;
@@ -224,6 +226,13 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 		str_delete (child->route);
 		child->route = str_create ("%s/%s", child->base->str, child->actual->str);
 	}
+
+}
+
+// sets a modifier for the selected route
+void http_route_set_modifier (HttpRoute *route, HttpRouteModifier modifier) {
+
+	if (route) route->modifier = modifier;
 
 }
 
