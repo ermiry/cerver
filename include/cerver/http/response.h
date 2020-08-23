@@ -6,13 +6,16 @@
 
 #include "cerver/http/status.h"
 
-#define RESPONSE_HEADERS_SIZE			4
+#define RESPONSE_HEADERS_SIZE			8
 
 #define RESPONSE_HEADER_MAP(XX)									\
 	XX(0,  CONTENT_ENCODING,      Content-Encoding)       		\
 	XX(1,  CONTENT_LANGUAGE,      Content-Language)          	\
 	XX(2,  CONTENT_LENGTH,        Content-Length)         		\
 	XX(3,  CONTENT_TYPE,		  Content-Type)         		\
+	XX(4,  CONNECTION,			  Connection)         			\
+	XX(5,  WEB_SOCKET_ACCEPT,	  Sec-WebSocket-Accept)        	\
+	XX(6,  UPGRADE,			  	  Upgrade)         				\
 
 typedef enum ResponseHeader {
 
