@@ -140,7 +140,7 @@ static Connection *cerver_client_connect (Client *client) {
     Connection *connection = NULL;
 
     if (client) {
-        connection = client_connection_create (client, "127.0.0.1", 8007, PROTOCOL_TCP, false);
+        connection = client_connection_create (client, "127.0.0.1", 7000, PROTOCOL_TCP, false);
         if (connection) {
             connection_set_max_sleep (connection, 30);
 
@@ -271,7 +271,7 @@ static void *cerver_client_connect_and_start (void *args) {
 
         // wait 2 seconds before connecting to cerver
         sleep (2);
-        Connection *connection = client_connection_create (client, "127.0.0.1", 8007, PROTOCOL_TCP, false);
+        Connection *connection = client_connection_create (client, "127.0.0.1", 7000, PROTOCOL_TCP, false);
         if (connection) {
             connection_set_max_sleep (connection, 30);
 
