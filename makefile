@@ -81,6 +81,7 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 examples: $(EXAMPLES)
 	@mkdir -p ./examples/bin
 	@mkdir -p ./examples/bin/client
+	@mkdir -p ./examples/bin/web
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
