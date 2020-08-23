@@ -37,7 +37,7 @@ static Cerver *client_cerver = NULL;
 static void end (int dummy) {
 	
 	if (client_cerver) {
-		cerver_stats_print (client_cerver);
+        cerver_stats_print (client_cerver, true, true);
 		cerver_teardown (client_cerver);
 	} 
 
