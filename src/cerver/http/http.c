@@ -5,6 +5,8 @@
 #include <ctype.h>
 #include <time.h>
 
+#include <openssl/sha.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -24,6 +26,7 @@
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/base64.h"
 
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
 
@@ -1114,6 +1117,53 @@ static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceiv
 
 }
 
+// route is expecting a web socket connection, check headers and perform handshake
+static void http_receive_handle_match_web_socket (
+	CerverReceive *cr, 
+	HttpRequest *request, 
+	HttpRoute *route
+) {
+
+	// check if client sent the correct headers
+	const String *connection = request->headers[REQUEST_HEADER_CONNECTION];
+	const String *upgrade = request->headers[REQUEST_HEADER_UPGRADE];
+
+	if (!strcasecmp ("Upgrade", connection->str) && !strcasecmp ("websocket", upgrade->str)) {
+		const String *web_socket_key = request->headers[REQUEST_HEADER_WEB_SOCKET_KEY];
+		// const String *web_socket_version = request->headers[REQUEST_HEADER_WEB_SOCKET_VERSION];
+
+		if (web_socket_key) {
+			char buffer[128] = { 0 };
+			snprintf (buffer, 128, "%s%s", web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+
+			unsigned char hash[SHA_DIGEST_LENGTH];
+			SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
+
+			memset (buffer, 0, 128);
+			base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
+
+			printf ("\n\n%s\n\n", buffer);
+
+			HttpResponse *res = http_response_create (101, NULL, 0);
+			if (res) {
+				http_response_add_header (res, RESPONSE_HEADER_CONNECTION, "Upgrade");
+				http_response_add_header (res, RESPONSE_HEADER_UPGRADE, "websocket");
+				http_response_add_header (res, RESPONSE_HEADER_WEB_SOCKET_ACCEPT, buffer);
+
+				http_response_compile (res);
+				http_response_print (res);
+				http_response_send (res, cr->cerver, cr->connection);
+				http_respponse_delete (res);
+			}
+		}
+
+		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+	}
+
+	else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+
+}
+
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, CerverReceive *cr, 
@@ -1163,7 +1213,13 @@ static void http_receive_handle_match (
 				}
 			}
 
-			found->handlers[request->method] (cr, request);
+			switch (found->modifier) {
+				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (cr, request); break;
+
+				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
+					http_receive_handle_match_web_socket (cr, request, found);
+					break;
+			}
 
 			found->n_requests[request->method] += 1;
 		}
