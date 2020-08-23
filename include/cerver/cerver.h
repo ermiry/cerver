@@ -516,7 +516,10 @@ typedef struct _CerverReport CerverReport;
 
 CERVER_PRIVATE void cerver_report_delete (void *ptr);
 
-CERVER_PRIVATE u8 cerver_report_check_info (CerverReport *cerver_report, struct _Connection *connection);
+CERVER_PRIVATE u8 cerver_report_check_info (
+    CerverReport *cerver_report, 
+    struct _Client *client, struct _Connection *connection
+);
 
 #pragma endregion
 

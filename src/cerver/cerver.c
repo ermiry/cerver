@@ -2638,7 +2638,10 @@ void cerver_report_delete (void *ptr) {
 
 }
 
-static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, Connection *connection) {
+static void cerver_report_check_info_handle_auth (
+    CerverReport *cerver_report,
+    Client *client, Connection *connection
+) {
 
     if (cerver_report && connection) {
         if (cerver_report->auth_required) {
@@ -2686,6 +2689,8 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
                             cerver_log_success (s);
                             free (s);
                         }
+
+                        client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
                     }
 
                     else {
@@ -2722,7 +2727,10 @@ static void cerver_report_check_info_handle_auth (CerverReport *cerver_report, C
 
 }
 
-u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection) {
+u8 cerver_report_check_info (
+    CerverReport *cerver_report, 
+    Client *client, Connection *connection
+) {
 
     u8 retval = 1;
 
@@ -2782,7 +2790,7 @@ u8 cerver_report_check_info (CerverReport *cerver_report, Connection *connection
         }
         // #endif
 
-        cerver_report_check_info_handle_auth (cerver_report, connection);
+        cerver_report_check_info_handle_auth (cerver_report, client, connection);
 
         retval = 0;
     }
