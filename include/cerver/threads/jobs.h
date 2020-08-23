@@ -5,6 +5,8 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
+
 #include "cerver/threads/bsem.h"
 
 typedef struct Job {
@@ -15,11 +17,11 @@ typedef struct Job {
 
 } Job;
 
-extern Job *job_new (void);
+CERVER_PUBLIC Job *job_new (void);
 
-extern void job_delete (void *job_ptr);
+CERVER_PUBLIC void job_delete (void *job_ptr);
 
-extern Job *job_create (void (*method) (void *args), void *args);
+CERVER_PUBLIC Job *job_create (void (*method) (void *args), void *args);
 
 typedef struct JobQueue {
 
@@ -35,20 +37,20 @@ typedef struct JobQueue {
 	
 } JobQueue;
 
-extern JobQueue *job_queue_new (void);
+CERVER_PUBLIC JobQueue *job_queue_new (void);
 
-extern void job_queue_delete (void *job_queue_ptr);
+CERVER_PUBLIC void job_queue_delete (void *job_queue_ptr);
 
-extern JobQueue *job_queue_create (void);
+CERVER_PUBLIC JobQueue *job_queue_create (void);
 
 // add a new job to the queue
 // returns 0 on success, 1 on error
-extern int job_queue_push (JobQueue *job_queue, Job *job);
+CERVER_PUBLIC int job_queue_push (JobQueue *job_queue, Job *job);
 
 // get the job at the start of the queue
-extern Job *job_queue_pull (JobQueue *job_queue);
+CERVER_PUBLIC Job *job_queue_pull (JobQueue *job_queue);
 
 // clears the job queue -> destroys all jobs
-extern void job_queue_clear (JobQueue *job_queue);
+CERVER_PUBLIC void job_queue_clear (JobQueue *job_queue);
 
 #endif

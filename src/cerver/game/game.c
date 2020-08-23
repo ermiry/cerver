@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -46,7 +46,7 @@ static void game_cerver_stats_delete (GameCerverStats *stats) {
 void game_cerver_stats_print (Cerver *cerver) {
 
     if (cerver) {
-        if (cerver->type == GAME_CERVER) {
+        if (cerver->type == CERVER_TYPE_GAME) {
             GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
             printf ("Current active lobbys:         %d\n", game_cerver->stats->current_active_lobbys);

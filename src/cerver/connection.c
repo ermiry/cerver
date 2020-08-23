@@ -7,7 +7,7 @@
 #include <time.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/htab.h"
 #include "cerver/collections/dlist.h"
@@ -150,13 +150,13 @@ void connection_delete (void *ptr) {
     if (ptr) {
         Connection *connection = (Connection *) ptr;
 
-        estring_delete (connection->name);
+        str_delete (connection->name);
 
         socket_delete (connection->socket);
 
         if (connection->active) connection_end (connection);
 
-        estring_delete (connection->ip);
+        str_delete (connection->ip);
 
         cerver_report_delete (connection->cerver_report);
 
@@ -178,7 +178,7 @@ Connection *connection_create_empty (void) {
 
     Connection *connection = connection_new ();
     if (connection) {
-        connection->name = estring_new ("no-name");
+        connection->name = str_new ("no-name");
 
         connection->socket = (Socket *) socket_create_empty ();
         connection->sock_receive = sock_receive_new ();
@@ -227,8 +227,8 @@ int connection_comparator (const void *a, const void *b) {
 void connection_set_name (Connection *connection, const char *name) {
 
     if (connection) {
-        if (connection->name) estring_delete (connection->name);
-        connection->name = name ? estring_new (name) : NULL;
+        if (connection->name) str_delete (connection->name);
+        connection->name = name ? str_new (name) : NULL;
     }
 
 }
@@ -237,7 +237,7 @@ void connection_set_name (Connection *connection, const char *name) {
 void connection_get_values (Connection *connection) {
 
     if (connection) {
-        connection->ip = estring_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
+        connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
         connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
     }
 
@@ -248,8 +248,8 @@ void connection_set_values (Connection *connection,
     const char *ip_address, u16 port, Protocol protocol, bool use_ipv6) {
 
     if (connection) {
-        if (connection->ip) estring_delete (connection->ip);
-        connection->ip = ip_address ? estring_new (ip_address) : NULL;
+        if (connection->ip) str_delete (connection->ip);
+        connection->ip = ip_address ? str_new (ip_address) : NULL;
         connection->port = port;
         connection->protocol = protocol;
         connection->use_ipv6 = use_ipv6;
@@ -487,6 +487,24 @@ void connection_end (Connection *connection) {
 
 }
 
+void connection_drop (Cerver *cerver, Connection *connection) {
+
+    if (connection) {
+        // close the socket
+        connection_end (connection);
+
+        if (cerver) {
+            // move the socket to the cerver's socket pool to avoid destroying it
+            // to handle if any other thread is waiting to access the socket's mutex
+            cerver_sockets_pool_push (cerver, connection->socket);
+            connection->socket = NULL;
+        }
+
+        connection_delete (connection);
+    }
+
+}
+
 // gets the connection from the on hold connections map in cerver
 Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 sock_fd) {
 
@@ -697,7 +715,13 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
     u8 errors = 0;
 
     if (cerver && connection) {
-        errors |= connection_unregister_from_cerver_poll (cerver, connection);
+        switch (cerver->handler_type) {
+            case CERVER_HANDLER_TYPE_POLL: 
+                errors |= connection_unregister_from_cerver_poll (cerver, connection);
+                break;
+
+            default: break;
+        }
         
         errors |= connection_unregister_from_cerver (cerver, connection);
     }

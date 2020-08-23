@@ -6,7 +6,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -148,7 +148,7 @@ void admin_delete (void *admin_ptr) {
 	if (admin_ptr) {
 		Admin *admin = (Admin *) admin_ptr;
 
-		estring_delete (admin->id);
+		str_delete (admin->id);
 
 		client_delete (admin->client);
 
@@ -167,7 +167,7 @@ Admin *admin_create (void) {
     if (admin) {
         time_t rawtime = 0;
         time (&rawtime);
-        admin->id = estring_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
+        admin->id = str_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
     }
 
     return admin;
@@ -507,11 +507,13 @@ AdminCerver *admin_cerver_new (void) {
         admin_cerver->update_thread_id = 0;
         admin_cerver->update = NULL;
         admin_cerver->update_args = NULL;
+        admin_cerver->delete_update_args = NULL;
         admin_cerver->update_ticks = DEFAULT_UPDATE_TICKS;
 
         admin_cerver->update_interval_thread_id = 0;
         admin_cerver->update_interval = NULL;
         admin_cerver->update_interval_args = NULL;
+        admin_cerver->delete_update_interval_args = NULL;
         admin_cerver->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
 
 		admin_cerver->stats = NULL;
@@ -714,12 +716,18 @@ void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packe
 
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
-// the update args will be passed to your method as a CerverUpdate & won't be deleted 
-void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps) {
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+void admin_cerver_set_update (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u8 fps
+) {
 
     if (admin_cerver) {
         admin_cerver->update = update;
         admin_cerver->update_args = update_args;
+        admin_cerver->delete_update_args = delete_update_args;
         admin_cerver->update_ticks = fps;
     }
 
@@ -727,12 +735,18 @@ void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *up
 
 // sets a custom update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
-// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
-void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval) {
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+void admin_cerver_set_update_interval (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u32 interval
+) {
 
     if (admin_cerver) {
         admin_cerver->update_interval = update;
         admin_cerver->update_interval_args = update_args;
+        admin_cerver->delete_update_interval_args = delete_update_args;
         admin_cerver->update_interval_secs = interval;
     }
 
@@ -954,6 +968,12 @@ static void admin_cerver_update (void *args) {
 
         cerver_update_delete (cu);
 
+        if (admin_cerver->update_args) {
+            if (admin_cerver->delete_update_args) {
+                admin_cerver->delete_update_args (admin_cerver->update_args);
+            }
+        }
+
         #ifdef ADMIN_DEBUG
         s = c_string_create ("Cerver's %s admin_cerver_update () has ended!",
             admin_cerver->cerver->info->name->str);
@@ -991,6 +1011,12 @@ static void admin_cerver_update_interval (void *args) {
         }
 
         cerver_update_delete (cu);
+
+        if (admin_cerver->update_interval_args) {
+            if (admin_cerver->delete_update_interval_args) {
+                admin_cerver->delete_update_interval_args (admin_cerver->update_interval_args);
+            }
+        }
 
         #ifdef ADMIN_DEBUG
         s = c_string_create ("Cerver's %s admin_cerver_update_interval () has ended!",
