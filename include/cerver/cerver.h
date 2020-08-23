@@ -139,7 +139,7 @@ typedef struct CerverStats {
 CERVER_EXPORT void cerver_stats_set_threshold_time (struct _Cerver *cerver, time_t threshold_time);
 
 // prints the cerver stats
-CERVER_EXPORT void cerver_stats_print (struct _Cerver *cerver);
+CERVER_EXPORT void cerver_stats_print (struct _Cerver *cerver, bool received, bool sent);
 
 #pragma endregion
 

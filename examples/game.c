@@ -20,7 +20,7 @@ static Cerver *my_cerver = NULL;
 static void my_game_end (int dummy) {
 	
 	if (my_cerver) {
-		cerver_stats_print (my_cerver);
+		cerver_stats_print (my_cerver, true, true);
 		printf ("\nGame Stats:\n");
 		game_cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
