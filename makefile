@@ -4,6 +4,10 @@ SLIB		:= libcerver.so
 PTHREAD 	:= -l pthread
 MATH		:= -lm
 
+OPENSSL		:= -l ssl -l crypto
+
+# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`	
+
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D HANDLER_DEBUG -D PACKETS_DEBUG -D AUTH_DEBUG -D ADMIN_DEBUG
 
@@ -21,7 +25,7 @@ DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
-LIB         := $(PTHREAD) $(MATH)
+LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
@@ -91,5 +95,8 @@ examples: $(EXAMPLES)
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/client.c -o ./examples/bin/client/client -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/auth.c -o ./examples/bin/client/auth -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/api.c -o ./examples/bin/web/api -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/upload.c -o ./examples/bin/web/upload -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web/web -l cerver
 
 .PHONY: all clean examples
