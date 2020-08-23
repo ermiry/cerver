@@ -727,9 +727,16 @@ static inline int http_receive_handle_header_field_handle (const char *header) {
 
 	if (!strcasecmp ("Host", header)) return REQUEST_HEADER_HOST;
 
+	if (!strcasecmp ("Origin", header)) return REQUEST_HEADER_ORIGIN;
+
 	if (!strcasecmp ("Proxy-Authorization", header)) return REQUEST_HEADER_PROXY_AUTHORIZATION;
 
+	if (!strcasecmp ("Upgrade", header)) return REQUEST_HEADER_UPGRADE;
+
 	if (!strcasecmp ("User-Agent", header)) return REQUEST_HEADER_USER_AGENT;
+
+	if (!strcasecmp ("Sec-WebSocket-Key", header)) return REQUEST_HEADER_WEB_SOCKET_KEY;
+	if (!strcasecmp ("Sec-WebSocket-Version", header)) return REQUEST_HEADER_WEB_SOCKET_VERSION;
 
 	return REQUEST_HEADER_INVALID;		// no known header
 

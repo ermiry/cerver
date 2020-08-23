@@ -130,9 +130,16 @@ void http_request_headers_print (HttpRequest *http_request) {
 
 				case REQUEST_HEADER_HOST							: printf ("Host: %s\n", header ? header->str : null); break;
 
+				case REQUEST_HEADER_ORIGIN							: printf ("Origin: %s\n", header ? header->str : null); break;
+
 				case REQUEST_HEADER_PROXY_AUTHORIZATION				: printf ("Proxy-Authorization: %s\n", header ? header->str : null); break;
 
+				case REQUEST_HEADER_UPGRADE							: printf ("Upgrade: %s\n", header ? header->str : null); break;
+
 				case REQUEST_HEADER_USER_AGENT						: printf ("User-Agent: %s\n", header ? header->str : null); break;
+
+				case REQUEST_HEADER_WEB_SOCKET_KEY					: printf ("Sec-WebSocket-Key: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_WEB_SOCKET_VERSION				: printf ("Sec-WebSocket-Version: %s\n", header ? header->str : null); break;
 			}
 		}
 	}
