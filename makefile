@@ -4,10 +4,6 @@ SLIB		:= libcerver.so
 PTHREAD 	:= -l pthread
 MATH		:= -lm
 
-OPENSSL		:= -l ssl -l crypto
-
-# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
-
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D HANDLER_DEBUG -D PACKETS_DEBUG -D AUTH_DEBUG -D ADMIN_DEBUG
 
@@ -18,17 +14,21 @@ INCDIR      := include
 BUILDDIR    := objs
 TARGETDIR   := bin
 
+EXAMDIR		:= examples
+
 SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
 CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
-LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
+LIB         := $(PTHREAD) $(MATH)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
+
+EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 
 # all: directories $(TARGET)
 all: directories $(SLIB)
@@ -52,6 +52,7 @@ clean:
 	@$(RM) -rf $(BUILDDIR) 
 	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf ./examples/bin
+	@$(RM) -rf ./examples/bin/client
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -73,22 +74,22 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-examples: ./examples/welcome.c ./examples/test.c ./examples/handlers.c ./examples/multi.c ./examples/requests.c ./examples/client.c ./examples/auth.c ./examples/sessions.c ./examples/admin.c ./examples/threads.c ./examples/packets.c ./examples/game.c ./examples/web/web.c
+examples: $(EXAMPLES)
 	@mkdir -p ./examples/bin
+	@mkdir -p ./examples/bin/client
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/welcome.c -o ./examples/bin/welcome -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/test.c -o ./examples/bin/test -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/handlers.c -o ./examples/bin/handlers -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/multi.c -o ./examples/bin/multi -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/threads.c -o ./examples/bin/threads -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/advanced.c -o ./examples/bin/advanced -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/requests.c -o ./examples/bin/requests -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client.c -o ./examples/bin/client -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/auth.c -o ./examples/bin/auth -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/sessions.c -o ./examples/bin/sessions -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/admin.c -o ./examples/bin/admin -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/packets.c -o ./examples/bin/packets -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/threads.c -o ./examples/bin/threads -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/api.c -o ./examples/bin/api -l cerver
-	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/upload.c -o ./examples/bin/upload -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/client.c -o ./examples/bin/client/client -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/auth.c -o ./examples/bin/client/auth -l cerver
 
 .PHONY: all clean examples
