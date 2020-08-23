@@ -251,11 +251,14 @@ struct _Cerver {
     pthread_t update_thread_id;
     Action update;                          // method to be executed every tick
     void *update_args;                      // args to pass to custom update method
+    void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
     u8 update_ticks;                        // like fps
 
     pthread_t update_interval_thread_id;
     Action update_interval;                 // the actual method to execute every x seconds
     void *update_interval_args;             // args to pass to the update method
+    // method to delete update interval args at cerver teardown
+    void (*delete_update_interval_args)(void *);
     u32 update_interval_secs;               // the interval in seconds          
 
     struct _AdminCerver *admin;
@@ -399,13 +402,23 @@ CERVER_EXPORT void cerver_set_check_packets (Cerver *cerver, bool check_packets)
 
 // sets a custom cerver update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
-// the update args will be passed to your method as a CerverUpdate & won't be deleted 
-CERVER_EXPORT void cerver_set_update (Cerver *cerver, Action update, void *update_args, const u8 fps);
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+CERVER_EXPORT void cerver_set_update (
+    Cerver *cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u8 fps
+);
 
 // sets a custom cerver update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
-// the update args will be passed to your method as a CerverUpdate & won't be deleted 
-CERVER_EXPORT void cerver_set_update_interval (Cerver *cerver, Action update, void *update_args, const u32 interval);
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+CERVER_EXPORT void cerver_set_update_interval (
+    Cerver *cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u32 interval
+);
 
 // enables admin connections to cerver
 // returns 0 on success, 1 on error
