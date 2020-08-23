@@ -51,7 +51,7 @@ void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (cre
 static void end (int dummy) {
 	
 	if (client_cerver) {
-		cerver_stats_print (client_cerver);
+		cerver_stats_print (client_cerver, true, true);
 		cerver_teardown (client_cerver);
 	} 
 
@@ -395,7 +395,7 @@ int main (void) {
 	cerver_log_debug ("Cerver creates a new client that will authenticate with a cerver & then, perform requests");
 	printf ("\n");
 
-	client_cerver = cerver_create (CUSTOM_CERVER, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
+	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
 		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Auth Example");
 
@@ -447,8 +447,7 @@ int main (void) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		cerver_delete (client_cerver);
 	}
 
 	return 0;
