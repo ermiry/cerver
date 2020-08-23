@@ -238,11 +238,11 @@ int main (void) {
 
 		unsigned int fps = 5;
 		String *update = str_create ("Update fps: %d", fps);
-		cerver_set_update (my_cerver, update_thread, update, fps);
+		cerver_set_update (my_cerver, update_thread, update, str_delete, fps);
 
 		unsigned int interval_value = 1;
 		String *interval = str_create ("Update interval: %d", interval_value);
-		cerver_set_update_interval (my_cerver, update_interval_thread, interval, interval_value);
+		cerver_set_update_interval (my_cerver, update_interval_thread, interval, str_delete, interval_value);
 
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
