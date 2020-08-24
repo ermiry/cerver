@@ -1073,6 +1073,10 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->request = http_request_new ();
 
+		http_receive->fin_rsv_opcode = 0;
+		http_receive->fragmented_message_len = 0;
+		http_receive->fragmented_message = NULL;
+
 		// http_receive->parser->data = http_receive->request;
 		http_receive->parser->data = http_receive;
 	}
@@ -1579,8 +1583,62 @@ static void http_receive_handle (
 
 #pragma region websockets
 
+// handle message based on control code
+static void http_web_sockets_handler (
+	HttpReceive *http_receive,
+	unsigned char fin_rsv_opcode,
+	char *message, size_t message_size
+) {
+
+	// if connection close
+	if ((fin_rsv_opcode & 0x0f) == 8) {
+
+	}
+
+	// if ping
+	else if ((fin_rsv_opcode & 0x0f) == 9) {
+		printf ("\nPING!\n\n");
+	}
+
+	// if pong
+	else if ((fin_rsv_opcode & 0x0f) == 10) {
+		printf ("\nPONG\n\n");
+	}
+
+	// if fragmented message and not final fragment
+	else if ((fin_rsv_opcode & 0x80) == 0) {
+
+	}
+
+	else {
+		// printf ("message: %s\n", message);
+
+		// echo the same result
+		unsigned char res[128] = { 0 };
+
+		fin_rsv_opcode = 129;
+
+		res[0] = fin_rsv_opcode;
+		res[1] = (unsigned char) message_size;
+
+		for (unsigned int i = 0; i < message_size; i++) {
+			res[i + 2] = message[i];
+		}
+
+		printf ("fin_rsv_opcode: %d\n", res[0]);
+		printf ("res len: %d\n", res[1]);
+		printf ("response: %s\n", res + 2);
+
+		printf ("sent: %ld\n", send (http_receive->cr->socket->sock_fd, res, message_size + 2, 0));
+		printf ("\n");
+
+		free (message);
+	}
+
+}
+
 static void http_web_sockets_read_message_content (
-	HttpReceive *http_receive, 
+	HttpReceive *http_receive,
 	ssize_t buffer_size, char *buffer,
 	unsigned char fin_rsv_opcode, size_t message_size
 ) {
@@ -1588,9 +1646,26 @@ static void http_web_sockets_read_message_content (
 	// read mask
 	unsigned char mask[4] = { buffer[0], buffer[1], buffer[2], buffer[3] };
 
-	// char *end = buffer + 4;
+	char *message = NULL;
 
-	char message[128] = { 0 };
+	// if fragmented message
+	if ((fin_rsv_opcode & 0x80) == 0 || (fin_rsv_opcode & 0x0f) == 0) {
+		if (!http_receive->fragmented_message) {
+			http_receive->fin_rsv_opcode = fin_rsv_opcode;
+			http_receive->fragmented_message = (char *) calloc (message_size, sizeof (char));
+			http_receive->fragmented_message_len = message_size;
+		}
+
+		else {
+			http_receive->fragmented_message_len += message_size;
+		}
+
+		message = http_receive->fragmented_message;
+	}
+
+	else {
+		message = (char *) calloc (message_size, sizeof (char));
+	}
 
 	char *end = (buffer + 4);
 	for (size_t c = 0; c < message_size; c++) {
@@ -1598,26 +1673,11 @@ static void http_web_sockets_read_message_content (
 		end += 1;
 	}
 
-	// printf ("message: %s\n", message);
-
-	// echo the same result
-	unsigned char res[128] = { 0 };
-
-	fin_rsv_opcode = 129;
-
-	res[0] = fin_rsv_opcode;
-	res[1] = (unsigned char) message_size;
-
-	for (unsigned int i = 0; i < message_size; i++) {
-		res[i + 2] = message[i];
-	}
-
-	printf ("fin_rsv_opcode: %d\n", res[0]);
-	printf ("res len: %d\n", res[1]);
-	printf ("response: %s\n", res + 2);
-
-	printf ("sent: %ld\n", send (http_receive->cr->socket->sock_fd, res, message_size + 2, 0));
-	printf ("\n");
+	http_web_sockets_handler (
+		http_receive,
+		fin_rsv_opcode,
+		message, message_size
+	);
 
 }
 
@@ -1666,6 +1726,26 @@ static void http_web_sockets_receive_handle (
 
 	else if (length == 127) {
 		printf ("length == 127\n");
+
+		// 8 next bytes is the size of content
+		unsigned char length_bytes[8] = { 
+			packet_buffer[2], packet_buffer[3],
+			packet_buffer[4], packet_buffer[5],
+			packet_buffer[6], packet_buffer[7],
+			packet_buffer[8], packet_buffer[9],
+		};
+
+		size_t length = 0;
+		size_t num_bytes = 8;
+		for (size_t c = 0; c < num_bytes; c++) {
+			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
+		}
+
+		http_web_sockets_read_message_content (
+			http_receive, 
+			rc - 10, packet_buffer + 10,
+			fin_rsv_opcode, length
+		);
 	}
 
 	else {

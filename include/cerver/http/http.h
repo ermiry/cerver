@@ -174,6 +174,11 @@ typedef struct HttpReceive {
     
 	HttpRequest *request;
 
+    // used for websockets
+    unsigned char fin_rsv_opcode;
+    size_t fragmented_message_len;
+    char *fragmented_message;
+
 } HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
