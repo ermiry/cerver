@@ -1639,73 +1639,110 @@ void cerver_receive (void *cerver_receive_ptr) {
 
 }
 
+// packet buffer only gets deleted if cerver_receive_handle_buffer () is used
+static inline u8 cerver_receive_threads_actual (CerverReceive *cr) {
+
+    u8 retval = 1;
+
+    #ifdef HANDLER_DEBUG
+    char *s = NULL;
+    #endif
+
+    char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+    if (packet_buffer) {
+        ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+
+        switch (rc) {
+            case -1: {
+                if (cr->socket->sock_fd > -1) {
+                    switch (errno) {
+                        case EAGAIN: {
+                            #ifdef HANDLER_DEBUG
+                            s = c_string_create (
+                                "cerver_receive_threads () - sock fd: %d timed out", 
+                                cr->socket->sock_fd
+                            );
+
+                            if (s) {
+                                cerver_log_debug (s);
+                                free (s);
+                            }
+                            #endif
+
+                            retval = 0;
+                        } break;
+
+                        default: {
+                            #ifdef HANDLER_DEBUG 
+                            s = c_string_create (
+                                "cerver_receive_threads () - rc < 0 - sock fd: %d", 
+                                cr->socket->sock_fd
+                            );
+                            
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                                free (s);
+                            }
+
+                            perror ("Error ");
+                            #endif
+                        } break;
+                    }
+                }
+
+                free (packet_buffer);
+            } break;
+
+            case 0: {
+                #ifdef HANDLER_DEBUG
+                s = c_string_create (
+                    "cerver_receive_threads () - rc == 0 - sock fd: %d",
+                    cr->socket->sock_fd
+                );
+
+                if (s) {
+                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                    free (s);
+                }
+
+                // perror ("Error ");
+                #endif
+
+                free (packet_buffer);
+            } break;
+
+            default: {
+                cerver_receive_success (cr, rc, packet_buffer);
+
+                retval = 0;
+            } break;
+        }
+    }
+
+    else {
+        char *status = c_string_create (
+            "cerver_receive_threads () - Failed to allocate packet buffer for sock fd <%d> connection!",
+            cr->connection->socket->sock_fd
+        );
+
+        if (status) {
+            cerver_log_msg (stderr, LOG_ERROR, LOG_HANDLER, status);
+            free (status);
+        }
+    }
+
+    return retval;
+
+}
+
 static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
     CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
-    ssize_t rc = 0;
-    do {
-        char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-        if (packet_buffer) {
-            rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+    // set the socket's timeout to prevent thread from getting stuck if no more data to read
+    (void) sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
-            switch (rc) {
-                case -1: {
-                    if (cr->socket->sock_fd > -1) {
-                        #ifdef CERVER_DEBUG 
-                        char *s = c_string_create (
-                            "cerver_receive_threads () - rc < 0 - sock fd: %d", 
-                            cr->socket->sock_fd
-                        );
-                        
-                        if (s) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
-                            free (s);
-                        }
-
-                        perror ("Error ");
-                        #endif
-                    }
-
-                    free (packet_buffer);
-                } break;
-
-                case 0: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create (
-                        "cerver_receive_threads () - rc == 0 - sock fd: %d",
-                        cr->socket->sock_fd
-                    );
-
-                    if (s) {
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
-                        free (s);
-                    }
-
-                    // perror ("Error ");
-                    #endif
-
-                    free (packet_buffer);
-                } break;
-
-                default: {
-                    cerver_receive_success (cr, rc, packet_buffer);
-                } break;
-            }
-        }
-
-        else {
-            char *status = c_string_create (
-                "cerver_receive_threads () - Failed to allocate packet buffer for sock fd <%d> connection!",
-                cr->connection->socket->sock_fd
-            );
-
-            if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_HANDLER, status);
-                free (status);
-            }
-        }
-    } while ((rc > 0) && (cr->socket->sock_fd > 0));
+    while (!cerver_receive_threads_actual (cr) && (cr->socket->sock_fd > 0) && cr->cerver->isRunning);
 
     // check if the connection has already ended
     if (cr->socket->sock_fd > 0) {
@@ -1713,6 +1750,10 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
     }
 
     cerver_receive_delete (cr);
+
+    #ifdef HANDLER_DEBUG
+    cerver_log_msg (stdout, LOG_DEBUG, LOG_HANDLER, "cerver_receive_threads () - loop has ended");
+    #endif
 
     return NULL;
 
@@ -1840,6 +1881,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
     http_receive_delete (http_receive);
 
+    #ifdef HANDLER_DEBUG
     char *status = c_string_create (
         "cerver_receive_http () - loop has ended - dropping sock fd <%d> connection...",
         sock_fd
@@ -1849,6 +1891,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
         cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
         free (status);
     }
+    #endif
 
     // the connection has ended
     connection_drop (cr->cerver, cr->connection);
