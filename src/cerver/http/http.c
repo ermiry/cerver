@@ -1039,6 +1039,8 @@ HttpReceive *http_receive_new (void) {
 	if (http_receive) {
 		http_receive->cr = NULL;
 
+		http_receive->keep_alive = false;
+
 		http_receive->http_cerver = NULL;
 
 		http_receive->parser = malloc (sizeof (http_parser));
@@ -1119,7 +1121,7 @@ static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceiv
 
 // route is expecting a web socket connection, check headers and perform handshake
 static void http_receive_handle_match_web_socket (
-	CerverReceive *cr, 
+	HttpReceive *http_receive, CerverReceive *cr, 
 	HttpRequest *request, 
 	HttpRoute *route
 ) {
@@ -1142,8 +1144,6 @@ static void http_receive_handle_match_web_socket (
 			memset (buffer, 0, 128);
 			base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
 
-			printf ("\n\n%s\n\n", buffer);
-
 			HttpResponse *res = http_response_create (101, NULL, 0);
 			if (res) {
 				http_response_add_header (res, RESPONSE_HEADER_CONNECTION, "Upgrade");
@@ -1155,6 +1155,9 @@ static void http_receive_handle_match_web_socket (
 				http_response_send (res, cr->cerver, cr->connection);
 				http_respponse_delete (res);
 			}
+
+			// keep connection alive
+			http_receive->keep_alive = true;
 		}
 
 		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
@@ -1166,7 +1169,8 @@ static void http_receive_handle_match_web_socket (
 
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
-	HttpCerver *http_cerver, CerverReceive *cr, 
+	HttpCerver *http_cerver, 
+	HttpReceive *http_receive, CerverReceive *cr, 
 	HttpRequest *request, 
 	HttpRoute *found
 ) {
@@ -1217,7 +1221,7 @@ static void http_receive_handle_match (
 				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (cr, request); break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-					http_receive_handle_match_web_socket (cr, request, found);
+					http_receive_handle_match_web_socket (http_receive, cr, request, found);
 					break;
 			}
 
@@ -1326,8 +1330,11 @@ static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
 
 }
 
-static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, CerverReceive *cr, 
-	HttpRoute *found, HttpRequest *request) {
+static void http_receive_handle_select_auth_bearer (
+	HttpCerver *http_cerver, 
+	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpRoute *found, HttpRequest *request
+) {
 
 	// get the bearer token
 	// printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
@@ -1356,7 +1363,7 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 
 				http_receive_handle_match (
 					http_cerver,
-					cr,
+					http_receive, cr,
 					request,
 					found
 				);
@@ -1393,7 +1400,7 @@ static void http_receive_handle_select_auth_bearer (HttpCerver *http_cerver, Cer
 }
 
 // select the route that will handle the request
-static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request) {
+static void http_receive_handle_select (HttpReceive *http_receive, CerverReceive *cr, HttpRequest *request) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
 
@@ -1431,7 +1438,7 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {
 				http_receive_handle_match (
 					http_cerver,
-					cr,
+					http_receive, cr,
 					request,
 					found
 				);
@@ -1440,7 +1447,7 @@ static void http_receive_handle_select (CerverReceive *cr, HttpRequest *request)
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (http_cerver, cr, found, request);
+					http_receive_handle_select_auth_bearer (http_cerver, http_receive, cr, found, request);
 				}
 
 				// no authentication header was provided
@@ -1502,7 +1509,7 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 static int http_receive_handle_message_completed (http_parser *parser) {
 
-	printf ("\non message complete!\n");
+	// printf ("\non message complete!\n");
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
@@ -1512,9 +1519,11 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	// http_request_headers_print (request);
 
 	// select method handler
-	http_receive_handle_select (http_receive->cr, http_receive->request);
+	http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
 
-	connection_end (http_receive->cr->connection);
+	if (!http_receive->keep_alive) {
+		connection_end (http_receive->cr->connection);
+	}
 
 	return 0;
 

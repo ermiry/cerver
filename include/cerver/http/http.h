@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_H_
 #define _CERVER_HTTP_H_
 
+#include <stdbool.h>
+
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
@@ -156,6 +158,9 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 typedef struct HttpReceive {
 
     CerverReceive *cr;
+
+    // keep connection alive - don't close after request has ended
+    bool keep_alive;
 
     HttpCerver *http_cerver;
 
