@@ -28,6 +28,10 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/base64.h"
 
+static void http_static_path_delete (void *http_static_path_ptr);
+
+static int http_static_path_comparator (const void *a, const void *b);
+
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
 
 static void http_receive_handle (
@@ -158,6 +162,8 @@ HttpCerver *http_cerver_new (void) {
 	if (http_cerver) {
 		http_cerver->cerver = NULL;
 
+		http_cerver->static_paths = NULL;
+
 		http_cerver->routes = NULL;
 
 		http_cerver->default_handler = NULL;
@@ -185,7 +191,7 @@ void http_cerver_delete (void *http_cerver_ptr) {
 	if (http_cerver_ptr) {
 		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
 
-		dlist_delete (http_cerver->public_paths);
+		dlist_delete (http_cerver->static_paths);
 
 		dlist_delete (http_cerver->routes);
 
@@ -208,7 +214,7 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 	if (http_cerver) {
 		http_cerver->cerver = cerver;
 
-		http_cerver->public_paths = dlist_init (str_delete, str_comparator);
+		http_cerver->static_paths = dlist_init (http_static_path_delete, http_static_path_comparator);
 
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
@@ -341,35 +347,99 @@ void http_cerver_init (HttpCerver *http_cerver) {
 
 #pragma region public
 
-// add a new public path where static files can be served upon request
-// it is recomened to set absoulute paths
-void http_cerver_public_path_add (HttpCerver *http_cerver, const char *public_path) {
+static HttpStaticPath *http_static_path_new (void) {
 
-	if (http_cerver && public_path) {
-		(void) dlist_insert_after (
-			http_cerver->public_paths,
-			dlist_end (http_cerver->public_paths),
-			str_new (public_path)
-		);
+	HttpStaticPath *http_static_path = (HttpStaticPath *) malloc (sizeof (HttpStaticPath));
+	if (http_static_path) {
+		http_static_path->path = NULL;
+		http_static_path->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
+	}
+
+	return http_static_path;
+
+}
+
+static void http_static_path_delete (void *http_static_path_ptr) {
+
+	if (http_static_path_ptr) {
+		HttpStaticPath *http_static_path = (HttpStaticPath *) http_static_path_ptr;
+
+		str_delete (http_static_path->path);
+
+		free (http_static_path);
 	}
 
 }
 
+static int http_static_path_comparator (const void *a, const void *b) {
+
+	return strcmp (((HttpStaticPath *) a)->path->str, ((HttpStaticPath *) b)->path->str);
+
+}
+
+static HttpStaticPath *http_static_path_create (const char *path) {
+
+	HttpStaticPath *http_static_path = http_static_path_new ();
+	if (http_static_path) {
+		http_static_path->path = str_new (path);
+	}
+
+	return http_static_path;
+
+}
+
+// sets authentication requirenments for a whole static path
+void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type) {
+
+	if (static_path) static_path->auth_type = auth_type;
+
+}
+
+// add a new static path where static files can be served upon request
+// it is recomened to set absoulute paths
+// returns the http static path structure that was added to the cerver
+HttpStaticPath *http_cerver_static_path_add (HttpCerver *http_cerver, const char *static_path) {
+
+	HttpStaticPath *http_static_path = NULL;
+
+	if (http_cerver && static_path) {
+		http_static_path = http_static_path_create (static_path);
+
+		(void) dlist_insert_after (
+			http_cerver->static_paths,
+			dlist_end (http_cerver->static_paths),
+			http_static_path
+		);
+	}
+
+	return http_static_path;
+
+}
+
 // removes a path from the served public paths
-void http_receive_public_path_remove (HttpCerver *http_cerver, const char *public_path) {
+// returns 0 on success, 1 on error
+u8 http_receive_public_path_remove (HttpCerver *http_cerver, const char *static_path) {
 
-	if (http_cerver && public_path) {
-		String *query = str_new (public_path);
+	u8 retval = 1;
 
-		str_delete (
-			dlist_remove (
-			http_cerver->public_paths,
+	if (http_cerver && static_path) {
+		String *query = str_new (static_path);
+
+		void *data = dlist_remove (
+			http_cerver->static_paths,
 			query,
 			NULL
-		));
+		);
+
+		if (data) {
+			http_static_path_delete (data);
+			retval = 0;
+		}
 
 		str_delete (query);
 	}
+
+	return retval;
 
 }
 

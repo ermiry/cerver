@@ -45,8 +45,8 @@ struct _HttpCerver {
 
     struct _Cerver *cerver;
 
-    // paths to serve public / static files
-    DoubleList *public_paths;
+    // paths to serve static files
+    DoubleList *static_paths;
 
     // list of top level routes
     DoubleList *routes;
@@ -86,12 +86,24 @@ CERVER_PRIVATE void http_cerver_init (HttpCerver *http_cerver);
 
 #pragma region public
 
-// add a new public path where static files can be served upon request
+typedef struct HttpStaticPath {
+
+    String *path;
+
+    HttpRouteAuthType auth_type;
+
+} HttpStaticPath;
+
+// sets authentication requirenments for a whole static path
+CERVER_EXPORT void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type);
+
+// add a new static path where static files can be served upon request
 // it is recomened to set absoulute paths
-CERVER_EXPORT void http_cerver_public_path_add (HttpCerver *http_cerver, const char *public_path);
+CERVER_EXPORT HttpStaticPath *http_cerver_static_path_add (HttpCerver *http_cerver, const char *static_path);
 
 // removes a path from the served public paths
-CERVER_EXPORT void http_receive_public_path_remove (HttpCerver *http_cerver, const char *public_path);
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_receive_public_path_remove (HttpCerver *http_cerver, const char *static_path);
 
 #pragma endregion
 
