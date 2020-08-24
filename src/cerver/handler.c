@@ -1784,7 +1784,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
                     cr->cerver->stats->total_n_receives_done += 1;
                     cr->cerver->stats->total_bytes_received += rc;
 
-                    http_receive_handle (http_receive, rc, packet_buffer);
+                    http_receive->handler (http_receive, rc, packet_buffer);
                 } break;
             }
 

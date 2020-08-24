@@ -30,6 +30,16 @@
 
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
 
+static void http_receive_handle (
+	HttpReceive *http_receive, 
+	ssize_t rc, char *packet_buffer
+);
+
+static void http_web_sockets_receive_handle (
+	HttpReceive *http_receive, 
+	ssize_t rc, char *packet_buffer
+);
+
 #pragma region utils
 
 static const char hex[] = "0123456789abcdef";
@@ -1041,6 +1051,8 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->keep_alive = false;
 
+		http_receive->handler = http_receive_handle;
+
 		http_receive->http_cerver = NULL;
 
 		http_receive->parser = malloc (sizeof (http_parser));
@@ -1158,6 +1170,8 @@ static void http_receive_handle_match_web_socket (
 
 			// keep connection alive
 			http_receive->keep_alive = true;
+
+			http_receive->handler = http_web_sockets_receive_handle;
 		}
 
 		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
@@ -1529,7 +1543,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 }
 
-void http_receive_handle (
+static void http_receive_handle (
 	HttpReceive *http_receive, 
 	ssize_t rc, char *packet_buffer
 ) {
@@ -1558,6 +1572,19 @@ void http_receive_handle (
 	}
 
 	// printf ("http_receive_handle () - end!\n");
+
+}
+
+#pragma endregion
+
+#pragma region websockets
+
+static void http_web_sockets_receive_handle (
+	HttpReceive *http_receive, 
+	ssize_t rc, char *packet_buffer
+) {
+
+	// TODO:
 
 }
 

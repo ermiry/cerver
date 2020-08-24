@@ -162,6 +162,8 @@ typedef struct HttpReceive {
     // keep connection alive - don't close after request has ended
     bool keep_alive;
 
+    void (*handler)(struct HttpReceive *, ssize_t, char *);
+
     HttpCerver *http_cerver;
 
 	http_parser *parser;
@@ -177,11 +179,6 @@ typedef struct HttpReceive {
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
-
-CERVER_PRIVATE void http_receive_handle (
-    HttpReceive *http_receive, 
-    ssize_t rc, char *packet_buffer
-);
 
 #pragma endregion
 
