@@ -155,6 +155,17 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 
 #pragma region handler
 
+enum _HttpWebSocketError {
+
+    HTTP_WEB_SOCKET_ERROR_NONE                      = 0,
+
+    HTTP_WEB_SOCKET_ERROR_READ_HANDSHAKE            = 1,
+    HTTP_WEB_SOCKET_ERROR_WRITE_HANDSHAKE           = 2,
+
+};
+
+typedef enum _HttpWebSocketError HttpWebSocketError;
+
 typedef struct HttpReceive {
 
     CerverReceive *cr;
@@ -174,16 +185,33 @@ typedef struct HttpReceive {
     
 	HttpRequest *request;
 
-    // used for websockets
+    // websockets
     unsigned char fin_rsv_opcode;
     size_t fragmented_message_len;
     char *fragmented_message;
+    void (*ws_on_open)(struct _Cerver *, struct _Connection *);
+	void (*ws_on_close)(struct _Cerver *, const char *reason);
+	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
+	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);
+	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, const size_t msg_len);
+	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 } HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
+
+#pragma endregion
+
+#pragma region websockets
+
+// sends a ws message to the selected connection
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_web_sockets_send (
+	Cerver *cerver, Connection *connection,
+	const char *msg, const size_t msg_len
+);
 
 #pragma endregion
 

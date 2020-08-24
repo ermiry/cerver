@@ -1073,9 +1073,16 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->request = http_request_new ();
 
+		// websockets
 		http_receive->fin_rsv_opcode = 0;
 		http_receive->fragmented_message_len = 0;
 		http_receive->fragmented_message = NULL;
+		http_receive->ws_on_open = NULL;
+		http_receive->ws_on_close = NULL;
+		http_receive->ws_on_ping = NULL;
+		http_receive->ws_on_pong = NULL;
+		http_receive->ws_on_message = NULL;
+		http_receive->ws_on_error = NULL;
 
 		// http_receive->parser->data = http_receive->request;
 		http_receive->parser->data = http_receive;
@@ -1176,6 +1183,13 @@ static void http_receive_handle_match_web_socket (
 			http_receive->keep_alive = true;
 
 			http_receive->handler = http_web_sockets_receive_handle;
+
+			http_receive->ws_on_open = route->ws_on_open;
+			http_receive->ws_on_close = route->ws_on_close;
+			http_receive->ws_on_ping = route->ws_on_ping;
+			http_receive->ws_on_pong = route->ws_on_pong;
+			http_receive->ws_on_message = route->ws_on_message;
+			http_receive->ws_on_error = route->ws_on_error;
 		}
 
 		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
@@ -1583,6 +1597,47 @@ static void http_receive_handle (
 
 #pragma region websockets
 
+// FIXME: handle msg_len >= 126 packets
+// sends a ws message to the selected connection
+// returns 0 on success, 1 on error
+u8 http_web_sockets_send (
+	Cerver *cerver, Connection *connection,
+	const char *msg, const size_t msg_len
+) {
+
+	u8 retval = 1;
+
+	unsigned char fin_rsv_opcode = 129;
+
+	unsigned char res[128] = { 0 };
+
+	res[0] = fin_rsv_opcode;
+	res[1] = (unsigned char) msg_len;
+
+	if (msg_len >= 126) {
+		// TODO:
+	}
+
+	else {
+		for (unsigned int i = 0; i < msg_len; i++) {
+			res[i + 2] = msg[i];
+		}
+	}
+
+	printf ("fin_rsv_opcode: %d\n", res[0]);
+	printf ("res len: %d\n", res[1]);
+	printf ("response: %s\n", res + 2);
+
+	ssize_t sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
+	if (sent > 0) retval = 0;
+
+	printf ("sent: %ld\n", sent);
+	printf ("\n");
+
+	return retval;
+
+}
+
 // handle message based on control code
 static void http_web_sockets_handler (
 	HttpReceive *http_receive,
@@ -1613,25 +1668,14 @@ static void http_web_sockets_handler (
 	else {
 		// printf ("message: %s\n", message);
 
-		// echo the same result
-		unsigned char res[128] = { 0 };
-
-		fin_rsv_opcode = 129;
-
-		res[0] = fin_rsv_opcode;
-		res[1] = (unsigned char) message_size;
-
-		for (unsigned int i = 0; i < message_size; i++) {
-			res[i + 2] = message[i];
+		if (http_receive->ws_on_message) {
+			http_receive->ws_on_message (
+				http_receive->cr->cerver, http_receive->cr->connection,
+				message, message_size
+			);
 		}
 
-		printf ("fin_rsv_opcode: %d\n", res[0]);
-		printf ("res len: %d\n", res[1]);
-		printf ("response: %s\n", res + 2);
-
-		printf ("sent: %ld\n", send (http_receive->cr->socket->sock_fd, res, message_size + 2, 0));
-		printf ("\n");
-
+		// safe to delete message
 		free (message);
 	}
 
