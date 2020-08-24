@@ -34,4 +34,10 @@ CERVER_PUBLIC bool sock_ip_equal (const struct sockaddr *a, const struct sockadd
 
 CERVER_PUBLIC in_port_t sock_ip_port (const struct sockaddr *address);
 
+// sets a timeout (in seconds) for a socket
+// the socket will still block until the timeout is completed
+// if no data was read, a EAGAIN error is returned
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int sock_set_timeout (int sock_fd, time_t timeout);
+
 #endif
