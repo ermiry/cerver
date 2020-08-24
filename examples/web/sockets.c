@@ -51,6 +51,45 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+void echo_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = http_response_json_msg (200, "Echo route works!");
+	if (res) {
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+}
+
+void echo_handler_on_open (Cerver *cerver, Connection *connection) {
+
+	printf ("echo_handler_on_open ()\n");
+
+}
+
+void echo_handler_on_close (Cerver *cerver, const char *reason) {
+
+	printf ("echo_handler_on_close ()\n");
+
+}
+
+void echo_handler_on_message (
+	Cerver *cerver, Connection *connection, 
+	const char *msg, const size_t msg_len
+) {
+
+	printf ("echo_handler_on_message ()\n");
+
+	printf ("message[%ld]: %s\n", msg_len, msg);
+
+	http_web_sockets_send (
+		cerver, connection,
+		msg, msg_len
+	);
+
+}
+
 void chat_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Chat route works!");
@@ -93,6 +132,14 @@ int main (int argc, char **argv) {
 		// /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
+
+		// /echo
+		HttpRoute *echo_route = http_route_create (REQUEST_METHOD_GET, "echo", echo_handler);
+        http_route_set_modifier (echo_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		http_route_set_ws_on_open (echo_route, echo_handler_on_open);
+		http_route_set_ws_on_message (echo_route, echo_handler_on_message);
+		http_route_set_ws_on_close (echo_route, echo_handler_on_close);
+		http_cerver_route_register (http_cerver, echo_route);
 
         // /chat
 		HttpRoute *chat_route = http_route_create (REQUEST_METHOD_GET, "chat", chat_handler);
