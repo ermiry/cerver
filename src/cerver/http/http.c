@@ -185,6 +185,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 	if (http_cerver_ptr) {
 		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
 
+		dlist_delete (http_cerver->public_paths);
+
 		dlist_delete (http_cerver->routes);
 
 		str_delete (http_cerver->uploads_path);
@@ -205,6 +207,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 	HttpCerver *http_cerver = http_cerver_new ();
 	if (http_cerver) {
 		http_cerver->cerver = cerver;
+
+		http_cerver->public_paths = dlist_init (str_delete, str_comparator);
 
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
@@ -329,6 +333,42 @@ void http_cerver_init (HttpCerver *http_cerver) {
 
 		// load jwt keys
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region public
+
+// add a new public path where static files can be served upon request
+// it is recomened to set absoulute paths
+void http_cerver_public_path_add (HttpCerver *http_cerver, const char *public_path) {
+
+	if (http_cerver && public_path) {
+		(void) dlist_insert_after (
+			http_cerver->public_paths,
+			dlist_end (http_cerver->public_paths),
+			str_new (public_path)
+		);
+	}
+
+}
+
+// removes a path from the served public paths
+void http_receive_public_path_remove (HttpCerver *http_cerver, const char *public_path) {
+
+	if (http_cerver && public_path) {
+		String *query = str_new (public_path);
+
+		str_delete (
+			dlist_remove (
+			http_cerver->public_paths,
+			query,
+			NULL
+		));
+
+		str_delete (query);
 	}
 
 }

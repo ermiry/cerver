@@ -45,6 +45,9 @@ struct _HttpCerver {
 
     struct _Cerver *cerver;
 
+    // paths to serve public / static files
+    DoubleList *public_paths;
+
     // list of top level routes
     DoubleList *routes;
 
@@ -78,6 +81,17 @@ CERVER_PRIVATE void http_cerver_delete (void *http_cerver_ptr);
 CERVER_PRIVATE HttpCerver *http_cerver_create (struct _Cerver *cerver);
 
 CERVER_PRIVATE void http_cerver_init (HttpCerver *http_cerver);
+
+#pragma endregion
+
+#pragma region public
+
+// add a new public path where static files can be served upon request
+// it is recomened to set absoulute paths
+CERVER_EXPORT void http_cerver_public_path_add (HttpCerver *http_cerver, const char *public_path);
+
+// removes a path from the served public paths
+CERVER_EXPORT void http_receive_public_path_remove (HttpCerver *http_cerver, const char *public_path);
 
 #pragma endregion
 
