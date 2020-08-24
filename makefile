@@ -97,6 +97,7 @@ examples: $(EXAMPLES)
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/client.c -o ./examples/bin/client/client -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/auth.c -o ./examples/bin/client/auth -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/api.c -o ./examples/bin/web/api -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/sockets.c -o ./examples/bin/web/sockets -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/upload.c -o ./examples/bin/web/upload -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/web/web.c -o ./examples/bin/web/web -l cerver
 

@@ -1579,12 +1579,104 @@ static void http_receive_handle (
 
 #pragma region websockets
 
+static void http_web_sockets_read_message_content (
+	HttpReceive *http_receive, 
+	ssize_t buffer_size, char *buffer,
+	unsigned char fin_rsv_opcode, size_t message_size
+) {
+
+	// read mask
+	unsigned char mask[4] = { buffer[0], buffer[1], buffer[2], buffer[3] };
+
+	// char *end = buffer + 4;
+
+	char message[128] = { 0 };
+
+	char *end = (buffer + 4);
+	for (size_t c = 0; c < message_size; c++) {
+		message[c] = *end ^ mask[c % 4];
+		end += 1;
+	}
+
+	// printf ("message: %s\n", message);
+
+	// echo the same result
+	unsigned char res[128] = { 0 };
+
+	fin_rsv_opcode = 129;
+
+	res[0] = fin_rsv_opcode;
+	res[1] = (unsigned char) message_size;
+
+	for (unsigned int i = 0; i < message_size; i++) {
+		res[i + 2] = message[i];
+	}
+
+	printf ("fin_rsv_opcode: %d\n", res[0]);
+	printf ("res len: %d\n", res[1]);
+	printf ("response: %s\n", res + 2);
+
+	printf ("sent: %ld\n", send (http_receive->cr->socket->sock_fd, res, message_size + 2, 0));
+	printf ("\n");
+
+}
+
 static void http_web_sockets_receive_handle (
 	HttpReceive *http_receive, 
 	ssize_t rc, char *packet_buffer
 ) {
 
-	// TODO:
+	printf ("http_web_sockets_receive_handle ()\n");
+
+	unsigned char first_bytes[2] = { packet_buffer[0], packet_buffer[1] };
+
+	unsigned char fin_rsv_opcode = first_bytes[0];
+	printf ("%d\n", first_bytes[0]);
+
+	// close connection if unmasked message from client (protocol error)
+	if (first_bytes[1] < 128) {
+		cerver_log_error ("http_web_sockets_receive_handle () - message from client not masked!");
+		// TODO: end connection
+
+		return;
+	}
+
+	size_t length = (first_bytes[1] & 127);
+
+	if (length == 126) {
+		printf ("length == 126\n");
+
+		// 2 next bytes is the size of content
+		unsigned char length_bytes[2] = { packet_buffer[2], packet_buffer[3] };
+
+		size_t length = 0;
+		size_t num_bytes = 2;
+		for (size_t c = 0; c < num_bytes; c++) {
+			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
+		}
+
+		printf ("length: %ld\n", length);
+
+		http_web_sockets_read_message_content (
+			http_receive, 
+			rc - 4, packet_buffer + 4,
+			fin_rsv_opcode, length
+		);
+	}
+
+	else if (length == 127) {
+		printf ("length == 127\n");
+	}
+
+	else {
+		printf ("length: %ld\n", length);
+
+		http_web_sockets_read_message_content (
+			http_receive,
+			rc - 2, packet_buffer + 2,
+			fin_rsv_opcode, length
+		);
+	}
 
 }
 

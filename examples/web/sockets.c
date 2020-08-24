@@ -51,6 +51,17 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+void chat_handler (CerverReceive *cr, HttpRequest *request) {
+
+	HttpResponse *res = http_response_json_msg (200, "Chat route works!");
+	if (res) {
+		http_response_print (res);
+		http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -82,6 +93,11 @@ int main (int argc, char **argv) {
 		// /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
+
+        // /chat
+		HttpRoute *chat_route = http_route_create (REQUEST_METHOD_GET, "chat", chat_handler);
+        http_route_set_modifier (chat_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		http_cerver_route_register (http_cerver, chat_route);
 
 		if (cerver_start (web_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
