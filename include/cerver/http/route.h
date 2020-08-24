@@ -73,7 +73,7 @@ struct _HttpRoute {
 	void (*ws_on_close)(struct _Cerver *, const char *reason);
 	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
 	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len);
+	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, const size_t msg_len);
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 	// stats
