@@ -206,6 +206,9 @@ CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
 
 #pragma region websockets
 
+// the default tmeout for a websocket sonnection
+#define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
+
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_web_sockets_send (

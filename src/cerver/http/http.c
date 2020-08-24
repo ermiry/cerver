@@ -1190,6 +1190,21 @@ static void http_receive_handle_match_web_socket (
 			http_receive->ws_on_pong = route->ws_on_pong;
 			http_receive->ws_on_message = route->ws_on_message;
 			http_receive->ws_on_error = route->ws_on_error;
+
+			// set the sockets timeout to prevent threads from getting stuck if no more data to read
+			if (sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
+				char *status = c_string_create (
+					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
+					cr->connection->socket->sock_fd
+				);
+
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+
+				// FIXME: end connection with error
+			}
 		}
 
 		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
