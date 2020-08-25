@@ -27,6 +27,8 @@ typedef enum ResponseHeader {
 
 CERVER_PUBLIC const char *http_response_header_str (ResponseHeader header);
 
+#pragma region main
+
 typedef struct HttpResponse {
 
 	http_status status;
@@ -101,6 +103,21 @@ CERVER_EXPORT u8 http_response_send_split (HttpResponse *res, struct _Cerver *ce
 CERVER_EXPORT u8 http_response_create_and_send (unsigned int status, const void *data, size_t data_len,
 	struct _Cerver *cerver, struct _Connection *connection);
 
+CERVER_PUBLIC void http_response_print (HttpResponse *res);
+
+#pragma endregion
+
+#pragma region render
+
+// opens the selected file and sends it back to the user
+// this method takes care of generating the header based on the file values
+// returns 0 on success, 1 on error
+extern u8 http_response_render_file (CerverReceive *cr, const char *filename);
+
+#pragma endregion
+
+#pragma region json
+
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 CERVER_EXPORT HttpResponse *http_response_json_msg (http_status status, const char *msg);
@@ -117,6 +134,6 @@ CERVER_EXPORT HttpResponse *http_response_json_error (http_status status, const 
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const char *error_msg);
 
-CERVER_PUBLIC void http_response_print (HttpResponse *res);
+#pragma endregion
 
 #endif

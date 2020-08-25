@@ -1,12 +1,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/sendfile.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/cerver.h"
 #include "cerver/version.h"
+#include "cerver/cerver.h"
+#include "cerver/files.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/status.h"
 #include "cerver/http/response.h"
 #include "cerver/http/json/json.h"
@@ -24,6 +28,8 @@ const char *http_response_header_str (ResponseHeader header) {
 	}
 
 }
+
+#pragma region main
 
 HttpResponse *http_response_new (void) {
 
@@ -376,6 +382,78 @@ u8 http_response_create_and_send (unsigned int status, const void *data, size_t 
 
 }
 
+void http_response_print (HttpResponse *res) {
+
+	if (res) {
+		if (res->res) {
+			printf ("\n%.*s\n\n", (int) res->res_len, (char *) res->res);
+		}
+	}
+
+}
+
+#pragma endregion
+
+#pragma region render
+
+// opens the selected file and sends it back to the user
+// this method takes care of generating the header based on the file values
+// returns 0 on success, 1 on error
+u8 http_response_render_file (CerverReceive *cr, const char *filename) {
+
+	u8 retval = 1;
+
+	// check if file exists
+	struct stat filestatus = { 0 };
+	int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
+	if (file > 0) {
+		char *ext = files_get_file_extension (filename);
+		if (ext) {
+			const char *content_type = http_content_type_by_extension (ext);
+
+			// prepare & send the header
+			char *header = c_string_create (
+				"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: %s\nContent-Length: %ld\n\n", 
+				http_status_str (200),
+				CERVER_VERSION,
+				content_type,
+				filestatus.st_size
+			);
+
+			if (header) {
+				// printf ("\n%s\n", header);
+
+				if (!http_response_send_actual (
+					cr->connection->socket,
+					header, strlen (header)
+				)) {
+					// send the actual file
+					sendfile (
+						cr->connection->socket->sock_fd, 
+						file, 
+						0, filestatus.st_size
+					);
+
+					retval = 0;
+				}
+
+				free (header);
+			}
+
+			free (ext);
+		}
+
+		close (file);
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region json
+
 static HttpResponse *http_response_json_internal (http_status status, const char *key, const char *value) {
 
 	HttpResponse *res = http_response_new ();
@@ -467,12 +545,4 @@ u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const 
 
 }
 
-void http_response_print (HttpResponse *res) {
-
-	if (res) {
-		if (res->res) {
-			printf ("\n%.*s\n\n", (int) res->res_len, (char *) res->res);
-		}
-	}
-
-}
+#pragma endregion
