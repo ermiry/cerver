@@ -1702,6 +1702,55 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 }
 
+// TODO: handle authentication
+static void http_receive_handle_serve_file (HttpReceive *http_receive) {
+
+	bool found = false;
+
+	HttpStaticPath *static_path = NULL;
+	struct stat filestatus = { 0 };
+	char filename[256] = { 0 };
+	for (ListElement *le = dlist_start (http_receive->http_cerver->static_paths); le; le = le->next) {
+		static_path = (HttpStaticPath *) le->data;
+
+		(void) c_string_concat_safe (
+			static_path->path->str, http_receive->request->url->str, 
+			filename, 256
+		);
+
+		// check if file exists
+		memset (&filestatus, 0, sizeof (struct stat));
+		if (!stat (filename, &filestatus)) {
+			// serve the file
+			int file = open (filename, O_RDONLY);
+			if (file) {
+				http_response_send_file (http_receive->cr, file, filename, &filestatus);
+
+				close (file);
+			}
+
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		// TODO: what to do here? - maybe something similar to catch all route
+		char *status = c_string_create (
+			"Unable to find file %s",
+			http_receive->request->url->str
+		);
+
+		if (status) {
+			cerver_log_warning (status);
+			free (status);
+		}
+
+		http_receive_handle_default_route (http_receive->cr, http_receive->request);
+	}
+
+}
+
 static int http_receive_handle_message_completed (http_parser *parser) {
 
 	// printf ("\non message complete!\n");
@@ -1711,10 +1760,31 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	// printf ("Method: %s\n", http_method_str (parser->method));
 	http_receive->request->method = http_receive->parser->method;
 
-	// http_request_headers_print (request);
-
 	// select method handler
-	http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+	switch (http_receive->request->method) {
+		case REQUEST_METHOD_GET: {
+			// check for file extension
+			if (strrchr (http_receive->request->url->str, '.')) {
+				// check if we can serve file from static paths
+				if (http_receive->http_cerver->static_paths->size) {
+					http_receive_handle_serve_file (http_receive);
+				}
+
+				// unable to serve a file, try for matching route
+				else {
+					http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+				}
+			}
+
+			else {
+				http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+			}
+		} break;
+
+		default:
+			http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+			break;
+	}
 
 	if (!http_receive->keep_alive) {
 		connection_end (http_receive->cr->connection);
