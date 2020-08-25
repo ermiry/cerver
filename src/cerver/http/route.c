@@ -136,17 +136,23 @@ HttpRoute *http_route_create (
 	HttpHandler handler
 ) {
 
-	HttpRoute *route = http_route_new ();
-	if (route) {
-		route->actual = str_new (actual_route);
+	HttpRoute *route = NULL;
 
-		// by default, all routes are top level when they are created
-		route->base = str_new ("/");
-		route->route = str_create ("/%s", actual_route);
+	if (actual_route) {
+		route = http_route_new ();
+		if (route) {
+			route->actual = str_new (actual_route);
 
-		route->children = dlist_init (http_route_delete, NULL);
+			// by default, all routes are top level when they are created
+			route->base = str_new ("/");
 
-		route->handlers[method] = handler;
+			if (!strcmp ("/", actual_route)) route->route = str_new ("/");
+			else route->route = str_create ("/%s", actual_route);
+
+			route->children = dlist_init (http_route_delete, NULL);
+
+			route->handlers[method] = handler;
+		}
 	}
 
 	return route;
