@@ -137,6 +137,32 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 
 }
 
+// concats two strings into the same buffer
+// wont perform operation if result would overflow buffer
+// returns the len of the final string
+size_t c_string_concat_safe (const char *s1, const char *s2, const char *des, size_t des_size) {
+
+	size_t retval = 0;
+
+	if (s1 && s2 && des) {
+		if ((strlen (s1) + strlen (s2)) < des_size) {
+			char *s1_end = (char *) s1;
+			char *s2_end = (char *) s2;
+			char *end = (char *) des;
+
+			while (*s1_end) *end++ = *s1_end++;
+			while (*s2_end) *end++ = *s2_end++;
+
+			*end = '\0';
+
+			retval = strlen (des);
+		}
+	}
+
+	return retval;
+
+}
+
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 

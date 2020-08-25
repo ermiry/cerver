@@ -42,6 +42,11 @@ CERVER_PUBLIC void c_string_copy (char *to, const char *from);
 // copies n bytes from a c string into another one previuosly allocated
 CERVER_PUBLIC void c_string_n_copy (char *to, const char *from, size_t n);
 
+// concats two strings into the same buffer
+// wont perform operation if result would overflow buffer
+// returns the len of the final string
+CERVER_PUBLIC size_t c_string_concat_safe (const char *s1, const char *s2, const char *des, size_t des_size);
+
 // creates a new c string with the desired format, as in printf
 CERVER_PUBLIC char *c_string_create (const char *format, ...);
 
