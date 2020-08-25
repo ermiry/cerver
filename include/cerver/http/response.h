@@ -103,6 +103,11 @@ CERVER_EXPORT u8 http_response_send_split (HttpResponse *res, struct _Cerver *ce
 CERVER_EXPORT u8 http_response_create_and_send (unsigned int status, const void *data, size_t data_len,
 	struct _Cerver *cerver, struct _Connection *connection);
 
+// sends a file directly to the connection
+// this method is used when serving files from static paths & by  http_response_render_file ()
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_send_file (CerverReceive *cr, int file, const char *filename, struct stat *filestatus);
+
 CERVER_PUBLIC void http_response_print (HttpResponse *res);
 
 #pragma endregion

@@ -382,6 +382,53 @@ u8 http_response_create_and_send (unsigned int status, const void *data, size_t 
 
 }
 
+// sends a file directly to the connection
+// this method is used when serving files from static paths & by  http_response_render_file ()
+// returns 0 on success, 1 on error
+u8 http_response_send_file (CerverReceive *cr, int file, const char *filename, struct stat *filestatus) {
+	
+	u8 retval = 1;
+
+	char *ext = files_get_file_extension (filename);
+	if (ext) {
+		const char *content_type = http_content_type_by_extension (ext);
+
+		// prepare & send the header
+		char *header = c_string_create (
+			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: %s\nContent-Length: %ld\n\n", 
+			http_status_str (200),
+			CERVER_VERSION,
+			content_type,
+			filestatus->st_size
+		);
+
+		if (header) {
+			// printf ("\n%s\n", header);
+
+			if (!http_response_send_actual (
+				cr->connection->socket,
+				header, strlen (header)
+			)) {
+				// send the actual file
+				sendfile (
+					cr->connection->socket->sock_fd, 
+					file, 
+					0, filestatus->st_size
+				);
+
+				retval = 0;
+			}
+
+			free (header);
+		}
+
+		free (ext);
+	}
+
+	return retval;
+
+}
+
 void http_response_print (HttpResponse *res) {
 
 	if (res) {
@@ -407,41 +454,7 @@ u8 http_response_render_file (CerverReceive *cr, const char *filename) {
 	struct stat filestatus = { 0 };
 	int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
 	if (file > 0) {
-		char *ext = files_get_file_extension (filename);
-		if (ext) {
-			const char *content_type = http_content_type_by_extension (ext);
-
-			// prepare & send the header
-			char *header = c_string_create (
-				"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: %s\nContent-Length: %ld\n\n", 
-				http_status_str (200),
-				CERVER_VERSION,
-				content_type,
-				filestatus.st_size
-			);
-
-			if (header) {
-				// printf ("\n%s\n", header);
-
-				if (!http_response_send_actual (
-					cr->connection->socket,
-					header, strlen (header)
-				)) {
-					// send the actual file
-					sendfile (
-						cr->connection->socket->sock_fd, 
-						file, 
-						0, filestatus.st_size
-					);
-
-					retval = 0;
-				}
-
-				free (header);
-			}
-
-			free (ext);
-		}
+		retval = http_response_send_file (cr, file, filename, &filestatus);
 
 		close (file);
 	}
