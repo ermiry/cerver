@@ -113,6 +113,8 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
+		http_cerver_static_path_add (http_cerver, "./examples/web/public");
+
 		// GET /
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
 		http_cerver_route_register (http_cerver, main_route);
