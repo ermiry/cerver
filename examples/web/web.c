@@ -40,6 +40,16 @@ void end (int dummy) {
 
 #pragma region routes
 
+// GET /
+void main_handler (CerverReceive *cr, HttpRequest *request) {
+
+	if (http_response_render_file (cr, "./examples/web/public/index.html")) {
+		cerver_log_error ("Failed to send ./examples/web/public/index.html");
+	}
+
+}
+
+// GET /test
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Test route works!");
@@ -51,6 +61,7 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// GET /hola
 void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Hola route works!");
@@ -62,6 +73,7 @@ void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// GET /adios
 void adios_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg (200, "Adios route works!");
@@ -101,15 +113,19 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
-		// /test
+		// GET /
+		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
+		http_cerver_route_register (http_cerver, main_route);
+
+		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
 
-		// /hola
+		// GET /hola
 		HttpRoute *hola_route = http_route_create (REQUEST_METHOD_GET, "hola", hola_handler);
 		http_cerver_route_register (http_cerver, hola_route);
 
-		// /adios
+		// GET /adios
 		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
 		http_cerver_route_register (http_cerver, adios_route);
 
