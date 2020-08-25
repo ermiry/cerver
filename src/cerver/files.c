@@ -59,7 +59,7 @@ unsigned int files_create_dir (const char *dir_path, mode_t mode) {
 
 }
 
-// returns an allocated string with the file extensio
+// returns an allocated string with the file extension
 // NULL if no file extension
 char *files_get_file_extension (const char *filename) {
 
@@ -73,12 +73,12 @@ char *files_get_file_extension (const char *filename) {
             char *p = ptr;
             while (*p++) ext_len++;
 
-            char *ext = (char *) calloc (ext_len + 1, sizeof (char));
-            if (ext) {
-                memcpy (ext, ptr, ext_len);
-                ext[ext_len] = '\0';
-
-                retval = ext;
+            if (ext_len) {
+                retval = (char *) calloc (ext_len + 1, sizeof (char));
+                if (retval) {
+                    memcpy (retval, ptr + 1, ext_len);
+                    retval[ext_len] = '\0';
+                }
             }
         }
         
@@ -246,14 +246,16 @@ char *file_read (const char *filename, size_t *file_size) {
 
 }
 
-// opens a file
+// opens a file with the required flags
 // returns fd on success, -1 on error
-int file_open_as_fd (const char *filename, struct stat *filestatus) {
+int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
+
+    int retval = -1;
 
     if (filename) {
         memset (filestatus, 0, sizeof (struct stat));
         if (!stat (filename, filestatus)) 
-            return open (filename, 0);
+            retval = open (filename, flags);
 
         else {
             #ifdef CERVER_DEBUG
@@ -266,7 +268,7 @@ int file_open_as_fd (const char *filename, struct stat *filestatus) {
         } 
     }
 
-    return -1;      // error
+    return retval;
 
 }
 
@@ -279,7 +281,7 @@ int file_send (const char *filename, int sock_fd) {
     if (filename) {
         // try to open the file
         struct stat filestatus;
-        int fd = file_open_as_fd (filename, &filestatus);
+        int fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
         if (fd >= 0) {
             // send a first packet with file info
             // TODO:
