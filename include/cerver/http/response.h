@@ -114,10 +114,20 @@ CERVER_PUBLIC void http_response_print (HttpResponse *res);
 
 #pragma region render
 
+// sends the selected text back to the user
+// this methods takes care of generating a repsonse with text/html content type
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_render_text (CerverReceive *cr, const char *text, const size_t text_len);
+
+// sends the selected json back to the user
+// this methods takes care of generating a repsonse with application/json content type
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_render_json (CerverReceive *cr, const char *json, const size_t json_len);
+
 // opens the selected file and sends it back to the user
 // this method takes care of generating the header based on the file values
 // returns 0 on success, 1 on error
-extern u8 http_response_render_file (CerverReceive *cr, const char *filename);
+CERVER_EXPORT u8 http_response_render_file (CerverReceive *cr, const char *filename);
 
 #pragma endregion
 

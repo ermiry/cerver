@@ -283,13 +283,13 @@ u8 http_response_compile (HttpResponse *res) {
 
 static u8 http_response_send_actual (
 	Socket *socket, 
-	char *data, size_t data_size
+	const char *data, size_t data_size
 ) {
 
 	u8 retval = 0;
 
 	ssize_t sent = 0;
-	char *p = data;
+	char *p = (char *) data;
 	while (data_size > 0) {
 		sent = send (socket->sock_fd, p, data_size, 0);
 		if (sent < 0) {
@@ -443,6 +443,98 @@ void http_response_print (HttpResponse *res) {
 
 #pragma region render
 
+static u8 http_response_render_send (
+	CerverReceive *cr,
+	const char *header, const size_t header_len,
+	const char *data, const size_t data_len
+) {
+
+	u8 retval = 1;
+
+	if (!http_response_send_actual (
+		cr->connection->socket,
+		header, header_len
+	)) {
+		if (!http_response_send_actual (
+			cr->connection->socket,
+			data, data_len
+		)) {
+			size_t total_size = header_len + data_len;
+			if (cr->cerver) cr->cerver->stats->total_bytes_sent += total_size;
+			cr->connection->stats->total_bytes_sent += total_size;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// sends the selected text back to the user
+// this methods takes care of generating a repsonse with text/html content type
+// returns 0 on success, 1 on error
+u8 http_response_render_text (CerverReceive *cr, const char *text, const size_t text_len) {
+
+	u8 retval = 1;
+
+	if (cr && text) {
+		char *header = c_string_create (
+			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: text/html; charset=UTF-8\nContent-Length: %ld\n\n", 
+			http_status_str (200),
+			CERVER_VERSION,
+			text_len
+		);
+
+		if (header) {
+			printf ("\n%s\n", header);
+
+			retval = http_response_render_send (
+				cr,
+				header, strlen (header),
+				text, text_len
+			);
+
+			free (header);
+		}
+	}
+
+	return retval;
+
+}
+
+// sends the selected json back to the user
+// this methods takes care of generating a repsonse with application/json content type
+// returns 0 on success, 1 on error
+u8 http_response_render_json (CerverReceive *cr, const char *json, const size_t json_len) {
+
+	u8 retval = 1;
+
+	if (cr && json) {
+		char *header = c_string_create (
+			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: application/json\nContent-Length: %ld\n\n", 
+			http_status_str (200),
+			CERVER_VERSION,
+			json_len
+		);
+
+		if (header) {
+			printf ("\n%s\n", header);
+
+			retval = http_response_render_send (
+				cr,
+				header, strlen (header),
+				json, json_len
+			);
+
+			free (header);
+		}
+	}
+
+	return retval;
+
+}
+
 // opens the selected file and sends it back to the user
 // this method takes care of generating the header based on the file values
 // returns 0 on success, 1 on error
@@ -450,13 +542,15 @@ u8 http_response_render_file (CerverReceive *cr, const char *filename) {
 
 	u8 retval = 1;
 
-	// check if file exists
-	struct stat filestatus = { 0 };
-	int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
-	if (file > 0) {
-		retval = http_response_send_file (cr, file, filename, &filestatus);
+	if (cr && filename) {
+		// check if file exists
+		struct stat filestatus = { 0 };
+		int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
+		if (file > 0) {
+			retval = http_response_send_file (cr, file, filename, &filestatus);
 
-		close (file);
+			close (file);
+		}
 	}
 
 	return retval;
