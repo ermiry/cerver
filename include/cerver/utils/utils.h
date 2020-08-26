@@ -2,6 +2,7 @@
 #define _CERVER_UTILS_H_
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "cerver/config.h"
 
@@ -41,6 +42,10 @@ CERVER_PUBLIC void c_string_copy (char *to, const char *from);
 
 // copies n bytes from a c string into another one previuosly allocated
 CERVER_PUBLIC void c_string_n_copy (char *to, const char *from, size_t n);
+
+// concats two c strings into a newly allocated buffer of len s1 + s2
+// returns a newly allocated buffer on success, NULL on any error
+CERVER_PUBLIC char *c_string_concat (const char *s1, const char *s2, size_t *des_size);
 
 // concats two strings into the same buffer
 // wont perform operation if result would overflow buffer
