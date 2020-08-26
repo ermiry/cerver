@@ -1788,7 +1788,7 @@ static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *htt
                             }
                             #endif
 
-                            retval = 0;
+                            if (http_receive->keep_alive) retval = 0;
                         } break;
 
                         default: {
@@ -1876,6 +1876,9 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
     http_receive->http_cerver = (HttpCerver *) cr->cerver->cerver_data;
 
     i32 sock_fd = cr->socket->sock_fd;
+
+    // set the socket's timeout to prevent thread from getting stuck if no more data to read
+    (void) sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
     while (!cerver_receive_http_actual (cr, http_receive) && cr->cerver->isRunning);
 
