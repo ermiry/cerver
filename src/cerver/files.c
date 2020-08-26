@@ -191,7 +191,7 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("File %s not found!", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -220,7 +220,7 @@ char *file_read (const char *filename, size_t *file_size) {
                 #ifdef CERVER_DEBUG
                 char *s = c_string_create ("Failed to read file (%s) contents!");
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                     free (s);
                 }
                 #endif
@@ -235,7 +235,7 @@ char *file_read (const char *filename, size_t *file_size) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Unable to open file %s.", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -261,7 +261,7 @@ int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("File %s not found!", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -291,7 +291,7 @@ int file_send (const char *filename, int sock_fd) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Failed to open file %s.", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif

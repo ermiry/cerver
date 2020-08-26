@@ -29,7 +29,7 @@ u8 thread_create_detachable (pthread_t *thread, void *(*work) (void *), void *ar
                 }
 
                 else {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to create detachable thread!");
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to create detachable thread!");
                     perror ("Error");
                 }
             }
