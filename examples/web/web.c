@@ -61,6 +61,30 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// GET /text
+void text_handler (CerverReceive *cr, HttpRequest *request) {
+
+	char *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>hola_handler () works!</h2></body></html>";
+	size_t text_len = strlen (text);
+
+	if (http_response_render_text (cr, text, text_len)) {
+		cerver_log_error ("text_handler () has failed!");
+	}
+
+}
+
+// GET /json
+void json_handler (CerverReceive *cr, HttpRequest *request) {
+
+	char *json = "{\"msg\": \"okay\"}";
+	size_t json_len = strlen (json);
+
+	if (http_response_render_json (cr, json, json_len)) {
+		cerver_log_error ("json_handler () has failed!");
+	}
+
+}
+
 // GET /hola
 void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
@@ -122,6 +146,14 @@ int main (int argc, char **argv) {
 		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
+
+		// GET /text
+		HttpRoute *text_route = http_route_create (REQUEST_METHOD_GET, "text", text_handler);
+		http_cerver_route_register (http_cerver, text_route);
+
+		// GET /json
+		HttpRoute *json_route = http_route_create (REQUEST_METHOD_GET, "json", json_handler);
+		http_cerver_route_register (http_cerver, json_route);
 
 		// GET /hola
 		HttpRoute *hola_route = http_route_create (REQUEST_METHOD_GET, "hola", hola_handler);

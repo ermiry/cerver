@@ -202,7 +202,7 @@ static void handler_cero (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -224,7 +224,7 @@ static void handler_one (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -246,7 +246,7 @@ static void handler_two (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -268,7 +268,7 @@ static void handler_three (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -294,7 +294,7 @@ static void on_client_connected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}
@@ -313,7 +313,7 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}
