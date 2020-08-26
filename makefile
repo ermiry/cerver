@@ -6,10 +6,14 @@ MATH		:= -lm
 
 OPENSSL		:= -l ssl -l crypto
 
-# CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`	
-
 # print additional information
-DEFINES = -D CERVER_DEBUG -D CERVER_STATS -D CLIENT_DEBUG -D HANDLER_DEBUG -D PACKETS_DEBUG -D AUTH_DEBUG -D ADMIN_DEBUG
+DEFINES	= -D CERVER_DEBUG -D CERVER_STATS 	\
+			-D CLIENT_DEBUG 				\
+			-D HANDLER_DEBUG 				\
+			-D PACKETS_DEBUG 				\
+			-D AUTH_DEBUG 					\
+			-D ADMIN_DEBUG					\
+			-D HTTP_DEBUG					\
 
 CC          := gcc
 

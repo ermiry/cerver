@@ -1664,7 +1664,7 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	http_request_headers_print (http_receive->request);
+	// http_request_headers_print (http_receive->request);
 
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
@@ -1757,8 +1757,20 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	// printf ("Method: %s\n", http_method_str (parser->method));
 	http_receive->request->method = http_receive->parser->method;
+
+	#ifdef HTTP_DEBUG
+	char *status = c_string_create (
+		"%s %s",
+		http_method_str (http_receive->request->method),
+		http_receive->request->url->str
+	);
+
+	if (status) {
+		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HTTP, status);
+		free (status);
+	}
+	#endif
 
 	// select method handler
 	switch (http_receive->request->method) {
