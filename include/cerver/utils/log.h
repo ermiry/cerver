@@ -13,34 +13,38 @@
 #define LOG_COLOR_CYAN      "\x1b[36m"
 #define LOG_COLOR_RESET     "\x1b[0m"
 
+#define LOG_TYPE_MAP(XX)						\
+	XX(0, 	NONE, 		[NONE])					\
+	XX(1, 	ERROR, 		[ERROR])				\
+	XX(2, 	WARNING, 	[WARNING])				\
+	XX(3, 	SUCCESS, 	[SUCCESS])				\
+	XX(4, 	DEBUG, 		[DEBUG])				\
+	XX(5, 	TEST, 		[TEST])					\
+	XX(6, 	CERVER, 	[CERVER])				\
+	XX(7, 	CLIENT, 	[CLIENT])				\
+	XX(8, 	HANDLER, 	[HANDLER])				\
+	XX(9, 	ADMIN, 		[ADMIN])				\
+	XX(10, 	EVENT, 		[EVENT])				\
+	XX(11, 	PACKET, 	[PACKET])				\
+	XX(12, 	REQ, 		[REQ])					\
+	XX(13, 	FILE, 		[FILE])					\
+	XX(14, 	HTTP, 		[HTTP])					\
+	XX(15, 	GAME, 		[GAME])					\
+	XX(16, 	PLAYER, 	[PLAYER)				\
+
 typedef enum LogType {
 
-	LOG_NO_TYPE             = 0,
-
-	LOG_ERROR               = 1,
-	LOG_WARNING             = 2,
-	LOG_SUCCESS             = 3,
-	LOG_DEBUG               = 4,
-	LOG_TEST                = 5,
-
-	LOG_CERVER				= 6,
-	LOG_CLIENT				= 7,
-
-	LOG_REQ					= 8,
-	LOG_PACKET				= 9,
-	LOG_FILE				= 10,
-	LOG_GAME				= 11,
-	LOG_PLAYER				= 12,
-
-	LOG_HANDLER				= 13,
-	LOG_ADMIN				= 14,
-
-	LOG_EVENT				= 15
-
+	#define XX(num, name, string) LOG_TYPE_##name = num,
+	LOG_TYPE_MAP (XX)
+	#undef XX
+	
 } LogType;
 
-CERVER_PUBLIC void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType second_type,
-	const char *msg);
+CERVER_PUBLIC void cerver_log_msg (
+	FILE *__restrict __stream, 
+	LogType first_type, LogType second_type,
+	const char *msg
+);
 
 // prints a red error message to stderr
 CERVER_PUBLIC void cerver_log_error (const char *msg);
