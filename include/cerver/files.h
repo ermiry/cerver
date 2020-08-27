@@ -15,7 +15,7 @@
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_dir (const char *dir_path, mode_t mode);
 
-// returns an allocated string with the file extensio
+// returns an allocated string with the file extension
 // NULL if no file extension
 CERVER_EXPORT char *files_get_file_extension (const char *filename);
 
@@ -33,9 +33,9 @@ CERVER_EXPORT FILE *file_open_as_file (const char *filename,
 // sets file size to the amount of bytes read
 CERVER_EXPORT char *file_read (const char *filename, size_t *file_size);
 
-// opens a file
+// opens a file with the required flags
 // returns fd on success, -1 on error
-CERVER_EXPORT int file_open_as_fd (const char *filename, struct stat *filestatus);
+CERVER_EXPORT int file_open_as_fd (const char *filename, struct stat *filestatus, int flags);
 
 // sends a file to the sock fd
 // returns 0 on success, 1 on error
