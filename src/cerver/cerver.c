@@ -143,7 +143,7 @@ u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *con
             char *s = c_string_create ("Failed to send cerver %s info packet!",
                 cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_PACKET, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_PACKET, s);
                 free (s);
             }
         }
@@ -240,14 +240,14 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
             char *status = c_string_create ("Cerver %s does not have a reference to cerver stats!",
                 cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
         }
     }
 
     else {
-        cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER, 
+        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_CERVER, 
             "Cant print stats of a NULL cerver!");
     }
 
@@ -1131,7 +1131,7 @@ Cerver *cerver_create (const CerverType type, const char *name,
     else {
         cerver_log_msg (
             stderr, 
-            LOG_ERROR, LOG_NO_TYPE, 
+            LOG_TYPE_ERROR, LOG_TYPE_NONE, 
             "A name is required to create a new cerver!"
         );
     } 
@@ -1172,7 +1172,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
     else {
         char *status = c_string_create ("Failed to bind cerver %s socket!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
             free (status);
         }
 
@@ -1198,7 +1198,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
                 #ifdef CERVER_DEBUG
                 char *status = c_string_create ("Cerver %s socket set to non blocking mode.", cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                     free (status);
                 }
                 #endif
@@ -1207,7 +1207,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
             else {
                 char *status = c_string_create ("Failed to set cerver %s socket to non blocking mode!", cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                     free (status);
                 }
 
@@ -1242,7 +1242,7 @@ static u8 cerver_network_init (Cerver *cerver) {
                 cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                 break;
 
-            default: cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Unknown protocol type!"); break;
+            default: cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Unknown protocol type!"); break;
         }
 
         if (cerver->sock >= 0) {
@@ -1254,7 +1254,7 @@ static u8 cerver_network_init (Cerver *cerver) {
             );
 
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -1267,7 +1267,7 @@ static u8 cerver_network_init (Cerver *cerver) {
         else {
             char *status = c_string_create ("Failed to create cerver %s socket!", cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
         }
@@ -1297,7 +1297,7 @@ static u8 cerver_init_poll_fds (Cerver *cerver) {
         #ifdef CERVER_DEBUG
         char *status = c_string_create ("Failed to allocate cerver %s main fds!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
             free (status);
         }
         #endif
@@ -1344,7 +1344,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
                 char *status = c_string_create ("Failed to init clients sock fd map in cerver %s",
                     cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                     free (status);
                 }
                 #endif
@@ -1356,7 +1356,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
             char *status = c_string_create ("Failed to init clients avl in cerver %s",
                 cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -1375,7 +1375,7 @@ static u8 cerver_init (Cerver *cerver) {
     if (cerver) {
         char *status = c_string_create ("Initializing cerver %s...", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, status);
             free (status);
         }
 
@@ -1393,7 +1393,7 @@ static u8 cerver_init (Cerver *cerver) {
                 char *s = c_string_create ("Done initializing cerver %s network values & data structures!",
                     cerver->info->name->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
                     free (s);
                 }
                 #endif
@@ -1405,7 +1405,7 @@ static u8 cerver_init (Cerver *cerver) {
                 char *status = c_string_create ("Failed to init cerver %s data structures!",
                     cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                     free (status);
                 }
             } 
@@ -1414,7 +1414,7 @@ static u8 cerver_init (Cerver *cerver) {
         else {
             char *status = c_string_create ("Failed to init cerver %s network!", cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
         }
@@ -1444,7 +1444,7 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
             if (thpool_init (cerver->thpool)) {
                 char *s = c_string_create ("Failed to init cerver %s thpool!", cerver->info->name->str);
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
                     free (s);
                 }
 
@@ -1476,7 +1476,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
         if (!cerver_init (cerver)) {
             char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
                 free (s);
             }
 
@@ -1505,7 +1505,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
                         char *s = c_string_create ("Game cerver %s doesn't have a reference to a game data!",
                             cerver->info->name->str);
                         if (s) {
-                            cerver_log_msg (stdout, LOG_WARNING, LOG_GAME, s);
+                            cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_GAME, s);
                             free (s);
                         }
                     }
@@ -1525,7 +1525,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
                 char *s = c_string_create ("Failed to generate cerver %s info packet", 
                     cerver->info->name->str);
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                     free (s);
                 }
 
@@ -1536,7 +1536,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
         else {
             char *s = c_string_create ("Failed to init cerver %s!", cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                 free (s);
             }
         }
@@ -1586,7 +1586,7 @@ static u8 cerver_auth_start (Cerver *cerver) {
                     char *status = c_string_create ("Failed to create cerver's %s on_hold_poll () thread!", 
                         cerver->info->name->str);
                     if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                        cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, status);
                         free (status);
                     }
                 }
@@ -1613,7 +1613,7 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
         char *s = c_string_create ("Initializing cerver %s multiple app handlers...",
             cerver->info->name->str);
         if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
             free (s);
         }
         #endif
@@ -1634,7 +1634,7 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
             char *s = c_string_create ("Cerver %s multiple app handlers are ready!",
                 cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, s);
+                cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
                 free (s);
             }
             #endif
@@ -1859,7 +1859,7 @@ static u8 cerver_update_start (Cerver *cerver) {
         char *s = c_string_create ("Created cerver %s UPDATE thread!",
             cerver->info->name->str);
         if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
             free (s);
         }
         #endif
@@ -1893,7 +1893,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
         char *s = c_string_create ("Created cerver %s UPDATE INTERVAL thread!",
             cerver->info->name->str);
         if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
             free (s);
         }
         #endif
@@ -2051,7 +2051,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                     char *s = c_string_create ("Failed to listen in cerver %s socket!",
                         cerver->info->name->str);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                         free (s);
                     }
 
@@ -2065,7 +2065,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                     cerver->info->name->str
                 );
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                     free (s);
                 }
             }
@@ -2090,7 +2090,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                     char *s = c_string_create ("Failed to listen in cerver %s socket!",
                         cerver->info->name->str);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                        cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                         free (s);
                     }
 
@@ -2104,7 +2104,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
                     cerver->info->name->str
                 );
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                     free (s);
                 }
             }
@@ -2207,7 +2207,7 @@ u8 cerver_start (Cerver *cerver) {
                         char *s = c_string_create ("Cant't start cerver %s! Unknown protocol!",
                             cerver->info->name->str);
                         if (s) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                             free (s);
                         }
                     }
@@ -2230,7 +2230,7 @@ u8 cerver_start (Cerver *cerver) {
         char *s = c_string_create ("The cerver %s is already running!",
             cerver->info->name->str);
         if (s) {
-            cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
+            cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_CERVER, s);
             free (s);
         }
     }
@@ -2399,7 +2399,7 @@ u8 cerver_shutdown (Cerver *cerver) {
             char *status = c_string_create ("The cerver %s socket has been closed.",
                 cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -2411,7 +2411,7 @@ u8 cerver_shutdown (Cerver *cerver) {
             char *status = c_string_create ("Failed to close cerver %s socket!",
                 cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
         } 
@@ -2506,7 +2506,7 @@ static void cerver_clean (Cerver *cerver) {
         // clean up cerver connected clients
         cerver_destroy_clients (cerver);
         #ifdef CERVER_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Done cleaning up clients.");
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Done cleaning up clients.");
         #endif
 
         // disable socket I/O in both ways and stop any ongoing job
@@ -2514,7 +2514,7 @@ static void cerver_clean (Cerver *cerver) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Cerver %s has been shutted down.", cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -2524,7 +2524,7 @@ static void cerver_clean (Cerver *cerver) {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Failed to shutdown cerver %s!", cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -2549,7 +2549,7 @@ static void cerver_clean (Cerver *cerver) {
                 thpool_get_num_threads_working (cerver->thpool)
             );
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -2559,7 +2559,7 @@ static void cerver_clean (Cerver *cerver) {
             #ifdef CERVER_DEBUG
             status = c_string_create ("Destroyed cerver %s thpool!", cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -2593,7 +2593,7 @@ u8 cerver_teardown (Cerver *cerver) {
         #ifdef CERVER_DEBUG
         status = c_string_create ("Starting cerver %s teardown...", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, status);
             free (status);
         }
         #endif
@@ -2615,7 +2615,7 @@ u8 cerver_teardown (Cerver *cerver) {
         status = c_string_create ("Cerver %s teardown was successful!", 
             cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, status);
+            cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_NONE, status);
             free (status);
         }
 
@@ -2626,7 +2626,7 @@ u8 cerver_teardown (Cerver *cerver) {
 
     else {
         #ifdef CERVER_DEBUG
-        cerver_log_msg (stdout, LOG_ERROR, LOG_CERVER, "Can't teardown a NULL cerver!");
+        cerver_log_msg (stdout, LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Can't teardown a NULL cerver!");
         #endif
     }
 
@@ -2673,11 +2673,11 @@ static void cerver_report_check_info_handle_auth (
     if (cerver_report && connection) {
         if (cerver_report->auth_required) {
             // #ifdef CLIENT_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver requires authentication.");
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver requires authentication.");
             // #endif
             if (connection->auth_data) {
                 #ifdef CLIENT_DEBUG
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Sending auth data to cerver...");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Sending auth data to cerver...");
                 #endif
 
                 if (!connection->auth_packet) {
@@ -2731,7 +2731,7 @@ static void cerver_report_check_info_handle_auth (
                 }
 
                 if (cerver_report->uses_sessions) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver supports sessions.");
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver supports sessions.");
                 }
             }
 
@@ -2747,7 +2747,7 @@ static void cerver_report_check_info_handle_auth (
 
         else {
             #ifdef CLIENT_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver does NOT require authentication.");
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver does NOT require authentication.");
             #endif
         }
     }
@@ -2767,7 +2767,7 @@ u8 cerver_report_check_info (
         // #ifdef CLIENT_DEBUG
         char *s = c_string_create ("Connected to cerver %s.", cerver_report->name->str);
         if (s) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, s);
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, s);
             free (s);
         }
 
@@ -2777,42 +2777,42 @@ u8 cerver_report_check_info (
         
         switch (cerver_report->protocol) {
             case PROTOCOL_TCP: 
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver using TCP protocol."); 
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver using TCP protocol."); 
                 break;
             case PROTOCOL_UDP: 
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver using UDP protocol.");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver using UDP protocol.");
                 break;
 
             default: 
-                cerver_log_msg (stdout, LOG_WARNING, LOG_NO_TYPE, "Cerver using unknown protocol."); 
+                cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Cerver using unknown protocol."); 
                 break;
         }
         // #endif
 
         if (cerver_report->use_ipv6) {
             // #ifdef CLIENT_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver is configured to use ipv6");
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver is configured to use ipv6");
             // #endif
         }
 
         // #ifdef CLIENT_DEBUG
         switch (cerver_report->type) {
             case CERVER_TYPE_CUSTOM:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: CUSTOM");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: CUSTOM");
                 break;
 
             case CERVER_TYPE_GAME:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: GAME");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: GAME");
                 break;
             case CERVER_TYPE_WEB:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: WEB");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: WEB");
                 break;
              case CERVER_TYPE_FILE:
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Cerver type: FILE");
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: FILE");
                 break;
 
             default: 
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Cerver type: UNKNOWN"); 
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Cerver type: UNKNOWN"); 
                 break;
         }
         // #endif

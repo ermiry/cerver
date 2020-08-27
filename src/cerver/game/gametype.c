@@ -96,7 +96,7 @@ void game_type_set_on_lobby_leave (GameType *game_type, Action on_lobby_leave) {
 
 }
 
-// registers a new game type, returns 0 on LOG_SUCCESS, 1 on error
+// registers a new game type, returns 0 on LOG_TYPE_SUCCESS, 1 on error
 int game_type_register (DoubleList *game_types, GameType *game_type) {
 
     int retval = 1;
@@ -110,7 +110,7 @@ int game_type_register (DoubleList *game_types, GameType *game_type) {
 
 }
 
-// unregister a game type, returns 0 on LOG_SUCCESS, 1 on error
+// unregister a game type, returns 0 on LOG_TYPE_SUCCESS, 1 on error
 int game_type_unregister (DoubleList *game_types, const char *name) {
 
     int retval = 1;

@@ -120,7 +120,7 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered a new player to lobby %s.",
                     lobby->id->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_PLAYER, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
                     free (s);
                 }
                 #endif
@@ -130,7 +130,7 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                     free (s);
                 }
                 #endif
@@ -183,7 +183,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Unregistered a player from lobby %s.",
                     lobby->id->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_PLAYER, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
                     free (s);
                 }
                 #endif
@@ -192,7 +192,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                     free (s);
                 }
                 #endif
@@ -204,7 +204,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                     char *s = c_string_create ("Destroying lobby %s -- it is empty.",
                         lobby->id->str);
                     if (s) {
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                         free (s);
                     }
                     #endif

@@ -75,13 +75,13 @@ void connection_stats_print (Connection *connection) {
         }
 
         else {
-            cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
                 "Connection does not have a reference to a connection stats!");
         }
     }
 
     else {
-        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, 
+        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, 
             "Can't get stats of a NULL connection!");
     }
 
@@ -396,7 +396,7 @@ u8 connection_init (Connection *connection) {
                     connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                     break;
 
-                default: cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Unkonw protocol type!"); return 1;
+                default: cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
             }
 
             if (connection->socket->sock_fd > 0) {
@@ -424,7 +424,7 @@ u8 connection_init (Connection *connection) {
 
                     // else {
                     //     #ifdef CLIENT_DEBUG
-                    //     cengine_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+                    //     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
                     //         "Failed to set the socket to non blocking mode!");
                     //     #endif
                     //     close (connection->sock_fd);
@@ -433,13 +433,13 @@ u8 connection_init (Connection *connection) {
             }
 
             else {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, 
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
                     "Failed to create new socket!");
             }
         }
 
         else {
-            cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE,
+            cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE,
                 "Failed to init connection -- it is already active!");
         }
         
@@ -592,7 +592,7 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
                 char *s = c_string_create ("Registered a new connection to client with session id: %s",
                     client->session_id->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT, s);
                     free (s);
                 }
             }
@@ -601,7 +601,7 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
                 char *s = c_string_create ("Registered a new connection to client (id): %ld",
                     client->id);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT, s);
                     free (s);
                 }
             }
@@ -657,7 +657,7 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
             char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
                 connection->socket->sock_fd, cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
                 free (s);
             }
             #endif
