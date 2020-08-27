@@ -161,6 +161,9 @@ CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
 
 #pragma region receive
 
+// the default timeout when handling a connection in dedicated thread
+#define DEFAULT_SOCKET_RECV_TIMEOUT         5
+
 typedef struct ReceiveHandle {
 
     ReceiveType type;
