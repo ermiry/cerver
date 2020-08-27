@@ -77,7 +77,7 @@ static void admin_handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -197,7 +197,7 @@ static void on_hold_connected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CERVER, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
 			free (status);
 		}
 	}
@@ -216,7 +216,7 @@ static void on_hold_disconnected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_NO_TYPE, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
 			free (status);
 		}
 	}
@@ -235,7 +235,7 @@ static void on_hold_drop (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_NO_TYPE, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
 			free (status);
 		}
 	}
@@ -255,7 +255,7 @@ static void on_admin_failed_auth (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}
@@ -276,7 +276,7 @@ static void on_admin_connected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}
@@ -297,7 +297,7 @@ static void on_admin_new_connection (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}
@@ -316,7 +316,7 @@ static void on_admin_close_connection (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}
@@ -335,7 +335,7 @@ static void on_admin_disconnected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}
@@ -354,7 +354,7 @@ static void on_admin_dropped (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_ADMIN, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
 			free (status);
 		}
 	}

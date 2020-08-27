@@ -89,7 +89,7 @@ static void my_app_handler_queue (void *handler_data_ptr) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_PACKET request.");
 				break;
 		}
 	}
@@ -109,7 +109,7 @@ static void my_app_error_handler_queue (void *handler_data_ptr) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_ERROR_PACKET request.");
 				break;
 		}
 	}
@@ -129,7 +129,7 @@ static void my_custom_handler_queue (void *handler_data_ptr) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown CUSTOM_PACKET request.");
 				break;
 		}
 	}
@@ -152,7 +152,7 @@ static void my_app_handler_direct (void *data) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_PACKET request.");
 				break;
 		}
 	}
@@ -171,7 +171,7 @@ static void my_app_error_handler_direct (void *data) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_ERROR_PACKET request.");
 				break;
 		}
 	}
@@ -190,7 +190,7 @@ static void my_custom_handler_direct (void *data) {
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown CUSTOM_PACKET request.");
 				break;
 		}
 	}
@@ -215,7 +215,7 @@ static void on_client_connected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}
@@ -234,7 +234,7 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}

@@ -42,7 +42,7 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from client. Sending another one back...");
+		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 		
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -70,7 +70,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -95,7 +95,7 @@ static void on_client_connected (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}
@@ -114,7 +114,7 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 		if (status) {
 			printf ("\n");
-			cerver_log_msg (stdout, LOG_EVENT, LOG_CLIENT, status);
+			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
 			free (status);
 		}
 	}

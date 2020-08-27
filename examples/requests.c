@@ -182,7 +182,7 @@ static void app_packet_handler (void *data) {
 				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
