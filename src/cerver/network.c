@@ -3,6 +3,8 @@
 
 #include <fcntl.h>
 
+#include <sys/time.h>
+
 #include "cerver/network.h"
 
 // enable/disable blocking on a socket
@@ -105,5 +107,23 @@ in_port_t sock_ip_port (const struct sockaddr *address) {
 	}
 
 	return retval;
+
+}
+
+// sets a timeout (in seconds) for a socket
+// the socket will still block until the timeout is completed
+// if no data was read, a EAGAIN error is returned
+// returns 0 on success, 1 on error
+int sock_set_timeout (int sock_fd, time_t timeout) {
+
+	struct timeval tv = { 0 };
+	tv.tv_sec = timeout;
+	tv.tv_usec = 0;
+
+	return setsockopt (
+		sock_fd, 
+		SOL_SOCKET, SO_RCVTIMEO, 
+		(const char *) &tv, sizeof (struct timeval)
+	);
 
 }
