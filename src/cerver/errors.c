@@ -346,7 +346,7 @@ static SError *error_serialize (CerverError *error) {
         serror->timestamp = error->timestamp;
         serror->error_type = error->type;
         memset (serror->msg, 0, ERROR_MESSAGE_LENGTH);
-        strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
+        if (error->msg) strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
     }
 
     return serror;
