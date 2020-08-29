@@ -217,7 +217,11 @@ static void auth_failed (Cerver *cerver, Connection *connection, const char *err
 
     if (cerver && connection) {
         // send failed auth packet to client
-        Packet *error_packet = error_packet_generate (CERVER_ERROR_FAILED_AUTH, error_message);
+        Packet *error_packet = error_packet_generate (
+            CERVER_ERROR_FAILED_AUTH, 
+            error_message
+        );
+
         if (error_packet) {
             packet_set_network_values (error_packet, cerver, NULL, connection, NULL);
             packet_send (error_packet, 0, NULL, false);
@@ -389,7 +393,10 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
                 }
                 #endif
 
-                auth_failed (packet->cerver, packet->connection, auth_method->error_message->str);
+                auth_failed (
+                    packet->cerver, packet->connection, 
+                    auth_method->error_message ? auth_method->error_message->str : NULL
+                );
 
                 if (admin) {
                     cerver_event_trigger (
