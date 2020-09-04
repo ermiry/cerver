@@ -64,10 +64,11 @@ typedef enum RequestHeader {
 	REQUEST_HEADER_WEB_SOCKET_KEY						= 18,
 	REQUEST_HEADER_WEB_SOCKET_VERSION					= 19,
 
+	REQUEST_HEADER_INVALID								= 32
+
 } RequestHeader;
 
 #define REQUEST_HEADERS_SIZE			32
-#define REQUEST_HEADER_INVALID			32
 
 #define REQUEST_PARAMS_SIZE				8
 

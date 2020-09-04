@@ -17,10 +17,11 @@ typedef enum MultiPartHeader {
 	MULTI_PART_HEADER_CONTENT_LENGTH					= 1,
 	MULTI_PART_HEADER_CONTENT_TYPE						= 2,
 
+	MULTI_PART_HEADER_INVALID							= 4
+
 } MultiPartHeader;
 
 #define MULTI_PART_HEADERS_SIZE				4
-#define MULTI_PART_HEADER_INVALID			4
 
 typedef struct MultiPart {
 
