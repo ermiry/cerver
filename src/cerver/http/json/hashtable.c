@@ -480,7 +480,7 @@ static int hashtable_do_rehash(hashtable_t *hashtable) {
     new_order = hashtable->order + 1;
     new_size = hashsize(new_order);
 
-    new_buckets = jsonp_malloc(new_size * sizeof(bucket_t));
+    new_buckets = (struct hashtable_bucket *) jsonp_malloc(new_size * sizeof(bucket_t));
     if (!new_buckets)
         return -1;
 
@@ -510,7 +510,7 @@ int hashtable_init(hashtable_t *hashtable) {
 
     hashtable->size = 0;
     hashtable->order = INITIAL_HASHTABLE_ORDER;
-    hashtable->buckets = jsonp_malloc(hashsize(hashtable->order) * sizeof(bucket_t));
+    hashtable->buckets = (struct hashtable_bucket *) jsonp_malloc(hashsize(hashtable->order) * sizeof(bucket_t));
     if (!hashtable->buckets)
         return -1;
 
@@ -558,7 +558,7 @@ int hashtable_set(hashtable_t *hashtable, const char *key, json_t *value) {
             return -1;
         }
 
-        pair = jsonp_malloc(offsetof(pair_t, key) + len + 1);
+        pair = (pair_t *) jsonp_malloc(offsetof(pair_t, key) + len + 1);
         if (!pair)
             return -1;
 

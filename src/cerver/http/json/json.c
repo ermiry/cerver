@@ -108,9 +108,7 @@ void jsonp_free(void *ptr) {
 char *jsonp_strdup(const char *str) { return jsonp_strndup(str, strlen(str)); }
 
 char *jsonp_strndup(const char *str, size_t len) {
-    char *new_str;
-
-    new_str = jsonp_malloc(len + 1);
+    char *new_str = (char *) jsonp_malloc(len + 1);
     if (!new_str)
         return NULL;
 
@@ -153,7 +151,7 @@ int strbuffer_init(strbuffer_t *strbuff) {
     strbuff->size = STRBUFFER_MIN_SIZE;
     strbuff->length = 0;
 
-    strbuff->value = jsonp_malloc(strbuff->size);
+    strbuff->value = (char *) jsonp_malloc(strbuff->size);
     if (!strbuff->value)
         return -1;
 
@@ -201,7 +199,7 @@ int strbuffer_append_bytes(strbuffer_t *strbuff, const char *data, size_t size) 
 
         new_size = max(strbuff->size * STRBUFFER_FACTOR, strbuff->length + size + 1);
 
-        new_value = jsonp_malloc(new_size);
+        new_value = (char *) jsonp_malloc(new_size);
         if (!new_value)
             return -1;
 
@@ -840,7 +838,7 @@ static int do_dump(const json_t *json, size_t flags, int depth, hashtable_t *par
                 size_t size, i;
 
                 size = json_object_size(json);
-                keys = jsonp_malloc(size * sizeof(const char *));
+                keys = (const char **) jsonp_malloc(size * sizeof(const char *));
                 if (!keys)
                     return -1;
 
@@ -1336,7 +1334,7 @@ static void lex_scan_string(lex_t *lex, json_error_t *error) {
          - two \uXXXX escapes (length 12) forming an UTF-16 surrogate pair
            are converted to 4 bytes
     */
-    t = jsonp_malloc(lex->saved_text.length + 1);
+    t = (char *) jsonp_malloc(lex->saved_text.length + 1);
     if (!t) {
         /* this is not very nice, since TOKEN_INVALID is returned */
         goto out;
@@ -1912,7 +1910,7 @@ typedef struct {
 
 static int buffer_get(void *data) {
     char c;
-    buffer_data_t *stream = data;
+    buffer_data_t *stream = (buffer_data_t *) data;
     if (stream->pos >= stream->len)
         return EOF;
 
@@ -2045,7 +2043,7 @@ typedef struct {
 
 static int callback_get(void *data) {
     char c;
-    callback_data_t *stream = data;
+    callback_data_t *stream = (callback_data_t *) data;
 
     if (stream->pos >= stream->len) {
         stream->pos = 0;
