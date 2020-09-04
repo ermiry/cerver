@@ -100,7 +100,7 @@ HttpRequest *http_request_create (void) {
 void http_request_headers_print (HttpRequest *http_request) {
 
 	if (http_request) {
-		char *null = "NULL";
+		const char *null = "NULL";
 		String *header = NULL;
 		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++) {
 			header = http_request->headers[i];

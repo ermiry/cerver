@@ -683,7 +683,7 @@ void http_cerver_all_stats_print (HttpCerver *http_cerver) {
 // returns a newly allocated url-encoded version of str that should be deleted after use
 char *http_url_encode (const char *str) {
 
-	char *pstr = (char *) str, *buf = malloc (strlen (str) * 3 + 1), *pbuf = buf;
+	char *pstr = (char *) str, *buf = (char *) malloc (strlen (str) * 3 + 1), *pbuf = buf;
 
 	if (buf) {
 		while (*pstr) {
@@ -707,7 +707,7 @@ char *http_url_encode (const char *str) {
 // returns a newly allocated url-decoded version of str that should be deleted after use
 char *http_url_decode (const char *str) {
 
-	char *pstr = (char *) str, *buf = malloc (strlen (str) + 1), *pbuf = buf;
+	char *pstr = (char *) str, *buf = (char *) malloc (strlen (str) + 1), *pbuf = buf;
 
 	if (buf) {
 		while (*pstr) {
@@ -862,7 +862,7 @@ static int http_receive_handle_url (http_parser *parser, const char *at, size_t 
 
 }
 
-static inline int http_receive_handle_header_field_handle (const char *header) {
+static inline RequestHeader http_receive_handle_header_field_handle (const char *header) {
 
 	if (!strcasecmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
 	if (!strcasecmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
@@ -1025,7 +1025,7 @@ static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) 
 
 // Content-Disposition: form-data; name="mirary"; filename="M.jpg"
 // Content-Type: image/jpeg
-static inline int http_receive_handle_mpart_header_field_handle (const char *header) {
+static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (const char *header) {
 
 	if (!strcmp ("Content-Disposition", header)) return MULTI_PART_HEADER_CONTENT_DISPOSITION;
 	if (!strcmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
@@ -1203,7 +1203,7 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->http_cerver = NULL;
 
-		http_receive->parser = malloc (sizeof (http_parser));
+		http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
 		http_parser_init (http_receive->parser, HTTP_REQUEST);
 
 		http_receive->settings.on_message_begin = NULL;
@@ -1260,7 +1260,7 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "HTTP Cerver!");
+	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -1274,7 +1274,7 @@ static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceiv
 
 	char *status = c_string_create (
 		"No matching route for %s %s",
-		http_method_str (request->method),
+		http_method_str ((enum http_method) request->method),
 		request->url->str
 	);
 
@@ -1315,7 +1315,7 @@ static void http_receive_handle_match_web_socket (
 			memset (buffer, 0, 128);
 			base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
 
-			HttpResponse *res = http_response_create (101, NULL, 0);
+			HttpResponse *res = http_response_create ((http_status) 101, NULL, 0);
 			if (res) {
 				http_response_add_header (res, RESPONSE_HEADER_CONNECTION, "Upgrade");
 				http_response_add_header (res, RESPONSE_HEADER_UPGRADE, "websocket");
@@ -1516,7 +1516,7 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 
 static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
 
-	HttpResponse *res = http_response_json_error (400, "Failed to authenticate!");
+	HttpResponse *res = http_response_json_error ((http_status) 400, "Failed to authenticate!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -1757,7 +1757,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	http_receive->request->method = http_receive->parser->method;
+	http_receive->request->method = (RequestMethod) http_receive->parser->method;
 
 	#ifdef HTTP_DEBUG
 	char *status = c_string_create (
@@ -1811,7 +1811,7 @@ static void http_receive_handle (
 	ssize_t rc, char *packet_buffer
 ) {
 
-	size_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
+	ssize_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
 	if (n_parsed != rc) {
 		char *status = c_string_create (
 			"http_parser_execute () failed - n parsed %ld / received %ld",
@@ -1824,7 +1824,7 @@ static void http_receive_handle (
 		}
 
 		// send back error message
-		HttpResponse *res = http_response_json_error (500, "Internal error!");
+		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
 		if (res) {
 			// http_response_print (res);
 			http_response_send (res, http_receive->cr->cerver, http_receive->cr->connection);
@@ -1933,7 +1933,7 @@ static void http_web_sockets_read_message_content (
 ) {
 
 	// read mask
-	unsigned char mask[4] = { buffer[0], buffer[1], buffer[2], buffer[3] };
+	unsigned char mask[4] = { (unsigned char) buffer[0], (unsigned char) buffer[1], (unsigned char) buffer[2], (unsigned char) buffer[3] };
 
 	char *message = NULL;
 
@@ -1977,7 +1977,7 @@ static void http_web_sockets_receive_handle (
 
 	printf ("http_web_sockets_receive_handle ()\n");
 
-	unsigned char first_bytes[2] = { packet_buffer[0], packet_buffer[1] };
+	unsigned char first_bytes[2] = { (unsigned char) packet_buffer[0], (unsigned char) packet_buffer[1] };
 
 	unsigned char fin_rsv_opcode = first_bytes[0];
 	printf ("%d\n", first_bytes[0]);
@@ -1996,7 +1996,7 @@ static void http_web_sockets_receive_handle (
 		printf ("length == 126\n");
 
 		// 2 next bytes is the size of content
-		unsigned char length_bytes[2] = { packet_buffer[2], packet_buffer[3] };
+		unsigned char length_bytes[2] = { (unsigned char) packet_buffer[2], (unsigned char) packet_buffer[3] };
 
 		size_t length = 0;
 		size_t num_bytes = 2;
@@ -2018,10 +2018,10 @@ static void http_web_sockets_receive_handle (
 
 		// 8 next bytes is the size of content
 		unsigned char length_bytes[8] = { 
-			packet_buffer[2], packet_buffer[3],
-			packet_buffer[4], packet_buffer[5],
-			packet_buffer[6], packet_buffer[7],
-			packet_buffer[8], packet_buffer[9],
+			(unsigned char) packet_buffer[2], (unsigned char) packet_buffer[3],
+			(unsigned char) packet_buffer[4], (unsigned char) packet_buffer[5],
+			(unsigned char) packet_buffer[6], (unsigned char) packet_buffer[7],
+			(unsigned char) packet_buffer[8], (unsigned char) packet_buffer[9],
 		};
 
 		size_t length = 0;

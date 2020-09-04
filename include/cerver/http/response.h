@@ -78,7 +78,7 @@ CERVER_EXPORT u8 http_response_set_data_ref (HttpResponse *res, void *data, size
 // creates a new http response with the specified status code
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted 
-CERVER_EXPORT HttpResponse *http_response_create (http_status status, const void *data, size_t data_len);
+CERVER_EXPORT HttpResponse *http_response_create (unsigned int status, const void *data, size_t data_len);
 
 // uses the exiting response's values to correctly create a HTTP header in a continuos buffer
 // ready to be sent from the request

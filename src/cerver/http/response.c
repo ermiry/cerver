@@ -167,7 +167,7 @@ HttpResponse *http_response_create (unsigned int status, const void *data, size_
 
 	HttpResponse *res = http_response_new ();
 	if (res) {
-		res->status = status;
+		res->status = (http_status) status;
 
 		if (data) {
 			res->data = malloc (data_len);
@@ -205,7 +205,7 @@ void http_response_compile_header (HttpResponse *res) {
 
 		res->header = calloc (res->header_len, sizeof (char));
 
-		char *end = res->header;
+		char *end = (char *) res->header;
 		memcpy (end, main_header, main_header_len);
 		end += main_header_len;
 		for (i = 0; i < RESPONSE_HEADERS_SIZE; i++) {
@@ -265,7 +265,7 @@ u8 http_response_compile (HttpResponse *res) {
 		res->res_len = res->header_len + res->data_len;
 		res->res = malloc (res->res_len);
 		if (res->res) {
-			char *end = res->res;
+			char *end = (char *) res->res;
 			memcpy (end, res->header, res->header_len);
 
 			if (res->data) {
@@ -316,7 +316,7 @@ u8 http_response_send (HttpResponse *res, Cerver *cerver, Connection *connection
 		if (res->res) {
 			if (!http_response_send_actual (
 				connection->socket,
-				res->res, res->res_len
+				(char *) res->res, res->res_len
 			)) {
 				if (cerver) cerver->stats->total_bytes_sent += res->res_len;
 				connection->stats->total_bytes_sent += res->res_len; 
@@ -342,11 +342,11 @@ u8 http_response_send_split (HttpResponse *res, Cerver *cerver, Connection *conn
 		if (res->header && res->data) {
 			if (!http_response_send_actual (
 				connection->socket,
-				res->header, res->header_len
+				(char *) res->header, res->header_len
 			)) {
 				if (!http_response_send_actual (
 					connection->socket,
-					res->data, res->data_len
+					(char *) res->data, res->data_len
 				)) {
 					size_t total_size = res->header_len + res->data_len;
 					if (cerver) cerver->stats->total_bytes_sent += total_size;
@@ -396,7 +396,7 @@ u8 http_response_send_file (CerverReceive *cr, int file, const char *filename, s
 		// prepare & send the header
 		char *header = c_string_create (
 			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: %s\nContent-Length: %ld\n\n", 
-			http_status_str (200),
+			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			content_type,
 			filestatus->st_size
@@ -481,7 +481,7 @@ u8 http_response_render_text (CerverReceive *cr, const char *text, const size_t 
 	if (cr && text) {
 		char *header = c_string_create (
 			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: text/html; charset=UTF-8\nContent-Length: %ld\n\n", 
-			http_status_str (200),
+			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			text_len
 		);
@@ -513,7 +513,7 @@ u8 http_response_render_json (CerverReceive *cr, const char *json, const size_t 
 	if (cr && json) {
 		char *header = c_string_create (
 			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: application/json\nContent-Length: %ld\n\n", 
-			http_status_str (200),
+			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			json_len
 		);
@@ -616,7 +616,7 @@ u8 http_response_json_msg_send (CerverReceive *cr, unsigned int status, const ch
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_msg (status, msg);
+	HttpResponse *res = http_response_json_msg ((http_status) status, msg);
 	if (res) {
 		// http_response_print (res);
 		retval = http_response_send (res, cr->cerver, cr->connection);
@@ -641,7 +641,7 @@ u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const 
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_error (status, error_msg);
+	HttpResponse *res = http_response_json_error ((http_status) status, error_msg);
 	if (res) {
 		// http_response_print (res);
 		retval = http_response_send (res, cr->cerver, cr->connection);

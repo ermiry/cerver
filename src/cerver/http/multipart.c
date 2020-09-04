@@ -17,7 +17,7 @@ MultiPart *http_multi_part_new (void) {
 
 	MultiPart *multi_part = (MultiPart *) malloc (sizeof (MultiPart));
 	if (multi_part) {
-		multi_part->next_header = 0;
+		multi_part->next_header = MULTI_PART_HEADER_INVALID;
 		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
 			multi_part->headers[i] = NULL;
 
@@ -60,7 +60,7 @@ void http_multi_part_delete (void *multi_part_ptr) {
 void http_multi_part_headers_print (MultiPart *mpart) {
 
 	if (mpart) {
-		char *null = "NULL";
+		const char *null = "NULL";
 		String *header = NULL;
 		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++) {
 			header = mpart->headers[i];
@@ -148,7 +148,7 @@ enum state {
 
 multipart_parser *multipart_parser_init (const char *boundary, const multipart_parser_settings* settings) {
 
-	multipart_parser *p = malloc (sizeof (multipart_parser) + strlen(boundary) + strlen(boundary) + 9);
+	multipart_parser *p = (multipart_parser *) malloc (sizeof (multipart_parser) + strlen(boundary) + strlen(boundary) + 9);
 	if (p) {
 		strcpy(p->multipart_boundary, boundary);
 		p->boundary_length = strlen(boundary);

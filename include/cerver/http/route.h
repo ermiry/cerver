@@ -9,8 +9,7 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/request.h"
-
-enum _HttpWebSocketError;
+#include "cerver/http/socket.h"
 
 #define DEFAULT_ROUTES_TOKENS_SIZE				16
 
