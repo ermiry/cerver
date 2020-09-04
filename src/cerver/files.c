@@ -175,6 +175,22 @@ DoubleList *file_get_lines (const char *filename) {
 
 }
 
+// returns true if the filename exists
+bool file_exists (const char *filename) {
+
+    bool retval = false;
+
+    if (filename) {
+        struct stat filestatus = { 0 };
+        if (!stat (filename, &filestatus)) {
+            retval = true;
+        }
+    }
+
+    return retval;
+
+}
+
 // opens a file and returns it as a FILE
 FILE *file_open_as_file (const char *filename, const char *modes, struct stat *filestatus) {
 
