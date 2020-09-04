@@ -94,13 +94,11 @@ DoubleList *files_get_from_dir (const char *dir) {
     DoubleList *images = NULL;
 
     if (dir) {
-        DIR *dp;
-        struct dirent *ep;
-
 		images = dlist_init (str_delete, str_comparator);
 
-        dp = opendir (dir);
+        DIR *dp = opendir (dir);
         if (dp) {
+            struct dirent *ep = NULL;
             String *file = NULL;
             while ((ep = readdir (dp)) != NULL) {
                 if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
