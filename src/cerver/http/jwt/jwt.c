@@ -175,7 +175,7 @@ int jwt_set_alg(jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len)
 		if (!key || len <= 0)
 			return EINVAL;
 
-		jwt->key = jwt_malloc(len);
+		jwt->key = (unsigned char *) jwt_malloc(len);
 		if (!jwt->key)
 			return ENOMEM;
 
@@ -198,7 +198,7 @@ int jwt_new(jwt_t **jwt)
 	if (!jwt)
 		return EINVAL;
 
-	*jwt = jwt_malloc(sizeof(jwt_t));
+	*jwt = (jwt_t *) jwt_malloc(sizeof(jwt_t));
 	if (!*jwt)
 		return ENOMEM;
 
@@ -237,7 +237,7 @@ void jwt_free(jwt_t *jwt)
 
 jwt_t *jwt_dup(jwt_t *jwt)
 {
-	jwt_t *new = NULL;
+	jwt_t *new_thing = NULL;
 
 	if (!jwt) {
 		errno = EINVAL;
@@ -246,40 +246,40 @@ jwt_t *jwt_dup(jwt_t *jwt)
 
 	errno = 0;
 
-	new = jwt_malloc(sizeof(jwt_t));
-	if (!new) {
+	new_thing = (jwt_t *) jwt_malloc(sizeof(jwt_t));
+	if (!new_thing) {
 		errno = ENOMEM;
 		return NULL;
 	}
 
-	memset(new, 0, sizeof(jwt_t));
+	memset(new_thing, 0, sizeof(jwt_t));
 
 	if (jwt->key_len) {
-		new->alg = jwt->alg;
-		new->key = jwt_malloc(jwt->key_len);
-		if (!new->key) {
+		new_thing->alg = jwt->alg;
+		new_thing->key = (unsigned char *) jwt_malloc(jwt->key_len);
+		if (!new_thing->key) {
 			errno = ENOMEM;
 			goto dup_fail;
 		}
-		memcpy(new->key, jwt->key, jwt->key_len);
-		new->key_len = jwt->key_len;
+		memcpy(new_thing->key, jwt->key, jwt->key_len);
+		new_thing->key_len = jwt->key_len;
 	}
 
-	new->grants = json_deep_copy(jwt->grants);
-	if (!new->grants)
+	new_thing->grants = json_deep_copy(jwt->grants);
+	if (!new_thing->grants)
 		errno = ENOMEM;
 
-	new->headers = json_deep_copy(jwt->headers);
-	if (!new->headers)
+	new_thing->headers = json_deep_copy(jwt->headers);
+	if (!new_thing->headers)
 		errno = ENOMEM;
 
 dup_fail:
 	if (errno) {
-		jwt_free(new);
-		new = NULL;
+		jwt_free(new_thing);
+		new_thing = NULL;
 	}
 
-	return new;
+	return new_thing;
 }
 
 static const char *get_js_string(json_t *js, const char *key)
@@ -329,39 +329,39 @@ static int get_js_bool(json_t *js, const char *key)
 void *jwt_b64_decode(const char *src, int *ret_len)
 {
 	void *buf;
-	char *new;
+	char *new_thing;
 	int len, i, z;
 
 	/* Decode based on RFC-4648 URI safe encoding. */
 	len = (int)strlen(src);
-	new = alloca(len + 4);
-	if (!new)
+	new_thing = (char *) alloca(len + 4);
+	if (!new_thing)
 		return NULL;
 
 	for (i = 0; i < len; i++) {
 		switch (src[i]) {
 		case '-':
-			new[i] = '+';
+			new_thing[i] = '+';
 			break;
 		case '_':
-			new[i] = '/';
+			new_thing[i] = '/';
 			break;
 		default:
-			new[i] = src[i];
+			new_thing[i] = src[i];
 		}
 	}
 	z = 4 - (i % 4);
 	if (z < 4) {
 		while (z--)
-			new[i++] = '=';
+			new_thing[i++] = '=';
 	}
-	new[i] = '\0';
+	new_thing[i] = '\0';
 
 	buf = jwt_malloc(i);
 	if (buf == NULL)
 		return NULL;
 
-	*ret_len = base64_decode(buf, new);
+	*ret_len = base64_decode((char *) buf, new_thing);
 
 	return buf;
 }
@@ -373,7 +373,7 @@ static json_t *jwt_b64_decode_json(char *src)
 	char *buf;
 	int len;
 
-	buf = jwt_b64_decode(src, &len);
+	buf = (char *) jwt_b64_decode(src, &len);
 
 	if (buf == NULL)
 		return NULL;
@@ -529,7 +529,7 @@ int jwt_decode(jwt_t **jwt, const char *token, const unsigned char *key,
 	       int key_len)
 {
 	char *head = jwt_strdup(token);
-	jwt_t *new = NULL;
+	jwt_t *new_thing = NULL;
 	char *body, *sig;
 	int ret = EINVAL;
 
@@ -560,42 +560,42 @@ int jwt_decode(jwt_t **jwt, const char *token, const unsigned char *key,
 
 	/* Now that we have everything split up, let's check out the
 	 * header. */
-	ret = jwt_new(&new);
+	ret = jwt_new(&new_thing);
 	if (ret) {
 		goto decode_done;
 	}
 
 	/* Copy the key over for verify_head. */
 	if (key_len) {
-		new->key = jwt_malloc(key_len);
-		if (new->key == NULL)
+		new_thing->key = (unsigned char *) jwt_malloc(key_len);
+		if (new_thing->key == NULL)
 			goto decode_done;
-		memcpy(new->key, key, key_len);
-		new->key_len = key_len;
+		memcpy(new_thing->key, key, key_len);
+		new_thing->key_len = key_len;
 	}
 
-	ret = jwt_verify_head(new, head);
+	ret = jwt_verify_head(new_thing, head);
 	if (ret)
 		goto decode_done;
 
-	ret = jwt_parse_body(new, body);
+	ret = jwt_parse_body(new_thing, body);
 	if (ret)
 		goto decode_done;
 
 	/* Check the signature, if needed. */
-	if (new->alg != JWT_ALG_NONE) {
+	if (new_thing->alg != JWT_ALG_NONE) {
 		/* Re-add this since it's part of the verified data. */
 		body[-1] = '.';
-		ret = jwt_verify(new, head, sig);
+		ret = jwt_verify(new_thing, head, sig);
 	} else {
 		ret = 0;
 	}
 
 decode_done:
 	if (ret)
-		jwt_free(new);
+		jwt_free(new_thing);
 	else
-		*jwt = new;
+		*jwt = new_thing;
 
 	jwt_freemem(head);
 
@@ -733,24 +733,24 @@ int jwt_del_grants(jwt_t *jwt, const char *grant)
 	return 0;
 }
 
-#ifdef _MSC_VER
+// #ifdef _MSC_VER
 
-int jwt_del_grant(jwt_t *jwt, const char *grant);
-#pragma comment(linker, "/alternatename:jwt_del_grant=jwt_del_grants")
+// int jwt_del_grant(jwt_t *jwt, const char *grant);
+// #pragma comment(linker, "/alternatename:jwt_del_grant=jwt_del_grants")
 
-#else
+// #else
 
-#ifdef NO_WEAK_ALIASES
-int jwt_del_grant(jwt_t *jwt, const char *grant)
-{
-	return jwt_del_grants(jwt, grant);
-}
-#else
-int jwt_del_grant(jwt_t *jwt, const char *grant)
-	__attribute__ ((weak, alias ("jwt_del_grants")));
-#endif
+// #ifdef NO_WEAK_ALIASES
+// int jwt_del_grant(jwt_t *jwt, const char *grant)
+// {
+// 	return jwt_del_grants(jwt, grant);
+// }
+// #else
+// int jwt_del_grant(jwt_t *jwt, const char *grant)
+// 	__attribute__ ((weak, alias ("jwt_del_grants")));
+// #endif
 
-#endif /* _MSC_VER */
+// #endif /* _MSC_VER */
 
 const char *jwt_get_header(jwt_t *jwt, const char *header)
 {
@@ -885,20 +885,20 @@ int jwt_del_headers(jwt_t *jwt, const char *header)
 
 static int __append_str(char **buf, const char *str)
 {
-	char *new;
+	char *new_thing = NULL;
 
 	if (*buf == NULL) {
-		new = jwt_calloc(1, strlen(str) + 1);
+		new_thing = (char *) jwt_calloc(1, strlen(str) + 1);
 	} else {
-		new = jwt_realloc(*buf, strlen(*buf) + strlen(str) + 1);
+		new_thing = (char *) jwt_realloc(*buf, strlen(*buf) + strlen(str) + 1);
 	}
 
-	if (new == NULL)
+	if (new_thing == NULL)
 		return ENOMEM;
 
-	strcat(new, str);
+	strcat(new_thing, str);
 
-	*buf = new;
+	*buf = new_thing;
 
 	return 0;
 }
@@ -1029,7 +1029,7 @@ static int jwt_encode(jwt_t *jwt, char **out)
 		return ret;
 	}
 
-	head = alloca(strlen(buf) * 2);
+	head = (char *) alloca(strlen(buf) * 2);
 	if (head == NULL) {
 		jwt_freemem(buf);
 		return ENOMEM;
@@ -1048,7 +1048,7 @@ static int jwt_encode(jwt_t *jwt, char **out)
 		return ret;
 	}
 
-	body = alloca(strlen(buf) * 2);
+	body = (char *) alloca(strlen(buf) * 2);
 	if (body == NULL) {
 		jwt_freemem(buf);
 		return ENOMEM;
@@ -1063,7 +1063,7 @@ static int jwt_encode(jwt_t *jwt, char **out)
 	jwt_base64uri_encode(body);
 
 	/* Allocate enough to reuse as b64 buffer. */
-	buf = jwt_malloc(head_len + body_len + 2);
+	buf = (char *) jwt_malloc(head_len + body_len + 2);
 	if (buf == NULL)
 		return ENOMEM;
 	strcpy(buf, head);
@@ -1091,7 +1091,7 @@ static int jwt_encode(jwt_t *jwt, char **out)
 	if (ret)
 		return ret;
 
-	buf = jwt_malloc(sig_len * 2);
+	buf = (char *) jwt_malloc(sig_len * 2);
 	if (buf == NULL) {
 		jwt_freemem(sig);
 		return ENOMEM;
@@ -1176,7 +1176,7 @@ int jwt_valid_new(jwt_valid_t **jwt_valid, jwt_alg_t alg)
 	if (!jwt_valid)
 		return EINVAL;
 
-	*jwt_valid = jwt_malloc(sizeof(jwt_valid_t));
+	*jwt_valid = (jwt_valid_t *) jwt_malloc(sizeof(jwt_valid_t));
 	if (!*jwt_valid)
 		return ENOMEM;
 
