@@ -14,6 +14,7 @@
 #include "cerver/http/multipart.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
+#include "cerver/http/socket.h"
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
@@ -209,17 +210,6 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 #pragma endregion
 
 #pragma region handler
-
-enum _HttpWebSocketError {
-
-    HTTP_WEB_SOCKET_ERROR_NONE                      = 0,
-
-    HTTP_WEB_SOCKET_ERROR_READ_HANDSHAKE            = 1,
-    HTTP_WEB_SOCKET_ERROR_WRITE_HANDSHAKE           = 2,
-
-};
-
-typedef enum _HttpWebSocketError HttpWebSocketError;
 
 typedef struct HttpReceive {
 
