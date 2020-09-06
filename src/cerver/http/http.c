@@ -1516,7 +1516,7 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 
 static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
 
-	HttpResponse *res = http_response_json_error ((http_status) 400, "Failed to authenticate!");
+	HttpResponse *res = http_response_json_error (HTTP_STATUS_UNAUTHORIZED, "Failed to authenticate!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
