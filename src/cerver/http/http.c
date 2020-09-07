@@ -1027,9 +1027,9 @@ static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) 
 // Content-Type: image/jpeg
 static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (const char *header) {
 
-	if (!strcmp ("Content-Disposition", header)) return MULTI_PART_HEADER_CONTENT_DISPOSITION;
-	if (!strcmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
-	if (!strcmp ("Content-Type", header)) return MULTI_PART_HEADER_CONTENT_TYPE;
+	if (!strcasecmp ("Content-Disposition", header)) return MULTI_PART_HEADER_CONTENT_DISPOSITION;
+	if (!strcasecmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
+	if (!strcasecmp ("Content-Type", header)) return MULTI_PART_HEADER_CONTENT_TYPE;
 
 	return MULTI_PART_HEADER_INVALID;		// no known header
 
@@ -1762,7 +1762,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	#ifdef HTTP_DEBUG
 	char *status = c_string_create (
 		"%s %s",
-		http_method_str (http_receive->request->method),
+		http_method_str ((enum http_method) http_receive->request->method),
 		http_receive->request->url->str
 	);
 
