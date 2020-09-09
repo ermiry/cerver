@@ -53,6 +53,7 @@ HttpRequest *http_request_new (void) {
 		http_request->multi_parts = NULL;
 		http_request->n_files = 0;
 		http_request->n_values = 0;
+		http_request->dirname = NULL;
 		
 		http_request->body_values = NULL;
 	}
@@ -83,6 +84,7 @@ void http_request_delete (HttpRequest *http_request) {
 		str_delete (http_request->body);
 
 		dlist_delete (http_request->multi_parts);
+		str_delete (http_request->dirname);
 
 		dlist_delete (http_request->body_values);
 

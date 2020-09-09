@@ -207,6 +207,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->default_handler = NULL;
 
 		http_cerver->uploads_path = NULL;
+		http_cerver->uploads_dirname_generator = NULL;
 
 		http_cerver->jwt_alg = JWT_ALG_NONE;
 
@@ -513,6 +514,16 @@ void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_
 	if (http_cerver) {
 		if (http_cerver->uploads_path) str_delete (http_cerver->uploads_path);
 		http_cerver->uploads_path = uploads_path ? str_new (uploads_path) : NULL;
+	}
+
+}
+
+// sets a method to be called on every new request & that will be used to generate a new directory
+// inside the uploads path to save all the files from each request
+void http_cerver_set_uploads_dirname_generator (HttpCerver *http_cerver, String *(*dirname_generator)(CerverReceive *)) {
+
+	if (http_cerver) {
+		http_cerver->uploads_dirname_generator = dirname_generator;
 	}
 
 }

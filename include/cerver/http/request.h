@@ -98,6 +98,7 @@ typedef struct HttpRequest {
 	DoubleList *multi_parts;
 	u8 n_files;
 	u8 n_values;
+	String *dirname;
 	
 	// body key-value pairs parsed from x-www-form-urlencoded data
 	DoubleList *body_values;

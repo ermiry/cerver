@@ -86,6 +86,7 @@ struct _HttpCerver {
 
     // uploads
     String *uploads_path;              // default uploads path
+    String *(*uploads_dirname_generator)(CerverReceive *cr);
 
     // auth
     jwt_alg_t jwt_alg;
@@ -157,6 +158,10 @@ CERVER_EXPORT char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, Doub
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
 CERVER_EXPORT void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_path);
+
+// sets a method to be called on every new request & that will be used to generate a new directory
+// inside the uploads path to save all the files from each request
+CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (HttpCerver *http_cerver, String *(*dirname_generator)(CerverReceive *));
 
 #pragma endregion
 
