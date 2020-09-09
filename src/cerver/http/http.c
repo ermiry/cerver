@@ -1080,7 +1080,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = (http_receive)->request->current_part;
 
+	#ifdef HTTP_DEBUG
 	http_multi_part_headers_print (multi_part);
+	#endif
 
 	if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
 		char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
@@ -1096,10 +1098,23 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			http_receive->request->n_files += 1;
 
 			if (http_receive->http_cerver->uploads_path) {
-				char *filename = c_string_create (
-					"%s/%s", 
-					http_receive->http_cerver->uploads_path->str, multi_part->filename->str
-				);
+				char *filename = NULL;
+
+				if (http_receive->request->dirname) {
+					filename = c_string_create (
+						"%s/%s/%s",
+						http_receive->http_cerver->uploads_path->str,
+						http_receive->request->dirname->str,
+						multi_part->filename->str
+					);
+				}
+
+				else {
+					filename = c_string_create (
+						"%s/%s", 
+						http_receive->http_cerver->uploads_path->str, multi_part->filename->str
+					);
+				}
 
 				multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
 				switch (multi_part->fd) {
@@ -1116,11 +1131,13 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 					} break;
 
 					default: {
+						#ifdef HTTP_DEBUG
 						char *status = c_string_create ("Opened %s to save multipart file!", filename);
 						if (status) {
 							cerver_log_debug (status);
 							free (status);
 						}
+						#endif
 
 						multi_part->saved_filename = str_new (NULL);
 						multi_part->saved_filename->str = filename;
@@ -1699,6 +1716,10 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 				http_receive->mpart_parser->data = http_receive;
 
 				http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
+
+				if (http_receive->http_cerver->uploads_dirname_generator) {
+					http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
+				}
 
 				free (boundary);
 			}
