@@ -1717,8 +1717,14 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 				http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
 
+				// TODO: handler errors
 				if (http_receive->http_cerver->uploads_dirname_generator) {
-					http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
+					if (http_receive->http_cerver->uploads_path) {
+						http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
+						char dirname[512] = { 0 };
+						snprintf (dirname, 512, "%s/%s", http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str);
+						files_create_dir (dirname, 0777);
+					}
 				}
 
 				free (boundary);
