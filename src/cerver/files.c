@@ -95,13 +95,11 @@ DoubleList *files_get_from_dir (const char *dir) {
     DoubleList *images = NULL;
 
     if (dir) {
-        DIR *dp;
-        struct dirent *ep;
-
 		images = dlist_init (str_delete, str_comparator);
 
-        dp = opendir (dir);
+        DIR *dp = opendir (dir);
         if (dp) {
+            struct dirent *ep = NULL;
             String *file = NULL;
             while ((ep = readdir (dp)) != NULL) {
                 if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
@@ -175,6 +173,22 @@ DoubleList *file_get_lines (const char *filename) {
     }
 
     return lines;
+
+}
+
+// returns true if the filename exists
+bool file_exists (const char *filename) {
+
+    bool retval = false;
+
+    if (filename) {
+        struct stat filestatus = { 0 };
+        if (!stat (filename, &filestatus)) {
+            retval = true;
+        }
+    }
+
+    return retval;
 
 }
 
