@@ -8,6 +8,8 @@
 #include "cerver/connection.h"
 #include "cerver/config.h"
 
+#pragma region type
+
 #define BALANCER_TYPE_MAP(XX)									\
 	XX(0, 	NONE, 				None)							\
 	XX(1, 	ROUND_ROBIN, 		Round-Robin)					\
@@ -21,6 +23,10 @@ typedef enum BalcancerType {
 } BalcancerType;
 
 const char *balancer_type_to_string (BalcancerType type);
+
+#pragma endregion
+
+#pragma region main
 
 typedef struct Balancer {
 
@@ -47,6 +53,10 @@ CERVER_EXPORT Balancer *balancer_create (
 	unsigned int n_services
 );
 
+#pragma endregion
+
+#pragma region services
+
 // registers a new service to the load balancer
 // a dedicated connection will be created when the balancer starts to handle traffic to & from the service
 // returns 0 on success, 1 on error
@@ -54,5 +64,17 @@ CERVER_EXPORT u8 balancer_service_register (
 	Balancer *balancer,
 	const char *ip_address, u16 port
 );
+
+#pragma endregion
+
+#pragma region start
+
+// starts the load balancer by first connecting to the registered services
+// and checking their ability to handle requests
+// then the cerver gets started to enable client connections
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 balancer_start (Balancer *balancer);
+
+#pragma endregion
 
 #endif

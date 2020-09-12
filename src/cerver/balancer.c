@@ -7,6 +7,9 @@
 #include "cerver/client.h"
 #include "cerver/connection.h"
 
+#include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
+
 const char *balancer_type_to_string (BalcancerType type) {
 
 	switch (type) {
@@ -127,5 +130,98 @@ u8 balancer_service_register (
 	return retval;
 
 }
+
+// connects to the service & sends a test packet to check its ability to handle requests
+// returns 0 on success, 1 on error
+static u8 balancer_service_connect (Balancer *balancer, Connection *service) {
+
+	// TODO:
+
+}
+
+#pragma endregion
+
+#pragma region start
+
+static u8 balancer_start_check (Balancer *balancer) {
+
+	u8 retval = 1;
+
+	if (balancer->next_service) {
+		if (balancer->next_service == balancer->n_services) {
+			balancer->next_service = 0;
+
+			retval = 0;
+		}
+
+		else {
+			char *status = c_string_create (
+				"Balancer registered services doesn't match the configured number: %d != %d",
+				balancer->next_service, balancer->n_services
+			);
+
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+		}
+	}
+
+	else {
+		cerver_log_error ("No service has been registered to the load balancer!");
+	}
+
+	return retval;
+
+}
+
+static u8 balancer_start_client (Balancer *balancer) {
+
+	u8 errors = 0;
+
+	for (unsigned int i = 0; i < balancer->n_services; i++) {
+		errors |= balancer_service_connect (balancer, balancer->services[i]);
+	}
+
+	return errors;
+
+}
+
+static u8 balancer_start_cerver (Balancer *balancer) {
+
+	u8 errors = 0;
+
+	if (cerver_start (balancer->cerver)) {
+		cerver_log_error ("Failed to start load balancer's cerver!");
+		errors = 1;
+	}
+
+	return errors;
+
+}
+
+// starts the load balancer by first connecting to the registered services
+// and checking their ability to handle requests
+// then the cerver gets started to enable client connections
+// returns 0 on success, 1 on error
+u8 balancer_start (Balancer *balancer) {
+
+	u8 retval = 1;
+
+	if (balancer) {
+		if (!balancer_start_check (balancer)) {
+			if (!balancer_start_client (balancer)) {
+				retval = balancer_start_cerver (balancer);
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region end
 
 #pragma endregion
