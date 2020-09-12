@@ -11,7 +11,7 @@ DEFINES	= -D CERVER_DEBUG -D CERVER_STATS 	\
 			-D HANDLER_DEBUG 				\
 			-D PACKETS_DEBUG 				\
 			-D AUTH_DEBUG 					\
-			-D ADMIN_DEBUG					\
+			-D ADMIN_DEBUG
 
 CC          := gcc
 
