@@ -1,19 +1,21 @@
 #ifndef _CERVER_VERSION_H_
 #define _CERVER_VERSION_H_
 
-#define CERVER_VERSION                  "1.5.5"
-#define CERVER_VERSION_NAME             "Release 1.5.5"
-#define CERVER_VERSION_DATE			    "28/08/2020"
-#define CERVER_VERSION_TIME			    "23:12 CST"
+#include "cerver/config.h"
+
+#define CERVER_VERSION                  "1.6"
+#define CERVER_VERSION_NAME             "Release 1.6"
+#define CERVER_VERSION_DATE			    "12/09/2020"
+#define CERVER_VERSION_TIME			    "17:16 CST"
 #define CERVER_VERSION_AUTHOR			"Erick Salas"
 
 // print full cerver version information 
-extern void cerver_version_print_full (void);
+CERVER_EXPORT void cerver_version_print_full (void);
 
 // print the version id
-extern void cerver_version_print_version_id (void);
+CERVER_EXPORT void cerver_version_print_version_id (void);
 
 // print the version name
-extern void cerver_version_print_version_name (void);
+CERVER_EXPORT void cerver_version_print_version_name (void);
 
 #endif
