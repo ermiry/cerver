@@ -131,11 +131,59 @@ u8 balancer_service_register (
 
 }
 
+// sends a test message to the service & waits for the request
+static u8 balancer_service_test (Balancer *balancer, Connection *service) {
+
+	u8 retval = 1;
+
+	Packet *packet = packet_create (TEST_PACKET, NULL, 0);
+	if (packet) {
+		packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
+		if (!client_request_to_cerver (balancer->client, service, packet)) {
+			retval = 0;
+		}
+
+		else {
+			char *status = c_string_create ("Failed to send test request to %s", service->name->str);
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+		}
+
+		packet_delete (packet);
+	}
+
+	return retval;
+
+}
+
 // connects to the service & sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
 static u8 balancer_service_connect (Balancer *balancer, Connection *service) {
 
-	// TODO:
+	u8 retval = 1;
+
+	if (!client_connect_to_cerver (balancer->client, service)) {
+		char *status = c_string_create ("Connected to %s", service->name->str);
+		if (status) {
+			cerver_log_success (status);
+			free (status);
+		}
+
+		// send test message to service
+		retval = balancer_service_test (balancer, service);
+	}
+
+	else {
+		char *status = c_string_create ("Failed to connect to %s", service->name->str);
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
+	}
+
+	return retval;
 
 }
 
