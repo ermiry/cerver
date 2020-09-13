@@ -51,7 +51,7 @@ void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (cre
 static void end (int dummy) {
 	
 	if (client_cerver) {
-		cerver_stats_print (client_cerver);
+		cerver_stats_print (client_cerver, true, true);
 		cerver_teardown (client_cerver);
 	} 
 
@@ -69,10 +69,10 @@ static void client_app_handler (void *packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 		
 		switch (packet->header->request_type) {
-			case TEST_MSG: cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from cerver!"); break;
+			case TEST_MSG: cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from cerver!"); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, "Got an unknown app request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -102,7 +102,7 @@ static u8 cerver_client_connect (Client *client, Connection **connection) {
 			);
 
             if (!client_connect_to_cerver (client, *connection)) {
-                cerver_log_msg (stdout, LOG_SUCCESS, LOG_NO_TYPE, "Connected to cerver!");
+                cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
 
 				client_connection_start (client, *connection);
 
@@ -110,7 +110,7 @@ static u8 cerver_client_connect (Client *client, Connection **connection) {
             }
 
             else {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to connect to cerver!");
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
             }
         }
     }
@@ -205,7 +205,7 @@ static int client_test_app_msg_send (Client *client, Connection *connection) {
             packet_set_network_values (packet, NULL, client, connection, NULL);
             size_t sent = 0;
             if (packet_send (packet, 0, &sent, false)) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, "Failed to send test to cerver");
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send test to cerver");
             }
 
             else {
@@ -229,7 +229,7 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, "Got a test message from client. Sending another one back...");
+		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 		
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -257,7 +257,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -395,7 +395,7 @@ int main (void) {
 	cerver_log_debug ("Cerver creates a new client that will authenticate with a cerver & then, perform requests");
 	printf ("\n");
 
-	client_cerver = cerver_create (CUSTOM_CERVER, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
+	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
 		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Auth Example");
 
@@ -447,8 +447,7 @@ int main (void) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		cerver_delete (client_cerver);
 	}
 
 	return 0;

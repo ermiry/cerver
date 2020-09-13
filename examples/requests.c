@@ -25,7 +25,7 @@ typedef enum AppRequest {
 typedef struct AppData {
 
 	int id;
-	estring *message;
+	String *message;
 
 } AppData;
 
@@ -54,7 +54,7 @@ void app_data_delete (void *app_data_ptr) {
 	if (app_data_ptr) {
 		AppData *app_data = (AppData *) app_data_ptr;
 
-		estring_delete (app_data->message);
+		str_delete (app_data->message);
 
 		free (app_data);
 	}
@@ -66,7 +66,7 @@ AppData *app_data_create (int id, const char *msg) {
 	AppData *app_data = app_data_new ();
 	if (app_data) {
 		app_data->id = id;
-		app_data->message = estring_new (msg);
+		app_data->message = str_new (msg);
 	}
 
 	return app_data;
@@ -87,7 +87,7 @@ void *app_data_copy (void *app_data_args_ptr) {
 		handler_data = app_data_new ();
 		if (handler_data) {
 			handler_data->id = app_data->id;
-			handler_data->message = estring_new (app_data->message->str);
+			handler_data->message = str_new (app_data->message->str);
 		}
 	}
 
@@ -105,7 +105,7 @@ AppData *app_data = NULL;
 static void end (int dummy) {
 	
 	if (my_cerver) {
-		cerver_stats_print (my_cerver);
+		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
 
 		app_data_delete (app_data);
@@ -137,7 +137,7 @@ static void handle_test_request (Packet *packet) {
 
 }
 
-static void handle_msg_request (Packet *packet, estring *msg) {
+static void handle_msg_request (Packet *packet, String *msg) {
 
 	if (packet && msg) {
 		cerver_log_debug ("Got an APP DATA request!");
@@ -182,7 +182,7 @@ static void app_packet_handler (void *data) {
 				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, "Got an unknown app request.");
+					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -204,7 +204,7 @@ int main (void) {
 	cerver_log_debug ("Requests Example");
 	printf ("\n");
 
-	my_cerver = cerver_create (CUSTOM_CERVER, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Requests Example");
 
@@ -237,8 +237,7 @@ int main (void) {
 	else {
         cerver_log_error ("Failed to create cerver!");
 
-        // DONT call - cerver_teardown () is called automatically if cerver_create () fails
-		// cerver_delete (client_cerver);
+		cerver_delete (my_cerver);
 	}
 
 	return 0;
