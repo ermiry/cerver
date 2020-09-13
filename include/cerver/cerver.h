@@ -62,6 +62,8 @@ typedef enum CerverType {
     CERVER_TYPE_WEB             = 3,
     CERVER_TYPE_FILE            = 4,
 
+    CERVER_TYPE_BALANCER        = 5
+
 } CerverType;
 
 CERVER_EXPORT String *cerver_type_to_string (CerverType type);

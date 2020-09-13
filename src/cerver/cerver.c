@@ -51,6 +51,8 @@ String *cerver_type_to_string (CerverType type) {
         case CERVER_TYPE_WEB: retval = str_new ("Cerver type: WEB"); break;
         case CERVER_TYPE_FILE: retval = str_new ("Cerver type: FILE"); break;
 
+        case CERVER_TYPE_BALANCER: retval = str_new ("Cerver type: BALANCER"); break;
+
         default: retval = str_new ("Cerver type: UNKNOWN"); break;
     }
 
@@ -2807,8 +2809,12 @@ u8 cerver_report_check_info (
             case CERVER_TYPE_WEB:
                 cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: WEB");
                 break;
-             case CERVER_TYPE_FILE:
+            case CERVER_TYPE_FILE:
                 cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: FILE");
+                break;
+
+            case CERVER_TYPE_BALANCER:
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: BALANCER");
                 break;
 
             default: 
