@@ -5,7 +5,7 @@
 #include <errno.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/time.h"
 
@@ -71,12 +71,12 @@ struct tm *timer_get_local_time (void) {
 }
 
 // returns a string representing the 24h time 
-estring *timer_time_to_string (struct tm *timeinfo) {
+String *timer_time_to_string (struct tm *timeinfo) {
 
     if (timeinfo) {
         char buffer[128] = { 0 };
         strftime (buffer, 128, "%T", timeinfo);
-        return estring_new (buffer);
+        return str_new (buffer);
     }
 
     return NULL;
@@ -84,12 +84,12 @@ estring *timer_time_to_string (struct tm *timeinfo) {
 }
 
 // returns a string with day/month/year
-estring *timer_date_to_string (struct tm *timeinfo) {
+String *timer_date_to_string (struct tm *timeinfo) {
 
     if (timeinfo) {
         char buffer[128] = { 0 };
         strftime (buffer, 128, "%d/%m/%y", timeinfo);
-        return estring_new (buffer);
+        return str_new (buffer);
     }
 
     return NULL;
@@ -97,12 +97,12 @@ estring *timer_date_to_string (struct tm *timeinfo) {
 }
 
 // returns a string with day/month/year - 24h time
-estring *timer_date_and_time_to_string (struct tm *timeinfo) {
+String *timer_date_and_time_to_string (struct tm *timeinfo) {
 
     if (timeinfo) {
         char buffer[128] = { 0 };
         strftime (buffer, 128, "%d/%m/%y - %T", timeinfo);
-        return estring_new (buffer);
+        return str_new (buffer);
     }
 
     return NULL;
@@ -110,12 +110,12 @@ estring *timer_date_and_time_to_string (struct tm *timeinfo) {
 }
 
 // returns a string representing the time with custom format
-estring *timer_time_to_string_custom (struct tm *timeinfo, const char *format) {
+String *timer_time_to_string_custom (struct tm *timeinfo, const char *format) {
 
     if (timeinfo) {
         char buffer[128] = { 0 };
         strftime (buffer, 128, format, timeinfo);
-        return estring_new (buffer);
+        return str_new (buffer);
     }
     
     return NULL;

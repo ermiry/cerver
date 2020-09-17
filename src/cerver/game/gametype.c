@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 #include "cerver/game/gametype.h"
 #include "cerver/collections/dlist.h"
 
@@ -34,7 +34,7 @@ GameType *game_type_create (const char *name, void *data, void (*delete_data)(vo
     if (name) {
         type = game_type_new ();
         if (type) {
-            type->name = estring_new (name);
+            type->name = str_new (name);
             type->data = data;
             type->delete_data = delete_data;
             type->start = start;
@@ -54,7 +54,7 @@ void game_type_delete (void *ptr) {
 
     if (ptr) {
         GameType *type = (GameType *) ptr;
-        estring_delete (type->name);
+        str_delete (type->name);
         if (type->delete_data) type->delete_data (type->data);
         else free (type->data);
 
@@ -96,7 +96,7 @@ void game_type_set_on_lobby_leave (GameType *game_type, Action on_lobby_leave) {
 
 }
 
-// registers a new game type, returns 0 on LOG_SUCCESS, 1 on error
+// registers a new game type, returns 0 on LOG_TYPE_SUCCESS, 1 on error
 int game_type_register (DoubleList *game_types, GameType *game_type) {
 
     int retval = 1;
@@ -110,7 +110,7 @@ int game_type_register (DoubleList *game_types, GameType *game_type) {
 
 }
 
-// unregister a game type, returns 0 on LOG_SUCCESS, 1 on error
+// unregister a game type, returns 0 on LOG_TYPE_SUCCESS, 1 on error
 int game_type_unregister (DoubleList *game_types, const char *name) {
 
     int retval = 1;

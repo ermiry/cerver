@@ -5,52 +5,35 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-static char *log_get_msg_type (LogType type) {
+static const char *log_get_msg_type (LogType type) {
 
-	char *retval = (char *) calloc (16, sizeof (char));
-
-	if (retval) {
-		switch (type) {
-			case LOG_ERROR: strcpy (retval, "[ERROR]"); break;
-			case LOG_WARNING: strcpy (retval, "[WARNING]"); break;
-			case LOG_SUCCESS: strcpy (retval, "[SUCCESS]"); break;
-			case LOG_DEBUG: strcpy (retval, "[DEBUG]"); break;
-			case LOG_TEST: strcpy (retval, "[TEST]"); break;
-
-			case LOG_CERVER: strcpy (retval, "[CERVER]"); break;
-			case LOG_CLIENT: strcpy (retval, "[CLIENT]"); break;
-
-			case LOG_REQ: strcpy (retval, "[REQ]"); break;
-			case LOG_FILE: strcpy (retval, "[FILE]"); break;
-			case LOG_PACKET: strcpy (retval, "[PACKET]"); break;
-			case LOG_PLAYER: strcpy (retval, "[PLAYER]"); break;
-			case LOG_GAME: strcpy (retval, "[GAME]"); break;
-
-			case LOG_HANDLER: strcpy (retval, "[HANDLER]"); break;
-			case LOG_ADMIN: strcpy (retval, "[ADMIN]"); break;
-
-			default: break;
-		}
+	switch (type) {
+		#define XX(num, name, string) case LOG_TYPE_##name: return #string;
+		LOG_TYPE_MAP(XX)
+		#undef XX
 	}
 
-	return retval;
+	return log_get_msg_type (LOG_TYPE_NONE);
 
 }
 
-void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType second_type,
-	const char *msg) {
+void cerver_log_msg (
+	FILE *__restrict __stream, 
+	LogType first_type, LogType second_type,
+	const char *msg
+) {
 
 	if (__stream && msg) {
-		char *first = log_get_msg_type (first_type);
+		const char *first = log_get_msg_type (first_type);
 		if (first) {
 			char *message = NULL;
 
-			if (second_type != LOG_NO_TYPE) {
-				char *second = log_get_msg_type (second_type);
+			if (second_type != LOG_TYPE_NONE) {
+				const char *second = log_get_msg_type (second_type);
 				if (second) {
 					switch (first_type) {
-						case LOG_DEBUG:
-						case LOG_TEST:
+						case LOG_TYPE_DEBUG:
+						case LOG_TYPE_TEST:
 							message = c_string_create ("%s: %s\n", second, msg);
 							break;
 
@@ -58,15 +41,13 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 							message = c_string_create ("%s%s: %s\n", first, second, msg);
 							break;
 					}
-
-					free (second);
 				}
 			}
 
 			else {
 				switch (first_type) {
-					case LOG_DEBUG:
-					case LOG_TEST:
+					case LOG_TYPE_DEBUG:
+					case LOG_TYPE_TEST:
 						break;
 
 					default: 
@@ -77,15 +58,17 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 
 			if (message) {
 				switch (first_type) {
-					case LOG_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s", first, message); break;
+					case LOG_TYPE_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s", first, message); break;
 					
-					case LOG_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s", first, message); break;
+					case LOG_TYPE_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s", first, message); break;
 
-					case LOG_ERROR: fprintf (__stream, LOG_COLOR_RED "%s" LOG_COLOR_RESET, message); break;
-					case LOG_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s" LOG_COLOR_RESET, message); break;
-					case LOG_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s" LOG_COLOR_RESET, message); break;
+					case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s" LOG_COLOR_RESET, message); break;
+					case LOG_TYPE_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s" LOG_COLOR_RESET, message); break;
+					case LOG_TYPE_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s" LOG_COLOR_RESET, message); break;
 
-					case LOG_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s" LOG_COLOR_RESET, message); break;
+					case LOG_TYPE_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s" LOG_COLOR_RESET, message); break;
+
+					case LOG_TYPE_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET, message); break;
 
 					default: fprintf (__stream, "%s", message); break;
 				}
@@ -95,19 +78,17 @@ void cerver_log_msg (FILE *__restrict __stream, LogType first_type, LogType seco
 
 			else {
 				switch (first_type) {
-					case LOG_DEBUG: 
+					case LOG_TYPE_DEBUG: 
 						fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", first, msg); 
 						break;
 					
-					case LOG_TEST: 
+					case LOG_TYPE_TEST: 
 						fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", first, msg);
 						break;
 
 					default: break;
 				}
 			}
-
-			free (first);
 		}
 	}
 

@@ -4,7 +4,7 @@
 #include <string.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/client.h"
 #include "cerver/packets.h"
@@ -35,7 +35,7 @@ void player_delete (void *player_ptr) {
     if (player_ptr) {
         Player *player = (Player *) player_ptr;
 
-        estring_delete (player->id);
+        str_delete (player->id);
 
         player->client = NULL;
 
@@ -53,7 +53,7 @@ void player_delete (void *player_ptr) {
 // sets the player id
 void player_set_id (Player *player, const char *id) {
 
-    if (player) player->id = estring_new (id);
+    if (player) player->id = str_new (id);
 
 }
 
@@ -69,7 +69,7 @@ void player_set_data (Player *player, void *data, Action data_delete) {
 
 int player_comparator_by_id (const void *a, const void *b) {
 
-    return estring_compare (((Player *) a)->id, ((Player *) b)->id);
+    return str_compare (((Player *) a)->id, ((Player *) b)->id);
 
 }
 
@@ -120,7 +120,7 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered a new player to lobby %s.",
                     lobby->id->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_PLAYER, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
                     free (s);
                 }
                 #endif
@@ -130,7 +130,7 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                     free (s);
                 }
                 #endif
@@ -183,7 +183,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Unregistered a player from lobby %s.",
                     lobby->id->str);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_PLAYER, s);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
                     free (s);
                 }
                 #endif
@@ -192,7 +192,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 s = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
                 if (s) {
-                    cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                     free (s);
                 }
                 #endif
@@ -204,7 +204,7 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                     char *s = c_string_create ("Destroying lobby %s -- it is empty.",
                         lobby->id->str);
                     if (s) {
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_GAME, s);
+                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
                         free (s);
                     }
                     #endif

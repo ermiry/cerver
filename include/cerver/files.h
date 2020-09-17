@@ -7,38 +7,43 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
+
 #include "cerver/utils/json.h"
 
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
-extern unsigned int files_create_dir (const char *dir_path, mode_t mode);
+CERVER_EXPORT unsigned int files_create_dir (const char *dir_path, mode_t mode);
 
-// returns an allocated string with the file extensio
+// returns an allocated string with the file extension
 // NULL if no file extension
-extern char *files_get_file_extension (const char *filename);
+CERVER_EXPORT char *files_get_file_extension (const char *filename);
 
 // returns a list of strings containg the names of all the files in the directory
-extern DoubleList *files_get_from_dir (const char *dir);
+CERVER_EXPORT DoubleList *files_get_from_dir (const char *dir);
 
 // reads eachone of the file's lines into a newly created string and returns them inside a dlist
-extern DoubleList *file_get_lines (const char *filename);
+CERVER_EXPORT DoubleList *file_get_lines (const char *filename);
+
+// returns true if the filename exists
+CERVER_EXPORT bool file_exists (const char *filename);
 
 // opens a file and returns it as a FILE
-extern FILE *file_open_as_file (const char *filename, 
+CERVER_EXPORT FILE *file_open_as_file (const char *filename, 
     const char *modes, struct stat *filestatus);
 
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
-extern char *file_read (const char *filename, int *file_size);
+CERVER_EXPORT char *file_read (const char *filename, size_t *file_size);
 
-// opens a file
+// opens a file with the required flags
 // returns fd on success, -1 on error
-extern int file_open_as_fd (const char *filename, struct stat *filestatus);
+CERVER_EXPORT int file_open_as_fd (const char *filename, struct stat *filestatus, int flags);
 
 // sends a file to the sock fd
 // returns 0 on success, 1 on error
-extern int file_send (const char *filename, int sock_fd);
+CERVER_EXPORT int file_send (const char *filename, int sock_fd);
 
-extern json_value *file_json_parse (const char *filename);
+CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 #endif

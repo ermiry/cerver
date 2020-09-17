@@ -4,13 +4,14 @@
 #include <stdbool.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
-#include "cerver/socket.h"
-#include "cerver/network.h"
 #include "cerver/cerver.h"
-#include "cerver/packets.h"
+#include "cerver/config.h"
 #include "cerver/handler.h"
+#include "cerver/network.h"
+#include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 
@@ -48,21 +49,21 @@ struct _ConnectionStats {
 
 typedef struct _ConnectionStats ConnectionStats;
 
-extern ConnectionStats *connection_stats_new (void);
+CERVER_PUBLIC ConnectionStats *connection_stats_new (void);
 
-extern void connection_stats_print (struct _Connection *connection);
+CERVER_PUBLIC void connection_stats_print (struct _Connection *connection);
 
 // a connection from a client
 struct _Connection {
 
-    estring *name;
+    String *name;
 
     struct _Socket *socket;
     u16 port;
     Protocol protocol;
     bool use_ipv6;
 
-    estring *ip;
+    String *ip;
     struct sockaddr_storage address;
 
     time_t connected_timestamp;             // when the connection started
@@ -106,48 +107,48 @@ struct _Connection {
 
 typedef struct _Connection Connection;
 
-extern Connection *connection_new (void);
+CERVER_PUBLIC Connection *connection_new (void);
 
-extern void connection_delete (void *ptr);
+CERVER_PUBLIC void connection_delete (void *ptr);
 
-extern Connection *connection_create_empty (void);
+CERVER_PUBLIC Connection *connection_create_empty (void);
 
 // creates a new client connection with the specified values
-extern Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
+CERVER_PUBLIC Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
     Protocol protocol);
 
 // compare two connections by their socket fds
-extern int connection_comparator (const void *a, const void *b);
+CERVER_PUBLIC int connection_comparator (const void *a, const void *b);
 
 // sets the connection's name, if it had a name before, it will be replaced
-extern void connection_set_name (Connection *connection, const char *name);
+CERVER_PUBLIC void connection_set_name (Connection *connection, const char *name);
 
 // get from where the client is connecting
-extern void connection_get_values (Connection *connection);
+CERVER_PUBLIC void connection_get_values (Connection *connection);
 
 // sets the connection's newtwork values
-extern void connection_set_values (Connection *connection,
+CERVER_PUBLIC void connection_set_values (Connection *connection,
     const char *ip_address, u16 port, Protocol protocol, bool use_ipv6);
 
 // sets the connection max sleep (wait time) to try to connect to the cerver
-extern void connection_set_max_sleep (Connection *connection, u32 max_sleep);
+CERVER_EXPORT void connection_set_max_sleep (Connection *connection, u32 max_sleep);
 
 // sets if the connection will receive packets or not (default true)
 // if true, a new thread is created that handled incoming packets
-extern void connection_set_receive (Connection *connection, bool receive);
+CERVER_EXPORT void connection_set_receive (Connection *connection, bool receive);
 
 // read packets into a buffer of this size in client_receive ()
 // by default the value RECEIVE_PACKET_BUFFER_SIZE is used
-extern void connection_set_receive_buffer_size (Connection *connection, u32 size);
+CERVER_EXPORT void connection_set_receive_buffer_size (Connection *connection, u32 size);
 
 // sets the connection received data
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
-extern void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
+CERVER_EXPORT void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
 
 // 17/06/2020
 // sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
 // the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
-extern void connection_set_update_sleep (Connection *connection, u32 sleep);
+CERVER_EXPORT void connection_set_update_sleep (Connection *connection, u32 sleep);
 
 typedef struct ConnectionCustomReceiveData {
 
@@ -161,83 +162,85 @@ typedef struct ConnectionCustomReceiveData {
 // a reference to the client and connection will be passed to the action as ClientConnection structure
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
-extern void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args);
+CERVER_PUBLIC void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args);
 
 // sets the connection auth data to send whenever the cerver requires authentication 
 // and a method to destroy it once the connection has ended,
 // if delete_auth_data is NULL, the auth data won't be deleted
-extern void connection_set_auth_data (Connection *connection, 
+CERVER_PUBLIC void connection_set_auth_data (Connection *connection, 
     void *auth_data, size_t auth_data_size, Action delete_auth_data,
     bool admin_auth);
 
 // removes the connection auth data using the connection's delete_auth_data method
 // if not such method, the data won't be deleted
 // the connection's auth data & delete method will be equal to NULL
-extern void connection_remove_auth_data (Connection *connection);
+CERVER_PUBLIC void connection_remove_auth_data (Connection *connection);
 
 // generates the connection auth packet to be send to the server
 // this is also generated automatically whenever the cerver ask for authentication
 // returns 0 on success, 1 on error
-extern u8 connection_generate_auth_packet (Connection *connection);
+CERVER_PUBLIC u8 connection_generate_auth_packet (Connection *connection);
 
 // sets up the new connection values
-extern u8 connection_init (Connection *connection);
+CERVER_PRIVATE u8 connection_init (Connection *connection);
 
 // starts a connection -> connects to the specified ip and port
 // returns 0 on success, 1 on error
-extern int connection_connect (Connection *connection);
+CERVER_PRIVATE int connection_connect (Connection *connection);
 
 // ends a client connection
-extern void connection_end (Connection *connection);
+CERVER_PRIVATE void connection_end (Connection *connection);
+
+CERVER_PRIVATE void connection_drop (struct _Cerver *cerver, Connection *connection);
 
 // gets the connection from the on hold connections map in cerver
-extern Connection *connection_get_by_sock_fd_from_on_hold (struct _Cerver *cerver, const i32 sock_fd);
+CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_on_hold (struct _Cerver *cerver, const i32 sock_fd);
 
 // gets the connection from the client by its sock fd
-extern Connection *connection_get_by_sock_fd_from_client (struct _Client *client, const i32 sock_fd);
+CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_client (struct _Client *client, const i32 sock_fd);
 
 // gets the connection from the admin cerver by its sock fd
-extern Connection *connection_get_by_sock_fd_from_admin (struct _AdminCerver *admin_cerver, const i32 sock_fd);
+CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_admin (struct _AdminCerver *admin_cerver, const i32 sock_fd);
 
 // checks if the connection belongs to the client
-extern bool connection_check_owner (struct _Client *client, Connection *connection);
+CERVER_PRIVATE bool connection_check_owner (struct _Client *client, Connection *connection);
 
 // registers a new connection to a client without adding it to the cerver poll
 // returns 0 on success, 1 on error
-extern u8 connection_register_to_client (struct _Client *client, Connection *connection);
+CERVER_PRIVATE u8 connection_register_to_client (struct _Client *client, Connection *connection);
 
 // registers the client connection to the cerver's strcutures (like maps)
 // returns 0 on success, 1 on error
-extern u8 connection_register_to_cerver (struct _Cerver *cerver, 
+CERVER_PRIVATE u8 connection_register_to_cerver (struct _Cerver *cerver, 
     struct _Client *client, Connection *connection);
 
 // unregister the client connection from the cerver's structures (like maps)
 // returns 0 on success, 1 on error
-extern u8 connection_unregister_from_cerver (struct _Cerver *cerver, Connection *connection);
+CERVER_PRIVATE u8 connection_unregister_from_cerver (struct _Cerver *cerver, Connection *connection);
 
 // wrapper function for easy access
 // registers a client connection to the cerver poll array
 // returns 0 on success, 1 on error
-extern u8 connection_register_to_cerver_poll (struct _Cerver *cerver, Connection *connection);
+CERVER_PRIVATE u8 connection_register_to_cerver_poll (struct _Cerver *cerver, Connection *connection);
 
 // wrapper function for easy access
 // unregisters a client connection from the cerver poll array
 // returns 0 on success, 1 on error
-extern u8 connection_unregister_from_cerver_poll (struct _Cerver *cerver, Connection *connection);
+CERVER_PRIVATE u8 connection_unregister_from_cerver_poll (struct _Cerver *cerver, Connection *connection);
 
 // first adds the client connection to the cerver's poll array, and upon success,
 // adds the connection to the cerver's structures
 // this method is equivalent to call connection_register_to_cerver_poll () & connection_register_to_cerver
 // returns 0 on success, 1 on error
-extern u8 connection_add_to_cerver (struct _Cerver *cerver, struct _Client *client, Connection *connection);
+CERVER_PRIVATE u8 connection_add_to_cerver (struct _Cerver *cerver, struct _Client *client, Connection *connection);
 
 // removes the connection's sock fd from the cerver's poll array and then removes the connection
 // from the cerver's structures
 // this method is equivalent to call connection_unregister_from_cerver_poll () & connection_unregister_from_cerver ()
 // returns 0 on success, 1 on error
-extern u8 connection_remove_from_cerver (struct _Cerver *cerver, Connection *connection);
+CERVER_PRIVATE u8 connection_remove_from_cerver (struct _Cerver *cerver, Connection *connection);
 
 // starts listening and receiving data in the connection sock
-extern void connection_update (void *ptr);
+CERVER_PRIVATE void connection_update (void *ptr);
 
 #endif

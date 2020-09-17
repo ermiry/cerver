@@ -6,7 +6,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -148,7 +148,7 @@ void admin_delete (void *admin_ptr) {
 	if (admin_ptr) {
 		Admin *admin = (Admin *) admin_ptr;
 
-		estring_delete (admin->id);
+		str_delete (admin->id);
 
 		client_delete (admin->client);
 
@@ -167,7 +167,7 @@ Admin *admin_create (void) {
     if (admin) {
         time_t rawtime = 0;
         time (&rawtime);
-        admin->id = estring_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
+        admin->id = str_create ("%ld-%d", rawtime, random_int_in_range (0, 100));
     }
 
     return admin;
@@ -282,7 +282,7 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
                     "%ld does not have ANY connection - removing him from cerver...",
                     admin->client->id);
                 if (s) {
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_ADMIN, s);
                     free (s);
                 }
                 #endif
@@ -347,7 +347,7 @@ u8 admin_remove_connection_by_sock_fd (AdminCerver *admin_cerver, Admin *admin, 
                         "%ld does not have a connection related to sock fd %d",
                         admin->client->id, sock_fd);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_ADMIN, s);
                         free (s);
                     }
                     #endif
@@ -507,11 +507,13 @@ AdminCerver *admin_cerver_new (void) {
         admin_cerver->update_thread_id = 0;
         admin_cerver->update = NULL;
         admin_cerver->update_args = NULL;
+        admin_cerver->delete_update_args = NULL;
         admin_cerver->update_ticks = DEFAULT_UPDATE_TICKS;
 
         admin_cerver->update_interval_thread_id = 0;
         admin_cerver->update_interval = NULL;
         admin_cerver->update_interval_args = NULL;
+        admin_cerver->delete_update_interval_args = NULL;
         admin_cerver->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
 
 		admin_cerver->stats = NULL;
@@ -714,12 +716,18 @@ void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packe
 
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
-// the update args will be passed to your method as a CerverUpdate & won't be deleted 
-void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *update_args, const u8 fps) {
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+void admin_cerver_set_update (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u8 fps
+) {
 
     if (admin_cerver) {
         admin_cerver->update = update;
         admin_cerver->update_args = update_args;
+        admin_cerver->delete_update_args = delete_update_args;
         admin_cerver->update_ticks = fps;
     }
 
@@ -727,12 +735,18 @@ void admin_cerver_set_update (AdminCerver *admin_cerver, Action update, void *up
 
 // sets a custom update method to be executed every x seconds (in intervals)
 // a new thread will be created that will call your method every x seconds
-// the update interval args will be passed to your method as a CerverUpdate & won't be deleted 
-void admin_cerver_set_update_interval (AdminCerver *admin_cerver, Action update, void *update_args, const u32 interval) {
+// the update args will be passed to your method as a CerverUpdate &
+// will only be deleted at cerver teardown if you set the delete_update_args ()
+void admin_cerver_set_update_interval (
+    AdminCerver *admin_cerver, 
+    Action update, void *update_args, void (*delete_update_args)(void *),
+    const u32 interval
+) {
 
     if (admin_cerver) {
         admin_cerver->update_interval = update;
         admin_cerver->update_interval_args = update_args;
+        admin_cerver->delete_update_interval_args = delete_update_args;
         admin_cerver->update_interval_secs = interval;
     }
 
@@ -827,7 +841,7 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
             char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_ADMIN, status);
                 free (status);
             }
             #endif
@@ -861,7 +875,7 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
             char *status = c_string_create ("Cerver %s ADMIN current connected admins: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_ADMIN, status);
                 free (status);
             }
             #endif
@@ -954,6 +968,12 @@ static void admin_cerver_update (void *args) {
 
         cerver_update_delete (cu);
 
+        if (admin_cerver->update_args) {
+            if (admin_cerver->delete_update_args) {
+                admin_cerver->delete_update_args (admin_cerver->update_args);
+            }
+        }
+
         #ifdef ADMIN_DEBUG
         s = c_string_create ("Cerver's %s admin_cerver_update () has ended!",
             admin_cerver->cerver->info->name->str);
@@ -991,6 +1011,12 @@ static void admin_cerver_update_interval (void *args) {
         }
 
         cerver_update_delete (cu);
+
+        if (admin_cerver->update_interval_args) {
+            if (admin_cerver->delete_update_interval_args) {
+                admin_cerver->delete_update_interval_args (admin_cerver->update_interval_args);
+            }
+        }
 
         #ifdef ADMIN_DEBUG
         s = c_string_create ("Cerver's %s admin_cerver_update_interval () has ended!",
@@ -1493,7 +1519,7 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
                     char *s = c_string_create ("Got an unknown request in cerver %s",
                         packet->cerver->info->name->str);
                     if (s) {
-                        cerver_log_msg (stderr, LOG_WARNING, LOG_NO_TYPE, s);
+                        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
                         free (s);
                     }
                     #endif
@@ -1689,7 +1715,7 @@ void admin_packet_handler (Packet *packet) {
                     char *s = c_string_create ("Got a packet of unknown type in cerver %s admin handler", 
                         packet->cerver->info->name->str);
                     if (s) {
-                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, s);
+                        cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, s);
                         free (s);
                     }
                     #endif
@@ -1752,7 +1778,7 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             char *s = c_string_create ("Added sock fd <%d> to cerver %s ADMIN poll, idx: %i", 
                 connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx);
             if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_ADMIN, s);
                 free (s);
             }
             #endif
@@ -1761,7 +1787,7 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_ADMIN, status);
                 free (status);
             }
             #endif
@@ -1774,7 +1800,7 @@ u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, Connection 
             char *s = c_string_create ("Cerver %s ADMIN poll is full!", 
                 admin_cerver->cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_ADMIN, s);
+                cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_ADMIN, s);
                 free (s);
             }
             #endif
@@ -1808,7 +1834,7 @@ u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 so
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
                 sock_fd, admin_cerver->cerver->info->name->str, idx);
             if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, s);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_ADMIN, s);
                 free (s);
             }
             #endif
@@ -1817,7 +1843,7 @@ u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 so
             char *status = c_string_create ("Cerver %s ADMIN current connections: %ld", 
                 admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_ADMIN, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_ADMIN, status);
                 free (status);
             }
             #endif
@@ -1830,7 +1856,7 @@ u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 so
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
                 sock_fd, admin_cerver->cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stdout, LOG_WARNING, LOG_ADMIN, s);
+                cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_ADMIN, s);
                 free (s);
             }
             // #endif
@@ -1867,7 +1893,7 @@ static inline void admin_poll_handle_actual (Cerver *cerver, const u32 idx, Cerv
                 //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
                 //         cerver->info->name->str);
                 //     if (s) {
-                //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                //         cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
                 //         free (s);
                 //     }
                 // }
@@ -1928,7 +1954,7 @@ static void *admin_poll (void *cerver_ptr) {
 
         char *status = c_string_create ("Cerver %s ADMIN poll has started!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_ADMIN, status);
+            cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_ADMIN, status);
             free (status);
         }
 
@@ -1950,7 +1976,7 @@ static void *admin_poll (void *cerver_ptr) {
                 case -1: {
                     char *status = c_string_create ("Cerver %s ADMIN poll has failed!", cerver->info->name->str);
                     if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                        cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_ADMIN, status);
                         free (status);
                     }
 
@@ -1962,7 +1988,7 @@ static void *admin_poll (void *cerver_ptr) {
                     // #ifdef ADMIN_DEBUG
                     // char *status = c_string_create ("Cerver %s ADMIN poll timeout", cerver->info->name->str);
                     // if (status) {
-                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
+                    //     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_ADMIN, status);
                     //     free (status);
                     // }
                     // #endif
@@ -1977,13 +2003,13 @@ static void *admin_poll (void *cerver_ptr) {
         #ifdef ADMIN_DEBUG
         status = c_string_create ("Cerver %s ADMIN poll has stopped!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_ADMIN, status);
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_ADMIN, status);
             free (status);
         }
         #endif
     }
 
-    else cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, "Can't handle admins on a NULL cerver!");
+    else cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_ADMIN, "Can't handle admins on a NULL cerver!");
 
     return NULL;
 

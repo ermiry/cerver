@@ -3,8 +3,10 @@
 
 #include <stddef.h>
 
-extern char *base64_encode (size_t* enclen, size_t len, unsigned char* data);
+#include "cerver/config.h"
 
-extern unsigned char *base64_decode (size_t* declen, size_t len, char* data);
+CERVER_PUBLIC char *base64_encode (size_t *enclen, size_t len, unsigned char *data);
+
+CERVER_PUBLIC unsigned char *base64_decode (size_t *declen, size_t len, char *data);
 
 #endif

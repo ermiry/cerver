@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
@@ -60,7 +60,7 @@ unsigned int files_create_dir (const char *dir_path, mode_t mode) {
 
 }
 
-// returns an allocated string with the file extensio
+// returns an allocated string with the file extension
 // NULL if no file extension
 char *files_get_file_extension (const char *filename) {
 
@@ -74,12 +74,12 @@ char *files_get_file_extension (const char *filename) {
             char *p = ptr;
             while (*p++) ext_len++;
 
-            char *ext = (char *) calloc (ext_len + 1, sizeof (char));
-            if (ext) {
-                memcpy (ext, ptr, ext_len);
-                ext[ext_len] = '\0';
-
-                retval = ext;
+            if (ext_len) {
+                retval = (char *) calloc (ext_len + 1, sizeof (char));
+                if (retval) {
+                    memcpy (retval, ptr + 1, ext_len);
+                    retval[ext_len] = '\0';
+                }
             }
         }
         
@@ -95,17 +95,15 @@ DoubleList *files_get_from_dir (const char *dir) {
     DoubleList *images = NULL;
 
     if (dir) {
-        DIR *dp;
-        struct dirent *ep;
+		images = dlist_init (str_delete, str_comparator);
 
-		images = dlist_init (estring_delete, estring_comparator);
-
-        dp = opendir (dir);
+        DIR *dp = opendir (dir);
         if (dp) {
-            estring *file = NULL;
+            struct dirent *ep = NULL;
+            String *file = NULL;
             while ((ep = readdir (dp)) != NULL) {
                 if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
-                    file = estring_create ("%s/%s", dir, ep->d_name);
+                    file = str_create ("%s/%s", dir, ep->d_name);
 
                     dlist_insert_after (images, dlist_end (images), file);
                 }
@@ -127,9 +125,9 @@ DoubleList *files_get_from_dir (const char *dir) {
 
 }
 
-static estring *file_get_line (FILE *file) {
+static String *file_get_line (FILE *file) {
 
-    estring *str = NULL;
+    String *str = NULL;
 
     if (file) {
         if (!feof (file)) {
@@ -138,7 +136,7 @@ static estring *file_get_line (FILE *file) {
                 size_t curr = strlen(line);
                 if(line[curr - 1] == '\n') line[curr - 1] = '\0';
 
-                str = estring_new (line);
+                str = str_new (line);
             }
         }
     }
@@ -155,9 +153,9 @@ DoubleList *file_get_lines (const char *filename) {
     if (filename) {
         FILE *file = fopen (filename, "r");
         if (file) {
-            lines = dlist_init (estring_delete, estring_comparator);
+            lines = dlist_init (str_delete, str_comparator);
             
-            estring *line = NULL;
+            String *line = NULL;
             while ((line = file_get_line (file))) {
                 dlist_insert_after (lines, dlist_end (lines), line);
             }
@@ -178,6 +176,22 @@ DoubleList *file_get_lines (const char *filename) {
 
 }
 
+// returns true if the filename exists
+bool file_exists (const char *filename) {
+
+    bool retval = false;
+
+    if (filename) {
+        struct stat filestatus = { 0 };
+        if (!stat (filename, &filestatus)) {
+            retval = true;
+        }
+    }
+
+    return retval;
+
+}
+
 // opens a file and returns it as a FILE
 FILE *file_open_as_file (const char *filename, const char *modes, struct stat *filestatus) {
 
@@ -192,7 +206,7 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("File %s not found!", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -205,12 +219,12 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
 
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
-char *file_read (const char *filename, int *file_size) {
+char *file_read (const char *filename, size_t *file_size) {
 
     char *file_contents = NULL;
 
     if (filename) {
-        struct stat filestatus;
+        struct stat filestatus = { 0 };
         FILE *fp = file_open_as_file (filename, "rt", &filestatus);
         if (fp) {
             *file_size = filestatus.st_size;
@@ -221,7 +235,7 @@ char *file_read (const char *filename, int *file_size) {
                 #ifdef CERVER_DEBUG
                 char *s = c_string_create ("Failed to read file (%s) contents!");
                 if (s) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                     free (s);
                 }
                 #endif
@@ -236,7 +250,7 @@ char *file_read (const char *filename, int *file_size) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Unable to open file %s.", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -247,27 +261,29 @@ char *file_read (const char *filename, int *file_size) {
 
 }
 
-// opens a file
+// opens a file with the required flags
 // returns fd on success, -1 on error
-int file_open_as_fd (const char *filename, struct stat *filestatus) {
+int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
+
+    int retval = -1;
 
     if (filename) {
         memset (filestatus, 0, sizeof (struct stat));
         if (!stat (filename, filestatus)) 
-            return open (filename, 0);
+            retval = open (filename, flags);
 
         else {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("File %s not found!", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
         } 
     }
 
-    return -1;      // error
+    return retval;
 
 }
 
@@ -280,7 +296,7 @@ int file_send (const char *filename, int sock_fd) {
     if (filename) {
         // try to open the file
         struct stat filestatus;
-        int fd = file_open_as_fd (filename, &filestatus);
+        int fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
         if (fd >= 0) {
             // send a first packet with file info
             // TODO:
@@ -290,7 +306,7 @@ int file_send (const char *filename, int sock_fd) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Failed to open file %s.", filename);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_FILE, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
                 free (s);
             }
             #endif
@@ -306,7 +322,7 @@ json_value *file_json_parse (const char *filename) {
     json_value *value = NULL;
 
     if (filename) {
-        int file_size;
+        size_t file_size = 0;
         char *file_contents = file_read (filename, &file_size);
         json_char *json = (json_char *) file_contents;
         value = json_parse (json, file_size);

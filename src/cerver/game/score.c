@@ -108,7 +108,7 @@ void game_score_add_scoreType (ScoreBoard *sb, char *newScore) {
 
         else {
             #ifdef CERVER_DEBUG
-            cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, 
+            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, 
                 "Can't add score type! It already exists in the scoreboard.");
             #endif
         }
@@ -160,7 +160,7 @@ u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Can't remove %s scoretype, doesn't exist in the scoreboard!");
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -179,7 +179,7 @@ u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Scores table already contains player: %s", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -200,7 +200,7 @@ u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
 
                     sb->registeredPlayers++;
 
-                    return 0;   // LOG_SUCCESS adding new player and its scores
+                    return 0;   // LOG_TYPE_SUCCESS adding new player and its scores
                 }
             }
         }
@@ -246,7 +246,7 @@ u8 game_score_remove_player (ScoreBoard *sb, char *playerName) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Scores table doesn't contains player: %s", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -280,7 +280,7 @@ void game_score_set (ScoreBoard *sb, char *playerName, char *scoreType, i32 valu
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Player: %s has not scores in the table!", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -310,7 +310,7 @@ i32 game_score_get (ScoreBoard *sb, char *playerName, char *scoreType) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Player: %s has not scores in the table!", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -344,7 +344,7 @@ void game_score_update (ScoreBoard *sb, char *playerName, char *scoreType, i32 v
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Player: %s has not scores in the table!", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif
@@ -378,7 +378,7 @@ void game_score_reset (ScoreBoard *sb, char *playerName) {
             #ifdef CERVER_DEBUG
             char *s = c_string_create ("Scores table already contains player: %s", playerName);
             if (s) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_GAME, s);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME, s);
                 free (s);
             }
             #endif

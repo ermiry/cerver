@@ -3,7 +3,7 @@
 #include <poll.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/estring.h"
+#include "cerver/types/string.h"
 
 #include "cerver/socket.h"
 #include "cerver/network.h"
@@ -53,7 +53,7 @@ static AuthData *auth_data_create (const char *token, void *data, size_t auth_da
 
     AuthData *auth_data = auth_data_new ();
     if (auth_data) {
-        auth_data->token = token ? estring_new (token) : NULL;
+        auth_data->token = token ? str_new (token) : NULL;
         if (data) {
             auth_data->auth_data = malloc (auth_data_size);
             if (auth_data->auth_data) {
@@ -75,7 +75,7 @@ static AuthData *auth_data_create (const char *token, void *data, size_t auth_da
 static void auth_data_delete (AuthData *auth_data) {
 
     if (auth_data) {
-        estring_delete (auth_data->token);
+        str_delete (auth_data->token);
         if (auth_data->auth_data) free (auth_data->auth_data);
         free (auth_data);
     }
@@ -115,7 +115,7 @@ static AuthMethod *auth_method_create (Packet *packet, AuthData *auth_data) {
 static void auth_method_delete (AuthMethod *auth_method) {
 
     if (auth_method) {
-        estring_delete (auth_method->error_message);
+        str_delete (auth_method->error_message);
 
         free (auth_method);
     }
@@ -143,7 +143,7 @@ static void auth_send_success_packet (const Cerver *cerver,
             char *status = c_string_create ("Failed to create success auth packet in cerver %s",
                 cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, status);
                 free (status);
             }
             #endif
@@ -178,7 +178,7 @@ static Client *auth_create_new_client (Packet *packet, AuthData *auth_data) {
                     char *s = c_string_create ("Generated client <%ld> session id: <%s>", 
                         client->id, session_id);
                     if (s) {
-                        cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, s);
+                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
                         free (s);
                     }
                     #endif
@@ -231,7 +231,7 @@ static void auth_failed (Cerver *cerver, Connection *connection, const char *err
         connection->auth_tries--;
         if (connection->auth_tries <= 0) {
             #ifdef AUTH_DEBUG
-            cerver_log_msg (stdout, LOG_DEBUG, LOG_NO_TYPE, 
+            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, 
                 "Connection reached max auth tries, dropping now...");
             #endif
             on_hold_connection_drop (cerver, connection);
@@ -254,7 +254,7 @@ static u8 auth_with_token_admin (const Packet *packet, const AuthData *auth_data
             char *status = c_string_create ("Found an ADMIN with session id <%s> in cerver %s.",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, status);
                 free (status);
             }
             #endif
@@ -301,7 +301,7 @@ static u8 auth_with_token_normal (const Packet *packet, const AuthData *auth_dat
             char *status = c_string_create ("Found a CLIENT with session id <%s> in cerver %s.",
                 auth_data->token->str, packet->cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CLIENT, status);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, status);
                 free (status);
             }
             #endif
@@ -372,7 +372,7 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
                 char *status = c_string_create ("Client authenticated successfully to cerver %s",
                     packet->cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stdout, LOG_SUCCESS, LOG_CLIENT, status);
+                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT, status);
                     free (status);
                 }
                 #endif
@@ -388,7 +388,7 @@ static u8 auth_with_defined_method (Packet *packet, delegate authenticate, AuthD
                 char *status = c_string_create ("Client failed to authenticate to cerver %s",
                     packet->cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stderr, LOG_DEBUG, LOG_CLIENT, status);
+                    cerver_log_msg (stderr, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, status);
                     free (status);
                 }
                 #endif
@@ -485,7 +485,7 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
             char *status = c_string_create ("Failed to get auth data from packet in cerver %s",
                 packet->cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -570,7 +570,7 @@ static void auth_try (Packet *packet) {
                         char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
                             packet->cerver->info->name->str);
                         if (status) {
-                            cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_ADMIN, status);
                             free (status);
                         }
 
@@ -614,7 +614,7 @@ static void auth_try (Packet *packet) {
             char *status = c_string_create ("Cerver %s does not have an authenticate method!",
                 packet->cerver->info->name->str);
             if (status) {
-                cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
             }
 
@@ -674,7 +674,7 @@ static void admin_auth_try (Packet *packet) {
                             char *status = c_string_create ("admin_auth_try () - failed to register a new admin to cerver %s",
                                 packet->cerver->info->name->str);
                             if (status) {
-                                cerver_log_msg (stderr, LOG_ERROR, LOG_ADMIN, status);
+                                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_ADMIN, status);
                                 free (status);
                             }
 
@@ -718,7 +718,7 @@ static void admin_auth_try (Packet *packet) {
                 char *status = c_string_create ("Cerver %s ADMIN does not have an authenticate method!",
                     packet->cerver->info->name->str);
                 if (status) {
-                    cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                    cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                     free (status);
                 }
 
@@ -775,7 +775,7 @@ static void cerver_auth_packet_handler (Packet *packet) {
 
                 default: {
                     #ifdef AUTH_DEBUG
-                    cerver_log_msg (stderr, LOG_WARNING, LOG_PACKET, 
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, 
                         "cerver_auth_packet_hanlder () -- got an unknwown request type");
                     #endif
 
@@ -826,7 +826,7 @@ void on_hold_packet_handler (void *packet_ptr) {
                     char *status = c_string_create ("Got an ON HOLD packet of unknown type in cerver %s.", 
                         packet->cerver->info->name->str);
                     if (status) {
-                        cerver_log_msg (stdout, LOG_WARNING, LOG_PACKET, status);
+                        cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, status);
                         free (status);
                     }
                     #endif
@@ -996,7 +996,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             char *s = c_string_create ("Added sock fd <%d> to cerver %s ON HOLD poll, idx: %i", 
                 connection->socket->sock_fd, cerver->info->name->str, idx);
             if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
                 free (s);
             }
             #endif
@@ -1005,7 +1005,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             char *status = c_string_create ("Cerver %s current ON HOLD connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -1018,7 +1018,7 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
             char *s = c_string_create ("Cerver %s ON HOLD poll is full!", 
                 cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stderr, LOG_WARNING, LOG_CERVER, s);
+                cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_CERVER, s);
                 free (s);
             }
             #endif
@@ -1052,7 +1052,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             char *s = c_string_create ("Removed sock fd <%d> from cerver %s ON HOLD poll, idx: %d",
                 sock_fd, cerver->info->name->str, idx);
             if (s) {
-                cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, s);
+                cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
                 free (s);
             }
             #endif
@@ -1061,7 +1061,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             char *status = c_string_create ("Cerver %s current ON HOLD connections: %ld", 
                 cerver->info->name->str, cerver->stats->current_n_hold_connections);
             if (status) {
-                cerver_log_msg (stdout, LOG_CERVER, LOG_CERVER, status);
+                cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_CERVER, status);
                 free (status);
             }
             #endif
@@ -1074,7 +1074,7 @@ u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
             char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s ON HOLD poll!",
                 sock_fd, cerver->info->name->str);
             if (s) {
-                cerver_log_msg (stdout, LOG_WARNING, LOG_CERVER, s);
+                cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_CERVER, s);
                 free (s);
             }
             // #endif
@@ -1111,7 +1111,7 @@ static inline void on_hold_poll_handle_actual (Cerver *cerver, const u32 idx, Ce
                 //     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
                 //         cerver->info->name->str);
                 //     if (s) {
-                //         cerver_log_msg (stderr, LOG_ERROR, LOG_NO_TYPE, s);
+                //         cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
                 //         free (s);
                 //     }
                 // }
@@ -1173,7 +1173,7 @@ void *on_hold_poll (void *cerver_ptr) {
 
         char *status = c_string_create ("Cerver %s ON HOLD poll has started!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_SUCCESS, LOG_CERVER, status);
+            cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, status);
             free (status);
         }
 
@@ -1184,7 +1184,7 @@ void *on_hold_poll (void *cerver_ptr) {
         }
 
         #ifdef AUTH_DEBUG
-        cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, "Waiting for connections to put on hold...");
+        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections to put on hold...");
         #endif
 
         int poll_retval = 0;
@@ -1195,7 +1195,7 @@ void *on_hold_poll (void *cerver_ptr) {
                 case -1: {
                     char *status = c_string_create ("Cerver %s ON HOLD poll has failed!", cerver->info->name->str);
                     if (status) {
-                        cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, status);
+                        cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                         free (status);
                     }
 
@@ -1207,7 +1207,7 @@ void *on_hold_poll (void *cerver_ptr) {
                     // #ifdef AUTH_DEBUG
                     // char *status = c_string_create ("Cerver %s ON HOLD poll timeout", cerver->info->name->str);
                     // if (status) {
-                    //     cerver_log_msg (stdout, LOG_DEBUG, LOG_CERVER, status);
+                    //     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
                     //     free (status);
                     // }
                     // #endif
@@ -1222,13 +1222,13 @@ void *on_hold_poll (void *cerver_ptr) {
         #ifdef AUTH_DEBUG
         status = c_string_create ("Cerver %s ON HOLD poll has stopped!", cerver->info->name->str);
         if (status) {
-            cerver_log_msg (stdout, LOG_CERVER, LOG_NO_TYPE, status);
+            cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, status);
             free (status);
         }
         #endif
     }
 
-    else cerver_log_msg (stderr, LOG_ERROR, LOG_CERVER, "Can't handle ON HOLD clients on a NULL cerver!");
+    else cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Can't handle ON HOLD clients on a NULL cerver!");
 
     return NULL;
 
