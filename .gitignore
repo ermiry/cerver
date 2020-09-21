@@ -3,7 +3,8 @@
 bin
 objs
 
+libcerver.so
+
 keys
 
-examples/web/node_modules
-examples/web/package-lock.json
+__pycache__
