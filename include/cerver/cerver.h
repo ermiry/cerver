@@ -365,6 +365,12 @@ CERVER_EXPORT u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generat
 // sets a custom method to handle the raw received buffer from the socket
 CERVER_EXPORT void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer);
 
+// method to create and set an app packet handle using the selected method
+CERVER_EXPORT void cerver_set_app_packet_handler (Cerver *cerver, Action handler, bool direct);
+
+// method to create and set an app error packet handle using the selected method
+CERVER_EXPORT void cerver_set_app_error_packet_handler (Cerver *cerver, Action handler, bool direct);
+
 // 27/05/2020 - changed form Action to Handler
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 CERVER_EXPORT void cerver_set_app_handlers (Cerver *cerver, 

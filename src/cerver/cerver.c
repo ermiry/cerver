@@ -598,6 +598,38 @@ void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_b
 
 }
 
+// method to create and set an app packet handle using the selected method
+void cerver_set_app_packet_handler (Cerver *cerver, Action handler, bool direct) {
+
+    if (cerver) {
+        Handler *app_handler = handler_create (handler);
+		handler_set_direct_handle (app_handler, direct);
+		
+        cerver->app_packet_handler = app_handler;
+        if (cerver->app_packet_handler) {
+            cerver->app_packet_handler->type = HANDLER_TYPE_CERVER;
+            cerver->app_packet_handler->cerver = cerver;
+        }
+    }
+
+}
+
+// method to create and set an app error packet handle using the selected method
+void cerver_set_app_error_packet_handler (Cerver *cerver, Action handler, bool direct) {
+
+    if (cerver) {
+        Handler *app_error_packet = handler_create (handler);
+		handler_set_direct_handle (app_error_packet, direct);
+		
+        cerver->app_error_packet_handler = app_error_packet;
+        if (cerver->app_error_packet_handler) {
+            cerver->app_error_packet_handler->type = HANDLER_TYPE_CERVER;
+            cerver->app_error_packet_handler->cerver = cerver;
+        }
+    }
+
+}
+
 // sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
 void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app_error_handler) {
 
