@@ -2099,7 +2099,7 @@ static void client_connection_terminate (Client *client, Connection *connection)
         if (connection->active) {
             if (connection->cerver_report) {
                 // send a close connection packet
-                Packet *packet = packet_generate_request (PACKET_TYPE_REQUEST, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
+                Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
                 if (packet) {
                     packet_set_network_values (packet, NULL, client, connection, NULL);
                     if (packet_send (packet, 0, NULL, false)) {
