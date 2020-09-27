@@ -2348,6 +2348,17 @@ static void client_client_packet_handler (Packet *packet) {
 
 }
 
+// handles a request made from the cerver
+static void client_request_packet_handler (Packet *packet) {
+
+    switch (packet->header->request_type) {
+        default: 
+            cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown request from cerver");
+            break;
+    }
+
+}
+
 // get the token from the packet data
 // returns 0 on succes, 1 on error
 static u8 auth_strip_token (Packet *packet, Client *client) {
@@ -2415,53 +2426,40 @@ static void client_auth_packet_handler (Packet *packet) {
 
 }
 
-// handles a request made from the cerver
-static void client_request_packet_handler (Packet *packet) {
-
-    switch (packet->header->request_type) {
-        default: 
-            cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown request from cerver");
-            break;
-    }
-
-}
-
 // 16/06/2020
 // handles a PACKET_TYPE_APP packet type
 static void client_app_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->client->app_packet_handler) {
-            if (packet->client->app_packet_handler->direct_handle) {
-                // printf ("app_packet_handler - direct handle!\n");
-                packet->client->app_packet_handler->handler (packet);
-                packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->client->app_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to client's %s app_packet_handler!",
-                        packet->client->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->client->app_packet_handler) {
+        if (packet->client->app_packet_handler->direct_handle) {
+            // printf ("app_packet_handler - direct handle!\n");
+            packet->client->app_packet_handler->handler (packet);
+            packet_delete (packet);
         }
 
         else {
-            char *s = c_string_create ("Client %s does not have a app_packet_handler!",
-                packet->client->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->client->app_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to client's %s app_packet_handler!",
+                    packet->client->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
+        }
+    }
+
+    else {
+        char *s = c_string_create ("Client %s does not have a app_packet_handler!",
+            packet->client->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
         }
     }
 
@@ -2471,38 +2469,36 @@ static void client_app_packet_handler (Packet *packet) {
 // handles a PACKET_TYPE_APP_ERROR packet type
 static void client_app_error_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->client->app_error_packet_handler) {
-            if (packet->client->app_error_packet_handler->direct_handle) {
-                // printf ("app_error_packet_handler - direct handle!\n");
-                packet->client->app_error_packet_handler->handler (packet);
-                packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->client->app_error_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to client's %s app_error_packet_handler!",
-                        packet->client->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->client->app_error_packet_handler) {
+        if (packet->client->app_error_packet_handler->direct_handle) {
+            // printf ("app_error_packet_handler - direct handle!\n");
+            packet->client->app_error_packet_handler->handler (packet);
+            packet_delete (packet);
         }
 
         else {
-            char *s = c_string_create ("Client %s does not have a app_error_packet_handler!",
-                packet->client->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->client->app_error_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to client's %s app_error_packet_handler!",
+                    packet->client->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
+        }
+    }
+
+    else {
+        char *s = c_string_create ("Client %s does not have a app_error_packet_handler!",
+            packet->client->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
         }
     }
 
@@ -2512,48 +2508,46 @@ static void client_app_error_packet_handler (Packet *packet) {
 // handles a PACKET_TYPE_CUSTOM packet type
 static void client_custom_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->client->custom_packet_handler) {
-            if (packet->client->custom_packet_handler->direct_handle) {
-                // printf ("custom_packet_handler - direct handle!\n");
-                packet->client->custom_packet_handler->handler (packet);
-                packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->client->custom_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to client's %s custom_packet_handler!",
-                        packet->client->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->client->custom_packet_handler) {
+        if (packet->client->custom_packet_handler->direct_handle) {
+            // printf ("custom_packet_handler - direct handle!\n");
+            packet->client->custom_packet_handler->handler (packet);
+            packet_delete (packet);
         }
 
         else {
-            char *s = c_string_create ("Client %s does not have a custom_packet_handler!",
-                packet->client->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->client->custom_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to client's %s custom_packet_handler!",
+                    packet->client->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
+        }
+    }
+
+    else {
+        char *s = c_string_create ("Client %s does not have a custom_packet_handler!",
+            packet->client->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
         }
     }
 
 }
 
 // the client handles a packet based on its type
-static void client_packet_handler (void *data) {
+static void client_packet_handler (void *packet_ptr) {
 
-    if (data) {
-        Packet *packet = (Packet *) data;
+    if (packet_ptr) {
+        Packet *packet = (Packet *) packet_ptr;
         packet->client->stats->n_packets_received += 1;
 
         bool good = true;
