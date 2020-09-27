@@ -93,9 +93,10 @@ void packets_per_type_print (PacketsPerType *packets_per_type) {
 
     if (packets_per_type) {
         printf ("Cerver:            %ld\n", packets_per_type->n_cerver_packets);
+        printf ("Client:            %ld\n", packets_per_type->n_client_packets);
         printf ("Error:             %ld\n", packets_per_type->n_error_packets);
-        printf ("Auth:              %ld\n", packets_per_type->n_auth_packets);
         printf ("Request:           %ld\n", packets_per_type->n_request_packets);
+        printf ("Auth:              %ld\n", packets_per_type->n_auth_packets);
         printf ("Game:              %ld\n", packets_per_type->n_game_packets);
         printf ("App:               %ld\n", packets_per_type->n_app_packets);
         printf ("App Error:         %ld\n", packets_per_type->n_app_error_packets);
@@ -629,7 +630,12 @@ static void packet_send_update_stats (
             if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
             break;
 
-        case PACKET_TYPE_CLIENT: break;
+        case PACKET_TYPE_CLIENT:
+            if (cerver) cerver->stats->sent_packets->n_client_packets += 1;
+            if (client) client->stats->sent_packets->n_client_packets += 1;
+            connection->stats->sent_packets->n_client_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
+            break;
 
         case PACKET_TYPE_ERROR: 
             if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
