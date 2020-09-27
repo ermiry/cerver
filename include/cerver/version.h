@@ -5,7 +5,7 @@
 
 #define CERVER_VERSION                  "1.6.1rc-1"
 #define CERVER_VERSION_NAME             "Release 1.6.1rc-1"
-#define CERVER_VERSION_DATE			    "26/10/2020"
+#define CERVER_VERSION_DATE			    "26/09/2020"
 #define CERVER_VERSION_TIME			    "23:34 CST"
 #define CERVER_VERSION_AUTHOR			"Erick Salas"
 
