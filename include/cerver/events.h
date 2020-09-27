@@ -13,10 +13,10 @@ struct _Connection;
 
 typedef enum CerverEventType {
 
-	CERVER_EVENT_NONE                  		= 0, 
+	CERVER_EVENT_NONE                  		= 0,
 
 	CERVER_EVENT_STARTED,              		// the cerver has started
-	CERVER_EVENT_TEARDOWN,             		// the cerver is going to be teardown 
+	CERVER_EVENT_TEARDOWN,             		// the cerver is going to be teardown
 
 	CERVER_EVENT_ON_HOLD_CONNECTED,   		// a connection has been put on hold
 	CERVER_EVENT_ON_HOLD_DISCONNECTED,  	// an on hold connection disconnected
@@ -49,7 +49,7 @@ typedef struct CerverEvent {
 	CerverEventType type;               // the event we are waiting to happen
 
 	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once 
+	bool drop_after_trigger;            // if we only want to trigger the event once
 
 	Action action;                      // the action to be triggered
 	void *action_args;                  // the action arguments
@@ -61,12 +61,15 @@ CERVER_PUBLIC void cerver_event_delete (void *event_ptr);
 
 // registers an action to be triggered when the specified event occurs
 // if there is an existing action registered to an event, it will be overrided
-// a newly allocated CerverEventData structure will be passed to your method 
+// a newly allocated CerverEventData structure will be passed to your method
 // that should be free using the cerver_event_data_delete () method
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 cerver_event_register (struct _Cerver *cerver, const CerverEventType event_type, 
-	Action action, void *action_args, Action delete_action_args, 
-	bool create_thread, bool drop_after_trigger);
+CERVER_EXPORT u8 cerver_event_register (
+	struct _Cerver *cerver,
+	const CerverEventType event_type,
+	Action action, void *action_args, Action delete_action_args,
+	bool create_thread, bool drop_after_trigger
+);
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
@@ -74,8 +77,11 @@ CERVER_EXPORT u8 cerver_event_register (struct _Cerver *cerver, const CerverEven
 CERVER_EXPORT u8 cerver_event_unregister (struct _Cerver *cerver, const CerverEventType event_type);
 
 // triggers all the actions that are registred to an event
-CERVER_PRIVATE void cerver_event_trigger (const CerverEventType event_type, const struct _Cerver *cerver, 
-	const struct _Client *client, const struct _Connection *connection);
+CERVER_PRIVATE void cerver_event_trigger (
+	const CerverEventType event_type,
+	const struct _Cerver *cerver,
+	const struct _Client *client, const struct _Connection *connection
+);
 
 #pragma region data
 
