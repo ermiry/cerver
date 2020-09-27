@@ -366,25 +366,25 @@ CERVER_EXPORT u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generat
 CERVER_EXPORT void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer);
 
 // 27/05/2020 - changed form Action to Handler
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 CERVER_EXPORT void cerver_set_app_handlers (Cerver *cerver, 
     struct _Handler *app_handler, struct _Handler *app_error_handler);
 
-// sets option to automatically delete APP_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet);
 
-// sets option to automatically delete APP_ERROR_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet);
 
 // 27/05/2020 - changed form Action to Handler
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void cerver_set_custom_handler (Cerver *cerver, struct _Handler *custom_handler);
 
-// sets option to automatically delete CUSTOM_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet);

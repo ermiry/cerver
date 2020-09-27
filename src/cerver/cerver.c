@@ -598,7 +598,7 @@ void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_b
 
 }
 
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app_error_handler) {
 
     if (cerver) {
@@ -617,7 +617,7 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
 
 }
 
-// sets option to automatically delete APP_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet) {
@@ -626,7 +626,7 @@ void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet) {
 
 }
 
-// sets option to automatically delete APP_ERROR_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet) {
@@ -635,7 +635,7 @@ void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet) {
 
 }
 
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 
     if (cerver) {
@@ -648,7 +648,7 @@ void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 
 }
 
-// sets option to automatically delete CUSTOM_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet) {
@@ -1560,7 +1560,7 @@ static u8 cerver_auth_start (Cerver *cerver) {
     u8 retval = 1;
 
     if (cerver) {
-        cerver->auth_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
+        cerver->auth_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0); 
 
         cerver->max_on_hold_connections = poll_n_fds / 2;
         cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
@@ -2445,7 +2445,7 @@ static void cerver_destroy_clients (Cerver *cerver) {
     if (cerver) {
         if (cerver->stats->current_n_connected_clients > 0) {
             // send a cerver teardown packet to all clients connected to cerver
-            Packet *packet = packet_generate_request (CERVER_PACKET, CERVER_TEARDOWN, NULL, 0);
+            Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
             if (packet) {
                 client_broadcast_to_all_avl (cerver->clients->root, cerver, packet);
                 packet_delete (packet);
@@ -2901,7 +2901,7 @@ Packet *cerver_packet_generate (Cerver *cerver) {
     if (cerver) {
         SCerver *scerver = cerver_serliaze (cerver);
         if (scerver) {
-            packet = packet_generate_request (CERVER_PACKET, CERVER_INFO, scerver, sizeof (SCerver));
+            packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, scerver, sizeof (SCerver));
             scerver_delete (scerver);
         }
     }
