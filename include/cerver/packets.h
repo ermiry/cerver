@@ -74,25 +74,25 @@ CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 
 #pragma region types
 
+#define PACKET_TYPE_MAP(XX)					\
+	XX(0, 	NONE)							\
+	XX(1, 	CERVER)							\
+	XX(2, 	CLIENT)							\
+	XX(3, 	ERROR)							\
+	XX(4, 	REQUEST)						\
+	XX(5, 	AUTH)							\
+	XX(6, 	GAME)							\
+	XX(7, 	APP)							\
+	XX(8, 	APP_ERROR)						\
+	XX(9, 	CUSTOM)							\
+	XX(10, 	TEST)
+
 // these indicate what type of packet we are sending/recieving
 typedef enum PacketType {
 
-    CERVER_PACKET       = 0,
-    CLIENT_PACKET       = 1,
-
-    ERROR_PACKET        = 2,
-
-	REQUEST_PACKET      = 3,
-    AUTH_PACKET         = 4,
-    GAME_PACKET         = 5,
-
-    APP_PACKET          = 6,
-    APP_ERROR_PACKET    = 7,
-
-    CUSTOM_PACKET       = 70,
-
-    TEST_PACKET         = 100,
-    DONT_CHECK_TYPE     = 101,
+	#define XX(num, name) PACKET_TYPE_##name = num,
+	PACKET_TYPE_MAP (XX)
+	#undef XX
 
 } PacketType;
 
@@ -155,55 +155,75 @@ CERVER_PUBLIC u8 packet_header_copy (PacketHeader **dest, PacketHeader *source);
 
 #pragma region packets
 
-typedef enum RequestType {
-
-    REQ_GET_FILE                = 1,
-    POST_SEND_FILE              = 2,
-    
-} RequestType;
+#define CERVER_PACKET_TYPE_MAP(XX)			\
+	XX(0, 	NONE)							\
+	XX(1, 	INFO)							\
+	XX(2, 	TEARDOWN)
 
 typedef enum CerverPacketType {
 
-	CERVER_INFO                 = 0,
-	CERVER_TEARDOWN             = 1,
-
-	CERVER_INFO_STATS           = 2,
-	CERVER_GAME_STATS           = 3
+	#define XX(num, name) CERVER_PACKET_TYPE_##name = num,
+	CERVER_PACKET_TYPE_MAP (XX)
+	#undef XX
 
 } CerverPacketType;
 
+#define CLIENT_PACKET_TYPE_MAP(XX)			\
+	XX(0, 	NONE)							\
+	XX(1, 	CLOSE_CONNECTION)				\
+	XX(2, 	DISCONNECT)
+
 typedef enum ClientPacketType {
 
-	CLIENT_CLOSE_CONNECTION     = 1,
-	CLIENT_DISCONNET            = 2,
+	#define XX(num, name) CLIENT_PACKET_TYPE_##name = num,
+	CLIENT_PACKET_TYPE_MAP (XX)
+	#undef XX
 
 } ClientPacketType;
 
+#define REQUEST_PACKET_TYPE_MAP(XX)			\
+	XX(0, 	NONE)							\
+	XX(1, 	GET_FILE)						\	
+	XX(2, 	SEND_FILE)
+
+typedef enum RequestPacketType {
+
+	#define XX(num, name) REQUEST_PACKET_TYPE_##name = num,
+	REQUEST_PACKET_TYPE_MAP (XX)
+	#undef XX
+
+} RequestPacketType;
+
+#define AUTH_PACKET_TYPE_MAP(XX)			\
+	XX(0, 	NONE)							\
+	XX(1, 	REQUEST_AUTH)					\	
+	XX(2, 	CLIENT_AUTH)					\
+	XX(3, 	ADMIN_AUTH)						\
+	XX(4, 	SUCCESS)
+
 typedef enum AuthPacketType {
 
-	AUTH_PACKET_TYPE_NONE			= 0,
-
-	AUTH_PACKET_TYPE_REQUEST_AUTH	= 1,
-
-	AUTH_PACKET_TYPE_CLIENT_AUTH	= 2,
-	AUTH_PACKET_TYPE_ADMIN_AUTH		= 3,
-
-	AUTH_PACKET_TYPE_SUCCESS		= 4
+	#define XX(num, name) AUTH_PACKET_TYPE_##name = num,
+	AUTH_PACKET_TYPE_MAP (XX)
+	#undef XX
 
 } AuthPacketType;
 
+#define GAME_PACKET_TYPE_MAP(XX)			\
+	XX(0, 	NONE)							\
+	XX(1, 	GAME_INIT)						\	
+	XX(2, 	GAME_START)						\
+	XX(3, 	LOBBY_CREATE)					\
+	XX(3, 	LOBBY_JOIN)						\
+	XX(3, 	LOBBY_LEAVE)					\
+	XX(3, 	LOBBY_UPDATE)					\
+	XX(3, 	LOBBY_DESTROY)					\
+
 typedef enum GamePacketType {
 
-	GAME_LOBBY_CREATE           = 0,
-	GAME_LOBBY_JOIN             = 1,
-	GAME_LOBBY_LEAVE            = 2,
-	GAME_LOBBY_UPDATE           = 3,
-	GAME_LOBBY_DESTROY          = 4,
-
-	GAME_INIT                   = 5,   // prepares the game structures
-	GAME_START                  = 6,   // strat running the game
-	GAME_INPUT_UPDATE           = 7,
-	GAME_SEND_MSG               = 8,
+	#define XX(num, name) GAME_PACKET_TYPE_##name = num,
+	GAME_PACKET_TYPE_MAP (XX)
+	#undef XX
 
 } GamePacketType;
 
