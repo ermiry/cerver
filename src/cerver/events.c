@@ -15,6 +15,23 @@
 
 u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type);
 
+#pragma region types
+
+// get the description for the current event type
+const char *cerver_event_type_description (CerverEventType type) {
+
+	switch (type) {
+		#define XX(num, name, description) case CERVER_EVENT_##name: return #description;
+		CERVER_EVENT_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_event_type_description (CERVER_EVENT_UNKNOWN);
+
+}
+
+#pragma endregion
+
 #pragma region data
 
 static CerverEventData *cerver_event_data_new (void) {
