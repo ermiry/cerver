@@ -183,7 +183,7 @@ typedef enum ClientPacketType {
 
 #define REQUEST_PACKET_TYPE_MAP(XX)			\
 	XX(0, 	NONE)							\
-	XX(1, 	GET_FILE)						\	
+	XX(1, 	GET_FILE)						\
 	XX(2, 	SEND_FILE)
 
 typedef enum RequestPacketType {
@@ -196,7 +196,7 @@ typedef enum RequestPacketType {
 
 #define AUTH_PACKET_TYPE_MAP(XX)			\
 	XX(0, 	NONE)							\
-	XX(1, 	REQUEST_AUTH)					\	
+	XX(1, 	REQUEST_AUTH)					\
 	XX(2, 	CLIENT_AUTH)					\
 	XX(3, 	ADMIN_AUTH)						\
 	XX(4, 	SUCCESS)
@@ -211,13 +211,13 @@ typedef enum AuthPacketType {
 
 #define GAME_PACKET_TYPE_MAP(XX)			\
 	XX(0, 	NONE)							\
-	XX(1, 	GAME_INIT)						\	
+	XX(1, 	GAME_INIT)						\
 	XX(2, 	GAME_START)						\
 	XX(3, 	LOBBY_CREATE)					\
-	XX(3, 	LOBBY_JOIN)						\
-	XX(3, 	LOBBY_LEAVE)					\
-	XX(3, 	LOBBY_UPDATE)					\
-	XX(3, 	LOBBY_DESTROY)					\
+	XX(4, 	LOBBY_JOIN)						\
+	XX(5, 	LOBBY_LEAVE)					\
+	XX(6, 	LOBBY_UPDATE)					\
+	XX(7, 	LOBBY_DESTROY)					\
 
 typedef enum GamePacketType {
 
@@ -267,8 +267,10 @@ CERVER_PUBLIC void packet_delete (void *ptr);
 CERVER_EXPORT Packet *packet_create (PacketType type, void *data, size_t data_size);
 
 // sets the packet destinatary to whom this packet is going to be sent
-CERVER_EXPORT void packet_set_network_values (Packet *packet, struct _Cerver *cerver, 
-	struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+CERVER_EXPORT void packet_set_network_values (
+	Packet *packet, 
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby
+);
 
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
@@ -309,8 +311,10 @@ CERVER_EXPORT u8 packet_generate (Packet *packet);
 // generates a simple request packet of the requested type reday to be sent, 
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
-CERVER_EXPORT Packet *packet_generate_request (PacketType packet_type, u32 req_type, 
-	void *data, size_t data_size);
+CERVER_EXPORT Packet *packet_generate_request (
+	PacketType packet_type, u32 req_type, 
+	void *data, size_t data_size
+);
 
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
@@ -322,8 +326,11 @@ CERVER_EXPORT u8 packet_send (const Packet *packet, int flags, size_t *total_sen
 // at least a packet & an active connection are required for this method to succeed
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
-    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+CERVER_EXPORT u8 packet_send_to (
+	const Packet *packet, 
+	size_t *total_sent, bool raw,
+    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby
+);
 
 // sends a packet to the socket in two parts, first the header & then the data
 // this method can be useful when trying to forward a big received packet without the overhead of 
@@ -336,8 +343,11 @@ CERVER_EXPORT u8 packet_send_split (const Packet *packet, int flags, size_t *tot
 // sends a packet to the socket in two parts, first the header & then the data
 // works just as packet_send_split () but with the flags set to 0
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
-    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby);
+CERVER_EXPORT u8 packet_send_to_split (
+	const Packet *packet, 
+	size_t *total_sent,
+    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby
+);
 
 // sends a packet in pieces, taking the header from the packet's field
 // sends each buffer as they are with they respective sizes
@@ -353,8 +363,10 @@ CERVER_EXPORT u8 packet_send_pieces (
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 packet_send_to_socket (const Packet *packet, struct _Socket *socket, 
-    int flags, size_t *total_sent, bool raw);
+CERVER_EXPORT u8 packet_send_to_socket (
+	const Packet *packet, 
+	struct _Socket *socket, int flags, size_t *total_sent, bool raw
+);
 
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet

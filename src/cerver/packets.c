@@ -184,7 +184,7 @@ Packet *packet_new (void) {
         packet->connection = NULL;
         packet->lobby = NULL;
 
-        packet->packet_type = DONT_CHECK_TYPE;
+        packet->packet_type = PACKET_TYPE_NONE;
         packet->req_type = 0;
 
         packet->data_size = 0;
@@ -466,8 +466,10 @@ u8 packet_generate (Packet *packet) {
 
 // generates a simple request packet of the requested type reday to be sent, 
 // and with option to pass some data
-Packet *packet_generate_request (PacketType packet_type, u32 req_type, 
-    void *data, size_t data_size) {
+Packet *packet_generate_request (
+    PacketType packet_type, u32 req_type, 
+    void *data, size_t data_size
+) {
 
     Packet *packet = packet_new ();
     if (packet) {
@@ -594,8 +596,10 @@ static u8 packet_send_udp (const void *packet, size_t packet_size) {
 }
 #pragma GCC diagnostic pop
 
-static void packet_send_update_stats (PacketType packet_type, size_t sent,
-    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+static void packet_send_update_stats (
+    PacketType packet_type, size_t sent,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+) {
 
     if (cerver) {
         cerver->stats->n_packets_sent += 1;
@@ -616,72 +620,72 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
     }
 
     switch (packet_type) {
-        case CERVER_PACKET:
+        case PACKET_TYPE_NONE: break;
+
+        case PACKET_TYPE_CERVER:
             if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
             if (client) client->stats->sent_packets->n_cerver_packets += 1;
             connection->stats->sent_packets->n_cerver_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
             break;
 
-        case CLIENT_PACKET: break;
+        case PACKET_TYPE_CLIENT: break;
 
-        case ERROR_PACKET: 
+        case PACKET_TYPE_ERROR: 
             if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
             if (client) client->stats->sent_packets->n_error_packets += 1;
             connection->stats->sent_packets->n_error_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
             break;
 
-        case AUTH_PACKET: 
-            if (cerver) cerver->stats->sent_packets->n_auth_packets += 1;
-            if (client) client->stats->sent_packets->n_auth_packets += 1;
-            connection->stats->sent_packets->n_auth_packets += 1;
-            if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
-            break;
-
-        case REQUEST_PACKET: 
+        case PACKET_TYPE_REQUEST: 
             if (cerver) cerver->stats->sent_packets->n_request_packets += 1;
             if (client) client->stats->sent_packets->n_request_packets += 1;
             connection->stats->sent_packets->n_request_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
             break;
 
-        case GAME_PACKET:
+        case PACKET_TYPE_AUTH: 
+            if (cerver) cerver->stats->sent_packets->n_auth_packets += 1;
+            if (client) client->stats->sent_packets->n_auth_packets += 1;
+            connection->stats->sent_packets->n_auth_packets += 1;
+            if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
+            break;
+
+        case PACKET_TYPE_GAME:
             if (cerver) cerver->stats->sent_packets->n_game_packets += 1; 
             if (client) client->stats->sent_packets->n_game_packets += 1;
             connection->stats->sent_packets->n_game_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
             break;
 
-        case APP_PACKET:
+        case PACKET_TYPE_APP:
             if (cerver) cerver->stats->sent_packets->n_app_packets += 1;
             if (client) client->stats->sent_packets->n_app_packets += 1;
             connection->stats->sent_packets->n_app_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
             break;
 
-        case APP_ERROR_PACKET: 
+        case PACKET_TYPE_APP_ERROR: 
             if (cerver) cerver->stats->sent_packets->n_app_error_packets += 1;
             if (client) client->stats->sent_packets->n_app_error_packets += 1;
             connection->stats->sent_packets->n_app_error_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
             break;
 
-        case CUSTOM_PACKET:
+        case PACKET_TYPE_CUSTOM:
             if (cerver) cerver->stats->sent_packets->n_custom_packets += 1;
             if (client) client->stats->sent_packets->n_custom_packets += 1;
             connection->stats->sent_packets->n_custom_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
             break;
 
-        case TEST_PACKET: 
+        case PACKET_TYPE_TEST: 
             if (cerver) cerver->stats->sent_packets->n_test_packets += 1;
             if (client) client->stats->sent_packets->n_test_packets += 1;
             connection->stats->sent_packets->n_test_packets += 1;
             if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
             break;
-
-        case DONT_CHECK_TYPE: break;
 
         default: 
             if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
@@ -693,9 +697,11 @@ static void packet_send_update_stats (PacketType packet_type, size_t sent,
 
 }
 
-static inline u8 packet_send_internal (const Packet *packet, int flags, size_t *total_sent, 
+static inline u8 packet_send_internal (
+    const Packet *packet, int flags, size_t *total_sent, 
     bool raw, bool split,
-    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+) {
 
     u8 retval = 1;
 
@@ -760,8 +766,11 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 // at least a packet & an active connection are required for this method to succeed
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-u8 packet_send_to (const Packet *packet, size_t *total_sent, bool raw,
-    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+u8 packet_send_to (
+    const Packet *packet, 
+    size_t *total_sent, bool raw,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+) {
 
     return packet_send_internal (
         packet, 0, total_sent, 
@@ -790,8 +799,11 @@ u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
 // sends a packet to the socket in two parts, first the header & then the data
 // works just as packet_send_split () but with the flags set to 0
 // returns 0 on success, 1 on error
-u8 packet_send_to_split (const Packet *packet, size_t *total_sent,
-    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby) {
+u8 packet_send_to_split (
+    const Packet *packet,
+    size_t *total_sent,
+    Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+) {
 
     return packet_send_internal (
         packet, 0, total_sent, 
@@ -883,8 +895,10 @@ u8 packet_send_pieces (
 // sends a packet directly to the socket
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-u8 packet_send_to_socket (const Packet *packet, Socket *socket, 
-    int flags, size_t *total_sent, bool raw) {
+u8 packet_send_to_socket (
+    const Packet *packet,
+    Socket *socket, int flags, size_t *total_sent, bool raw
+) {
 
     u8 retval = 0;
 
