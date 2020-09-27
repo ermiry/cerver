@@ -1473,60 +1473,65 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
 #pragma region handler
 
+// handles a packet of type PACKET_TYPE_CLIENT
+static void admin_cerver_client_packet_handler (Packet *packet) {
+
+    if (packet->header) {
+        switch (packet->header->request_type) {
+            // the client is going to close its current connection
+            // but will remain in the cerver if it has another connection active
+            // if not, it will be dropped
+            case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+                #ifdef ADMIN_DEBUG
+                char *s = c_string_create ("Admin with client %ld requested to close the connection",
+                    packet->client->id);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+                #endif
+
+                admin_remove_connection_by_sock_fd (
+                    packet->cerver->admin,
+                    admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd),
+                    packet->connection->socket->sock_fd
+                );
+            } break;
+
+            // the client is going to disconnect and will close all of its active connections
+            // so drop it from the server
+            case CLIENT_PACKET_TYPE_DISCONNECT: {
+                admin_cerver_drop_admin (
+                    packet->cerver->admin,
+                    admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd)
+                );
+
+                cerver_event_trigger (
+                    CERVER_EVENT_ADMIN_DISCONNECTED,
+                    packet->cerver,
+                    NULL, NULL
+                );
+            } break;
+
+            default: {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("Got an unknown client packet in cerver %s",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
+                    free (s);
+                }
+                #endif
+            } break;
+        }
+    }
+
+}
+
 // handles a request made from the admin
 static void admin_cerver_request_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->header) {
-            switch (packet->header->request_type) {
-                // the client is going to close its current connection
-                // but will remain in the cerver if it has another connection active
-                // if not, it will be dropped
-                case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
-                    #ifdef ADMIN_DEBUG
-                    char *s = c_string_create ("Admin with client %ld requested to close the connection",
-                        packet->client->id);
-                    if (s) {
-                        cerver_log_debug (s);
-                        free (s);
-                    }
-                    #endif
-
-                    admin_remove_connection_by_sock_fd (
-                        packet->cerver->admin,
-                        admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd),
-                        packet->connection->socket->sock_fd
-                    );
-                } break;
-
-                // the client is going to disconnect and will close all of its active connections
-                // so drop it from the server
-                case CLIENT_PACKET_TYPE_DISCONNECT: {
-                    admin_cerver_drop_admin (
-                        packet->cerver->admin,
-                        admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd)
-                    );
-
-                    cerver_event_trigger (
-                        CERVER_EVENT_ADMIN_DISCONNECTED,
-                        packet->cerver,
-                        NULL, NULL
-                    );
-                } break;
-
-                default: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Got an unknown request in cerver %s",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
-                        free (s);
-                    }
-                    #endif
-                } break;
-            }
-        }
-    }
+    // TODO:
 
 }
 
@@ -1677,6 +1682,14 @@ void admin_packet_handler (Packet *packet) {
 
         if (good) {
             switch (packet->header->packet_type) {
+                case PACKET_TYPE_CLIENT:
+                    packet->cerver->admin->stats->received_packets->n_client_packets += 1;
+                    packet->client->stats->received_packets->n_client_packets += 1;
+                    packet->connection->stats->received_packets->n_client_packets += 1; 
+                    admin_cerver_client_packet_handler (packet); 
+                    packet_delete (packet);
+                    break;
+
                 // handles a request made from the admin
                 case PACKET_TYPE_REQUEST:
                     packet->cerver->admin->stats->received_packets->n_request_packets += 1;
