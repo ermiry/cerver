@@ -170,7 +170,7 @@ static void handler_do_while_cerver (Handler *handler) {
     if (handler) {
         Job *job = NULL;
         Packet *packet = NULL;
-        PacketType packet_type = DONT_CHECK_TYPE;
+        PacketType packet_type = PACKET_TYPE_NONE;
         HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
@@ -195,9 +195,9 @@ static void handler_do_while_cerver (Handler *handler) {
                     job_delete (job);
 
                     switch (packet_type) {
-                        case APP_PACKET: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
-                        case APP_ERROR_PACKET: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-                        case CUSTOM_PACKET: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP_ERROR: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_CUSTOM: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
 
                         default: packet_delete (packet); break;
                     }
@@ -261,7 +261,7 @@ static void handler_do_while_admin (Handler *handler) {
     if (handler) {
         Job *job = NULL;
         Packet *packet = NULL;
-        PacketType packet_type = DONT_CHECK_TYPE;
+        PacketType packet_type = PACKET_TYPE_NONE;
         HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
@@ -286,9 +286,9 @@ static void handler_do_while_admin (Handler *handler) {
                     job_delete (job);
 
                     switch (packet_type) {
-                        case APP_PACKET: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
-                        case APP_ERROR_PACKET: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-                        case CUSTOM_PACKET: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP_ERROR: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_CUSTOM: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
 
                         default: packet_delete (packet); break;
                     }
@@ -471,7 +471,7 @@ static void cerver_request_packet_handler (Packet *packet) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
-                case CLIENT_CLOSE_CONNECTION: {
+                case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
                     #ifdef CERVER_DEBUG
                     char *s = c_string_create ("Client %ld requested to close the connection",
                         packet->client->id);
@@ -503,7 +503,7 @@ static void cerver_request_packet_handler (Packet *packet) {
 
                 // the client is going to disconnect and will close all of its active connections
                 // so drop it from the server
-                case CLIENT_DISCONNET: {
+                case CLIENT_PACKET_TYPE_DISCONNECT: {
                     // check if the client is inside a lobby
                     if (packet->lobby) {
                         #ifdef CERVER_DEBUG
@@ -560,7 +560,7 @@ void cerver_test_packet_handler (Packet *packet) {
         Packet *test_packet = packet_new ();
         if (test_packet) {
             packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
-            test_packet->packet_type = TEST_PACKET;
+            test_packet->packet_type = PACKET_TYPE_TEST;
             packet_generate (test_packet);
             if (packet_send (test_packet, 0, NULL, false)) {
                 char *s = c_string_create ("Failed to send error packet from cerver %s.", 
@@ -578,7 +578,7 @@ void cerver_test_packet_handler (Packet *packet) {
 }
 
 // 27/01/2020
-// handles an APP_PACKET packet type
+// handles an PACKET_TYPE_APP packet type
 static void cerver_app_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -643,7 +643,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 }
 
 // 27/05/2020
-// handles an APP_ERROR_PACKET packet type
+// handles an PACKET_TYPE_APP_ERROR packet type
 static void cerver_app_error_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -684,7 +684,7 @@ static void cerver_app_error_packet_handler (Packet *packet) {
 }
 
 // 27/05/2020
-// handles a CUSTOM_PACKET packet type
+// handles a PACKET_TYPE_CUSTOM packet type
 static void cerver_custom_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -751,8 +751,14 @@ static void cerver_packet_handler (void *ptr) {
 
         if (good) {
             switch (packet->header->packet_type) {
+                case PACKET_TYPE_NONE: break;
+
+                case PACKET_TYPE_CERVER: break;
+
+                case PACKET_TYPE_CLIENT: break;
+
                 // handles an error from the client
-                case ERROR_PACKET: 
+                case PACKET_TYPE_ERROR: 
                     packet->cerver->stats->received_packets->n_error_packets += 1;
                     packet->client->stats->received_packets->n_error_packets += 1;
                     packet->connection->stats->received_packets->n_error_packets += 1;
@@ -761,18 +767,8 @@ static void cerver_packet_handler (void *ptr) {
                     packet_delete (packet);
                     break;
 
-                // handles authentication packets
-                case AUTH_PACKET: 
-                    packet->cerver->stats->received_packets->n_auth_packets += 1;
-                    packet->client->stats->received_packets->n_auth_packets += 1;
-                    packet->connection->stats->received_packets->n_auth_packets += 1;
-                    if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
-                    /* TODO: */ 
-                    packet_delete (packet);
-                    break;
-
                 // handles a request made from the client
-                case REQUEST_PACKET: 
+                case PACKET_TYPE_REQUEST: 
                     packet->cerver->stats->received_packets->n_request_packets += 1;
                     packet->client->stats->received_packets->n_request_packets += 1;
                     packet->connection->stats->received_packets->n_request_packets += 1;
@@ -781,8 +777,18 @@ static void cerver_packet_handler (void *ptr) {
                     packet_delete (packet);
                     break;
 
+                // handles authentication packets
+                case PACKET_TYPE_AUTH: 
+                    packet->cerver->stats->received_packets->n_auth_packets += 1;
+                    packet->client->stats->received_packets->n_auth_packets += 1;
+                    packet->connection->stats->received_packets->n_auth_packets += 1;
+                    if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
+                    /* TODO: */ 
+                    packet_delete (packet);
+                    break;
+
                 // handles a game packet sent from the client
-                case GAME_PACKET: 
+                case PACKET_TYPE_GAME: 
                     packet->cerver->stats->received_packets->n_game_packets += 1;
                     packet->client->stats->received_packets->n_game_packets += 1;
                     packet->connection->stats->received_packets->n_game_packets += 1;
@@ -791,7 +797,7 @@ static void cerver_packet_handler (void *ptr) {
                     break;
 
                 // user set handler to handle app specific packets
-                case APP_PACKET:
+                case PACKET_TYPE_APP:
                     packet->cerver->stats->received_packets->n_app_packets += 1;
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
@@ -800,7 +806,7 @@ static void cerver_packet_handler (void *ptr) {
                     break;
 
                 // user set handler to handle app specific errors
-                case APP_ERROR_PACKET: 
+                case PACKET_TYPE_APP_ERROR: 
                     packet->cerver->stats->received_packets->n_app_error_packets += 1;
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
@@ -809,7 +815,7 @@ static void cerver_packet_handler (void *ptr) {
                     break;
 
                 // custom packet hanlder
-                case CUSTOM_PACKET: 
+                case PACKET_TYPE_CUSTOM: 
                     packet->cerver->stats->received_packets->n_custom_packets += 1;
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
@@ -818,7 +824,7 @@ static void cerver_packet_handler (void *ptr) {
                     break;
 
                 // acknowledge the client we have received his test packet
-                case TEST_PACKET: 
+                case PACKET_TYPE_TEST: 
                     packet->cerver->stats->received_packets->n_test_packets += 1;
                     packet->client->stats->received_packets->n_test_packets += 1;
                     packet->connection->stats->received_packets->n_test_packets += 1;
