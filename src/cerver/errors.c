@@ -20,6 +20,23 @@ static inline void serror_delete (void *ptr);
 
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
 
+#pragma region types
+
+// get the description for the current error type
+const char *cerver_error_type_description (CerverErrorType type) {
+
+	switch (type) {
+		#define XX(num, name, description) case CERVER_ERROR_##name: return #description;
+		CERVER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_error_type_description (CERVER_ERROR_UNKNOWN);
+
+}
+
+#pragma endregion
+
 #pragma region data
 
 static CerverErrorEventData *cerver_error_event_data_new (void) {
@@ -110,8 +127,10 @@ void cerver_error_event_delete (void *event_ptr) {
 
 }
 
-static CerverErrorEvent *cerver_error_event_get (const Cerver *cerver, const CerverErrorType error_type,
-	ListElement **le_ptr) {
+static CerverErrorEvent *cerver_error_event_get (
+	const Cerver *cerver, const CerverErrorType error_type,
+	ListElement **le_ptr
+) {
 
 	if (cerver) {
 		if (cerver->errors) {
@@ -144,9 +163,12 @@ static void cerver_error_event_pop (DoubleList *list, ListElement *le) {
 // a newly allocated CerverErrorEventData structure will be passed to your method
 // that should be free using the cerver_error_event_data_delete () method
 // returns 0 on success, 1 on error
-u8 cerver_error_event_register (Cerver *cerver, const CerverErrorType error_type,
+u8 cerver_error_event_register (
+	Cerver *cerver,
+	const CerverErrorType error_type,
 	Action action, void *action_args, Action delete_action_args,
-	bool create_thread, bool drop_after_trigger) {
+	bool create_thread, bool drop_after_trigger
+) {
 
 	u8 retval = 1;
 
@@ -208,7 +230,8 @@ u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_ty
 }
 
 // triggers all the actions that are registred to an error
-void cerver_error_event_trigger (const CerverErrorType error_type,
+void cerver_error_event_trigger (
+	const CerverErrorType error_type,
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
 	const char *error_message
@@ -307,8 +330,10 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
 // creates and send a new error packet
 // returns 0 on success, 1 on error
-u8 error_packet_generate_and_send (const CerverErrorType type, const char *msg,
-	Cerver *cerver, Client *client, Connection *connection) {
+u8 error_packet_generate_and_send (
+	const CerverErrorType type, const char *msg,
+	Cerver *cerver, Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
