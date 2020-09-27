@@ -462,86 +462,91 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 #pragma region handlers
 
+// handles a packet of type PACKET_TYPE_CLIENT
+static void cerver_client_packet_handler (Packet *packet) {
+
+    if (packet->header) {
+        switch (packet->header->request_type) {
+            // the client is going to close its current connection
+            // but will remain in the cerver if it has another connection active
+            // if not, it will be dropped
+            case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("Client %ld requested to close the connection",
+                    packet->client->id);
+                if (s) {
+                    cerver_log_debug (s);
+                    free (s);
+                }
+                #endif
+
+                // check if the client is inside a lobby
+                if (packet->lobby) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
+                        packet->client->id, packet->lobby->id->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
+                        free (s);
+                    }
+                    #endif
+
+                    // remove the player from the lobby
+                    Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
+                    player_unregister_from_lobby (packet->lobby, player);
+                }
+
+                client_remove_connection_by_sock_fd (packet->cerver, 
+                    packet->client, packet->connection->socket->sock_fd); 
+            } break;
+
+            // the client is going to disconnect and will close all of its active connections
+            // so drop it from the server
+            case CLIENT_PACKET_TYPE_DISCONNECT: {
+                // check if the client is inside a lobby
+                if (packet->lobby) {
+                    #ifdef CERVER_DEBUG
+                    char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
+                        packet->client->id, packet->lobby->id->str);
+                    if (s) {
+                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
+                        free (s);
+                    }
+                    #endif
+
+                    // remove the player from the lobby
+                    Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
+                    player_unregister_from_lobby (packet->lobby, player);
+                }
+
+                client_drop (packet->cerver, packet->client);
+
+                cerver_event_trigger (
+                    CERVER_EVENT_CLIENT_DISCONNECTED,
+                    packet->cerver,
+                    NULL, NULL
+                );
+            } break;
+
+            default: {
+                #ifdef CERVER_DEBUG
+                char *s = c_string_create ("Got an unknown client packet in cerver %s",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
+                    free (s);
+                }
+                #endif
+            } break;
+        }
+    }
+
+}
+
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->header) {
-            switch (packet->header->request_type) {
-                // the client is going to close its current connection
-                // but will remain in the cerver if it has another connection active
-                // if not, it will be dropped
-                case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Client %ld requested to close the connection",
-                        packet->client->id);
-                    if (s) {
-                        cerver_log_debug (s);
-                        free (s);
-                    }
-                    #endif
-
-                    // check if the client is inside a lobby
-                    if (packet->lobby) {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str);
-                        if (s) {
-                            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                            free (s);
-                        }
-                        #endif
-
-                        // remove the player from the lobby
-                        Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
-                        player_unregister_from_lobby (packet->lobby, player);
-                    }
-
-                    client_remove_connection_by_sock_fd (packet->cerver, 
-                        packet->client, packet->connection->socket->sock_fd); 
-                } break;
-
-                // the client is going to disconnect and will close all of its active connections
-                // so drop it from the server
-                case CLIENT_PACKET_TYPE_DISCONNECT: {
-                    // check if the client is inside a lobby
-                    if (packet->lobby) {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str);
-                        if (s) {
-                            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                            free (s);
-                        }
-                        #endif
-
-                        // remove the player from the lobby
-                        Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
-                        player_unregister_from_lobby (packet->lobby, player);
-                    }
-
-                    client_drop (packet->cerver, packet->client);
-
-                    cerver_event_trigger (
-                        CERVER_EVENT_CLIENT_DISCONNECTED,
-                        packet->cerver,
-                        NULL, NULL
-                    );
-                } break;
-
-                default: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Got an unknown request in cerver %s",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
-                        free (s);
-                    }
-                    #endif
-                } break;
-            }
-        }
-    }
+    // TODO:
 
 }
 
@@ -755,7 +760,14 @@ static void cerver_packet_handler (void *ptr) {
 
                 case PACKET_TYPE_CERVER: break;
 
-                case PACKET_TYPE_CLIENT: break;
+                case PACKET_TYPE_CLIENT:
+                    packet->cerver->stats->received_packets->n_client_packets += 1;
+                    packet->client->stats->received_packets->n_client_packets += 1;
+                    packet->connection->stats->received_packets->n_client_packets += 1;
+                    if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
+                    cerver_client_packet_handler (packet);
+                    packet_delete (packet);
+                    break;
 
                 // handles an error from the client
                 case PACKET_TYPE_ERROR: 
