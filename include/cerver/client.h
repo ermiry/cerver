@@ -135,11 +135,11 @@ CERVER_EXPORT void *client_get_data (Client *client);
 // deletes the previous data of the client
 CERVER_EXPORT void client_set_data (Client *client, void *data, Action delete_data);
 
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 CERVER_EXPORT void client_set_app_handlers (Client *client, 
     struct _Handler *app_handler, struct _Handler *app_error_handler);
 
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void client_set_custom_handler (Client *client, struct _Handler *custom_handler);
 
 // set whether to check or not incoming packets

@@ -318,7 +318,7 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 
 }
 
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void client_set_app_handlers (Client *client, 
     Handler *app_handler, Handler *app_error_handler) {
 
@@ -338,7 +338,7 @@ void client_set_app_handlers (Client *client,
 
 }
 
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 void client_set_custom_handler (Client *client, Handler *custom_handler) {
 
     if (client) {
@@ -2099,7 +2099,7 @@ static void client_connection_terminate (Client *client, Connection *connection)
         if (connection->active) {
             if (connection->cerver_report) {
                 // send a close connection packet
-                Packet *packet = packet_generate_request (REQUEST_PACKET, CLIENT_CLOSE_CONNECTION, NULL, 0);
+                Packet *packet = packet_generate_request (PACKET_TYPE_REQUEST, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
                 if (packet) {
                     packet_set_network_values (packet, NULL, client, connection, NULL);
                     if (packet_send (packet, 0, NULL, false)) {
@@ -2306,29 +2306,17 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 void client_cerver_packet_handler (Packet *packet) {
 
     switch (packet->header->request_type) {
-        case CERVER_INFO: {
+        case CERVER_PACKET_TYPE_INFO:
             client_cerver_packet_handle_info (packet);
-        } break;
+        break;
 
         // the cerves is going to be teardown, we have to disconnect
-        case CERVER_TEARDOWN:
+        case CERVER_PACKET_TYPE_TEARDOWN:
             #ifdef CLIENT_DEBUG
             cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_NONE, "---> Server teardown! <---");
             #endif
             client_got_disconnected (packet->client);
             client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
-            break;
-
-        case CERVER_INFO_STATS:
-            // #ifdef CLIENT_DEBUG
-            // cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver stats packet.");
-            // #endif
-            break;
-
-        case CERVER_GAME_STATS:
-            // #ifdef CLIENT_DEBUG
-            // cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver game stats packet.");
-            // #endif
             break;
 
         default: 
@@ -2343,12 +2331,12 @@ static void client_client_packet_handler (Packet *packet) {
 
     switch (packet->header->request_type) {
         // the cerver close our connection
-        case CLIENT_CLOSE_CONNECTION:
+        case CLIENT_PACKET_TYPE_CLOSE_CONNECTION:
             client_connection_end (packet->client, packet->connection);
             break;
 
         // the cerver has disconneted us
-        case CLIENT_DISCONNET:
+        case CLIENT_PACKET_TYPE_DISCONNECT:
             client_got_disconnected (packet->client);
             client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
             break;
@@ -2439,7 +2427,7 @@ static void client_request_packet_handler (Packet *packet) {
 }
 
 // 16/06/2020
-// handles a APP_PACKET packet type
+// handles a PACKET_TYPE_APP packet type
 static void client_app_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -2480,7 +2468,7 @@ static void client_app_packet_handler (Packet *packet) {
 }
 
 // 16/06/2020
-// handles a APP_ERROR_PACKET packet type
+// handles a PACKET_TYPE_APP_ERROR packet type
 static void client_app_error_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -2521,7 +2509,7 @@ static void client_app_error_packet_handler (Packet *packet) {
 }
 
 // 16/06/2020
-// handles a CUSTOM_PACKET packet type
+// handles a PACKET_TYPE_CUSTOM packet type
 static void client_custom_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -2585,8 +2573,10 @@ static void client_packet_handler (void *data) {
 
         if (good) {
             switch (packet->header->packet_type) {
+                case PACKET_TYPE_NONE: break;
+
                 // handles cerver type packets
-                case CERVER_PACKET:
+                case PACKET_TYPE_CERVER:
                     packet->client->stats->received_packets->n_cerver_packets += 1;
                     packet->connection->stats->received_packets->n_cerver_packets += 1;
                     client_cerver_packet_handler (packet); 
@@ -2594,64 +2584,64 @@ static void client_packet_handler (void *data) {
                     break;
 
                 // handles a client type packet
-                case CLIENT_PACKET:
+                case PACKET_TYPE_CLIENT:
                     client_client_packet_handler (packet);
                     break;
 
                 // handles an error from the server
-                case ERROR_PACKET: 
+                case PACKET_TYPE_ERROR: 
                     packet->client->stats->received_packets->n_error_packets += 1;
                     packet->connection->stats->received_packets->n_error_packets += 1;
                     client_error_packet_handler (packet); 
                     packet_delete (packet);
                     break;
 
-                // handles authentication packets
-                case AUTH_PACKET: 
-                    packet->client->stats->received_packets->n_auth_packets += 1;
-                    packet->connection->stats->received_packets->n_auth_packets += 1;
-                    client_auth_packet_handler (packet); 
-                    packet_delete (packet);
-                    break;
-
                 // handles a request made from the server
-                case REQUEST_PACKET: 
+                case PACKET_TYPE_REQUEST: 
                     packet->client->stats->received_packets->n_request_packets += 1; 
                     packet->connection->stats->received_packets->n_request_packets += 1; 
                     client_request_packet_handler (packet);
                     packet_delete (packet);
                     break;
 
+                // handles authentication packets
+                case PACKET_TYPE_AUTH: 
+                    packet->client->stats->received_packets->n_auth_packets += 1;
+                    packet->connection->stats->received_packets->n_auth_packets += 1;
+                    client_auth_packet_handler (packet); 
+                    packet_delete (packet);
+                    break;
+
                 // handles a game packet sent from the server
-                case GAME_PACKET: 
+                case PACKET_TYPE_GAME: 
                     packet->client->stats->received_packets->n_game_packets += 1;
                     packet->connection->stats->received_packets->n_game_packets += 1;
                     packet_delete (packet);
                     break;
 
                 // user set handler to handler app specific packets
-                case APP_PACKET:
+                case PACKET_TYPE_APP:
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     client_app_packet_handler (packet);
                     break;
 
                 // user set handler to handle app specific errors
-                case APP_ERROR_PACKET: 
+                case PACKET_TYPE_APP_ERROR: 
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
                     client_app_error_packet_handler (packet);
                     break;
 
                 // custom packet hanlder
-                case CUSTOM_PACKET: 
+                case PACKET_TYPE_CUSTOM: 
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
                     client_custom_packet_handler (packet);
                     break;
 
                 // handles a test packet form the cerver
-                case TEST_PACKET: 
+                case PACKET_TYPE_TEST: 
                     packet->client->stats->received_packets->n_test_packets += 1;
                     packet->connection->stats->received_packets->n_test_packets += 1;
                     cerver_log_msg (stdout, LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver.");
