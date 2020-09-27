@@ -54,7 +54,7 @@ static void cerver_handle_test_request (Packet *packet) {
 	if (packet) {
 		cerver_log_debug ("Got a test message from client. Sending another one back...");
 		
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
@@ -171,7 +171,7 @@ static int request_message (Client *client, Connection *connection) {
 
         char *end = (char *) packet->packet;
         PacketHeader *header = (PacketHeader *) end;
-        header->packet_type = APP_PACKET;
+        header->packet_type = PACKET_TYPE_APP;
         header->packet_size = packet_len;
         header->handler_id = 0;
         header->request_type = GET_MSG;
@@ -235,7 +235,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
     int retval = 1;
 
     if ((client->running) && connection->active) {
-        Packet *packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+        Packet *packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
         if (packet) {
             packet_set_network_values (packet, NULL, client, connection, NULL);
             size_t sent = 0;
@@ -244,7 +244,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
             }
 
             else {
-                printf ("APP_PACKET sent to cerver: %ld\n", sent);
+                printf ("PACKET_TYPE_APP sent to cerver: %ld\n", sent);
                 retval = 0;
             } 
 
