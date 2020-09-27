@@ -292,7 +292,7 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
     if (error) {
         SError *serror = error_serialize (error);
         if (serror) {
-            packet = packet_create (ERROR_PACKET, serror, sizeof (SError));
+            packet = packet_create (PACKET_TYPE_ERROR, serror, sizeof (SError));
             packet_generate (packet);
 
             serror_delete (serror);

@@ -367,7 +367,7 @@ u8 connection_generate_auth_packet (Connection *connection) {
     if (connection) {
         if (connection->auth_data) {
             connection->auth_packet = packet_generate_request (
-                AUTH_PACKET, 
+                PACKET_TYPE_AUTH, 
                 connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH, 
                 connection->auth_data, connection->auth_data_size
             );

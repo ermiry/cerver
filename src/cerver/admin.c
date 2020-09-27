@@ -92,27 +92,27 @@ static void admin_cerver_packet_send_update_stats (AdminCerverStats *stats,
     stats->total_bytes_sent += sent;
 
     switch (packet_type) {
-        case CERVER_PACKET: stats->sent_packets->n_cerver_packets += 1; break;
+        case PACKET_TYPE_NONE: break;
 
-        case CLIENT_PACKET: break;
+        case PACKET_TYPE_CERVER: stats->sent_packets->n_cerver_packets += 1; break;
 
-        case ERROR_PACKET: stats->sent_packets->n_error_packets += 1; break;
+        case PACKET_TYPE_CLIENT: break;
 
-        case AUTH_PACKET: stats->sent_packets->n_auth_packets += 1; break;
+        case PACKET_TYPE_ERROR: stats->sent_packets->n_error_packets += 1; break;
 
-        case REQUEST_PACKET: stats->sent_packets->n_request_packets += 1; break;
+        case PACKET_TYPE_REQUEST: stats->sent_packets->n_request_packets += 1; break;
 
-        case GAME_PACKET: stats->sent_packets->n_game_packets += 1; break;
+        case PACKET_TYPE_AUTH: stats->sent_packets->n_auth_packets += 1; break;
 
-        case APP_PACKET: stats->sent_packets->n_app_packets += 1; break;
+        case PACKET_TYPE_GAME: stats->sent_packets->n_game_packets += 1; break;
 
-        case APP_ERROR_PACKET: stats->sent_packets->n_app_error_packets += 1; break;
+        case PACKET_TYPE_APP: stats->sent_packets->n_app_packets += 1; break;
 
-        case CUSTOM_PACKET: stats->sent_packets->n_custom_packets += 1; break;
+        case PACKET_TYPE_APP_ERROR: stats->sent_packets->n_app_error_packets += 1; break;
 
-        case TEST_PACKET: stats->sent_packets->n_test_packets += 1; break;
+        case PACKET_TYPE_CUSTOM: stats->sent_packets->n_custom_packets += 1; break;
 
-        case DONT_CHECK_TYPE: break;
+        case PACKET_TYPE_TEST: stats->sent_packets->n_test_packets += 1; break;
 
         default: stats->sent_packets->n_unknown_packets += 1; break;
     }
@@ -612,7 +612,7 @@ void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout)
 
 }
 
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, Handler *app_handler, Handler *app_error_handler) {
 
     if (admin_cerver) {
@@ -631,7 +631,7 @@ void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, Handler *app_hand
 
 }
 
-// sets option to automatically delete APP_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
@@ -640,7 +640,7 @@ void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete
 
 }
 
-// sets option to automatically delete APP_ERROR_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
@@ -649,7 +649,7 @@ void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool 
 
 }
 
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, Handler *custom_handler) {
 
     if (admin_cerver) {
@@ -662,7 +662,7 @@ void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, Handler *custom
 
 }
 
-// sets option to automatically delete CUSTOM_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet) {
@@ -1425,7 +1425,7 @@ static u8 admin_cerver_disconnect_admins (AdminCerver *admin_cerver) {
 	if (admin_cerver) {
 		if (dlist_size (admin_cerver->admins)) {
 			// send a cerver teardown packet to all clients connected to cerver
-            Packet *packet = packet_generate_request (CERVER_PACKET, CERVER_TEARDOWN, NULL, 0);
+            Packet *packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_TEARDOWN, NULL, 0);
             if (packet) {
                 errors |= admin_cerver_broadcast_to_admins (admin_cerver, packet);
                 packet_delete (packet);
@@ -1482,7 +1482,7 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
                 // the client is going to close its current connection
                 // but will remain in the cerver if it has another connection active
                 // if not, it will be dropped
-                case CLIENT_CLOSE_CONNECTION: {
+                case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
                     #ifdef ADMIN_DEBUG
                     char *s = c_string_create ("Admin with client %ld requested to close the connection",
                         packet->client->id);
@@ -1501,7 +1501,7 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
 
                 // the client is going to disconnect and will close all of its active connections
                 // so drop it from the server
-                case CLIENT_DISCONNET: {
+                case CLIENT_PACKET_TYPE_DISCONNECT: {
                     admin_cerver_drop_admin (
                         packet->cerver->admin,
                         admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd)
@@ -1530,7 +1530,7 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
 
 }
 
-// handles an APP_PACKET packet type
+// handles an PACKET_TYPE_APP packet type
 static void admin_app_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -1572,7 +1572,7 @@ static void admin_app_packet_handler (Packet *packet) {
 
 }
 
-// handles an APP_ERROR_PACKET packet type
+// handles an PACKET_TYPE_APP_ERROR packet type
 static void admin_app_error_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -1614,7 +1614,7 @@ static void admin_app_error_packet_handler (Packet *packet) {
 
 }
 
-// handles a CUSTOM_PACKET packet type
+// handles a PACKET_TYPE_CUSTOM packet type
 static void admin_custom_packet_handler (Packet *packet) {
 
     if (packet) {
@@ -1678,7 +1678,7 @@ void admin_packet_handler (Packet *packet) {
         if (good) {
             switch (packet->header->packet_type) {
                 // handles a request made from the admin
-                case REQUEST_PACKET:
+                case PACKET_TYPE_REQUEST:
                     packet->cerver->admin->stats->received_packets->n_request_packets += 1;
                     packet->client->stats->received_packets->n_request_packets += 1;
                     packet->connection->stats->received_packets->n_request_packets += 1; 
@@ -1686,21 +1686,21 @@ void admin_packet_handler (Packet *packet) {
                     packet_delete (packet);
                     break;
 
-                case APP_PACKET:
+                case PACKET_TYPE_APP:
                     packet->cerver->admin->stats->received_packets->n_app_packets += 1;
                     packet->client->stats->received_packets->n_app_packets += 1;
                     packet->connection->stats->received_packets->n_app_packets += 1;
                     admin_app_packet_handler (packet); 
                     break;
 
-                case APP_ERROR_PACKET: 
+                case PACKET_TYPE_APP_ERROR: 
                     packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
                     packet->client->stats->received_packets->n_app_error_packets += 1;
                     packet->connection->stats->received_packets->n_app_error_packets += 1;
                     admin_app_error_packet_handler (packet); 
                     break;
 
-                case CUSTOM_PACKET: 
+                case PACKET_TYPE_CUSTOM: 
                     packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
                     packet->client->stats->received_packets->n_custom_packets += 1;
                     packet->connection->stats->received_packets->n_custom_packets += 1;
