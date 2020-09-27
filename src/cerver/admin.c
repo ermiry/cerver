@@ -1538,41 +1538,39 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
 // handles an PACKET_TYPE_APP packet type
 static void admin_app_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->cerver->admin->app_packet_handler) {
-            if (packet->cerver->admin->app_packet_handler->direct_handle) {
-                // printf ("app_packet_handler - direct handle!\n");
-                packet->cerver->admin->app_packet_handler->handler (packet);
-                if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->cerver->admin->app_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->cerver->admin->app_packet_handler) {
+        if (packet->cerver->admin->app_packet_handler->direct_handle) {
+            // printf ("app_packet_handler - direct handle!\n");
+            packet->cerver->admin->app_packet_handler->handler (packet);
+            if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
         }
 
         else {
-            #ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s ADMIN does not have an app_packet_handler!",
-                packet->cerver->info->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->cerver->admin->app_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
-            #endif
         }
+    }
+
+    else {
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver %s ADMIN does not have an app_packet_handler!",
+            packet->cerver->info->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
+        }
+        #endif
     }
 
 }
@@ -1580,41 +1578,39 @@ static void admin_app_packet_handler (Packet *packet) {
 // handles an PACKET_TYPE_APP_ERROR packet type
 static void admin_app_error_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->cerver->admin->app_error_packet_handler) {
-            if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
-                // printf ("app_error_packet_handler - direct handle!\n");
-                packet->cerver->admin->app_error_packet_handler->handler (packet);
-                if (packet->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->cerver->admin->app_error_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->cerver->admin->app_error_packet_handler) {
+        if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
+            // printf ("app_error_packet_handler - direct handle!\n");
+            packet->cerver->admin->app_error_packet_handler->handler (packet);
+            if (packet->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet);
         }
 
         else {
-            #ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s ADMIN does not have an app_error_packet_handler!",
-                packet->cerver->info->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->cerver->admin->app_error_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
-            #endif
         }
+    }
+
+    else {
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver %s ADMIN does not have an app_error_packet_handler!",
+            packet->cerver->info->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
+        }
+        #endif
     }
 
 }
@@ -1622,41 +1618,39 @@ static void admin_app_error_packet_handler (Packet *packet) {
 // handles a PACKET_TYPE_CUSTOM packet type
 static void admin_custom_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->cerver->admin->custom_packet_handler) {
-            if (packet->cerver->admin->custom_packet_handler->direct_handle) {
-                // printf ("custom_packet_handler - direct handle!\n");
-                packet->cerver->admin->custom_packet_handler->handler (packet);
-                if (packet->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet);
-            }
-
-            else {
-                // add the packet to the handler's job queueu to be handled
-                // as soon as the handler is available
-                if (job_queue_push (
-                    packet->cerver->admin->custom_packet_handler->job_queue,
-                    job_create (NULL, packet)
-                )) {
-                    char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_error (s);
-                        free (s);
-                    }
-                }
-            }
+    if (packet->cerver->admin->custom_packet_handler) {
+        if (packet->cerver->admin->custom_packet_handler->direct_handle) {
+            // printf ("custom_packet_handler - direct handle!\n");
+            packet->cerver->admin->custom_packet_handler->handler (packet);
+            if (packet->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet);
         }
 
         else {
-            #ifdef ADMIN_DEBUG
-            char *s = c_string_create ("Cerver %s ADMIN does not have an custom_packet_handler!",
-                packet->cerver->info->name->str);
-            if (s) {
-                cerver_log_warning (s);
-                free (s);
+            // add the packet to the handler's job queueu to be handled
+            // as soon as the handler is available
+            if (job_queue_push (
+                packet->cerver->admin->custom_packet_handler->job_queue,
+                job_create (NULL, packet)
+            )) {
+                char *s = c_string_create ("Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_error (s);
+                    free (s);
+                }
             }
-            #endif
         }
+    }
+
+    else {
+        #ifdef ADMIN_DEBUG
+        char *s = c_string_create ("Cerver %s ADMIN does not have an custom_packet_handler!",
+            packet->cerver->info->name->str);
+        if (s) {
+            cerver_log_warning (s);
+            free (s);
+        }
+        #endif
     }
 
 }
