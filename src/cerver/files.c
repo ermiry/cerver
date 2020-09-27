@@ -21,6 +21,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/json.h"
 
+#pragma region main
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 unsigned int files_create_dir (const char *dir_path, mode_t mode) {
@@ -287,6 +289,27 @@ int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
 
 }
 
+json_value *file_json_parse (const char *filename) {
+
+    json_value *value = NULL;
+
+    if (filename) {
+        size_t file_size = 0;
+        char *file_contents = file_read (filename, &file_size);
+        json_char *json = (json_char *) file_contents;
+        value = json_parse (json, file_size);
+
+        free (file_contents);
+    }
+
+    return value;
+    
+}
+
+#pragma endregion
+
+#pragma region send
+
 // sends a file to the sock fd
 // returns 0 on success, 1 on error
 int file_send (const char *filename, int sock_fd) {
@@ -317,19 +340,4 @@ int file_send (const char *filename, int sock_fd) {
 
 }
 
-json_value *file_json_parse (const char *filename) {
-
-    json_value *value = NULL;
-
-    if (filename) {
-        size_t file_size = 0;
-        char *file_contents = file_read (filename, &file_size);
-        json_char *json = (json_char *) file_contents;
-        value = json_parse (json, file_size);
-
-        free (file_contents);
-    }
-
-    return value;
-    
-}
+#pragma endregion

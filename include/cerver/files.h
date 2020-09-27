@@ -11,6 +11,8 @@
 
 #include "cerver/utils/json.h"
 
+#pragma region main
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_dir (const char *dir_path, mode_t mode);
@@ -29,8 +31,10 @@ CERVER_EXPORT DoubleList *file_get_lines (const char *filename);
 CERVER_EXPORT bool file_exists (const char *filename);
 
 // opens a file and returns it as a FILE
-CERVER_EXPORT FILE *file_open_as_file (const char *filename, 
-    const char *modes, struct stat *filestatus);
+CERVER_EXPORT FILE *file_open_as_file (
+    const char *filename, 
+    const char *modes, struct stat *filestatus
+);
 
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
@@ -40,10 +44,23 @@ CERVER_EXPORT char *file_read (const char *filename, size_t *file_size);
 // returns fd on success, -1 on error
 CERVER_EXPORT int file_open_as_fd (const char *filename, struct stat *filestatus, int flags);
 
+CERVER_EXPORT json_value *file_json_parse (const char *filename);
+
+#pragma endregion
+
+#pragma region send
+
+typedef struct FileHeader {
+
+    char filename[1024];
+    size_t len;
+
+} FileHeader;
+
 // sends a file to the sock fd
 // returns 0 on success, 1 on error
 CERVER_EXPORT int file_send (const char *filename, int sock_fd);
 
-CERVER_EXPORT json_value *file_json_parse (const char *filename);
+#pragma endregion
 
 #endif
