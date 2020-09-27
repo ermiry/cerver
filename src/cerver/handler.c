@@ -11,14 +11,15 @@
 
 #include "cerver/collections/htab.h"
 
-#include "cerver/socket.h"
+#include "cerver/auth.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
-#include "cerver/packets.h"
-#include "cerver/handler.h"
-#include "cerver/auth.h"
 #include "cerver/events.h"
+#include "cerver/files.h"
+#include "cerver/handler.h"
+#include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
@@ -529,11 +530,11 @@ static void cerver_client_packet_handler (Packet *packet) {
             } break;
 
             default: {
-                #ifdef CERVER_DEBUG
+                #ifdef HANDLER_DEBUG
                 char *s = c_string_create ("Got an unknown client packet in cerver %s",
                     packet->cerver->info->name->str);
                 if (s) {
-                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, s);
                     free (s);
                 }
                 #endif
@@ -543,17 +544,79 @@ static void cerver_client_packet_handler (Packet *packet) {
 
 }
 
+ // handles a request from a client to get a file
+static void cerver_request_get_file (Packet *packet) {
+
+    // get the necessary information to fulfil the request
+    if (packet->data_size >= sizeof (FileHeader)) {
+        char *end = packet->data;
+        FileHeader *file_header = (FileHeader *) end;
+
+        // search for the requested file in the configured paths
+
+        // if found, pipe the file contents to the client's socket fd
+        // the socket should be blocked during the entire operation
+
+        // if not found, return an error to the client
+    }
+
+    else {
+        // TODO: return a bad request error packet
+    }
+
+}
+
+// handles a request from a client to upload a file
+static void cerver_request_send_file (Packet *packet) {
+
+    // get the necessary information to fulfil the request
+    if (packet->data_size >= sizeof (FileHeader)) {
+        char *end = packet->data;
+        FileHeader *file_header = (FileHeader *) end;
+
+        // open a local file in the configured upload paths
+
+        // start reading the file contents from the packet
+
+        // the remaining contents should be piped from the socket directly into the local file
+    }
+
+    else {
+        // TODO: return a bad request error packet
+    }
+
+}
+
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
-    // TODO:
+    if (packet->header) {
+        switch (packet->header->request_type) {
+            // request from a client to get a file
+            case REQUEST_PACKET_TYPE_GET_FILE: cerver_request_get_file (packet); break;
+
+            // request from a client to upload a file
+            case REQUEST_PACKET_TYPE_SEND_FILE: cerver_request_send_file (packet); break;
+
+            default: {
+                #ifdef HANDLER_DEBUG
+                char *s = c_string_create ("Got an unknown request packet in cerver %s",
+                    packet->cerver->info->name->str);
+                if (s) {
+                    cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, s);
+                    free (s);
+                }
+                #endif
+            } break;
+        }
+    }
 
 }
 
 // sends back a test packet to the client!
 void cerver_test_packet_handler (Packet *packet) {
 
-    #ifdef CERVER_DEBUG
+    #ifdef HANDLER_DEBUG
     char *s = c_string_create ("Got a test packet in cerver %s.", packet->cerver->info->name->str);
     if (s) {
         cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_PACKET, s);
@@ -842,7 +905,7 @@ static void cerver_packet_handler (void *packet_ptr) {
                     packet->client->stats->received_packets->n_bad_packets += 1;
                     packet->connection->stats->received_packets->n_bad_packets += 1;
                     if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
-                    #ifdef CERVER_DEBUG
+                    #ifdef HANDLER_DEBUG
                     char *s = c_string_create ("Got a packet of unknown type in cerver %s.", 
                         packet->cerver->info->name->str);
                     if (s) {
