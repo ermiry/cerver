@@ -1,5 +1,5 @@
-#ifndef _CERVER_ESTRING_H_
-#define _CERVER_ESTRING_H_
+#ifndef _CERVER_STRING_H_
+#define _CERVER_STRING_H_
 
 #include "cerver/types/types.h"
 
