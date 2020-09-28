@@ -127,37 +127,6 @@ void cerver_error_event_delete (void *event_ptr) {
 
 }
 
-static CerverErrorEvent *cerver_error_event_get (
-	const Cerver *cerver, const CerverErrorType error_type,
-	ListElement **le_ptr
-) {
-
-	if (cerver) {
-		if (cerver->errors) {
-			CerverErrorEvent *error = NULL;
-			for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
-				error = (CerverErrorEvent *) le->data;
-				if (error->type == error_type) {
-					if (le_ptr) *le_ptr = le;
-					return error;
-				}
-			}
-		}
-	}
-
-	return NULL;
-
-}
-
-static void cerver_error_event_pop (DoubleList *list, ListElement *le) {
-
-	if (le) {
-		void *data = dlist_remove_element (list, le);
-		if (data) cerver_error_event_delete (data);
-	}
-
-}
-
 // registers an action to be triggered when the specified error event occurs
 // if there is an existing action registered to an error event, it will be overrided
 // a newly allocated CerverErrorEventData structure will be passed to your method
@@ -173,29 +142,23 @@ u8 cerver_error_event_register (
 	u8 retval = 1;
 
 	if (cerver) {
-		if (cerver->errors) {
-			CerverErrorEvent *error = cerver_error_event_new ();
-			if (error) {
-				error->type = error_type;
+		CerverErrorEvent *error = cerver_error_event_new ();
+		if (error) {
+			error->type = error_type;
 
-				error->create_thread = create_thread;
-				error->drop_after_trigger = drop_after_trigger;
+			error->create_thread = create_thread;
+			error->drop_after_trigger = drop_after_trigger;
 
-				error->action = action;
-				error->action_args = action_args;
-				error->delete_action_args = delete_action_args;
+			error->action = action;
+			error->action_args = action_args;
+			error->delete_action_args = delete_action_args;
 
-				// search if there is an action already registred for that error and remove it
-				(void) cerver_error_event_unregister (cerver, error_type);
+			// search if there is an action already registred for that error and remove it
+			(void) cerver_error_event_unregister (cerver, error_type);
 
-				if (!dlist_insert_after (
-					cerver->errors,
-					dlist_end (cerver->errors),
-					error
-				)) {
-					retval = 0;
-				}
-			}
+			cerver->errors[error_type] = error;
+
+			retval = 0;
 		}
 	}
 
@@ -205,23 +168,17 @@ u8 cerver_error_event_register (
 
 // unregister the action associated with an error event
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if error is NOT registered
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		if (cerver->errors) {
-			CerverErrorEvent *error = NULL;
-			for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
-				error = (CerverErrorEvent *) le->data;
-				if (error->type == error_type) {
-					cerver_error_event_delete (dlist_remove_element (cerver->errors, le));
-					retval = 0;
+		if (cerver->errors[error_type]) {
+			cerver_error_event_delete (cerver->errors[error_type]);
+			cerver->errors[error_type] = NULL;
 
-					break;
-				}
-			}
+			retval = 0;
 		}
 	}
 
@@ -238,8 +195,7 @@ void cerver_error_event_trigger (
 ) {
 
 	if (cerver) {
-		ListElement *le = NULL;
-		CerverErrorEvent *error = cerver_error_event_get (cerver, error_type, &le);
+		CerverErrorEvent *error = cerver->errors[error_type];
 		if (error) {
 			// trigger the action
 			if (error->action) {
@@ -266,7 +222,9 @@ void cerver_error_event_trigger (
 					));
 				}
 
-				if (error->drop_after_trigger) cerver_error_event_pop (cerver->errors, le);
+				if (error->drop_after_trigger) {
+					(void) cerver_error_event_unregister ((Cerver *) cerver, error_type);
+				}
 			}
 		}
 	}
