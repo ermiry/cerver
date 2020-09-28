@@ -90,6 +90,7 @@ examples: $(EXAMPLES)
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/threads.c -o ./examples/bin/threads -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/advanced.c -o ./examples/bin/advanced -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/requests.c -o ./examples/bin/requests -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/files.c -o ./examples/bin/files -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/auth.c -o ./examples/bin/auth -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/sessions.c -o ./examples/bin/sessions -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/admin.c -o ./examples/bin/admin -l cerver
