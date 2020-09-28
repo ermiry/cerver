@@ -40,38 +40,40 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-String *cerver_type_to_string (CerverType type) {
-
-	String *retval = NULL;
+const char *cerver_type_to_string (CerverType type) {
 
 	switch (type) {
-		case CERVER_TYPE_CUSTOM: retval = str_new ("Cerver type: CUSTOM"); break;
-
-		case CERVER_TYPE_GAME: retval = str_new ("Cerver type: GAME"); break;
-		case CERVER_TYPE_WEB: retval = str_new ("Cerver type: WEB"); break;
-		case CERVER_TYPE_FILE: retval = str_new ("Cerver type: FILE"); break;
-
-		default: retval = str_new ("Cerver type: UNKNOWN"); break;
+		#define XX(num, name, string) case CERVER_TYPE_##name: return #string;
+		CERVER_TYPE_MAP(XX)
+		#undef XX
 	}
 
-	return retval;
+	return cerver_type_to_string (CERVER_TYPE_NONE);
 
 }
 
-String *cerver_handler_type_to_string (CerverHandlerType type) {
-
-	String *retval = NULL;
+const char *cerver_handler_type_to_string (CerverHandlerType type) {
 
 	switch (type) {
-		case CERVER_HANDLER_TYPE_POLL: retval = str_new ("Cerver handler type: POLL"); break;
-
-		case CERVER_HANDLER_TYPE_THREADS: retval = str_new ("Cerver handler type: THREADS"); break;
-
-		default: retval = str_new ("Cerver handler type: NONE"); break;
+		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #string;
+		CERVER_HANDLER_TYPE_MAP(XX)
+		#undef XX
 	}
 
-	return retval;
+	return cerver_handler_type_to_string (CERVER_TYPE_NONE);
 
+}
+
+const char *cerver_handler_type_description (CerverHandlerType type) {
+
+	switch (type) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #description;
+		CERVER_HANDLER_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_handler_type_description (CERVER_TYPE_NONE);
+	
 }
 
 #pragma region info
@@ -1113,7 +1115,7 @@ Cerver *cerver_create (const CerverType type, const char *name,
 					// cerver->delete_cerver_data = http_cerver_delete;
 				} break;
 
-				case CERVER_TYPE_FILE: break;
+				case CERVER_TYPE_FILES: break;
 
 				default: break;
 			}
@@ -1382,13 +1384,8 @@ static u8 cerver_init (Cerver *cerver) {
 			free (status);
 		}
 
-		String *cerver_type = cerver_type_to_string (cerver->type);
-		printf ("%s\n", cerver_type->str);
-		str_delete (cerver_type);
-
-		String *cerver_handler_type = cerver_handler_type_to_string (cerver->handler_type);
-		printf ("%s\n", cerver_handler_type->str);
-		str_delete (cerver_handler_type);
+		printf ("Cerver type: %s\n", cerver_type_to_string (cerver->type));
+		printf ("Cerver handler type: %s\n", cerver_handler_type_to_string (cerver->handler_type));
 
 		if (!cerver_network_init (cerver)) {
 			if (!cerver_init_data_structures (cerver)) {
@@ -1518,7 +1515,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 					// http_cerver_init ((HttpCerver *) cerver->cerver_data);
 				} break;
 
-				case CERVER_TYPE_FILE: break;
+				case CERVER_TYPE_FILES: break;
 
 				default: break;
 			}
@@ -1697,7 +1694,7 @@ static u8 cerver_app_handlers_start (Cerver *cerver) {
 			else {
 				switch (cerver->type) {
 					case CERVER_TYPE_WEB: break;
-					case CERVER_TYPE_FILE: break;
+					case CERVER_TYPE_FILES: break;
 
 					default: {
 						char *s = c_string_create ("Cerver %s does not have an app_packet_handler",
@@ -1748,7 +1745,7 @@ static u8 cerver_app_error_handler_start (Cerver *cerver) {
 		else {
 			switch (cerver->type) {
 				case CERVER_TYPE_WEB: break;
-				case CERVER_TYPE_FILE: break;
+				case CERVER_TYPE_FILES: break;
 
 				default: {
 					char *s = c_string_create ("Cerver %s does not have an app_error_packet_handler",
@@ -2498,7 +2495,7 @@ static void cerver_clean (Cerver *cerver) {
 
 			case CERVER_TYPE_WEB: break;
 
-			case CERVER_TYPE_FILE: break;
+			case CERVER_TYPE_FILES: break;
 
 			default: break;
 		}
@@ -2810,7 +2807,7 @@ u8 cerver_report_check_info (
 			case CERVER_TYPE_WEB:
 				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: WEB");
 				break;
-			 case CERVER_TYPE_FILE:
+			 case CERVER_TYPE_FILES:
 				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: FILE");
 				break;
 
