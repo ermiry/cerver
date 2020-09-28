@@ -561,7 +561,11 @@ static void cerver_request_get_file (Packet *packet) {
 	}
 
 	else {
-		// TODO: return a bad request error packet
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_GET_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
 	}
 
 }
@@ -582,7 +586,11 @@ static void cerver_request_send_file (Packet *packet) {
 	}
 
 	else {
-		// TODO: return a bad request error packet
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_SEND_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
 	}
 
 }
