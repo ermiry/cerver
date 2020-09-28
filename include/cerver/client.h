@@ -26,6 +26,9 @@ struct _PacketsPerType;
 struct _Connection;
 struct _Handler;
 
+struct _ClientEvent;
+struct _ClientError;
+
 #pragma region stats
 
 struct _ClientStats {
@@ -52,6 +55,9 @@ CERVER_PUBLIC void client_stats_print (struct _Client *client);
 #pragma endregion
 
 #pragma region main
+
+#define CLIENT_MAX_EVENTS				32
+#define CLIENT_MAX_ERRORS				32
 
 // anyone that connects to the cerver
 struct _Client {
@@ -93,8 +99,8 @@ struct _Client {
 	// 17/06/2020 - general client lock
 	pthread_mutex_t *lock;
 
-	DoubleList *events;
-	DoubleList *errors;
+	struct _ClientEvent *events[CLIENT_MAX_EVENTS];
+	struct _ClientError *errors[CLIENT_MAX_ERRORS];
 
 	ClientStats *stats;
 
@@ -228,36 +234,38 @@ CERVER_PUBLIC void client_broadcast_to_all_avl (AVLNode *node, struct _Cerver *c
 
 #pragma region events
 
+#define CLIENT_EVENT_MAP(XX)																													\
+	XX(0,	NONE, 				No event)																										\
+	XX(1,	CONNECTED, 			Connected to cerver)																							\
+	XX(2,	DISCONNECTED, 		Disconnected from the cerver; either by the cerver or by losing connection)										\
+	XX(3,	CONNECTION_FAILED, 	Failed to connect to cerver)																					\
+	XX(4,	CONNECTION_CLOSE, 	The connection was clossed directly by client. This happens when a call to a recv () methods returns <= 0)		\
+	XX(5,	CONNECTION_DATA, 	Data has been received; only triggered from client request methods)												\
+	XX(6,	CERVER_INFO, 		Received cerver info from the cerver)																			\
+	XX(7,	CERVER_TEARDOWN, 	The cerver is going to teardown & the client will disconnect)													\
+	XX(8,	CERVER_STATS, 		Received cerver stats)																							\
+	XX(9,	CERVER_GAME_STATS, 	Received cerver game stats)																						\
+	XX(10,	AUTH_SENT, 			Auth data has been sent to the cerver)																			\
+	XX(11,	SUCCESS_AUTH, 		Auth with cerver has been successfull)																			\
+	XX(12,	MAX_AUTH_TRIES, 	Maxed out attempts to authenticate to cerver; need to try again)												\
+	XX(13,	LOBBY_CREATE, 		A new lobby was successfully created)																			\
+	XX(14,	LOBBY_JOIN, 		Correctly joined a new lobby)																					\
+	XX(15,	LOBBY_LEAVE, 		Successfully exited a lobby)																					\
+	XX(16,	LOBBY_START, 		The game in the lobby has started)																				\
+	XX(17,	UNKNOWN, 			Unknown event)
+
 typedef enum ClientEventType {
 
-	CLIENT_EVENT_NONE                  = 0,
-
-	CLIENT_EVENT_CONNECTED,            // connected to cerver
-	CLIENT_EVENT_DISCONNECTED,         // disconnected from the cerver, either by the cerver or by losing connection
-
-	CLIENT_EVENT_CONNECTION_FAILED,    // failed to connect to cerver
-	CLIENT_EVENT_CONNECTION_CLOSE,     // this happens when a call to a recv () methods returns <= 0, the connection is clossed directly by client
-
-	CLIENT_EVENT_CONNECTION_DATA,      // data has been received, only triggered from client request methods
-
-	CLIENT_EVENT_CERVER_INFO,          // received cerver info from the cerver
-	CLIENT_EVENT_CERVER_TEARDOWN,      // the cerver is going to teardown (disconnect happens automatically)
-	CLIENT_EVENT_CERVER_STATS,         // received cerver stats
-	CLIENT_EVENT_CERVER_GAME_STATS,    // received cerver game stats
-
-	CLIENT_EVENT_AUTH_SENT,            // auth data has been sent to the cerver
-	CLIENT_EVENT_SUCCESS_AUTH,         // auth with cerver has been successfull
-	CLIENT_EVENT_MAX_AUTH_TRIES,       // maxed out attempts to authenticate to cerver, so try again
-
-	CLIENT_EVENT_LOBBY_CREATE,         // a new lobby was successfully created
-	CLIENT_EVENT_LOBBY_JOIN,           // correctly joined a new lobby
-	CLIENT_EVENT_LOBBY_LEAVE,          // successfully exited a lobby
-
-	CLIENT_EVENT_LOBBY_START,          // the game in the lobby has started
+	#define XX(num, name, description) CLIENT_EVENT_##name = num,
+	CLIENT_EVENT_MAP (XX)
+	#undef XX
 
 } ClientEventType;
 
-typedef struct ClientEvent {
+// get the description for the current error type
+CERVER_EXPORT const char *client_event_type_description (ClientEventType type);
+
+struct _ClientEvent {
 
 	ClientEventType type;         // the event we are waiting to happen
 	bool create_thread;                 // create a detachable thread to run action
@@ -273,7 +281,11 @@ typedef struct ClientEvent {
 	void *action_args;                  // the action arguments
 	Action delete_action_args;          // how to get rid of the data
 
-} ClientEvent;
+};
+
+typedef struct _ClientEvent ClientEvent;
+
+CERVER_PRIVATE void client_event_delete (void *ptr);
 
 // registers an action to be triggered when the specified event occurs
 // if there is an existing action registered to an event, it will be overrided
@@ -281,18 +293,20 @@ typedef struct ClientEvent {
 // that should be free using the client_event_data_delete () method
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 client_event_register (
-	struct _Client *client, const ClientEventType event_type,
+	struct _Client *client,
+	const ClientEventType event_type,
 	Action action, void *action_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if event is NOT registered
 CERVER_EXPORT u8 client_event_unregister (struct _Client *client, const ClientEventType event_type);
 
 CERVER_PRIVATE void client_event_set_response (
-	struct _Client *client, const ClientEventType event_type,
+	struct _Client *client,
+	const ClientEventType event_type,
 	void *response_data, Action delete_response_data
 );
 
@@ -340,7 +354,7 @@ typedef enum ClientErrorType {
 
 } ClientErrorType;
 
-typedef struct ClientError {
+struct _ClientError {
 
 	ClientErrorType type;
 	bool create_thread;                 // create a detachable thread to run action
@@ -350,7 +364,9 @@ typedef struct ClientError {
 	void *action_args;                  // the action arguments
 	Action delete_action_args;          // how to get rid of the data
 
-} ClientError;
+};
+
+typedef struct ClientError ClientError;
 
 // registers an action to be triggered when the specified error occurs
 // if there is an existing action registered to an error, it will be overrided
