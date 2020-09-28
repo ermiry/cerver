@@ -40,40 +40,40 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-String *cerver_type_to_string (CerverType type) {
+const char *cerver_type_to_string (CerverType type) {
 
-    String *retval = NULL;
+	switch (type) {
+		#define XX(num, name, string) case CERVER_TYPE_##name: return #string;
+		CERVER_TYPE_MAP(XX)
+		#undef XX
+	}
 
-    switch (type) {
-        case CERVER_TYPE_CUSTOM: retval = str_new ("Cerver type: CUSTOM"); break;
-
-        case CERVER_TYPE_GAME: retval = str_new ("Cerver type: GAME"); break;
-        case CERVER_TYPE_WEB: retval = str_new ("Cerver type: WEB"); break;
-        case CERVER_TYPE_FILE: retval = str_new ("Cerver type: FILE"); break;
-
-        case CERVER_TYPE_BALANCER: retval = str_new ("Cerver type: BALANCER"); break;
-
-        default: retval = str_new ("Cerver type: UNKNOWN"); break;
-    }
-
-    return retval;
+	return cerver_type_to_string (CERVER_TYPE_NONE);
 
 }
 
-String *cerver_handler_type_to_string (CerverHandlerType type) {
+const char *cerver_handler_type_to_string (CerverHandlerType type) {
 
-    String *retval = NULL;
+	switch (type) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #string;
+		CERVER_HANDLER_TYPE_MAP(XX)
+		#undef XX
+	}
 
-    switch (type) {
-        case CERVER_HANDLER_TYPE_POLL: retval = str_new ("Cerver handler type: POLL"); break;
+	return cerver_handler_type_to_string (CERVER_TYPE_NONE);
 
-        case CERVER_HANDLER_TYPE_THREADS: retval = str_new ("Cerver handler type: THREADS"); break;
+}
 
-        default: retval = str_new ("Cerver handler type: NONE"); break;
-    }
+const char *cerver_handler_type_description (CerverHandlerType type) {
 
-    return retval;
+	switch (type) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #description;
+		CERVER_HANDLER_TYPE_MAP(XX)
+		#undef XX
+	}
 
+	return cerver_handler_type_description (CERVER_TYPE_NONE);
+	
 }
 
 #pragma region info

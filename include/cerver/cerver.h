@@ -52,32 +52,40 @@ struct _Packet;
 struct _PacketsPerType;
 struct _Handler;
 
+#define CERVER_TYPE_MAP(XX)					\
+	XX(0,	NONE, 		None)				\
+	XX(1,	CUSTOM, 	Custom)				\
+	XX(2,	GAME, 		Game)				\
+	XX(3,	WEB, 		Web)				\
+	XX(4,	FILES, 		Files)              \
+	XX(5,	BALANCER, 	Balancer)
+
 typedef enum CerverType {
 
-    CERVER_TYPE_NONE            = 0,
-
-    CERVER_TYPE_CUSTOM          = 1,
-
-    CERVER_TYPE_GAME            = 2,
-    CERVER_TYPE_WEB             = 3,
-    CERVER_TYPE_FILE            = 4,
-
-    CERVER_TYPE_BALANCER        = 5
+	#define XX(num, name, string) CERVER_TYPE_##name = num,
+	CERVER_TYPE_MAP (XX)
+	#undef XX
 
 } CerverType;
 
-CERVER_EXPORT String *cerver_type_to_string (CerverType type);
+CERVER_EXPORT const char *cerver_type_to_string (CerverType type);
+
+#define CERVER_HANDLER_TYPE_MAP(XX)																\
+	XX(0,	NONE, 		None, 		None)														\
+	XX(1,	POLL, 		Poll, 		Handle connections using a single thread & poll ())			\
+	XX(2,	THREADS, 	Threads, 	Handle each new connection in a dedicated thread)
 
 typedef enum CerverHandlerType {
 
-    CERVER_HANDLER_TYPE_NONE            = 0,
-
-    CERVER_HANDLER_TYPE_POLL            = 1, // handle connections using a single thread & poll ()
-    CERVER_HANDLER_TYPE_THREADS         = 2, // handle each new connection in a dedicated thread
+	#define XX(num, name, string, description) CERVER_HANDLER_TYPE_##name = num,
+	CERVER_HANDLER_TYPE_MAP (XX)
+	#undef XX
 
 } CerverHandlerType;
 
-CERVER_EXPORT String *cerver_handler_type_to_string (CerverHandlerType type);
+CERVER_EXPORT const char *cerver_handler_type_to_string (CerverHandlerType type);
+
+CERVER_EXPORT const char *cerver_handler_type_description (CerverHandlerType type);
 
 #pragma region info
 
