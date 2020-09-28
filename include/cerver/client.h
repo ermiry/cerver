@@ -285,8 +285,6 @@ struct _ClientEvent {
 
 typedef struct _ClientEvent ClientEvent;
 
-CERVER_PRIVATE void client_event_delete (void *ptr);
-
 // registers an action to be triggered when the specified event occurs
 // if there is an existing action registered to an event, it will be overrided
 // a newly allocated ClientEventData structure will be passed to your method
@@ -336,23 +334,28 @@ CERVER_PUBLIC void client_event_data_delete (ClientEventData *event_data);
 
 #pragma region errors
 
+#define CLIENT_ERROR_MAP(XX)													\
+	XX(0,	NONE, 				No error)										\
+	XX(1,	CERVER_ERROR, 		The cerver had an internal error)				\
+	XX(2,	FAILED_AUTH, 		Client failed to authenticate)					\
+	XX(3,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
+	XX(4,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
+	XX(5,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
+	XX(6,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
+	XX(7,	GAME_INIT, 			The game failed to init)						\
+	XX(8,	GAME_START, 		The game failed to start)						\
+	XX(9,	UNKNOWN, 			Unknown error)
+
 typedef enum ClientErrorType {
 
-	CLIENT_ERROR_NONE                    = 0,
-
-	CLIENT_ERROR_CERVER_ERROR            = 1, // internal server error, like no memory
-
-	CLIENT_ERROR_FAILED_AUTH             = 2, // we failed to authenticate with the cerver
-
-	CLIENT_ERROR_CREATE_LOBBY            = 3, // failed to create a new game lobby
-	CLIENT_ERROR_JOIN_LOBBY              = 4, // a client / player failed to join an existin lobby
-	CLIENT_ERROR_LEAVE_LOBBY             = 5, // a player failed to leave from a lobby
-	CLIENT_ERROR_FIND_LOBBY              = 6, // failed to find a game lobby for a player
-
-	CLIENT_ERROR_GAME_INIT               = 7, // the game failed to init properly
-	CLIENT_ERROR_GAME_START              = 8, // the game failed to start
+	#define XX(num, name, description) CLIENT_ERROR_##name = num,
+	CLIENT_ERROR_MAP (XX)
+	#undef XX
 
 } ClientErrorType;
+
+// get the description for the current error type
+CERVER_EXPORT const char *client_error_type_description (ClientErrorType type);
 
 struct _ClientError {
 
@@ -366,33 +369,32 @@ struct _ClientError {
 
 };
 
-typedef struct ClientError ClientError;
+typedef struct _ClientError ClientError;
 
 // registers an action to be triggered when the specified error occurs
 // if there is an existing action registered to an error, it will be overrided
-// a newly allocated ClientErrorData structure will be passed to your method
+// a newly allocated ClientErrorData structure will be passed to your method 
 // that should be free using the client_error_data_delete () method
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 client_error_register (
-	struct _Client *client, const ClientErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	struct _Client *client,
+	const ClientErrorType error_type,
+	Action action, void *action_args, Action delete_action_args, 
 	bool create_thread, bool drop_after_trigger
 );
 
 // unregisters the action associated with the error types
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if error is NOT registered
 CERVER_EXPORT u8 client_error_unregister (struct _Client *client, const ClientErrorType error_type);
 
 // triggers all the actions that are registred to an error
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 client_error_trigger (
-	const ClientErrorType error_type,
-	const struct _Client *client, const struct _Connection *connection,
+	const ClientErrorType error_type, 
+	const struct _Client *client, const struct _Connection *connection, 
 	const char *error_message
 );
-
-#pragma region data
 
 // structure that is passed to the user registered method
 typedef struct ClientErrorData {

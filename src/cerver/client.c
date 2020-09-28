@@ -1049,7 +1049,7 @@ static ClientEvent *client_event_new (void) {
 
 }
 
-void client_event_delete (void *ptr) {
+static void client_event_delete (void *ptr) {
 
 	if (ptr) {
 		ClientEvent *event = (ClientEvent *) ptr;
@@ -1189,6 +1189,19 @@ void client_event_trigger (
 
 u8 client_error_unregister (Client *client, const ClientErrorType error_type);
 
+// get the description for the current error type
+const char *client_error_type_description (ClientErrorType type) {
+
+	switch (type) {
+		#define XX(num, name, description) case CLIENT_ERROR_##name: return #description;
+		CLIENT_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return client_error_type_description (CLIENT_ERROR_UNKNOWN);
+
+}
+
 static ClientErrorData *client_error_data_new (void) {
 
 	ClientErrorData *error_data = (ClientErrorData *) malloc (sizeof (ClientErrorData));
@@ -1268,44 +1281,14 @@ static void client_error_delete (void *client_error_ptr) {
 
 }
 
-static ClientError *client_error_get (
-	const Client *client, const ClientErrorType error_type,
-	ListElement **le_ptr
-) {
-
-	if (client) {
-		if (client->errors) {
-			ClientError *error = NULL;
-			for (ListElement *le = dlist_start (client->errors); le; le = le->next) {
-				error = (ClientError *) le->data;
-				if (error->type == error_type) {
-					if (le_ptr) *le_ptr = le;
-					return error;
-				}
-			}
-		}
-	}
-
-	return NULL;
-
-}
-
-static void client_error_pop (DoubleList *list, ListElement *le) {
-
-	if (le) {
-		void *data = dlist_remove_element (list, le);
-		if (data) client_error_delete (data);
-	}
-
-}
-
 // registers an action to be triggered when the specified error occurs
 // if there is an existing action registered to an error, it will be overrided
 // a newly allocated ClientErrorData structure will be passed to your method
 // that should be free using the client_error_data_delete () method
 // returns 0 on success, 1 on error
 u8 client_error_register (
-	Client *client, const ClientErrorType error_type,
+	Client *client,
+	const ClientErrorType error_type,
 	Action action, void *action_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
@@ -1313,29 +1296,23 @@ u8 client_error_register (
 	u8 retval = 1;
 
 	if (client) {
-		if (client->errors) {
-			ClientError *error = client_error_new ();
-			if (error) {
-				error->type = error_type;
+		ClientError *error = client_error_new ();
+		if (error) {
+			error->type = error_type;
 
-				error->create_thread = create_thread;
-				error->drop_after_trigger = drop_after_trigger;
+			error->create_thread = create_thread;
+			error->drop_after_trigger = drop_after_trigger;
 
-				error->action = action;
-				error->action_args = action_args;
-				error->delete_action_args = delete_action_args;
+			error->action = action;
+			error->action_args = action_args;
+			error->delete_action_args = delete_action_args;
 
-				// search if there is an action already registred for that error and remove it
-				(void) client_error_unregister (client, error_type);
+			// search if there is an action already registred for that error and remove it
+			(void) client_error_unregister (client, error_type);
 
-				if (!dlist_insert_after (
-					client->errors,
-					dlist_end (client->errors),
-					error
-				)) {
-					retval = 0;
-				}
-			}
+			client->errors[error_type] = error;
+
+			retval = 0;
 		}
 	}
 
@@ -1345,23 +1322,17 @@ u8 client_error_register (
 
 // unregisters the action associated with the error types
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if error is NOT registered
 u8 client_error_unregister (Client *client, const ClientErrorType error_type) {
 
 	u8 retval = 1;
 
 	if (client) {
-		if (client->errors) {
-			ClientError *error = NULL;
-			for (ListElement *le = dlist_start (client->errors); le; le = le->next) {
-				error = (ClientError *) le->data;
-				if (error->type == error_type) {
-					client_error_delete (dlist_remove_element (client->errors, le));
-					retval = 0;
+		if (client->errors[error_type]) {
+			client_error_delete (client->errors[error_type]);
+			client->errors[error_type] = NULL;
 
-					break;
-				}
-			}
+			retval = 0;
 		}
 	}
 
@@ -1371,7 +1342,8 @@ u8 client_error_unregister (Client *client, const ClientErrorType error_type) {
 
 // triggers all the actions that are registred to an error
 // returns 0 on success, 1 on error
-u8 client_error_trigger (const ClientErrorType error_type,
+u8 client_error_trigger (
+	const ClientErrorType error_type,
 	const Client *client, const Connection *connection,
 	const char *error_message
 ) {
@@ -1379,8 +1351,7 @@ u8 client_error_trigger (const ClientErrorType error_type,
 	u8 retval = 1;
 
 	if (client) {
-		ListElement *le = NULL;
-		ClientError *error = client_error_get (client, error_type, &le);
+		ClientError *error = client->errors[error_type];
 		if (error) {
 			// trigger the action
 			if (error->action) {
@@ -1407,7 +1378,9 @@ u8 client_error_trigger (const ClientErrorType error_type,
 					retval = 0;
 				}
 
-				if (error->drop_after_trigger) client_error_pop (client->errors, le);
+				if (error->drop_after_trigger) {
+					(void) client_error_unregister ((Client *) client, error_type);
+				}
 			}
 		}
 	}
