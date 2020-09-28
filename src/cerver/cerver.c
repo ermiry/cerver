@@ -15,8 +15,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/collections/dlist.h"
 #include "cerver/collections/avl.h"
+#include "cerver/collections/dlist.h"
 #include "cerver/collections/pool.h"
 
 #include "cerver/admin.h"
@@ -24,11 +24,11 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
+#include "cerver/events.h"
+#include "cerver/errors.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
-#include "cerver/events.h"
-#include "cerver/errors.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -338,8 +338,11 @@ Cerver *cerver_new (void) {
 
 		c->admin = NULL;
 
-		c->events = NULL;
-		c->errors = NULL;
+		for (unsigned int i = 0; i < CERVER_MAX_EVENTS; i++)
+			c->events[i] = NULL;
+
+		for (unsigned int i = 0; i < CERVER_MAX_ERRORS; i++)
+			c->errors[i] = NULL;
 
 		c->info = NULL;
 		c->stats = NULL;
@@ -404,8 +407,11 @@ void cerver_delete (void *ptr) {
 
 		admin_cerver_delete (cerver->admin);
 
-		dlist_delete (cerver->events);
-		dlist_delete (cerver->errors);
+		for (unsigned int i = 0; i < CERVER_MAX_EVENTS; i++)
+			if (cerver->events[i]) cerver_event_delete (cerver->events[i]);
+
+		for (unsigned int i = 0; i < CERVER_MAX_ERRORS; i++)
+			if (cerver->errors[i]) cerver_error_event_delete (cerver->errors[i]);
 
 		cerver_info_delete (cerver->info);
 		cerver_stats_delete (cerver->stats);
@@ -1117,9 +1123,6 @@ Cerver *cerver_create (const CerverType type, const char *name,
 			cerver_set_poll_time_out (cerver, poll_timeout);
 
 			cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
-
-			cerver->events = dlist_init (cerver_event_delete, NULL);
-			cerver->errors = dlist_init (cerver_error_event_delete, NULL);
 
 			cerver->info = cerver_info_new ();
 			cerver->info->name = str_new (name);

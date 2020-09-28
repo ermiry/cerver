@@ -16,11 +16,13 @@
 #include "cerver/collections/htab.h"
 #include "cerver/collections/pool.h"
 
-#include "cerver/config.h"
 #include "cerver/admin.h"
+#include "cerver/config.h"
+#include "cerver/events.h"
+#include "cerver/errors.h"
+#include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
-#include "cerver/handler.h"
 
 #include "cerver/threads/thpool.h"
 
@@ -264,8 +266,8 @@ struct _Cerver {
 	struct _AdminCerver *admin;
 	pthread_t admin_thread_id;
 
-	DoubleList *events;
-	DoubleList *errors;
+	CerverEvent *events[CERVER_MAX_EVENTS];
+	CerverErrorEvent *errors[CERVER_MAX_ERRORS];
 
 	CerverInfo *info;
 	CerverStats *stats;
