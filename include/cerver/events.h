@@ -13,6 +13,8 @@ struct _Connection;
 
 #pragma region types
 
+#define CERVER_MAX_EVENTS				32
+
 #define CERVER_EVENT_MAP(XX)																		\
 	XX(0,	NONE, 						No event)													\
 	XX(1,	STARTED, 					The cerver has started)										\
@@ -83,7 +85,7 @@ CERVER_EXPORT u8 cerver_event_register (
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if event is NOT registered
 CERVER_EXPORT u8 cerver_event_unregister (struct _Cerver *cerver, const CerverEventType event_type);
 
 // triggers all the actions that are registred to an event

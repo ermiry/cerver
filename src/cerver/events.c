@@ -115,37 +115,6 @@ void cerver_event_delete (void *event_ptr) {
 
 }
 
-static CerverEvent *cerver_event_get (
-	const Cerver *cerver, const CerverEventType event_type,
-	ListElement **le_ptr
-) {
-
-	if (cerver) {
-		if (cerver->events) {
-			CerverEvent *event = NULL;
-			for (ListElement *le = dlist_start (cerver->events); le; le = le->next) {
-				event = (CerverEvent *) le->data;
-				if (event->type == event_type) {
-					if (le_ptr) *le_ptr = le;
-					return event;
-				}
-			}
-		}
-	}
-
-	return NULL;
-
-}
-
-static void cerver_event_pop (DoubleList *list, ListElement *le) {
-
-	if (le) {
-		void *data = dlist_remove_element (list, le);
-		if (data) cerver_event_delete (data);
-	}
-
-}
-
 // registers an action to be triggered when the specified event occurs
 // if there is an existing action registered to an event, it will be overrided
 // a newly allocated CerverEventData structure will be passed to your method
@@ -161,29 +130,23 @@ u8 cerver_event_register (
 	u8 retval = 1;
 
 	if (cerver) {
-		if (cerver->events) {
-			CerverEvent *event = cerver_event_new ();
-			if (event) {
-				event->type = event_type;
+		CerverEvent *event = cerver_event_new ();
+		if (event) {
+			event->type = event_type;
 
-				event->create_thread = create_thread;
-				event->drop_after_trigger = drop_after_trigger;
+			event->create_thread = create_thread;
+			event->drop_after_trigger = drop_after_trigger;
 
-				event->action = action;
-				event->action_args = action_args;
-				event->delete_action_args = delete_action_args;
+			event->action = action;
+			event->action_args = action_args;
+			event->delete_action_args = delete_action_args;
 
-				// search if there is an action already registred for that event and remove it
-				(void) cerver_event_unregister (cerver, event_type);
+			// search if there is an action already registred for that event and remove it
+			(void) cerver_event_unregister (cerver, event_type);
 
-				if (!dlist_insert_after (
-					cerver->events,
-					dlist_end (cerver->events),
-					event
-				)) {
-					retval = 0;
-				}
-			}
+			cerver->events[event_type] = event;
+
+			retval = 0;
 		}
 	}
 
@@ -193,23 +156,17 @@ u8 cerver_event_register (
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if event is NOT registered
 u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		if (cerver->events) {
-			CerverEvent *event = NULL;
-			for (ListElement *le = dlist_start (cerver->events); le; le = le->next) {
-				event = (CerverEvent *) le->data;
-				if (event->type == event_type) {
-					cerver_event_delete (dlist_remove_element (cerver->events, le));
-					retval = 0;
+		if (cerver->events[event_type]) {
+			cerver_event_delete (cerver->events[event_type]);
+			cerver->events[event_type] = NULL;
 
-					break;
-				}
-			}
+			retval = 0;
 		}
 	}
 
@@ -225,8 +182,7 @@ void cerver_event_trigger (
 ) {
 
 	if (cerver) {
-		ListElement *le = NULL;
-		CerverEvent *event = cerver_event_get (cerver, event_type, &le);
+		CerverEvent *event = cerver->events[event_type];
 		if (event) {
 			// trigger the action
 			if (event->action) {
@@ -251,7 +207,9 @@ void cerver_event_trigger (
 					));
 				}
 
-				if (event->drop_after_trigger) cerver_event_pop (cerver->events, le);
+				if (event->drop_after_trigger) {
+					(void) cerver_event_unregister ((Cerver *) cerver, event_type);
+				}
 			}
 		}
 	}
