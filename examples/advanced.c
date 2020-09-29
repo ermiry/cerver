@@ -52,8 +52,8 @@ static void my_app_handler_direct (void *data) {
 
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a APP_PACKET test request!");
-				handle_test_request (packet, APP_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_APP test request!");
+				handle_test_request (packet, PACKET_TYPE_APP); 
 				break;
 
 			default: 
@@ -71,8 +71,8 @@ static void my_app_error_handler_direct (void *data) {
 
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-				handle_test_request (packet, APP_ERROR_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_APP_ERROR test request!");
+				handle_test_request (packet, PACKET_TYPE_APP_ERROR); 
 				break;
 
 			default: 
@@ -90,8 +90,8 @@ static void my_custom_handler_direct (void *data) {
 		
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-				handle_test_request (packet, CUSTOM_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_CUSTOM test request!");
+				handle_test_request (packet, PACKET_TYPE_CUSTOM); 
 				break;
 
 			default: 

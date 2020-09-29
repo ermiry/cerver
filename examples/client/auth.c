@@ -200,7 +200,7 @@ static int client_test_app_msg_send (Client *client, Connection *connection) {
     int retval = 1;
 
     if ((client->running) && connection->active) {
-        Packet *packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+        Packet *packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
         if (packet) {
             packet_set_network_values (packet, NULL, client, connection, NULL);
             size_t sent = 0;
@@ -231,7 +231,7 @@ static void handle_test_request (Packet *packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
 		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 		
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;

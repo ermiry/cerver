@@ -136,7 +136,7 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 			free (status);
 		}
 		
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
@@ -169,7 +169,7 @@ static void handle_msg_request (Packet *packet, unsigned int handler_id, String 
 		strncpy (app_message->message, msg->str, 128);
 		app_message->len = msg->len;
 		
-		Packet *msg_packet = packet_generate_request (APP_PACKET, GET_MSG, app_message, sizeof (AppMessage));
+		Packet *msg_packet = packet_generate_request (PACKET_TYPE_APP, GET_MSG, app_message, sizeof (AppMessage));
 		if (msg_packet) {
 			packet_set_network_values (msg_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
