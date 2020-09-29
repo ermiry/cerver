@@ -2812,7 +2812,7 @@ u8 cerver_report_check_info (
 				break;
 
 			case CERVER_TYPE_BALANCER:
-				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: BALANECR");
+				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: BALANCER");
 				break;
 
 			default:
