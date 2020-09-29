@@ -28,7 +28,7 @@ const char *balancer_type_to_string (BalcancerType type);
 
 #pragma region main
 
-typedef struct Balancer {
+struct _Balancer {
 
 	BalcancerType type;
 
@@ -39,7 +39,9 @@ typedef struct Balancer {
 	unsigned int n_services;		// how many services the load balancer is connected to
 	Connection **services;			// references to the client's connections for direct access
 
-} Balancer;
+};
+
+typedef struct _Balancer Balancer;
 
 CERVER_PRIVATE Balancer *balancer_new (void);
 

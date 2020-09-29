@@ -77,6 +77,8 @@ Balancer *balancer_create (
 			port, PROTOCOL_TCP, false, connection_queue, DEFAULT_POLL_TIMEOUT
 		);
 
+		balancer->cerver->balancer = balancer;
+
 		balancer->client = client_create ();
 		client_set_name (balancer->client, "balancer-client");
 
@@ -116,7 +118,7 @@ u8 balancer_service_register (
 
 			if (connection) {
 				char name[64] = { 0 };
-				snprintf (name, 64, "service-%d", balancer->n_services);
+				snprintf (name, 64, "service-%d", balancer->next_service);
 
 				connection_set_name (connection, name);
 				connection_set_max_sleep (connection, 30);
@@ -138,9 +140,9 @@ static u8 balancer_service_test (Balancer *balancer, Connection *service) {
 
 	u8 retval = 1;
 
-	Packet *packet = packet_create (PACKET_TYPE_TEST, NULL, 0);
+	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
 	if (packet) {
-		packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
+		// packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
 		if (!client_request_to_cerver (balancer->client, service, packet)) {
 			retval = 0;
 		}
@@ -273,5 +275,7 @@ u8 balancer_start (Balancer *balancer) {
 #pragma endregion
 
 #pragma region end
+
+// TODO:
 
 #pragma endregion
