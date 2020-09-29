@@ -107,23 +107,25 @@ u8 balancer_service_register (
 	u8 retval = 1;
 
 	if (balancer && ip_address) {
-		Connection *connection = client_connection_create (
-			balancer->client, 
-			ip_address, port,
-			PROTOCOL_TCP, false 
-		);
+		if ((balancer->next_service + 1) <= balancer->n_services) {
+			Connection *connection = client_connection_create (
+				balancer->client, 
+				ip_address, port,
+				PROTOCOL_TCP, false 
+			);
 
-		if (connection) {
-			char name[64] = { 0 };
-			snprintf (name, 64, "service-%d", balancer->n_services);
+			if (connection) {
+				char name[64] = { 0 };
+				snprintf (name, 64, "service-%d", balancer->n_services);
 
-			connection_set_name (connection, name);
-			connection_set_max_sleep (connection, 30);
+				connection_set_name (connection, name);
+				connection_set_max_sleep (connection, 30);
 
-			balancer->services[balancer->next_service] = connection;
-			balancer->next_service += 1;
+				balancer->services[balancer->next_service] = connection;
+				balancer->next_service += 1;
 
-			retval = 0;
+				retval = 0;
+			}
 		}
 	}
 
