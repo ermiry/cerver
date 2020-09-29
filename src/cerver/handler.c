@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <errno.h>
+#include <fcntl.h>
 
 #include <sys/prctl.h>
 
@@ -12,6 +13,7 @@
 #include "cerver/collections/htab.h"
 
 #include "cerver/auth.h"
+#include "cerver/balancer.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
@@ -1595,6 +1597,62 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
+static void balancer_receive (void *cerver_receive_ptr) {
+
+	if (cerver_receive_ptr) {
+		CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+		if (cr->cerver && cr->socket) {
+			if (cr->socket > 0) {
+				printf ("\nPacketHeader: %ld\n", sizeof (PacketHeader));
+				char *header_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+				ssize_t rc = recv (cr->socket->sock_fd, header_buffer, cr->cerver->receive_buffer_size, 0);
+				// char header_buffer[128] = { 0 };
+				// ssize_t rc = recv (cr->socket->sock_fd, header_buffer, 32, MSG_DONTWAIT);
+
+				// printf ("\n");
+				printf ("rc -> %ld\n", rc);
+				perror ("Error");
+				printf ("\n");
+
+				switch (rc) {
+					case -1: {
+						// TODO:
+					} break;
+
+					case 0: {
+						// TODO:
+					} break;
+
+					default: {
+						// TODO: select the correct service
+						Connection *service = cr->cerver->balancer->services[0];
+
+						PacketHeader *header = (PacketHeader *) header_buffer;
+						printf ("Packet size: %ld\n", header->packet_size);
+
+						// send the header to the selected service
+						send (service->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
+
+						// splice remaining packet to service
+						splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, header->packet_size - sizeof (PacketHeader), 0);
+					} break;
+				}
+			}
+
+			else {
+				cerver_log_warning ("balancer_receive () - cr->socket <= 0");
+				cerver_receive_delete (cr);
+			}
+		}
+
+		else {
+			cerver_receive_delete (cr);
+		}
+	}
+
+}
+
 // receive all incoming data from the socket
 void cerver_receive (void *cerver_receive_ptr) {
 
@@ -2599,7 +2657,11 @@ static inline void cerver_poll_handle_actual_receive (Cerver *cerver, const u32 
 
 			else {
 				// handle all received packets in the same thread
-				cerver_receive (cr);
+				switch (cr->cerver->type) {
+					case CERVER_TYPE_BALANCER: balancer_receive (cr); break;
+
+					default: cerver_receive (cr); break;
+				}
 			}
 		} break;
 
@@ -2618,8 +2680,7 @@ static inline void cerver_poll_handle_actual_receive (Cerver *cerver, const u32 
 		} break;
 
 		// Urgent data arrived. SIGURG is sent then.
-		case POLLPRI: {
-		} break;
+		case POLLPRI: break;
 
 		default: {
 			if (cerver->fds[idx].revents != 0) {
