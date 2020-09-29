@@ -11,6 +11,7 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
+#include "cerver/packets.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -118,9 +119,9 @@ u8 balancer_service_register (
 	if (balancer && ip_address) {
 		if ((balancer->next_service + 1) <= balancer->n_services) {
 			Connection *connection = client_connection_create (
-				balancer->client, 
+				balancer->client,
 				ip_address, port,
-				PROTOCOL_TCP, false 
+				PROTOCOL_TCP, false
 			);
 
 			if (connection) {
@@ -285,6 +286,59 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region handler
 
+// FIXME: discard buffer on bad types
+static void balancer_client_receive_success (
+	Client *client, Connection *connection,
+	PacketHeader *header
+) {
+
+	switch (header->packet_type) {
+		case PACKET_TYPE_NONE: break;
+
+		case PACKET_TYPE_CLIENT: break;
+
+		case PACKET_TYPE_AUTH: break;
+
+		case PACKET_TYPE_TEST: break;
+
+		// only route packets of these types back to original client
+		case PACKET_TYPE_CERVER:
+		case PACKET_TYPE_ERROR:
+		case PACKET_TYPE_REQUEST:
+		case PACKET_TYPE_GAME:
+		case PACKET_TYPE_APP:
+		case PACKET_TYPE_APP_ERROR:
+		case PACKET_TYPE_CUSTOM: {
+			// FIXME: better handler
+
+			// send the header to the selected service
+			send (header->sock_fd, header, sizeof (PacketHeader), 0);
+
+			// splice remaining packet to service
+			size_t left = header->packet_size - sizeof (PacketHeader);
+			if (left) {
+				splice (connection->socket->sock_fd, NULL, header->sock_fd, NULL, left, 0);
+			}
+		} break;
+
+		default: {
+			client->stats->received_packets->n_bad_packets += 1;
+			connection->stats->received_packets->n_bad_packets += 1;
+			#ifdef CLIENT_DEBUG
+			cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Got a packet of unknown type.");
+			#endif
+		} break;
+	}
+
+	// FIXME: update stats
+	// client->stats->n_receives_done += 1;
+	// client->stats->total_bytes_received += rc;
+
+	// connection->stats->n_receives_done += 1;
+	// connection->stats->total_bytes_received += rc;
+
+}
+
 // custom receive method for packets comming from the services
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
 static u8 balancer_client_receive (void *custom_data_ptr) {
@@ -297,77 +351,55 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 	Connection *connection = custom_data->connection;
 
 	if (client && connection) {
-		char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
-		if (packet_buffer) {
-			ssize_t rc = recv (connection->socket->sock_fd, packet_buffer, connection->receive_packet_buffer_size, 0);
+		char header_buffer[sizeof (PacketHeader)] = { 0 };
+		ssize_t rc = recv (connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
 
-			switch (rc) {
-				case -1: {
-					if (errno != EWOULDBLOCK) {
-						#ifdef CLIENT_DEBUG
-						char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd);
-						if (s) {
-							cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
-							free (s);
-						}
-						perror ("Error");
-						#endif
-
-						client_receive_handle_failed (client, connection);
-					}
-				} break;
-
-				case 0: {
-					// man recv -> steam socket perfomed an orderly shutdown
-					// but in dgram it might mean something?
+		switch (rc) {
+			case -1: {
+				if (errno != EWOULDBLOCK) {
 					#ifdef CLIENT_DEBUG
-					char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
-						connection->socket->sock_fd);
+					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd);
 					if (s) {
-						cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, s);
+						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, s);
 						free (s);
 					}
-					// perror ("Error");
+					perror ("Error");
 					#endif
 
-					client_receive_handle_failed (client, connection);
-				} break;
-
-				default: {
-					// char *s = c_string_create ("Connection %s rc: %ld",
-					//     connection->name->str, rc);
-					// if (s) {
-					//     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
-					//     free (s);
-					// }
-
-					client->stats->n_receives_done += 1;
-					client->stats->total_bytes_received += rc;
-
-					connection->stats->n_receives_done += 1;
-					connection->stats->total_bytes_received += rc;
-
 					// FIXME:
-					// handle the recived packet buffer -> split them in packets of the correct size
-					// client_receive_handle_buffer (
-					// 	client,
-					// 	connection,
-					// 	packet_buffer,
-					// 	rc
-					// );
+					// client_receive_handle_failed (client, connection);
+				}
+			} break;
 
-					retval = 0;
-				} break;
-			}
+			case 0: {
+				#ifdef CLIENT_DEBUG
+				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d",
+					connection->socket->sock_fd);
+				if (s) {
+					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
+					free (s);
+				}
+				#endif
 
-			free (packet_buffer);
-		}
+				// FIXME:
+				// client_receive_handle_failed (client, connection);
+			} break;
 
-		else {
-			#ifdef CLIENT_DEBUG
-			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to allocate a new packet buffer!");
-			#endif
+			default: {
+				// char *s = c_string_create ("Connection %s rc: %ld",
+				// 	connection->name->str, rc);
+				// if (s) {
+				// 	cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
+				// 	free (s);
+				// }
+
+				balancer_client_receive_success (
+					client, connection,
+					(PacketHeader *) header_buffer
+				);
+
+				retval = 0;
+			} break;
 		}
 	}
 
