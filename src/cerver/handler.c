@@ -1539,14 +1539,7 @@ static inline void cerver_receive_success_receive_handle (CerverReceive *cr, ssi
 
 }
 
-static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
-
-	// char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
-	//     cr->cerver->info->name->str, rc, cr->sock_fd);
-	// if (status) {
-	//     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
-	//     free (status);
-	// }
+static void cerver_receive_success_update_stats (CerverReceive *cr, ssize_t rc) {
 
 	cr->socket->packet_buffer_size = rc;
 
@@ -1554,9 +1547,7 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 	cr->cerver->stats->total_bytes_received += rc;
 
 	switch (cr->cerver->type) {
-		case CERVER_TYPE_WEB:
-			http_receive_handle (cr, rc, packet_buffer);
-			break;
+		case CERVER_TYPE_WEB: break;
 
 		default: {
 			if (cr->lobby) {
@@ -1597,17 +1588,37 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 				default: break;
 			}
-
-			cerver_receive_success_receive_handle (cr, rc, packet_buffer);
 		} break;
 	}
 
 }
 
+static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
+
+	// char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
+	//     cr->cerver->info->name->str, rc, cr->socket->sock_fd);
+	// if (status) {
+	//     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
+	//     free (status);
+	// }
+
+	cerver_receive_success_update_stats (cr, rc);
+
+	switch (cr->cerver->type) {
+		case CERVER_TYPE_WEB:
+			http_receive_handle (cr, rc, packet_buffer);
+			break;
+
+		default:
+			cerver_receive_success_receive_handle (cr, rc, packet_buffer);
+			break;
+	}
+
+}
+
+// TODO: do we want to update other cerver stats?
 // FIXME: discard buffer on bad types
 static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
-
-	printf ("Packet size: %ld\n", header->packet_size);
 
 	switch (header->packet_type) {
 		case PACKET_TYPE_NONE: break;
@@ -1663,6 +1674,9 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 		} break;
 	}
 
+	// FIXME: update stats based on action
+	// cerver_receive_success_update_stats (cr, rc);
+
 }
 
 static void balancer_receive (void *cerver_receive_ptr) {
@@ -1698,8 +1712,6 @@ static void balancer_receive (void *cerver_receive_ptr) {
 					} break;
 
 					case 0: {
-						// man recv -> steam socket perfomed an orderly shutdown
-						// but in dgram it might mean something?
 						#ifdef HANDLER_DEBUG
 						char *s = c_string_create (
 							"balancer_receive () - rc == 0 - sock fd: %d",
@@ -1710,8 +1722,6 @@ static void balancer_receive (void *cerver_receive_ptr) {
 							cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
 							free (s);
 						}
-
-						// perror ("Error ");
 						#endif
 
 						cerver_switch_receive_handle_failed (cr);
@@ -1776,7 +1786,6 @@ void cerver_receive (void *cerver_receive_ptr) {
 
 						case 0: {
 							// man recv -> steam socket perfomed an orderly shutdown
-							// but in dgram it might mean something?
 							#ifdef HANDLER_DEBUG
 							char *s = c_string_create (
 								"cerver_recieve () - rc == 0 - sock fd: %d",
