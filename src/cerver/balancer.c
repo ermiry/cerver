@@ -136,7 +136,7 @@ static u8 balancer_service_test (Balancer *balancer, Connection *service) {
 
 	u8 retval = 1;
 
-	Packet *packet = packet_create (TEST_PACKET, NULL, 0);
+	Packet *packet = packet_create (PACKET_TYPE_TEST, NULL, 0);
 	if (packet) {
 		packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
 		if (!client_request_to_cerver (balancer->client, service, packet)) {
