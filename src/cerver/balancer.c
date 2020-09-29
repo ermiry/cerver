@@ -1,4 +1,9 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+
+#include <errno.h>
 
 #include "cerver/types/types.h"
 
@@ -9,6 +14,8 @@
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
+
+static u8 balancer_client_receive (void *custom_data_ptr);
 
 const char *balancer_type_to_string (BalcancerType type) {
 
@@ -122,6 +129,8 @@ u8 balancer_service_register (
 
 				connection_set_name (connection, name);
 				connection_set_max_sleep (connection, 30);
+
+				connection_set_custom_receive (connection, balancer_client_receive, NULL);
 
 				balancer->services[balancer->next_service] = connection;
 				balancer->next_service += 1;
@@ -265,6 +274,100 @@ u8 balancer_start (Balancer *balancer) {
 			if (!balancer_start_client (balancer)) {
 				retval = balancer_start_cerver (balancer);
 			}
+		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region handler
+
+// custom receive method for packets comming from the services
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+static u8 balancer_client_receive (void *custom_data_ptr) {
+
+	unsigned int retval = 1;
+
+	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) custom_data_ptr;
+
+	Client *client = custom_data->client;
+	Connection *connection = custom_data->connection;
+
+	if (client && connection) {
+		char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
+		if (packet_buffer) {
+			ssize_t rc = recv (connection->socket->sock_fd, packet_buffer, connection->receive_packet_buffer_size, 0);
+
+			switch (rc) {
+				case -1: {
+					if (errno != EWOULDBLOCK) {
+						#ifdef CLIENT_DEBUG
+						char *s = c_string_create ("client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd);
+						if (s) {
+							cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
+							free (s);
+						}
+						perror ("Error");
+						#endif
+
+						client_receive_handle_failed (client, connection);
+					}
+				} break;
+
+				case 0: {
+					// man recv -> steam socket perfomed an orderly shutdown
+					// but in dgram it might mean something?
+					#ifdef CLIENT_DEBUG
+					char *s = c_string_create ("client_receive () - rc == 0 - sock fd: %d",
+						connection->socket->sock_fd);
+					if (s) {
+						cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, s);
+						free (s);
+					}
+					// perror ("Error");
+					#endif
+
+					client_receive_handle_failed (client, connection);
+				} break;
+
+				default: {
+					// char *s = c_string_create ("Connection %s rc: %ld",
+					//     connection->name->str, rc);
+					// if (s) {
+					//     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
+					//     free (s);
+					// }
+
+					client->stats->n_receives_done += 1;
+					client->stats->total_bytes_received += rc;
+
+					connection->stats->n_receives_done += 1;
+					connection->stats->total_bytes_received += rc;
+
+					// FIXME:
+					// handle the recived packet buffer -> split them in packets of the correct size
+					// client_receive_handle_buffer (
+					// 	client,
+					// 	connection,
+					// 	packet_buffer,
+					// 	rc
+					// );
+
+					retval = 0;
+				} break;
+			}
+
+			free (packet_buffer);
+		}
+
+		else {
+			#ifdef CLIENT_DEBUG
+			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
+				"Failed to allocate a new packet buffer!");
+			#endif
 		}
 	}
 
