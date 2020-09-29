@@ -1604,6 +1604,67 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
+// FIXME: discard buffer on bad types
+static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
+
+	printf ("Packet size: %ld\n", header->packet_size);
+
+	switch (header->packet_type) {
+		case PACKET_TYPE_NONE: break;
+
+		case PACKET_TYPE_CLIENT:
+			cr->cerver->stats->received_packets->n_client_packets += 1;
+			cr->client->stats->received_packets->n_client_packets += 1;
+			cr->connection->stats->received_packets->n_client_packets += 1;
+			cerver_client_packet_handler_by_header (
+				header,
+				cr->cerver, cr->client, cr->connection, cr->lobby
+			);
+			break;
+
+		case PACKET_TYPE_ERROR: break;
+
+		case PACKET_TYPE_AUTH: break;
+
+		// only route packets of these types to services
+		case PACKET_TYPE_CERVER:
+			PACKET_TYPE_REQUEST:
+			PACKET_TYPE_GAME:
+			PACKET_TYPE_APP:
+			PACKET_TYPE_APP_ERROR:
+			PACKET_TYPE_APP_CUSTOM:
+			PACKET_TYPE_APP_TEST: {
+			// TODO: select the correct service
+			Connection *service = cr->cerver->balancer->services[0];
+
+			// send the header to the selected service
+			send (service->socket->sock_fd, header, sizeof (PacketHeader), 0);
+
+			// splice remaining packet to service
+			size_t left = header->packet_size - sizeof (PacketHeader);
+			if (left) {
+				splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+			}
+		} break;
+
+		default: {
+			cr->cerver->stats->received_packets->n_bad_packets += 1;
+			cr->client->stats->received_packets->n_bad_packets += 1;
+			cr->connection->stats->received_packets->n_bad_packets += 1;
+			if (cr->lobby) cr->lobby->stats->received_packets->n_bad_packets += 1;
+			#ifdef HANDLER_DEBUG
+			char *s = c_string_create ("balancer_receive () - packet of unknown type in cerver %s.",
+				cr->cerver->info->name->str);
+			if (s) {
+				cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, s);
+				free (s);
+			}
+			#endif
+		} break;
+	}
+
+}
+
 static void balancer_receive (void *cerver_receive_ptr) {
 
 	if (cerver_receive_ptr) {
@@ -1657,34 +1718,7 @@ static void balancer_receive (void *cerver_receive_ptr) {
 					} break;
 
 					default: {
-						PacketHeader *header = (PacketHeader *) header_buffer;
-						printf ("Packet size: %ld\n", header->packet_size);
-
-						switch (header->packet_type) {
-							case PACKET_TYPE_CLIENT:
-							cr->cerver->stats->received_packets->n_client_packets += 1;
-							cr->client->stats->received_packets->n_client_packets += 1;
-							cr->connection->stats->received_packets->n_client_packets += 1;
-							cerver_client_packet_handler_by_header (
-								header,
-								cr->cerver, cr->client, cr->connection, cr->lobby
-							);
-							break;
-
-							default: {
-								// TODO: select the correct service
-								Connection *service = cr->cerver->balancer->services[0];
-
-								// send the header to the selected service
-								send (service->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
-
-								// splice remaining packet to service
-								size_t left = header->packet_size - sizeof (PacketHeader);
-								if (left) {
-									splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
-								}
-							} break;
-						}
+						balancer_receive_success (cr, (PacketHeader *) header_buffer);
 					} break;
 				}
 			}
