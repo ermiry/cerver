@@ -1657,19 +1657,33 @@ static void balancer_receive (void *cerver_receive_ptr) {
 					} break;
 
 					default: {
-						// TODO: select the correct service
-						Connection *service = cr->cerver->balancer->services[0];
-
 						PacketHeader *header = (PacketHeader *) header_buffer;
 						printf ("Packet size: %ld\n", header->packet_size);
 
-						// send the header to the selected service
-						send (service->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
+						switch (header->packet_type) {
+							case PACKET_TYPE_CLIENT:
+							cr->cerver->stats->received_packets->n_client_packets += 1;
+							cr->client->stats->received_packets->n_client_packets += 1;
+							cr->connection->stats->received_packets->n_client_packets += 1;
+							cerver_client_packet_handler_by_header (
+								header,
+								cr->cerver, cr->client, cr->connection, cr->lobby
+							);
+							break;
 
-						// splice remaining packet to service
-						size_t left = header->packet_size - sizeof (PacketHeader);
-						if (left) {
-							splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+							default: {
+								// TODO: select the correct service
+								Connection *service = cr->cerver->balancer->services[0];
+
+								// send the header to the selected service
+								send (service->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
+
+								// splice remaining packet to service
+								size_t left = header->packet_size - sizeof (PacketHeader);
+								if (left) {
+									splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+								}
+							} break;
 						}
 					} break;
 				}
