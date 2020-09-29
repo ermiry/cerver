@@ -132,6 +132,16 @@ int main (void) {
 
 	load_balancer = balancer_create (BALANCER_TYPE_ROUND_ROBIN, 7000, 10, 2);
 	if (load_balancer) {
+		/*** register services ***/
+		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {
+			cerver_log_error ("Failed to register FIRST service!");
+		}
+
+		if (balancer_service_register (load_balancer, "127.0.0.1", 7002)) {
+			cerver_log_error ("Failed to register SECOND service!");
+		}
+
+		/*** register to events ***/
 		cerver_event_register (
 			load_balancer->cerver, 
 			CERVER_EVENT_STARTED,
