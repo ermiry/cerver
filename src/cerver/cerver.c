@@ -348,6 +348,8 @@ Cerver *cerver_new (void) {
 
 		c->info = NULL;
 		c->stats = NULL;
+
+		c->balancer = NULL;
 	}
 
 	return c;

@@ -46,6 +46,7 @@
 #define DEFAULT_UPDATE_TICKS                15
 #define DEFAULT_UPDATE_INTERVAL_SECS        1
 
+struct _Balancer;
 struct _Cerver;
 struct _AdminCerver;
 struct _Client;
@@ -281,6 +282,9 @@ struct _Cerver {
 
 	CerverInfo *info;
 	CerverStats *stats;
+
+	// reference to the parent load balancer
+	struct _Balancer *balancer;
 
 };
 
