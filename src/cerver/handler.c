@@ -1604,24 +1604,49 @@ static void balancer_receive (void *cerver_receive_ptr) {
 
 		if (cr->cerver && cr->socket) {
 			if (cr->socket > 0) {
-				printf ("\nPacketHeader: %ld\n", sizeof (PacketHeader));
-				char *header_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-				ssize_t rc = recv (cr->socket->sock_fd, header_buffer, cr->cerver->receive_buffer_size, 0);
-				// char header_buffer[128] = { 0 };
-				// ssize_t rc = recv (cr->socket->sock_fd, header_buffer, 32, MSG_DONTWAIT);
-
-				// printf ("\n");
-				printf ("rc -> %ld\n", rc);
-				perror ("Error");
-				printf ("\n");
+				char header_buffer[sizeof (PacketHeader)] = { 0 };
+				ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
 
 				switch (rc) {
 					case -1: {
-						// TODO:
+						// no more data to read
+						if (errno != EWOULDBLOCK) {
+							// #ifdef HANDLER_DEBUG
+							char *s = c_string_create (
+								"balancer_receive () - rc < 0 - sock fd: %d",
+								cr->socket->sock_fd
+							);
+
+							if (s) {
+								cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
+								free (s);
+							}
+
+							perror ("Error");
+							// #endif
+
+							cerver_switch_receive_handle_failed (cr);
+						}
 					} break;
 
 					case 0: {
-						// TODO:
+						// man recv -> steam socket perfomed an orderly shutdown
+						// but in dgram it might mean something?
+						#ifdef HANDLER_DEBUG
+						char *s = c_string_create (
+							"balancer_receive () - rc == 0 - sock fd: %d",
+							cr->socket->sock_fd
+						);
+
+						if (s) {
+							cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
+							free (s);
+						}
+
+						// perror ("Error ");
+						#endif
+
+						cerver_switch_receive_handle_failed (cr);
 					} break;
 
 					default: {
@@ -1635,7 +1660,10 @@ static void balancer_receive (void *cerver_receive_ptr) {
 						send (service->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
 
 						// splice remaining packet to service
-						splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, header->packet_size - sizeof (PacketHeader), 0);
+						size_t left = header->packet_size - sizeof (PacketHeader);
+						if (left) {
+							splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+						}
 					} break;
 				}
 			}
@@ -1671,7 +1699,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 						case -1: {
 							// no more data to read
 							if (errno != EWOULDBLOCK) {
-								#ifdef CERVER_DEBUG
+								#ifdef HANDLER_DEBUG
 								char *s = c_string_create (
 									"cerver_receive () - rc < 0 - sock fd: %d",
 									cr->socket->sock_fd
@@ -1682,7 +1710,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 									free (s);
 								}
 
-								perror ("Error ");
+								perror ("Error");
 								#endif
 
 								cerver_switch_receive_handle_failed (cr);
@@ -1694,7 +1722,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 						case 0: {
 							// man recv -> steam socket perfomed an orderly shutdown
 							// but in dgram it might mean something?
-							#ifdef CERVER_DEBUG
+							#ifdef HANDLER_DEBUG
 							char *s = c_string_create (
 								"cerver_recieve () - rc == 0 - sock fd: %d",
 								cr->socket->sock_fd
