@@ -186,7 +186,11 @@ static u8 balancer_service_connect (Balancer *balancer, Connection *service) {
 		}
 
 		// send test message to service
-		retval = balancer_service_test (balancer, service);
+		if (!balancer_service_test (balancer, service)) {
+			if (!client_connection_start (balancer->client, service)) {
+				retval = 0;
+			}
+		}
 	}
 
 	else {
