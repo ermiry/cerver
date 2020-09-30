@@ -120,6 +120,39 @@ Balancer *balancer_create (
 
 #pragma region services
 
+// auxiliary structure to be passed in ConnectionCustomReceiveData
+typedef struct {
+
+	Balancer *balancer;
+	Service *service;
+
+} BalancerService;
+
+static BalancerService *balancer_service_aux_new (Balancer *balancer, Service *service) {
+
+	BalancerService *bs = (BalancerService *) malloc (sizeof (BalancerService));
+	if (bs) {
+		bs->balancer = balancer;
+		bs->service = service;
+	}
+
+	return bs;
+
+}
+
+static void balancer_service_aux_delete (void *bs_ptr) {
+
+	if (bs_ptr) {
+		BalancerService *bs = (BalancerService *) bs_ptr;
+
+		bs->balancer = NULL;
+		bs->service = NULL;
+
+		free (bs_ptr);
+	}
+
+}
+
 const char *balancer_service_status_to_string (ServiceStatus status) {
 
 	switch (status) {
@@ -233,13 +266,20 @@ u8 balancer_service_register (
 				);
 
 				if (connection) {
+					service->connection = connection;
+
 					char name[64] = { 0 };
 					snprintf (name, 64, "service-%d", balancer->next_service);
 
 					connection_set_name (connection, name);
 					connection_set_max_sleep (connection, 30);
 
-					connection_set_custom_receive (connection, balancer_client_receive, NULL);
+					connection_set_custom_receive (
+						connection, 
+						balancer_client_receive,
+						balancer_service_aux_new (balancer, service),
+						balancer_service_delete
+					);
 
 					balancer->services[balancer->next_service] = service;
 					balancer->next_service += 1;
