@@ -4,7 +4,6 @@
 #include <stdbool.h>
 
 #include <errno.h>
-#include <fcntl.h>
 
 #include <sys/prctl.h>
 
@@ -1645,19 +1644,10 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 		case PACKET_TYPE_APP_ERROR:
 		case PACKET_TYPE_CUSTOM:
 		case PACKET_TYPE_TEST: {
-			// TODO: select the correct service
-			Connection *service = cr->cerver->balancer->services[0];
-
-			header->sock_fd = cr->connection->socket->sock_fd;
-
-			// send the header to the selected service
-			send (service->socket->sock_fd, header, sizeof (PacketHeader), 0);
-
-			// splice remaining packet to service
-			size_t left = header->packet_size - sizeof (PacketHeader);
-			if (left) {
-				splice (cr->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
-			}
+			balancer_route_to_service (
+				cr->cerver->balancer, cr->connection,
+				header
+			);
 		} break;
 
 		default: {

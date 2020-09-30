@@ -83,4 +83,16 @@ CERVER_EXPORT u8 balancer_start (Balancer *balancer);
 
 #pragma endregion
 
+#pragma region route
+
+// routes the received packet to a service to be handled
+// first sends the packet header with the correct sock fd
+// if any data, it is forwarded from one sock fd to another using splice ()
+CERVER_PRIVATE void balancer_route_to_service (
+	Balancer *balancer, Connection *connection,
+	PacketHeader *header
+);
+
+#pragma endregion
+
 #endif

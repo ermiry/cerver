@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <errno.h>
+#include <fcntl.h>
 
 #include "cerver/types/types.h"
 
@@ -113,6 +114,30 @@ Balancer *balancer_create (
 #pragma endregion
 
 #pragma region services
+
+static unsigned int balancer_get_next_service (Balancer *balancer) {
+
+	unsigned int retval = 0;
+
+	pthread_mutex_lock (balancer->mutex);
+
+	switch (balancer->type) {
+		case BALANCER_TYPE_ROUND_ROBIN: {
+			retval = balancer->next_service;
+
+			balancer->next_service += 1;
+			if (balancer->next_service >= balancer->n_services)
+				balancer->next_service = 0;
+		} break;
+
+		default: break;
+	}
+
+	pthread_mutex_unlock (balancer->mutex);
+
+	return retval;
+
+}
 
 // registers a new service to the load balancer
 // a dedicated connection will be created when the balancer starts to handle traffic to & from the service
@@ -296,6 +321,33 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma endregion
 
+#pragma region route
+
+// routes the received packet to a service to be handled
+// first sends the packet header with the correct sock fd
+// if any data, it is forwarded from one sock fd to another using splice ()
+void balancer_route_to_service (
+	Balancer *balancer, Connection *connection,
+	PacketHeader *header
+) {
+
+	Connection *service = balancer->services[balancer_get_next_service (balancer)];
+
+	header->sock_fd = connection->socket->sock_fd;
+
+	// send the header to the selected service
+	send (service->socket->sock_fd, header, sizeof (PacketHeader), 0);
+
+	// splice remaining packet to service
+	size_t left = header->packet_size - sizeof (PacketHeader);
+	if (left) {
+		splice (connection->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+	}
+
+}
+
+#pragma endregion
+
 #pragma region handler
 
 // FIXME: discard buffer on bad types
@@ -357,6 +409,7 @@ static void balancer_client_receive_success (
 
 }
 
+// FIXME: handle disconnect from a service - route them to the other services
 // custom receive method for packets comming from the services
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
 static u8 balancer_client_receive (void *custom_data_ptr) {
