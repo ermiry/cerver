@@ -273,6 +273,19 @@ CERVER_EXPORT void packet_set_network_values (
 	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection, struct _Lobby *lobby
 );
 
+// sets the packet's header
+// copies the header's values into the packet
+CERVER_EXPORT void packet_set_header (Packet *packet, PacketHeader *header);
+
+// sets the packet's header values
+// if the packet does NOT yet have a header, it will be created
+CERVER_EXPORT void packet_set_header_values (
+	Packet *packet,
+	PacketType packet_type, size_t packet_size,
+	u8 handler_id, u32 request_type,
+	u16 sock_fd
+);
+
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error

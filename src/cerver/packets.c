@@ -258,6 +258,39 @@ void packet_set_network_values (Packet *packet, Cerver *cerver,
 
 }
 
+// sets the packet's header
+// copies the header's values into the packet
+void packet_set_header (Packet *packet, PacketHeader *header) {
+
+    if (packet && header) {
+        if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
+        if (packet->header) memcpy (&packet->header, header, sizeof (PacketHeader));
+    }
+
+}
+
+// sets the packet's header values
+// if the packet does NOT yet have a header, it will be created
+void packet_set_header_values (
+	Packet *packet,
+	PacketType packet_type, size_t packet_size,
+	u8 handler_id, u32 request_type,
+	u16 sock_fd
+) {
+
+	if (packet) {
+		if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
+		if (packet->header) {
+			packet->header->packet_type = packet_type;
+			packet->header->packet_size = packet_size;
+			packet->header->handler_id = handler_id;
+			packet->header->request_type = request_type;
+			packet->header->sock_fd = sock_fd;
+		}
+	}
+
+}
+
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
@@ -444,7 +477,8 @@ u8 packet_generate (Packet *packet) {
 		}
 
 		packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-		packet->header = packet_header_create (packet->packet_type, packet->packet_size, packet->req_type);
+		if (!packet->header)
+			packet->header = packet_header_create (packet->packet_type, packet->packet_size, packet->req_type);
 
 		// create the packet buffer to be sent
 		packet->packet = malloc (packet->packet_size);
