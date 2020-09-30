@@ -535,6 +535,20 @@ static void balancer_client_receive_success (
 
 }
 
+// handles a failed receive from the client's connection
+// ends the connection & flags the service as unavailable to attempt a reconnection
+static void balancer_client_receive_handle_failed (
+	BalancerService *bs, 
+	Client *client, Connection *connection
+) {
+
+	(void) client_connection_stop (client, connection);
+
+	// TODO: set a timeout to connect again
+	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
+
+}
+
 // FIXME: handle disconnect from a service - route them to the other services
 // custom receive method for packets comming from the services
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
@@ -544,54 +558,53 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 
 	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) custom_data_ptr;
 
-	Client *client = custom_data->client;
-	Connection *connection = custom_data->connection;
-
-	if (client && connection) {
+	if (custom_data->client && custom_data->connection) {
 		char header_buffer[sizeof (PacketHeader)] = { 0 };
-		ssize_t rc = recv (connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
+		ssize_t rc = recv (custom_data->connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
 
 		switch (rc) {
 			case -1: {
 				if (errno != EWOULDBLOCK) {
 					#ifdef CLIENT_DEBUG
-					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd);
+					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 					if (s) {
 						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, s);
 						free (s);
 					}
 					perror ("Error");
 					#endif
-
-					// FIXME:
-					// client_receive_handle_failed (client, connection);
+					
+					balancer_client_receive_handle_failed (
+						(BalancerService *) custom_data->args, 
+						custom_data->client, custom_data->connection
+					);
 				}
 			} break;
 
 			case 0: {
 				#ifdef CLIENT_DEBUG
-				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d",
-					connection->socket->sock_fd);
+				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 				if (s) {
 					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
 					free (s);
 				}
 				#endif
 
-				// FIXME:
-				// client_receive_handle_failed (client, connection);
+				balancer_client_receive_handle_failed (
+					(BalancerService *) custom_data->args, 
+					custom_data->client, custom_data->connection
+				);
 			} break;
 
 			default: {
-				char *s = c_string_create ("Connection %s rc: %ld",
-					connection->name->str, rc);
+				char *s = c_string_create ("Connection %s rc: %ld", custom_data->connection->name->str, rc);
 				if (s) {
 					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
 					free (s);
 				}
 
 				balancer_client_receive_success (
-					client, connection,
+					custom_data->client, custom_data->connection,
 					(PacketHeader *) header_buffer
 				);
 
