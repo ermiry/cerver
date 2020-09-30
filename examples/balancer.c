@@ -130,7 +130,7 @@ int main (void) {
 	cerver_log_debug ("Simple Round Robin Load Balancer");
 	printf ("\n");
 
-	load_balancer = balancer_create (BALANCER_TYPE_ROUND_ROBIN, 7000, 10, 2);
+	load_balancer = balancer_create ("test-balancer", BALANCER_TYPE_ROUND_ROBIN, 7000, 10, 2);
 	if (load_balancer) {
 		/*** register services ***/
 		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {

@@ -2,6 +2,7 @@
 #define _CERVER_BALANCER_H_
 
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/cerver.h"
 #include "cerver/client.h"
@@ -34,14 +35,15 @@ const char *balancer_type_to_string (BalcancerType type);
 
 struct _Balancer {
 
+	String *name;
 	BalcancerType type;
 
 	Cerver *cerver;
 	Client *client;
 
-	unsigned int next_service;
-	unsigned int n_services;		// how many services the load balancer is connected to
-	struct _Service **services;			// references to the client's connections for direct access
+	int next_service;
+	int n_services;					// how many services the load balancer is connected to
+	struct _Service **services;		// references to the client's connections for direct access
 
 	pthread_mutex_t *mutex;
 
@@ -56,7 +58,7 @@ CERVER_PRIVATE void balancer_delete (void *balancer_ptr);
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 CERVER_EXPORT Balancer *balancer_create (
-	BalcancerType type,
+	const char *name, BalcancerType type,
 	u16 port, u16 connection_queue,
 	unsigned int n_services
 );

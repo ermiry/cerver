@@ -7,6 +7,7 @@
 #include <fcntl.h>
 
 #include "cerver/types/types.h"
+#include "cerver/types/string.h"
 
 #include "cerver/balancer.h"
 #include "cerver/cerver.h"
@@ -41,6 +42,7 @@ Balancer *balancer_new (void) {
 
 	Balancer *balancer = (Balancer *) malloc (sizeof (Balancer));
 	if (balancer) {
+		balancer->name = NULL;
 		balancer->type = BALANCER_TYPE_NONE;
 
 		balancer->cerver = NULL;
@@ -62,6 +64,8 @@ void balancer_delete (void *balancer_ptr) {
 	if (balancer_ptr) {
 		Balancer *balancer = (Balancer *) balancer_ptr;
 
+		str_delete (balancer->name);
+
 		cerver_delete (balancer->cerver);
 		client_delete (balancer->client);
 
@@ -82,13 +86,14 @@ void balancer_delete (void *balancer_ptr) {
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 Balancer *balancer_create (
-	BalcancerType type,
+	const char *name, BalcancerType type,
 	u16 port, u16 connection_queue,
 	unsigned int n_services
 ) {
 
 	Balancer *balancer = balancer_new ();
 	if (balancer) {
+		balancer->name = str_new (name);
 		balancer->type = type;
 
 		balancer->cerver = cerver_create (
