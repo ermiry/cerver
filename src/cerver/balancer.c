@@ -115,6 +115,54 @@ Balancer *balancer_create (
 
 #pragma region services
 
+const char *balancer_service_status_to_string (ServiceStatus status) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #string;
+		SERVICE_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return balancer_service_status_to_string (SERVICE_STATUS_NONE);
+
+}
+
+const char *balancer_service_status_description (ServiceStatus status) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #description;
+		SERVICE_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return balancer_service_status_description (SERVICE_STATUS_NONE);
+
+}
+
+static Service *balancer_service_new (void) {
+
+	Service *service = (Service *) malloc (sizeof (Service));
+	if (service) {
+		service->status = SERVICE_STATUS_NONE;
+		service->connection = NULL;
+	}
+
+	return service;
+
+}
+
+static void balancer_service_delete (void *service_ptr) {
+
+	if (service_ptr) {
+		Service *service = (Service *) service_ptr;
+
+		service->connection = NULL;
+
+		free (service_ptr);
+	}
+
+}
+
 static unsigned int balancer_get_next_service (Balancer *balancer) {
 
 	unsigned int retval = 0;

@@ -63,6 +63,36 @@ CERVER_EXPORT Balancer *balancer_create (
 
 #pragma region services
 
+#define SERVICE_STATUS_MAP(XX)																			\
+	XX(0, 	NONE, 			None, 			None)														\
+	XX(1, 	CONNECTING, 	Connecting, 	Creating connection with service)							\
+	XX(2, 	READY, 			Ready, 			Ready to start accepting packets)							\
+	XX(3, 	WORKING, 		Working, 		Handling packets)											\
+	XX(4, 	DISCONNECTING, 	Disconnecting, 	In the process of closing the connection)					\
+	XX(5, 	DISCONNECTED, 	Disconnected, 	The balancer has been disconnected from the service)		\
+	XX(6, 	UNAVAILABLE, 	Unavailable, 	The service is down or is not handling packets)
+
+typedef enum ServiceStatus {
+
+	#define XX(num, name, string, description) SERVICE_STATUS_##name = num,
+	SERVICE_STATUS_MAP (XX)
+	#undef XX
+
+} ServiceStatus;
+
+CERVER_EXPORT const char *balancer_service_status_to_string (ServiceStatus status);
+
+CERVER_EXPORT const char *balancer_service_status_description (ServiceStatus status);
+
+struct _Service {
+
+	ServiceStatus status;
+	Connection *connection;
+
+};
+
+typedef struct _Service Service;
+
 // registers a new service to the load balancer
 // a dedicated connection will be created when the balancer starts to handle traffic to & from the service
 // returns 0 on success, 1 on error
