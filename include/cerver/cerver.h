@@ -1,10 +1,6 @@
 #ifndef _CERVER_CERVER_H_
 #define _CERVER_CERVER_H_
 
-#ifndef _GNU_SOURCE
-	#define _GNU_SOURCE
-#endif
-
 #include <stdlib.h>
 
 #include <poll.h>
