@@ -303,7 +303,11 @@ static void balancer_client_receive_success (
 
 		case PACKET_TYPE_AUTH: break;
 
-		case PACKET_TYPE_TEST: break;
+		case PACKET_TYPE_TEST: {
+			client->stats->received_packets->n_test_packets += 1;
+			connection->stats->received_packets->n_test_packets += 1;
+			cerver_log_msg (stdout, LOG_TYPE_TEST, LOG_TYPE_HANDLER, "Got a test packet from service");
+		} break;
 
 		// only route packets of these types back to original client
 		case PACKET_TYPE_CERVER:
@@ -314,6 +318,8 @@ static void balancer_client_receive_success (
 		case PACKET_TYPE_APP_ERROR:
 		case PACKET_TYPE_CUSTOM: {
 			// FIXME: better handler
+
+			printf ("sockfd: %d\n", header->sock_fd);
 
 			// send the header to the selected service
 			send (header->sock_fd, header, sizeof (PacketHeader), 0);
@@ -390,12 +396,12 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 			} break;
 
 			default: {
-				// char *s = c_string_create ("Connection %s rc: %ld",
-				// 	connection->name->str, rc);
-				// if (s) {
-				// 	cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
-				// 	free (s);
-				// }
+				char *s = c_string_create ("Connection %s rc: %ld",
+					connection->name->str, rc);
+				if (s) {
+					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
+					free (s);
+				}
 
 				balancer_client_receive_success (
 					client, connection,
