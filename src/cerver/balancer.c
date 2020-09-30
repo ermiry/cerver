@@ -19,6 +19,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+static void balancer_service_delete (void *service_ptr);
+
 static u8 balancer_client_receive (void *custom_data_ptr);
 
 const char *balancer_type_to_string (BalcancerType type) {
@@ -64,6 +66,9 @@ void balancer_delete (void *balancer_ptr) {
 		client_delete (balancer->client);
 
 		if (balancer->services) {
+			for (unsigned int i = 0; i < balancer->n_services; i++)
+				balancer_service_delete (balancer->services[i]);
+
 			free (balancer->services);
 		}
 
@@ -98,7 +103,7 @@ Balancer *balancer_create (
 		client_set_name (balancer->client, "balancer-client");
 
 		balancer->n_services = n_services;
-		balancer->services = (Connection **) calloc (balancer->n_services, sizeof (Connection *));
+		balancer->services = (Service **) calloc (balancer->n_services, sizeof (Service *));
 		if (balancer->services) {
 			for (unsigned int i = 0; i < balancer->n_services; i++)
 				balancer->services[i] = NULL;
@@ -199,25 +204,28 @@ u8 balancer_service_register (
 
 	if (balancer && ip_address) {
 		if ((balancer->next_service + 1) <= balancer->n_services) {
-			Connection *connection = client_connection_create (
-				balancer->client,
-				ip_address, port,
-				PROTOCOL_TCP, false
-			);
+			Service *service = balancer_service_new ();
+			if (service) {
+				Connection *connection = client_connection_create (
+					balancer->client,
+					ip_address, port,
+					PROTOCOL_TCP, false
+				);
 
-			if (connection) {
-				char name[64] = { 0 };
-				snprintf (name, 64, "service-%d", balancer->next_service);
+				if (connection) {
+					char name[64] = { 0 };
+					snprintf (name, 64, "service-%d", balancer->next_service);
 
-				connection_set_name (connection, name);
-				connection_set_max_sleep (connection, 30);
+					connection_set_name (connection, name);
+					connection_set_max_sleep (connection, 30);
 
-				connection_set_custom_receive (connection, balancer_client_receive, NULL);
+					connection_set_custom_receive (connection, balancer_client_receive, NULL);
 
-				balancer->services[balancer->next_service] = connection;
-				balancer->next_service += 1;
+					balancer->services[balancer->next_service] = service;
+					balancer->next_service += 1;
 
-				retval = 0;
+					retval = 0;
+				}
 			}
 		}
 	}
