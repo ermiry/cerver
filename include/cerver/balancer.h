@@ -95,4 +95,14 @@ CERVER_PRIVATE void balancer_route_to_service (
 
 #pragma endregion
 
+#pragma region end
+
+// first ends and destroys the balancer's internal cerver
+// then disconnects from each of the registered services
+// last frees any balancer memory left
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 balancer_teardown (Balancer *balancer);
+
+#pragma endregion
+
 #endif

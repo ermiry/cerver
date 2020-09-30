@@ -482,6 +482,26 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 
 #pragma region end
 
-// TODO:
+// first ends and destroys the balancer's internal cerver
+// then disconnects from each of the registered services
+// last frees any balancer memory left
+// returns 0 on success, 1 on error
+u8 balancer_teardown (Balancer *balancer) {
+
+	u8 retval = 1;
+
+	if (balancer) {
+		(void) cerver_teardown (balancer->cerver);
+		balancer->cerver = NULL;
+
+		client_teardown (balancer->client);
+		balancer->client = NULL;
+
+		balancer_delete (balancer);
+	}
+
+	return retval;
+
+}
 
 #pragma endregion
