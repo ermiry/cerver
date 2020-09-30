@@ -21,7 +21,7 @@ static void end (int dummy) {
 	
 	if (load_balancer) {
         cerver_stats_print (load_balancer->cerver, true, true);
-		cerver_teardown (load_balancer->cerver);
+		balancer_teardown (load_balancer);
 	} 
 
 	exit (0);
