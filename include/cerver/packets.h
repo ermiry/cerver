@@ -128,12 +128,14 @@ CERVER_PUBLIC void packets_per_type_print (PacketsPerType *packets_per_type);
 
 struct _PacketHeader {
 
-	PacketType packet_type;
-	size_t packet_size;
+	PacketType packet_type;		// the main packet type
+	size_t packet_size;			// total size of the packet (header + data)
 
-	u8 handler_id;
+	u8 handler_id;				// used in cervers with multiple app handlers
 
-	u32 request_type;
+	u32 request_type;			// the packet's subtype
+
+	u16 sock_fd;				// used in when working with load balancers
 
 };
 

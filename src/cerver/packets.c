@@ -135,6 +135,8 @@ PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, 
 		header->handler_id = 0;
 
 		header->request_type = req_type;
+
+		header->sock_fd = 0;
 	}
 
 	return header;
@@ -148,6 +150,7 @@ void packet_header_print (PacketHeader *header) {
 		printf ("Packet size: %ld\n", header->packet_size);
 		printf ("Handler id: %d\n", header->handler_id);
 		printf ("Request type: %d\n", header->request_type);
+		printf ("Sock fd: %d\n", header->sock_fd);
 	}
 
 }
@@ -285,6 +288,7 @@ void packet_set_header_values (
 			packet->header->packet_size = packet_size;
 			packet->header->handler_id = handler_id;
 			packet->header->request_type = request_type;
+			packet->header->sock_fd = sock_fd;
 		}
 	}
 
