@@ -506,15 +506,20 @@ CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connect
 
 /*** end ***/
 
+// closes the connection's socket & set it to be inactive
+// does not send a close connection packet to the cerver
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int client_connection_stop (Client *client, Connection *connection);
+
 // terminates the connection & closes the socket
 // but does NOT destroy the current connection
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_close (Client *client, struct _Connection *connection);
+CERVER_PUBLIC int client_connection_close (Client *client, struct _Connection *connection);
 
 // terminates and destroys a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_end (Client *client, struct _Connection *connection);
+CERVER_PUBLIC int client_connection_end (Client *client, struct _Connection *connection);
 
 // stop any on going connection and process and destroys the client
 // returns 0 on success, 1 on error
