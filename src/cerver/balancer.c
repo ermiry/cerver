@@ -168,6 +168,26 @@ static void balancer_service_delete (void *service_ptr) {
 
 }
 
+static void balancer_service_set_status (Service *service, ServiceStatus status) {
+
+	if (service) {
+		service->status = status;
+	}
+
+}
+
+static ServiceStatus balancer_service_get_status (Service *service) {
+
+	ServiceStatus retval = SERVICE_STATUS_NONE;
+
+	if (service) {
+		retval =  service->status;
+	}
+
+	return retval;
+
+}
+
 static unsigned int balancer_get_next_service (Balancer *balancer) {
 
 	unsigned int retval = 0;
@@ -235,19 +255,19 @@ u8 balancer_service_register (
 }
 
 // sends a test message to the service & waits for the request
-static u8 balancer_service_test (Balancer *balancer, Connection *service) {
+static u8 balancer_service_test (Balancer *balancer, Service *service) {
 
 	u8 retval = 1;
 
 	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
 	if (packet) {
 		// packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
-		if (!client_request_to_cerver (balancer->client, service, packet)) {
+		if (!client_request_to_cerver (balancer->client, service->connection, packet)) {
 			retval = 0;
 		}
 
 		else {
-			char *status = c_string_create ("Failed to send test request to %s", service->name->str);
+			char *status = c_string_create ("Failed to send test request to %s", service->connection->name->str);
 			if (status) {
 				cerver_log_error (status);
 				free (status);
@@ -263,31 +283,41 @@ static u8 balancer_service_test (Balancer *balancer, Connection *service) {
 
 // connects to the service & sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
-static u8 balancer_service_connect (Balancer *balancer, Connection *service) {
+static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 
 	u8 retval = 1;
 
-	if (!client_connect_to_cerver (balancer->client, service)) {
-		char *status = c_string_create ("Connected to %s", service->name->str);
+	balancer_service_set_status (service, SERVICE_STATUS_CONNECTING);
+
+	if (!client_connect_to_cerver (balancer->client, service->connection)) {
+		char *status = c_string_create ("Connected to %s", service->connection->name->str);
 		if (status) {
 			cerver_log_success (status);
 			free (status);
 		}
 
+		// we are ready to test service handler
+		balancer_service_set_status (service, SERVICE_STATUS_READY);
+
 		// send test message to service
 		if (!balancer_service_test (balancer, service)) {
-			if (!client_connection_start (balancer->client, service)) {
+			if (!client_connection_start (balancer->client, service->connection)) {
+				// the service is able to handle packets
+				balancer_service_set_status (service, SERVICE_STATUS_WORKING);
+
 				retval = 0;
 			}
 		}
 	}
 
 	else {
-		char *status = c_string_create ("Failed to connect to %s", service->name->str);
+		char *status = c_string_create ("Failed to connect to %s", service->connection->name->str);
 		if (status) {
 			cerver_log_error (status);
 			free (status);
 		}
+
+		balancer_service_set_status (service, SERVICE_STATUS_UNAVAILABLE);
 	}
 
 	return retval;
