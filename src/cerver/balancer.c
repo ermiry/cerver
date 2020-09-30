@@ -226,19 +226,32 @@ static ServiceStatus balancer_service_get_status (Service *service) {
 
 }
 
-static unsigned int balancer_get_next_service (Balancer *balancer) {
+static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
 
-	unsigned int retval = 0;
+	balancer->next_service += 1;
+	if (balancer->next_service >= balancer->n_services)
+		balancer->next_service = 0;
+
+	return balancer->next_service;
+
+}
+
+static int balancer_get_next_service (Balancer *balancer) {
+
+	int retval = -1;
 
 	pthread_mutex_lock (balancer->mutex);
 
 	switch (balancer->type) {
 		case BALANCER_TYPE_ROUND_ROBIN: {
-			retval = balancer->next_service;
+			int count = 0;
+			do {
+				retval = balancer_get_next_service_round_robin (balancer);
+				if (balancer->services[retval]->status == SERVICE_STATUS_WORKING) break;
+				else count += 1;
+			} while (count < balancer->n_services);
 
-			balancer->next_service += 1;
-			if (balancer->next_service >= balancer->n_services)
-				balancer->next_service = 0;
+			if (count >= balancer->n_services) retval = -1;
 		} break;
 
 		default: break;
@@ -283,7 +296,7 @@ u8 balancer_service_register (
 						connection, 
 						balancer_client_receive,
 						balancer_service_aux_new (balancer, service),
-						balancer_service_delete
+						balancer_service_aux_delete
 					);
 
 					balancer->services[balancer->next_service] = service;
@@ -379,7 +392,8 @@ static u8 balancer_start_check (Balancer *balancer) {
 
 	if (balancer->next_service) {
 		if (balancer->next_service == balancer->n_services) {
-			balancer->next_service = 0;
+			// dirty fix to use first service on the first loop
+			balancer->next_service = balancer->n_services;
 
 			retval = 0;
 		}
@@ -462,17 +476,26 @@ void balancer_route_to_service (
 	PacketHeader *header
 ) {
 
-	Connection *service = balancer->services[balancer_get_next_service (balancer)];
+	int selected_service = balancer_get_next_service (balancer);
+	if (selected_service >= 0) {
+		Service *service = balancer->services[selected_service];
 
-	header->sock_fd = connection->socket->sock_fd;
+		header->sock_fd = connection->socket->sock_fd;
 
-	// send the header to the selected service
-	send (service->socket->sock_fd, header, sizeof (PacketHeader), 0);
+		// send the header to the selected service
+		send (service->connection->socket->sock_fd, header, sizeof (PacketHeader), 0);
 
-	// splice remaining packet to service
-	size_t left = header->packet_size - sizeof (PacketHeader);
-	if (left) {
-		splice (connection->socket->sock_fd, NULL, service->socket->sock_fd, NULL, left, 0);
+		// splice remaining packet to service
+		size_t left = header->packet_size - sizeof (PacketHeader);
+		if (left) {
+			splice (connection->socket->sock_fd, NULL, service->connection->socket->sock_fd, NULL, left, 0);
+		}
+	}
+
+	else {
+		cerver_log_warning ("No available services to handle packets!");
+
+		// TODO: return error message to client
 	}
 
 }
@@ -548,6 +571,17 @@ static void balancer_client_receive_handle_failed (
 ) {
 
 	(void) client_connection_stop (client, connection);
+
+	char *status = c_string_create (
+		"Balancer %s - service %s has disconnected!\n",
+		bs->balancer->name->str, bs->service->connection->name->str
+	);
+
+	if (status) {
+		printf ("\n");
+		cerver_log_warning (status);
+		free (status);
+	}
 
 	// TODO: set a timeout to connect again
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
