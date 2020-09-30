@@ -4,14 +4,15 @@ SLIB		:= libcerver.so
 PTHREAD 	:= -l pthread
 MATH		:= -lm
 
-# print additional information
-# print additional information
-DEFINES	= -D CERVER_DEBUG -D CERVER_STATS 	\
-			-D CLIENT_DEBUG 				\
-			-D HANDLER_DEBUG 				\
-			-D PACKETS_DEBUG 				\
-			-D AUTH_DEBUG 					\
-			-D ADMIN_DEBUG
+DEFINES		:= -D _GNU_SOURCE
+
+DEVELOPMENT	:= -g \
+				-D CERVER_DEBUG -D CERVER_STATS \
+				-D CLIENT_DEBUG 				\
+				-D HANDLER_DEBUG 				\
+				-D PACKETS_DEBUG 				\
+				-D AUTH_DEBUG 					\
+				-D ADMIN_DEBUG
 
 CC          := gcc
 
@@ -26,7 +27,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := -g $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
+CFLAGS      := $(DEVELOPMENT) $(DEFINES) -Wall -Wno-unknown-pragmas -std=gnu99 -fPIC
 LIB         := $(PTHREAD) $(MATH)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
