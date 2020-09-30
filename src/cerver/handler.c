@@ -1639,12 +1639,12 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 
 		// only route packets of these types to services
 		case PACKET_TYPE_CERVER:
-			PACKET_TYPE_REQUEST:
-			PACKET_TYPE_GAME:
-			PACKET_TYPE_APP:
-			PACKET_TYPE_APP_ERROR:
-			PACKET_TYPE_APP_CUSTOM:
-			PACKET_TYPE_APP_TEST: {
+		case PACKET_TYPE_REQUEST:
+		case PACKET_TYPE_GAME:
+		case PACKET_TYPE_APP:
+		case PACKET_TYPE_APP_ERROR:
+		case PACKET_TYPE_CUSTOM:
+		case PACKET_TYPE_TEST: {
 			// TODO: select the correct service
 			Connection *service = cr->cerver->balancer->services[0];
 
