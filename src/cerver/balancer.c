@@ -13,6 +13,8 @@
 #include "cerver/connection.h"
 #include "cerver/packets.h"
 
+#include "cerver/threads/thread.h"
+
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
@@ -44,6 +46,8 @@ Balancer *balancer_new (void) {
 		balancer->next_service = 0;
 		balancer->n_services = 0;
 		balancer->services = NULL;
+
+		balancer->mutex = NULL;
 	}
 
 	return balancer;
@@ -61,6 +65,8 @@ void balancer_delete (void *balancer_ptr) {
 		if (balancer->services) {
 			free (balancer->services);
 		}
+
+		pthread_mutex_delete (balancer->mutex);
 
 		free (balancer_ptr);
 	}
@@ -96,6 +102,8 @@ Balancer *balancer_create (
 			for (unsigned int i = 0; i < balancer->n_services; i++)
 				balancer->services[i] = NULL;
 		}
+
+		balancer->mutex = pthread_mutex_new ();
 	}
 
 	return balancer;

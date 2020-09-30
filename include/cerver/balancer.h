@@ -8,6 +8,8 @@
 #include "cerver/connection.h"
 #include "cerver/config.h"
 
+#include "cerver/threads/thread.h"
+
 #pragma region type
 
 #define BALANCER_TYPE_MAP(XX)									\
@@ -38,6 +40,8 @@ struct _Balancer {
 	unsigned int next_service;
 	unsigned int n_services;		// how many services the load balancer is connected to
 	Connection **services;			// references to the client's connections for direct access
+
+	pthread_mutex_t *mutex;
 
 };
 
