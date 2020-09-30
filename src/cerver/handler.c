@@ -1648,6 +1648,8 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 			// TODO: select the correct service
 			Connection *service = cr->cerver->balancer->services[0];
 
+			header->sock_fd = cr->connection->socket->sock_fd;
+
 			// send the header to the selected service
 			send (service->socket->sock_fd, header, sizeof (PacketHeader), 0);
 
