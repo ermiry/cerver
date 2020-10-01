@@ -6,6 +6,8 @@
 #include <errno.h>
 #endif
 
+#include <fcntl.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -966,6 +968,47 @@ u8 packet_send_to_socket (
 		if (total_sent) *total_sent = (size_t) sent;
 
 		pthread_mutex_unlock (socket->write_mutex);
+	}
+
+	return retval;
+
+}
+
+// routes a packet from one connection's sock fd to another connection's sock fd
+// the header is sent first and then the packet's body (if any) is handled directly between fds
+// by calling the splice method
+// this method is thread safe, since it will block the socket until the entire packet has been routed
+// returns 0 on success, 1 on error
+u8 packet_route_between_connections (
+	Connection *from, Connection *to,
+	PacketHeader *header, size_t *sent
+) {
+
+	u8 retval = 1;
+
+	if (from && to && header) {
+		pthread_mutex_lock (to->socket->write_mutex);
+
+		// first send the header
+		size_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
+		if (s > 0) {
+			size_t left = header->packet_size - sizeof (PacketHeader);
+			if (left) {
+				s = splice (from->socket->sock_fd, NULL, to->socket->sock_fd, NULL, left, 0);
+				if (s > 0) {
+					if (sent) *sent = s + sizeof (PacketHeader);
+					retval = 0;
+				}
+			}
+
+			else {
+				// we are done
+				if (sent) *sent = s;
+				retval = 0;
+			}
+		}
+
+		pthread_mutex_unlock (to->socket->write_mutex);
 	}
 
 	return retval;

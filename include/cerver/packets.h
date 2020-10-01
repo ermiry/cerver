@@ -384,6 +384,16 @@ CERVER_EXPORT u8 packet_send_to_socket (
 	struct _Socket *socket, int flags, size_t *total_sent, bool raw
 );
 
+// routes a packet from one connection's sock fd to another connection's sock fd
+// the header is sent first and then the packet's body (if any) is handled directly between fds
+// by calling the splice method
+// this method is thread safe, since it will block the socket until the entire packet has been routed
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_route_between_connections (
+	struct _Connection *from, struct _Connection *to,
+	PacketHeader *header, size_t *sent
+);
+
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (Packet *packet);
