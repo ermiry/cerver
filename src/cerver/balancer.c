@@ -392,6 +392,34 @@ static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 
 }
 
+static void *balancer_service_reconnect_thread (void *bs_ptr) {
+
+	BalancerService *bs = (BalancerService *) bs_ptr;
+
+	Balancer *balancer = bs->balancer;
+	Service *service = bs->service;
+
+	(void) connection_init (service->connection);
+
+	do {
+		sleep (service->reconnect_wait_time);
+
+		char *status = c_string_create (
+			"Attempting connection to balancer %s service %s",
+			balancer->name->str, service->connection->name->str
+		);
+
+		if (status) {
+			cerver_log_debug (status);
+			free (status);
+		}
+
+	} while (balancer_service_connect (balancer, service));
+
+	return NULL;
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -593,12 +621,23 @@ static void balancer_client_receive_handle_failed (
 		free (status);
 	}
 
-	// TODO: set a timeout to connect again
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
+
+	pthread_t thread_id = 0;
+	if (thread_create_detachable (&thread_id, balancer_service_reconnect_thread, bs)) {
+		char *status = c_string_create (
+			"Failed to create reconnect thread for balancer %s service %s",
+			bs->balancer->name->str, bs->service->connection->name->str
+		);
+
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
+	}
 
 }
 
-// FIXME: handle disconnect from a service - route them to the other services
 // custom receive method for packets comming from the services
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
 static u8 balancer_client_receive (void *custom_data_ptr) {
