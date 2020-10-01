@@ -560,7 +560,7 @@ void balancer_route_to_service (
 
 		error_packet_generate_and_send (
 			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
-			balancer->services, balancer->client, connection
+			balancer->cerver, balancer->client, connection
 		);
 	}
 
