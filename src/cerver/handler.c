@@ -1615,22 +1615,52 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
-// FIXME: discard buffer on bad types
+// we received a packet of a bad type (the handler is unable to handle it)
+// consume from the socket until the next packet header
+static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) {
+
+	if (header->packet_size > sizeof (PacketHeader)) {
+		char buffer[128] = { 0 };
+
+		size_t data_size = header->packet_size - sizeof (PacketHeader);
+
+		size_t to_read = 0;
+		size_t rc = 0;
+
+		do {
+			to_read = data_size >= 128 ? 128 : data_size;
+			rc = recv (cr->socket->sock_fd, buffer, to_read, 0);
+
+			// TODO: handle failed
+
+			data_size -= to_read;
+		} while (data_size <= 0);
+	}
+
+}
+
 static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
 
 	switch (header->packet_type) {
 		case PACKET_TYPE_CLIENT:
 			cr->cerver->stats->received_packets->n_client_packets += 1;
-			cr->client->stats->received_packets->n_client_packets += 1;
-			cr->connection->stats->received_packets->n_client_packets += 1;
+			// cr->client->stats->received_packets->n_client_packets += 1;
+			// cr->connection->stats->received_packets->n_client_packets += 1;
 			cerver_client_packet_handler_by_header (
 				header,
 				cr->cerver, cr->client, cr->connection, cr->lobby
 			);
 			break;
 
-		case PACKET_TYPE_ERROR: break;
-		case PACKET_TYPE_AUTH: break;
+		case PACKET_TYPE_ERROR:
+			cr->cerver->stats->received_packets->n_error_packets += 1;
+			balancer_receive_bad_type (cr, header);
+			break;
+
+		case PACKET_TYPE_AUTH:
+			cr->cerver->stats->received_packets->n_auth_packets += 1;
+			balancer_receive_bad_type (cr, header);
+			break;
 
 		// only route packets of these types to services
 		case PACKET_TYPE_CERVER:
@@ -1649,9 +1679,8 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 		case PACKET_TYPE_NONE:
 		default: {
 			cr->cerver->stats->received_packets->n_bad_packets += 1;
-			cr->client->stats->received_packets->n_bad_packets += 1;
-			cr->connection->stats->received_packets->n_bad_packets += 1;
-			if (cr->lobby) cr->lobby->stats->received_packets->n_bad_packets += 1;
+			// cr->client->stats->received_packets->n_bad_packets += 1;
+			// cr->connection->stats->received_packets->n_bad_packets += 1;
 			#ifdef HANDLER_DEBUG
 			char *s = c_string_create ("balancer_receive () - packet of unknown type in cerver %s.",
 				cr->cerver->info->name->str);
