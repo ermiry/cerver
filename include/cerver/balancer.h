@@ -67,6 +67,8 @@ CERVER_EXPORT Balancer *balancer_create (
 
 #pragma region services
 
+#define DEFAULT_SERVICE_WAIT_TIME			20
+
 #define SERVICE_STATUS_MAP(XX)																			\
 	XX(0, 	NONE, 			None, 			None)														\
 	XX(1, 	CONNECTING, 	Connecting, 	Creating connection with service)							\
@@ -93,6 +95,8 @@ struct _Service {
 	ServiceStatus status;
 	Connection *connection;
 
+	unsigned int reconnect_wait_time;
+
 };
 
 typedef struct _Service Service;
@@ -104,6 +108,10 @@ CERVER_EXPORT u8 balancer_service_register (
 	Balancer *balancer,
 	const char *ip_address, u16 port
 );
+
+// sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
+// the default value is 20 secs
+CERVER_EXPORT void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time);
 
 #pragma endregion
 

@@ -188,6 +188,8 @@ static Service *balancer_service_new (void) {
 	if (service) {
 		service->status = SERVICE_STATUS_NONE;
 		service->connection = NULL;
+
+		service->reconnect_wait_time = DEFAULT_SERVICE_WAIT_TIME;
 	}
 
 	return service;
@@ -309,6 +311,14 @@ u8 balancer_service_register (
 	}
 
 	return retval;
+
+}
+
+// sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
+// the default value is 20 secs
+void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time) {
+
+	if (service) service->reconnect_wait_time = wait_time;
 
 }
 
