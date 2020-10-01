@@ -56,7 +56,6 @@ void connection_stats_print (Connection *connection) {
 
 	if (connection) {
 		if (connection->stats) {
-			printf ("\nConnection's stats:\n");
 			printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
 
 			printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
