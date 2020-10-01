@@ -1615,13 +1615,10 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
-// TODO: do we want to update other cerver stats?
 // FIXME: discard buffer on bad types
 static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
 
 	switch (header->packet_type) {
-		case PACKET_TYPE_NONE: break;
-
 		case PACKET_TYPE_CLIENT:
 			cr->cerver->stats->received_packets->n_client_packets += 1;
 			cr->client->stats->received_packets->n_client_packets += 1;
@@ -1633,7 +1630,6 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 			break;
 
 		case PACKET_TYPE_ERROR: break;
-
 		case PACKET_TYPE_AUTH: break;
 
 		// only route packets of these types to services
@@ -1650,6 +1646,7 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 			);
 		} break;
 
+		case PACKET_TYPE_NONE:
 		default: {
 			cr->cerver->stats->received_packets->n_bad_packets += 1;
 			cr->client->stats->received_packets->n_bad_packets += 1;
