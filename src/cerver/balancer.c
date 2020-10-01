@@ -614,7 +614,7 @@ static void balancer_client_receive_success (
 		default: {
 			client->stats->received_packets->n_bad_packets += 1;
 			connection->stats->received_packets->n_bad_packets += 1;
-			#ifdef CLIENT_DEBUG
+			#ifdef BALANCER_DEBUG
 			cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Got a packet of unknown type.");
 			#endif
 		} break;
@@ -681,7 +681,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 		switch (rc) {
 			case -1: {
 				if (errno != EWOULDBLOCK) {
-					#ifdef CLIENT_DEBUG
+					#ifdef BALANCER_DEBUG
 					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 					if (s) {
 						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, s);
@@ -698,7 +698,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 			} break;
 
 			case 0: {
-				#ifdef CLIENT_DEBUG
+				#ifdef BALANCER_DEBUG
 				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 				if (s) {
 					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
