@@ -4,7 +4,6 @@
 #include <stdbool.h>
 
 #include <errno.h>
-#include <fcntl.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -531,6 +530,7 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region route
 
+// TODO: update balancer & service stats
 // routes the received packet to a service to be handled
 // first sends the packet header with the correct sock fd
 // if any data, it is forwarded from one sock fd to another using splice ()
@@ -545,13 +545,37 @@ void balancer_route_to_service (
 
 		header->sock_fd = connection->socket->sock_fd;
 
-		// send the header to the selected service
-		send (service->connection->socket->sock_fd, header, sizeof (PacketHeader), 0);
+		size_t sent = 0;
+		if (packet_route_between_connections (
+			connection, service->connection,
+			header, &sent
+		)) {
+			#ifdef BALANCER_DEBUG
+			char *status = c_string_create (
+				"Packet routing between %d -> %d (%s) has failed!",
+				connection->socket->sock_fd, 
+				service->connection->socket->sock_fd, service->connection->name->str
+			);
 
-		// splice remaining packet to service
-		size_t left = header->packet_size - sizeof (PacketHeader);
-		if (left) {
-			splice (connection->socket->sock_fd, NULL, service->connection->socket->sock_fd, NULL, left, 0);
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+			#endif
+		}
+
+		else {
+			char *status = c_string_create (
+				"Routed %ld between %d -> %d (%s)",
+				sent,
+				connection->socket->sock_fd, 
+				service->connection->socket->sock_fd, service->connection->name->str
+			);
+
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
 		}
 	}
 
