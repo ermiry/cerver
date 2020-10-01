@@ -121,6 +121,31 @@ Balancer *balancer_create (
 
 }
 
+static void balancer_service_stats_print (Service *service) {
+
+	Connection *connection = service->connection;
+
+	printf ("Service: %s\n", connection->name->str);
+	connection_stats_print (connection);
+
+}
+
+void balancer_stats_print (Balancer *balancer) {
+
+	if (balancer) {
+		cerver_stats_print (balancer->cerver, true, true);
+
+		printf ("N services: %d\n", balancer->n_services);
+
+		for (int i = 0; i < balancer->n_services; i++) {
+			printf ("\n");
+			balancer_service_stats_print (balancer->services[i]);
+			printf ("\n");
+		}
+	}
+
+}
+
 #pragma endregion
 
 #pragma region services

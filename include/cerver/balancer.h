@@ -63,6 +63,8 @@ CERVER_EXPORT Balancer *balancer_create (
 	unsigned int n_services
 );
 
+CERVER_EXPORT void balancer_stats_print (Balancer *balancer);
+
 #pragma endregion
 
 #pragma region services
