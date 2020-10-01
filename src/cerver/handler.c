@@ -1674,7 +1674,7 @@ static void balancer_receive (void *cerver_receive_ptr) {
 		CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
 		if (cr->cerver && cr->socket) {
-			if (cr->socket > 0) {
+			if (cr->socket->sock_fd > 0) {
 				char header_buffer[sizeof (PacketHeader)] = { 0 };
 				ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
 
@@ -1742,7 +1742,7 @@ void cerver_receive (void *cerver_receive_ptr) {
 		CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
 		if (cr->cerver && cr->socket) {
-			if (cr->socket > 0) {
+			if (cr->socket->sock_fd > 0) {
 				char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
 				// cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
 				if (packet_buffer) {
