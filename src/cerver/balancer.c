@@ -24,7 +24,7 @@ static void balancer_service_delete (void *service_ptr);
 
 static u8 balancer_client_receive (void *custom_data_ptr);
 
-const char *balancer_type_to_string (BalcancerType type) {
+const char *balancer_type_to_string (BalancerType type) {
 
 	switch (type) {
 		#define XX(num, name, string) case BALANCER_TYPE_##name: return #string;
@@ -86,7 +86,7 @@ void balancer_delete (void *balancer_ptr) {
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 Balancer *balancer_create (
-	const char *name, BalcancerType type,
+	const char *name, BalancerType type,
 	u16 port, u16 connection_queue,
 	unsigned int n_services
 ) {

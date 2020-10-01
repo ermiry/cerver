@@ -19,15 +19,15 @@ struct _Service;
 	XX(0, 	NONE, 				None)							\
 	XX(1, 	ROUND_ROBIN, 		Round-Robin)					\
 
-typedef enum BalcancerType {
+typedef enum BalancerType {
 
 	#define XX(num, name, string) BALANCER_TYPE_##name = num,
 	BALANCER_TYPE_MAP (XX)
 	#undef XX
 
-} BalcancerType;
+} BalancerType;
 
-const char *balancer_type_to_string (BalcancerType type);
+const char *balancer_type_to_string (BalancerType type);
 
 #pragma endregion
 
@@ -36,7 +36,7 @@ const char *balancer_type_to_string (BalcancerType type);
 struct _Balancer {
 
 	String *name;
-	BalcancerType type;
+	BalancerType type;
 
 	Cerver *cerver;
 	Client *client;
@@ -58,7 +58,7 @@ CERVER_PRIVATE void balancer_delete (void *balancer_ptr);
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 CERVER_EXPORT Balancer *balancer_create (
-	const char *name, BalcancerType type,
+	const char *name, BalancerType type,
 	u16 port, u16 connection_queue,
 	unsigned int n_services
 );
