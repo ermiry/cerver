@@ -558,7 +558,10 @@ void balancer_route_to_service (
 	else {
 		cerver_log_warning ("No available services to handle packets!");
 
-		// TODO: return error message to client
+		error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
+			balancer->services, balancer->client, connection
+		);
 	}
 
 }
