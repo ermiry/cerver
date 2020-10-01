@@ -20,7 +20,7 @@ static Balancer *load_balancer = NULL;
 static void end (int dummy) {
 	
 	if (load_balancer) {
-        cerver_stats_print (load_balancer->cerver, true, true);
+        balancer_stats_print (load_balancer);
 		balancer_teardown (load_balancer);
 	} 
 
