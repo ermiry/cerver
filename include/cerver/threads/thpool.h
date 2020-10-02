@@ -11,19 +11,19 @@ struct _PoolThread;
 
 typedef struct Thpool {
 
-    const char *name;
+	const char *name;
 
-    unsigned int n_threads;
-    struct _PoolThread **threads;
+	unsigned int n_threads;
+	struct _PoolThread **threads;
 
-    volatile bool keep_alive;
-    volatile unsigned int num_threads_alive;
-    volatile unsigned int num_threads_working;
+	volatile bool keep_alive;
+	volatile unsigned int num_threads_alive;
+	volatile unsigned int num_threads_working;
 
-    pthread_mutex_t *mutex;
-    pthread_cond_t *threads_all_idle;
+	pthread_mutex_t *mutex;
+	pthread_cond_t *threads_all_idle;
 
-    JobQueue *job_queue;
+	JobQueue *job_queue;
 
 } Thpool;
 
