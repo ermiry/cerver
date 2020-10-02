@@ -21,16 +21,17 @@ struct _Connection;
 #define CERVER_ERROR_MAP(XX)													\
 	XX(0,	NONE, 				No error)										\
 	XX(1,	CERVER_ERROR, 		The cerver had an internal error)				\
-	XX(2,	FAILED_AUTH, 		Client failed to authenticate)					\
-	XX(3,	GET_FILE, 			Bad get file request)							\
-	XX(4,	SEND_FILE, 			Bad upload file request)						\
-	XX(5,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
-	XX(6,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
-	XX(7,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
-	XX(8,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
-	XX(9,	GAME_INIT, 			The game failed to init)						\
-	XX(10,	GAME_START, 		The game failed to start)						\
-	XX(11,	UNKNOWN, 			Unknown error)
+	XX(2,	PACKET_ERROR, 		The cerver was unable to handle the packet)		\
+	XX(3,	FAILED_AUTH, 		Client failed to authenticate)					\
+	XX(4,	GET_FILE, 			Bad get file request)							\
+	XX(5,	SEND_FILE, 			Bad upload file request)						\
+	XX(6,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
+	XX(7,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
+	XX(8,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
+	XX(9,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
+	XX(10,	GAME_INIT, 			The game failed to init)						\
+	XX(11,	GAME_START, 		The game failed to start)						\
+	XX(12,	UNKNOWN, 			Unknown error)
 
 typedef enum CerverErrorType {
 
@@ -52,7 +53,7 @@ typedef struct CerverErrorEvent {
 	CerverErrorType type;
 
 	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once 
+	bool drop_after_trigger;            // if we only want to trigger the event once
 
 	Action action;                      // the action to be triggered
 	void *action_args;                  // the action arguments
@@ -64,14 +65,14 @@ CERVER_PUBLIC void cerver_error_event_delete (void *event_ptr);
 
 // registers an action to be triggered when the specified error event occurs
 // if there is an existing action registered to an error event, it will be overrided
-// a newly allocated CerverErrorEventData structure will be passed to your method 
+// a newly allocated CerverErrorEventData structure will be passed to your method
 // that should be free using the cerver_error_event_data_delete () method
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_error_event_register (
 	struct _Cerver *cerver,
-	const CerverErrorType error_type, 
-    Action action, void *action_args, Action delete_action_args, 
-    bool create_thread, bool drop_after_trigger
+	const CerverErrorType error_type,
+	Action action, void *action_args, Action delete_action_args,
+	bool create_thread, bool drop_after_trigger
 );
 
 // unregister the action associated with an error event
@@ -81,10 +82,10 @@ CERVER_EXPORT u8 cerver_error_event_unregister (struct _Cerver *cerver, const Ce
 
 // triggers all the actions that are registred to an error
 CERVER_PRIVATE void cerver_error_event_trigger (
-	const CerverErrorType error_type, 
-    const struct _Cerver *cerver, 
+	const CerverErrorType error_type,
+	const struct _Cerver *cerver,
 	const struct _Client *client, const struct _Connection *connection,
-    const char *error_message
+	const char *error_message
 );
 
 #pragma endregion
@@ -114,8 +115,8 @@ CERVER_PUBLIC void cerver_error_event_data_delete (CerverErrorEventData *error_e
 typedef struct CerverError {
 
 	CerverErrorType type;
-    time_t timestamp;
-    String *msg;
+	time_t timestamp;
+	String *msg;
 
 } CerverError;
 
@@ -134,7 +135,7 @@ CERVER_PUBLIC struct _Packet *error_packet_generate (const CerverErrorType type,
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 error_packet_generate_and_send (
 	const CerverErrorType type, const char *msg,
-    struct _Cerver *cerver, struct _Client *client, struct _Connection *connection
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection
 );
 
 #pragma endregion
@@ -146,9 +147,9 @@ CERVER_PUBLIC u8 error_packet_generate_and_send (
 // serialized error data
 typedef struct SError {
 
-    time_t timestamp;
-    u32 error_type;
-    char msg[ERROR_MESSAGE_LENGTH];
+	time_t timestamp;
+	u32 error_type;
+	char msg[ERROR_MESSAGE_LENGTH];
 
 } SError;
 
