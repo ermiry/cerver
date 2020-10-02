@@ -597,6 +597,7 @@ u8 balancer_start (Balancer *balancer) {
 // first sends the packet header with the correct sock fd
 // if any data, it is forwarded from one sock fd to another using splice ()
 void balancer_route_to_service (
+	CerverReceive *cr,
 	Balancer *balancer, Connection *connection,
 	PacketHeader *header
 ) {
@@ -649,7 +650,10 @@ void balancer_route_to_service (
 			balancer->cerver, balancer->client, connection
 		);
 
-		// TODO: consume data from socket to get next packet
+		if (header->packet_size > sizeof (PacketHeader)) {
+			// consume data from socket to get next packet
+			balancer_receive_consume_from_connection (cr, header->packet_size - sizeof (PacketHeader));
+		}
 
 		balancer->stats->unhandled_packets += 1;
 		balancer->stats->unhandled_bytes += header->packet_size;
