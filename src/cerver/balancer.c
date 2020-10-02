@@ -661,8 +661,87 @@ void balancer_route_to_service (
 
 #pragma region handler
 
+// TODO: update stats
+// route the service's response back to the original client
+static void balancer_client_route_response (
+	BalancerService *bs,
+	Client *client, Connection *connection,
+	PacketHeader *header
+) {
+
+	// get the original connection by the sockfd from the packet header
+	Client *original_client = client_get_by_sock_fd (bs->balancer->cerver, header->sock_fd);
+	if (original_client) {
+		Connection *original_connection = connection_get_by_sock_fd_from_client (original_client, header->sock_fd);
+		if (original_connection) {
+			size_t sent = 0;
+			if (!packet_route_between_connections (
+				connection, original_connection,
+				header, &sent
+			)) {
+				char *status = c_string_create (
+					"Routed %ld between %d (%s) -> %d (original)",
+					sent,
+					connection->socket->sock_fd, connection->name->str,
+					original_connection->socket->sock_fd
+				);
+
+				if (status) {
+					cerver_log_debug (status);
+					free (status);
+				}
+			}
+
+			else {
+				#ifdef BALANCER_DEBUG
+				char *status = c_string_create (
+					"Packet routing between %d (%s) -> %d (original) has failed!",
+					connection->socket->sock_fd, connection->name->str,
+					original_connection->socket->sock_fd
+				);
+
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+				#endif
+			}
+		}
+
+		else {
+			char *status = c_string_create (
+				"balancer_client_route_response () - unable to find CONNECTION with sock fd %d", 
+				header->sock_fd
+			);
+
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+
+			// TODO: consume data from socket to get next packet
+		}
+	}
+
+	else {
+		char *status = c_string_create (
+			"balancer_client_route_response () - unable to find CLIENT with sock fd %d", 
+			header->sock_fd
+		);
+
+		if (status) {
+			cerver_log_error (status);
+			free (status);
+		}
+
+		// TODO: consume data from socket to get next packet
+	}
+
+}
+
 // FIXME: discard buffer on bad types
 static void balancer_client_receive_success (
+	BalancerService *bs,
 	Client *client, Connection *connection,
 	PacketHeader *header
 ) {
@@ -674,6 +753,7 @@ static void balancer_client_receive_success (
 
 		case PACKET_TYPE_AUTH: break;
 
+		// TODO: handle whether the response was sent by the handler or by a client
 		case PACKET_TYPE_TEST: {
 			client->stats->received_packets->n_test_packets += 1;
 			connection->stats->received_packets->n_test_packets += 1;
@@ -688,18 +768,11 @@ static void balancer_client_receive_success (
 		case PACKET_TYPE_APP:
 		case PACKET_TYPE_APP_ERROR:
 		case PACKET_TYPE_CUSTOM: {
-			// FIXME: better handler
-
-			printf ("sockfd: %d\n", header->sock_fd);
-
-			// send the header to the selected service
-			send (header->sock_fd, header, sizeof (PacketHeader), 0);
-
-			// splice remaining packet to service
-			size_t left = header->packet_size - sizeof (PacketHeader);
-			if (left) {
-				splice (connection->socket->sock_fd, NULL, header->sock_fd, NULL, left, 0);
-			}
+			balancer_client_route_response (
+				bs,
+				client, connection,
+				header
+			);
 		} break;
 
 		default: {
@@ -811,6 +884,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 				}
 
 				balancer_client_receive_success (
+					(BalancerService *) custom_data->args,
 					custom_data->client, custom_data->connection,
 					(PacketHeader *) header_buffer
 				);
