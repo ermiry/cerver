@@ -237,14 +237,33 @@ const char *balancer_service_status_description (ServiceStatus status) {
 
 }
 
+static ServiceStats *balancer_service_stats_new (void) {
+
+	ServiceStats *stats = (ServiceStats *) malloc (sizeof (ServiceStats));
+	if (stats) {
+		memset (stats, 0, sizeof (ServiceStats));
+	}
+
+	return stats;
+
+}
+
+static void balancer_service_stats_delete (ServiceStats *stats) {
+
+	if (stats) free (stats);
+
+}
+
 static Service *balancer_service_new (void) {
 
 	Service *service = (Service *) malloc (sizeof (Service));
 	if (service) {
 		service->status = SERVICE_STATUS_NONE;
-		service->connection = NULL;
 
+		service->connection = NULL;
 		service->reconnect_wait_time = DEFAULT_SERVICE_WAIT_TIME;
+
+		service->stats = NULL;
 	}
 
 	return service;
@@ -258,8 +277,21 @@ static void balancer_service_delete (void *service_ptr) {
 
 		service->connection = NULL;
 
+		balancer_service_stats_delete (service->stats);
+
 		free (service_ptr);
 	}
+
+}
+
+static Service *balancer_service_create (void) {
+
+	Service *service = balancer_service_new ();
+	if (service) {
+		service->stats = balancer_service_stats_new ();
+	}
+
+	return service;
 
 }
 
@@ -332,7 +364,7 @@ u8 balancer_service_register (
 
 	if (balancer && ip_address) {
 		if ((balancer->next_service + 1) <= balancer->n_services) {
-			Service *service = balancer_service_new ();
+			Service *service = balancer_service_create ();
 			if (service) {
 				Connection *connection = client_connection_create (
 					balancer->client,

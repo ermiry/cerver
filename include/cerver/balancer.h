@@ -126,12 +126,35 @@ CERVER_EXPORT const char *balancer_service_status_to_string (ServiceStatus statu
 
 CERVER_EXPORT const char *balancer_service_status_description (ServiceStatus status);
 
+typedef struct ServiceStats {
+
+	// routed packets to the service
+	u64 n_packets_routed;              // total number of packets that were routed to the service
+	u64 total_bytes_routed;            // total amount of bytes routed to the service
+
+	// good types packets received from the service
+	u64 n_packets_received;            // packets received from the service
+	u64 receives_done;                 // calls to recv ()
+	u64 bytes_received;                // bytes received from the service
+
+	// bad types packets - consumed data from sock fd until next header
+	u64 bad_n_packets_received;        // bad packets received from the service
+	u64 bad_receives_done;             // calls to recv ()
+	u64 bad_bytes_received;            // bad bytes received from the service
+
+	u64 routed_packets[PACKETS_MAX_TYPES];
+	u64 received_packets[PACKETS_MAX_TYPES];
+
+} ServiceStats;
+
 struct _Service {
 
 	ServiceStatus status;
-	Connection *connection;
 
+	Connection *connection;
 	unsigned int reconnect_wait_time;
+
+	ServiceStats *stats;
 
 };
 
