@@ -401,6 +401,15 @@ u8 balancer_service_register (
 
 }
 
+// sets the service's name
+void balancer_service_set_name (Service *service, const char *name) {
+
+	if (service && name) {
+		connection_set_name (service->connection, name);
+	}
+
+}
+
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
 void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time) {

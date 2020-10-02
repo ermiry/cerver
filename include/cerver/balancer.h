@@ -176,6 +176,9 @@ CERVER_EXPORT u8 balancer_service_register (
 	const char *ip_address, u16 port
 );
 
+// sets the service's name
+CERVER_EXPORT void balancer_service_set_name (Service *service, const char *name);
+
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
 CERVER_EXPORT void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time);
