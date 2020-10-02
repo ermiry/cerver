@@ -608,27 +608,12 @@ void balancer_route_to_service (
 		header->sock_fd = connection->socket->sock_fd;
 
 		size_t sent = 0;
-		if (packet_route_between_connections (
+		if (!packet_route_between_connections (
 			connection, service->connection,
 			header, &sent
 		)) {
-			#ifdef BALANCER_DEBUG
 			char *status = c_string_create (
-				"Packet routing between %d -> %d (%s) has failed!",
-				connection->socket->sock_fd, 
-				service->connection->socket->sock_fd, service->connection->name->str
-			);
-
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
-			#endif
-		}
-
-		else {
-			char *status = c_string_create (
-				"Routed %ld between %d -> %d (%s)",
+				"Routed %ld between %d (original) -> %d (%s)",
 				sent,
 				connection->socket->sock_fd, 
 				service->connection->socket->sock_fd, service->connection->name->str
@@ -638,6 +623,21 @@ void balancer_route_to_service (
 				cerver_log_debug (status);
 				free (status);
 			}
+		}
+
+		else {
+			#ifdef BALANCER_DEBUG
+			char *status = c_string_create (
+				"Packet routing between %d (original) -> %d (%s) has failed!",
+				connection->socket->sock_fd, 
+				service->connection->socket->sock_fd, service->connection->name->str
+			);
+
+			if (status) {
+				cerver_log_error (status);
+				free (status);
+			}
+			#endif
 		}
 	}
 
