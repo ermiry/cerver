@@ -107,7 +107,9 @@ CERVER_EXPORT Balancer *balancer_create (
 
 #pragma region services
 
-#define DEFAULT_SERVICE_WAIT_TIME			20
+#define SERVICE_CONSUME_BUFFER_SIZE				512
+
+#define DEFAULT_SERVICE_WAIT_TIME				20
 
 #define SERVICE_STATUS_MAP(XX)																			\
 	XX(0, 	NONE, 			None, 			None)														\

@@ -661,6 +661,56 @@ void balancer_route_to_service (
 
 #pragma region handler
 
+static void balancer_client_receive_handle_failed (
+	BalancerService *bs, 
+	Client *client, Connection *connection
+);
+
+// consume from the service's connection socket until the next packet header
+// returns 0 on success, 1 on error
+static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeader *header) {
+
+	u8 retval = 1;
+
+	if (header->packet_size > sizeof (PacketHeader)) {
+		char buffer[SERVICE_CONSUME_BUFFER_SIZE] = { 0 };
+
+		size_t data_size = header->packet_size - sizeof (PacketHeader);
+
+		size_t to_read = 0;
+		size_t rc = 0;
+
+		do {
+			to_read = data_size >= SERVICE_CONSUME_BUFFER_SIZE ? SERVICE_CONSUME_BUFFER_SIZE : data_size;
+			rc = recv (bs->service->connection->socket->sock_fd, buffer, to_read, 0);
+			if (rc <= 0) {
+				// #ifdef BALANCER_DEBUG
+				snprintf (
+					buffer, SERVICE_CONSUME_BUFFER_SIZE, 
+					"balancer_client_consume_from_service () - rc <= 0 - service %s", 
+					bs->service->connection->name->str
+				);
+				cerver_log_warning (buffer);
+				// #endif
+
+				// end the connection & flag the service as unavailable
+				balancer_client_receive_handle_failed (
+					bs, 
+					bs->balancer->client, bs->service->connection
+				);
+				break;
+			}
+
+			data_size -= to_read;
+		} while (data_size <= 0);
+
+		if (!data_size) retval = 0;
+	}
+
+	return retval;
+
+}
+
 // TODO: update stats
 // route the service's response back to the original client
 static void balancer_client_route_response (
