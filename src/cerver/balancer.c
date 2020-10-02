@@ -303,17 +303,17 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 }
 
-static ServiceStatus balancer_service_get_status (Service *service) {
+// static ServiceStatus balancer_service_get_status (Service *service) {
 
-	ServiceStatus retval = SERVICE_STATUS_NONE;
+// 	ServiceStatus retval = SERVICE_STATUS_NONE;
 
-	if (service) {
-		retval =  service->status;
-	}
+// 	if (service) {
+// 		retval =  service->status;
+// 	}
 
-	return retval;
+// 	return retval;
 
-}
+// }
 
 static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
 
