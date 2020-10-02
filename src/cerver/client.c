@@ -2072,6 +2072,24 @@ static void client_connection_terminate (Client *client, Connection *connection)
 
 }
 
+// closes the connection's socket & set it to be inactive
+// does not send a close connection packet to the cerver
+// returns 0 on success, 1 on error
+int client_connection_stop (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
+		connection_end (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // terminates the connection & closes the socket
 // but does NOT destroy the current connection
 // returns 0 on success, 1 on error
@@ -2081,8 +2099,7 @@ int client_connection_close (Client *client, Connection *connection) {
 
 	if (client && connection) {
 		client_connection_terminate (client, connection);
-		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
-		connection_end (connection);
+		retval = client_connection_stop (client, connection);
 	}
 
 	return retval;

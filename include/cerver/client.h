@@ -373,13 +373,13 @@ typedef struct _ClientError ClientError;
 
 // registers an action to be triggered when the specified error occurs
 // if there is an existing action registered to an error, it will be overrided
-// a newly allocated ClientErrorData structure will be passed to your method 
+// a newly allocated ClientErrorData structure will be passed to your method
 // that should be free using the client_error_data_delete () method
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 client_error_register (
 	struct _Client *client,
 	const ClientErrorType error_type,
-	Action action, void *action_args, Action delete_action_args, 
+	Action action, void *action_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
@@ -391,8 +391,8 @@ CERVER_EXPORT u8 client_error_unregister (struct _Client *client, const ClientEr
 // triggers all the actions that are registred to an error
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 client_error_trigger (
-	const ClientErrorType error_type, 
-	const struct _Client *client, const struct _Connection *connection, 
+	const ClientErrorType error_type,
+	const struct _Client *client, const struct _Connection *connection,
 	const char *error_message
 );
 
@@ -506,15 +506,20 @@ CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connect
 
 /*** end ***/
 
+// closes the connection's socket & set it to be inactive
+// does not send a close connection packet to the cerver
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int client_connection_stop (Client *client, Connection *connection);
+
 // terminates the connection & closes the socket
 // but does NOT destroy the current connection
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_close (Client *client, struct _Connection *connection);
+CERVER_PUBLIC int client_connection_close (Client *client, struct _Connection *connection);
 
 // terminates and destroys a connection registered to a client
 // that is connected to a cerver
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_end (Client *client, struct _Connection *connection);
+CERVER_PUBLIC int client_connection_end (Client *client, struct _Connection *connection);
 
 // stop any on going connection and process and destroys the client
 // returns 0 on success, 1 on error
