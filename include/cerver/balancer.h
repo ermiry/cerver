@@ -12,6 +12,7 @@
 
 #include "cerver/threads/thread.h"
 
+struct _Balancer;
 struct _Service;
 
 #pragma region type
@@ -60,6 +61,8 @@ typedef struct BalancerStats {
 
 } BalancerStats;
 
+CERVER_EXPORT void balancer_stats_print (struct _Balancer *balancer);
+
 #pragma endregion
 
 #pragma region main
@@ -75,6 +78,8 @@ struct _Balancer {
 	int next_service;
 	int n_services;					// how many services the load balancer is connected to
 	struct _Service **services;		// references to the client's connections for direct access
+
+	BalancerStats *stats;
 
 	pthread_mutex_t *mutex;
 
@@ -93,8 +98,6 @@ CERVER_EXPORT Balancer *balancer_create (
 	u16 port, u16 connection_queue,
 	unsigned int n_services
 );
-
-CERVER_EXPORT void balancer_stats_print (Balancer *balancer);
 
 #pragma endregion
 
