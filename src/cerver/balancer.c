@@ -23,6 +23,8 @@ static void balancer_service_delete (void *service_ptr);
 
 static u8 balancer_client_receive (void *custom_data_ptr);
 
+#pragma region types
+
 const char *balancer_type_to_string (BalancerType type) {
 
 	switch (type) {
@@ -34,6 +36,29 @@ const char *balancer_type_to_string (BalancerType type) {
 	return balancer_type_to_string (BALANCER_TYPE_NONE);
 
 }
+
+#pragma endregion
+
+#pragma region stats
+
+static BalancerStats *balancer_stats_new (void) {
+
+	BalancerStats *stats = (BalancerStats *) malloc (sizeof (BalancerStats));
+	if (stats) {
+		memset (stats, 0, sizeof (BalancerStats));
+	}
+
+	return stats;
+
+}
+
+static void balancer_stats_delete (BalancerStats *stats) {
+
+	if (stats) free (stats);
+
+}
+
+#pragma endregion
 
 #pragma region main
 
@@ -50,6 +75,8 @@ Balancer *balancer_new (void) {
 		balancer->next_service = 0;
 		balancer->n_services = 0;
 		balancer->services = NULL;
+
+		balancer->stats = NULL;
 
 		balancer->mutex = NULL;
 	}
@@ -74,6 +101,8 @@ void balancer_delete (void *balancer_ptr) {
 
 			free (balancer->services);
 		}
+
+		balancer_stats_delete (balancer->stats);
 
 		pthread_mutex_delete (balancer->mutex);
 
@@ -112,6 +141,8 @@ Balancer *balancer_create (
 			for (unsigned int i = 0; i < balancer->n_services; i++)
 				balancer->services[i] = NULL;
 		}
+
+		balancer->stats = balancer_stats_new ();
 
 		balancer->mutex = pthread_mutex_new ();
 	}

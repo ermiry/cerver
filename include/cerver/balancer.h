@@ -8,6 +8,7 @@
 #include "cerver/client.h"
 #include "cerver/connection.h"
 #include "cerver/config.h"
+#include "cerver/packets.h"
 
 #include "cerver/threads/thread.h"
 
@@ -28,6 +29,36 @@ typedef enum BalancerType {
 } BalancerType;
 
 const char *balancer_type_to_string (BalancerType type);
+
+#pragma endregion
+
+#pragma region stats
+
+typedef struct BalancerStats {
+
+	// good types packets that the balancer can handle
+	u64 n_packets_received;            // packets received from clients
+	u64 receives_done;                 // receives done to clients
+	u64 bytes_received;                // bytes received from clients
+
+	// bad types packets - consumed data from sock fd until next header
+	u64 bad_n_packets_received;        // packets received from clients
+	u64 bad_receives_done;             // receives done to clients
+	u64 bad_bytes_received;            // bytes received from clients
+
+	// routed packets to services
+	u64 n_packets_routed;              // total number of packets that were routed to services
+	u64 total_bytes_routed;            // total amount of bytes routed to services
+
+	// responses sent to the original clients
+	u64 n_packets_sent;                // total number of packets that were sent
+	u64 total_bytes_sent;              // total amount of bytes sent by the cerver
+
+	u64 received_packets[PACKETS_MAX_TYPES];	
+	u64 routed_packets[PACKETS_MAX_TYPES];
+	u64 sent_packets[PACKETS_MAX_TYPES];
+
+} BalancerStats;
 
 #pragma endregion
 
