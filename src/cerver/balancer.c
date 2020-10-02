@@ -682,6 +682,11 @@ void balancer_route_to_service (
 			connection, service->connection,
 			header, &sent
 		)) {
+			service->stats->n_packets_routed += 1;
+			service->stats->total_bytes_routed += sent;
+
+			service->stats->routed_packets[header->packet_type] += 1;
+
 			char *status = c_string_create (
 				"Routed %ld between %d (original) -> %d (%s)",
 				sent,
