@@ -126,6 +126,8 @@ CERVER_PUBLIC void packets_per_type_delete (void *ptr);
 
 CERVER_PUBLIC void packets_per_type_print (PacketsPerType *packets_per_type);
 
+CERVER_PUBLIC void packets_per_type_array_print (u64 packets[PACKETS_MAX_TYPES]);
+
 #pragma endregion
 
 #pragma region header

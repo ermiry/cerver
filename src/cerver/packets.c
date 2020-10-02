@@ -110,6 +110,22 @@ void packets_per_type_print (PacketsPerType *packets_per_type) {
 
 }
 
+void packets_per_type_array_print (u64 packets[PACKETS_MAX_TYPES]) {
+
+	printf ("\tCerver:              %ld\n", packets[PACKET_TYPE_CERVER]);
+	printf ("\tClient:              %ld\n", packets[PACKET_TYPE_CLIENT]);
+	printf ("\tError:               %ld\n", packets[PACKET_TYPE_ERROR]);
+	printf ("\tRequest:             %ld\n", packets[PACKET_TYPE_REQUEST]);
+	printf ("\tAuth:                %ld\n", packets[PACKET_TYPE_AUTH]);
+	printf ("\tGame:                %ld\n", packets[PACKET_TYPE_GAME]);
+	printf ("\tApp:                 %ld\n", packets[PACKET_TYPE_APP]);
+	printf ("\tApp Error:           %ld\n", packets[PACKET_TYPE_APP_ERROR]);
+	printf ("\tCustom:              %ld\n", packets[PACKET_TYPE_CUSTOM]);
+	printf ("\tTest:                %ld\n", packets[PACKET_TYPE_TEST]);
+	printf ("\tBad:                 %ld\n", packets[PACKET_TYPE_BAD]);
+
+}
+
 #pragma endregion
 
 #pragma region header
