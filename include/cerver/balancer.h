@@ -155,6 +155,8 @@ typedef struct ServiceStats {
 
 } ServiceStats;
 
+CERVER_EXPORT void balancer_service_stats_print (struct _Service *service);
+
 struct _Service {
 
 	ServiceStatus status;

@@ -254,6 +254,38 @@ static void balancer_service_stats_delete (ServiceStats *stats) {
 
 }
 
+void balancer_service_stats_print (Service *service) {
+
+	if (service) {
+		fprintf (stdout, LOG_COLOR_BLUE "Service: %s\n" LOG_COLOR_RESET, service->connection->name->str);
+	
+		// routed packets to the service
+		printf ("Routed packets:              %ld\n", service->stats->n_packets_routed);
+		printf ("Routed bytes:                %ld\n", service->stats->total_bytes_routed);
+
+		// good types packets received from the service
+		printf ("Receives done:               %ld\n", service->stats->receives_done);
+		printf ("Received packets:            %ld\n", service->stats->n_packets_received);
+		printf ("Received bytes:              %ld\n", service->stats->bytes_received);
+
+		// bad types packets - consumed data from sock fd until next header
+		printf ("Bad receives done:           %ld\n", service->stats->bad_receives_done);
+		printf ("Bad received packets:        %ld\n", service->stats->bad_n_packets_received);
+		printf ("Bad received bytes:          %ld\n", service->stats->bad_bytes_received);
+
+		printf ("\n");
+		printf ("Routed packets:");
+		printf ("\n");
+		packets_per_type_array_print (service->stats->routed_packets);
+
+		printf ("\n");
+		printf ("Received packets:");
+		printf ("\n");
+		packets_per_type_array_print (service->stats->received_packets);
+	}
+
+}
+
 static Service *balancer_service_new (void) {
 
 	Service *service = (Service *) malloc (sizeof (Service));
