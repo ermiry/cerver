@@ -140,7 +140,7 @@ typedef struct ServiceStats {
 	u64 n_packets_routed;              // total number of packets that were routed to the service
 	u64 total_bytes_routed;            // total amount of bytes routed to the service
 
-	// good types packets received from the service
+	// total amount of data received from the service
 	u64 n_packets_received;            // packets received from the service
 	u64 receives_done;                 // calls to recv ()
 	u64 bytes_received;                // bytes received from the service

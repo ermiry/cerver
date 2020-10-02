@@ -848,7 +848,8 @@ static void balancer_client_route_response (
 				free (status);
 			}
 
-			// TODO: consume data from socket to get next packet
+			// consume data from socket to get next packet
+			balancer_client_consume_from_service (bs, header);
 		}
 	}
 
@@ -863,7 +864,29 @@ static void balancer_client_route_response (
 			free (status);
 		}
 
-		// TODO: consume data from socket to get next packet
+		// consume data from socket to get next packet
+		balancer_client_consume_from_service (bs, header);
+	}
+
+}
+
+// handles a PACKET_TYPE_TEST packet from the service
+static void balancer_client_handle_test (
+	BalancerService *bs,
+	Client *client, Connection *connection,
+	PacketHeader *header
+) {
+
+	if (!header->sock_fd) {
+		char *status = c_string_create ("Got a TEST packet from service %s", connection->name->str);
+		if (status) {
+			cerver_log_msg (stdout, LOG_TYPE_TEST, LOG_TYPE_HANDLER, status);
+			free (status);
+		}
+	}
+
+	else {
+		balancer_client_route_response (bs, client, connection, header);
 	}
 
 }
@@ -874,8 +897,14 @@ static void balancer_client_receive_success (
 	PacketHeader *header
 ) {
 
+	bs->service->stats->receives_done += 1;
+	bs->service->stats->n_packets_received += 1;
+
+	bs->service->stats->bytes_received += header->packet_size;
+
 	bs->service->stats->received_packets[
-		header->packet_type < PACKET_TYPE_BAD ? header->packet_type : PACKET_TYPE_BAD
+		((!header->packet_type) || (header->packet_type >= PACKET_TYPE_BAD)) ? 
+			PACKET_TYPE_BAD : header->packet_type
 	] += 1;
 
 	switch (header->packet_type) {
@@ -887,11 +916,13 @@ static void balancer_client_receive_success (
 			balancer_client_consume_from_service (bs, header);
 			break;
 
-		// TODO: handle whether the response was sent by the handler or by a client
+		// handle whether the response was sent by the handler or by a client
 		case PACKET_TYPE_TEST: {
-			client->stats->received_packets->n_test_packets += 1;
-			connection->stats->received_packets->n_test_packets += 1;
-			cerver_log_msg (stdout, LOG_TYPE_TEST, LOG_TYPE_HANDLER, "Got a test packet from service");
+			balancer_client_handle_test (
+				bs,
+				client, connection,
+				header
+			);
 		} break;
 
 		// only route packets of these types back to original client
@@ -911,22 +942,21 @@ static void balancer_client_receive_success (
 
 		case PACKET_TYPE_NONE:
 		default: {
-			client->stats->received_packets->n_bad_packets += 1;
-			connection->stats->received_packets->n_bad_packets += 1;
 			#ifdef BALANCER_DEBUG
-			cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Got a packet of unknown type.");
+			char *status = c_string_create (
+				"balancer_client_receive () - got a packet of unknown type from service %s",
+				connection->name->str
+			);
+
+			if (status) {
+				cerver_log_warning (status);
+				free (status);
+			}
 			#endif
 
 			balancer_client_consume_from_service (bs, header);
 		} break;
 	}
-
-	// FIXME: update stats
-	// client->stats->n_receives_done += 1;
-	// client->stats->total_bytes_received += rc;
-
-	// connection->stats->n_receives_done += 1;
-	// connection->stats->total_bytes_received += rc;
 
 }
 
