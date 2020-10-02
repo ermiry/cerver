@@ -593,7 +593,6 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region route
 
-// TODO: update balancer & service stats
 // routes the received packet to a service to be handled
 // first sends the packet header with the correct sock fd
 // if any data, it is forwarded from one sock fd to another using splice ()
@@ -649,6 +648,11 @@ void balancer_route_to_service (
 			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
 			balancer->cerver, balancer->client, connection
 		);
+
+		// TODO: consume data from socket to get next packet
+
+		balancer->stats->unhandled_packets += 1;
+		balancer->stats->unhandled_bytes += header->packet_size;
 	}
 
 }

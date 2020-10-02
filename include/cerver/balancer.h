@@ -55,6 +55,10 @@ typedef struct BalancerStats {
 	u64 n_packets_sent;                // total number of packets that were sent
 	u64 total_bytes_sent;              // total amount of bytes sent by the cerver
 
+	// packets that the balancer was unable to handle
+	u64 unhandled_packets;
+	u64 unhandled_bytes;
+
 	u64 received_packets[PACKETS_MAX_TYPES];	
 	u64 routed_packets[PACKETS_MAX_TYPES];
 	u64 sent_packets[PACKETS_MAX_TYPES];
