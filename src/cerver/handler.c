@@ -1615,36 +1615,46 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
+void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_size) {
+
+	size_t to_read = 0;
+
+	do {
+		char buffer[BALANCER_CONSUME_BUFFER_SIZE] = { 0 };
+		to_read = data_size >= BALANCER_CONSUME_BUFFER_SIZE ? BALANCER_CONSUME_BUFFER_SIZE : data_size;
+		if (recv (cr->socket->sock_fd, buffer, to_read, 0) <= 0) {
+			#ifdef HANDLER_DEBUG
+			snprintf (
+				buffer, 128, 
+				"balancer_receive_consume_from_connection () - rc <= 0 - sock fd %d", 
+				cr->socket->sock_fd
+			);
+			cerver_log_warning (buffer);
+			#endif
+
+			cerver_switch_receive_handle_failed (cr);
+			break;
+		}
+
+		data_size -= to_read;
+	} while (data_size <= 0);
+
+}
+
 // we received a packet of a bad type (the handler is unable to handle it)
 // consume from the socket until the next packet header
 static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) {
 
 	if (header->packet_size > sizeof (PacketHeader)) {
-		char buffer[128] = { 0 };
 		size_t data_size = header->packet_size - sizeof (PacketHeader);
 		if (data_size < MAX_UDP_PACKET_SIZE) {
-			size_t to_read = 0;
-			size_t rc = 0;
-
-			do {
-				to_read = data_size >= 128 ? 128 : data_size;
-				rc = recv (cr->socket->sock_fd, buffer, to_read, 0);
-				if (rc <= 0) {
-					#ifdef HANDLER_DEBUG
-					snprintf (buffer, 128, "balancer_receive_bad_type () - rc <= 0 - sock fd %d", cr->socket->sock_fd);
-					cerver_log_warning (buffer);
-					#endif
-
-					cerver_switch_receive_handle_failed (cr);
-				}
-
-				data_size -= to_read;
-			} while (data_size <= 0);
+			balancer_receive_consume_from_connection (cr, data_size);
 		}
 
 		else {
 			// end connection directly if remaining packet is to large
 			#ifdef HANDLER_DEBUG
+			char buffer[128] = { 0 };
 			snprintf (
 				buffer, 128, 
 				"balancer_receive_bad_type () - sock fd %d - data size %ld > %d", 
@@ -1661,11 +1671,14 @@ static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) 
 
 static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
 
+	size_t rc = sizeof (PacketHeader);
+
 	switch (header->packet_type) {
 		case PACKET_TYPE_CLIENT:
 			cr->cerver->stats->received_packets->n_client_packets += 1;
 			// cr->client->stats->received_packets->n_client_packets += 1;
 			// cr->connection->stats->received_packets->n_client_packets += 1;
+			rc = header->packet_size;
 			cerver_client_packet_handler_by_header (
 				header,
 				cr->cerver, cr->client, cr->connection, cr->lobby
@@ -1691,6 +1704,7 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 		case PACKET_TYPE_CUSTOM:
 		case PACKET_TYPE_TEST: {
 			balancer_route_to_service (
+				cr,
 				cr->cerver->balancer, cr->connection,
 				header
 			);
@@ -1709,11 +1723,12 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 				free (s);
 			}
 			#endif
+
+			balancer_receive_bad_type (cr, header);
 		} break;
 	}
 
-	// FIXME: update stats based on action
-	// cerver_receive_success_update_stats (cr, rc);
+	cerver_receive_success_update_stats (cr, rc);
 
 }
 

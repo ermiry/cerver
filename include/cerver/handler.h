@@ -216,6 +216,8 @@ CERVER_PRIVATE void cerver_switch_receive_handle_failed (CerverReceive *cr);
 // receive all incoming data from the socket
 CERVER_PRIVATE void cerver_receive (void *ptr);
 
+CERVER_PRIVATE void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_size);
+
 #pragma endregion
 
 #pragma region poll

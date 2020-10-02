@@ -71,6 +71,8 @@ CERVER_EXPORT void balancer_stats_print (struct _Balancer *balancer);
 
 #pragma region main
 
+#define BALANCER_CONSUME_BUFFER_SIZE			512
+
 struct _Balancer {
 
 	String *name;
@@ -196,6 +198,7 @@ CERVER_EXPORT u8 balancer_start (Balancer *balancer);
 // first sends the packet header with the correct sock fd
 // if any data, it is forwarded from one sock fd to another using splice ()
 CERVER_PRIVATE void balancer_route_to_service (
+	CerverReceive *cr,
 	Balancer *balancer, Connection *connection,
 	PacketHeader *header
 );
