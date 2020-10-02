@@ -1403,7 +1403,14 @@ static void client_error_packet_handler (Packet *packet) {
 					packet->client, packet->connection,
 					s_error->msg
 				);
-			break;
+				break;
+			case CLIENT_ERROR_PACKET_ERROR:
+				client_error_trigger (
+					CLIENT_ERROR_PACKET_ERROR,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			case CLIENT_ERROR_FAILED_AUTH: {
 				if (client_error_trigger (
@@ -1419,6 +1426,21 @@ static void client_error_packet_handler (Packet *packet) {
 					}
 				}
 			} break;
+
+			case CLIENT_ERROR_GET_FILE:
+				client_error_trigger (
+					CLIENT_ERROR_GET_FILE,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
+			case CLIENT_ERROR_SEND_FILE:
+				client_error_trigger (
+					CLIENT_ERROR_SEND_FILE,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			case CLIENT_ERROR_CREATE_LOBBY:
 				client_error_trigger (

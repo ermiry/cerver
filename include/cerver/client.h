@@ -337,14 +337,17 @@ CERVER_PUBLIC void client_event_data_delete (ClientEventData *event_data);
 #define CLIENT_ERROR_MAP(XX)													\
 	XX(0,	NONE, 				No error)										\
 	XX(1,	CERVER_ERROR, 		The cerver had an internal error)				\
-	XX(2,	FAILED_AUTH, 		Client failed to authenticate)					\
-	XX(3,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
-	XX(4,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
-	XX(5,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
-	XX(6,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
-	XX(7,	GAME_INIT, 			The game failed to init)						\
-	XX(8,	GAME_START, 		The game failed to start)						\
-	XX(9,	UNKNOWN, 			Unknown error)
+	XX(2,	PACKET_ERROR, 		The cerver was unable to handle the packet)		\
+	XX(3,	FAILED_AUTH, 		Client failed to authenticate)					\
+	XX(4,	GET_FILE, 			Bad get file request)							\
+	XX(5,	SEND_FILE, 			Bad upload file request)						\
+	XX(6,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
+	XX(7,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
+	XX(8,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
+	XX(9,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
+	XX(10,	GAME_INIT, 			The game failed to init)						\
+	XX(11,	GAME_START, 		The game failed to start)						\
+	XX(12,	UNKNOWN, 			Unknown error)
 
 typedef enum ClientErrorType {
 
