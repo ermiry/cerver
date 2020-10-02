@@ -774,17 +774,23 @@ static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeade
 				break;
 			}
 
+			else {
+				bs->service->stats->bad_receives_done += 1;
+				bs->service->stats->bad_bytes_received += rc;
+			}
+
 			data_size -= to_read;
 		} while (data_size <= 0);
 
 		if (!data_size) retval = 0;
 	}
 
+	bs->service->stats->bad_n_packets_received += 1;
+
 	return retval;
 
 }
 
-// TODO: update stats
 // route the service's response back to the original client
 static void balancer_client_route_response (
 	BalancerService *bs,
