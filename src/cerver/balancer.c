@@ -793,19 +793,24 @@ static void balancer_client_route_response (
 
 }
 
-// FIXME: discard buffer on bad types
 static void balancer_client_receive_success (
 	BalancerService *bs,
 	Client *client, Connection *connection,
 	PacketHeader *header
 ) {
 
+	bs->service->stats->received_packets[
+		header->packet_type < PACKET_TYPE_BAD ? header->packet_type : PACKET_TYPE_BAD
+	] += 1;
+
 	switch (header->packet_type) {
-		case PACKET_TYPE_NONE: break;
+		case PACKET_TYPE_CLIENT:
+			balancer_client_consume_from_service (bs, header);
+			break;
 
-		case PACKET_TYPE_CLIENT: break;
-
-		case PACKET_TYPE_AUTH: break;
+		case PACKET_TYPE_AUTH:
+			balancer_client_consume_from_service (bs, header);
+			break;
 
 		// TODO: handle whether the response was sent by the handler or by a client
 		case PACKET_TYPE_TEST: {
@@ -829,12 +834,15 @@ static void balancer_client_receive_success (
 			);
 		} break;
 
+		case PACKET_TYPE_NONE:
 		default: {
 			client->stats->received_packets->n_bad_packets += 1;
 			connection->stats->received_packets->n_bad_packets += 1;
 			#ifdef BALANCER_DEBUG
 			cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Got a packet of unknown type.");
 			#endif
+
+			balancer_client_consume_from_service (bs, header);
 		} break;
 	}
 
