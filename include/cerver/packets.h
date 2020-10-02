@@ -74,6 +74,9 @@ CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 
 #pragma region types
 
+#define PACKETS_MAX_TYPES					16
+#define PACKETS_CURRENT_TYPES				10
+
 #define PACKET_TYPE_MAP(XX)					\
 	XX(0, 	NONE)							\
 	XX(1, 	CERVER)							\
@@ -85,7 +88,8 @@ CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 	XX(7, 	APP)							\
 	XX(8, 	APP_ERROR)						\
 	XX(9, 	CUSTOM)							\
-	XX(10, 	TEST)
+	XX(10, 	TEST)							\
+	XX(11, 	BAD)
 
 // these indicate what type of packet we are sending/recieving
 typedef enum PacketType {
