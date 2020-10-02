@@ -21,6 +21,8 @@
 
 static void balancer_service_delete (void *service_ptr);
 
+void balancer_service_stats_print (Service *service);
+
 static u8 balancer_client_receive (void *custom_data_ptr);
 
 #pragma region types
@@ -58,21 +60,47 @@ static void balancer_stats_delete (BalancerStats *stats) {
 
 }
 
-static void balancer_service_stats_print (Service *service) {
-
-	Connection *connection = service->connection;
-
-	printf ("Service: %s\n", connection->name->str);
-	connection_stats_print (connection);
-
-}
-
 void balancer_stats_print (Balancer *balancer) {
 
 	if (balancer) {
-		cerver_stats_print (balancer->cerver, true, true);
+		fprintf (stdout, LOG_COLOR_BLUE "Balancer: %s\n" LOG_COLOR_RESET, balancer->name->str);
+	
+		// good types packets that the balancer can handle
+		printf ("Receives done:               %ld\n", balancer->stats->receives_done);
+		printf ("Received packets:            %ld\n", balancer->stats->n_packets_received);
+		printf ("Received bytes:              %ld\n", balancer->stats->bytes_received);
 
-		printf ("N services: %d\n", balancer->n_services);
+		// bad types packets - consumed data from sock fd until next header
+		printf ("Bad receives done:           %ld\n", balancer->stats->bad_receives_done);
+		printf ("Bad received packets:        %ld\n", balancer->stats->bad_n_packets_received);
+		printf ("Bad received bytes:          %ld\n", balancer->stats->bad_bytes_received);
+
+		// routed packets to services
+		printf ("Routed packets:              %ld\n", balancer->stats->n_packets_routed);
+		printf ("Routed bytes:                %ld\n", balancer->stats->total_bytes_routed);
+
+		// responses sent to the original clients
+		printf ("Responses sent packets:      %ld\n", balancer->stats->n_packets_sent);
+		printf ("Responses sent bytes:        %ld\n", balancer->stats->total_bytes_sent);
+
+		// packets that the balancer was unable to handle
+		printf ("Unhandled packets:           %ld\n", balancer->stats->unhandled_packets);
+		printf ("Unhandled bytes:             %ld\n", balancer->stats->unhandled_bytes);
+
+		printf ("\n");
+		printf ("Received packets:");
+		printf ("\n");
+		packets_per_type_array_print (balancer->stats->received_packets);
+
+		printf ("\n");
+		printf ("Routed packets:");
+		printf ("\n");
+		packets_per_type_array_print (balancer->stats->routed_packets);
+
+		printf ("\n");
+		printf ("Responses packets:");
+		printf ("\n");
+		packets_per_type_array_print (balancer->stats->sent_packets);
 
 		for (int i = 0; i < balancer->n_services; i++) {
 			printf ("\n");
