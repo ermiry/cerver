@@ -130,6 +130,7 @@ Connection *connection_new (void) {
 		connection->receive_packets = true;
 		connection->custom_receive = NULL;
 		connection->custom_receive_args = NULL;
+		connection->custom_receive_args_delete = NULL;
 
 		connection->authenticated = false;
 		connection->auth_data = NULL;
@@ -164,6 +165,12 @@ void connection_delete (void *ptr) {
 
 		if (connection->received_data && connection->received_data_delete)
 			connection->received_data_delete (connection->received_data);
+
+		if (connection->custom_receive_args) {
+			if (connection->custom_receive_args_delete) {
+				connection->custom_receive_args_delete (connection->custom_receive_args);
+			}
+		}
 
 		connection_remove_auth_data (connection);
 
@@ -306,11 +313,16 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 // sets a custom receive method to handle incomming packets in the connection
 // a reference to the client and connection will be passed to the action as ClientConnection structure
 // the method must return 0 on success & 1 on error
-void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args) {
+void connection_set_custom_receive (
+	Connection *connection, 
+	delegate custom_receive, 
+	void *args, void (*args_delete)(void *)
+) {
 
 	if (connection) {
 		connection->custom_receive = custom_receive;
 		connection->custom_receive_args = args;
+		connection->custom_receive_args_delete = args_delete;
 		if (connection->custom_receive) connection->receive_packets = true;
 	}
 
@@ -319,9 +331,11 @@ void connection_set_custom_receive (Connection *connection, delegate custom_rece
 // sets the connection auth data to send whenever the cerver requires authentication
 // and a method to destroy it once the connection has ended,
 // if delete_auth_data is NULL, the auth data won't be deleted
-void connection_set_auth_data (Connection *connection,
+void connection_set_auth_data (
+	Connection *connection,
 	void *auth_data, size_t auth_data_size, Action delete_auth_data,
-	bool admin_auth) {
+	bool admin_auth
+) {
 
 	if (connection && auth_data) {
 		connection_remove_auth_data (connection);
@@ -734,7 +748,10 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
 
 #pragma region receive
 
-static ConnectionCustomReceiveData *connection_custom_receive_data_new (Client *client, Connection *connection, void *args) {
+static ConnectionCustomReceiveData *connection_custom_receive_data_new (
+	Client *client, Connection *connection, 
+	void *args
+) {
 
 	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
 	if (custom_data) {
@@ -760,8 +777,10 @@ void connection_update (void *ptr) {
 		ClientConnection *cc = (ClientConnection *) ptr;
 		// thread_set_name (c_string_create ("connection-%s", cc->connection->name->str));
 
-		ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (cc->client, cc->connection,
-			cc->connection->custom_receive_args);
+		ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (
+			cc->client, cc->connection,
+			cc->connection->custom_receive_args
+		);
 
 		if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
