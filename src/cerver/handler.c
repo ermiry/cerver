@@ -1615,6 +1615,7 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
+// TODO: end connection directly if remaining packet is to large
 // we received a packet of a bad type (the handler is unable to handle it)
 // consume from the socket until the next packet header
 static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) {
@@ -1630,8 +1631,13 @@ static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) 
 		do {
 			to_read = data_size >= 128 ? 128 : data_size;
 			rc = recv (cr->socket->sock_fd, buffer, to_read, 0);
-
-			// TODO: handle failed
+			if (rc <= 0) {
+				#ifdef HANDLER_DEBUG
+				snprintf (buffer, 128, "balancer_receive_bad_type () - rc <= 0 - sock fd %d", cr->socket->sock_fd);
+				cerver_log_warning (buffer);
+				#endif
+				cerver_switch_receive_handle_failed (cr);
+			}
 
 			data_size -= to_read;
 		} while (data_size <= 0);
