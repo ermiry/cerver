@@ -137,8 +137,8 @@ size_t dlist_size (const DoubleList *dlist) {
 
 }
 
-bool dlist_is_empty (const DoubleList *dlist) { 
-	
+bool dlist_is_empty (const DoubleList *dlist) {
+
 	bool retval = true;
 
 	if (dlist) {
@@ -150,7 +150,7 @@ bool dlist_is_empty (const DoubleList *dlist) {
 	}
 
 	return retval;
-	
+
 }
 
 bool dlist_is_not_empty (const DoubleList *dlist) {
@@ -295,7 +295,7 @@ void dlist_clear (void *dlist_ptr) {
 
 		pthread_mutex_lock (dlist->mutex);
 
-		while (dlist->size > 0) 
+		while (dlist->size > 0)
 			(void) dlist_internal_remove_element (dlist, NULL);
 
 		pthread_mutex_unlock (dlist->mutex);
@@ -344,7 +344,7 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *da
 			if (element == NULL) {
 				if (dlist->size == 0) dlist->end = le;
 				else dlist->start->prev = le;
-			
+
 				le->next = dlist->start;
 				le->prev = NULL;
 				dlist->start = le;
@@ -386,7 +386,7 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 			if (element == NULL) {
 				if (dlist->size == 0) dlist->end = le;
 				else dlist->start->prev = le;
-			
+
 				le->next = dlist->start;
 				le->prev = NULL;
 				dlist->start = le;
@@ -432,7 +432,7 @@ int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos
 			ListElement *le = dlist_start (dlist);
 			while (le) {
 				if (count == pos) break;
-				
+
 				count++;
 				le = le->next;
 			}
@@ -509,7 +509,7 @@ void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
 
 }
 
-// removes the dlist element from the dlist at the specified index 
+// removes the dlist element from the dlist at the specified index
 // returns the data or NULL if index was invalid
 void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 
@@ -568,7 +568,7 @@ int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_d
 
 		retval = 0;
 	}
-	
+
 	return retval;
 
 }
@@ -591,13 +591,13 @@ void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(co
 		}
 	}
 
-	return NULL;    
+	return NULL;
 
 }
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
+ListElement *dlist_get_element (const DoubleList *dlist, const void *data,
 	int (*compare)(const void *one, const void *two)) {
 
 	if (dlist && data) {
@@ -652,52 +652,52 @@ void *dlist_get_at (const DoubleList *dlist, const unsigned int idx) {
 
 /*** Sorting ***/
 
-// Split a doubly linked dlist (DLL) into 2 DLLs of half sizes 
-static ListElement *dllist_split (ListElement *head) { 
+// Split a doubly linked dlist (DLL) into 2 DLLs of half sizes
+static ListElement *dllist_split (ListElement *head) {
 
-	ListElement *fast = head, *slow = head; 
+	ListElement *fast = head, *slow = head;
 
-	while (fast->next && fast->next->next) { 
-		fast = fast->next->next; 
-		slow = slow->next; 
-	} 
+	while (fast->next && fast->next->next) {
+		fast = fast->next->next;
+		slow = slow->next;
+	}
 
-	ListElement *temp = slow->next; 
-	slow->next = NULL; 
+	ListElement *temp = slow->next;
+	slow->next = NULL;
 
-	return temp; 
+	return temp;
 
-}  
+}
 
-// Function to merge two linked lists 
-static ListElement *dllist_merge (int (*compare)(const void *one, const void *two), 
-	ListElement *first, ListElement *second)  { 
+// Function to merge two linked lists
+static ListElement *dllist_merge (int (*compare)(const void *one, const void *two),
+	ListElement *first, ListElement *second)  {
 
-	// If first linked dlist is empty 
-	if (!first) return second; 
-  
-	// If second linked dlist is empty 
-	if (!second) return first; 
+	// If first linked dlist is empty
+	if (!first) return second;
 
-	// Pick the smallest value 
+	// If second linked dlist is empty
+	if (!second) return first;
+
+	// Pick the smallest value
 	if (compare (first->data, second->data) <= 0) {
-		first->next = dllist_merge (compare, first->next, second); 
-		first->next->prev = first; 
-		first->prev = NULL; 
-		return first; 
+		first->next = dllist_merge (compare, first->next, second);
+		first->next->prev = first;
+		first->prev = NULL;
+		return first;
 	}
 
 	else {
-		second->next = dllist_merge (compare, first, second->next); 
-		second->next->prev = second; 
-		second->prev = NULL; 
-		return second; 
+		second->next = dllist_merge (compare, first, second->next);
+		second->next->prev = second;
+		second->prev = NULL;
+		return second;
 	}
 
-} 
+}
 
 // merge sort
-static ListElement *dlist_merge_sort (ListElement *head, 
+static ListElement *dlist_merge_sort (ListElement *head,
 	int (*compare)(const void *one, const void *two)) {
 
 	if (!head || !head->next) return head;
@@ -708,7 +708,7 @@ static ListElement *dlist_merge_sort (ListElement *head,
 	head = dlist_merge_sort (head, compare);
 	second = dlist_merge_sort (second, compare);
 
-	// merge the two sorted halves 
+	// merge the two sorted halves
 	return dllist_merge (compare, head, second);
 
 }
