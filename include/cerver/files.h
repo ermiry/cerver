@@ -11,6 +11,35 @@
 
 #include "cerver/utils/json.h"
 
+struct _Cerver;
+
+#pragma region cerver
+
+#define FILE_CERVER_MAX_PATHS           32
+
+struct _FileCerver {
+
+    struct _Cerver *cerver;
+
+    // search for requested files in these paths
+    unsigned int n_paths;
+    String *paths[FILE_CERVER_MAX_PATHS];
+
+    // default path where uploads files will be placed
+    String *uploads_path;
+
+};
+
+typedef struct _FileCerver FileCerver;
+
+CERVER_PRIVATE FileCerver *file_cerver_new (void);
+
+CERVER_PRIVATE void file_cerver_delete (void *file_cerver_ptr);
+
+CERVER_PRIVATE FileCerver *file_cerver_create (struct _Cerver *cerver);
+
+#pragma endregion
+
 #pragma region main
 
 // check if a directory already exists, and if not, creates it

@@ -14,12 +14,61 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/files.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 #include "cerver/utils/json.h"
+
+#pragma region cerver
+
+FileCerver *file_cerver_new (void) {
+
+    FileCerver *file_cerver = (FileCerver *) malloc (sizeof (FileCerver));
+    if (file_cerver) {
+        file_cerver->cerver = NULL;
+
+        file_cerver->n_paths = 0;
+        for (unsigned int i = 0; i < FILE_CERVER_MAX_PATHS; i++)
+            file_cerver->paths[i] = NULL;
+
+        file_cerver->uploads_path = NULL;
+    }
+
+    return file_cerver;
+
+}
+
+void file_cerver_delete (void *file_cerver_ptr) {
+
+    if (file_cerver_ptr) {
+        FileCerver *file_cerver = (FileCerver *) file_cerver_ptr;
+
+        for (unsigned int i = 0; i < FILE_CERVER_MAX_PATHS; i++) {
+            if (file_cerver->paths[i]) str_delete (file_cerver->paths[i]);
+        }
+
+        str_delete (file_cerver->uploads_path);
+
+        free (file_cerver_ptr);
+    }
+
+}
+
+FileCerver *file_cerver_create (Cerver *cerver) {
+
+    FileCerver *file_cerver = file_cerver_new ();
+    if (file_cerver) {
+        file_cerver->cerver = cerver;
+    }
+
+    return file_cerver;
+
+}
+
+#pragma endregion
 
 #pragma region main
 
