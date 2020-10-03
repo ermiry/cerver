@@ -1012,7 +1012,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 
 	if (custom_data->client && custom_data->connection) {
 		char header_buffer[sizeof (PacketHeader)] = { 0 };
-		ssize_t rc = recv (custom_data->connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
+		ssize_t rc = recv (custom_data->connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
 
 		switch (rc) {
 			case -1: {
