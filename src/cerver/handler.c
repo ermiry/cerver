@@ -799,7 +799,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_client_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_client_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
 					cerver_client_packet_handler (packet);
 					packet_delete (packet);
@@ -811,7 +813,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_error_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_error_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
 					/* TODO: */
 					packet_delete (packet);
@@ -823,7 +827,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_request_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_request_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
 					cerver_request_packet_handler (packet);
 					packet_delete (packet);
@@ -835,7 +841,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_auth_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_auth_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
 					/* TODO: */
 					packet_delete (packet);
@@ -847,7 +855,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_game_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_game_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
 					game_packet_handler (packet);
 					break;
@@ -858,7 +868,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_app_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_app_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
 					cerver_app_packet_handler (packet);
 					break;
@@ -869,7 +881,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_app_error_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_app_error_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
 					cerver_app_error_packet_handler (packet);
 					break;
@@ -880,7 +894,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_custom_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_custom_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
 					cerver_custom_packet_handler (packet);
 					break;
@@ -891,7 +907,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_test_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_test_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
 					cerver_test_packet_handler (packet);
 					packet_delete (packet);
@@ -902,8 +920,11 @@ static void cerver_packet_handler (void *packet_ptr) {
 					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_bad_packets += 1;
 					#endif
+					#ifdef CONNECTION_STATS
 					packet->connection->stats->received_packets->n_bad_packets += 1;
+					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
+
 					#ifdef HANDLER_DEBUG
 					char *s = c_string_create ("Got a packet of unknown type in cerver %s.",
 						packet->cerver->info->name->str);
@@ -912,6 +933,7 @@ static void cerver_packet_handler (void *packet_ptr) {
 						free (s);
 					}
 					#endif
+
 					packet_delete (packet);
 				} break;
 			}
@@ -934,7 +956,9 @@ static void cerver_packet_select_handler (ReceiveHandle *receive_handle, Packet 
 			#ifdef CLIENT_STATS
 			packet->client->stats->n_packets_received += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->n_packets_received += 1;
+			#endif
 
 			cerver_packet_handler (packet);
 		} break;
@@ -1586,8 +1610,10 @@ static void cerver_receive_success_update_stats (CerverReceive *cr, ssize_t rc) 
 					cr->client->stats->total_bytes_received += rc;
 					#endif
 
+					#ifdef CONNECTION_STATS
 					cr->connection->stats->n_receives_done += 1;
 					cr->connection->stats->total_bytes_received += rc;
+					#endif
 				} break;
 
 				case RECEIVE_TYPE_ON_HOLD: {
@@ -1607,8 +1633,10 @@ static void cerver_receive_success_update_stats (CerverReceive *cr, ssize_t rc) 
 					cr->client->stats->total_bytes_received += rc;
 					#endif
 
+					#ifdef CONNECTION_STATS
 					cr->connection->stats->n_receives_done += 1;
 					cr->connection->stats->total_bytes_received += rc;
+					#endif
 				} break;
 
 				default: break;
