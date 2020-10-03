@@ -22,6 +22,7 @@
 #include "cerver/connection.h"
 #include "cerver/events.h"
 #include "cerver/errors.h"
+#include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -1116,7 +1117,10 @@ Cerver *cerver_create (
 					// cerver->delete_cerver_data = http_cerver_delete;
 				} break;
 
-				case CERVER_TYPE_FILES: break;
+				case CERVER_TYPE_FILES: {
+					cerver->cerver_data = file_cerver_create (cerver);
+					cerver->delete_cerver_data = file_cerver_delete;
+				} break;
 
 				default: break;
 			}
@@ -2496,7 +2500,12 @@ static void cerver_clean (Cerver *cerver) {
 
 			case CERVER_TYPE_WEB: break;
 
-			case CERVER_TYPE_FILES: break;
+			case CERVER_TYPE_FILES: {
+				if (cerver->cerver_data) {
+					file_cerver_delete (cerver->cerver_data);
+					cerver->cerver_data = NULL;
+				}
+			} break;
 
 			default: break;
 		}
