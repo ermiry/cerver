@@ -19,7 +19,7 @@
 #define DEFAULT_CONNECTION_MAX_SLEEP                60
 #define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
 
-#define DEFAULT_CONNECTION_UPDATE_SLEEP             200000
+#define DEFAULT_CONNECTION_TIMEOUT					2
 
 struct _Socket;
 struct _Cerver;
@@ -80,7 +80,7 @@ struct _Connection {
 	struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
 
 	pthread_t update_thread_id;
-	u32 update_sleep;
+	u32 update_timeout;
 
 	// 16/06/2020 - used for direct requests to cerver
 	bool full_packet;
@@ -150,10 +150,10 @@ CERVER_EXPORT void connection_set_receive_buffer_size (Connection *connection, u
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
 CERVER_EXPORT void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete);
 
-// 17/06/2020
-// sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
-// the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
-CERVER_EXPORT void connection_set_update_sleep (Connection *connection, u32 sleep);
+// sets the timeout (in secs) the connection's socket will have
+// this refers to the time the socket will block waiting for new data to araive
+// note that this only has effect in connection_update ()
+CERVER_EXPORT void connection_set_update_timeout (Connection *connection, u32 timeout);
 
 typedef struct ConnectionCustomReceiveData {
 

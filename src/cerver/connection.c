@@ -118,7 +118,7 @@ Connection *connection_new (void) {
 		connection->sock_receive = NULL;
 
 		connection->update_thread_id = 0;
-		connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
+		connection->update_timeout = DEFAULT_CONNECTION_TIMEOUT;
 
 		connection->full_packet = false;
 
@@ -288,12 +288,12 @@ void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 
 }
 
-// 17/06/2020
-// sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
-// the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
-void connection_set_update_sleep (Connection *connection, u32 sleep) {
+// sets the timeout (in secs) the connection's socket will have
+// this refers to the time the socket will block waiting for new data to araive
+// note that this only has effect in connection_update ()
+void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
-	if (connection) connection->update_sleep = sleep;
+	if (connection) connection->update_timeout = timeout;
 
 }
 
@@ -783,32 +783,26 @@ void connection_update (void *ptr) {
 
 		if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
-		// 17/06/2020 - non blocking recv () to correctly use client mutex
-		// when destroying client
-		if (sock_set_blocking (cc->connection->socket->sock_fd, true)) {
-			// if (cc->connection->receive_packets) {
-				while (cc->client->running && cc->connection->active) {
-					pthread_mutex_lock (cc->client->lock);
+		(void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
 
-					if (cc->connection->custom_receive) {
-						// if a custom receive method is set, use that one directly
-						if (cc->connection->custom_receive (custom_data)) {
-							// break;      // an error has ocurred
-						}
-					}
+		while (cc->client->running && cc->connection->active) {
+			// pthread_mutex_lock (cc->client->lock);
 
-					else {
-						// use the default receive method that expects cerver type packages
-						if (client_receive (cc->client, cc->connection)) {
-							// break;      // an error has ocurred
-						}
-					}
-
-					pthread_mutex_unlock (cc->client->lock);
-
-					usleep (cc->connection->update_sleep);
+			if (cc->connection->custom_receive) {
+				// if a custom receive method is set, use that one directly
+				if (cc->connection->custom_receive (custom_data)) {
+					// break;      // an error has ocurred
 				}
-			// }
+			}
+
+			else {
+				// use the default receive method that expects cerver type packages
+				if (client_receive (cc->client, cc->connection)) {
+					// break;      // an error has ocurred
+				}
+			}
+
+			// pthread_mutex_unlock (cc->client->lock);
 		}
 
 		connection_custom_receive_data_delete (custom_data);
