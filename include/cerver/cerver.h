@@ -286,8 +286,11 @@ CERVER_PRIVATE Cerver *cerver_new (void);
 CERVER_PRIVATE void cerver_delete (void *ptr);
 
 // sets the cerver main network values
-CERVER_EXPORT void cerver_set_network_values (Cerver *cerver, const u16 port, const Protocol protocol,
-	bool use_ipv6, const u16 connection_queue);
+CERVER_EXPORT void cerver_set_network_values (
+	Cerver *cerver,
+	const u16 port, const Protocol protocol,
+	bool use_ipv6, const u16 connection_queue
+);
 
 // sets the cerver connection queue (how many connections to queue for accept)
 CERVER_EXPORT void cerver_set_connection_queue (Cerver *cerver, const u16 connection_queue);
@@ -315,8 +318,10 @@ CERVER_EXPORT void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_
 // will be automatically dropped from the cerver
 // max_inactive_time - max secs allowed for a client to be inactive, 0 for default
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
-CERVER_EXPORT void cerver_set_inactive_clients (Cerver *cerver,
-	u32 max_inactive_time, u32 check_inactive_interval);
+CERVER_EXPORT void cerver_set_inactive_clients (
+	Cerver *cerver,
+	u32 max_inactive_time, u32 check_inactive_interval
+);
 
 // sets the cerver handler type
 // the default type is to handle connections using the poll () which requires only one thread
@@ -374,8 +379,10 @@ CERVER_EXPORT void cerver_set_handle_recieved_buffer (Cerver *cerver, Action han
 
 // 27/05/2020 - changed form Action to Handler
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-CERVER_EXPORT void cerver_set_app_handlers (Cerver *cerver,
-	struct _Handler *app_handler, struct _Handler *app_error_handler);
+CERVER_EXPORT void cerver_set_app_handlers (
+	Cerver *cerver,
+	struct _Handler *app_handler, struct _Handler *app_error_handler
+);
 
 // sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy
