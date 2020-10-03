@@ -13,7 +13,8 @@ DEVELOPMENT	:= -g \
 				-D PACKETS_DEBUG 				\
 				-D AUTH_DEBUG 					\
 				-D ADMIN_DEBUG					\
-				-D BALANCER_DEBUG
+				-D BALANCER_DEBUG				\
+				-D SERVICE_DEBUG
 
 CC          := gcc
 

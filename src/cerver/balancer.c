@@ -687,6 +687,7 @@ void balancer_route_to_service (
 
 			service->stats->routed_packets[header->packet_type] += 1;
 
+			#ifdef BALANCER_DEBUG
 			char *status = c_string_create (
 				"Routed %ld between %d (original) -> %d (%s)",
 				sent,
@@ -698,6 +699,7 @@ void balancer_route_to_service (
 				cerver_log_debug (status);
 				free (status);
 			}
+			#endif
 		}
 
 		else {
@@ -762,7 +764,7 @@ static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeade
 			to_read = data_size >= SERVICE_CONSUME_BUFFER_SIZE ? SERVICE_CONSUME_BUFFER_SIZE : data_size;
 			rc = recv (bs->service->connection->socket->sock_fd, buffer, to_read, 0);
 			if (rc <= 0) {
-				// #ifdef BALANCER_DEBUG
+				// #ifdef SERVICE_DEBUG
 				snprintf (
 					buffer, SERVICE_CONSUME_BUFFER_SIZE, 
 					"balancer_client_consume_from_service () - rc <= 0 - service %s", 
@@ -813,6 +815,7 @@ static void balancer_client_route_response (
 				connection, original_connection,
 				header, &sent
 			)) {
+				#ifdef SERVICE_DEBUG
 				char *status = c_string_create (
 					"Routed %ld between %d (%s) -> %d (original)",
 					sent,
@@ -824,10 +827,11 @@ static void balancer_client_route_response (
 					cerver_log_debug (status);
 					free (status);
 				}
+				#endif
 			}
 
 			else {
-				#ifdef BALANCER_DEBUG
+				#ifdef SERVICE_DEBUG
 				char *status = c_string_create (
 					"Packet routing between %d (%s) -> %d (original) has failed!",
 					connection->socket->sock_fd, connection->name->str,
@@ -947,7 +951,7 @@ static void balancer_client_receive_success (
 
 		case PACKET_TYPE_NONE:
 		default: {
-			#ifdef BALANCER_DEBUG
+			#ifdef SERVICE_DEBUG
 			char *status = c_string_create (
 				"balancer_client_receive () - got a packet of unknown type from service %s",
 				connection->name->str
@@ -1017,7 +1021,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 		switch (rc) {
 			case -1: {
 				if (errno != EWOULDBLOCK) {
-					#ifdef BALANCER_DEBUG
+					#ifdef SERVICE_DEBUG
 					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 					if (s) {
 						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, s);
@@ -1034,7 +1038,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 			} break;
 
 			case 0: {
-				#ifdef BALANCER_DEBUG
+				#ifdef SERVICE_DEBUG
 				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
 				if (s) {
 					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
