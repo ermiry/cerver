@@ -796,7 +796,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 
 				case PACKET_TYPE_CLIENT:
 					packet->cerver->stats->received_packets->n_client_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_client_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_client_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
 					cerver_client_packet_handler (packet);
@@ -806,7 +808,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// handles an error from the client
 				case PACKET_TYPE_ERROR:
 					packet->cerver->stats->received_packets->n_error_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_error_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_error_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
 					/* TODO: */
@@ -816,7 +820,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// handles a request made from the client
 				case PACKET_TYPE_REQUEST:
 					packet->cerver->stats->received_packets->n_request_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_request_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_request_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
 					cerver_request_packet_handler (packet);
@@ -826,7 +832,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// handles authentication packets
 				case PACKET_TYPE_AUTH:
 					packet->cerver->stats->received_packets->n_auth_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_auth_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_auth_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
 					/* TODO: */
@@ -836,7 +844,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// handles a game packet sent from the client
 				case PACKET_TYPE_GAME:
 					packet->cerver->stats->received_packets->n_game_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_game_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_game_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
 					game_packet_handler (packet);
@@ -845,7 +855,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// user set handler to handle app specific packets
 				case PACKET_TYPE_APP:
 					packet->cerver->stats->received_packets->n_app_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_app_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_app_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
 					cerver_app_packet_handler (packet);
@@ -854,7 +866,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// user set handler to handle app specific errors
 				case PACKET_TYPE_APP_ERROR:
 					packet->cerver->stats->received_packets->n_app_error_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_app_error_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_app_error_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
 					cerver_app_error_packet_handler (packet);
@@ -863,7 +877,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// custom packet hanlder
 				case PACKET_TYPE_CUSTOM:
 					packet->cerver->stats->received_packets->n_custom_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_custom_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_custom_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
 					cerver_custom_packet_handler (packet);
@@ -872,7 +888,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 				// acknowledge the client we have received his test packet
 				case PACKET_TYPE_TEST:
 					packet->cerver->stats->received_packets->n_test_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_test_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_test_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
 					cerver_test_packet_handler (packet);
@@ -881,7 +899,9 @@ static void cerver_packet_handler (void *packet_ptr) {
 
 				default: {
 					packet->cerver->stats->received_packets->n_bad_packets += 1;
+					#ifdef CLIENT_STATS
 					packet->client->stats->received_packets->n_bad_packets += 1;
+					#endif
 					packet->connection->stats->received_packets->n_bad_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
 					#ifdef HANDLER_DEBUG
@@ -911,7 +931,9 @@ static void cerver_packet_select_handler (ReceiveHandle *receive_handle, Packet 
 			packet->connection = receive_handle->connection;
 
 			packet->cerver->stats->client_n_packets_received += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->n_packets_received += 1;
+			#endif
 			packet->connection->stats->n_packets_received += 1;
 
 			cerver_packet_handler (packet);
@@ -1559,8 +1581,10 @@ static void cerver_receive_success_update_stats (CerverReceive *cr, ssize_t rc) 
 					cr->cerver->stats->client_receives_done += 1;
 					cr->cerver->stats->client_bytes_received += rc;
 
+					#ifdef CLIENT_STATS
 					cr->client->stats->n_receives_done += 1;
 					cr->client->stats->total_bytes_received += rc;
+					#endif
 
 					cr->connection->stats->n_receives_done += 1;
 					cr->connection->stats->total_bytes_received += rc;
@@ -1578,8 +1602,10 @@ static void cerver_receive_success_update_stats (CerverReceive *cr, ssize_t rc) 
 					cr->cerver->admin->stats->total_n_receives_done += 1;
 					cr->cerver->admin->stats->total_bytes_received += rc;
 
+					#ifdef CLIENT_STATS
 					cr->client->stats->n_receives_done += 1;
 					cr->client->stats->total_bytes_received += rc;
+					#endif
 
 					cr->connection->stats->n_receives_done += 1;
 					cr->connection->stats->total_bytes_received += rc;
