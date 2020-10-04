@@ -37,6 +37,14 @@ FileCerver *file_cerver_new (void) {
 			file_cerver->paths[i] = NULL;
 
 		file_cerver->uploads_path = NULL;
+
+		file_cerver->n_files_requests = 0;
+		file_cerver->n_success_files_requests = 0;
+		file_cerver->n_bad_files_requests = 0;
+
+		file_cerver->n_files_uploaded = 0;
+		file_cerver->n_success_files_uploaded = 0;
+		file_cerver->n_bad_files_uploaded = 0;
 	}
 
 	return file_cerver;
@@ -120,6 +128,20 @@ u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
 	}
 
 	return retval;
+
+}
+
+void file_cerver_stats_print (FileCerver *file_cerver) {
+
+	if (file_cerver) {
+		printf ("Files requests:                %ld\n", file_cerver->n_files_requests);
+		printf ("Success requests:              %ld\n", file_cerver->n_success_files_requests);
+		printf ("Bad requests:                  %ld\n\n", file_cerver->n_bad_files_requests);
+
+		printf ("Files uploads:                 %ld\n", file_cerver->n_files_uploaded);
+		printf ("Success uploads:               %ld\n", file_cerver->n_success_files_uploaded);
+		printf ("Bad uploads:                   %ld\n", file_cerver->n_bad_files_uploaded);
+	}
 
 }
 

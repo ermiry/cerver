@@ -29,6 +29,15 @@ struct _FileCerver {
 
 	// default path where uploads files will be placed
 	String *uploads_path;
+	
+	// stats
+	u32 n_files_requests;
+	u32 n_success_files_requests;
+	u32 n_bad_files_requests;
+
+	u32 n_files_uploaded;
+	u32 n_success_files_uploaded;
+	u32 n_bad_files_uploaded;
 
 };
 
@@ -50,6 +59,8 @@ CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const 
 // search for the requested file in the configured paths
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename);
+
+CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 
 #pragma endregion
 
