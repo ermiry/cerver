@@ -8,6 +8,7 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
+#include <cerver/files.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -219,6 +220,12 @@ int main (void) {
 			on_client_close_connection, NULL, NULL,
 			false, false
 		);
+
+		/*** file cerver configuration ***/
+		FileCerver *file_cerver = (FileCerver *) my_cerver->cerver_data;
+
+		file_cerver_add_path (file_cerver, "./data");
+		file_cerver_set_uploads_path (file_cerver, "./uploads");
 
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
