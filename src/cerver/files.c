@@ -22,6 +22,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/json.h"
 
+bool file_exists (const char *filename);
+
 #pragma region cerver
 
 FileCerver *file_cerver_new (void) {
@@ -92,6 +94,32 @@ void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_
 		str_delete (file_cerver->uploads_path);
 		file_cerver->uploads_path = str_new (uploads_path);
 	}
+
+}
+
+// search for the requested file in the configured paths
+// returns 0 on success, 1 on error
+u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
+
+	u8 retval = 1;
+
+	if (file_cerver && filename) {
+		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		for (unsigned int i = 0; i < file_cerver->n_paths; i++) {
+			(void) snprintf (
+				filename_query, DEFAULT_FILENAME_LEN * 2,
+				"%s/%s",
+				file_cerver->paths[i]->str, filename
+			);
+
+			if (file_exists (filename_query)) {
+				retval = 0;
+				break;
+			}
+		}
+	}
+
+	return retval;
 
 }
 
@@ -209,7 +237,7 @@ static String *file_get_line (FILE *file) {
 
 	if (file) {
 		if (!feof (file)) {
-			char line[1024];
+			char line[1024] = { 0 };
 			if (fgets (line, 1024, file)) {
 				size_t curr = strlen(line);
 				if(line[curr - 1] == '\n') line[curr - 1] = '\0';

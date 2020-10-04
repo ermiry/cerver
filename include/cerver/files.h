@@ -13,6 +13,8 @@
 
 struct _Cerver;
 
+#define DEFAULT_FILENAME_LEN			1024
+
 #pragma region cerver
 
 #define FILE_CERVER_MAX_PATHS           32
@@ -44,6 +46,10 @@ CERVER_EXPORT u8 file_cerver_add_path (FileCerver *file_cerver, const char *path
 
 // sets the default uploads path to be used when a client sends a file
 CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path);
+
+// search for the requested file in the configured paths
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename);
 
 #pragma endregion
 
@@ -88,7 +94,7 @@ CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 typedef struct FileHeader {
 
-	char filename[1024];
+	char filename[DEFAULT_FILENAME_LEN];
 	size_t len;
 
 } FileHeader;
