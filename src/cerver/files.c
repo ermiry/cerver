@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <unistd.h>
+
 #define _XOPEN_SOURCE 700
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
-
-#include <unistd.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -65,6 +65,33 @@ FileCerver *file_cerver_create (Cerver *cerver) {
     }
 
     return file_cerver;
+
+}
+
+// adds a new file path to take into account when a client request for a file
+// returns 0 on success, 1 on error
+u8 file_cerver_add_path (FileCerver *file_cerver, const char *path) {
+
+    u8 retval = 1;
+
+    if (file_cerver && path) {
+        if (file_cerver->n_paths < FILE_CERVER_MAX_PATHS) {
+            file_cerver->paths[file_cerver->n_paths] = str_new (path);
+            file_cerver->n_paths += 1;
+        }
+    }
+
+    return retval;
+
+}
+
+// sets the default uploads path to be used when a client sends a file
+void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path) {
+
+    if (file_cerver && uploads_path) {
+        str_delete (file_cerver->uploads_path);
+        file_cerver->uploads_path = str_new (uploads_path);
+    }
 
 }
 

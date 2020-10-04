@@ -38,6 +38,13 @@ CERVER_PRIVATE void file_cerver_delete (void *file_cerver_ptr);
 
 CERVER_PRIVATE FileCerver *file_cerver_create (struct _Cerver *cerver);
 
+// adds a new file path to take into account when a client request for a file
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 file_cerver_add_path (FileCerver *file_cerver, const char *path);
+
+// sets the default uploads path to be used when a client sends a file
+CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path);
+
 #pragma endregion
 
 #pragma region main
