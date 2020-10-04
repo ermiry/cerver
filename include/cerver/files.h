@@ -19,14 +19,14 @@ struct _Cerver;
 
 struct _FileCerver {
 
-    struct _Cerver *cerver;
+	struct _Cerver *cerver;
 
-    // search for requested files in these paths
-    unsigned int n_paths;
-    String *paths[FILE_CERVER_MAX_PATHS];
+	// search for requested files in these paths
+	unsigned int n_paths;
+	String *paths[FILE_CERVER_MAX_PATHS];
 
-    // default path where uploads files will be placed
-    String *uploads_path;
+	// default path where uploads files will be placed
+	String *uploads_path;
 
 };
 
@@ -68,8 +68,8 @@ CERVER_EXPORT bool file_exists (const char *filename);
 
 // opens a file and returns it as a FILE
 CERVER_EXPORT FILE *file_open_as_file (
-    const char *filename, 
-    const char *modes, struct stat *filestatus
+	const char *filename,
+	const char *modes, struct stat *filestatus
 );
 
 // opens and reads a file into a buffer
@@ -88,8 +88,8 @@ CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 typedef struct FileHeader {
 
-    char filename[1024];
-    size_t len;
+	char filename[1024];
+	size_t len;
 
 } FileHeader;
 
