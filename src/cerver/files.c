@@ -40,6 +40,31 @@ static u8 file_receive (
 
 #pragma region cerver
 
+static FileCerverStats *file_cerver_stats_new (void) {
+
+	FileCerverStats *stats = (FileCerverStats *) malloc (sizeof (FileCerverStats));
+	if (stats) {
+		stats->n_files_requests = 0;
+		stats->n_success_files_requests = 0;
+		stats->n_bad_files_requests = 0;
+		stats->n_bytes_sent = 0;
+
+		stats->n_files_uploaded = 0;
+		stats->n_success_files_uploaded = 0;
+		stats->n_bad_files_uploaded = 0;
+		stats->n_bytes_received = 0;
+	}
+
+	return stats;
+
+}
+
+static void file_cerver_stats_delete (FileCerverStats *stats) {
+
+	if (stats) free (stats);
+
+}
+
 FileCerver *file_cerver_new (void) {
 
 	FileCerver *file_cerver = (FileCerver *) malloc (sizeof (FileCerver));
@@ -54,13 +79,7 @@ FileCerver *file_cerver_new (void) {
 
 		file_cerver->file_upload_handler = file_receive;
 
-		file_cerver->n_files_requests = 0;
-		file_cerver->n_success_files_requests = 0;
-		file_cerver->n_bad_files_requests = 0;
-
-		file_cerver->n_files_uploaded = 0;
-		file_cerver->n_success_files_uploaded = 0;
-		file_cerver->n_bad_files_uploaded = 0;
+		file_cerver->stats = NULL;
 	}
 
 	return file_cerver;
@@ -78,6 +97,8 @@ void file_cerver_delete (void *file_cerver_ptr) {
 
 		str_delete (file_cerver->uploads_path);
 
+		file_cerver_stats_delete (file_cerver->stats);
+
 		free (file_cerver_ptr);
 	}
 
@@ -88,6 +109,8 @@ FileCerver *file_cerver_create (Cerver *cerver) {
 	FileCerver *file_cerver = file_cerver_new ();
 	if (file_cerver) {
 		file_cerver->cerver = cerver;
+
+		file_cerver->stats = file_cerver_stats_new ();
 	}
 
 	return file_cerver;
@@ -164,15 +187,15 @@ String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) 
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		printf ("Files requests:                %ld\n", file_cerver->n_files_requests);
-		printf ("Success requests:              %ld\n", file_cerver->n_success_files_requests);
-		printf ("Bad requests:                  %ld\n\n", file_cerver->n_bad_files_requests);
-		printf ("Files bytes sent:              %ld\n\n", file_cerver->n_bytes_sent);
+		printf ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
+		printf ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
+		printf ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
+		printf ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
 
-		printf ("Files uploads:                 %ld\n", file_cerver->n_files_uploaded);
-		printf ("Success uploads:               %ld\n", file_cerver->n_success_files_uploaded);
-		printf ("Bad uploads:                   %ld\n", file_cerver->n_bad_files_uploaded);
-		printf ("Files bytes received:          %ld\n\n", file_cerver->n_bytes_received);
+		printf ("Files uploads:                 %ld\n", file_cerver->stats->n_files_uploaded);
+		printf ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
+		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_uploaded);
+		printf ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
 	}
 
 }
