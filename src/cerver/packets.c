@@ -534,34 +534,43 @@ Packet *packet_generate_request (
 
 }
 
+static inline u8 packet_send_tcp_actual (
+	const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw
+) {
+
+	ssize_t sent = 0;
+	char *p = raw ? (char *) packet->data : (char *) packet->packet;
+	size_t packet_size = raw ? packet->data_size : packet->packet_size;
+
+	while (packet_size > 0) {
+		sent = send (connection->socket->sock_fd, p, packet_size, flags);
+		if (sent < 0) {
+			return 1;
+		}
+
+		p += sent;
+		packet_size -= (size_t) sent;
+	}
+
+	if (total_sent) *total_sent = (size_t) sent;
+
+	return 0;
+
+}
+
 // sends a packet directly using the tcp protocol and the packet sock fd
 // returns 0 on success, 1 on error
-static u8 packet_send_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw) {
+static u8 packet_send_tcp (
+	const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw
+) {
 
 	u8 retval = 1;
 
-	if (packet && connection) {
-		pthread_mutex_lock (connection->socket->write_mutex);
+	pthread_mutex_lock (connection->socket->write_mutex);
 
-		ssize_t sent = 0;
-		char *p = raw ? (char *) packet->data : (char *) packet->packet;
-		size_t packet_size = raw ? packet->data_size : packet->packet_size;
+	retval = packet_send_tcp_actual (packet, connection, flags, total_sent, raw);
 
-		while (packet_size > 0) {
-			sent = send (connection->socket->sock_fd, p, packet_size, flags);
-			if (sent < 0) {
-				break;
-			}
-
-			p += sent;
-			packet_size -= (size_t) sent;
-			retval = 0;
-		}
-
-		if (total_sent) *total_sent = (size_t) sent;
-
-		pthread_mutex_unlock (connection->socket->write_mutex);
-	}
+	pthread_mutex_unlock (connection->socket->write_mutex);
 
 	return retval;
 
@@ -742,7 +751,7 @@ static void packet_send_update_stats (
 
 static inline u8 packet_send_internal (
 	const Packet *packet, int flags, size_t *total_sent,
-	bool raw, bool split,
+	bool raw, bool split, bool unsafe,
 	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
 ) {
 
@@ -754,7 +763,9 @@ static inline u8 packet_send_internal (
 				size_t sent = 0;
 
 				if (!(split ? packet_send_split_tcp (packet, connection, flags, &sent)
-					: packet_send_tcp (packet, connection, flags, &sent, raw))) {
+					: unsafe ? packet_send_tcp_actual (packet, connection, flags, &sent, raw) 
+						: packet_send_tcp (packet, connection, flags, &sent, raw))
+				) {
 					if (total_sent) *total_sent = sent;
 
 					packet_send_update_stats (
@@ -768,7 +779,7 @@ static inline u8 packet_send_internal (
 				else {
 					#ifdef PACKETS_DEBUG
 					printf ("\n");
-					perror ("Error");
+					perror ("packet_send_internal () - Error");
 					printf ("\n");
 					#endif
 
@@ -798,7 +809,20 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 	return packet_send_internal (
 		packet, flags, total_sent,
-		raw, false,
+		raw, false, false,
+		packet->cerver, packet->client, packet->connection, packet->lobby
+	);
+
+}
+
+// works just as packet_send () but the socket's write mutex won't be locked
+// useful when you need to lock the mutex manually
+// returns 0 on success, 1 on error
+u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+
+	return packet_send_internal (
+		packet, flags, total_sent,
+		raw, false, true,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
 
@@ -817,7 +841,7 @@ u8 packet_send_to (
 
 	return packet_send_internal (
 		packet, 0, total_sent,
-		raw, false,
+		raw, false, false,
 		cerver, client, connection, lobby
 	);
 
@@ -833,7 +857,7 @@ u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
 
 	return packet_send_internal (
 		packet, flags, total_sent,
-		false, true,
+		false, true, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
 
@@ -850,7 +874,7 @@ u8 packet_send_to_split (
 
 	return packet_send_internal (
 		packet, 0, total_sent,
-		false, true,
+		false, true, false,
 		cerver, client, connection, lobby
 	);
 

@@ -337,6 +337,11 @@ CERVER_EXPORT Packet *packet_generate_request (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw);
 
+// works just as packet_send () but the socket's write mutex won't be locked
+// useful when you need to lock the mutex manually
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool raw);
+
 // sends a packet to the specified destination
 // sets flags to 0
 // at least a packet & an active connection are required for this method to succeed
