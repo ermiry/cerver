@@ -111,6 +111,20 @@ void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_
 
 }
 
+// sets a custom method to bed used to handle a file upload
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+void file_cerver_set_file_upload_handler (
+	FileCerver *file_cerver,
+	u8 (*file_upload_handler) (struct _Cerver *, struct _Client *, struct _Connection *, struct _FileHeader *)
+) {
+
+	if (file_cerver) {
+		file_cerver->file_upload_handler = file_upload_handler;
+	}
+
+}
+
 // search for the requested file in the configured paths
 // returns the actual filename (path + directory) where it was found, NULL on error
 String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) {

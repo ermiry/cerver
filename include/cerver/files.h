@@ -18,6 +18,8 @@ struct _Cerver;
 struct _Client;
 struct _connection;
 
+struct _FileHeader;
+
 #define DEFAULT_FILENAME_LEN			1024
 
 #pragma region cerver
@@ -34,6 +36,11 @@ struct _FileCerver {
 
 	// default path where uploads files will be placed
 	String *uploads_path;
+
+	u8 (*file_upload_handler) (
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		struct _FileHeader *file_header
+	);
 	
 	// stats
 	u64 n_files_requests;
@@ -62,6 +69,14 @@ CERVER_EXPORT u8 file_cerver_add_path (FileCerver *file_cerver, const char *path
 
 // sets the default uploads path to be used when a client sends a file
 CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path);
+
+// sets a custom method to bed used to handle a file upload
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+CERVER_EXPORT void file_cerver_set_file_upload_handler (
+	FileCerver *file_cerver,
+	u8 (*file_upload_handler) (struct _Cerver *, struct _Client *, struct _Connection *, struct _FileHeader *)
+);
 
 // search for the requested file in the configured paths
 // returns the actual filename (path + directory) where it was found, NULL on error
@@ -110,12 +125,14 @@ CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 #pragma region send
 
-typedef struct FileHeader {
+struct _FileHeader {
 
 	char filename[DEFAULT_FILENAME_LEN];
 	size_t len;
 
-} FileHeader;
+};
+
+typedef struct _FileHeader FileHeader;
 
 // opens a file and sends the content back to the client
 // first the FileHeader in a regular packet, then the file contents between sockets
