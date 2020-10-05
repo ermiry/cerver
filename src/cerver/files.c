@@ -79,6 +79,8 @@ FileCerver *file_cerver_new (void) {
 
 		file_cerver->file_upload_handler = file_receive;
 
+		file_cerver->file_upload_cb = NULL;
+
 		file_cerver->stats = NULL;
 	}
 
@@ -157,6 +159,21 @@ void file_cerver_set_file_upload_handler (
 
 	if (file_cerver) {
 		file_cerver->file_upload_handler = file_upload_handler;
+	}
+
+}
+
+// sets a callback to be executed after a file has been successfully uploaded by a client
+void file_cerver_set_file_upload_cb (
+	FileCerver *file_cerver,
+	void (*file_upload_cb) (
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		const char *saved_filename
+	)
+) {
+
+	if (file_cerver) {
+		file_cerver->file_upload_cb = file_upload_cb;
 	}
 
 }

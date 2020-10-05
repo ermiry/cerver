@@ -651,7 +651,14 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection,
 			file_header, &saved_filename
 		)) {
-			// TODO:
+			if (file_cerver->file_upload_cb) {
+				file_cerver->file_upload_cb (
+					packet->cerver, packet->client, packet->connection,
+					saved_filename
+				);
+			}
+			
+			if (saved_filename) free (saved_filename);
 		}
 
 		else {

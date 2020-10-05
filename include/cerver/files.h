@@ -55,6 +55,11 @@ struct _FileCerver {
 		struct _Cerver *, struct _Client *, struct _Connection *,
 		struct _FileHeader *, char **saved_filename
 	);
+
+	void (*file_upload_cb) (
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		const char *saved_filename
+	);
 	
 	FileCerverStats *stats;
 
@@ -83,6 +88,15 @@ CERVER_EXPORT void file_cerver_set_file_upload_handler (
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *, 
 		struct _FileHeader *, char **saved_filename
+	)
+);
+
+// sets a callback to be executed after a file has been successfully uploaded by a client
+CERVER_EXPORT void file_cerver_set_file_upload_cb (
+	FileCerver *file_cerver,
+	void (*file_upload_cb) (
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		const char *saved_filename
 	)
 );
 
