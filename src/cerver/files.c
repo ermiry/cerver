@@ -137,10 +137,12 @@ void file_cerver_stats_print (FileCerver *file_cerver) {
 		printf ("Files requests:                %ld\n", file_cerver->n_files_requests);
 		printf ("Success requests:              %ld\n", file_cerver->n_success_files_requests);
 		printf ("Bad requests:                  %ld\n\n", file_cerver->n_bad_files_requests);
+		printf ("Files bytes sent:              %ld\n\n", file_cerver->n_bytes_sent);
 
 		printf ("Files uploads:                 %ld\n", file_cerver->n_files_uploaded);
 		printf ("Success uploads:               %ld\n", file_cerver->n_success_files_uploaded);
 		printf ("Bad uploads:                   %ld\n", file_cerver->n_bad_files_uploaded);
+		printf ("Files bytes received:          %ld\n\n", file_cerver->n_bytes_received);
 	}
 
 }

@@ -31,13 +31,15 @@ struct _FileCerver {
 	String *uploads_path;
 	
 	// stats
-	u32 n_files_requests;
-	u32 n_success_files_requests;
-	u32 n_bad_files_requests;
+	u64 n_files_requests;
+	u64 n_success_files_requests;
+	u64 n_bad_files_requests;
+	u64 n_bytes_sent;
 
-	u32 n_files_uploaded;
-	u32 n_success_files_uploaded;
-	u32 n_bad_files_uploaded;
+	u64 n_files_uploaded;
+	u64 n_success_files_uploaded;
+	u64 n_bad_files_uploaded;
+	u64 n_bytes_received;
 
 };
 
