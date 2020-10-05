@@ -678,8 +678,10 @@ static void packet_send_update_stats (
 	}
 	#endif
 
+	#ifdef CONNECTION_STATS
 	connection->stats->n_packets_sent += 1;
 	connection->stats->total_bytes_sent += sent;
+	#endif
 
 	if (lobby) {
 		lobby->stats->n_packets_sent += 1;
@@ -694,7 +696,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_cerver_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_cerver_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
 			break;
 
@@ -703,7 +707,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_client_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_client_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
 			break;
 
@@ -712,7 +718,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_error_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_error_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
 			break;
 
@@ -721,7 +729,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_request_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_request_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
 			break;
 
@@ -730,7 +740,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_auth_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_auth_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
 			break;
 
@@ -739,7 +751,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_game_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_game_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
 			break;
 
@@ -748,7 +762,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
 			break;
 
@@ -757,7 +773,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_error_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_error_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
 			break;
 
@@ -766,7 +784,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_custom_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_custom_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
 			break;
 
@@ -775,7 +795,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_test_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_test_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
 			break;
 
@@ -784,7 +806,9 @@ static void packet_send_update_stats (
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_unknown_packets += 1;
 			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_unknown_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
 			break;
 	}
