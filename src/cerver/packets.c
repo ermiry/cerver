@@ -671,10 +671,12 @@ static void packet_send_update_stats (
 		cerver->stats->total_bytes_sent += sent;
 	}
 
+	#ifdef CLIENT_STATS
 	if (client) {
 		client->stats->n_packets_sent += 1;
 		client->stats->total_bytes_sent += sent;
 	}
+	#endif
 
 	connection->stats->n_packets_sent += 1;
 	connection->stats->total_bytes_sent += sent;
@@ -689,77 +691,99 @@ static void packet_send_update_stats (
 
 		case PACKET_TYPE_CERVER:
 			if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_cerver_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_cerver_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
 			break;
 
 		case PACKET_TYPE_CLIENT:
 			if (cerver) cerver->stats->sent_packets->n_client_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_client_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_client_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
 			break;
 
 		case PACKET_TYPE_ERROR:
 			if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_error_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_error_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
 			break;
 
 		case PACKET_TYPE_REQUEST:
 			if (cerver) cerver->stats->sent_packets->n_request_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_request_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_request_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
 			break;
 
 		case PACKET_TYPE_AUTH:
 			if (cerver) cerver->stats->sent_packets->n_auth_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_auth_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_auth_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
 			break;
 
 		case PACKET_TYPE_GAME:
 			if (cerver) cerver->stats->sent_packets->n_game_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_game_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_game_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
 			break;
 
 		case PACKET_TYPE_APP:
 			if (cerver) cerver->stats->sent_packets->n_app_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_app_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
 			if (cerver) cerver->stats->sent_packets->n_app_error_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_error_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_app_error_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
 			break;
 
 		case PACKET_TYPE_CUSTOM:
 			if (cerver) cerver->stats->sent_packets->n_custom_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_custom_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_custom_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
 			break;
 
 		case PACKET_TYPE_TEST:
 			if (cerver) cerver->stats->sent_packets->n_test_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_test_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_test_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
 			break;
 
 		default:
 			if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_unknown_packets += 1;
+			#endif
 			connection->stats->sent_packets->n_unknown_packets += 1;
 			if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
 			break;
