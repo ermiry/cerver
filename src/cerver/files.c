@@ -399,17 +399,8 @@ int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
 
 	if (filename) {
 		memset (filestatus, 0, sizeof (struct stat));
-		if (!stat (filename, filestatus))
+		if (!stat (filename, filestatus)) {
 			retval = open (filename, flags);
-
-		else {
-			#ifdef CERVER_DEBUG
-			char *s = c_string_create ("File %s not found!", filename);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-				free (s);
-			}
-			#endif
 		}
 	}
 
