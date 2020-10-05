@@ -646,9 +646,10 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		char *end = packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
+		char *saved_filename = NULL;
 		if (!file_cerver->file_upload_handler (
 			packet->cerver, packet->client, packet->connection,
-			file_header
+			file_header, &saved_filename
 		)) {
 			// TODO:
 		}

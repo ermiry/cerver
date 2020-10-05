@@ -35,7 +35,7 @@ bool file_exists (const char *filename);
 
 static u8 file_receive (
 	Cerver *cerver, Client *client, Connection *connection,
-	FileHeader *file_header
+	FileHeader *file_header, char **saved_filename
 );
 
 #pragma region cerver
@@ -149,7 +149,10 @@ void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_
 // and return 0 on success and 1 on error
 void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
-	u8 (*file_upload_handler) (struct _Cerver *, struct _Client *, struct _Connection *, struct _FileHeader *)
+	u8 (*file_upload_handler) (
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	)
 ) {
 
 	if (file_cerver) {
@@ -606,7 +609,7 @@ ssize_t file_send (
 
 static u8 file_receive (
 	Cerver *cerver, Client *client, Connection *connection,
-	FileHeader *file_header
+	FileHeader *file_header, char **saved_filename
 ) {
 
 	u8 retval = 1;
@@ -614,14 +617,14 @@ static u8 file_receive (
 	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
 
 	// generate a custom filename taking into account the uploads path
-	char *actual_filename = c_string_create (
+	*saved_filename = c_string_create (
 		"%s/%ld-%s", 
 		file_cerver->uploads_path, 
 		time (NULL), file_header->filename
 	);
 
-	if (actual_filename) {
-		int file_fd = open (actual_filename, O_CREAT);
+	if (*saved_filename) {
+		int file_fd = open (*saved_filename, O_CREAT);
 		if (file_fd > 0) {
 			ssize_t received = splice (
 				connection->socket->sock_fd, NULL,
@@ -631,9 +634,19 @@ static u8 file_receive (
 			);
 
 			switch (received) {
-				case -1: cerver_log_error ("file_receive () - splice () = -1"); break;
+				case -1: {
+					cerver_log_error ("file_receive () - splice () = -1");
 
-				case 0: cerver_log_warning ("file_receive () - splice () = 0"); break;
+					free (*saved_filename);
+					*saved_filename = NULL;
+				} break;
+
+				case 0: {
+					cerver_log_warning ("file_receive () - splice () = 0");
+
+					free (*saved_filename);
+					*saved_filename = NULL;
+				} break;
 
 				default: {
 					char *status = c_string_create (
@@ -654,9 +667,10 @@ static u8 file_receive (
 
 		else {
 			cerver_log_error ("file_receive () - failed to open file");
+
+			free (*saved_filename);
+			*saved_filename = NULL;
 		}
-		
-		free (actual_filename);
 	}
 
 	return retval;

@@ -53,7 +53,7 @@ struct _FileCerver {
 
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *file_header
+		struct _FileHeader *, char **saved_filename
 	);
 	
 	FileCerverStats *stats;
@@ -75,12 +75,15 @@ CERVER_EXPORT u8 file_cerver_add_path (FileCerver *file_cerver, const char *path
 // sets the default uploads path to be used when a client sends a file
 CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path);
 
-// sets a custom method to bed used to handle a file upload
+// sets a custom method to be used to handle a file upload
 // in this method, file contents must be consumed from the sock fd
 // and return 0 on success and 1 on error
 CERVER_EXPORT void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
-	u8 (*file_upload_handler) (struct _Cerver *, struct _Client *, struct _Connection *, struct _FileHeader *)
+	u8 (*file_upload_handler) (
+		struct _Cerver *, struct _Client *, struct _Connection *, 
+		struct _FileHeader *, char **saved_filename
+	)
 );
 
 // search for the requested file in the configured paths
