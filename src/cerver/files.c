@@ -106,10 +106,10 @@ void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_
 }
 
 // search for the requested file in the configured paths
-// returns 0 on success, 1 on error
-u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
+// returns the actual filename (path + directory) where it was found, NULL on error
+String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
 
-	u8 retval = 1;
+	String *retval = NULL;
 
 	if (file_cerver && filename) {
 		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
@@ -121,7 +121,7 @@ u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
 			);
 
 			if (file_exists (filename_query)) {
-				retval = 0;
+				retval = str_new (filename_query);
 				break;
 			}
 		}

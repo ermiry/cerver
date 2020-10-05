@@ -57,8 +57,8 @@ CERVER_EXPORT u8 file_cerver_add_path (FileCerver *file_cerver, const char *path
 CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path);
 
 // search for the requested file in the configured paths
-// returns 0 on success, 1 on error
-CERVER_PUBLIC u8 file_cerver_search_file (FileCerver *file_cerver, const char *filename);
+// returns the actual filename (path + directory) where it was found, NULL on error
+CERVER_PUBLIC String *file_cerver_search_file (FileCerver *file_cerver, const char *filename);
 
 CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 
