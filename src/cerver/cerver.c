@@ -422,8 +422,11 @@ void cerver_delete (void *ptr) {
 }
 
 // sets the cerver main network values
-void cerver_set_network_values (Cerver *cerver, const u16 port, const Protocol protocol,
-	bool use_ipv6, const u16 connection_queue) {
+void cerver_set_network_values (
+	Cerver *cerver,
+	const u16 port, const Protocol protocol,
+	bool use_ipv6, const u16 connection_queue
+) {
 
 	if (cerver) {
 		cerver->port = port;
@@ -1086,9 +1089,11 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 #pragma region create
 
 // returns a new cerver with the specified parameters
-Cerver *cerver_create (const CerverType type, const char *name,
+Cerver *cerver_create (
+	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue, u32 poll_timeout) {
+	u16 connection_queue, u32 poll_timeout
+) {
 
 	Cerver *cerver = NULL;
 
