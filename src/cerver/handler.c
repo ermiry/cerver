@@ -552,17 +552,170 @@ static void cerver_client_packet_handler (Packet *packet) {
 
 }
 
- // handles a request from a client to get a file
+static inline void cerver_request_get_file_actual (Packet *packet) {
+
+	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		// search for the requested file in the configured paths
+		String *actual_filename = file_cerver_search_file (file_cerver, file_header->filename);
+		if (actual_filename) {
+			// if found, pipe the file contents to the client's socket fd
+			// the socket should be blocked during the entire operation
+			ssize_t sent = file_send (
+				packet->cerver, packet->client, packet->connection,
+				file_header->filename
+			);
+
+			if (sent > 0) {
+				file_cerver->stats->n_bytes_sent += sent;
+
+				char *status = c_string_create ("Sent file %s", actual_filename->str);
+				if (status) {
+					cerver_log_success (status);
+					free (status);
+				}
+			}
+
+			else {
+				char *status = c_string_create ("Failed to send file %s", actual_filename->str);
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+			}
+		}
+
+		else {
+			// if not found, return an error to the client
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "File not found",
+				packet->cerver, packet->client, packet->connection
+			);
+
+			file_cerver->stats->n_bad_files_requests += 1;
+		}
+
+	}
+
+	else {
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_GET_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
+
+		file_cerver->stats->n_bad_files_requests += 1;
+	}
+
+}
+
+// handles a request from a client to get a file
 static void cerver_request_get_file (Packet *packet) {
 
-	// TODO:
+	switch (packet->cerver->type) {
+		case CERVER_TYPE_CUSTOM:
+		case CERVER_TYPE_FILES: {
+			cerver_request_get_file_actual (packet);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			char *status = c_string_create (
+				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_GET_FILE requests",
+				packet->cerver->info->name->str
+			);
+
+			if (status) {
+				cerver_log_warning (status);
+				free (status);
+			}
+			#endif
+
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "Unable to process request",
+				packet->cerver, packet->client, packet->connection
+			);
+		} break;
+	}
+
+}
+
+static inline void cerver_request_send_file_actual (Packet *packet) {
+
+	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		char *saved_filename = NULL;
+		if (!file_cerver->file_upload_handler (
+			packet->cerver, packet->client, packet->connection,
+			file_header, &saved_filename
+		)) {
+			if (file_cerver->file_upload_cb) {
+				file_cerver->file_upload_cb (
+					packet->cerver, packet->client, packet->connection,
+					saved_filename
+				);
+			}
+			
+			if (saved_filename) free (saved_filename);
+		}
+
+		else {
+			cerver_log_error ("Failed to receive file");
+
+			file_cerver->stats->n_bad_files_uploaded += 1;
+		}
+	}
+
+	else {
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_SEND_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
+
+		file_cerver->stats->n_bad_files_uploaded += 1;
+	}
 
 }
 
 // handles a request from a client to upload a file
 static void cerver_request_send_file (Packet *packet) {
 
-	// TODO:
+	switch (packet->cerver->type) {
+		case CERVER_TYPE_CUSTOM:
+		case CERVER_TYPE_FILES: {
+			cerver_request_send_file_actual (packet);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			char *status = c_string_create (
+				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_SEND_FILE requests",
+				packet->cerver->info->name->str
+			);
+
+			if (status) {
+				cerver_log_warning (status);
+				free (status);
+			}
+			#endif
+
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "Unable to process request",
+				packet->cerver, packet->client, packet->connection
+			);
+		} break;
+	}	
 
 }
 
