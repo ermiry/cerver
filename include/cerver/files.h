@@ -5,6 +5,9 @@
 
 #include <sys/stat.h>
 
+#include "cerver/types/types.h"
+#include "cerver/types/string.h"
+
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
@@ -12,6 +15,8 @@
 #include "cerver/utils/json.h"
 
 struct _Cerver;
+struct _Client;
+struct _connection;
 
 #define DEFAULT_FILENAME_LEN			1024
 
@@ -112,9 +117,13 @@ typedef struct FileHeader {
 
 } FileHeader;
 
-// sends a file to the sock fd
+// opens a file and sends the content back to the client
+// first the FileHeader in a regular packet, then the file contents between sockets
 // returns 0 on success, 1 on error
-CERVER_EXPORT int file_send (const char *filename, int sock_fd);
+CERVER_PUBLIC ssize_t file_send (
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection,
+	const char *filename
+);
 
 #pragma endregion
 

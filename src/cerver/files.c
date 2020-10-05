@@ -2,21 +2,27 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <unistd.h>
-
 #define _XOPEN_SOURCE 700
+#include <unistd.h>
+#include <dirent.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <dirent.h>
+#include <sys/sendfile.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/cerver.h"
+#include "cerver/client.h"
+#include "cerver/errors.h"
 #include "cerver/files.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
@@ -429,29 +435,117 @@ json_value *file_json_parse (const char *filename) {
 
 #pragma region send
 
-// sends a file to the sock fd
+// sends a first packet with file info
 // returns 0 on success, 1 on error
-int file_send (const char *filename, int sock_fd) {
+static u8 file_send_header (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename, size_t filelen
+) {
 
-	int retval = 1;
+	u8 retval = 1;
 
-	if (filename) {
-		// try to open the file
-		struct stat filestatus;
-		int fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
-		if (fd >= 0) {
-			// send a first packet with file info
-			// TODO:
+	Packet *packet = packet_new ();
+	if (packet) {
+		size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
+
+		packet->packet = malloc (packet_len);
+		packet->packet_size = packet_len;
+
+		char *end = (char *) packet->packet;
+		PacketHeader *header = (PacketHeader *) end;
+		header->packet_type = PACKET_TYPE_REQUEST;
+		header->packet_size = packet_len;
+
+		header->request_type = REQUEST_PACKET_TYPE_SEND_FILE;
+
+		end += sizeof (PacketHeader);
+
+		FileHeader *file_header = (FileHeader *) end;
+		strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+		file_header->len = filelen;
+
+		packet_set_network_values (packet, cerver, client, connection, NULL);
+
+		retval = packet_send (packet, 0, NULL, false);
+	}
+
+	return retval;
+
+}
+
+static ssize_t file_send_actual (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename, const char *actual_filename
+) {
+
+	ssize_t retval = 0;
+
+	pthread_mutex_lock (connection->socket->write_mutex);
+
+	// try to open the file
+	struct stat filestatus = { 0 };
+	int fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
+	if (fd >= 0) {
+		// send a first packet with file info
+		if (!file_send_header (
+			cerver, client, connection,
+			actual_filename, filestatus.st_size
+		)) {
+			// send the actual file
+			retval = sendfile (connection->socket->sock_fd, fd, NULL, filestatus.st_size);
 		}
 
 		else {
-			#ifdef CERVER_DEBUG
-			char *s = c_string_create ("Failed to open file %s.", filename);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-				free (s);
-			}
-			#endif
+			cerver_log_msg (
+				stderr, 
+				LOG_TYPE_ERROR, LOG_TYPE_FILE, 
+				"file_send () - failed to send file header"
+			);
+		}
+
+		close (fd);
+	}
+
+	else {
+		char *s = c_string_create ("file_send () - Failed to open file %s", filename);
+		if (s) {
+			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
+			free (s);
+		}
+
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_GET_FILE, "File not found",
+			cerver, client, connection
+		);
+	}
+
+	pthread_mutex_unlock (connection->socket->write_mutex);
+
+	return retval;
+
+}
+
+// opens a file and sends the content back to the client
+// first the FileHeader in a regular packet, then the file contents between sockets
+// returns the number of bytes sent
+ssize_t file_send (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename
+) {
+
+	ssize_t retval = 0;
+
+	if (filename && connection) {
+		char *actual_filename = strrchr (filename, '/');
+		if (actual_filename) {
+			retval = file_send_actual (
+				cerver, client, connection,
+				filename, actual_filename
+			);
+		}
+
+		else {
+			cerver_log_error ("file_send () - failed to get actual filename");
 		}
 	}
 
