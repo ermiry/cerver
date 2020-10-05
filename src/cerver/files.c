@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define _XOPEN_SOURCE 700
+#include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
+
+#define _XOPEN_SOURCE 700
 #include <dirent.h>
 
 #include <sys/types.h>
@@ -30,6 +33,11 @@
 
 bool file_exists (const char *filename);
 
+static u8 file_receive (
+	Cerver *cerver, Client *client, Connection *connection,
+	FileHeader *file_header
+);
+
 #pragma region cerver
 
 FileCerver *file_cerver_new (void) {
@@ -43,6 +51,8 @@ FileCerver *file_cerver_new (void) {
 			file_cerver->paths[i] = NULL;
 
 		file_cerver->uploads_path = NULL;
+
+		file_cerver->file_upload_handler = file_receive;
 
 		file_cerver->n_files_requests = 0;
 		file_cerver->n_success_files_requests = 0;
@@ -561,6 +571,69 @@ ssize_t file_send (
 		else {
 			cerver_log_error ("file_send () - failed to get actual filename");
 		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region receive
+
+static u8 file_receive (
+	Cerver *cerver, Client *client, Connection *connection,
+	FileHeader *file_header
+) {
+
+	u8 retval = 1;
+
+	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
+
+	// generate a custom filename taking into account the uploads path
+	char *actual_filename = c_string_create (
+		"%s/%ld-%s", 
+		file_cerver->uploads_path, 
+		time (NULL), file_header->filename
+	);
+
+	if (actual_filename) {
+		int file_fd = open (actual_filename, O_CREAT);
+		if (file_fd > 0) {
+			ssize_t received = splice (
+				connection->socket->sock_fd, NULL,
+				file_fd, NULL,
+				file_header->len,
+				0
+			);
+
+			switch (received) {
+				case -1: cerver_log_error ("file_receive () - splice () = -1"); break;
+
+				case 0: cerver_log_warning ("file_receive () - splice () = 0"); break;
+
+				default: {
+					char *status = c_string_create (
+						"file_receive () - spliced %ld bytes", received
+					);
+
+					if (status) {
+						cerver_log_debug (status);
+						free (status);
+					}
+
+					retval = 0;
+				} break;
+			}
+
+			close (file_fd);
+		}
+
+		else {
+			cerver_log_error ("file_receive () - failed to open file");
+		}
+		
+		free (actual_filename);
 	}
 
 	return retval;
