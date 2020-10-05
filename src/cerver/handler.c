@@ -564,7 +564,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			);
 
 			if (sent > 0) {
-				file_cerver->n_bytes_sent += sent;
+				file_cerver->stats->n_bytes_sent += sent;
 
 				char *status = c_string_create ("Sent file %s", actual_filename->str);
 				if (status) {
@@ -589,7 +589,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 				packet->cerver, packet->client, packet->connection
 			);
 
-			file_cerver->n_bad_files_requests += 1;
+			file_cerver->stats->n_bad_files_requests += 1;
 		}
 
 	}
@@ -601,7 +601,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection
 		);
 
-		file_cerver->n_bad_files_requests += 1;
+		file_cerver->stats->n_bad_files_requests += 1;
 	}
 
 }
@@ -637,19 +637,27 @@ static void cerver_request_get_file (Packet *packet) {
 
 }
 
-// handles a request from a client to upload a file
-static void cerver_request_send_file (Packet *packet) {
+static inline void cerver_request_send_file_actual (Packet *packet) {
+
+	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
 		char *end = packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
-		// open a local file in the configured upload paths
+		if (!file_cerver->file_upload_handler (
+			packet->cerver, packet->client, packet->connection,
+			file_header
+		)) {
+			// TODO:
+		}
 
-		// start reading the file contents from the packet
+		else {
+			cerver_log_error ("Failed to receive file");
 
-		// the remaining contents should be piped from the socket directly into the local file
+			file_cerver->stats->n_bad_files_uploaded += 1;
+		}
 	}
 
 	else {
@@ -658,7 +666,40 @@ static void cerver_request_send_file (Packet *packet) {
 			CERVER_ERROR_SEND_FILE, "Missing file header",
 			packet->cerver, packet->client, packet->connection
 		);
+
+		file_cerver->stats->n_bad_files_uploaded += 1;
 	}
+
+}
+
+// handles a request from a client to upload a file
+static void cerver_request_send_file (Packet *packet) {
+
+	switch (packet->cerver->type) {
+		case CERVER_TYPE_CUSTOM:
+		case CERVER_TYPE_FILES: {
+			cerver_request_send_file_actual (packet);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			char *status = c_string_create (
+				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_SEND_FILE requests",
+				packet->cerver->info->name->str
+			);
+
+			if (status) {
+				cerver_log_warning (status);
+				free (status);
+			}
+			#endif
+
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "Unable to process request",
+				packet->cerver, packet->client, packet->connection
+			);
+		} break;
+	}	
 
 }
 
