@@ -750,7 +750,8 @@ static void packet_send_update_stats (
 }
 
 static inline u8 packet_send_internal (
-	const Packet *packet, int flags, size_t *total_sent,
+	const Packet *packet,
+	int flags, size_t *total_sent,
 	bool raw, bool split, bool unsafe,
 	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
 ) {
