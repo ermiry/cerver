@@ -15,9 +15,6 @@
 
 #include "cerver/threads/thread.h"
 
-static SError *error_serialize (CerverError *error);
-static inline void serror_delete (void *ptr);
-
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
 
 #pragma region types
@@ -282,36 +279,6 @@ u8 error_packet_generate_and_send (
 	}
 
 	return retval;
-
-}
-
-#pragma endregion
-
-#pragma region serialization
-
-static inline SError *serror_new (void) {
-
-	SError *serror = (SError *) malloc (sizeof (SError));
-	if (serror) memset (serror, 0, sizeof (SError));
-	return serror;
-
-}
-
-static inline void serror_delete (void *ptr) { if (ptr) free (ptr); }
-
-static SError *error_serialize (CerverError *error) {
-
-	SError *serror = NULL;
-
-	if (error) {
-		serror = serror_new ();
-		serror->timestamp = error->timestamp;
-		serror->error_type = error->type;
-		memset (serror->msg, 0, ERROR_MESSAGE_LENGTH);
-		if (error->msg) strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
-	}
-
-	return serror;
 
 }
 
