@@ -627,6 +627,58 @@ ssize_t file_send (
 
 #pragma region receive
 
+static u8 file_receive_internal (Connection *connection, size_t filelen, int file_fd) {
+
+	u8 retval = 1;
+
+	int buff_size = 4096;
+	int pipefds[2] = { 0 };
+	ssize_t received = 0;
+	ssize_t moved = 0;
+	if (!pipe (pipefds)) {
+		// printf ("\n\n%d\n\n", fcntl (pipefds[1], F_SETFL, O_NONBLOCK));
+
+		size_t len = filelen;
+		while (len > 0) {
+			if (buff_size > len) buff_size = len;
+
+			// move from socket to pipe buffer
+			received = splice (
+				connection->socket->sock_fd, NULL,
+				pipefds[1], NULL,
+				buff_size,
+				0
+			);
+
+			printf ("\n");
+			perror ("received");
+			printf ("\n");
+
+			// move from pipe buffer to file
+			moved = splice (
+				pipefds[0], NULL,
+				file_fd, NULL,
+				buff_size,
+				0
+			);
+
+			printf ("\n");
+			perror ("moved");
+			printf ("\n");
+
+			len -= buff_size;
+		}
+
+		close (pipefds[0]);
+    	close (pipefds[1]);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static u8 file_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
@@ -639,48 +691,58 @@ static u8 file_receive (
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
 		"%s/%ld-%s", 
-		file_cerver->uploads_path, 
+		file_cerver->uploads_path->str, 
 		time (NULL), file_header->filename
 	);
 
+	printf ("\n\n[%ld] - %s\n\n", file_header->len, *saved_filename);
+
 	if (*saved_filename) {
-		int file_fd = open (*saved_filename, O_CREAT);
+		int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
 		if (file_fd > 0) {
-			ssize_t received = splice (
-				connection->socket->sock_fd, NULL,
-				file_fd, NULL,
+			retval = file_receive_internal (
+				connection,
 				file_header->len,
-				0
+				file_fd
 			);
 
-			switch (received) {
-				case -1: {
-					cerver_log_error ("file_receive () - splice () = -1");
+			printf ("\n\nafter file_receive_internal ()\n\n");
 
-					free (*saved_filename);
-					*saved_filename = NULL;
-				} break;
+			// ssize_t received = splice (
+			// 	connection->socket->sock_fd, NULL,
+			// 	file_fd, NULL,
+			// 	file_header->len,
+			// 	0
+			// );
 
-				case 0: {
-					cerver_log_warning ("file_receive () - splice () = 0");
+			// switch (received) {
+			// 	case -1: {
+			// 		cerver_log_error ("file_receive () - splice () = -1");
 
-					free (*saved_filename);
-					*saved_filename = NULL;
-				} break;
+			// 		free (*saved_filename);
+			// 		*saved_filename = NULL;
+			// 	} break;
 
-				default: {
-					char *status = c_string_create (
-						"file_receive () - spliced %ld bytes", received
-					);
+			// 	case 0: {
+			// 		cerver_log_warning ("file_receive () - splice () = 0");
 
-					if (status) {
-						cerver_log_debug (status);
-						free (status);
-					}
+			// 		free (*saved_filename);
+			// 		*saved_filename = NULL;
+			// 	} break;
 
-					retval = 0;
-				} break;
-			}
+			// 	default: {
+			// 		char *status = c_string_create (
+			// 			"file_receive () - spliced %ld bytes", received
+			// 		);
+
+			// 		if (status) {
+			// 			cerver_log_debug (status);
+			// 			free (status);
+			// 		}
+
+			// 		retval = 0;
+			// 	} break;
+			// }
 
 			close (file_fd);
 		}
