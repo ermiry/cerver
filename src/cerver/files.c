@@ -605,7 +605,8 @@ ssize_t file_send (
 	ssize_t retval = 0;
 
 	if (filename && connection) {
-		char *actual_filename = strrchr (filename, '/');
+		char *last = strrchr (filename, '/');
+		const char *actual_filename = last ? last + 1 : NULL;
 		if (actual_filename) {
 			retval = file_send_actual (
 				cerver, client, connection,
