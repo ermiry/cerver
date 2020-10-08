@@ -110,6 +110,13 @@ CERVER_PUBLIC void cerver_error_event_data_delete (CerverErrorEventData *error_e
 
 #pragma endregion
 
+#pragma region handler
+
+// handles error packets
+CERVER_PRIVATE void cerver_error_packet_handler (struct _Packet *packet);
+
+#pragma endregion
+
 #pragma region packets
 
 // creates an error packet ready to be sent

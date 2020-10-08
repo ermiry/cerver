@@ -230,6 +230,56 @@ void cerver_error_event_trigger (
 
 #pragma endregion
 
+#pragma region handler
+
+// TODO: differentiate local errors from the ones coming from the clients
+// handles error packets
+void cerver_error_packet_handler (Packet *packet) {
+
+	if (packet->data_size >= sizeof (SError)) {
+		char *end = (char *) packet->data;
+		SError *s_error = (SError *) end;
+
+		switch (s_error->error_type) {
+			case CERVER_ERROR_NONE: break;
+
+			case CERVER_ERROR_PACKET_ERROR:
+				cerver_error_event_trigger (
+					CERVER_ERROR_PACKET_ERROR,
+					packet->cerver, packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
+
+			case CERVER_ERROR_GET_FILE:
+				cerver_error_event_trigger (
+					CERVER_ERROR_GET_FILE,
+					packet->cerver, packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
+			case CERVER_ERROR_SEND_FILE:
+				cerver_error_event_trigger (
+					CERVER_ERROR_SEND_FILE,
+					packet->cerver, packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
+
+			default: {
+				cerver_error_event_trigger (
+					CERVER_ERROR_UNKNOWN,
+					packet->cerver, packet->client, packet->connection,
+					s_error->msg
+				);
+			} break;
+		}
+	}
+
+}
+
+#pragma endregion
+
 #pragma region packets
 
 // creates an error packet ready to be sent
