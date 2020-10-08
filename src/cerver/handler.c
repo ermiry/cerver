@@ -556,11 +556,19 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 		// search for the requested file in the configured paths
 		String *actual_filename = file_cerver_search_file (file_cerver, file_header->filename);
 		if (actual_filename) {
+			#ifdef HANDLER_DEBUG
+			char *status = c_string_create ("cerver_request_get_file () - Sending %s...\n", actual_filename->str);
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
 			// if found, pipe the file contents to the client's socket fd
 			// the socket should be blocked during the entire operation
 			ssize_t sent = file_send (
 				packet->cerver, packet->client, packet->connection,
-				file_header->filename
+				actual_filename->str
 			);
 
 			if (sent > 0) {
@@ -580,9 +588,16 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 					free (status);
 				}
 			}
+
+			str_delete (actual_filename);
 		}
 
 		else {
+			#ifdef HANDLER_DEBUG
+			cerver_log_warning ("cerver_request_get_file () - file not found");
+			#endif
+
+			// TODO: add new error type
 			// if not found, return an error to the client
 			(void) error_packet_generate_and_send (
 				CERVER_ERROR_GET_FILE, "File not found",
@@ -595,6 +610,10 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 	}
 
 	else {
+		#ifdef HANDLER_DEBUG
+		cerver_log_warning ("cerver_request_get_file () - missing file header");
+		#endif
+
 		// return a bad request error packet
 		(void) error_packet_generate_and_send (
 			CERVER_ERROR_GET_FILE, "Missing file header",
@@ -954,7 +973,7 @@ static void cerver_packet_handler (void *packet_ptr) {
 					packet->client->stats->received_packets->n_error_packets += 1;
 					packet->connection->stats->received_packets->n_error_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
-					/* TODO: */
+					cerver_error_packet_handler (packet);
 					packet_delete (packet);
 					break;
 
