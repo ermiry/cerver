@@ -1,5 +1,5 @@
-#ifndef _CERVER_CERVER_H_
-#define _CERVER_CERVER_H_
+#ifndef _CERVER_H_
+#define _CERVER_H_
 
 #include <stdlib.h>
 
