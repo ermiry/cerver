@@ -649,6 +649,102 @@ ssize_t file_send_by_fd (
 
 #pragma region receive
 
+// move from socket to pipe buffer
+static inline u8 file_receive_internal_receive (
+	Connection *connection, int pipefd, int buff_size,
+	ssize_t *received
+) {
+
+	u8 retval = 1;
+
+	*received = splice (
+		connection->socket->sock_fd, NULL,
+		pipefd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*received) {
+		case -1: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_receive () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_receive () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef FILES_DEBUG
+			char *status = c_string_create (
+				"file_receive_internal_receive () - spliced %ld bytes", *received
+			);
+
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+// move from pipe buffer to file
+static inline u8 file_receive_internal_move (
+	int pipefd, int file_fd, int buff_size,
+	ssize_t *moved
+) {
+
+	u8 retval = 1;
+
+	*moved = splice (
+		pipefd, NULL,
+		file_fd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*moved) {
+		case -1: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_move () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_move () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef FILES_DEBUG
+			char *status = c_string_create (
+				"file_receive_internal_move () - spliced %ld bytes", *moved
+			);
+
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
 static u8 file_receive_internal (Connection *connection, size_t filelen, int file_fd) {
 
 	u8 retval = 1;
@@ -658,35 +754,13 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 	ssize_t received = 0;
 	ssize_t moved = 0;
 	if (!pipe (pipefds)) {
-		// printf ("\n\n%d\n\n", fcntl (pipefds[1], F_SETFL, O_NONBLOCK));
-
 		size_t len = filelen;
 		while (len > 0) {
 			if (buff_size > len) buff_size = len;
 
-			// move from socket to pipe buffer
-			received = splice (
-				connection->socket->sock_fd, NULL,
-				pipefds[1], NULL,
-				buff_size,
-				0
-			);
+			if (file_receive_internal_receive (connection, pipefds[1], buff_size, &received)) break;
 
-			printf ("\n");
-			perror ("received");
-			printf ("\n");
-
-			// move from pipe buffer to file
-			moved = splice (
-				pipefds[0], NULL,
-				file_fd, NULL,
-				buff_size,
-				0
-			);
-
-			printf ("\n");
-			perror ("moved");
-			printf ("\n");
+			if (file_receive_internal_move (pipefds[0], file_fd, buff_size, &moved)) break;
 
 			len -= buff_size;
 		}
@@ -694,7 +768,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 		close (pipefds[0]);
     	close (pipefds[1]);
 
-		retval = 0;
+		if (len <= 0) retval = 0;
 	}
 
 	return retval;
@@ -717,19 +791,9 @@ static u8 file_receive (
 		time (NULL), file_header->filename
 	);
 
-	printf ("\n\n[%ld] - %s\n\n", file_header->len, *saved_filename);
-
 	if (*saved_filename) {
 		int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
 		if (file_fd > 0) {
-			retval = file_receive_internal (
-				connection,
-				file_header->len,
-				file_fd
-			);
-
-			printf ("\n\nafter file_receive_internal ()\n\n");
-
 			// ssize_t received = splice (
 			// 	connection->socket->sock_fd, NULL,
 			// 	file_fd, NULL,
@@ -737,34 +801,22 @@ static u8 file_receive (
 			// 	0
 			// );
 
-			// switch (received) {
-			// 	case -1: {
-			// 		cerver_log_error ("file_receive () - splice () = -1");
+			if (!file_receive_internal (
+				connection,
+				file_header->len,
+				file_fd
+			)) {
+				#ifdef FILES_DEBUG
+				cerver_log_success ("file_receive_internal () has finished");
+				#endif
 
-			// 		free (*saved_filename);
-			// 		*saved_filename = NULL;
-			// 	} break;
+				retval = 0;
+			}
 
-			// 	case 0: {
-			// 		cerver_log_warning ("file_receive () - splice () = 0");
-
-			// 		free (*saved_filename);
-			// 		*saved_filename = NULL;
-			// 	} break;
-
-			// 	default: {
-			// 		char *status = c_string_create (
-			// 			"file_receive () - spliced %ld bytes", received
-			// 		);
-
-			// 		if (status) {
-			// 			cerver_log_debug (status);
-			// 			free (status);
-			// 		}
-
-			// 		retval = 0;
-			// 	} break;
-			// }
+			else {
+				free (*saved_filename);
+				*saved_filename = NULL;
+			}
 
 			close (file_fd);
 		}
