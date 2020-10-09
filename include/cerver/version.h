@@ -3,10 +3,10 @@
 
 #include "cerver/config.h"
 
-#define CERVER_VERSION                  "1.6.1rc-7"
-#define CERVER_VERSION_NAME             "Release 1.6.1rc-7"
-#define CERVER_VERSION_DATE			    "07/10/2020"
-#define CERVER_VERSION_TIME			    "23:24 CST"
+#define CERVER_VERSION                  "1.6.1rc-8"
+#define CERVER_VERSION_NAME             "Release 1.6.1rc-8"
+#define CERVER_VERSION_DATE			    "08/10/2020"
+#define CERVER_VERSION_TIME			    "23:48 CST"
 #define CERVER_VERSION_AUTHOR			"Erick Salas"
 
 // print full cerver version information 
