@@ -158,10 +158,18 @@ typedef struct _FileHeader FileHeader;
 
 // opens a file and sends the content back to the client
 // first the FileHeader in a regular packet, then the file contents between sockets
-// returns 0 on success, 1 on error
+// returns the number of bytes sent, or -1 on error
 CERVER_PUBLIC ssize_t file_send (
-	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection,
+	Cerver *cerver, Client *client, Connection *connection,
 	const char *filename
+);
+
+// sends the file contents of the file referenced by a fd
+// first the FileHeader in a regular packet, then the file contents between sockets
+// returns the number of bytes sent, or -1 on error
+CERVER_PUBLIC ssize_t file_send_by_fd (
+	Cerver *cerver, Client *client, Connection *connection,
+	int file_fd, const char *actual_filename, size_t filelen
 );
 
 #pragma endregion
