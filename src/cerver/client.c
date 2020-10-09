@@ -2619,13 +2619,97 @@ static void client_client_packet_handler (Packet *packet) {
 
 }
 
+static void client_request_send_file_actual (Packet *packet) {
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		char *saved_filename = NULL;
+		if (!packet->client->file_upload_handler (
+			packet->client, packet->connection,
+			file_header, &saved_filename
+		)) {
+			if (packet->client->file_upload_cb) {
+				packet->client->file_upload_cb (
+					packet->client, packet->connection,
+					saved_filename
+				);
+			}
+			
+			if (saved_filename) free (saved_filename);
+		}
+
+		else {
+			cerver_log_error ("client_request_send_file () - Failed to receive file");
+
+			packet->client->file_stats->n_bad_files_uploaded += 1;
+		}
+	}
+
+	else {
+		#ifdef CLIENT_DEBUG
+		cerver_log_warning ("client_request_send_file () - missing file header");
+		#endif
+
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_SEND_FILE, "Missing file header",
+			NULL, packet->client, packet->connection
+		);
+
+		packet->client->file_stats->n_bad_files_uploaded += 1;
+	}
+
+}
+
+// request from a cerver to receive a file
+static void client_request_send_file (Packet *packet) {
+
+	// check if the client is able to process the request
+	if (packet->client->file_upload_handler && packet->client->uploads_path) {
+		client_request_send_file_actual (packet);
+	}
+
+	else {
+		// TODO: add new error type
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_SEND_FILE, "Unable to process request",
+			NULL, packet->client, packet->connection
+		);
+
+		#ifdef CLIENT_DEBUG
+		char *status = c_string_create (
+			"Client %s is unable to handle REQUEST_PACKET_TYPE_SEND_FILE packets!",
+			packet->client->name->str
+		);
+
+		if (status) {
+			cerver_log_warning (status);
+			free (status);
+		}
+		#endif
+	}
+
+}
+
 // handles a request made from the cerver
 static void client_request_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
-		default:
-			cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown request from cerver");
-			break;
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// request from a cerver to get a file
+			case REQUEST_PACKET_TYPE_GET_FILE: client_request_get_file (packet); break;
+
+			// request from a cerver to receive a file
+			case REQUEST_PACKET_TYPE_SEND_FILE: client_request_send_file (packet); break;
+
+			default:
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Unknown request from cerver");
+				break;
+		}
 	}
 
 }
