@@ -560,6 +560,10 @@ CERVER_EXPORT void client_files_set_file_upload_cb (
 	)
 );
 
+// search for the requested file in the configured paths
+// returns the actual filename (path + directory) where it was found, NULL on error
+CERVER_PUBLIC String *client_files_search_file (Client *client, const char *filename);
+
 /*** start ***/
 
 // after a client connection successfully connects to a server,

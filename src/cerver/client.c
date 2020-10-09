@@ -2101,6 +2101,32 @@ void client_files_set_file_upload_cb (
 
 }
 
+// search for the requested file in the configured paths
+// returns the actual filename (path + directory) where it was found, NULL on error
+String *client_files_search_file (Client *client, const char *filename) {
+
+	String *retval = NULL;
+
+	if (client && filename) {
+		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		for (unsigned int i = 0; i < client->n_paths; i++) {
+			(void) snprintf (
+				filename_query, DEFAULT_FILENAME_LEN * 2,
+				"%s/%s",
+				client->paths[i]->str, filename
+			);
+
+			if (file_exists (filename_query)) {
+				retval = str_new (filename_query);
+				break;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start
