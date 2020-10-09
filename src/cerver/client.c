@@ -18,6 +18,7 @@
 #include "cerver/connection.h"
 #include "cerver/events.h"
 #include "cerver/errors.h"
+#include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -2034,6 +2035,69 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 	}
 
 	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region files
+
+// adds a new file path to take into account when getting a request for a file
+// returns 0 on success, 1 on error
+u8 client_files_add_path (Client *client, const char *path) {
+
+	u8 retval = 1;
+
+	if (client && path) {
+		if (client->n_paths < CLIENT_FILES_MAX_PATHS) {
+			client->paths[client->n_paths] = str_new (path);
+			client->n_paths += 1;
+		}
+	}
+
+	return retval;
+
+}
+
+// sets the default uploads path to be used when receiving a file
+void client_files_set_uploads_path (Client *client, const char *uploads_path) {
+
+	if (client && uploads_path) {
+		str_delete (client->uploads_path);
+		client->uploads_path = str_new (uploads_path);
+	}
+
+}
+
+// sets a custom method to be used to handle a file upload (receive)
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+void client_files_set_file_upload_handler (
+	Client *client,
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	)
+) {
+
+	if (client) {
+		client->file_upload_handler = file_upload_handler;
+	}
+
+}
+
+// sets a callback to be executed after a file has been successfully received
+void client_files_set_file_upload_cb (
+	Client *client,
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	)
+) {
+
+	if (client) {
+		client->file_upload_cb = file_upload_cb;
+	}
 
 }
 

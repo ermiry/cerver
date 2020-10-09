@@ -159,8 +159,10 @@ CERVER_PUBLIC void client_delete_dummy (void *ptr);
 CERVER_PUBLIC Client *client_create (void);
 
 // creates a new client and registers a new connection
-CERVER_PUBLIC Client *client_create_with_connection (struct _Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address);
+CERVER_PUBLIC Client *client_create_with_connection (
+	struct _Cerver *cerver,
+	const i32 sock_fd, const struct sockaddr_storage address
+);
 
 // sets the client's name
 CERVER_EXPORT void client_set_name (Client *client, const char *name);
@@ -181,8 +183,10 @@ CERVER_EXPORT void *client_get_data (Client *client);
 CERVER_EXPORT void client_set_data (Client *client, void *data, Action delete_data);
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-CERVER_EXPORT void client_set_app_handlers (Client *client,
-	struct _Handler *app_handler, struct _Handler *app_error_handler);
+CERVER_EXPORT void client_set_app_handlers (
+	Client *client,
+	struct _Handler *app_handler, struct _Handler *app_error_handler
+);
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void client_set_custom_handler (Client *client, struct _Handler *custom_handler);
@@ -526,6 +530,35 @@ CERVER_EXPORT unsigned int client_request_to_cerver (Client *client, struct _Con
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // returns 0 on success request, 1 on error
 CERVER_EXPORT unsigned int client_request_to_cerver_async (Client *client, struct _Connection *connection, struct _Packet *request);
+
+/*** files ***/
+
+// adds a new file path to take into account when getting a request for a file
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 client_files_add_path (Client *client, const char *path);
+
+// sets the default uploads path to be used when receiving a file
+CERVER_EXPORT void client_files_set_uploads_path (Client *client, const char *uploads_path);
+
+// sets a custom method to be used to handle a file upload (receive)
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+CERVER_EXPORT void client_files_set_file_upload_handler (
+	Client *client,
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	)
+);
+
+// sets a callback to be executed after a file has been successfully received
+CERVER_EXPORT void client_files_set_file_upload_cb (
+	Client *client,
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	)
+);
 
 /*** start ***/
 
