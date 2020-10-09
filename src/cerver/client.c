@@ -103,14 +103,55 @@ void client_stats_print (Client *client) {
 		}
 
 		else {
-			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Client does not have a reference to a client stats!");
+			cerver_log_msg (
+				stderr,
+				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
+				"Client does not have a reference to a client stats!"
+			);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-			"Can't get stats of a NULL client!");
+		cerver_log_msg (
+			stderr,
+			LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
+			"Can't get stats of a NULL client!"
+		);
+	}
+
+}
+
+static ClientFileStats *client_file_stats_new (void) {
+
+	ClientFileStats *file_stats = (ClientFileStats *) malloc (sizeof (ClientFileStats));
+	if (file_stats) {
+		memset (file_stats, 0, sizeof (ClientFileStats));
+	}
+
+	return file_stats;
+
+}
+
+static void client_file_stats_delete (ClientFileStats *file_stats) {
+
+	if (file_stats) free (file_stats);
+
+}
+
+void client_file_stats_print (Client *client) {
+
+	if (client) {
+		if (client->file_stats) {
+			printf ("Files requests:                %ld\n", client->file_stats->n_files_requests);
+			printf ("Success requests:              %ld\n", client->file_stats->n_success_files_requests);
+			printf ("Bad requests:                  %ld\n\n", client->file_stats->n_bad_files_requests);
+			printf ("Files bytes sent:              %ld\n\n", client->file_stats->n_bytes_sent);
+
+			printf ("Files uploads:                 %ld\n", client->file_stats->n_files_uploaded);
+			printf ("Success uploads:               %ld\n", client->file_stats->n_success_files_uploaded);
+			printf ("Bad uploads:                   %ld\n", client->file_stats->n_bad_files_uploaded);
+			printf ("Files bytes received:          %ld\n\n", client->file_stats->n_bytes_received);
+		}
 	}
 
 }
@@ -246,6 +287,8 @@ Client *client_create (void) {
 
 		client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (client->lock, NULL);
+
+		client->file_stats = client_file_stats_new ();
 
 		client->stats = client_stats_new ();
 	}
