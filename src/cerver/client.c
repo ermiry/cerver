@@ -2619,6 +2619,88 @@ static void client_client_packet_handler (Packet *packet) {
 
 }
 
+// handles a request from a cerver to get a file
+static void client_request_get_file (Packet *packet) {
+
+	Client *client = packet->client;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		// search for the requested file in the configured paths
+		String *actual_filename = client_files_search_file (client, file_header->filename);
+		if (actual_filename) {
+			#ifdef CLIENT_DEBUG
+			char *status = c_string_create ("client_request_get_file () - Sending %s...\n", actual_filename->str);
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			// if found, pipe the file contents to the client's socket fd
+			// the socket should be blocked during the entire operation
+			ssize_t sent = file_send (
+				NULL, client, packet->connection,
+				actual_filename->str
+			);
+
+			if (sent > 0) {
+				client->file_stats->n_bytes_sent += sent;
+
+				char *status = c_string_create ("Sent file %s", actual_filename->str);
+				if (status) {
+					cerver_log_success (status);
+					free (status);
+				}
+			}
+
+			else {
+				char *status = c_string_create ("Failed to send file %s", actual_filename->str);
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+			}
+
+			str_delete (actual_filename);
+		}
+
+		else {
+			#ifdef CLIENT_DEBUG
+			cerver_log_warning ("client_request_get_file () - file not found");
+			#endif
+
+			// TODO: add new error type
+			// if not found, return an error to the client
+			(void) error_packet_generate_and_send (
+				CLIENT_ERROR_GET_FILE, "File not found",
+				NULL, packet->client, packet->connection
+			);
+
+			client->file_stats->n_bad_files_uploaded += 1;
+		}
+
+	}
+
+	else {
+		#ifdef CLIENT_DEBUG
+		cerver_log_warning ("client_request_get_file () - missing file header");
+		#endif
+
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_GET_FILE, "Missing file header",
+			NULL, packet->client, packet->connection
+		);
+
+		client->file_stats->n_bad_files_uploaded += 1;
+	}
+
+}
+
 static void client_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
