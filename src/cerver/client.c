@@ -1948,6 +1948,108 @@ unsigned int client_connect_async (Client *client, Connection *connection) {
 
 #pragma endregion
 
+#pragma region start
+
+// after a client connection successfully connects to a server,
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
+// returns 0 on success, 1 on error
+int client_connection_start (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		if (connection->active) {
+			if (!client_start (client)) {
+				if (!thread_create_detachable (
+					&connection->update_thread_id,
+					(void *(*)(void *)) connection_update,
+					client_connection_aux_new (client, connection)
+				)) {
+					retval = 0;         // success
+				}
+
+				else {
+					char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %s",
+						client->name->str);
+					if (s) {
+						cerver_log_error (s);
+						free (s);
+					}
+				}
+			}
+
+			else {
+				char *s = c_string_create ("client_connection_start () - Failed to start client %s",
+					client->name->str);
+				if (s) {
+					cerver_log_error (s);
+					free (s);
+				}
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+int client_connect_and_start (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		if (!client_connect (client, connection)) {
+			if (!client_connection_start (client, connection)) {
+				retval = 0;
+			}
+		}
+
+		else {
+			char *s = c_string_create ("client_connect_and_start () - Client %s failed to connect",
+				client->name->str);
+			if (s) {
+				cerver_log_error (s);
+				free (s);
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+static void client_connection_start_wrapper (void *data_ptr) {
+
+	if (data_ptr) {
+		ClientConnection *cc = (ClientConnection *) data_ptr;
+		client_connect_and_start (cc->client, cc->connection);
+		client_connection_aux_delete (cc);
+	}
+
+}
+
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+u8 client_connect_and_start_async (Client *client, Connection *connection) {
+
+	pthread_t thread_id = 0;
+
+	return (client && connection) ? thread_create_detachable (
+		&thread_id,
+		(void *(*)(void *)) client_connection_start_wrapper,
+		client_connection_aux_new (client, connection)
+	) : 1;
+
+}
+
+#pragma endregion
+
 #pragma region requests
 
 // when a client is already connected to the cerver, a request can be made to the cerver
@@ -2056,8 +2158,8 @@ static u8 client_file_receive (
 
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
-		"%s/%ld-%s", 
-		client->uploads_path->str, 
+		"%s/%ld-%s",
+		client->uploads_path->str,
 		time (NULL), file_header->filename
 	);
 
@@ -2242,319 +2344,6 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 
 #pragma endregion
 
-#pragma region start
-
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
-// receive & handle packets in a dedicated thread
-// returns 0 on success, 1 on error
-int client_connection_start (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		if (connection->active) {
-			if (!client_start (client)) {
-				if (!thread_create_detachable (
-					&connection->update_thread_id,
-					(void *(*)(void *)) connection_update,
-					client_connection_aux_new (client, connection)
-				)) {
-					retval = 0;         // success
-				}
-
-				else {
-					char *s = c_string_create ("client_connection_start () - Failed to create update thread for client %s",
-						client->name->str);
-					if (s) {
-						cerver_log_error (s);
-						free (s);
-					}
-				}
-			}
-
-			else {
-				char *s = c_string_create ("client_connection_start () - Failed to start client %s",
-					client->name->str);
-				if (s) {
-					cerver_log_error (s);
-					free (s);
-				}
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// this is a blocking method, returns only after a success or failed connection
-// returns 0 on success, 1 on error
-int client_connect_and_start (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		if (!client_connect (client, connection)) {
-			if (!client_connection_start (client, connection)) {
-				retval = 0;
-			}
-		}
-
-		else {
-			char *s = c_string_create ("client_connect_and_start () - Client %s failed to connect",
-				client->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-static void client_connection_start_wrapper (void *data_ptr) {
-
-	if (data_ptr) {
-		ClientConnection *cc = (ClientConnection *) data_ptr;
-		client_connect_and_start (cc->client, cc->connection);
-		client_connection_aux_delete (cc);
-	}
-
-}
-
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// returns 0 on success creating connection thread, 1 on error
-u8 client_connect_and_start_async (Client *client, Connection *connection) {
-
-	pthread_t thread_id = 0;
-
-	return (client && connection) ? thread_create_detachable (
-		&thread_id,
-		(void *(*)(void *)) client_connection_start_wrapper,
-		client_connection_aux_new (client, connection)
-	) : 1;
-
-}
-
-#pragma endregion
-
-#pragma region end
-
-// ends a connection with a cerver by sending a disconnect packet and the closing the connection
-static void client_connection_terminate (Client *client, Connection *connection) {
-
-	if (connection) {
-		if (connection->active) {
-			if (connection->cerver_report) {
-				// send a close connection packet
-				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
-				if (packet) {
-					packet_set_network_values (packet, NULL, client, connection, NULL);
-					if (packet_send (packet, 0, NULL, false)) {
-						cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
-					}
-					packet_delete (packet);
-				}
-			}
-		}
-	}
-
-}
-
-// closes the connection's socket & set it to be inactive
-// does not send a close connection packet to the cerver
-// returns 0 on success, 1 on error
-int client_connection_stop (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
-		connection_end (connection);
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-// terminates the connection & closes the socket
-// but does NOT destroy the current connection
-// returns 0 on success, 1 on error
-int client_connection_close (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		client_connection_terminate (client, connection);
-		retval = client_connection_stop (client, connection);
-	}
-
-	return retval;
-
-}
-
-// terminates and destroy a connection registered to a client
-// that is connected to a cerver
-// returns 0 on success, 1 on error
-int client_connection_end (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		client_connection_close (client, connection);
-
-		dlist_remove (client->connections, connection, NULL);
-
-		connection_delete (connection);
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-static void client_app_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_packet_handler) {
-			if (!client->app_packet_handler->direct_handle) {
-				// stop app handler
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_app_error_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_error_packet_handler) {
-			if (!client->app_error_packet_handler->direct_handle) {
-				// stop app error handler
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_custom_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->custom_packet_handler) {
-			if (!client->custom_packet_handler->direct_handle) {
-				// stop custom handler
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_handlers_destroy (Client *client) {
-
-	if (client) {
-		char *s = c_string_create ("Client %s num_handlers_alive: %d",
-			client->name->str, client->num_handlers_alive);
-		if (s) {
-			cerver_log_debug (s);
-			free (s);
-		}
-
-		client_app_handler_destroy (client);
-
-		client_app_error_handler_destroy (client);
-
-		client_custom_handler_destroy (client);
-
-		// poll remaining handlers
-		while (client->num_handlers_alive) {
-			if (client->app_packet_handler)
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-
-			if (client->app_error_packet_handler)
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-
-			if (client->custom_packet_handler)
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-
-			sleep (1);
-		}
-	}
-
-}
-
-static void *client_teardown_internal (void *client_ptr) {
-
-	if (client_ptr) {
-		Client *client = (Client *) client_ptr;
-
-		pthread_mutex_lock (client->lock);
-
-		// end any ongoing connection
-		for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-			client_connection_close (client, (Connection *) le->data);
-		}
-
-		client_handlers_destroy (client);
-
-		// delete all connections
-		dlist_delete (client->connections);
-		client->connections = NULL;
-
-		pthread_mutex_unlock (client->lock);
-
-		client_delete (client);
-	}
-
-	return NULL;
-
-}
-
-// stop any on going connection and process and destroys the client
-// returns 0 on success, 1 on error
-u8 client_teardown (Client *client) {
-
-	u8 retval = 1;
-
-	if (client) {
-		client->running = false;
-
-		client_teardown_internal (client);
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-// calls client_teardown () in a new thread as handlers might need time to stop
-// that will cause the calling thread to wait at least a second
-// returns 0 on success creating thread, 1 on error
-u8 client_teardown_async (Client *client) {
-
-	pthread_t thread_id = 0;
-	return client ? thread_create_detachable (
-		&thread_id,
-		client_teardown_internal,
-		client
-	) : 1;
-
-}
-
-#pragma endregion
-
 #pragma region handler
 
 static void client_cerver_packet_handle_info (Packet *packet) {
@@ -2719,7 +2508,7 @@ static void client_request_send_file_actual (Packet *packet) {
 					saved_filename
 				);
 			}
-			
+
 			if (saved_filename) free (saved_filename);
 		}
 
@@ -3390,6 +3179,217 @@ unsigned int client_receive (Client *client, Connection *connection) {
 	}
 
 	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region end
+
+// ends a connection with a cerver by sending a disconnect packet and the closing the connection
+static void client_connection_terminate (Client *client, Connection *connection) {
+
+	if (connection) {
+		if (connection->active) {
+			if (connection->cerver_report) {
+				// send a close connection packet
+				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
+				if (packet) {
+					packet_set_network_values (packet, NULL, client, connection, NULL);
+					if (packet_send (packet, 0, NULL, false)) {
+						cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
+					}
+					packet_delete (packet);
+				}
+			}
+		}
+	}
+
+}
+
+// closes the connection's socket & set it to be inactive
+// does not send a close connection packet to the cerver
+// returns 0 on success, 1 on error
+int client_connection_stop (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
+		connection_end (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// terminates the connection & closes the socket
+// but does NOT destroy the current connection
+// returns 0 on success, 1 on error
+int client_connection_close (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_connection_terminate (client, connection);
+		retval = client_connection_stop (client, connection);
+	}
+
+	return retval;
+
+}
+
+// terminates and destroy a connection registered to a client
+// that is connected to a cerver
+// returns 0 on success, 1 on error
+int client_connection_end (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_connection_close (client, connection);
+
+		dlist_remove (client->connections, connection, NULL);
+
+		connection_delete (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void client_app_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->app_packet_handler) {
+			if (!client->app_packet_handler->direct_handle) {
+				// stop app handler
+				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_app_error_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->app_error_packet_handler) {
+			if (!client->app_error_packet_handler->direct_handle) {
+				// stop app error handler
+				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_custom_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->custom_packet_handler) {
+			if (!client->custom_packet_handler->direct_handle) {
+				// stop custom handler
+				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_handlers_destroy (Client *client) {
+
+	if (client) {
+		char *s = c_string_create ("Client %s num_handlers_alive: %d",
+			client->name->str, client->num_handlers_alive);
+		if (s) {
+			cerver_log_debug (s);
+			free (s);
+		}
+
+		client_app_handler_destroy (client);
+
+		client_app_error_handler_destroy (client);
+
+		client_custom_handler_destroy (client);
+
+		// poll remaining handlers
+		while (client->num_handlers_alive) {
+			if (client->app_packet_handler)
+				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+
+			if (client->app_error_packet_handler)
+				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+
+			if (client->custom_packet_handler)
+				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+
+			sleep (1);
+		}
+	}
+
+}
+
+static void *client_teardown_internal (void *client_ptr) {
+
+	if (client_ptr) {
+		Client *client = (Client *) client_ptr;
+
+		pthread_mutex_lock (client->lock);
+
+		// end any ongoing connection
+		for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+			client_connection_close (client, (Connection *) le->data);
+		}
+
+		client_handlers_destroy (client);
+
+		// delete all connections
+		dlist_delete (client->connections);
+		client->connections = NULL;
+
+		pthread_mutex_unlock (client->lock);
+
+		client_delete (client);
+	}
+
+	return NULL;
+
+}
+
+// stop any on going connection and process and destroys the client
+// returns 0 on success, 1 on error
+u8 client_teardown (Client *client) {
+
+	u8 retval = 1;
+
+	if (client) {
+		client->running = false;
+
+		client_teardown_internal (client);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// calls client_teardown () in a new thread as handlers might need time to stop
+// that will cause the calling thread to wait at least a second
+// returns 0 on success creating thread, 1 on error
+u8 client_teardown_async (Client *client) {
+
+	pthread_t thread_id = 0;
+	return client ? thread_create_detachable (
+		&thread_id,
+		client_teardown_internal,
+		client
+	) : 1;
 
 }
 

@@ -514,6 +514,25 @@ CERVER_EXPORT unsigned int client_connect_to_cerver (Client *client, struct _Con
 // returns 0 on success connection thread creation, 1 on error
 CERVER_EXPORT unsigned int client_connect_async (Client *client, struct _Connection *connection);
 
+/*** start ***/
+
+// after a client connection successfully connects to a server,
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
+// returns 0 on success, 1 on error
+CERVER_EXPORT int client_connection_start (Client *client, struct _Connection *connection);
+
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+CERVER_EXPORT int client_connect_and_start (Client *client, struct _Connection *connection);
+
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
+
 /*** requests ***/
 
 // when a client is already connected to the cerver, a request can be made to the cerver
@@ -575,24 +594,11 @@ CERVER_EXPORT u8 client_file_get (Client *client, struct _Connection *connection
 // returns 0 on success sending request, 1 on failed to send request
 CERVER_EXPORT u8 client_file_send (Client *client, struct _Connection *connection, const char *filename);
 
-/*** start ***/
+/*** update ***/
 
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
-// receive & handle packets in a dedicated thread
-// returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_start (Client *client, struct _Connection *connection);
-
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// this is a blocking method, returns only after a success or failed connection
-// returns 0 on success, 1 on error
-CERVER_EXPORT int client_connect_and_start (Client *client, struct _Connection *connection);
-
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// returns 0 on success creating connection thread, 1 on error
-CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
+// receives incoming data from the socket
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+CERVER_PUBLIC unsigned int client_receive (Client *client, struct _Connection *connection);
 
 /*** end ***/
 
@@ -619,12 +625,6 @@ CERVER_EXPORT u8 client_teardown (Client *client);
 // that will cause the calling thread to wait at least a second
 // returns 0 on success creating thread, 1 on error
 CERVER_EXPORT u8 client_teardown_async (Client *client);
-
-/*** update ***/
-
-// receives incoming data from the socket
-// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
-CERVER_PUBLIC unsigned int client_receive (Client *client, struct _Connection *connection);
 
 #pragma endregion
 
