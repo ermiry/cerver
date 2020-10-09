@@ -564,6 +564,15 @@ CERVER_EXPORT void client_files_set_file_upload_cb (
 // returns the actual filename (path + directory) where it was found, NULL on error
 CERVER_PUBLIC String *client_files_search_file (Client *client, const char *filename);
 
+// requests a file from the cerver
+// the client's uploads_path should have been configured before calling this method
+// returns 0 on success sending request, 1 on failed to send request
+CERVER_EXPORT u8 client_file_get (Client *client, struct _Connection *connection, const char *filename);
+
+// sends a file to the cerver
+// returns 0 on success sending request, 1 on failed to send request
+CERVER_EXPORT u8 client_file_send (Client *client, struct _Connection *connection, const char *filename);
+
 /*** start ***/
 
 // after a client connection successfully connects to a server,

@@ -2127,6 +2127,89 @@ String *client_files_search_file (Client *client, const char *filename) {
 
 }
 
+// requests a file from the cerver
+// the client's uploads_path should have been configured before calling this method
+// returns 0 on success sending request, 1 on failed to send request
+u8 client_file_get (Client *client, Connection *connection, const char *filename) {
+
+	u8 retval = 1;
+
+	if (client && connection && filename) {
+		if (client->uploads_path) {
+			Packet *packet = packet_new ();
+			if (packet) {
+				size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
+
+				packet->packet = malloc (packet_len);
+				packet->packet_size = packet_len;
+
+				char *end = (char *) packet->packet;
+				PacketHeader *header = (PacketHeader *) end;
+				header->packet_type = PACKET_TYPE_REQUEST;
+				header->packet_size = packet_len;
+
+				header->request_type = REQUEST_PACKET_TYPE_GET_FILE;
+
+				end += sizeof (PacketHeader);
+
+				FileHeader *file_header = (FileHeader *) end;
+				strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+				file_header->len = 0;
+
+				packet_set_network_values (packet, NULL, client, connection, NULL);
+
+				retval = packet_send (packet, 0, NULL, false);
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// TODO: handle client stats
+// sends a file to the cerver
+// returns 0 on success sending request, 1 on failed to send request
+u8 client_file_send (Client *client, Connection *connection, const char *filename) {
+
+	u8 retval = 1;
+
+	if (client && connection && filename) {
+		char *last = strrchr (filename, '/');
+		const char *actual_filename = last ? last + 1 : NULL;
+		if (actual_filename) {
+			// try to open the file
+			struct stat filestatus = { 0 };
+			int file_fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
+			if (file_fd >= 0) {
+				size_t sent = file_send_by_fd (
+					NULL, client, connection,
+					file_fd, actual_filename, filestatus.st_size
+				);
+
+				if (sent == filestatus.st_size) retval = 0;
+
+				close (file_fd);
+			}
+
+			else {
+				char *s = c_string_create ("client_file_send () - Failed to open file %s", filename);
+				if (s) {
+					client_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
+					free (s);
+				}
+			}
+		}
+
+		else {
+			client_log_error ("client_file_send () - failed to get actual filename");
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start
