@@ -23,10 +23,12 @@
 
 struct _Cerver;
 struct _Client;
+struct _Connection;
 struct _Packet;
 struct _PacketsPerType;
-struct _Connection;
 struct _Handler;
+
+struct _FileHeader;
 
 struct _ClientEvent;
 struct _ClientError;

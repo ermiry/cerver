@@ -32,6 +32,11 @@
 static void client_event_delete (void *ptr);
 static void client_error_delete (void *client_error_ptr);
 
+static u8 client_file_receive (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+);
+
 unsigned int client_receive (Client *client, Connection *connection);
 
 static u64 next_client_id = 0;
@@ -204,7 +209,7 @@ Client *client_new (void) {
 
 		client->uploads_path = NULL;
 
-		client->file_upload_handler = file_receive;
+		client->file_upload_handler = client_file_receive;
 
 		client->file_upload_cb = NULL;
 
@@ -2042,6 +2047,31 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 
 #pragma region files
 
+static u8 client_file_receive (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+) {
+
+	u8 retval = 1;
+
+	// generate a custom filename taking into account the uploads path
+	*saved_filename = c_string_create (
+		"%s/%ld-%s", 
+		client->uploads_path->str, 
+		time (NULL), file_header->filename
+	);
+
+	if (*saved_filename) {
+		retval = file_receive_actual (
+			client, connection,
+			file_header, saved_filename
+		);
+	}
+
+	return retval;
+
+}
+
 // adds a new file path to take into account when getting a request for a file
 // returns 0 on success, 1 on error
 u8 client_files_add_path (Client *client, const char *path) {
@@ -2195,14 +2225,14 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 			else {
 				char *s = c_string_create ("client_file_send () - Failed to open file %s", filename);
 				if (s) {
-					client_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
+					cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
 					free (s);
 				}
 			}
 		}
 
 		else {
-			client_log_error ("client_file_send () - failed to get actual filename");
+			cerver_log_error ("client_file_send () - failed to get actual filename");
 		}
 	}
 
