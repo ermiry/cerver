@@ -33,7 +33,7 @@
 
 bool file_exists (const char *filename);
 
-static u8 file_receive (
+static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
 );
@@ -77,7 +77,7 @@ FileCerver *file_cerver_new (void) {
 
 		file_cerver->uploads_path = NULL;
 
-		file_cerver->file_upload_handler = file_receive;
+		file_cerver->file_upload_handler = file_cerver_receive;
 
 		file_cerver->file_upload_cb = NULL;
 
@@ -775,7 +775,56 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 
 }
 
-static u8 file_receive (
+// opens the file using an already created filename
+// and use the fd to receive and save the file
+u8 file_receive_actual (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+) {
+
+	u8 retval = 1;
+
+	int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	if (file_fd > 0) {
+		// ssize_t received = splice (
+		// 	connection->socket->sock_fd, NULL,
+		// 	file_fd, NULL,
+		// 	file_header->len,
+		// 	0
+		// );
+
+		if (!file_receive_internal (
+			connection,
+			file_header->len,
+			file_fd
+		)) {
+			#ifdef FILES_DEBUG
+			cerver_log_success ("file_receive_internal () has finished");
+			#endif
+
+			retval = 0;
+		}
+
+		else {
+			free (*saved_filename);
+			*saved_filename = NULL;
+		}
+
+		close (file_fd);
+	}
+
+	else {
+		cerver_log_error ("file_receive_actual () - failed to open file");
+
+		free (*saved_filename);
+		*saved_filename = NULL;
+	}
+
+	return retval;
+
+}
+
+static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
 ) {
@@ -792,41 +841,10 @@ static u8 file_receive (
 	);
 
 	if (*saved_filename) {
-		int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
-		if (file_fd > 0) {
-			// ssize_t received = splice (
-			// 	connection->socket->sock_fd, NULL,
-			// 	file_fd, NULL,
-			// 	file_header->len,
-			// 	0
-			// );
-
-			if (!file_receive_internal (
-				connection,
-				file_header->len,
-				file_fd
-			)) {
-				#ifdef FILES_DEBUG
-				cerver_log_success ("file_receive_internal () has finished");
-				#endif
-
-				retval = 0;
-			}
-
-			else {
-				free (*saved_filename);
-				*saved_filename = NULL;
-			}
-
-			close (file_fd);
-		}
-
-		else {
-			cerver_log_error ("file_receive () - failed to open file");
-
-			free (*saved_filename);
-			*saved_filename = NULL;
-		}
+		retval = file_receive_actual (
+			client, connection,
+			file_header, saved_filename
+		);
 	}
 
 	return retval;
