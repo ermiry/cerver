@@ -156,6 +156,18 @@ Client *client_new (void) {
 		for (unsigned int i = 0; i < CLIENT_MAX_ERRORS; i++)
 			client->errors[i] = NULL;
 
+		client->n_paths = 0;
+		for (unsigned int i = 0; i < CLIENT_FILES_MAX_PATHS; i++)
+			client->paths[i] = NULL;
+
+		client->uploads_path = NULL;
+
+		client->file_upload_handler = file_receive;
+
+		client->file_upload_cb = NULL;
+
+		client->file_stats = NULL;
+
 		client->stats = NULL;
 	}
 
@@ -199,6 +211,15 @@ void client_delete (void *ptr) {
 
 		for (unsigned int i = 0; i < CLIENT_MAX_ERRORS; i++)
 			if (client->errors[i]) client_error_delete (client->errors[i]);
+
+		for (unsigned int i = 0; i < CLIENT_FILES_MAX_PATHS; i++)
+			str_delete (client->paths[i]);
+
+		str_delete (client->uploads_path);
+
+		client_file_stats_delete (client->file_stats);
+
+		client_stats_delete (client->stats);
 
 		client_stats_delete (client->stats);
 

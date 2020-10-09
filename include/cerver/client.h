@@ -19,6 +19,8 @@
 
 #include "cerver/utils/log.h"
 
+#define CLIENT_FILES_MAX_PATHS           32
+
 struct _Cerver;
 struct _Client;
 struct _Packet;
@@ -51,6 +53,24 @@ struct _ClientStats {
 typedef struct _ClientStats ClientStats;
 
 CERVER_PUBLIC void client_stats_print (struct _Client *client);
+
+struct _ClientFileStats {
+
+	u64 n_files_requests;
+	u64 n_success_files_requests;
+	u64 n_bad_files_requests;
+	u64 n_bytes_sent;
+
+	u64 n_files_uploaded;
+	u64 n_success_files_uploaded;
+	u64 n_bad_files_uploaded;
+	u64 n_bytes_received;
+
+};
+
+typedef struct _ClientFileStats ClientFileStats;
+
+CERVER_PUBLIC void client_file_stats_print (struct _Client *client);
 
 #pragma endregion
 
@@ -101,6 +121,25 @@ struct _Client {
 
 	struct _ClientEvent *events[CLIENT_MAX_EVENTS];
 	struct _ClientError *errors[CLIENT_MAX_ERRORS];
+
+	// files
+	unsigned int n_paths;
+	String *paths[CLIENT_FILES_MAX_PATHS];
+
+	// default path where received files will be placed
+	String *uploads_path;
+
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	);
+
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	);
+
+	ClientFileStats *file_stats;
 
 	ClientStats *stats;
 
