@@ -681,6 +681,8 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		)) {
 			file_cerver->stats->n_success_files_uploaded += 1;
 
+			file_cerver->stats->n_bytes_received += file_header->len;
+
 			if (file_cerver->file_upload_cb) {
 				file_cerver->file_upload_cb (
 					packet->cerver, packet->client, packet->connection,
