@@ -33,6 +33,13 @@
 
 bool file_exists (const char *filename);
 
+static ssize_t file_send_actual (
+	Cerver *cerver, Client *client, Connection *connection,
+	int file_fd, const char *actual_filename, size_t filelen
+);
+
+static int file_send_open (const char *filename, struct stat *filestatus, const char **actual_filename);
+
 static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
@@ -197,6 +204,42 @@ String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) 
 				retval = str_new (filename_query);
 				break;
 			}
+		}
+	}
+
+	return retval;
+
+}
+
+// opens a file and sends the content back to the client
+// first the FileHeader in a regular packet, then the file contents between sockets
+// if the file is not found, a CERVER_ERROR_FILE_NOT_FOUND error packet will be sent
+// returns the number of bytes sent, or -1 on error
+ssize_t file_cerver_send_file (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename
+) {
+
+	ssize_t retval = -1;
+
+	if (filename && connection) {
+		const char *actual_filename = NULL;
+		struct stat filestatus = { 0 };
+		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
+		if (file_fd > 0) {
+			retval = file_send_actual (
+				cerver, client, connection,
+				file_fd, actual_filename, filestatus.st_size
+			);
+
+			close (file_fd);
+		}
+
+		else {
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_FILE_NOT_FOUND, "File not found",
+				cerver, client, connection
+			);
 		}
 	}
 

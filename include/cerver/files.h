@@ -104,6 +104,15 @@ CERVER_EXPORT void file_cerver_set_file_upload_cb (
 // returns the actual filename (path + directory) where it was found, NULL on error
 CERVER_PUBLIC String *file_cerver_search_file (FileCerver *file_cerver, const char *filename);
 
+// opens a file and sends the content back to the client
+// first the FileHeader in a regular packet, then the file contents between sockets
+// if the file is not found, a CERVER_ERROR_FILE_NOT_FOUND error packet will be sent
+// returns the number of bytes sent, or -1 on error
+CERVER_PUBLIC ssize_t file_cerver_send_file (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename
+);
+
 CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 
 #pragma endregion
@@ -156,7 +165,7 @@ struct _FileHeader {
 
 typedef struct _FileHeader FileHeader;
 
-// opens a file and sends the content back to the client
+// opens a file and sends its contents
 // first the FileHeader in a regular packet, then the file contents between sockets
 // returns the number of bytes sent, or -1 on error
 CERVER_PUBLIC ssize_t file_send (
