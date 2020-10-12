@@ -655,7 +655,10 @@ static ssize_t file_send_actual (
 
 }
 
-static int file_send_open (const char *filename, struct stat *filestatus, const char **actual_filename) {
+static int file_send_open (
+	const char *filename, struct stat *filestatus,
+	const char **actual_filename
+) {
 
 	int file_fd = -1;
 
