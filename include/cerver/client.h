@@ -61,9 +61,10 @@ struct _ClientFileStats {
 	u64 n_files_requests;
 	u64 n_success_files_requests;
 	u64 n_bad_files_requests;
+	u64 n_files_sent;
 	u64 n_bytes_sent;
 
-	u64 n_files_uploaded;
+	u64 n_files_upload_requests;
 	u64 n_success_files_uploaded;
 	u64 n_bad_files_uploaded;
 	u64 n_bytes_received;
