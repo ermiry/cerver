@@ -566,7 +566,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 			// if found, pipe the file contents to the client's socket fd
 			// the socket should be blocked during the entire operation
-			ssize_t sent = file_send (
+			ssize_t sent = file_cerver_send_file (
 				packet->cerver, packet->client, packet->connection,
 				actual_filename->str
 			);
@@ -574,11 +574,13 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			if (sent > 0) {
 				file_cerver->stats->n_bytes_sent += sent;
 
+				#ifdef HANDLER_DEBUG
 				char *status = c_string_create ("Sent file %s", actual_filename->str);
 				if (status) {
 					cerver_log_success (status);
 					free (status);
 				}
+				#endif
 			}
 
 			else {
@@ -597,10 +599,9 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			cerver_log_warning ("cerver_request_get_file () - file not found");
 			#endif
 
-			// TODO: add new error type
 			// if not found, return an error to the client
 			(void) error_packet_generate_and_send (
-				CERVER_ERROR_GET_FILE, "File not found",
+				CERVER_ERROR_FILE_NOT_FOUND, "File not found",
 				packet->cerver, packet->client, packet->connection
 			);
 
