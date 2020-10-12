@@ -45,6 +45,11 @@ static u8 file_cerver_receive (
 	FileHeader *file_header, char **saved_filename
 );
 
+u8 file_receive_actual (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+);
+
 #pragma region cerver
 
 static FileCerverStats *file_cerver_stats_new (void) {
@@ -241,6 +246,33 @@ ssize_t file_cerver_send_file (
 				cerver, client, connection
 			);
 		}
+	}
+
+	return retval;
+
+}
+
+static u8 file_cerver_receive (
+	Cerver *cerver, Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+) {
+
+	u8 retval = 1;
+
+	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
+
+	// generate a custom filename taking into account the uploads path
+	*saved_filename = c_string_create (
+		"%s/%ld-%s", 
+		file_cerver->uploads_path->str, 
+		time (NULL), file_header->filename
+	);
+
+	if (*saved_filename) {
+		retval = file_receive_actual (
+			client, connection,
+			file_header, saved_filename
+		);
 	}
 
 	return retval;
@@ -865,33 +897,6 @@ u8 file_receive_actual (
 
 		free (*saved_filename);
 		*saved_filename = NULL;
-	}
-
-	return retval;
-
-}
-
-static u8 file_cerver_receive (
-	Cerver *cerver, Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
-) {
-
-	u8 retval = 1;
-
-	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
-
-	// generate a custom filename taking into account the uploads path
-	*saved_filename = c_string_create (
-		"%s/%ld-%s", 
-		file_cerver->uploads_path->str, 
-		time (NULL), file_header->filename
-	);
-
-	if (*saved_filename) {
-		retval = file_receive_actual (
-			client, connection,
-			file_header, saved_filename
-		);
 	}
 
 	return retval;
