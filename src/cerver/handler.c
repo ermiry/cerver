@@ -548,6 +548,8 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
 
+	file_cerver->stats->n_files_requests += 1;
+
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
 		char *end = packet->data;
@@ -572,6 +574,8 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			);
 
 			if (sent > 0) {
+				file_cerver->stats->n_success_files_requests += 1;
+				file_cerver->stats->n_files_sent += 1;
 				file_cerver->stats->n_bytes_sent += sent;
 
 				#ifdef HANDLER_DEBUG
@@ -589,6 +593,8 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 					cerver_log_error (status);
 					free (status);
 				}
+
+				file_cerver->stats->n_bad_files_sent += 1;
 			}
 
 			str_delete (actual_filename);
@@ -661,6 +667,8 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 
 	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
 
+	file_cerver->stats->n_files_upload_requests += 1;
+
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
 		char *end = packet->data;
@@ -671,6 +679,8 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection,
 			file_header, &saved_filename
 		)) {
+			file_cerver->stats->n_success_files_uploaded += 1;
+
 			if (file_cerver->file_upload_cb) {
 				file_cerver->file_upload_cb (
 					packet->cerver, packet->client, packet->connection,
@@ -684,7 +694,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		else {
 			cerver_log_error ("Failed to receive file");
 
-			file_cerver->stats->n_bad_files_uploaded += 1;
+			file_cerver->stats->n_bad_files_received += 1;
 		}
 	}
 
@@ -695,7 +705,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection
 		);
 
-		file_cerver->stats->n_bad_files_uploaded += 1;
+		file_cerver->stats->n_bad_files_upload_requests += 1;
 	}
 
 }
