@@ -1514,6 +1514,13 @@ static void client_error_packet_handler (Packet *packet) {
 					s_error->msg
 				);
 				break;
+			case CLIENT_ERROR_FILE_NOT_FOUND:
+				client_error_trigger (
+					CLIENT_ERROR_FILE_NOT_FOUND,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			case CLIENT_ERROR_CREATE_LOBBY:
 				client_error_trigger (
