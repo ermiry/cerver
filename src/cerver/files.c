@@ -59,11 +59,14 @@ static FileCerverStats *file_cerver_stats_new (void) {
 		stats->n_files_requests = 0;
 		stats->n_success_files_requests = 0;
 		stats->n_bad_files_requests = 0;
+		stats->n_files_sent = 0;
+		stats->n_bad_files_sent = 0;
 		stats->n_bytes_sent = 0;
 
-		stats->n_files_uploaded = 0;
+		stats->n_files_upload_requests = 0;
 		stats->n_success_files_uploaded = 0;
-		stats->n_bad_files_uploaded = 0;
+		stats->n_bad_files_upload_requests = 0;
+		stats->n_bad_files_received = 0;
 		stats->n_bytes_received = 0;
 	}
 
@@ -285,11 +288,14 @@ void file_cerver_stats_print (FileCerver *file_cerver) {
 		printf ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
 		printf ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
 		printf ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
+		printf ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
+		printf ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
 		printf ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
 
-		printf ("Files uploads:                 %ld\n", file_cerver->stats->n_files_uploaded);
+		printf ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
 		printf ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
-		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_uploaded);
+		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
+		printf ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
 		printf ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
 	}
 

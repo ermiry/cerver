@@ -28,15 +28,18 @@ struct _FileHeader;
 
 typedef struct FileCerverStats {
 
-	u64 n_files_requests;
-	u64 n_success_files_requests;
-	u64 n_bad_files_requests;
-	u64 n_bytes_sent;
+	u64 n_files_requests;				// n requests to get a file
+	u64 n_success_files_requests;		// fulfilled requests
+	u64 n_bad_files_requests;			// bad requests
+	u64 n_files_sent;					// n files sent
+	u64 n_bad_files_sent;				// n files that failed to send
+	u64 n_bytes_sent;					// total bytes sent
 
-	u64 n_files_uploaded;
-	u64 n_success_files_uploaded;
-	u64 n_bad_files_uploaded;
-	u64 n_bytes_received;
+	u64 n_files_upload_requests;		// n requests to upload a file
+	u64 n_success_files_uploaded;		// n files received
+	u64 n_bad_files_upload_requests;	// bad requests to upload files
+	u64 n_bad_files_received;			// files that failed to be received
+	u64 n_bytes_received;				// total bytes received
 
 } FileCerverStats;
 
