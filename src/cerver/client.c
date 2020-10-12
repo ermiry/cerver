@@ -268,8 +268,6 @@ void client_delete (void *ptr) {
 
 		client_stats_delete (client->stats);
 
-		client_stats_delete (client->stats);
-
 		free (client);
 	}
 
