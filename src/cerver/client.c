@@ -2516,6 +2516,8 @@ static void client_request_send_file_actual (Packet *packet) {
 		)) {
 			client->file_stats->n_success_files_uploaded += 1;
 
+			client->file_stats->n_bytes_received += file_header->len;
+
 			if (client->file_upload_cb) {
 				client->file_upload_cb (
 					packet->client, packet->connection,
