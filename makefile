@@ -100,5 +100,6 @@ examples: $(EXAMPLES)
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/game.c -o ./examples/bin/game -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/client.c -o ./examples/bin/client/client -l cerver
 	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/auth.c -o ./examples/bin/client/auth -l cerver
+	$(CC) -g -Wall -Wno-unknown-pragmas -I ./include -L ./bin ./examples/client/files.c -o ./examples/bin/client/files -l cerver
 
 .PHONY: all clean examples
