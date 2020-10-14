@@ -533,7 +533,7 @@ static u8 file_send_header (
 
 		packet_set_network_values (packet, cerver, client, connection, NULL);
 
-		retval = packet_send (packet, 0, NULL, false);
+		retval = packet_send_unsafe (packet, 0, NULL, false);
 	}
 
 	return retval;
