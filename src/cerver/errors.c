@@ -233,53 +233,32 @@ void cerver_error_event_trigger (
 
 #pragma endregion
 
-#pragma region error
-
-CerverError *cerver_error_new (const CerverErrorType type, const char *msg) {
-
-	CerverError *error = (CerverError *) malloc (sizeof (CerverError));
-	if (error) {
-		error->type = type;
-		time (&error->timestamp);
-		error->msg = msg ? str_new (msg) : NULL;
-	}
-
-	return error;
-
-}
-
-void cerver_error_delete (void *cerver_error_ptr) {
-
-	if (cerver_error_ptr) {
-		CerverError *error = (CerverError *) cerver_error_ptr;
-
-		str_delete (error->msg);
-
-		free (error);
-	}
-
-}
-
-#pragma endregion
-
 #pragma region packets
 
 // creates an error packet ready to be sent
 Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
-	Packet *packet = NULL;
+	Packet *packet = packet_new ();
+	if (packet) {
+		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
 
-	CerverError *error = cerver_error_new (type, msg);
-	if (error) {
-		SError *serror = error_serialize (error);
-		if (serror) {
-			packet = packet_create (PACKET_TYPE_ERROR, serror, sizeof (SError));
-			packet_generate (packet);
+		packet->packet = malloc (packet_len);
+		packet->packet_size = packet_len;
 
-			serror_delete (serror);
-		}
+		char *end = (char *) packet->packet;
+		PacketHeader *header = (PacketHeader *) end;
+		header->packet_type = PACKET_TYPE_ERROR;
+		header->packet_size = packet_len;
 
-		cerver_error_delete (error);
+		header->request_type = REQUEST_PACKET_TYPE_NONE;
+
+		end += sizeof (PacketHeader);
+
+		SError *s_error = (SError *) end;
+		s_error->error_type = type;
+		s_error->timestamp = time (NULL);
+		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
+		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
 	}
 
 	return packet;

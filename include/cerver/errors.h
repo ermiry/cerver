@@ -110,22 +110,6 @@ CERVER_PUBLIC void cerver_error_event_data_delete (CerverErrorEventData *error_e
 
 #pragma endregion
 
-#pragma region error
-
-typedef struct CerverError {
-
-	CerverErrorType type;
-	time_t timestamp;
-	String *msg;
-
-} CerverError;
-
-CERVER_PRIVATE CerverError *cerver_error_new (const CerverErrorType type, const char *msg);
-
-CERVER_PRIVATE void cerver_error_delete (void *cerver_error_ptr);
-
-#pragma endregion
-
 #pragma region packets
 
 // creates an error packet ready to be sent
