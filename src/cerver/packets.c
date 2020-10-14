@@ -816,7 +816,8 @@ static void packet_send_update_stats (
 }
 
 static inline u8 packet_send_internal (
-	const Packet *packet, int flags, size_t *total_sent,
+	const Packet *packet,
+	int flags, size_t *total_sent,
 	bool raw, bool split, bool unsafe,
 	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
 ) {
@@ -874,7 +875,8 @@ static inline u8 packet_send_internal (
 u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		raw, false, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -887,7 +889,8 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		raw, false, true,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -906,7 +909,8 @@ u8 packet_send_to (
 ) {
 
 	return packet_send_internal (
-		packet, 0, total_sent,
+		packet,
+		0, total_sent,
 		raw, false, false,
 		cerver, client, connection, lobby
 	);
@@ -922,7 +926,8 @@ u8 packet_send_to (
 u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		false, true, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -939,7 +944,8 @@ u8 packet_send_to_split (
 ) {
 
 	return packet_send_internal (
-		packet, 0, total_sent,
+		packet,
+		0, total_sent,
 		false, true, false,
 		cerver, client, connection, lobby
 	);
