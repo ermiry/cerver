@@ -970,7 +970,7 @@ static void cerver_packet_handler (void *packet_ptr) {
 					packet->connection->stats->received_packets->n_error_packets += 1;
 					#endif
 					if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
-					/* TODO: */
+					cerver_error_packet_handler (packet);
 					packet_delete (packet);
 					break;
 
