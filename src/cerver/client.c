@@ -18,6 +18,7 @@
 #include "cerver/connection.h"
 #include "cerver/events.h"
 #include "cerver/errors.h"
+#include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
@@ -30,6 +31,11 @@
 
 static void client_event_delete (void *ptr);
 static void client_error_delete (void *client_error_ptr);
+
+static u8 client_file_receive (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+);
 
 unsigned int client_receive (Client *client, Connection *connection);
 
@@ -103,14 +109,58 @@ void client_stats_print (Client *client) {
 		}
 
 		else {
-			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Client does not have a reference to a client stats!");
+			cerver_log_msg (
+				stderr,
+				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
+				"Client does not have a reference to a client stats!"
+			);
 		}
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-			"Can't get stats of a NULL client!");
+		cerver_log_msg (
+			stderr,
+			LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
+			"Can't get stats of a NULL client!"
+		);
+	}
+
+}
+
+static ClientFileStats *client_file_stats_new (void) {
+
+	ClientFileStats *file_stats = (ClientFileStats *) malloc (sizeof (ClientFileStats));
+	if (file_stats) {
+		memset (file_stats, 0, sizeof (ClientFileStats));
+	}
+
+	return file_stats;
+
+}
+
+static void client_file_stats_delete (ClientFileStats *file_stats) {
+
+	if (file_stats) free (file_stats);
+
+}
+
+void client_file_stats_print (Client *client) {
+
+	if (client) {
+		if (client->file_stats) {
+			printf ("Files requests:                %ld\n", client->file_stats->n_files_requests);
+			printf ("Success requests:              %ld\n", client->file_stats->n_success_files_requests);
+			printf ("Bad requests:                  %ld\n\n", client->file_stats->n_bad_files_requests);
+			printf ("Files sent:                    %ld\n\n", client->file_stats->n_files_sent);
+			printf ("Failed files sent:             %ld\n\n", client->file_stats->n_bad_files_sent);
+			printf ("Files bytes sent:              %ld\n\n", client->file_stats->n_bytes_sent);
+
+			printf ("Files upload requests:         %ld\n", client->file_stats->n_files_upload_requests);
+			printf ("Success uploads:               %ld\n", client->file_stats->n_success_files_uploaded);
+			printf ("Bad uploads:                   %ld\n", client->file_stats->n_bad_files_upload_requests);
+			printf ("Bad files received:            %ld\n", client->file_stats->n_bad_files_received);
+			printf ("Files bytes received:          %ld\n\n", client->file_stats->n_bytes_received);
+		}
 	}
 
 }
@@ -156,6 +206,18 @@ Client *client_new (void) {
 		for (unsigned int i = 0; i < CLIENT_MAX_ERRORS; i++)
 			client->errors[i] = NULL;
 
+		client->n_paths = 0;
+		for (unsigned int i = 0; i < CLIENT_FILES_MAX_PATHS; i++)
+			client->paths[i] = NULL;
+
+		client->uploads_path = NULL;
+
+		client->file_upload_handler = client_file_receive;
+
+		client->file_upload_cb = NULL;
+
+		client->file_stats = NULL;
+
 		client->stats = NULL;
 	}
 
@@ -200,6 +262,13 @@ void client_delete (void *ptr) {
 		for (unsigned int i = 0; i < CLIENT_MAX_ERRORS; i++)
 			if (client->errors[i]) client_error_delete (client->errors[i]);
 
+		for (unsigned int i = 0; i < CLIENT_FILES_MAX_PATHS; i++)
+			str_delete (client->paths[i]);
+
+		str_delete (client->uploads_path);
+
+		client_file_stats_delete (client->file_stats);
+
 		client_stats_delete (client->stats);
 
 		free (client);
@@ -225,6 +294,8 @@ Client *client_create (void) {
 
 		client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (client->lock, NULL);
+
+		client->file_stats = client_file_stats_new ();
 
 		client->stats = client_stats_new ();
 	}
@@ -1443,6 +1514,13 @@ static void client_error_packet_handler (Packet *packet) {
 					s_error->msg
 				);
 				break;
+			case CLIENT_ERROR_FILE_NOT_FOUND:
+				client_error_trigger (
+					CLIENT_ERROR_FILE_NOT_FOUND,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			case CLIENT_ERROR_CREATE_LOBBY:
 				client_error_trigger (
@@ -1878,103 +1956,6 @@ unsigned int client_connect_async (Client *client, Connection *connection) {
 
 #pragma endregion
 
-#pragma region requests
-
-// when a client is already connected to the cerver, a request can be made to the cerver
-// and the result will be returned
-// this is a blocking method, as it will wait until a complete cerver response has been received
-// the response will be handled using the client's packet handler
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// retruns 0 when the response has been handled, 1 on error
-unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
-
-	unsigned int retval = 1;
-
-	if (client && connection && request) {
-		// send the request to the cerver
-		packet_set_network_values (request, NULL, client, connection, NULL);
-
-		size_t sent = 0;
-		if (!packet_send (request, 0, &sent, false)) {
-			// printf ("Request to cerver: %ld\n", sent);
-
-			// receive the data directly
-			client_connection_get_next_packet (client, connection);
-
-			retval = 0;
-		}
-
-		else {
-			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver () - failed to send request packet!");
-			#endif
-		}
-	}
-
-	return retval;
-
-}
-
-static void *client_request_to_cerver_thread (void *cc_ptr) {
-
-	if (cc_ptr) {
-		ClientConnection *cc = (ClientConnection *) cc_ptr;
-
-		cc->connection->full_packet = false;
-		while (!cc->connection->full_packet) {
-			client_receive (cc->client, cc->connection);
-		}
-
-		client_connection_aux_delete (cc);
-	}
-
-	return NULL;
-
-}
-
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the result will be placed inside the connection
-// this method will NOT block and the response will be handled using the client's packet handler
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// returns 0 on success request, 1 on error
-unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
-
-	unsigned int retval = 1;
-
-	if (client && connection && request) {
-		// send the request to the cerver
-		packet_set_network_values (request, NULL, client, connection, NULL);
-		if (!packet_send (request, 0, NULL, false)) {
-			ClientConnection *cc = client_connection_aux_new (client, connection);
-			if (cc) {
-				// create a new thread to receive & handle the response
-				if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
-					retval = 0;         // success
-				}
-
-				else {
-					#ifdef CLIENT_DEBUG
-					cerver_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
-					#endif
-				}
-			}
-		}
-
-		else {
-			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver_async () - failed to send request packet!");
-			#endif
-		}
-	}
-
-	return retval;
-
-}
-
-#pragma endregion
-
 #pragma region start
 
 // after a client connection successfully connects to a server,
@@ -2077,212 +2058,297 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 
 #pragma endregion
 
-#pragma region end
+#pragma region requests
 
-// ends a connection with a cerver by sending a disconnect packet and the closing the connection
-static void client_connection_terminate (Client *client, Connection *connection) {
+// when a client is already connected to the cerver, a request can be made to the cerver
+// and the result will be returned
+// this is a blocking method, as it will wait until a complete cerver response has been received
+// the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// retruns 0 when the response has been handled, 1 on error
+unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
 
-	if (connection) {
-		if (connection->active) {
-			if (connection->cerver_report) {
-				// send a close connection packet
-				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
-				if (packet) {
-					packet_set_network_values (packet, NULL, client, connection, NULL);
-					if (packet_send (packet, 0, NULL, false)) {
-						cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
-					}
-					packet_delete (packet);
-				}
-			}
+	unsigned int retval = 1;
+
+	if (client && connection && request) {
+		// send the request to the cerver
+		packet_set_network_values (request, NULL, client, connection, NULL);
+
+		size_t sent = 0;
+		if (!packet_send (request, 0, &sent, false)) {
+			// printf ("Request to cerver: %ld\n", sent);
+
+			// receive the data directly
+			client_connection_get_next_packet (client, connection);
+
+			retval = 0;
 		}
-	}
 
-}
-
-// closes the connection's socket & set it to be inactive
-// does not send a close connection packet to the cerver
-// returns 0 on success, 1 on error
-int client_connection_stop (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
-		connection_end (connection);
-
-		retval = 0;
+		else {
+			#ifdef CLIENT_DEBUG
+			cerver_log_error ("client_request_to_cerver () - failed to send request packet!");
+			#endif
+		}
 	}
 
 	return retval;
 
 }
 
-// terminates the connection & closes the socket
-// but does NOT destroy the current connection
-// returns 0 on success, 1 on error
-int client_connection_close (Client *client, Connection *connection) {
+static void *client_request_to_cerver_thread (void *cc_ptr) {
 
-	int retval = 1;
+	if (cc_ptr) {
+		ClientConnection *cc = (ClientConnection *) cc_ptr;
 
-	if (client && connection) {
-		client_connection_terminate (client, connection);
-		retval = client_connection_stop (client, connection);
-	}
-
-	return retval;
-
-}
-
-// terminates and destroy a connection registered to a client
-// that is connected to a cerver
-// returns 0 on success, 1 on error
-int client_connection_end (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		client_connection_close (client, connection);
-
-		dlist_remove (client->connections, connection, NULL);
-
-		connection_delete (connection);
-
-		retval = 0;
-	}
-
-	return retval;
-
-}
-
-static void client_app_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_packet_handler) {
-			if (!client->app_packet_handler->direct_handle) {
-				// stop app handler
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_app_error_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_error_packet_handler) {
-			if (!client->app_error_packet_handler->direct_handle) {
-				// stop app error handler
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_custom_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->custom_packet_handler) {
-			if (!client->custom_packet_handler->direct_handle) {
-				// stop custom handler
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_handlers_destroy (Client *client) {
-
-	if (client) {
-		char *s = c_string_create ("Client %s num_handlers_alive: %d",
-			client->name->str, client->num_handlers_alive);
-		if (s) {
-			cerver_log_debug (s);
-			free (s);
+		cc->connection->full_packet = false;
+		while (!cc->connection->full_packet) {
+			client_receive (cc->client, cc->connection);
 		}
 
-		client_app_handler_destroy (client);
-
-		client_app_error_handler_destroy (client);
-
-		client_custom_handler_destroy (client);
-
-		// poll remaining handlers
-		while (client->num_handlers_alive) {
-			if (client->app_packet_handler)
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-
-			if (client->app_error_packet_handler)
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-
-			if (client->custom_packet_handler)
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-
-			sleep (1);
-		}
-	}
-
-}
-
-static void *client_teardown_internal (void *client_ptr) {
-
-	if (client_ptr) {
-		Client *client = (Client *) client_ptr;
-
-		pthread_mutex_lock (client->lock);
-
-		// end any ongoing connection
-		for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
-			client_connection_close (client, (Connection *) le->data);
-		}
-
-		client_handlers_destroy (client);
-
-		// delete all connections
-		dlist_delete (client->connections);
-		client->connections = NULL;
-
-		pthread_mutex_unlock (client->lock);
-
-		client_delete (client);
+		client_connection_aux_delete (cc);
 	}
 
 	return NULL;
 
 }
 
-// stop any on going connection and process and destroys the client
-// returns 0 on success, 1 on error
-u8 client_teardown (Client *client) {
+// when a client is already connected to the cerver, a request can be made to the cerver
+// the result will be placed inside the connection
+// this method will NOT block and the response will be handled using the client's packet handler
+// this method only works if your response consists only of one packet
+// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// returns 0 on success request, 1 on error
+unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
 
-	u8 retval = 1;
+	unsigned int retval = 1;
 
-	if (client) {
-		client->running = false;
+	if (client && connection && request) {
+		// send the request to the cerver
+		packet_set_network_values (request, NULL, client, connection, NULL);
+		if (!packet_send (request, 0, NULL, false)) {
+			ClientConnection *cc = client_connection_aux_new (client, connection);
+			if (cc) {
+				// create a new thread to receive & handle the response
+				if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
+					retval = 0;         // success
+				}
 
-		client_teardown_internal (client);
+				else {
+					#ifdef CLIENT_DEBUG
+					cerver_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
+					#endif
+				}
+			}
+		}
 
-		retval = 0;
+		else {
+			#ifdef CLIENT_DEBUG
+			cerver_log_error ("client_request_to_cerver_async () - failed to send request packet!");
+			#endif
+		}
 	}
 
 	return retval;
 
 }
 
-// calls client_teardown () in a new thread as handlers might need time to stop
-// that will cause the calling thread to wait at least a second
-// returns 0 on success creating thread, 1 on error
-u8 client_teardown_async (Client *client) {
+#pragma endregion
 
-	pthread_t thread_id = 0;
-	return client ? thread_create_detachable (
-		&thread_id,
-		client_teardown_internal,
-		client
-	) : 1;
+#pragma region files
+
+static u8 client_file_receive (
+	Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+) {
+
+	u8 retval = 1;
+
+	// generate a custom filename taking into account the uploads path
+	*saved_filename = c_string_create (
+		"%s/%ld-%s",
+		client->uploads_path->str,
+		time (NULL), file_header->filename
+	);
+
+	if (*saved_filename) {
+		retval = file_receive_actual (
+			client, connection,
+			file_header, saved_filename
+		);
+	}
+
+	return retval;
+
+}
+
+// adds a new file path to take into account when getting a request for a file
+// returns 0 on success, 1 on error
+u8 client_files_add_path (Client *client, const char *path) {
+
+	u8 retval = 1;
+
+	if (client && path) {
+		if (client->n_paths < CLIENT_FILES_MAX_PATHS) {
+			client->paths[client->n_paths] = str_new (path);
+			client->n_paths += 1;
+		}
+	}
+
+	return retval;
+
+}
+
+// sets the default uploads path to be used when receiving a file
+void client_files_set_uploads_path (Client *client, const char *uploads_path) {
+
+	if (client && uploads_path) {
+		str_delete (client->uploads_path);
+		client->uploads_path = str_new (uploads_path);
+	}
+
+}
+
+// sets a custom method to be used to handle a file upload (receive)
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+void client_files_set_file_upload_handler (
+	Client *client,
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	)
+) {
+
+	if (client) {
+		client->file_upload_handler = file_upload_handler;
+	}
+
+}
+
+// sets a callback to be executed after a file has been successfully received
+void client_files_set_file_upload_cb (
+	Client *client,
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	)
+) {
+
+	if (client) {
+		client->file_upload_cb = file_upload_cb;
+	}
+
+}
+
+// search for the requested file in the configured paths
+// returns the actual filename (path + directory) where it was found, NULL on error
+String *client_files_search_file (Client *client, const char *filename) {
+
+	String *retval = NULL;
+
+	if (client && filename) {
+		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		for (unsigned int i = 0; i < client->n_paths; i++) {
+			(void) snprintf (
+				filename_query, DEFAULT_FILENAME_LEN * 2,
+				"%s/%s",
+				client->paths[i]->str, filename
+			);
+
+			if (file_exists (filename_query)) {
+				retval = str_new (filename_query);
+				break;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// requests a file from the cerver
+// the client's uploads_path should have been configured before calling this method
+// returns 0 on success sending request, 1 on failed to send request
+u8 client_file_get (Client *client, Connection *connection, const char *filename) {
+
+	u8 retval = 1;
+
+	if (client && connection && filename) {
+		if (client->uploads_path) {
+			Packet *packet = packet_new ();
+			if (packet) {
+				size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
+
+				packet->packet = malloc (packet_len);
+				packet->packet_size = packet_len;
+
+				char *end = (char *) packet->packet;
+				PacketHeader *header = (PacketHeader *) end;
+				header->packet_type = PACKET_TYPE_REQUEST;
+				header->packet_size = packet_len;
+
+				header->request_type = REQUEST_PACKET_TYPE_GET_FILE;
+
+				end += sizeof (PacketHeader);
+
+				FileHeader *file_header = (FileHeader *) end;
+				strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+				file_header->len = 0;
+
+				packet_set_network_values (packet, NULL, client, connection, NULL);
+
+				retval = packet_send (packet, 0, NULL, false);
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// sends a file to the cerver
+// returns 0 on success sending request, 1 on failed to send request
+u8 client_file_send (Client *client, Connection *connection, const char *filename) {
+
+	u8 retval = 1;
+
+	if (client && connection && filename) {
+		char *last = strrchr (filename, '/');
+		const char *actual_filename = last ? last + 1 : NULL;
+		if (actual_filename) {
+			// try to open the file
+			struct stat filestatus = { 0 };
+			int file_fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
+			if (file_fd >= 0) {
+				size_t sent = file_send_by_fd (
+					NULL, client, connection,
+					file_fd, actual_filename, filestatus.st_size
+				);
+
+				client->file_stats->n_files_sent += 1;
+				client->file_stats->n_bytes_sent += sent;
+
+				if (sent == filestatus.st_size) retval = 0;
+
+				close (file_fd);
+			}
+
+			else {
+				char *s = c_string_create ("client_file_send () - Failed to open file %s", filename);
+				if (s) {
+					cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
+					free (s);
+				}
+			}
+		}
+
+		else {
+			cerver_log_error ("client_file_send () - failed to get actual filename");
+		}
+	}
+
+	return retval;
 
 }
 
@@ -2352,13 +2418,191 @@ static void client_client_packet_handler (Packet *packet) {
 
 }
 
+// handles a request from a cerver to get a file
+static void client_request_get_file (Packet *packet) {
+
+	Client *client = packet->client;
+
+	client->file_stats->n_files_requests += 1;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		// search for the requested file in the configured paths
+		String *actual_filename = client_files_search_file (client, file_header->filename);
+		if (actual_filename) {
+			#ifdef CLIENT_DEBUG
+			char *status = c_string_create ("client_request_get_file () - Sending %s...\n", actual_filename->str);
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			// if found, pipe the file contents to the client's socket fd
+			// the socket should be blocked during the entire operation
+			ssize_t sent = file_send (
+				NULL, client, packet->connection,
+				actual_filename->str
+			);
+
+			if (sent > 0) {
+				client->file_stats->n_success_files_requests += 1;
+				client->file_stats->n_files_sent += 1;
+				client->file_stats->n_bytes_sent += sent;
+
+				char *status = c_string_create ("Sent file %s", actual_filename->str);
+				if (status) {
+					cerver_log_success (status);
+					free (status);
+				}
+			}
+
+			else {
+				char *status = c_string_create ("Failed to send file %s", actual_filename->str);
+				if (status) {
+					cerver_log_error (status);
+					free (status);
+				}
+
+				client->file_stats->n_bad_files_sent += 1;
+			}
+
+			str_delete (actual_filename);
+		}
+
+		else {
+			#ifdef CLIENT_DEBUG
+			cerver_log_warning ("client_request_get_file () - file not found");
+			#endif
+
+			// if not found, return an error to the client
+			(void) error_packet_generate_and_send (
+				CLIENT_ERROR_FILE_NOT_FOUND, "File not found",
+				NULL, packet->client, packet->connection
+			);
+
+			client->file_stats->n_bad_files_requests += 1;
+		}
+
+	}
+
+	else {
+		#ifdef CLIENT_DEBUG
+		cerver_log_warning ("client_request_get_file () - missing file header");
+		#endif
+
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_GET_FILE, "Missing file header",
+			NULL, packet->client, packet->connection
+		);
+
+		client->file_stats->n_bad_files_requests += 1;
+	}
+
+}
+
+static void client_request_send_file_actual (Packet *packet) {
+
+	Client *client = packet->client;
+
+	client->file_stats->n_files_upload_requests += 1;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		char *saved_filename = NULL;
+		if (!client->file_upload_handler (
+			client, packet->connection,
+			file_header, &saved_filename
+		)) {
+			client->file_stats->n_success_files_uploaded += 1;
+
+			client->file_stats->n_bytes_received += file_header->len;
+
+			if (client->file_upload_cb) {
+				client->file_upload_cb (
+					packet->client, packet->connection,
+					saved_filename
+				);
+			}
+
+			if (saved_filename) free (saved_filename);
+		}
+
+		else {
+			cerver_log_error ("client_request_send_file () - Failed to receive file");
+
+			client->file_stats->n_bad_files_received += 1;
+		}
+	}
+
+	else {
+		#ifdef CLIENT_DEBUG
+		cerver_log_warning ("client_request_send_file () - missing file header");
+		#endif
+
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_SEND_FILE, "Missing file header",
+			NULL, client, packet->connection
+		);
+
+		client->file_stats->n_bad_files_upload_requests += 1;
+	}
+
+}
+
+// request from a cerver to receive a file
+static void client_request_send_file (Packet *packet) {
+
+	// check if the client is able to process the request
+	if (packet->client->file_upload_handler && packet->client->uploads_path) {
+		client_request_send_file_actual (packet);
+	}
+
+	else {
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CLIENT_ERROR_SEND_FILE, "Unable to process request",
+			NULL, packet->client, packet->connection
+		);
+
+		#ifdef CLIENT_DEBUG
+		char *status = c_string_create (
+			"Client %s is unable to handle REQUEST_PACKET_TYPE_SEND_FILE packets!",
+			packet->client->name->str
+		);
+
+		if (status) {
+			cerver_log_warning (status);
+			free (status);
+		}
+		#endif
+	}
+
+}
+
 // handles a request made from the cerver
 static void client_request_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
-		default:
-			cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown request from cerver");
-			break;
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// request from a cerver to get a file
+			case REQUEST_PACKET_TYPE_GET_FILE: client_request_get_file (packet); break;
+
+			// request from a cerver to receive a file
+			case REQUEST_PACKET_TYPE_SEND_FILE: client_request_send_file (packet); break;
+
+			default:
+				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Unknown request from cerver");
+				break;
+		}
 	}
 
 }
@@ -2957,6 +3201,217 @@ unsigned int client_receive (Client *client, Connection *connection) {
 	}
 
 	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region end
+
+// ends a connection with a cerver by sending a disconnect packet and the closing the connection
+static void client_connection_terminate (Client *client, Connection *connection) {
+
+	if (connection) {
+		if (connection->active) {
+			if (connection->cerver_report) {
+				// send a close connection packet
+				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
+				if (packet) {
+					packet_set_network_values (packet, NULL, client, connection, NULL);
+					if (packet_send (packet, 0, NULL, false)) {
+						cerver_log_error ("Failed to send CLIENT_CLOSE_CONNECTION!");
+					}
+					packet_delete (packet);
+				}
+			}
+		}
+	}
+
+}
+
+// closes the connection's socket & set it to be inactive
+// does not send a close connection packet to the cerver
+// returns 0 on success, 1 on error
+int client_connection_stop (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
+		connection_end (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// terminates the connection & closes the socket
+// but does NOT destroy the current connection
+// returns 0 on success, 1 on error
+int client_connection_close (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_connection_terminate (client, connection);
+		retval = client_connection_stop (client, connection);
+	}
+
+	return retval;
+
+}
+
+// terminates and destroy a connection registered to a client
+// that is connected to a cerver
+// returns 0 on success, 1 on error
+int client_connection_end (Client *client, Connection *connection) {
+
+	int retval = 1;
+
+	if (client && connection) {
+		client_connection_close (client, connection);
+
+		dlist_remove (client->connections, connection, NULL);
+
+		connection_delete (connection);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void client_app_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->app_packet_handler) {
+			if (!client->app_packet_handler->direct_handle) {
+				// stop app handler
+				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_app_error_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->app_error_packet_handler) {
+			if (!client->app_error_packet_handler->direct_handle) {
+				// stop app error handler
+				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_custom_handler_destroy (Client *client) {
+
+	if (client) {
+		if (client->custom_packet_handler) {
+			if (!client->custom_packet_handler->direct_handle) {
+				// stop custom handler
+				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+			}
+		}
+	}
+
+}
+
+static void client_handlers_destroy (Client *client) {
+
+	if (client) {
+		char *s = c_string_create ("Client %s num_handlers_alive: %d",
+			client->name->str, client->num_handlers_alive);
+		if (s) {
+			cerver_log_debug (s);
+			free (s);
+		}
+
+		client_app_handler_destroy (client);
+
+		client_app_error_handler_destroy (client);
+
+		client_custom_handler_destroy (client);
+
+		// poll remaining handlers
+		while (client->num_handlers_alive) {
+			if (client->app_packet_handler)
+				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
+
+			if (client->app_error_packet_handler)
+				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
+
+			if (client->custom_packet_handler)
+				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
+
+			sleep (1);
+		}
+	}
+
+}
+
+static void *client_teardown_internal (void *client_ptr) {
+
+	if (client_ptr) {
+		Client *client = (Client *) client_ptr;
+
+		pthread_mutex_lock (client->lock);
+
+		// end any ongoing connection
+		for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+			client_connection_close (client, (Connection *) le->data);
+		}
+
+		client_handlers_destroy (client);
+
+		// delete all connections
+		dlist_delete (client->connections);
+		client->connections = NULL;
+
+		pthread_mutex_unlock (client->lock);
+
+		client_delete (client);
+	}
+
+	return NULL;
+
+}
+
+// stop any on going connection and process and destroys the client
+// returns 0 on success, 1 on error
+u8 client_teardown (Client *client) {
+
+	u8 retval = 1;
+
+	if (client) {
+		client->running = false;
+
+		client_teardown_internal (client);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// calls client_teardown () in a new thread as handlers might need time to stop
+// that will cause the calling thread to wait at least a second
+// returns 0 on success creating thread, 1 on error
+u8 client_teardown_async (Client *client) {
+
+	pthread_t thread_id = 0;
+	return client ? thread_create_detachable (
+		&thread_id,
+		client_teardown_internal,
+		client
+	) : 1;
 
 }
 

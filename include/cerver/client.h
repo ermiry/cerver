@@ -19,12 +19,16 @@
 
 #include "cerver/utils/log.h"
 
+#define CLIENT_FILES_MAX_PATHS           32
+
 struct _Cerver;
 struct _Client;
+struct _Connection;
 struct _Packet;
 struct _PacketsPerType;
-struct _Connection;
 struct _Handler;
+
+struct _FileHeader;
 
 struct _ClientEvent;
 struct _ClientError;
@@ -51,6 +55,27 @@ struct _ClientStats {
 typedef struct _ClientStats ClientStats;
 
 CERVER_PUBLIC void client_stats_print (struct _Client *client);
+
+struct _ClientFileStats {
+
+	u64 n_files_requests;				// n requests to get a file
+	u64 n_success_files_requests;		// fulfilled requests
+	u64 n_bad_files_requests;			// bad requests
+	u64 n_files_sent;					// n files sent
+	u64 n_bad_files_sent;				// n files that failed to send
+	u64 n_bytes_sent;					// total bytes sent
+
+	u64 n_files_upload_requests;		// n requests to upload a file
+	u64 n_success_files_uploaded;		// n files received
+	u64 n_bad_files_upload_requests;	// bad requests to upload files
+	u64 n_bad_files_received;			// files that failed to be received
+	u64 n_bytes_received;				// total bytes received
+
+};
+
+typedef struct _ClientFileStats ClientFileStats;
+
+CERVER_PUBLIC void client_file_stats_print (struct _Client *client);
 
 #pragma endregion
 
@@ -102,6 +127,25 @@ struct _Client {
 	struct _ClientEvent *events[CLIENT_MAX_EVENTS];
 	struct _ClientError *errors[CLIENT_MAX_ERRORS];
 
+	// files
+	unsigned int n_paths;
+	String *paths[CLIENT_FILES_MAX_PATHS];
+
+	// default path where received files will be placed
+	String *uploads_path;
+
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	);
+
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	);
+
+	ClientFileStats *file_stats;
+
 	ClientStats *stats;
 
 };
@@ -120,8 +164,10 @@ CERVER_PUBLIC void client_delete_dummy (void *ptr);
 CERVER_PUBLIC Client *client_create (void);
 
 // creates a new client and registers a new connection
-CERVER_PUBLIC Client *client_create_with_connection (struct _Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address);
+CERVER_PUBLIC Client *client_create_with_connection (
+	struct _Cerver *cerver,
+	const i32 sock_fd, const struct sockaddr_storage address
+);
 
 // sets the client's name
 CERVER_EXPORT void client_set_name (Client *client, const char *name);
@@ -142,8 +188,10 @@ CERVER_EXPORT void *client_get_data (Client *client);
 CERVER_EXPORT void client_set_data (Client *client, void *data, Action delete_data);
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-CERVER_EXPORT void client_set_app_handlers (Client *client,
-	struct _Handler *app_handler, struct _Handler *app_error_handler);
+CERVER_EXPORT void client_set_app_handlers (
+	Client *client,
+	struct _Handler *app_handler, struct _Handler *app_error_handler
+);
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void client_set_custom_handler (Client *client, struct _Handler *custom_handler);
@@ -341,13 +389,14 @@ CERVER_PUBLIC void client_event_data_delete (ClientEventData *event_data);
 	XX(3,	FAILED_AUTH, 		Client failed to authenticate)					\
 	XX(4,	GET_FILE, 			Bad get file request)							\
 	XX(5,	SEND_FILE, 			Bad upload file request)						\
-	XX(6,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
-	XX(7,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
-	XX(8,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
-	XX(9,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
-	XX(10,	GAME_INIT, 			The game failed to init)						\
-	XX(11,	GAME_START, 		The game failed to start)						\
-	XX(12,	UNKNOWN, 			Unknown error)
+	XX(6,	FILE_NOT_FOUND, 	The request file was not found)					\
+	XX(7,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
+	XX(8,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
+	XX(9,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
+	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
+	XX(11,	GAME_INIT, 			The game failed to init)						\
+	XX(12,	GAME_START, 		The game failed to start)						\
+	XX(13,	UNKNOWN, 			Unknown error)
 
 typedef enum ClientErrorType {
 
@@ -469,6 +518,25 @@ CERVER_EXPORT unsigned int client_connect_to_cerver (Client *client, struct _Con
 // returns 0 on success connection thread creation, 1 on error
 CERVER_EXPORT unsigned int client_connect_async (Client *client, struct _Connection *connection);
 
+/*** start ***/
+
+// after a client connection successfully connects to a server,
+// it will start the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
+// returns 0 on success, 1 on error
+CERVER_EXPORT int client_connection_start (Client *client, struct _Connection *connection);
+
+// connects a client connection to a server
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+CERVER_EXPORT int client_connect_and_start (Client *client, struct _Connection *connection);
+
+// connects a client connection to a server in a new thread to avoid blocking the calling thread,
+// and after a success connection, it will start the connection (create update thread for receiving messages)
+// returns 0 on success creating connection thread, 1 on error
+CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
+
 /*** requests ***/
 
 // when a client is already connected to the cerver, a request can be made to the cerver
@@ -488,24 +556,53 @@ CERVER_EXPORT unsigned int client_request_to_cerver (Client *client, struct _Con
 // returns 0 on success request, 1 on error
 CERVER_EXPORT unsigned int client_request_to_cerver_async (Client *client, struct _Connection *connection, struct _Packet *request);
 
-/*** start ***/
+/*** files ***/
 
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
-// receive & handle packets in a dedicated thread
+// adds a new file path to take into account when getting a request for a file
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_start (Client *client, struct _Connection *connection);
+CERVER_EXPORT u8 client_files_add_path (Client *client, const char *path);
 
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// this is a blocking method, returns only after a success or failed connection
-// returns 0 on success, 1 on error
-CERVER_EXPORT int client_connect_and_start (Client *client, struct _Connection *connection);
+// sets the default uploads path to be used when receiving a file
+CERVER_EXPORT void client_files_set_uploads_path (Client *client, const char *uploads_path);
 
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// returns 0 on success creating connection thread, 1 on error
-CERVER_EXPORT u8 client_connect_and_start_async (Client *client, struct _Connection *connection);
+// sets a custom method to be used to handle a file upload (receive)
+// in this method, file contents must be consumed from the sock fd
+// and return 0 on success and 1 on error
+CERVER_EXPORT void client_files_set_file_upload_handler (
+	Client *client,
+	u8 (*file_upload_handler) (
+		struct _Client *, struct _Connection *,
+		struct _FileHeader *, char **saved_filename
+	)
+);
+
+// sets a callback to be executed after a file has been successfully received
+CERVER_EXPORT void client_files_set_file_upload_cb (
+	Client *client,
+	void (*file_upload_cb) (
+		struct _Client *, struct _Connection *,
+		const char *saved_filename
+	)
+);
+
+// search for the requested file in the configured paths
+// returns the actual filename (path + directory) where it was found, NULL on error
+CERVER_PUBLIC String *client_files_search_file (Client *client, const char *filename);
+
+// requests a file from the cerver
+// the client's uploads_path should have been configured before calling this method
+// returns 0 on success sending request, 1 on failed to send request
+CERVER_EXPORT u8 client_file_get (Client *client, struct _Connection *connection, const char *filename);
+
+// sends a file to the cerver
+// returns 0 on success sending request, 1 on failed to send request
+CERVER_EXPORT u8 client_file_send (Client *client, struct _Connection *connection, const char *filename);
+
+/*** update ***/
+
+// receives incoming data from the socket
+// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
+CERVER_PUBLIC unsigned int client_receive (Client *client, struct _Connection *connection);
 
 /*** end ***/
 
@@ -532,12 +629,6 @@ CERVER_EXPORT u8 client_teardown (Client *client);
 // that will cause the calling thread to wait at least a second
 // returns 0 on success creating thread, 1 on error
 CERVER_EXPORT u8 client_teardown_async (Client *client);
-
-/*** update ***/
-
-// receives incoming data from the socket
-// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
-CERVER_PUBLIC unsigned int client_receive (Client *client, struct _Connection *connection);
 
 #pragma endregion
 
