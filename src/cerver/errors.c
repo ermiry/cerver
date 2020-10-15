@@ -265,6 +265,13 @@ void cerver_error_packet_handler (Packet *packet) {
 					s_error->msg
 				);
 				break;
+			case CERVER_ERROR_FILE_NOT_FOUND:
+				client_error_trigger (
+					CERVER_ERROR_FILE_NOT_FOUND,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			default: {
 				cerver_error_event_trigger (

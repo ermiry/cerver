@@ -25,13 +25,14 @@ struct _Connection;
 	XX(3,	FAILED_AUTH, 		Client failed to authenticate)					\
 	XX(4,	GET_FILE, 			Bad get file request)							\
 	XX(5,	SEND_FILE, 			Bad upload file request)						\
-	XX(6,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
-	XX(7,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
-	XX(8,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
-	XX(9,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
-	XX(10,	GAME_INIT, 			The game failed to init)						\
-	XX(11,	GAME_START, 		The game failed to start)						\
-	XX(12,	UNKNOWN, 			Unknown error)
+	XX(6,	FILE_NOT_FOUND, 	The request file was not found)					\
+	XX(7,	CREATE_LOBBY, 		Failed to create a new game lobby)				\
+	XX(8,	JOIN_LOBBY, 		The player failed to join an existing lobby)	\
+	XX(9,	LEAVE_LOBBY, 		The player failed to exit the lobby)			\
+	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
+	XX(11,	GAME_INIT, 			The game failed to init)						\
+	XX(12,	GAME_START, 		The game failed to start)						\
+	XX(13,	UNKNOWN, 			Unknown error)
 
 typedef enum CerverErrorType {
 
