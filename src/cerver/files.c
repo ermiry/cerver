@@ -33,8 +33,20 @@
 
 bool file_exists (const char *filename);
 
-static u8 file_receive (
+static ssize_t file_send_actual (
 	Cerver *cerver, Client *client, Connection *connection,
+	int file_fd, const char *actual_filename, size_t filelen
+);
+
+static int file_send_open (const char *filename, struct stat *filestatus, const char **actual_filename);
+
+static u8 file_cerver_receive (
+	Cerver *cerver, Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+);
+
+u8 file_receive_actual (
+	Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
 );
 
@@ -47,11 +59,14 @@ static FileCerverStats *file_cerver_stats_new (void) {
 		stats->n_files_requests = 0;
 		stats->n_success_files_requests = 0;
 		stats->n_bad_files_requests = 0;
+		stats->n_files_sent = 0;
+		stats->n_bad_files_sent = 0;
 		stats->n_bytes_sent = 0;
 
-		stats->n_files_uploaded = 0;
+		stats->n_files_upload_requests = 0;
 		stats->n_success_files_uploaded = 0;
-		stats->n_bad_files_uploaded = 0;
+		stats->n_bad_files_upload_requests = 0;
+		stats->n_bad_files_received = 0;
 		stats->n_bytes_received = 0;
 	}
 
@@ -77,7 +92,7 @@ FileCerver *file_cerver_new (void) {
 
 		file_cerver->uploads_path = NULL;
 
-		file_cerver->file_upload_handler = file_receive;
+		file_cerver->file_upload_handler = file_cerver_receive;
 
 		file_cerver->file_upload_cb = NULL;
 
@@ -204,17 +219,83 @@ String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) 
 
 }
 
+// opens a file and sends the content back to the client
+// first the FileHeader in a regular packet, then the file contents between sockets
+// if the file is not found, a CERVER_ERROR_FILE_NOT_FOUND error packet will be sent
+// returns the number of bytes sent, or -1 on error
+ssize_t file_cerver_send_file (
+	Cerver *cerver, Client *client, Connection *connection,
+	const char *filename
+) {
+
+	ssize_t retval = -1;
+
+	if (filename && connection) {
+		const char *actual_filename = NULL;
+		struct stat filestatus = { 0 };
+		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
+		if (file_fd > 0) {
+			retval = file_send_actual (
+				cerver, client, connection,
+				file_fd, actual_filename, filestatus.st_size
+			);
+
+			close (file_fd);
+		}
+
+		else {
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_FILE_NOT_FOUND, "File not found",
+				cerver, client, connection
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 file_cerver_receive (
+	Cerver *cerver, Client *client, Connection *connection,
+	FileHeader *file_header, char **saved_filename
+) {
+
+	u8 retval = 1;
+
+	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
+
+	// generate a custom filename taking into account the uploads path
+	*saved_filename = c_string_create (
+		"%s/%ld-%s", 
+		file_cerver->uploads_path->str, 
+		time (NULL), file_header->filename
+	);
+
+	if (*saved_filename) {
+		retval = file_receive_actual (
+			client, connection,
+			file_header, saved_filename
+		);
+	}
+
+	return retval;
+
+}
+
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
 		printf ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
 		printf ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
 		printf ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
+		printf ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
+		printf ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
 		printf ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
 
-		printf ("Files uploads:                 %ld\n", file_cerver->stats->n_files_uploaded);
+		printf ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
 		printf ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
-		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_uploaded);
+		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
+		printf ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
 		printf ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
 	}
 
@@ -406,7 +487,7 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
 			fp = fopen (filename, modes);
 
 		else {
-			#ifdef CERVER_DEBUG
+			#ifdef FILES_DEBUG
 			char *s = c_string_create ("File %s not found!", filename);
 			if (s) {
 				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
@@ -435,7 +516,7 @@ char *file_read (const char *filename, size_t *file_size) {
 
 			// read the entire file into the buffer
 			if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
-				#ifdef CERVER_DEBUG
+				#ifdef FILES_DEBUG
 				char *s = c_string_create ("Failed to read file (%s) contents!");
 				if (s) {
 					cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
@@ -450,7 +531,7 @@ char *file_read (const char *filename, size_t *file_size) {
 		}
 
 		else {
-			#ifdef CERVER_DEBUG
+			#ifdef FILES_DEBUG
 			char *s = c_string_create ("Unable to open file %s.", filename);
 			if (s) {
 				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
@@ -534,6 +615,8 @@ static u8 file_send_header (
 		packet_set_network_values (packet, cerver, client, connection, NULL);
 
 		retval = packet_send_unsafe (packet, 0, NULL, false);
+
+		packet_delete (packet);
 	}
 
 	return retval;
@@ -542,47 +625,27 @@ static u8 file_send_header (
 
 static ssize_t file_send_actual (
 	Cerver *cerver, Client *client, Connection *connection,
-	const char *filename, const char *actual_filename
+	int file_fd, const char *actual_filename, size_t filelen
 ) {
 
 	ssize_t retval = 0;
 
 	pthread_mutex_lock (connection->socket->write_mutex);
 
-	// try to open the file
-	struct stat filestatus = { 0 };
-	int fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
-	if (fd >= 0) {
-		// send a first packet with file info
-		if (!file_send_header (
-			cerver, client, connection,
-			actual_filename, filestatus.st_size
-		)) {
-			// send the actual file
-			retval = sendfile (connection->socket->sock_fd, fd, NULL, filestatus.st_size);
-		}
-
-		else {
-			cerver_log_msg (
-				stderr,
-				LOG_TYPE_ERROR, LOG_TYPE_FILE,
-				"file_send () - failed to send file header"
-			);
-		}
-
-		close (fd);
+	// send a first packet with file info
+	if (!file_send_header (
+		cerver, client, connection,
+		actual_filename, filelen
+	)) {
+		// send the actual file
+		retval = sendfile (connection->socket->sock_fd, file_fd, NULL, filelen);
 	}
 
 	else {
-		char *s = c_string_create ("file_send () - Failed to open file %s", filename);
-		if (s) {
-			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-			free (s);
-		}
-
-		(void) error_packet_generate_and_send (
-			CERVER_ERROR_GET_FILE, "File not found",
-			cerver, client, connection
+		cerver_log_msg (
+			stderr, 
+			LOG_TYPE_ERROR, LOG_TYPE_FILE, 
+			"file_send_actual () - failed to send file header"
 		);
 	}
 
@@ -592,28 +655,78 @@ static ssize_t file_send_actual (
 
 }
 
-// opens a file and sends the content back to the client
+static int file_send_open (
+	const char *filename, struct stat *filestatus,
+	const char **actual_filename
+) {
+
+	int file_fd = -1;
+
+	char *last = strrchr (filename, '/');
+	*actual_filename = last ? last + 1 : NULL;
+	if (actual_filename) {
+		// try to open the file
+		file_fd = file_open_as_fd (filename, filestatus, O_RDONLY);
+		if (file_fd <= 0) {
+			char *s = c_string_create ("file_send () - Failed to open file %s", filename);
+			if (s) {
+				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
+				free (s);
+			}
+		}
+	}
+
+	else {
+		cerver_log_error ("file_send () - failed to get actual filename");
+	}
+
+	return file_fd;
+
+}
+
+// opens a file and sends its contents
 // first the FileHeader in a regular packet, then the file contents between sockets
-// returns the number of bytes sent
+// returns the number of bytes sent, or -1 on error
 ssize_t file_send (
 	Cerver *cerver, Client *client, Connection *connection,
 	const char *filename
 ) {
 
-	ssize_t retval = 0;
+	ssize_t retval = -1;
 
 	if (filename && connection) {
-		char *actual_filename = strrchr (filename, '/');
-		if (actual_filename) {
+		const char *actual_filename = NULL;
+		struct stat filestatus = { 0 };
+		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
+		if (file_fd > 0) {
 			retval = file_send_actual (
 				cerver, client, connection,
-				filename, actual_filename
+				file_fd, actual_filename, filestatus.st_size
 			);
-		}
 
-		else {
-			cerver_log_error ("file_send () - failed to get actual filename");
+			close (file_fd);
 		}
+	}
+
+	return retval;
+
+}
+
+// sends the file contents of the file referenced by a fd
+// first the FileHeader in a regular packet, then the file contents between sockets
+// returns the number of bytes sent, or -1 on error
+ssize_t file_send_by_fd (
+	Cerver *cerver, Client *client, Connection *connection,
+	int file_fd, const char *actual_filename, size_t filelen
+) {
+
+	ssize_t retval = -1;
+
+	if (client && connection && actual_filename) {
+		retval = file_send_actual (
+			cerver, client, connection,
+			file_fd, actual_filename, filelen
+		);
 	}
 
 	return retval;
@@ -624,70 +737,175 @@ ssize_t file_send (
 
 #pragma region receive
 
-static u8 file_receive (
-	Cerver *cerver, Client *client, Connection *connection,
+// move from socket to pipe buffer
+static inline u8 file_receive_internal_receive (
+	Connection *connection, int pipefd, int buff_size,
+	ssize_t *received
+) {
+
+	u8 retval = 1;
+
+	*received = splice (
+		connection->socket->sock_fd, NULL,
+		pipefd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*received) {
+		case -1: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_receive () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_receive () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef FILES_DEBUG
+			char *status = c_string_create (
+				"file_receive_internal_receive () - spliced %ld bytes", *received
+			);
+
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+// move from pipe buffer to file
+static inline u8 file_receive_internal_move (
+	int pipefd, int file_fd, int buff_size,
+	ssize_t *moved
+) {
+
+	u8 retval = 1;
+
+	*moved = splice (
+		pipefd, NULL,
+		file_fd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*moved) {
+		case -1: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_move () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef FILES_DEBUG
+			perror ("file_receive_internal_move () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef FILES_DEBUG
+			char *status = c_string_create (
+				"file_receive_internal_move () - spliced %ld bytes", *moved
+			);
+
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+static u8 file_receive_internal (Connection *connection, size_t filelen, int file_fd) {
+
+	u8 retval = 1;
+
+	int buff_size = 4096;
+	int pipefds[2] = { 0 };
+	ssize_t received = 0;
+	ssize_t moved = 0;
+	if (!pipe (pipefds)) {
+		size_t len = filelen;
+		while (len > 0) {
+			if (buff_size > len) buff_size = len;
+
+			if (file_receive_internal_receive (connection, pipefds[1], buff_size, &received)) break;
+
+			if (file_receive_internal_move (pipefds[0], file_fd, buff_size, &moved)) break;
+
+			len -= buff_size;
+		}
+
+		close (pipefds[0]);
+    	close (pipefds[1]);
+
+		if (len <= 0) retval = 0;
+	}
+
+	return retval;
+
+}
+
+// opens the file using an already created filename
+// and use the fd to receive and save the file
+u8 file_receive_actual (
+	Client *client, Connection *connection,
 	FileHeader *file_header, char **saved_filename
 ) {
 
 	u8 retval = 1;
 
-	FileCerver *file_cerver = (FileCerver *) cerver->cerver_data;
+	int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
+	if (file_fd > 0) {
+		// ssize_t received = splice (
+		// 	connection->socket->sock_fd, NULL,
+		// 	file_fd, NULL,
+		// 	file_header->len,
+		// 	0
+		// );
 
-	// generate a custom filename taking into account the uploads path
-	*saved_filename = c_string_create (
-		"%s/%ld-%s",
-		file_cerver->uploads_path,
-		time (NULL), file_header->filename
-	);
+		if (!file_receive_internal (
+			connection,
+			file_header->len,
+			file_fd
+		)) {
+			#ifdef FILES_DEBUG
+			cerver_log_success ("file_receive_internal () has finished");
+			#endif
 
-	if (*saved_filename) {
-		int file_fd = open (*saved_filename, O_CREAT);
-		if (file_fd > 0) {
-			ssize_t received = splice (
-				connection->socket->sock_fd, NULL,
-				file_fd, NULL,
-				file_header->len,
-				0
-			);
-
-			switch (received) {
-				case -1: {
-					cerver_log_error ("file_receive () - splice () = -1");
-
-					free (*saved_filename);
-					*saved_filename = NULL;
-				} break;
-
-				case 0: {
-					cerver_log_warning ("file_receive () - splice () = 0");
-
-					free (*saved_filename);
-					*saved_filename = NULL;
-				} break;
-
-				default: {
-					char *status = c_string_create (
-						"file_receive () - spliced %ld bytes", received
-					);
-
-					if (status) {
-						cerver_log_debug (status);
-						free (status);
-					}
-
-					retval = 0;
-				} break;
-			}
-
-			close (file_fd);
+			retval = 0;
 		}
 
 		else {
-			cerver_log_error ("file_receive () - failed to open file");
-
 			free (*saved_filename);
 			*saved_filename = NULL;
 		}
+
+		close (file_fd);
+	}
+
+	else {
+		cerver_log_error ("file_receive_actual () - failed to open file");
+
+		free (*saved_filename);
+		*saved_filename = NULL;
 	}
 
 	return retval;
