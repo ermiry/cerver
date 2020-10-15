@@ -556,6 +556,8 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
 
+	file_cerver->stats->n_files_requests += 1;
+
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
 		char *end = packet->data;
@@ -564,21 +566,33 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 		// search for the requested file in the configured paths
 		String *actual_filename = file_cerver_search_file (file_cerver, file_header->filename);
 		if (actual_filename) {
+			#ifdef HANDLER_DEBUG
+			char *status = c_string_create ("cerver_request_get_file () - Sending %s...\n", actual_filename->str);
+			if (status) {
+				cerver_log_debug (status);
+				free (status);
+			}
+			#endif
+
 			// if found, pipe the file contents to the client's socket fd
 			// the socket should be blocked during the entire operation
-			ssize_t sent = file_send (
+			ssize_t sent = file_cerver_send_file (
 				packet->cerver, packet->client, packet->connection,
-				file_header->filename
+				actual_filename->str
 			);
 
 			if (sent > 0) {
+				file_cerver->stats->n_success_files_requests += 1;
+				file_cerver->stats->n_files_sent += 1;
 				file_cerver->stats->n_bytes_sent += sent;
 
+				#ifdef HANDLER_DEBUG
 				char *status = c_string_create ("Sent file %s", actual_filename->str);
 				if (status) {
 					cerver_log_success (status);
 					free (status);
 				}
+				#endif
 			}
 
 			else {
@@ -587,13 +601,21 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 					cerver_log_error (status);
 					free (status);
 				}
+
+				file_cerver->stats->n_bad_files_sent += 1;
 			}
+
+			str_delete (actual_filename);
 		}
 
 		else {
+			#ifdef HANDLER_DEBUG
+			cerver_log_warning ("cerver_request_get_file () - file not found");
+			#endif
+
 			// if not found, return an error to the client
 			(void) error_packet_generate_and_send (
-				CERVER_ERROR_GET_FILE, "File not found",
+				CERVER_ERROR_FILE_NOT_FOUND, "File not found",
 				packet->cerver, packet->client, packet->connection
 			);
 
@@ -603,6 +625,10 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 	}
 
 	else {
+		#ifdef HANDLER_DEBUG
+		cerver_log_warning ("cerver_request_get_file () - missing file header");
+		#endif
+
 		// return a bad request error packet
 		(void) error_packet_generate_and_send (
 			CERVER_ERROR_GET_FILE, "Missing file header",
@@ -649,6 +675,8 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 
 	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
 
+	file_cerver->stats->n_files_upload_requests += 1;
+
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
 		char *end = packet->data;
@@ -659,6 +687,10 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection,
 			file_header, &saved_filename
 		)) {
+			file_cerver->stats->n_success_files_uploaded += 1;
+
+			file_cerver->stats->n_bytes_received += file_header->len;
+
 			if (file_cerver->file_upload_cb) {
 				file_cerver->file_upload_cb (
 					packet->cerver, packet->client, packet->connection,
@@ -672,7 +704,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		else {
 			cerver_log_error ("Failed to receive file");
 
-			file_cerver->stats->n_bad_files_uploaded += 1;
+			file_cerver->stats->n_bad_files_received += 1;
 		}
 	}
 
@@ -683,7 +715,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 			packet->cerver, packet->client, packet->connection
 		);
 
-		file_cerver->stats->n_bad_files_uploaded += 1;
+		file_cerver->stats->n_bad_files_upload_requests += 1;
 	}
 
 }
