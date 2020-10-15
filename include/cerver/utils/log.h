@@ -40,6 +40,11 @@ typedef enum LogType {
 	
 } LogType;
 
+CERVER_PUBLIC void cerver_log (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+);
+
 CERVER_PUBLIC void cerver_log_msg (
 	FILE *__restrict __stream, 
 	LogType first_type, LogType second_type,

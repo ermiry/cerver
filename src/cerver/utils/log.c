@@ -1,6 +1,8 @@
-#include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <stdarg.h>
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
@@ -14,6 +16,30 @@ static const char *log_get_msg_type (LogType type) {
 	}
 
 	return log_get_msg_type (LOG_TYPE_NONE);
+
+}
+
+static void cerver_log_string_create (const char *format, va_list args) {
+
+	char buffer[4096] = { 0 };
+	(void) vsnprintf (buffer, 4096, format, args);
+	printf ("\n%s\n", buffer);
+
+}
+
+void cerver_log (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+) {
+
+	if (format) {
+		va_list args = { 0 };
+		va_start (args, format);
+
+		cerver_log_string_create (format, args);
+
+		va_end (args);
+	}
 
 }
 
