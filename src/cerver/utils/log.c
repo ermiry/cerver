@@ -4,8 +4,12 @@
 
 #include <stdarg.h>
 
+#include "cerver/collections/pool.h"
+
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+
+static Pool *log_pool = NULL;
 
 #pragma region types
 
@@ -32,7 +36,7 @@ typedef struct {
 
 } CerverLog;
 
-static CerverLog *cerver_log_new (void) {
+static void *cerver_log_new (void) {
 
 	CerverLog *log = (CerverLog *) malloc (sizeof (CerverLog));
 	if (log) {
@@ -97,9 +101,10 @@ static void cerver_log_internal (
 	const char *format, va_list args
 ) {
 
-	CerverLog *log = cerver_log_new ();
-	cerver_log_header_create (log->header, first_type, second_type);
-	(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+	CerverLog *log = (CerverLog *) pool_pop (log_pool);
+	if (log) {
+		cerver_log_header_create (log->header, first_type, second_type);
+		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
 
 	switch (first_type) {
 		case LOG_TYPE_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
@@ -114,14 +119,17 @@ static void cerver_log_internal (
 
 		case LOG_TYPE_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 
-		default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
-	}
+			default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		}
 
-	cerver_log_delete (log);
+		pool_push (log_pool, log);
+	}
 
 }
 
 #pragma endregion
+
+#pragma region public
 
 void cerver_log (
 	LogType first_type, LogType second_type,
