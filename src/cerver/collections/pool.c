@@ -85,6 +85,8 @@ int pool_init (
 					produce ()
 				);
 			}
+
+			retval = errors;
 		}
 	}
 
