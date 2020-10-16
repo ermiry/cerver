@@ -25,9 +25,6 @@ static const char *log_get_msg_type (LogType type) {
 
 #pragma region internal
 
-#define LOG_HEADER_SIZE			32
-#define LOG_MESSAGE_SIZE		4096
-
 typedef struct {
 
 	char header[LOG_HEADER_SIZE];
@@ -77,6 +74,35 @@ static void cerver_log_header_create (
 
 }
 
+static void cerver_log_internal (
+	LogType first_type, LogType second_type,
+	const char *format, va_list args
+) {
+
+	CerverLog *log = cerver_log_new ();
+	cerver_log_header_create (log->header, first_type, second_type);
+	(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+
+	switch (first_type) {
+		case LOG_TYPE_DEBUG: fprintf (stdout, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
+		
+		case LOG_TYPE_TEST: fprintf (stdout, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
+
+		case LOG_TYPE_ERROR: fprintf (stderr, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_WARNING: fprintf (stderr, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_SUCCESS: fprintf (stdout, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+		case LOG_TYPE_CERVER: fprintf (stdout, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+		case LOG_TYPE_EVENT: fprintf (stdout, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+		default: fprintf (stdout, "%s: %s\n", log->header, log->message); break;
+	}
+
+	cerver_log_delete (log);
+
+}
+
 #pragma endregion
 
 void cerver_log (
@@ -88,27 +114,10 @@ void cerver_log (
 		va_list args = { 0 };
 		va_start (args, format);
 
-		CerverLog *log = cerver_log_new ();
-		cerver_log_header_create (log->header, first_type, second_type);
-		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
-
-		switch (first_type) {
-			case LOG_TYPE_DEBUG: fprintf (stdout, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
-			
-			case LOG_TYPE_TEST: fprintf (stdout, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
-
-			case LOG_TYPE_ERROR: fprintf (stdout, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-			case LOG_TYPE_WARNING: fprintf (stdout, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-			case LOG_TYPE_SUCCESS: fprintf (stdout, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-
-			case LOG_TYPE_CERVER: fprintf (stdout, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-
-			case LOG_TYPE_EVENT: fprintf (stdout, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-
-			default: fprintf (stdout, "%s: %s\n", log->header, log->message); break;
-		}
-
-		cerver_log_delete (log);
+		cerver_log_internal (
+			first_type, second_type,
+			format, args
+		);
 
 		va_end (args);
 	}
@@ -193,29 +202,69 @@ void cerver_log_msg (
 }
 
 // prints a red error message to stderr
-void cerver_log_error (const char *msg) {
+void cerver_log_error (const char *msg, ...) {
 
-	if (msg) fprintf (stderr, LOG_COLOR_RED "[ERROR]: " "%s\n" LOG_COLOR_RESET, msg);
+	if (msg) {
+		va_list args = { 0 };
+		va_start (args, msg);
+
+		cerver_log_internal (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			msg, args
+		);
+
+		va_end (args);
+	}
 
 }
 
 // prints a yellow warning message to stderr
-void cerver_log_warning (const char *msg) {
+void cerver_log_warning (const char *msg, ...) {
 
-	if (msg) fprintf (stderr, LOG_COLOR_YELLOW "[WARNING]: " "%s\n" LOG_COLOR_RESET, msg);
+	if (msg) {
+		va_list args = { 0 };
+		va_start (args, msg);
+
+		cerver_log_internal (
+			LOG_TYPE_WARNING, LOG_TYPE_NONE,
+			msg, args
+		);
+
+		va_end (args);
+	}
 
 }
 
 // prints a green success message to stdout
-void cerver_log_success (const char *msg) {
+void cerver_log_success (const char *msg, ...) {
 
-	if (msg) fprintf (stdout, LOG_COLOR_GREEN "[SUCCESS]: " "%s\n" LOG_COLOR_RESET, msg);
+	if (msg) {
+		va_list args = { 0 };
+		va_start (args, msg);
+
+		cerver_log_internal (
+			LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
+			msg, args
+		);
+
+		va_end (args);
+	}
 
 }
 
 // prints a debug message to stdout
-void cerver_log_debug (const char *msg) {
+void cerver_log_debug (const char *msg, ...) {
 
-	if (msg) fprintf (stdout, LOG_COLOR_MAGENTA "[DEBUG]: " LOG_COLOR_RESET "%s\n", msg);
+	if (msg) {
+		va_list args = { 0 };
+		va_start (args, msg);
+
+		cerver_log_internal (
+			LOG_TYPE_DEBUG, LOG_TYPE_NONE,
+			msg, args
+		);
+
+		va_end (args);
+	}
 
 }

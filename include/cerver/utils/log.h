@@ -5,6 +5,9 @@
 
 #include "cerver/config.h"
 
+#define LOG_HEADER_SIZE			32
+#define LOG_MESSAGE_SIZE		4096
+
 #define LOG_COLOR_RED       "\x1b[31m"
 #define LOG_COLOR_GREEN     "\x1b[32m"
 #define LOG_COLOR_YELLOW    "\x1b[33m"
@@ -52,15 +55,15 @@ CERVER_PUBLIC void cerver_log_msg (
 );
 
 // prints a red error message to stderr
-CERVER_PUBLIC void cerver_log_error (const char *msg);
+CERVER_PUBLIC void cerver_log_error (const char *msg, ...);
 
 // prints a yellow warning message to stderr
-CERVER_PUBLIC void cerver_log_warning (const char *msg);
+CERVER_PUBLIC void cerver_log_warning (const char *msg, ...);
 
 // prints a green success message to stdout
-CERVER_PUBLIC void cerver_log_success (const char *msg);
+CERVER_PUBLIC void cerver_log_success (const char *msg, ...);
 
 // prints a debug message to stdout
-CERVER_PUBLIC void cerver_log_debug (const char *msg);
+CERVER_PUBLIC void cerver_log_debug (const char *msg, ...);
 
 #endif
