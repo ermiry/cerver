@@ -109,7 +109,9 @@ static void end (int dummy) {
 		cerver_teardown (my_cerver);
 
 		app_data_delete (app_data);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -197,6 +199,8 @@ int main (void) {
 	// register to the quit signal
 	signal (SIGINT, end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -239,6 +243,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 
