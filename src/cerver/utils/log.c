@@ -249,6 +249,8 @@ void cerver_log_init (void) {
 
 	if (!log_pool) {
 		log_pool = pool_create (cerver_log_delete);
+		pool_set_create (log_pool, cerver_log_new);
+		pool_set_produce_if_empty (log_pool, true);
 		pool_init (log_pool, cerver_log_new, LOG_POOL_INIT);
 	}
 
