@@ -13,6 +13,8 @@ static Pool *pool_new (void) {
 
 		pool->destroy = NULL;
 		pool->create = NULL;
+
+		pool->produce = false;
 	}
 
 	return pool;
@@ -32,6 +34,14 @@ void pool_set_destroy (Pool *pool, void (*destroy)(void *data)) {
 void pool_set_create (Pool *pool, void *(*create)(void)) {
 
 	if (pool) pool->create = create;
+
+}
+
+// sets the pool's ability to produce a element when a pop request is done and the pool is empty
+// the pool will use its create method to allocate a new element and fullfil the request
+void pool_set_produce_if_empty (Pool *pool, bool produce) {
+
+	if (pool) pool->produce = produce;
 
 }
 
@@ -107,6 +117,10 @@ void *pool_pop (Pool *pool) {
 			pool->dlist,
 			NULL
 		);
+
+		if (!retval && pool->produce) {
+			retval = pool->create ();
+		}
 	}
 
 	return retval;

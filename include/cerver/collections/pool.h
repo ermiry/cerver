@@ -2,6 +2,7 @@
 #define _COLLECTIONS_POOL_H_
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "cerver/collections/dlist.h"
 
@@ -12,6 +13,8 @@ typedef struct Pool {
 	void (*destroy)(void *data);
 	void *(*create)(void);
 
+	bool produce;
+
 } Pool;
 
 // sets a destroy method to be used by the pool to correctly dispose data
@@ -19,6 +22,10 @@ extern void pool_set_destroy (Pool *pool, void (*destroy)(void *data));
 
 // sets a create method to be used by the pool to correctly allocate new data
 extern void pool_set_create (Pool *pool, void *(*create)(void));
+
+// sets the pool's ability to produce a element when a pop request is done and the pool is empty
+// the pool will use its create method to allocate a new element and fullfil the request
+extern void pool_set_produce_if_empty (Pool *pool, bool produce);
 
 // returns how many elements are inside the pool
 extern size_t pool_size (Pool *pool);
