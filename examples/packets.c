@@ -10,7 +10,7 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
-#include <cerver/time.h>
+#include <cerver/timer.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
