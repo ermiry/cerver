@@ -1154,7 +1154,7 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
         // i32 sock_fd = receive_handle->sock_fd;
         char *buffer = receive_handle->buffer;
         size_t buffer_size = receive_handle->buffer_size;
-        i32 sock_fd = receive_handle->socket->sock_fd;
+        // i32 sock_fd = receive_handle->socket->sock_fd;
         // char *buffer = receive_handle->socket->packet_buffer;
         // size_t buffer_size = receive_handle->socket->packet_buffer_size;
         Lobby *lobby = receive_handle->lobby;
@@ -1321,7 +1321,7 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
         else {
             #ifdef CERVER_DEBUG
             char *status = c_string_create ("Sock fd: %d does not have an associated sock_receive in cerver %s.",
-                sock_fd, cerver->info->name->str);
+                receive_handle->socket->sock_fd, cerver->info->name->str);
             if (status) {
                 cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, status);
                 free (status);
@@ -1500,54 +1500,46 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
     cr->cerver->stats->total_n_receives_done += 1;
     cr->cerver->stats->total_bytes_received += rc;
 
-    switch (cr->cerver->type) {
-        case CERVER_TYPE_WEB:
-            http_receive_handle (cr, rc, packet_buffer);
-            break;
-
-        default: {
-            if (cr->lobby) {
-                cr->lobby->stats->n_receives_done += 1;
-                cr->lobby->stats->bytes_received += rc;
-            }
-
-            switch (cr->type) {
-                case RECEIVE_TYPE_NORMAL: {
-                    cr->cerver->stats->client_receives_done += 1;
-                    cr->cerver->stats->client_bytes_received += rc;
-
-                    cr->client->stats->n_receives_done += 1;
-                    cr->client->stats->total_bytes_received += rc;
-
-                    cr->connection->stats->n_receives_done += 1;
-                    cr->connection->stats->total_bytes_received += rc;
-                } break;
-
-                case RECEIVE_TYPE_ON_HOLD: {
-                    cr->cerver->stats->on_hold_receives_done += 1;
-                    cr->cerver->stats->on_hold_bytes_received += rc;
-
-                    cr->connection->stats->n_receives_done += 1;
-                    cr->connection->stats->total_bytes_received += rc;
-                } break;
-
-                case RECEIVE_TYPE_ADMIN: {
-                    cr->cerver->admin->stats->total_n_receives_done += 1;
-                    cr->cerver->admin->stats->total_bytes_received += rc;
-
-                    cr->client->stats->n_receives_done += 1;
-                    cr->client->stats->total_bytes_received += rc;
-
-                    cr->connection->stats->n_receives_done += 1;
-                    cr->connection->stats->total_bytes_received += rc;
-                } break;
-
-                default: break;
-            }
-
-            cerver_receive_success_receive_handle (cr, rc, packet_buffer);
-        } break;
+    if (cr->lobby) {
+        cr->lobby->stats->n_receives_done += 1;
+        cr->lobby->stats->bytes_received += rc;
     }
+
+    switch (cr->type) {
+        case RECEIVE_TYPE_NORMAL: {
+            cr->cerver->stats->client_receives_done += 1;
+            cr->cerver->stats->client_bytes_received += rc;
+
+            cr->client->stats->n_receives_done += 1;
+            cr->client->stats->total_bytes_received += rc;
+
+            cr->connection->stats->n_receives_done += 1;
+            cr->connection->stats->total_bytes_received += rc;
+        } break;
+
+        case RECEIVE_TYPE_ON_HOLD: {
+            cr->cerver->stats->on_hold_receives_done += 1;
+            cr->cerver->stats->on_hold_bytes_received += rc;
+
+            cr->connection->stats->n_receives_done += 1;
+            cr->connection->stats->total_bytes_received += rc;
+        } break;
+
+        case RECEIVE_TYPE_ADMIN: {
+            cr->cerver->admin->stats->total_n_receives_done += 1;
+            cr->cerver->admin->stats->total_bytes_received += rc;
+
+            cr->client->stats->n_receives_done += 1;
+            cr->client->stats->total_bytes_received += rc;
+
+            cr->connection->stats->n_receives_done += 1;
+            cr->connection->stats->total_bytes_received += rc;
+        } break;
+
+        default: break;
+    }
+
+    cerver_receive_success_receive_handle (cr, rc, packet_buffer);
 
 }
 
@@ -1767,76 +1759,132 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 }
 
-// FIXME: 28/07/2020 - 14:08 - will handle the buffer each recv () 
+static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *http_receive) {
+
+    u8 retval = 1;
+
+    #ifdef HANDLER_DEBUG
+    char *s = NULL;
+    #endif
+
+    char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+    if (packet_buffer) {
+        ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+
+        switch (rc) {
+            case -1: {
+                if (cr->socket->sock_fd > -1) {
+                    switch (errno) {
+                        case EAGAIN: {
+                            #ifdef HANDLER_DEBUG
+                            s = c_string_create (
+                                "cerver_receive_http () - sock fd: %d timed out", 
+                                cr->socket->sock_fd
+                            );
+
+                            if (s) {
+                                cerver_log_debug (s);
+                                free (s);
+                            }
+                            #endif
+
+                            if (http_receive->keep_alive) retval = 0;
+                        } break;
+
+                        default: {
+                            #ifdef HANDLER_DEBUG 
+                            s = c_string_create (
+                                "cerver_receive_http () - rc < 0 - sock fd: %d", 
+                                cr->socket->sock_fd
+                            );
+                            
+                            if (s) {
+                                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
+                                free (s);
+                            }
+
+                            perror ("Error ");
+                            #endif
+                        } break;
+                    }
+                }
+            } break;
+
+            case 0: {
+                #ifdef HANDLER_DEBUG
+                s = c_string_create (
+                    "cerver_receive_http () - rc == 0 - sock fd: %d",
+                    cr->socket->sock_fd
+                );
+
+                if (s) {
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
+                    free (s);
+                }
+
+                // perror ("Error ");
+                #endif
+            } break;
+
+            default: {
+                // char *status = c_string_create ("Cerver %s rc: %ld for sock fd: %d",
+                //     cr->cerver->info->name->str, rc, cr->sock_fd);
+                // if (status) {
+                //     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
+                //     free (status);
+                // }
+
+                // update cerver stats
+                cr->socket->packet_buffer_size = rc;
+
+                cr->cerver->stats->total_n_receives_done += 1;
+                cr->cerver->stats->total_bytes_received += rc;
+
+                http_receive->handler (http_receive, rc, packet_buffer);
+
+                retval = 0;
+            } break;
+        }
+
+        free (packet_buffer);
+    }
+
+    else {
+        char *status = c_string_create (
+            "cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+            cr->connection->socket->sock_fd
+        );
+
+        if (status) {
+            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, status);
+            free (status);
+        }
+    }
+
+    return retval;
+
+}
+
 // we expect only one request to be sent, so keep reading the socket until no more data is left,
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
     CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
+    HttpReceive *http_receive = http_receive_new ();
+    http_receive->cr = cr;
+    http_receive->http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+
     i32 sock_fd = cr->socket->sock_fd;
-    ssize_t rc = 0;
-    do {
-        char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-        if (packet_buffer) {
-            rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
 
-            switch (rc) {
-                case -1: {
-                    if (cr->socket->sock_fd > -1) {
-                        #ifdef CERVER_DEBUG 
-                        char *s = c_string_create (
-                            "cerver_receive_http () - rc < 0 - sock fd: %d", 
-                            cr->socket->sock_fd
-                        );
-                        
-                        if (s) {
-                            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
-                            free (s);
-                        }
+    // set the socket's timeout to prevent thread from getting stuck if no more data to read
+    (void) sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
-                        perror ("Error ");
-                        #endif
-                    }
-                } break;
+    while (!cerver_receive_http_actual (cr, http_receive) && cr->cerver->isRunning);
 
-                case 0: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create (
-                        "cerver_receive_http () - rc == 0 - sock fd: %d",
-                        cr->socket->sock_fd
-                    );
+    http_receive_delete (http_receive);
 
-                    if (s) {
-                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
-                        free (s);
-                    }
-
-                    // perror ("Error ");
-                    #endif
-                } break;
-
-                default: {
-                    cerver_receive_success (cr, rc, packet_buffer);
-                } break;
-            }
-
-            free (packet_buffer);
-        }
-
-        else {
-            char *status = c_string_create (
-                "cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
-                cr->connection->socket->sock_fd
-            );
-
-            if (status) {
-                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, status);
-                free (status);
-            }
-        }
-    } while (rc > 0);
-
+    #ifdef HANDLER_DEBUG
     char *status = c_string_create (
         "cerver_receive_http () - loop has ended - dropping sock fd <%d> connection...",
         sock_fd
@@ -1846,6 +1894,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
         cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
         free (status);
     }
+    #endif
 
     // the connection has ended
     connection_drop (cr->cerver, cr->connection);

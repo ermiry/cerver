@@ -40,6 +40,28 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+#pragma region global
+
+// initializes global cerver values
+// should be called only once at the start of the program
+void cerver_init (void) {
+
+	cerver_log_init ();
+
+}
+
+// correctly disposes global values
+// should be called only once at the very end of the program
+void cerver_end (void) {
+
+	cerver_log_end ();
+
+}
+
+#pragma endregion
+
+#pragma region types
+
 String *cerver_type_to_string (CerverType type) {
 
     String *retval = NULL;
@@ -73,6 +95,8 @@ String *cerver_handler_type_to_string (CerverHandlerType type) {
     return retval;
 
 }
+
+#pragma endregion
 
 #pragma region info
 
@@ -913,10 +937,8 @@ static u8 cerver_multiple_app_handlers_destroy (Cerver *cerver) {
 
     if (cerver) {
         if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
-            char *status = NULL;
-
             #ifdef CERVER_DEBUG
-            status = c_string_create ("Stopping multiple app handlers in cerver %s...",
+            char *status = c_string_create ("Stopping multiple app handlers in cerver %s...",
                 cerver->info->name->str);
             if (status) {
                 cerver_log_debug (status);
@@ -1103,8 +1125,8 @@ Cerver *cerver_create (const CerverType type, const char *name,
                 } break;
                 
                 case CERVER_TYPE_WEB: {
-                    // cerver->cerver_data = http_cerver_create (cerver);
-                    // cerver->delete_cerver_data = http_cerver_delete;
+                    cerver->cerver_data = http_cerver_create (cerver);
+                    cerver->delete_cerver_data = http_cerver_delete;
                 } break;
 
                 case CERVER_TYPE_FILE: break;
@@ -1368,7 +1390,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 }
 
 // inits a cerver of a given type
-static u8 cerver_init (Cerver *cerver) {
+static u8 cerver_init_internal (Cerver *cerver) {
 
     int retval = 1;
 
@@ -1473,7 +1495,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
     u8 errors = 0;
 
     if (cerver) {
-        if (!cerver_init (cerver)) {
+        if (!cerver_init_internal (cerver)) {
             char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
@@ -1512,7 +1534,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
                 } break;
                 
                 case CERVER_TYPE_WEB: {
-                    // http_cerver_init ((HttpCerver *) cerver->cerver_data);
+                    http_cerver_init ((HttpCerver *) cerver->cerver_data);
                 } break;
 
                 case CERVER_TYPE_FILE: break;
@@ -2493,7 +2515,10 @@ static void cerver_clean (Cerver *cerver) {
                 }
             } break;
 
-            case CERVER_TYPE_WEB: break;
+            case CERVER_TYPE_WEB: {
+                http_cerver_delete (cerver->cerver_data);
+                cerver->cerver_data = NULL;
+            } break;
 
             case CERVER_TYPE_FILE: break;
 
@@ -2541,10 +2566,8 @@ static void cerver_clean (Cerver *cerver) {
         }
         
         if (cerver->thpool) {
-            char *status = NULL;
-
             #ifdef CERVER_DEBUG
-            status = c_string_create ("Cerver %s active thpool threads: %i", 
+            char *status = c_string_create ("Cerver %s active thpool threads: %i", 
                 cerver->info->name->str,
                 thpool_get_num_threads_working (cerver->thpool)
             );

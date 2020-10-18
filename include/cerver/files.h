@@ -9,8 +9,6 @@
 
 #include "cerver/config.h"
 
-#include "cerver/utils/json.h"
-
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_dir (const char *dir_path, mode_t mode);
@@ -43,7 +41,5 @@ CERVER_EXPORT int file_open_as_fd (const char *filename, struct stat *filestatus
 // sends a file to the sock fd
 // returns 0 on success, 1 on error
 CERVER_EXPORT int file_send (const char *filename, int sock_fd);
-
-CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 #endif

@@ -52,6 +52,20 @@ struct _Packet;
 struct _PacketsPerType;
 struct _Handler;
 
+#pragma region global
+
+// initializes global cerver values
+// should be called only once at the start of the program
+CERVER_EXPORT void cerver_init (void);
+
+// correctly disposes global values
+// should be called only once at the very end of the program
+CERVER_EXPORT void cerver_end (void);
+
+#pragma endregion
+
+#pragma region types
+
 typedef enum CerverType {
 
     CERVER_TYPE_NONE            = 0,
@@ -76,6 +90,8 @@ typedef enum CerverHandlerType {
 } CerverHandlerType;
 
 CERVER_EXPORT String *cerver_handler_type_to_string (CerverHandlerType type);
+
+#pragma endregion
 
 #pragma region info
 
@@ -258,7 +274,7 @@ struct _Cerver {
     Action update_interval;                 // the actual method to execute every x seconds
     void *update_interval_args;             // args to pass to the update method
     // method to delete update interval args at cerver teardown
-    void (*delete_update_interval_args)(void *);       
+    void (*delete_update_interval_args)(void *);
     u32 update_interval_secs;               // the interval in seconds          
 
     struct _AdminCerver *admin;
