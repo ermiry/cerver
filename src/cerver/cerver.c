@@ -40,6 +40,28 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+#pragma region global
+
+// initializes global cerver values
+// should be called only once at the start of the program
+void cerver_init (void) {
+
+	cerver_log_init ();
+
+}
+
+// correctly disposes global values
+// should be called only once at the very end of the program
+void cerver_end (void) {
+
+	cerver_log_end ();
+
+}
+
+#pragma endregion
+
+#pragma region types
+
 String *cerver_type_to_string (CerverType type) {
 
     String *retval = NULL;
@@ -73,6 +95,8 @@ String *cerver_handler_type_to_string (CerverHandlerType type) {
     return retval;
 
 }
+
+#pragma endregion
 
 #pragma region info
 
@@ -1366,7 +1390,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 }
 
 // inits a cerver of a given type
-static u8 cerver_init (Cerver *cerver) {
+static u8 cerver_init_internal (Cerver *cerver) {
 
     int retval = 1;
 
@@ -1471,7 +1495,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
     u8 errors = 0;
 
     if (cerver) {
-        if (!cerver_init (cerver)) {
+        if (!cerver_init_internal (cerver)) {
             char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
             if (s) {
                 cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
