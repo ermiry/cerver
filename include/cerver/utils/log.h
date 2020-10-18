@@ -8,6 +8,8 @@
 #define LOG_POOL_INIT			32
 
 #define LOG_HEADER_SIZE			32
+#define LOG_HEADER_HALF_SIZE	LOG_HEADER_SIZE / 2
+
 #define LOG_MESSAGE_SIZE		4096
 
 #define LOG_COLOR_RED       "\x1b[31m"
