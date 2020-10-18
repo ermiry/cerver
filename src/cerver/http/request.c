@@ -179,7 +179,7 @@ const String *http_request_multi_parts_get_value (HttpRequest *http_request, con
 			mpart = (MultiPart *) le->data;
 
 			if (mpart->value) {
-				if (!strcmp (mpart->value->str, key)) {
+				if (!strcmp (mpart->name->str, key)) {
 					return mpart->value;
 				}
 			}
