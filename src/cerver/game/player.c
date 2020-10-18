@@ -115,9 +115,8 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
             // if (!failed) {
                 dlist_insert_after (lobby->players, dlist_end (lobby->players), player);
 
-                char *s = NULL;
                 #ifdef CERVER_DEBUG
-                s = c_string_create ("Registered a new player to lobby %s.",
+                char *s = c_string_create ("Registered a new player to lobby %s.",
                     lobby->id->str);
                 if (s) {
                     cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
@@ -127,11 +126,11 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
 
                 lobby->n_current_players++;
                 #ifdef CERVER_STATS
-                s = c_string_create ("Registered players to lobby %s: %i.",
+                char *status = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                    free (s);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, status);
+                    free (status);
                 }
                 #endif
 
@@ -178,9 +177,8 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
             if (!dlist_remove (lobby->players, player, NULL)) {
                 lobby->n_current_players--;
 
-                char *s = NULL;
                 #ifdef CERVER_DEBUG
-                s = c_string_create ("Unregistered a player from lobby %s.",
+                char *s = c_string_create ("Unregistered a player from lobby %s.",
                     lobby->id->str);
                 if (s) {
                     cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
@@ -189,11 +187,11 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
                 #endif
 
                 #ifdef CERVER_STATS
-                s = c_string_create ("Registered players to lobby %s: %i.",
+                char *status = c_string_create ("Registered players to lobby %s: %i.",
                     lobby->id->str, lobby->n_current_players);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                    free (s);
+                if (status) {
+                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, status);
+                    free (status);
                 }
                 #endif
 
