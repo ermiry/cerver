@@ -11,6 +11,7 @@
 
 #include "cerver/collections/dlist.h"
 
+#include "cerver/config.h"
 #include "cerver/cerver.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
