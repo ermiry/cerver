@@ -4,8 +4,12 @@
 
 #include <stdarg.h>
 
+#include "cerver/collections/pool.h"
+
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+
+static Pool *log_pool = NULL;
 
 #pragma region types
 
@@ -32,7 +36,7 @@ typedef struct {
 
 } CerverLog;
 
-static CerverLog *cerver_log_new (void) {
+static void *cerver_log_new (void) {
 
 	CerverLog *log = (CerverLog *) malloc (sizeof (CerverLog));
 	if (log) {
@@ -58,8 +62,8 @@ static void cerver_log_header_create (
 	const char *first = log_get_msg_type (first_type);
 	if (second_type != LOG_TYPE_NONE) {
 		(void) snprintf (
-			header, LOG_HEADER_SIZE,
-			"%s%s",
+			header, LOG_HEADER_SIZE, 
+			"%s%s", 
 			first, log_get_msg_type (second_type)
 		);
 	}
@@ -97,31 +101,35 @@ static void cerver_log_internal (
 	const char *format, va_list args
 ) {
 
-	CerverLog *log = cerver_log_new ();
-	cerver_log_header_create (log->header, first_type, second_type);
-	(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+	CerverLog *log = (CerverLog *) pool_pop (log_pool);
+	if (log) {
+		cerver_log_header_create (log->header, first_type, second_type);
+		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
 
-	switch (first_type) {
-		case LOG_TYPE_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
+		switch (first_type) {
+			case LOG_TYPE_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
+			
+			case LOG_TYPE_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
 
-		case LOG_TYPE_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
+			case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+			case LOG_TYPE_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+			case LOG_TYPE_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 
-		case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-		case LOG_TYPE_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-		case LOG_TYPE_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+			case LOG_TYPE_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 
-		case LOG_TYPE_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+			case LOG_TYPE_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 
-		case LOG_TYPE_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+			default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		}
 
-		default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		pool_push (log_pool, log);
 	}
-
-	cerver_log_delete (log);
 
 }
 
 #pragma endregion
+
+#pragma region public
 
 void cerver_log (
 	LogType first_type, LogType second_type,
@@ -144,7 +152,7 @@ void cerver_log (
 }
 
 void cerver_log_msg (
-	FILE *__restrict __stream,
+	FILE *__restrict __stream, 
 	LogType first_type, LogType second_type,
 	const char *msg
 ) {
@@ -232,3 +240,27 @@ void cerver_log_debug (const char *msg, ...) {
 	}
 
 }
+
+#pragma endregion
+
+#pragma region main
+
+void cerver_log_init (void) {
+
+	if (!log_pool) {
+		log_pool = pool_create (cerver_log_delete);
+		pool_set_create (log_pool, cerver_log_new);
+		pool_set_produce_if_empty (log_pool, true);
+		pool_init (log_pool, cerver_log_new, LOG_POOL_INIT);
+	}
+
+}
+
+void cerver_log_end (void) {
+
+	pool_delete (log_pool);
+	log_pool = NULL;
+
+}
+
+#pragma endregion
