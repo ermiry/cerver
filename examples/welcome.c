@@ -14,11 +14,13 @@ static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -30,6 +32,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -54,10 +58,12 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
-		
+		cerver_log_error ("Failed to create cerver!");
+
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

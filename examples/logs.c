@@ -42,23 +42,21 @@ static void end (int dummy) {
 
 static void handle_test_request (Packet *packet) {
 
-	if (packet) {
-		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
+	// cerver_log_debug ("Got a test message from client. Sending another one back...");
+	cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
-		if (test_packet) {
-			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
-			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false))
-				cerver_log_error ("Failed to send test packet to client!");
+	Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+	if (test_packet) {
+		packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
+		size_t sent = 0;
+		if (packet_send (test_packet, 0, &sent, false))
+			cerver_log_error ("Failed to send test packet to client!");
 
-			else {
-				// printf ("Response packet sent: %ld\n", sent);
-			}
-
-			packet_delete (test_packet);
+		else {
+			// printf ("Response packet sent: %ld\n", sent);
 		}
+
+		packet_delete (test_packet);
 	}
 
 }
@@ -82,46 +80,6 @@ static void handler (void *data) {
 #pragma endregion
 
 #pragma region events
-
-static void on_cever_started (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		char *status = c_string_create (
-			"Cerver %s has started!\n",
-			event_data->cerver->info->name->str
-		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
-
-		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
-	}
-
-}
-
-static void on_cever_teardown (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		char *status = c_string_create (
-			"Cerver %s is going to be destroyed!\n",
-			event_data->cerver->info->name->str
-		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
-	}
-
-}
 
 static void on_client_connected (void *event_data_ptr) {
 
@@ -167,7 +125,7 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
-int main (void) {
+int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
@@ -176,13 +134,12 @@ int main (void) {
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Simple Test Message Example");
+	cerver_log_debug ("Simple Logs Example");
 	printf ("\n");
-	cerver_log_debug ("Single app handler with direct handle option enabled");
+	cerver_log_debug ("Simple test cerver with custom logs configuartions");
 	printf ("\n");
 
 	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
@@ -197,21 +154,6 @@ int main (void) {
 		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
-
-		String *test = str_new ("This is a test!");
-		cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_STARTED,
-			on_cever_started, test, str_delete,
-			false, false
-		);
-
-		cerver_event_register (
-			my_cerver,
-			CERVER_EVENT_TEARDOWN,
-			on_cever_teardown, NULL, NULL,
-			false, false
-		);
 
 		cerver_event_register (
 			my_cerver,
