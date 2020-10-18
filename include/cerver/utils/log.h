@@ -5,6 +5,13 @@
 
 #include "cerver/config.h"
 
+#define LOG_POOL_INIT			32
+
+#define LOG_HEADER_SIZE			32
+#define LOG_HEADER_HALF_SIZE	LOG_HEADER_SIZE / 2
+
+#define LOG_MESSAGE_SIZE		4096
+
 #define LOG_COLOR_RED       "\x1b[31m"
 #define LOG_COLOR_GREEN     "\x1b[32m"
 #define LOG_COLOR_YELLOW    "\x1b[33m"
@@ -12,6 +19,8 @@
 #define LOG_COLOR_MAGENTA   "\x1b[35m"
 #define LOG_COLOR_CYAN      "\x1b[36m"
 #define LOG_COLOR_RESET     "\x1b[0m"
+
+#pragma region types
 
 #define LOG_TYPE_MAP(XX)						\
 	XX(0, 	NONE, 		[NONE])					\
@@ -40,6 +49,15 @@ typedef enum LogType {
 	
 } LogType;
 
+#pragma endregion
+
+#pragma region public
+
+CERVER_PUBLIC void cerver_log (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+);
+
 CERVER_PUBLIC void cerver_log_msg (
 	FILE *__restrict __stream, 
 	LogType first_type, LogType second_type,
@@ -47,15 +65,25 @@ CERVER_PUBLIC void cerver_log_msg (
 );
 
 // prints a red error message to stderr
-CERVER_PUBLIC void cerver_log_error (const char *msg);
+CERVER_PUBLIC void cerver_log_error (const char *msg, ...);
 
 // prints a yellow warning message to stderr
-CERVER_PUBLIC void cerver_log_warning (const char *msg);
+CERVER_PUBLIC void cerver_log_warning (const char *msg, ...);
 
 // prints a green success message to stdout
-CERVER_PUBLIC void cerver_log_success (const char *msg);
+CERVER_PUBLIC void cerver_log_success (const char *msg, ...);
 
 // prints a debug message to stdout
-CERVER_PUBLIC void cerver_log_debug (const char *msg);
+CERVER_PUBLIC void cerver_log_debug (const char *msg, ...);
+
+#pragma endregion
+
+#pragma region main
+
+CERVER_PRIVATE void cerver_log_init (void);
+
+CERVER_PRIVATE void cerver_log_end (void);
+
+#pragma endregion
 
 #endif

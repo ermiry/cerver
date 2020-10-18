@@ -5,8 +5,8 @@
 
 #include "cerver/config.h"
 
-CERVER_PUBLIC char *base64_encode (size_t *enclen, size_t len, unsigned char *data);
+CERVER_PUBLIC int base64_encode (char *encoded, const char *string, int len);
 
-CERVER_PUBLIC unsigned char *base64_decode (size_t *declen, size_t len, char *data);
+CERVER_PUBLIC int base64_decode (char *bufplain, const char *bufcoded);
 
 #endif
