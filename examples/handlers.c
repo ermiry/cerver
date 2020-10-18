@@ -36,11 +36,13 @@ typedef enum AppRequest {
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -54,18 +56,18 @@ static void handle_test_request (Packet *packet, PacketType packet_type) {
 
 	if (packet) {
 		cerver_log_debug ("Got a test message from client. Sending another one back...");
-		
+
 		Packet *test_packet = packet_generate_request (packet_type, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -83,12 +85,12 @@ static void my_app_handler_queue (void *handler_data_ptr) {
 		Packet *packet = handler_data->packet;
 
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a APP_PACKET test request!");
-				handle_test_request (packet, APP_PACKET); 
+				handle_test_request (packet, APP_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_PACKET request.");
 				break;
 		}
@@ -103,12 +105,12 @@ static void my_app_error_handler_queue (void *handler_data_ptr) {
 		Packet *packet = handler_data->packet;
 
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-				handle_test_request (packet, APP_ERROR_PACKET); 
+				handle_test_request (packet, APP_ERROR_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_ERROR_PACKET request.");
 				break;
 		}
@@ -121,14 +123,14 @@ static void my_custom_handler_queue (void *handler_data_ptr) {
 	if (handler_data_ptr) {
 		HandlerData *handler_data = (HandlerData *) handler_data_ptr;
 		Packet *packet = handler_data->packet;
-		
+
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-				handle_test_request (packet, CUSTOM_PACKET); 
+				handle_test_request (packet, CUSTOM_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown CUSTOM_PACKET request.");
 				break;
 		}
@@ -146,12 +148,12 @@ static void my_app_handler_direct (void *data) {
 		Packet *packet = (Packet *) data;
 
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a APP_PACKET test request!");
-				handle_test_request (packet, APP_PACKET); 
+				handle_test_request (packet, APP_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_PACKET request.");
 				break;
 		}
@@ -165,12 +167,12 @@ static void my_app_error_handler_direct (void *data) {
 		Packet *packet = (Packet *) data;
 
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-				handle_test_request (packet, APP_ERROR_PACKET); 
+				handle_test_request (packet, APP_ERROR_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_ERROR_PACKET request.");
 				break;
 		}
@@ -182,14 +184,14 @@ static void my_custom_handler_direct (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		
+
 		switch (packet->header->request_type) {
-			case TEST_MSG: 
+			case TEST_MSG:
 				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-				handle_test_request (packet, CUSTOM_PACKET); 
+				handle_test_request (packet, CUSTOM_PACKET);
 				break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown CUSTOM_PACKET request.");
 				break;
 		}
@@ -209,7 +211,7 @@ static void on_client_connected (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -298,14 +300,14 @@ static void start (HandlersType type) {
 		cerver_set_custom_handler (my_cerver, app_custom_handler);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -324,9 +326,9 @@ static void start (HandlersType type) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
-        cerver_delete (my_cerver);
+		cerver_delete (my_cerver);
 	}
 
 }
@@ -351,6 +353,8 @@ int main (int argc, char **argv) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -401,6 +405,8 @@ int main (int argc, char **argv) {
 	}
 
 	else print_help ();
+
+	cerver_end ();
 
 	return 0;
 

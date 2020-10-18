@@ -24,14 +24,16 @@ Cerver *web_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
-	
+
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
 		printf ("\nHTTP Cerver stats:\n");
 		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
 		printf ("\n");
 		cerver_teardown (web_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -78,6 +80,8 @@ int main (int argc, char **argv) {
 	// register to the quit signal
 	signal (SIGINT, end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -123,6 +127,8 @@ int main (int argc, char **argv) {
 
 		cerver_delete (web_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

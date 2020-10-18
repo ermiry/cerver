@@ -49,11 +49,13 @@ void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (cre
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (client_cerver) {
 		cerver_stats_print (client_cerver, true, true);
 		cerver_teardown (client_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -67,11 +69,11 @@ static void client_app_handler (void *packet_ptr) {
 
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
-		
+
 		switch (packet->header->request_type) {
 			case TEST_MSG: cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from cerver!"); break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got an unknown app request.");
 				break;
 		}
@@ -95,8 +97,8 @@ static u8 cerver_client_connect (Client *client, Connection **connection) {
 			// auth configuration
 			Credentials *credentials = credentials_new ("ermiry", "hola12");
 			connection_set_auth_data (
-				*connection, 
-				credentials, sizeof (Credentials), 
+				*connection,
+				credentials, sizeof (Credentials),
 				credentials_delete,
 				false
 			);
@@ -211,7 +213,7 @@ static int client_test_app_msg_send (Client *client, Connection *connection) {
 			else {
 				printf ("APP_PACKET sent to cerver: %ld\n", sent);
 				retval = 0;
-			} 
+			}
 
 			packet_delete (packet);
 		}
@@ -230,18 +232,18 @@ static void handle_test_request (Packet *packet) {
 	if (packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
 		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
-		
+
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -252,11 +254,11 @@ static void handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		
+
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
@@ -286,7 +288,7 @@ static void on_client_connected (void *event_data_ptr) {
 		printf (
 			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 	}
@@ -324,9 +326,9 @@ static void *cerver_client_connect_and_start (void *args) {
 		client_set_app_handlers (client, app_handler, NULL);
 
 		(void) client_event_register (
-			client, 
-			CLIENT_EVENT_CONNECTION_CLOSE, 
-			client_event_connection_close, NULL, NULL, 
+			client,
+			CLIENT_EVENT_CONNECTION_CLOSE,
+			client_event_connection_close, NULL, NULL,
 			false, false
 		);
 
@@ -386,6 +388,8 @@ int main (void) {
 	// register to the quit signal
 	signal (SIGINT, end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -409,21 +413,21 @@ int main (void) {
 		cerver_set_app_handlers (client_cerver, app_handler, NULL);
 
 		cerver_event_register (
-			client_cerver, 
+			client_cerver,
 			CERVER_EVENT_TEARDOWN,
 			on_cever_teardown, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			client_cerver, 
+			client_cerver,
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			client_cerver, 
+			client_cerver,
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -449,6 +453,8 @@ int main (void) {
 
 		cerver_delete (client_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

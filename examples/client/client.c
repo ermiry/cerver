@@ -35,11 +35,13 @@ static Cerver *client_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (client_cerver) {
 		cerver_stats_print (client_cerver, true, true);
 		cerver_teardown (client_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -53,18 +55,18 @@ static void cerver_handle_test_request (Packet *packet) {
 
 	if (packet) {
 		cerver_log_debug ("Got a test message from client. Sending another one back...");
-		
+
 		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -79,7 +81,7 @@ static void cerver_app_handler_direct (void *data) {
 		switch (packet->header->request_type) {
 			case TEST_MSG: cerver_handle_test_request (packet); break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
@@ -106,7 +108,7 @@ static void client_app_handler_direct (void *packet_ptr) {
 					printf ("%s - %d\n", app_message->message, app_message->len);
 				} break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got an unknown app request.");
 					break;
 			}
@@ -127,7 +129,7 @@ static void client_app_handler (void *data) {
 				cerver_log_debug ("Got a test message from cerver!");
 			} break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
@@ -206,7 +208,7 @@ static void *cerver_client_request (void *args) {
 		// wait 2 seconds before connecting to cerver
 		sleep (2);
 		Connection *connection = cerver_client_connect (client);
-		
+
 		// send 1 request message every second
 		for (unsigned int i = 0; i < 10; i++) {
 			request_message (client, connection);
@@ -246,7 +248,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 			else {
 				printf ("APP_PACKET sent to cerver: %ld\n", sent);
 				retval = 0;
-			} 
+			}
 
 			packet_delete (packet);
 		}
@@ -283,7 +285,7 @@ static void *cerver_client_connect_and_start (void *args) {
 				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
 			}
 		}
-		
+
 		// send 1 request message every second
 		for (unsigned int i = 0; i < 5; i++) {
 			test_app_msg_send (client, connection);
@@ -322,6 +324,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -365,6 +369,8 @@ int main (void) {
 
 		cerver_delete (client_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 
