@@ -3,5 +3,7 @@
 bin
 objs
 
-uploads
 keys
+
+data
+uploads
