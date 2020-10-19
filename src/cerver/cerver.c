@@ -37,6 +37,28 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
+#pragma region global
+
+// initializes global cerver values
+// should be called only once at the start of the program
+void cerver_init (void) {
+
+	cerver_log_init ();
+
+}
+
+// correctly disposes global values
+// should be called only once at the very end of the program
+void cerver_end (void) {
+
+	cerver_log_end ();
+
+}
+
+#pragma endregion
+
+#pragma region types
+
 const char *cerver_type_to_string (CerverType type) {
 
 	switch (type) {
@@ -72,6 +94,8 @@ const char *cerver_handler_type_description (CerverHandlerType type) {
 	return cerver_handler_type_description (CERVER_TYPE_NONE);
 
 }
+
+#pragma endregion
 
 #pragma region info
 
