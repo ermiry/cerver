@@ -6,6 +6,8 @@
 
 #include "cerver/config.h"
 
+#define LOG_DEFAULT_PATH		"/var/log/cerver"
+
 #define LOG_POOL_INIT			32
 
 #define LOG_DATETIME_SIZE		32
@@ -55,6 +57,25 @@ typedef enum LogType {
 
 #pragma region configuration
 
+typedef enum LogOutputType {
+
+	LOG_OUTPUT_TYPE_NONE		= 0,
+	LOG_OUTPUT_TYPE_STD			= 1,	// log to stdout & stderr
+	LOG_OUTPUT_TYPE_FILE		= 2,	// log to a file
+	LOG_OUTPUT_TYPE_BOTH		= 3		// log to both std output and file
+
+} LogOutputType;
+
+// returns the current log output type
+CERVER_EXPORT LogOutputType cerver_log_get_output_type (void);
+
+// sets the log output type to use
+CERVER_EXPORT void cerver_log_set_output_type (LogOutputType type);
+
+// sets the path where logs files will be stored
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
+
 #define LOG_TIME_TYPE_MAP(XX)										\
 	XX(0, 	NONE, 		None,		Logs without time)				\
 	XX(1, 	TIME, 		Time,		Logs with time)					\
@@ -85,10 +106,6 @@ CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
 
 // set if logs datetimes will use local time or not
 CERVER_EXPORT void cerver_log_set_local_time (bool value);
-
-// sets the path where logs files will be stored
-// returns 0 on success, 1 on error
-CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
 
 #pragma endregion
 

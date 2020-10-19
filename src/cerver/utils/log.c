@@ -34,11 +34,51 @@ static const char *log_get_msg_type (LogType type) {
 
 #pragma region configuration
 
+static LogOutputType log_output_type = LOG_OUTPUT_TYPE_STD;
+
 static LogTimeType log_time_type = LOG_TIME_TYPE_NONE;
 static bool use_local_time = false;
 
 static String *logs_pathname = NULL;
 static FILE *logfile = NULL;
+
+// returns the current log output type
+LogOutputType cerver_log_get_output_type (void) {
+
+	return log_output_type;
+
+}
+
+// sets the log output type to use
+void cerver_log_set_output_type (LogOutputType type) {
+
+	log_output_type = type;
+
+}
+
+// sets the path where logs files will be stored
+// returns 0 on success, 1 on error
+unsigned int cerver_log_set_path (const char *pathname) {
+
+	unsigned int retval = 1;
+
+	if (pathname) {
+		if (!file_exists (pathname)) {
+			if (!files_create_dir (pathname, 0755)) {
+				logs_pathname = str_new (pathname);
+				retval = 0;
+			}
+		}
+
+		else {
+			logs_pathname = str_new (pathname);
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
 
 const char *cerver_log_time_type_to_string (LogTimeType type) {
 
@@ -84,30 +124,6 @@ void cerver_log_set_time_config (LogTimeType type) {
 
 // set if logs datetimes will use local time or not
 void cerver_log_set_local_time (bool value) { use_local_time = value; }
-
-// sets the path where logs files will be stored
-// returns 0 on success, 1 on error
-unsigned int cerver_log_set_path (const char *pathname) {
-
-	unsigned int retval = 1;
-
-	if (pathname) {
-		if (!file_exists (pathname)) {
-			if (!files_create_dir (pathname, 666)) {
-				logs_pathname = str_new (pathname);
-				retval = 0;
-			}
-		}
-
-		else {
-			logs_pathname = str_new (pathname);
-			retval = 0;
-		}
-	}
-
-	return retval;
-
-}
 
 #pragma endregion
 
@@ -195,13 +211,16 @@ static FILE *cerver_log_get_stream (LogType first_type) {
 
 	FILE *retval = stdout;
 
-	switch (first_type) {
-		case LOG_TYPE_ERROR:
-		case LOG_TYPE_WARNING:
-			retval = stderr;
-			break;
+	if (logfile) retval = logfile;
+	else {
+		switch (first_type) {
+			case LOG_TYPE_ERROR:
+			case LOG_TYPE_WARNING:
+				retval = stderr;
+				break;
 
-		default: break;
+			default: break;
+		}
 	}
 
 	return retval;
@@ -438,9 +457,37 @@ void cerver_log_init (void) {
 		pool_init (log_pool, cerver_log_new, LOG_POOL_INIT);
 	}
 
+	if (!logs_pathname) {
+		logs_pathname = str_new (LOG_DEFAULT_PATH);
+	}
+
+	switch (log_output_type) {
+		case LOG_OUTPUT_TYPE_FILE:
+		case LOG_OUTPUT_TYPE_BOTH: {
+			char filename[1024] = { 0 };
+			snprintf (filename, 1024, "%s/%ld.log", logs_pathname->str, time (NULL));
+
+			logfile = fopen (filename, "w+");
+			if (!logfile) {
+				fprintf (stderr, "\n\nFailed to open %s log file!\n", filename);
+				perror ("Error");
+				printf ("\n\n");
+			}
+		} break;
+
+		default: break;
+	}
+
 }
 
 void cerver_log_end (void) {
+
+	if (logfile) {
+		fclose (logfile);
+		logfile = NULL;
+	}
+
+	str_delete (logs_pathname);
 
 	pool_delete (log_pool);
 	log_pool = NULL;
