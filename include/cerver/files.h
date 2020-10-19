@@ -16,7 +16,7 @@
 
 struct _Cerver;
 struct _Client;
-struct _connection;
+struct _Connection;
 
 struct _FileHeader;
 
@@ -112,7 +112,7 @@ CERVER_PUBLIC String *file_cerver_search_file (FileCerver *file_cerver, const ch
 // if the file is not found, a CERVER_ERROR_FILE_NOT_FOUND error packet will be sent
 // returns the number of bytes sent, or -1 on error
 CERVER_PUBLIC ssize_t file_cerver_send_file (
-	Cerver *cerver, Client *client, Connection *connection,
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection,
 	const char *filename
 );
 
@@ -172,7 +172,7 @@ typedef struct _FileHeader FileHeader;
 // first the FileHeader in a regular packet, then the file contents between sockets
 // returns the number of bytes sent, or -1 on error
 CERVER_PUBLIC ssize_t file_send (
-	Cerver *cerver, Client *client, Connection *connection,
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection,
 	const char *filename
 );
 
@@ -180,7 +180,7 @@ CERVER_PUBLIC ssize_t file_send (
 // first the FileHeader in a regular packet, then the file contents between sockets
 // returns the number of bytes sent, or -1 on error
 CERVER_PUBLIC ssize_t file_send_by_fd (
-	Cerver *cerver, Client *client, Connection *connection,
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection,
 	int file_fd, const char *actual_filename, size_t filelen
 );
 
@@ -191,7 +191,7 @@ CERVER_PUBLIC ssize_t file_send_by_fd (
 // opens the file using an already created filename
 // and use the fd to receive and save the file
 CERVER_PRIVATE u8 file_receive_actual (
-	Client *client, Connection *connection,
+	struct _Client *client, struct _Connection *connection,
 	FileHeader *file_header, char **saved_filename
 );
 
