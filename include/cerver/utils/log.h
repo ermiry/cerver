@@ -2,6 +2,7 @@
 #define _CERVER_UTILS_LOG_H_
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "cerver/config.h"
 
@@ -81,6 +82,9 @@ CERVER_EXPORT LogTimeType cerver_log_get_time_config (void);
 // date: day/month/year format
 // both: day/month/year - 24h date time format
 CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
+
+// set if logs datetimes will use local time or not
+CERVER_EXPORT void cerver_log_set_local_time (bool value);
 
 #pragma endregion
 

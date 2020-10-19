@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdarg.h>
 #include <time.h>
@@ -29,6 +30,7 @@ static const char *log_get_msg_type (LogType type) {
 #pragma region configuration
 
 static LogTimeType log_time_type = LOG_TIME_TYPE_NONE;
+static bool use_local_time = false;
 
 const char *cerver_log_time_type_to_string (LogTimeType type) {
 
@@ -71,6 +73,9 @@ void cerver_log_set_time_config (LogTimeType type) {
 	log_time_type = type;
 
 }
+
+// set if logs datetimes will use local time or not
+void cerver_log_set_local_time (bool value) { use_local_time = value; }
 
 #pragma endregion
 
@@ -184,7 +189,7 @@ static void cerver_log_internal (
 
 		if (log_time_type != LOG_TIME_TYPE_NONE) {
 			time_t datetime = time (NULL);
-			struct tm *timeinfo = gmtime (&datetime);
+			struct tm *timeinfo = use_local_time ? localtime (&datetime) : gmtime (&datetime);
 
 			switch (log_time_type) {
 				case LOG_TIME_TYPE_TIME: strftime (log->datetime, LOG_DATETIME_SIZE, "%T", timeinfo); break;
