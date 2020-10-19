@@ -9,8 +9,6 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
-static Pool *log_pool = NULL;
-
 #pragma region types
 
 static const char *log_get_msg_type (LogType type) {
@@ -27,7 +25,39 @@ static const char *log_get_msg_type (LogType type) {
 
 #pragma endregion
 
+#pragma region configuration
+
+static LogTimeType log_time_type = LOG_TIME_TYPE_NONE;
+
+const char *cerver_log_time_type_to_string (LogTimeType type) {
+
+	switch (type) {
+		#define XX(num, name, string, description) case LOG_TIME_TYPE_##name: return #string;
+		LOG_TIME_TYPE_MAP(XX)
+		#undef XX
+
+		default: return cerver_log_time_type_to_string (LOG_TIME_TYPE_NONE);
+	}
+
+}
+
+const char *cerver_log_time_type_description (LogTimeType type) {
+
+	switch (type) {
+		#define XX(num, name, string, description) case LOG_TIME_TYPE_##name: return #description;
+		LOG_TIME_TYPE_MAP(XX)
+		#undef XX
+
+		default: return cerver_log_time_type_description (LOG_TIME_TYPE_NONE);
+	}
+
+}
+
+#pragma endregion
+
 #pragma region internal
+
+static Pool *log_pool = NULL;
 
 typedef struct {
 

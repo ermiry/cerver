@@ -51,6 +51,28 @@ typedef enum LogType {
 
 #pragma endregion
 
+#pragma region configuration
+
+#define LOG_TIME_TYPE_MAP(XX)										\
+	XX(0, 	NONE, 		None,		Logs without time)				\
+	XX(1, 	TIME, 		Time,		Logs with time)					\
+	XX(2, 	DATE, 		Date,		Logs with date)					\
+	XX(3, 	BOTH, 		Both,		Logs with date and time)
+
+typedef enum LogTimeType {
+
+	#define XX(num, name, string, description) LOG_TIME_TYPE_##name = num,
+	LOG_TIME_TYPE_MAP (XX)
+	#undef XX
+
+} LogTimeType;
+
+CERVER_PUBLIC const char *cerver_log_time_type_to_string (LogTimeType type);
+
+CERVER_PUBLIC const char *cerver_log_time_type_description (LogTimeType type);
+
+#pragma endregion
+
 #pragma region public
 
 CERVER_PUBLIC void cerver_log (
