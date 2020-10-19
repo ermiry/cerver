@@ -32,6 +32,8 @@ static const char *log_get_msg_type (LogType type) {
 typedef struct {
 
 	char header[LOG_HEADER_SIZE];
+	char *second;
+
 	char message[LOG_MESSAGE_SIZE];
 
 } CerverLog;
@@ -41,6 +43,8 @@ static void *cerver_log_new (void) {
 	CerverLog *log = (CerverLog *) malloc (sizeof (CerverLog));
 	if (log) {
 		memset (log->header, 0, LOG_HEADER_SIZE);
+		log->second = log->header + LOG_HEADER_HALF_SIZE;
+
 		memset (log->message, 0, LOG_MESSAGE_SIZE);
 	}
 
@@ -55,22 +59,43 @@ static void cerver_log_delete (void *cerver_log_ptr) {
 }
 
 static void cerver_log_header_create (
-	char *header,
+	CerverLog *log,
 	LogType first_type, LogType second_type
 ) {
 
 	const char *first = log_get_msg_type (first_type);
 	if (second_type != LOG_TYPE_NONE) {
-		(void) snprintf (
-			header, LOG_HEADER_SIZE, 
-			"%s%s", 
-			first, log_get_msg_type (second_type)
-		);
+		switch (first_type) {
+			case LOG_TYPE_DEBUG:
+			case LOG_TYPE_TEST: {
+				// first type
+				(void) snprintf (
+					log->header, LOG_HEADER_HALF_SIZE, 
+					"%s", 
+					first
+				);
+
+				// second type
+				(void) snprintf (
+					log->second, LOG_HEADER_HALF_SIZE, 
+					"%s", 
+					log_get_msg_type (second_type)
+				);
+			} break;
+
+			default: {
+				(void) snprintf (
+					log->header, LOG_HEADER_SIZE, 
+					"%s%s", 
+					first, log_get_msg_type (second_type)
+				);
+			} break;
+		}
 	}
 
 	else {
 		(void) snprintf (
-			header, LOG_HEADER_SIZE,
+			log->header, LOG_HEADER_SIZE,
 			"%s",
 			first
 		);
@@ -103,17 +128,27 @@ static void cerver_log_internal (
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
 	if (log) {
-		cerver_log_header_create (log->header, first_type, second_type);
+		cerver_log_header_create (log, first_type, second_type);
 		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
 
 		switch (first_type) {
-			case LOG_TYPE_DEBUG: fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
-			
-			case LOG_TYPE_TEST: fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message); break;
-
 			case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 			case LOG_TYPE_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 			case LOG_TYPE_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+			case LOG_TYPE_DEBUG: {
+				if (second_type != LOG_TYPE_NONE)
+					fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+
+				else fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+			} break;
+			
+			case LOG_TYPE_TEST: {
+				if (second_type != LOG_TYPE_NONE)
+					fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+
+				else fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+			} break;
 
 			case LOG_TYPE_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 
