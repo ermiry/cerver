@@ -26,6 +26,8 @@ static void my_game_end (int dummy) {
 		cerver_teardown (my_cerver);
 	} 
 
+	cerver_end ();
+
 	exit (0);
 
 }
@@ -76,6 +78,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, my_game_end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -133,6 +137,8 @@ int main (void) {
 		cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
 			"Failed to init my game!");
 	}
+
+	cerver_end ();
 
 	return 0;
 

@@ -103,13 +103,15 @@ AppData *app_data = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
 
 		app_data_delete (app_data);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -124,13 +126,13 @@ static void handle_test_request (Packet *packet) {
 		if (test_packet) {
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -148,18 +150,18 @@ static void handle_msg_request (Packet *packet, String *msg) {
 		memset (app_message, 0, sizeof (AppMessage));
 		strncpy (app_message->message, msg->str, 128);
 		app_message->len = msg->len;
-		
+
 		Packet *msg_packet = packet_generate_request (PACKET_TYPE_APP, GET_MSG, app_message, sizeof (AppMessage));
 		if (msg_packet) {
 			packet_set_network_values (msg_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (msg_packet, 0, &sent, false)) 
+			if (packet_send (msg_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send handler's message to client");
 
 			else {
 				printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (msg_packet);
 		}
 
@@ -181,7 +183,7 @@ static void app_packet_handler (void *data) {
 
 				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
@@ -196,6 +198,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -221,7 +225,7 @@ int main (void) {
 		handler_set_data_delete (app_handler, app_data_delete);
 
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
-		
+
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
 				my_cerver->info->name->str);
@@ -235,10 +239,12 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

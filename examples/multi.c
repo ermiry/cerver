@@ -108,7 +108,7 @@ void *app_data_copy (void *app_data_args_ptr) {
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
@@ -117,7 +117,9 @@ static void end (int dummy) {
 		app_data_delete (app_data_1);
 		app_data_delete (app_data_2);
 		app_data_delete (app_data_3);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -135,18 +137,18 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 			cerver_log_debug (status);
 			free (status);
 		}
-		
+
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -168,18 +170,18 @@ static void handle_msg_request (Packet *packet, unsigned int handler_id, String 
 		memset (app_message, 0, sizeof (AppMessage));
 		strncpy (app_message->message, msg->str, 128);
 		app_message->len = msg->len;
-		
+
 		Packet *msg_packet = packet_generate_request (PACKET_TYPE_APP, GET_MSG, app_message, sizeof (AppMessage));
 		if (msg_packet) {
 			packet_set_network_values (msg_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (msg_packet, 0, &sent, false)) 
+			if (packet_send (msg_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send handler's message to client");
 
 			else {
 				printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (msg_packet);
 		}
 
@@ -201,7 +203,7 @@ static void handler_cero (void *data) {
 
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
@@ -211,7 +213,7 @@ static void handler_cero (void *data) {
 }
 
 static void handler_one (void *data) {
-	
+
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
@@ -223,7 +225,7 @@ static void handler_one (void *data) {
 
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
@@ -233,7 +235,7 @@ static void handler_one (void *data) {
 }
 
 static void handler_two (void *data) {
-	
+
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
@@ -245,7 +247,7 @@ static void handler_two (void *data) {
 
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
@@ -255,7 +257,7 @@ static void handler_two (void *data) {
 }
 
 static void handler_three (void *data) {
-	
+
 	if (data) {
 		HandlerData *handler_data = (HandlerData *) data;
 
@@ -267,7 +269,7 @@ static void handler_three (void *data) {
 
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
-				default: 
+				default:
 					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
@@ -288,7 +290,7 @@ static void on_client_connected (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -330,6 +332,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -376,14 +380,14 @@ int main (void) {
 		handler_set_data_delete (handler_3, app_data_delete);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -402,11 +406,13 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}
-	
+
+	cerver_end ();
+
 	return 0;
 
 }

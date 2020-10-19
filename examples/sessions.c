@@ -33,11 +33,13 @@ static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-	
+
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -51,18 +53,18 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		cerver_log_debug ("Got a test message from client. Sending another one back...");
-		
+
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
+			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-			
+
 			packet_delete (test_packet);
 		}
 	}
@@ -77,7 +79,7 @@ static void handler (void *data) {
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
-			default: 
+			default:
 				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
@@ -116,7 +118,7 @@ static u8 my_auth_method_username (AuthMethod *auth_method, const char *username
 }
 
 static u8 my_auth_method_password (AuthMethod *auth_method, const char *password) {
-	
+
 	u8 retval = 1;
 
 	if (password) {
@@ -211,7 +213,7 @@ static void on_hold_disconnected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"An on hold connection disconnected in cerver %s!\n", 
+			"An on hold connection disconnected in cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
 
@@ -230,7 +232,7 @@ static void on_hold_drop (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"An on hold connection was dropped in cerver %s!\n", 
+			"An on hold connection was dropped in cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
 
@@ -251,7 +253,7 @@ static void on_client_success_auth (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -271,7 +273,7 @@ static void on_client_failed_auth (void *event_data_ptr) {
 
 		char *status = c_string_create (
 			"Client failed to authenticate connection with sock fd %d to cerver %s!\n",
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -292,7 +294,7 @@ static void on_client_connected (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -313,7 +315,7 @@ static void on_client_new_connection (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld new connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -357,6 +359,8 @@ int main (void) {
 	// register to the quit signal
 	signal (SIGINT, end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -383,56 +387,56 @@ int main (void) {
 		cerver_set_sessions (my_cerver, session_default_generate_id);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_ON_HOLD_CONNECTED,
 			on_hold_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_ON_HOLD_DISCONNECTED,
 			on_hold_disconnected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_ON_HOLD_DROPPED,
 			on_hold_drop, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_SUCCESS_AUTH,
 			on_client_success_auth, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_FAILED_AUTH,
 			on_client_failed_auth, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_NEW_CONNECTION,
 			on_client_new_connection, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver, 
+			my_cerver,
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -455,6 +459,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

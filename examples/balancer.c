@@ -18,11 +18,13 @@ static Balancer *load_balancer = NULL;
 #pragma region end
 
 static void end (int dummy) {
-	
+
 	if (load_balancer) {
-        balancer_stats_print (load_balancer);
+		balancer_stats_print (load_balancer);
 		balancer_teardown (load_balancer);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -38,7 +40,7 @@ static void on_cever_started (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"Cerver %s has started!\n", 
+			"Cerver %s has started!\n",
 			event_data->cerver->info->name->str
 		);
 
@@ -57,7 +59,7 @@ static void on_cever_teardown (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		char *status = c_string_create (
-			"Cerver %s is going to be destroyed!\n", 
+			"Cerver %s is going to be destroyed!\n",
 			event_data->cerver->info->name->str
 		);
 
@@ -78,7 +80,7 @@ static void on_client_connected (void *event_data_ptr) {
 		char *status = c_string_create (
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd, 
+			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
 
@@ -121,6 +123,8 @@ int main (void) {
 	// register to the quit signal
 	signal (SIGINT, end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -143,28 +147,28 @@ int main (void) {
 
 		/*** register to events ***/
 		cerver_event_register (
-			load_balancer->cerver, 
+			load_balancer->cerver,
 			CERVER_EVENT_STARTED,
 			on_cever_started, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			load_balancer->cerver, 
+			load_balancer->cerver,
 			CERVER_EVENT_TEARDOWN,
 			on_cever_teardown, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			load_balancer->cerver, 
+			load_balancer->cerver,
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			load_balancer->cerver, 
+			load_balancer->cerver,
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -176,8 +180,10 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create load balancer!");
+		cerver_log_error ("Failed to create load balancer!");
 	}
+
+	cerver_end ();
 
 	return 0;
 
