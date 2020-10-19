@@ -1404,7 +1404,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 }
 
 // inits a cerver of a given type
-static u8 cerver_init (Cerver *cerver) {
+static u8 cerver_init_internal (Cerver *cerver) {
 
 	int retval = 1;
 
@@ -1504,7 +1504,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 	u8 errors = 0;
 
 	if (cerver) {
-		if (!cerver_init (cerver)) {
+		if (!cerver_init_internal (cerver)) {
 			char *s = c_string_create ("Initialized cerver %s!", cerver->info->name->str);
 			if (s) {
 				cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
