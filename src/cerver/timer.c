@@ -7,7 +7,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/time.h"
+#include "cerver/timer.h"
 
 static TimeSpec *timespec_new (void) {
 
