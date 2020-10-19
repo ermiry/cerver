@@ -227,36 +227,148 @@ static FILE *cerver_log_get_stream (LogType first_type) {
 
 }
 
-static void cerver_log_internal_normal (
+static void cerver_log_internal_normal_std (
+	CerverLog *log,
+	LogType first_type, LogType second_type
+) {
+
+	switch (first_type) {
+		case LOG_TYPE_ERROR: fprintf (stderr, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_WARNING: fprintf (stderr, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_SUCCESS: fprintf (stdout, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+		case LOG_TYPE_DEBUG: {
+			if (second_type != LOG_TYPE_NONE)
+				fprintf (stdout, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+
+			else fprintf (stdout, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+		} break;
+		
+		case LOG_TYPE_TEST: {
+			if (second_type != LOG_TYPE_NONE)
+				fprintf (stdout, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+
+			else fprintf (stdout, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+		} break;
+
+		case LOG_TYPE_CERVER: fprintf (stdout, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_EVENT: fprintf (stdout, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+
+		default: fprintf (stdout, "%s: %s\n", log->header, log->message); break;
+	}
+
+}
+
+static void cerver_log_internal_normal_file (
 	FILE *__restrict __stream,
 	CerverLog *log,
 	LogType first_type, LogType second_type
 ) {
 
 	switch (first_type) {
-		case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-		case LOG_TYPE_WARNING: fprintf (__stream, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
-		case LOG_TYPE_SUCCESS: fprintf (__stream, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_ERROR: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		case LOG_TYPE_WARNING: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		case LOG_TYPE_SUCCESS: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+
+		case LOG_TYPE_DEBUG: {
+			if (second_type != LOG_TYPE_NONE) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
+			else fprintf (__stream,  "%s: %s\n", log->header, log->message);
+		} break;
+		
+		case LOG_TYPE_TEST: {
+			if (second_type != LOG_TYPE_NONE) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
+			else fprintf (__stream, "%s: %s\n", log->header, log->message);
+		} break;
+
+		case LOG_TYPE_CERVER: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+		case LOG_TYPE_EVENT: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+
+		default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+	}
+
+}
+
+static void cerver_log_internal_normal (
+	FILE *__restrict __stream,
+	CerverLog *log,
+	LogType first_type, LogType second_type
+) {
+
+	switch (log_output_type) {
+		case LOG_OUTPUT_TYPE_STD: cerver_log_internal_normal_std (log, first_type, second_type); break;
+		case LOG_OUTPUT_TYPE_FILE: cerver_log_internal_normal_file (__stream, log, first_type, second_type); break;
+
+		case LOG_OUTPUT_TYPE_BOTH:
+			cerver_log_internal_normal_std (log, first_type, second_type);
+			cerver_log_internal_normal_file (__stream, log, first_type, second_type);
+			break;
+
+		default: break;
+	}
+
+}
+
+static void cerver_log_internal_with_time_std (
+	CerverLog *log,
+	LogType first_type, LogType second_type
+) {
+
+	switch (first_type) {
+		case LOG_TYPE_ERROR: fprintf (stderr, "[%s]" LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
+		case LOG_TYPE_WARNING: fprintf (stderr, "[%s]" LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
+		case LOG_TYPE_SUCCESS: fprintf (stdout, "[%s]" LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
 
 		case LOG_TYPE_DEBUG: {
 			if (second_type != LOG_TYPE_NONE)
-				fprintf (__stream, LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+				fprintf (stdout, "[%s]" LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
 
-			else fprintf (__stream, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+			else fprintf (stdout, "[%s]" LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
 		} break;
 		
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
-				fprintf (__stream, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
+				fprintf (stdout, "[%s]" LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
 
-			else fprintf (__stream, LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
+			else fprintf (stdout, "[%s]" LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
 		} break;
 
-		case LOG_TYPE_CERVER: fprintf (__stream, LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		case LOG_TYPE_CERVER: fprintf (stdout, "[%s]" LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
+		case LOG_TYPE_EVENT: fprintf (stdout, "[%s]" LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
 
-		case LOG_TYPE_EVENT: fprintf (__stream, LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
+		default: fprintf (stdout, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+	}
 
-		default: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
+}
+
+static void cerver_log_internal_with_time_file (
+	FILE *__restrict __stream,
+	CerverLog *log,
+	LogType first_type, LogType second_type
+) {
+
+	switch (first_type) {
+		case LOG_TYPE_ERROR: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+		case LOG_TYPE_WARNING: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+		case LOG_TYPE_SUCCESS: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+
+		case LOG_TYPE_DEBUG: {
+			if (second_type != LOG_TYPE_NONE)
+				fprintf (__stream, "[%s]%s%s: %s\n", log->datetime, log->header, log->second, log->message);
+
+			else fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message);
+		} break;
+		
+		case LOG_TYPE_TEST: {
+			if (second_type != LOG_TYPE_NONE)
+				fprintf (__stream, "[%s]%s%s: %s\n", log->datetime, log->header, log->second, log->message);
+
+			else fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message);
+		} break;
+
+		case LOG_TYPE_CERVER: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+		case LOG_TYPE_EVENT: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+
+		default: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
 	}
 
 }
@@ -267,30 +379,16 @@ static void cerver_log_internal_with_time (
 	LogType first_type, LogType second_type
 ) {
 
-	switch (first_type) {
-		case LOG_TYPE_ERROR: fprintf (__stream, "[%s]" LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
-		case LOG_TYPE_WARNING: fprintf (__stream, "[%s]" LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
-		case LOG_TYPE_SUCCESS: fprintf (__stream, "[%s]" LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
+	switch (log_output_type) {
+		case LOG_OUTPUT_TYPE_STD: cerver_log_internal_with_time_std (log, first_type, second_type); break;
+		case LOG_OUTPUT_TYPE_FILE: cerver_log_internal_with_time_file (__stream, log, first_type, second_type); break;
 
-		case LOG_TYPE_DEBUG: {
-			if (second_type != LOG_TYPE_NONE)
-				fprintf (__stream, "[%s]" LOG_COLOR_MAGENTA "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
+		case LOG_OUTPUT_TYPE_BOTH:
+			cerver_log_internal_with_time_std (log, first_type, second_type);
+			cerver_log_internal_with_time_file (__stream, log, first_type, second_type);
+			break;
 
-			else fprintf (__stream, "[%s]" LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
-		} break;
-		
-		case LOG_TYPE_TEST: {
-			if (second_type != LOG_TYPE_NONE)
-				fprintf (__stream, "[%s]" LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
-
-			else fprintf (__stream, "[%s]" LOG_COLOR_CYAN "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
-		} break;
-
-		case LOG_TYPE_CERVER: fprintf (__stream, "[%s]" LOG_COLOR_BLUE "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
-
-		case LOG_TYPE_EVENT: fprintf (__stream, "[%s]" LOG_COLOR_MAGENTA "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
-
-		default: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
+		default: break;
 	}
 
 }
@@ -364,7 +462,7 @@ void cerver_log_msg (
 		va_list args;
 
 		cerver_log_internal (
-			__stream,
+			cerver_log_get_stream (first_type),
 			first_type, second_type,
 			msg, args
 		);
@@ -380,7 +478,7 @@ void cerver_log_error (const char *msg, ...) {
 		va_start (args, msg);
 
 		cerver_log_internal (
-			stderr,
+			cerver_log_get_stream (LOG_TYPE_ERROR),
 			LOG_TYPE_ERROR, LOG_TYPE_NONE,
 			msg, args
 		);
@@ -398,7 +496,7 @@ void cerver_log_warning (const char *msg, ...) {
 		va_start (args, msg);
 
 		cerver_log_internal (
-			stderr,
+			cerver_log_get_stream (LOG_TYPE_WARNING),
 			LOG_TYPE_WARNING, LOG_TYPE_NONE,
 			msg, args
 		);
@@ -416,7 +514,7 @@ void cerver_log_success (const char *msg, ...) {
 		va_start (args, msg);
 
 		cerver_log_internal (
-			stdout,
+			cerver_log_get_stream (LOG_TYPE_SUCCESS),
 			LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
 			msg, args
 		);
@@ -434,7 +532,7 @@ void cerver_log_debug (const char *msg, ...) {
 		va_start (args, msg);
 
 		cerver_log_internal (
-			stdout,
+			cerver_log_get_stream (LOG_TYPE_DEBUG),
 			LOG_TYPE_DEBUG, LOG_TYPE_NONE,
 			msg, args
 		);
@@ -468,7 +566,13 @@ void cerver_log_init (void) {
 			snprintf (filename, 1024, "%s/%ld.log", logs_pathname->str, time (NULL));
 
 			logfile = fopen (filename, "w+");
-			if (!logfile) {
+			if (logfile) {
+				fprintf (logfile, "\nCerver Version: %s\n", CERVER_VERSION_NAME);
+				fprintf (logfile, "Release Date & time: %s - %s\n", CERVER_VERSION_DATE, CERVER_VERSION_TIME);
+				fprintf (logfile, "Author: %s\n\n", CERVER_VERSION_AUTHOR);
+			}
+
+			else {
 				fprintf (stderr, "\n\nFailed to open %s log file!\n", filename);
 				perror ("Error");
 				printf ("\n\n");

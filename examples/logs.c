@@ -36,6 +36,14 @@ static void end (int dummy) {
 
 }
 
+static void quit (int dummy) {
+
+	cerver_end ();
+
+	exit (0);
+
+}
+
 #pragma endregion
 
 #pragma region handler
@@ -131,14 +139,17 @@ int main (int argc, char **argv) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+	signal (SIGSEGV, quit);
+
+	cerver_log_set_output_type (LOG_OUTPUT_TYPE_BOTH);
+	cerver_log_set_path ("./logs");
+	cerver_log_set_time_config (LOG_TIME_TYPE_TIME);
+	cerver_log_set_local_time (true);
 
 	cerver_init ();
 
 	cerver_version_print_full ();
 	printf ("\n");
-
-	cerver_log_set_time_config (LOG_TIME_TYPE_TIME);
-	cerver_log_set_local_time (true);
 
 	cerver_log_debug ("Simple Logs Example");
 	printf ("\n");
