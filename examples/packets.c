@@ -137,7 +137,7 @@ static void handle_test_request (Packet *packet) {
 static void handle_app_message (Packet *packet) {
 
 	if (packet) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 
 		AppData *app_data = (AppData *) end;
 		app_data_print (app_data);
@@ -151,7 +151,7 @@ static void handle_multi_message (Packet *packet) {
 	if (packet) {
 		cerver_log_debug ("MULTI message!");
 
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 
 		AppData *app_data = NULL;
 		for (u32 i = 0; i < 5; i++) {
