@@ -44,7 +44,7 @@ void end (int dummy) {
 
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Test route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -55,7 +55,7 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 void echo_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Echo route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Echo route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -94,7 +94,7 @@ void echo_handler_on_message (
 
 void chat_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Chat route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Chat route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);

@@ -46,7 +46,7 @@ void end (int dummy) {
 // GET /test
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Test route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -60,7 +60,7 @@ void upload_handler (CerverReceive *cr, HttpRequest *request) {
 
 	http_request_multi_parts_print (request);
 
-	HttpResponse *res = http_response_json_msg (200, "Upload route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Upload route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
