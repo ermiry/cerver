@@ -54,7 +54,7 @@ void main_handler (CerverReceive *cr, HttpRequest *request) {
 // GET /test
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Test route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -66,7 +66,7 @@ void test_handler (CerverReceive *cr, HttpRequest *request) {
 // GET /text
 void text_handler (CerverReceive *cr, HttpRequest *request) {
 
-	char *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>hola_handler () works!</h2></body></html>";
+	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>hola_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
 	if (http_response_render_text (cr, text, text_len)) {
@@ -78,7 +78,7 @@ void text_handler (CerverReceive *cr, HttpRequest *request) {
 // GET /json
 void json_handler (CerverReceive *cr, HttpRequest *request) {
 
-	char *json = "{\"msg\": \"okay\"}";
+	char const *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
 	if (http_response_render_json (cr, json, json_len)) {
@@ -90,7 +90,7 @@ void json_handler (CerverReceive *cr, HttpRequest *request) {
 // GET /hola
 void hola_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Hola route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Hola route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
@@ -102,7 +102,7 @@ void hola_handler (CerverReceive *cr, HttpRequest *request) {
 // GET /adios
 void adios_handler (CerverReceive *cr, HttpRequest *request) {
 
-	HttpResponse *res = http_response_json_msg (200, "Adios route works!");
+	HttpResponse *res = http_response_json_msg ((http_status) 200, "Adios route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
