@@ -86,6 +86,10 @@ CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
 // set if logs datetimes will use local time or not
 CERVER_EXPORT void cerver_log_set_local_time (bool value);
 
+// sets the path where logs files will be stored
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
+
 #pragma endregion
 
 #pragma region public

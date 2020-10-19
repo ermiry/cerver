@@ -6,7 +6,12 @@
 #include <stdarg.h>
 #include <time.h>
 
+#include "cerver/types/string.h"
+
 #include "cerver/collections/pool.h"
+
+#include "cerver/files.h"
+#include "cerver/version.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
@@ -31,6 +36,9 @@ static const char *log_get_msg_type (LogType type) {
 
 static LogTimeType log_time_type = LOG_TIME_TYPE_NONE;
 static bool use_local_time = false;
+
+static String *logs_pathname = NULL;
+static FILE *logfile = NULL;
 
 const char *cerver_log_time_type_to_string (LogTimeType type) {
 
@@ -76,6 +84,30 @@ void cerver_log_set_time_config (LogTimeType type) {
 
 // set if logs datetimes will use local time or not
 void cerver_log_set_local_time (bool value) { use_local_time = value; }
+
+// sets the path where logs files will be stored
+// returns 0 on success, 1 on error
+unsigned int cerver_log_set_path (const char *pathname) {
+
+	unsigned int retval = 1;
+
+	if (pathname) {
+		if (!file_exists (pathname)) {
+			if (!files_create_dir (pathname, 666)) {
+				logs_pathname = str_new (pathname);
+				retval = 0;
+			}
+		}
+
+		else {
+			logs_pathname = str_new (pathname);
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
 
 #pragma endregion
 
