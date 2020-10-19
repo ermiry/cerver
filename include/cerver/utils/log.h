@@ -7,6 +7,7 @@
 
 #define LOG_POOL_INIT			32
 
+#define LOG_DATETIME_SIZE		32
 #define LOG_HEADER_SIZE			32
 #define LOG_HEADER_HALF_SIZE	LOG_HEADER_SIZE / 2
 
@@ -70,6 +71,16 @@ typedef enum LogTimeType {
 CERVER_PUBLIC const char *cerver_log_time_type_to_string (LogTimeType type);
 
 CERVER_PUBLIC const char *cerver_log_time_type_description (LogTimeType type);
+
+// returns the current log time configuration
+CERVER_EXPORT LogTimeType cerver_log_get_time_config (void);
+
+// sets the log time configuration to be used by log methods
+// none: print logs with no dates
+// time: 24h time format
+// date: day/month/year format
+// both: day/month/year - 24h date time format
+CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
 
 #pragma endregion
 

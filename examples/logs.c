@@ -137,6 +137,8 @@ int main (int argc, char **argv) {
 	cerver_version_print_full ();
 	printf ("\n");
 
+	cerver_log_set_time_config (LOG_TIME_TYPE_TIME);
+
 	cerver_log_debug ("Simple Logs Example");
 	printf ("\n");
 	cerver_log_debug ("Simple test cerver with custom logs configuartions");

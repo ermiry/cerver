@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <stdarg.h>
+#include <time.h>
 
 #include "cerver/collections/pool.h"
 
@@ -53,6 +54,24 @@ const char *cerver_log_time_type_description (LogTimeType type) {
 
 }
 
+// returns the current log time configuration
+LogTimeType cerver_log_get_time_config (void) {
+
+	return log_time_type;
+
+}
+
+// sets the log time configuration to be used by log methods
+// none: print logs with no dates
+// time: 24h time format
+// date: day/month/year format
+// both: day/month/year - 24h date time format
+void cerver_log_set_time_config (LogTimeType type) {
+
+	log_time_type = type;
+
+}
+
 #pragma endregion
 
 #pragma region internal
@@ -61,6 +80,7 @@ static Pool *log_pool = NULL;
 
 typedef struct {
 
+	char datetime[LOG_DATETIME_SIZE];
 	char header[LOG_HEADER_SIZE];
 	char *second;
 
@@ -72,6 +92,7 @@ static void *cerver_log_new (void) {
 
 	CerverLog *log = (CerverLog *) malloc (sizeof (CerverLog));
 	if (log) {
+		memset (log->datetime, 0, LOG_DATETIME_SIZE);
 		memset (log->header, 0, LOG_HEADER_SIZE);
 		log->second = log->header + LOG_HEADER_HALF_SIZE;
 
@@ -160,6 +181,21 @@ static void cerver_log_internal (
 	if (log) {
 		cerver_log_header_create (log, first_type, second_type);
 		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+
+		if (log_time_type != LOG_TIME_TYPE_NONE) {
+			time_t datetime = time (NULL);
+			struct tm *timeinfo = gmtime (&datetime);
+
+			switch (log_time_type) {
+				case LOG_TIME_TYPE_TIME: strftime (log->datetime, LOG_DATETIME_SIZE, "%T", timeinfo); break;
+				case LOG_TIME_TYPE_DATE: strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y", timeinfo); break;
+				case LOG_TIME_TYPE_BOTH: strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y - %T", timeinfo); break;
+
+				default: break;
+			}
+
+			fprintf (__stream, "[%s]", log->datetime);
+		}
 
 		switch (first_type) {
 			case LOG_TYPE_ERROR: fprintf (__stream, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
