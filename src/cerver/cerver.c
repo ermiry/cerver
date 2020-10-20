@@ -1468,7 +1468,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 	if (cerver) {
 		if (!cerver_init_internal (cerver)) {
-			cerver_log_msg (
+			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 				"Initialized cerver %s!", cerver->info->name->str
 			);
@@ -2455,8 +2455,6 @@ static void cerver_clean (Cerver *cerver) {
 		}
 
 		if (cerver->thpool) {
-			char *status = NULL;
-
 			#ifdef CERVER_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,

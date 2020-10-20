@@ -561,9 +561,6 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 	u8 retval = 1;
 
 	if (cerver && client) {
-		#ifdef CLIENT_DEBUG
-		char *s = NULL;
-		#endif
 		Connection *connection = NULL;
 		switch (client->connections->size) {
 			case 0: {

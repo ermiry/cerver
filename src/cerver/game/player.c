@@ -116,7 +116,6 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
             // if (!failed) {
                 dlist_insert_after (lobby->players, dlist_end (lobby->players), player);
 
-                char *s = NULL;
                 #ifdef CERVER_DEBUG
                 cerver_log (
                     LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
@@ -177,7 +176,6 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
             if (!dlist_remove (lobby->players, player, NULL)) {
                 lobby->n_current_players--;
 
-                char *s = NULL;
                 #ifdef CERVER_DEBUG
                 cerver_log (
                     LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
