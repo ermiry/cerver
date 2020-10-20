@@ -134,8 +134,10 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			"Failed to init my game!");
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to init my game!"
+		);
 	}
 
 	cerver_end ();
