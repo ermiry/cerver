@@ -233,6 +233,8 @@ static void cerver_log_internal_normal_std (
 ) {
 
 	switch (first_type) {
+		case LOG_TYPE_NONE: fprintf (stdout, "%s\n", log->message); break;
+
 		case LOG_TYPE_ERROR: fprintf (stderr, LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 		case LOG_TYPE_WARNING: fprintf (stderr, LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
 		case LOG_TYPE_SUCCESS: fprintf (stdout, LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->header, log->message); break;
@@ -266,6 +268,8 @@ static void cerver_log_internal_normal_file (
 ) {
 
 	switch (first_type) {
+		case LOG_TYPE_NONE: fprintf (__stream, "%s\n", log->message); break;
+
 		case LOG_TYPE_ERROR: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
 		case LOG_TYPE_WARNING: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
 		case LOG_TYPE_SUCCESS: fprintf (__stream, "%s: %s\n", log->header, log->message); break;
@@ -314,6 +318,8 @@ static void cerver_log_internal_with_time_std (
 ) {
 
 	switch (first_type) {
+		case LOG_TYPE_NONE: fprintf (stdout, "[%s]: %s\n", log->datetime, log->message); break;
+
 		case LOG_TYPE_ERROR: fprintf (stderr, "[%s]" LOG_COLOR_RED "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
 		case LOG_TYPE_WARNING: fprintf (stderr, "[%s]" LOG_COLOR_YELLOW "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
 		case LOG_TYPE_SUCCESS: fprintf (stdout, "[%s]" LOG_COLOR_GREEN "%s: %s\n" LOG_COLOR_RESET, log->datetime, log->header, log->message); break;
@@ -347,6 +353,8 @@ static void cerver_log_internal_with_time_file (
 ) {
 
 	switch (first_type) {
+		case LOG_TYPE_NONE: fprintf (__stream, "[%s]: %s\n", log->datetime, log->message); break;
+
 		case LOG_TYPE_ERROR: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
 		case LOG_TYPE_WARNING: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
 		case LOG_TYPE_SUCCESS: fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message); break;
@@ -401,7 +409,7 @@ static void cerver_log_internal (
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
 	if (log) {
-		cerver_log_header_create (log, first_type, second_type);
+		if (first_type != LOG_TYPE_NONE) cerver_log_header_create (log, first_type, second_type);
 		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
 
 		if (log_time_type != LOG_TIME_TYPE_NONE) {
