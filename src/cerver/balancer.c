@@ -491,11 +491,10 @@ static u8 balancer_service_test (Balancer *balancer, Service *service) {
 		}
 
 		else {
-			char *status = c_string_create ("Failed to send test request to %s", service->connection->name->str);
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
+			cerver_log_error (
+				"Failed to send test request to %s",
+				service->connection->name->str
+			);
 		}
 
 		packet_delete (packet);
@@ -514,11 +513,10 @@ static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 	balancer_service_set_status (service, SERVICE_STATUS_CONNECTING);
 
 	if (!client_connect_to_cerver (balancer->client, service->connection)) {
-		char *status = c_string_create ("Connected to %s", service->connection->name->str);
-		if (status) {
-			cerver_log_success (status);
-			free (status);
-		}
+		cerver_log_success (
+			"Connected to %s",
+			service->connection->name->str
+		);
 
 		// we are ready to test service handler
 		balancer_service_set_status (service, SERVICE_STATUS_READY);
@@ -535,11 +533,10 @@ static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 	}
 
 	else {
-		char *status = c_string_create ("Failed to connect to %s", service->connection->name->str);
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
+		cerver_log_error (
+			"Failed to connect to %s",
+			service->connection->name->str
+		);
 
 		balancer_service_set_status (service, SERVICE_STATUS_UNAVAILABLE);
 	}
@@ -560,15 +557,10 @@ static void *balancer_service_reconnect_thread (void *bs_ptr) {
 	do {
 		sleep (service->reconnect_wait_time);
 
-		char *status = c_string_create (
+		cerver_log_debug (
 			"Attempting connection to balancer %s service %s",
 			balancer->name->str, service->connection->name->str
 		);
-
-		if (status) {
-			cerver_log_debug (status);
-			free (status);
-		}
 
 	} while (balancer_service_connect (balancer, service));
 
@@ -593,15 +585,10 @@ static u8 balancer_start_check (Balancer *balancer) {
 		}
 
 		else {
-			char *status = c_string_create (
+			cerver_log_error (
 				"Balancer registered services doesn't match the configured number: %d != %d",
 				balancer->next_service, balancer->n_services
 			);
-
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
 		}
 	}
 
@@ -688,32 +675,22 @@ void balancer_route_to_service (
 			service->stats->routed_packets[header->packet_type] += 1;
 
 			#ifdef BALANCER_DEBUG
-			char *status = c_string_create (
+			cerver_log_debug (
 				"Routed %ld between %d (original) -> %d (%s)",
 				sent,
 				connection->socket->sock_fd, 
 				service->connection->socket->sock_fd, service->connection->name->str
 			);
-
-			if (status) {
-				cerver_log_debug (status);
-				free (status);
-			}
 			#endif
 		}
 
 		else {
 			#ifdef BALANCER_DEBUG
-			char *status = c_string_create (
+			cerver_log_error (
 				"Packet routing between %d (original) -> %d (%s) has failed!",
 				connection->socket->sock_fd, 
 				service->connection->socket->sock_fd, service->connection->name->str
 			);
-
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
 			#endif
 		}
 	}
@@ -816,46 +793,31 @@ static void balancer_client_route_response (
 				header, &sent
 			)) {
 				#ifdef SERVICE_DEBUG
-				char *status = c_string_create (
+				cerver_log_debug (
 					"Routed %ld between %d (%s) -> %d (original)",
 					sent,
 					connection->socket->sock_fd, connection->name->str,
 					original_connection->socket->sock_fd
 				);
-
-				if (status) {
-					cerver_log_debug (status);
-					free (status);
-				}
 				#endif
 			}
 
 			else {
 				#ifdef SERVICE_DEBUG
-				char *status = c_string_create (
+				cerver_log_error (
 					"Packet routing between %d (%s) -> %d (original) has failed!",
 					connection->socket->sock_fd, connection->name->str,
 					original_connection->socket->sock_fd
 				);
-
-				if (status) {
-					cerver_log_error (status);
-					free (status);
-				}
 				#endif
 			}
 		}
 
 		else {
-			char *status = c_string_create (
+			cerver_log_error (
 				"balancer_client_route_response () - unable to find CONNECTION with sock fd %d", 
 				header->sock_fd
 			);
-
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
 
 			// consume data from socket to get next packet
 			balancer_client_consume_from_service (bs, header);
@@ -863,15 +825,10 @@ static void balancer_client_route_response (
 	}
 
 	else {
-		char *status = c_string_create (
+		cerver_log_error (
 			"balancer_client_route_response () - unable to find CLIENT with sock fd %d", 
 			header->sock_fd
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 
 		// consume data from socket to get next packet
 		balancer_client_consume_from_service (bs, header);
@@ -887,11 +844,11 @@ static void balancer_client_handle_test (
 ) {
 
 	if (!header->sock_fd) {
-		char *status = c_string_create ("Got a TEST packet from service %s", connection->name->str);
-		if (status) {
-			cerver_log_msg (stdout, LOG_TYPE_TEST, LOG_TYPE_HANDLER, status);
-			free (status);
-		}
+		cerver_log (
+			LOG_TYPE_TEST, LOG_TYPE_HANDLER,
+			"Got a TEST packet from service %s",
+			connection->name->str
+		);
 	}
 
 	else {
@@ -952,15 +909,10 @@ static void balancer_client_receive_success (
 		case PACKET_TYPE_NONE:
 		default: {
 			#ifdef SERVICE_DEBUG
-			char *status = c_string_create (
+			cerver_log_warning (
 				"balancer_client_receive () - got a packet of unknown type from service %s",
 				connection->name->str
 			);
-
-			if (status) {
-				cerver_log_warning (status);
-				free (status);
-			}
 			#endif
 
 			balancer_client_consume_from_service (bs, header);
@@ -978,30 +930,20 @@ static void balancer_client_receive_handle_failed (
 
 	(void) client_connection_stop (client, connection);
 
-	char *status = c_string_create (
+	printf ("\n");
+	cerver_log_warning (
 		"Balancer %s - service %s has disconnected!\n",
 		bs->balancer->name->str, bs->service->connection->name->str
 	);
-
-	if (status) {
-		printf ("\n");
-		cerver_log_warning (status);
-		free (status);
-	}
 
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
 
 	pthread_t thread_id = 0;
 	if (thread_create_detachable (&thread_id, balancer_service_reconnect_thread, bs)) {
-		char *status = c_string_create (
+		cerver_log_error (
 			"Failed to create reconnect thread for balancer %s service %s",
 			bs->balancer->name->str, bs->service->connection->name->str
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 	}
 
 }
@@ -1022,11 +964,11 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 			case -1: {
 				if (errno != EWOULDBLOCK) {
 					#ifdef SERVICE_DEBUG
-					char *s = c_string_create ("balancer_client_receive () - rc < 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
-					if (s) {
-						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_HANDLER, s);
-						free (s);
-					}
+					cerver_log (
+						LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
+						"balancer_client_receive () - rc < 0 - sock fd: %d",
+						custom_data->connection->socket->sock_fd
+					);
 					perror ("Error");
 					#endif
 					
@@ -1039,11 +981,11 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 
 			case 0: {
 				#ifdef SERVICE_DEBUG
-				char *s = c_string_create ("balancer_client_receive () - rc == 0 - sock fd: %d", custom_data->connection->socket->sock_fd);
-				if (s) {
-					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
-					free (s);
-				}
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+					"balancer_client_receive () - rc == 0 - sock fd: %d",
+					custom_data->connection->socket->sock_fd
+				);
 				#endif
 
 				balancer_client_receive_handle_failed (
@@ -1053,11 +995,11 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 			} break;
 
 			default: {
-				char *s = c_string_create ("Connection %s rc: %ld", custom_data->connection->name->str, rc);
-				if (s) {
-					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
-					free (s);
-				}
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+					"Connection %s rc: %ld",
+					custom_data->connection->name->str, rc
+				);
 
 				balancer_client_receive_success (
 					(BalancerService *) custom_data->args,
