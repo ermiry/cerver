@@ -82,7 +82,7 @@ static void cerver_app_handler_direct (void *data) {
 			case TEST_MSG: cerver_handle_test_request (packet); break;
 
 			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -106,7 +106,7 @@ static void client_app_handler (void *data) {
 			} break;
 
 			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -123,7 +123,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 			packet_set_network_values (packet, NULL, client, connection, NULL);
 			size_t sent = 0;
 			if (packet_send (packet, 0, &sent, false)) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send test to cerver");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send test to cerver");
 			}
 
 			else {
@@ -156,11 +156,11 @@ static void *cerver_client_connect_and_start (void *args) {
 			connection_set_max_sleep (connection, 30);
 
 			if (!client_connect_and_start (client, connection)) {
-				cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
+				cerver_log (LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
 			}
 
 			else {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
 			}
 		}
 
