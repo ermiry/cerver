@@ -20,17 +20,17 @@ struct _Connection;
 // the auth data stripped from the packet
 struct _AuthData {
 
-    String *token;
+	String *token;
 
-    void *auth_data;
-    size_t auth_data_size;
+	void *auth_data;
+	size_t auth_data_size;
 
-    // recover data used for authentication
-    // after a success auth, it will be added to the client
-    // if not, it should be dispossed by user defined auth method
-    // and set to NULL
-    void *data;                 
-    Action delete_data;         // how to delete the data
+	// recover data used for authentication
+	// after a success auth, it will be added to the client
+	// if not, it should be dispossed by user defined auth method
+	// and set to NULL
+	void *data;
+	Action delete_data;         // how to delete the data
 
 };
 
@@ -39,12 +39,12 @@ typedef struct _AuthData AuthData;
 // auxiliary structure passed to the user defined auth method
 struct _AuthMethod {
 
-    struct _Packet *packet;         // the original packet
-    AuthData *auth_data;            // the stripped auth data from the packet
+	struct _Packet *packet;         // the original packet
+	AuthData *auth_data;            // the stripped auth data from the packet
 
-    // a user message that can be sent to the connection when teh auth has failed
-    // in a generated ERR_FAILED_AUTH packet
-    String *error_message;
+	// a user message that can be sent to the connection when teh auth has failed
+	// in a generated ERR_FAILED_AUTH packet
+	String *error_message;
 
 };
 

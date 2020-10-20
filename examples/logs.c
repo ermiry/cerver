@@ -36,29 +36,35 @@ static void end (int dummy) {
 
 }
 
+static void quit (int dummy) {
+
+	cerver_end ();
+
+	exit (0);
+
+}
+
 #pragma endregion
 
 #pragma region handler
 
 static void handle_test_request (Packet *packet) {
 
-	if (packet) {
-		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
-		
-		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
-		if (test_packet) {
-			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
-			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
-				cerver_log_error ("Failed to send test packet to client!");
+	// cerver_log_debug ("Got a test message from client. Sending another one back...");
+	cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
+	
+	Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
+	if (test_packet) {
+		packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
+		size_t sent = 0;
+		if (packet_send (test_packet, 0, &sent, false)) 
+			cerver_log_error ("Failed to send test packet to client!");
 
-			else {
-				// printf ("Response packet sent: %ld\n", sent);
-			}
-			
-			packet_delete (test_packet);
+		else {
+			// printf ("Response packet sent: %ld\n", sent);
 		}
+		
+		packet_delete (test_packet);
 	}
 
 }
@@ -72,7 +78,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log ( LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -119,33 +125,36 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
-int main (void) {
+int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
 	// register to the quit signal
 	signal (SIGINT, end);
+	signal (SIGSEGV, quit);
+
+	cerver_log_set_output_type (LOG_OUTPUT_TYPE_BOTH);
+	cerver_log_set_path ("./logs");
+	cerver_log_set_time_config (LOG_TIME_TYPE_TIME);
+	cerver_log_set_local_time (true);
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Dedicated Connection Thread Example");
+	cerver_log_debug ("Simple Logs Example");
 	printf ("\n");
-	cerver_log_debug ("Handling each connection in a dedicated thread");
+	cerver_log_debug ("Simple test cerver with custom logs configuartions");
 	printf ("\n");
 
 	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Dedicated threads for each conenction");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
-		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
-		cerver_set_handle_detachable_threads (my_cerver, true);
-		// cerver_set_thpool_n_threads (my_cerver, 4);
+		cerver_set_thpool_n_threads (my_cerver, 4);
 
 		Handler *app_handler = handler_create (handler);
 		// 27/05/2020 - needed for this example!
@@ -179,7 +188,7 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}

@@ -34,7 +34,7 @@ typedef struct JobQueue {
 
 	pthread_mutex_t *rwmutex;             // used for queue r/w access
 	bsem *has_jobs;
-	
+
 } JobQueue;
 
 CERVER_PUBLIC JobQueue *job_queue_new (void);

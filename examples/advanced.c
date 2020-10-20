@@ -52,12 +52,12 @@ static void my_app_handler_direct (void *data) {
 
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a APP_PACKET test request!");
-				handle_test_request (packet, APP_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_APP test request!");
+				handle_test_request (packet, PACKET_TYPE_APP); 
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_PACKET request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown PACKET_TYPE_APP request.");
 				break;
 		}
 	}
@@ -71,12 +71,12 @@ static void my_app_error_handler_direct (void *data) {
 
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a APP_ERROR_PACKET test request!");
-				handle_test_request (packet, APP_ERROR_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_APP_ERROR test request!");
+				handle_test_request (packet, PACKET_TYPE_APP_ERROR); 
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown APP_ERROR_PACKET request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown PACKET_TYPE_APP_ERROR request.");
 				break;
 		}
 	}
@@ -90,12 +90,12 @@ static void my_custom_handler_direct (void *data) {
 		
 		switch (packet->header->request_type) {
 			case TEST_MSG: 
-				cerver_log_debug ("Got a CUSTOM_PACKET test request!");
-				handle_test_request (packet, CUSTOM_PACKET); 
+				cerver_log_debug ("Got a PACKET_TYPE_CUSTOM test request!");
+				handle_test_request (packet, PACKET_TYPE_CUSTOM); 
 				break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown CUSTOM_PACKET request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown PACKET_TYPE_CUSTOM request.");
 				break;
 		}
 	}
@@ -136,18 +136,14 @@ static void on_client_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -157,16 +153,12 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -180,7 +172,9 @@ static void end (int dummy) {
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -192,6 +186,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -261,6 +257,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

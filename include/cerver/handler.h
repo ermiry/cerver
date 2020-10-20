@@ -29,62 +29,62 @@ struct _Admin;
 
 typedef enum HandlerType {
 
-    HANDLER_TYPE_NONE         = 0,
+	HANDLER_TYPE_NONE         = 0,
 
-    HANDLER_TYPE_CERVER       = 1,
-    HANDLER_TYPE_CLIENT       = 2,
-    HANDLER_TYPE_ADMIN        = 3,
+	HANDLER_TYPE_CERVER       = 1,
+	HANDLER_TYPE_CLIENT       = 2,
+	HANDLER_TYPE_ADMIN        = 3,
 
 } HandlerType;
 
 // the strcuture that will be passed to the handler
 typedef struct HandlerData {
 
-    int handler_id;
+	int handler_id;
 
-    void *data;                     // handler's own data
-    struct _Packet *packet;         // the packet to handle
+	void *data;                     // handler's own data
+	struct _Packet *packet;         // the packet to handle
 
 } HandlerData;
 
 struct _Handler {
 
-    HandlerType type;
-    int unique_id;                  // added every time a new handler gets created
+	HandlerType type;
+	int unique_id;                  // added every time a new handler gets created
 
-    int id;
-    pthread_t thread_id;
+	int id;
+	pthread_t thread_id;
 
-    // unique handler data
-    // will be passed to jobs alongside any job specific data as the args
-    void *data;
-    
-    // must return a newly allocated handler unique data
-    // will be executed when the handler starts
-    void *(*data_create) (void *args);
-    void *data_create_args;
+	// unique handler data
+	// will be passed to jobs alongside any job specific data as the args
+	void *data;
 
-    // called at the end of the handler to delete the handler's data
-    // if no method is set, it won't be deleted
-    Action data_delete;
+	// must return a newly allocated handler unique data
+	// will be executed when the handler starts
+	void *(*data_create) (void *args);
+	void *data_create_args;
 
-    // the method that this handler will execute to handle packets
-    Action handler;
+	// called at the end of the handler to delete the handler's data
+	// if no method is set, it won't be deleted
+	Action data_delete;
 
-    // 27/05/2020 - used to avoid pushing job to the queue and instead handle
-    // the packet directly in the same thread
-    // this option is set to false as default
-    // pros - inmediate handle with no delays
-    //      - handler method can be called from multiple threads
-    // neutral - data create and delete will be executed every time
-    // cons - calling thread will be busy until handler method is done
-    bool direct_handle;
+	// the method that this handler will execute to handle packets
+	Action handler;
 
-    // the jobs (packets) that are waiting to be handled - passed as args to the handler method
-    JobQueue *job_queue;
+	// 27/05/2020 - used to avoid pushing job to the queue and instead handle
+	// the packet directly in the same thread
+	// this option is set to false as default
+	// pros - inmediate handle with no delays
+	//      - handler method can be called from multiple threads
+	// neutral - data create and delete will be executed every time
+	// cons - calling thread will be busy until handler method is done
+	bool direct_handle;
 
-    struct _Cerver *cerver;     // the cerver this handler belongs to
-    struct _Client *client;     // the client this handler belongs to
+	// the jobs (packets) that are waiting to be handled - passed as args to the handler method
+	JobQueue *job_queue;
+
+	struct _Cerver *cerver;     // the cerver this handler belongs to
+	struct _Client *client;     // the client this handler belongs to
 
 };
 
@@ -109,8 +109,8 @@ CERVER_EXPORT void handler_set_data (Handler *handler, void *data);
 
 // set a method to create the handler's data before it starts handling any packet
 // this data will be passed to the handler method using a HandlerData structure
-CERVER_EXPORT void handler_set_data_create (Handler *handler, 
-    void *(*data_create) (void *args), void *data_create_args);
+CERVER_EXPORT void handler_set_data_create (Handler *handler,
+	void *(*data_create) (void *args), void *data_create_args);
 
 // set the method to be used to delete the handler's data
 CERVER_EXPORT void handler_set_data_delete (Handler *handler, Action data_delete);
@@ -140,14 +140,14 @@ CERVER_PRIVATE void cerver_test_packet_handler (struct _Packet *packet);
 
 struct _SockReceive {
 
-    struct _Packet *spare_packet;
-    size_t missing_packet;
+	struct _Packet *spare_packet;
+	size_t missing_packet;
 
-    void *header;
-    char *header_end;
-    // unsigned int curr_header_pos;
-    unsigned int remaining_header;
-    bool complete_header;
+	void *header;
+	char *header_end;
+	// unsigned int curr_header_pos;
+	unsigned int remaining_header;
+	bool complete_header;
 
 };
 
@@ -166,19 +166,19 @@ CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
 
 typedef struct ReceiveHandle {
 
-    ReceiveType type;
+	ReceiveType type;
 
-    struct _Cerver *cerver;
+	struct _Cerver *cerver;
 
-    struct _Socket *socket;
-    struct _Connection *connection;
-    struct _Client *client;
-    struct _Admin *admin;
+	struct _Socket *socket;
+	struct _Connection *connection;
+	struct _Client *client;
+	struct _Admin *admin;
 
-    struct _Lobby *lobby;
+	struct _Lobby *lobby;
 
-    char *buffer;
-    size_t buffer_size;
+	char *buffer;
+	size_t buffer_size;
 
 } ReceiveHandle;
 
@@ -189,16 +189,16 @@ CERVER_PRIVATE void cerver_receive_handle_buffer (void *receive_ptr);
 
 typedef struct CerverReceive {
 
-    ReceiveType type;
+	ReceiveType type;
 
-    struct _Cerver *cerver;
+	struct _Cerver *cerver;
 
-    struct _Socket *socket;
-    struct _Connection *connection;
-    struct _Client *client;
-    struct _Admin *admin;
+	struct _Socket *socket;
+	struct _Connection *connection;
+	struct _Client *client;
+	struct _Admin *admin;
 
-    struct _Lobby *lobby;
+	struct _Lobby *lobby;
 
 } CerverReceive;
 
@@ -206,15 +206,17 @@ CERVER_PRIVATE void cerver_receive_delete (void *ptr);
 
 CERVER_PRIVATE CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
-CERVER_PRIVATE CerverReceive *cerver_receive_create_full (ReceiveType receive_type, 
-    struct _Cerver *cerver, 
-    struct _Client *client, struct _Connection *connection
+CERVER_PRIVATE CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
 );
 
 CERVER_PRIVATE void cerver_switch_receive_handle_failed (CerverReceive *cr);
 
 // receive all incoming data from the socket
 CERVER_PRIVATE void cerver_receive (void *ptr);
+
+CERVER_PRIVATE void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_size);
 
 #pragma endregion
 

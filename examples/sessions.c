@@ -37,7 +37,9 @@ static void end (int dummy) {
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -52,7 +54,7 @@ static void handle_test_request (Packet *packet) {
 	if (packet) {
 		cerver_log_debug ("Got a test message from client. Sending another one back...");
 		
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
@@ -78,7 +80,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -190,17 +192,13 @@ static void on_hold_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
 			"Conenction %d is on hold in cerver %s!\n",
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
 	}
 
 }
@@ -210,16 +208,12 @@ static void on_hold_disconnected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_NONE,
 			"An on hold connection disconnected in cerver %s!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
-			free (status);
-		}
 	}
 
 }
@@ -229,16 +223,12 @@ static void on_hold_drop (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_NONE,
 			"An on hold connection was dropped in cerver %s!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
-			free (status);
-		}
 	}
 
 }
@@ -248,18 +238,14 @@ static void on_client_success_auth (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -269,17 +255,13 @@ static void on_client_failed_auth (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client failed to authenticate connection with sock fd %d to cerver %s!\n",
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -289,18 +271,14 @@ static void on_client_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -310,18 +288,14 @@ static void on_client_new_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld new connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -331,16 +305,12 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -356,6 +326,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -455,6 +427,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

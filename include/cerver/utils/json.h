@@ -30,44 +30,34 @@
 #ifndef _CERVER_UTILS_JSON_H_
 #define _CERVER_UTILS_JSON_H_
 
+#include <stdlib.h>
+
+#include "cerver/config.h"
+
 #ifndef json_char
-   #define json_char char
+	#define json_char char
 #endif
 
 #ifndef json_int_t
-   #ifndef _MSC_VER
-      #include <inttypes.h>
-      #define json_int_t int64_t
-   #else
-      #define json_int_t __int64
-   #endif
-#endif
-
-#include <stdlib.h>
-
-#ifdef __cplusplus
-
-   #include <string.h>
-
-   extern "C"
-   {
-
+	#ifndef _MSC_VER
+		#include <inttypes.h>
+		#define json_int_t int64_t
+	#else
+		#define json_int_t __int64
+	#endif
 #endif
 
 typedef struct {
 
-   unsigned long max_memory;
-   int settings;
+	unsigned long max_memory;
+	int settings;
 
-   /* Custom allocator support (leave null to use malloc/free)
-    */
+	void *(*mem_alloc) (size_t, int zero, void *user_data);
+	void (*mem_free) (void *, void *user_data);
 
-   void * (* mem_alloc) (size_t, int zero, void * user_data);
-   void (* mem_free) (void *, void * user_data);
+	void * user_data;  /* will be passed to mem_alloc and mem_free */
 
-   void * user_data;  /* will be passed to mem_alloc and mem_free */
-
-   size_t value_extra;  /* how much extra space to allocate for values? */
+	size_t value_extra;  /* how much extra space to allocate for values? */
 
 } json_settings;
 
@@ -75,110 +65,86 @@ typedef struct {
 
 typedef enum {
 
-   json_none,
-   json_object,
-   json_array,
-   json_integer,
-   json_double,
-   json_string,
-   json_boolean,
-   json_null
+	json_none,
+	json_object,
+	json_array,
+	json_integer,
+	json_double,
+	json_string,
+	json_boolean,
+	json_null
 
 } json_type;
 
 extern const struct _json_value json_value_none;
-       
+
 typedef struct _json_object_entry {
 
-    json_char * name;
-    unsigned int name_length;
-    
-    struct _json_value * value;
-    
+	 json_char * name;
+	 unsigned int name_length;
+
+	 struct _json_value * value;
+
 } json_object_entry;
 
-typedef struct _json_value {
+struct _json_value {
 
-   struct _json_value * parent;
+	struct _json_value *parent;
 
-   json_type type;
+	json_type type;
 
-   union {
+	union {
+		int boolean;
+		json_int_t integer;
+		double dbl;
 
-      int boolean;
-      json_int_t integer;
-      double dbl;
+		struct {
+			unsigned int length;
+			json_char *ptr;
+		} string;
 
-      struct {
+		struct {
+			unsigned int length;
 
-		unsigned int length;
-		json_char * ptr; /* null terminated */
+			json_object_entry * values;
+		} object;
 
-      } string;
+		struct {
+			unsigned int length;
+			struct _json_value **values;
 
-      struct {
-		unsigned int length;
+			#if defined(__cplusplus) && __cplusplus >= 201103L
+			decltype(values) begin () const {  return values; }
+			decltype(values) end () const {  return values + length; }
+			#endif
+		} array;
+	} u;
 
-		json_object_entry * values;
+	union {
+		struct _json_value * next_alloc;
+		void * object_mem;
+	} _reserved;
 
-      } object;
+	#ifdef JSON_TRACK_SOURCE
+	/* Location of the value in the source JSON */
+	unsigned int line, col;
+	#endif
 
-      struct
-      {
-         unsigned int length;
-         struct _json_value ** values;
+};
 
-         #if defined(__cplusplus) && __cplusplus >= 201103L
-         decltype(values) begin () const
-         {  return values;
-         }
-         decltype(values) end () const
-         {  return values + length;
-         }
-         #endif
+typedef struct _json_value json_value;
 
-      } array;
-
-   } u;
-
-   union
-   {
-      struct _json_value * next_alloc;
-      void * object_mem;
-
-   } _reserved;
-
-   #ifdef JSON_TRACK_SOURCE
-
-      /* Location of the value in the source JSON
-       */
-      unsigned int line, col;
-
-   #endif
-
-} json_value;
-       
-extern json_value * json_parse (const json_char * json,
-                         size_t length);
+CERVER_PUBLIC json_value *json_parse (const json_char * json, size_t length);
 
 #define json_error_max 128
-extern json_value * json_parse_ex (json_settings * settings,
-                            const json_char * json,
-                            size_t length,
-                            char * error);
 
-extern void json_value_free (json_value *);
+CERVER_PUBLIC json_value *json_parse_ex (json_settings *settings, const json_char *json, size_t length, char *error);
 
+CERVER_PUBLIC void json_value_free (json_value *);
 
 /* Not usually necessary, unless you used a custom mem_alloc and now want to
  * use a custom mem_free.
  */
-extern void json_value_free_ex (json_settings * settings,
-                         json_value *);
-
-
-#ifdef __cplusplus
-   } /* extern "C" */
-#endif
+CERVER_PUBLIC void json_value_free_ex (json_settings *settings, json_value *);
 
 #endif

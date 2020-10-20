@@ -11,7 +11,7 @@ typedef struct bsem {
 	pthread_mutex_t *mutex;
 	pthread_cond_t *cond;
 	int v;
-	
+
 } bsem;
 
 CERVER_PUBLIC bsem *bsem_new (void);
