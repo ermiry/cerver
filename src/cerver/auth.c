@@ -143,7 +143,7 @@ static void auth_send_success_packet (const Cerver *cerver,
             cerver_log_error (
                 "Failed to create success auth packet in cerver %s",
                 cerver->info->name->str
-            )
+            );
             #endif
         }
     }
@@ -1161,7 +1161,7 @@ void *on_hold_poll (void *cerver_ptr) {
         }
 
         #ifdef AUTH_DEBUG
-        cerver_log (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections to put on hold...");
+        cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections to put on hold...");
         #endif
 
         int poll_retval = 0;
