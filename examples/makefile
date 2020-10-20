@@ -2,7 +2,6 @@ TARGET      := cerver
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
-
 CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
 
 # print additional information
@@ -37,8 +36,7 @@ directories:
 	@mkdir -p $(BUILDDIR)
 
 clean:
-	@$(RM) -rf $(BUILDDIR)
-	@$(RM) -rf $(TARGETDIR)
+	@$(RM) -rf $(BUILDDIR) @$(RM) -rf $(TARGETDIR)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -57,4 +55,5 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
-.PHONY: all clean
+
+.PHONY: all clean examples

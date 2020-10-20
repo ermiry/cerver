@@ -24,7 +24,7 @@ static void my_game_end (int dummy) {
 		printf ("\nGame Stats:\n");
 		game_cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
-	} 
+	}
 
 	cerver_end ();
 
@@ -43,7 +43,7 @@ static int my_game_init (void) {
 
 static void my_game_packet_handler (void *data) {
 
-	// method to handle APP_PACKET type packets that are specific for your application 
+	// method to handle PACKET_TYPE_APP type packets that are specific for your application 
 
 }
 
@@ -134,8 +134,10 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			"Failed to init my game!");
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to init my game!"
+		);
 	}
 
 	cerver_end ();

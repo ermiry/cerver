@@ -33,7 +33,7 @@ static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-
+	
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
@@ -53,18 +53,18 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		cerver_log_debug ("Got a test message from ADMIN. Sending another one back...");
-
+		
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false))
+			if (packet_send (test_packet, 0, &sent, false)) 
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-
+			
 			packet_delete (test_packet);
 		}
 	}
@@ -78,8 +78,8 @@ static void admin_handler (void *data) {
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
-			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+			default: 
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -117,7 +117,7 @@ static u8 my_auth_method_username (AuthMethod *auth_method, const char *username
 }
 
 static u8 my_auth_method_password (AuthMethod *auth_method, const char *password) {
-
+	
 	u8 retval = 1;
 
 	if (password) {
@@ -191,17 +191,13 @@ static void on_hold_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
 			"Conenction %d is on hold in cerver %s!\n",
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
 	}
 
 }
@@ -211,16 +207,12 @@ static void on_hold_disconnected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
-			"An on hold connection disconnected in cerver %s!\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_NONE,
+			"An on hold connection disconnected in cerver %s!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
-			free (status);
-		}
 	}
 
 }
@@ -230,16 +222,12 @@ static void on_hold_drop (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
-			"An on hold connection was dropped in cerver %s!\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_NONE,
+			"An on hold connection was dropped in cerver %s!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_NONE, status);
-			free (status);
-		}
 	}
 
 }
@@ -249,17 +237,13 @@ static void on_admin_failed_auth (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"Admin failed to authenticate connection with sock fd %d to cerver %s!\n",
-			event_data->connection->socket->sock_fd,
+			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -269,18 +253,14 @@ static void on_admin_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"Admin with client %ld authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd,
+			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -290,18 +270,14 @@ static void on_admin_new_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"Admin with client %ld new connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd,
+			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -311,16 +287,12 @@ static void on_admin_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"An admin closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -330,16 +302,12 @@ static void on_admin_disconnected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"An admin disconnected from cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -349,16 +317,12 @@ static void on_admin_dropped (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
 			"An admin was dropped from cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_ADMIN, status);
-			free (status);
-		}
 	}
 
 }
@@ -377,7 +341,7 @@ void admin_update_thread (void *data) {
 }
 
 void admin_update_internal_thread (void *data) {
-
+	
 	printf ("Updating every second!\n");
 
 }
@@ -430,63 +394,63 @@ int main (void) {
 		admin_cerver_set_app_handlers (my_cerver->admin, admin_app_handler, NULL);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ON_HOLD_CONNECTED,
 			on_hold_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ON_HOLD_DISCONNECTED,
 			on_hold_disconnected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ON_HOLD_DROPPED,
 			on_hold_drop, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_FAILED_AUTH,
 			on_admin_failed_auth, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_CONNECTED,
 			on_admin_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_NEW_CONNECTION,
 			on_admin_new_connection, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_CLOSE_CONNECTION,
 			on_admin_close_connection, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_DISCONNECTED,
 			on_admin_disconnected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_ADMIN_DROPPED,
 			on_admin_dropped, NULL, NULL,
 			false, false
