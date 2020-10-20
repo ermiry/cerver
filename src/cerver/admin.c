@@ -840,7 +840,7 @@ u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin) {
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
 				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins
-			)
+			);
 			#endif
 
 			retval = 0;     // success
@@ -873,7 +873,7 @@ u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin) {
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
 				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins
-			)
+			);
 			#endif
 
 			retval = 0;
@@ -1396,8 +1396,6 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 	u8 errors = 0;
 
 	if (admin_cerver) {
-		char *status = NULL;
-
 		#ifdef ADMIN_DEBUG
 		cerver_log_debug (
 			"Staring cerver %s admin teardown...",
