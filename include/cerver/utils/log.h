@@ -111,16 +111,15 @@ CERVER_EXPORT void cerver_log_set_local_time (bool value);
 
 #pragma region public
 
+// creates and prints a message of custom types
+// based on the first type, the message can be printed with colors to stdout
 CERVER_PUBLIC void cerver_log (
 	LogType first_type, LogType second_type,
 	const char *format, ...
 );
 
-CERVER_PUBLIC void cerver_log_msg (
-	FILE *__restrict __stream, 
-	LogType first_type, LogType second_type,
-	const char *msg
-);
+// prints a message with no type, effectively making this a custom printf ()
+CERVER_PUBLIC void cerver_log_msg (const char *msg, ...);
 
 // prints a red error message to stderr
 CERVER_PUBLIC void cerver_log_error (const char *msg, ...);
