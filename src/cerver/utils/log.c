@@ -440,6 +440,8 @@ static void cerver_log_internal (
 
 #pragma region public
 
+// creates and prints a message of custom types
+// based on the first type, the message can be printed with colors to stdout
 void cerver_log (
 	LogType first_type, LogType second_type,
 	const char *format, ...
@@ -460,20 +462,20 @@ void cerver_log (
 
 }
 
-void cerver_log_msg (
-	FILE *__restrict __stream, 
-	LogType first_type, LogType second_type,
-	const char *msg
-) {
+// prints a message with no type, effectively making this a custom printf ()
+void cerver_log_msg (const char *msg, ...) {
 
-	if (__stream && msg) {
+	if (msg) {
 		va_list args;
+		va_start (args, msg);
 
 		cerver_log_internal (
-			cerver_log_get_stream (first_type),
-			first_type, second_type,
+			cerver_log_get_stream (LOG_TYPE_NONE),
+			LOG_TYPE_NONE, LOG_TYPE_NONE,
 			msg, args
 		);
+
+		va_end (args);
 	}
 
 }
