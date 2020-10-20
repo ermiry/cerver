@@ -8,6 +8,7 @@
 
 #include "cerver/client.h"
 #include "cerver/packets.h"
+
 #include "cerver/game/game.h"
 #include "cerver/game/player.h"
 
@@ -117,22 +118,20 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
 
                 char *s = NULL;
                 #ifdef CERVER_DEBUG
-                s = c_string_create ("Registered a new player to lobby %s.",
-                    lobby->id->str);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
+                    "Registered a new player to lobby %s.",
+                    lobby->id->str
+                );
                 #endif
 
                 lobby->n_current_players++;
                 #ifdef CERVER_STATS
-                s = c_string_create ("Registered players to lobby %s: %i.",
-                    lobby->id->str, lobby->n_current_players);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                    "Registered players to lobby %s: %i.",
+                    lobby->id->str, lobby->n_current_players
+                );
                 #endif
 
                 retval = 0;
@@ -180,33 +179,30 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
 
                 char *s = NULL;
                 #ifdef CERVER_DEBUG
-                s = c_string_create ("Unregistered a player from lobby %s.",
-                    lobby->id->str);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
+                    "Unregistered a player from lobby %s.",
+                    lobby->id->str
+                );
                 #endif
 
                 #ifdef CERVER_STATS
-                s = c_string_create ("Registered players to lobby %s: %i.",
-                    lobby->id->str, lobby->n_current_players);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                    "Registered players to lobby %s: %i.",
+                    lobby->id->str, lobby->n_current_players
+                );
                 #endif
 
                 // check if there are players left inside the lobby
                 if (lobby->n_current_players <= 0) {
                     // destroy the lobby
                     #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Destroying lobby %s -- it is empty.",
-                        lobby->id->str);
-                    if (s) {
-                        cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                        free (s);
-                    }
+                    cerver_log (
+                        LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                        "Destroying lobby %s -- it is empty.",
+                        lobby->id->str
+                    );
                     #endif
 
                     // teardown the cerver
