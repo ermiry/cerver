@@ -108,7 +108,7 @@ extern void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(
 // NULL for the start of the list
 extern void *dlist_remove_element (DoubleList *dlist, ListElement *element);
 
-// removes the dlist element from the dlist at the specified index 
+// removes the dlist element from the dlist at the specified index
 // returns the data or NULL if index was invalid
 extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);
 
@@ -117,7 +117,7 @@ extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
 // returns 0 on success, 1 on error
-extern int dlist_traverse (const DoubleList *dlist, 
+extern int dlist_traverse (const DoubleList *dlist,
 	void (*method)(void *list_element_data, void *method_args), void *method_args);
 
 // uses the list comparator to search using the data as the query
@@ -127,7 +127,7 @@ extern void *dlist_search (const DoubleList *dlist, const void *data, int (*comp
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching
-extern ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
+extern ListElement *dlist_get_element (const DoubleList *dlist, const void *data,
 	int (*compare)(const void *one, const void *two));
 
 // traverses the dlist and returns the list element at the specified index

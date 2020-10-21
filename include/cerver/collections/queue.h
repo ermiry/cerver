@@ -7,8 +7,8 @@
 
 typedef struct Queue {
 
-    DoubleList *dlist;
-    void (*destroy)(void *data);
+	DoubleList *dlist;
+	void (*destroy)(void *data);
 
 } Queue;
 
@@ -20,8 +20,8 @@ extern Queue *queue_create (void (*destroy)(void *data));
 
 // uses the create method to populate the queue with n elements
 // returns 0 on no error, 1 if at least one element failed to be inserted
-extern int queue_init (Queue *queue, 
-    void *(*create)(void), unsigned int n_elements);
+extern int queue_init (Queue *queue,
+	void *(*create)(void), unsigned int n_elements);
 
 // deletes the queue and all of its members using the destroy method
 extern void queue_delete (Queue *queue);

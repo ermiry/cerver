@@ -131,7 +131,7 @@ static void auth_send_success_packet (const Cerver *cerver,
     SToken *token, size_t token_size) {
 
     if (cerver && connection) {
-        Packet *success_packet = packet_generate_request (AUTH_PACKET, AUTH_PACKET_TYPE_SUCCESS, token, token_size);
+        Packet *success_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_SUCCESS, token, token_size);
         if (success_packet) {
             packet_set_network_values (success_packet, (Cerver *) cerver, (Client *) client, (Connection *) connection, NULL);
             packet_send (success_packet, 0, NULL, false);
@@ -816,10 +816,10 @@ void on_hold_packet_handler (void *packet_ptr) {
         if (good) {
             switch (packet->header->packet_type) {
                 // handles authentication packets
-                case AUTH_PACKET: cerver_auth_packet_handler (packet); break;
+                case PACKET_TYPE_AUTH: cerver_auth_packet_handler (packet); break;
 
                 // acknowledge the client we have received his test packet
-                case TEST_PACKET: cerver_test_packet_handler (packet); break;
+                case PACKET_TYPE_TEST: cerver_test_packet_handler (packet); break;
 
                 default: {
                     #ifdef AUTH_DEBUG

@@ -41,7 +41,7 @@ static int my_game_init (void) {
 
 static void my_game_packet_handler (void *data) {
 
-	// method to handle APP_PACKET type packets that are specific for your application 
+	// method to handle PACKET_TYPE_APP type packets that are specific for your application 
 
 }
 

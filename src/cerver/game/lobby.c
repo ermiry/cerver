@@ -1017,8 +1017,8 @@ void lobby_send (Lobby *lobby, bool created,
         // serialize and send back the lobby
         SLobby *slobby = lobby_serialize (lobby);
         if (slobby) {
-            Packet *lobby_packet = packet_generate_request (GAME_PACKET, 
-                created ? GAME_LOBBY_CREATE : GAME_LOBBY_JOIN, 
+            Packet *lobby_packet = packet_generate_request (PACKET_TYPE_GAME, 
+                created ? GAME_PACKET_TYPE_LOBBY_CREATE : GAME_PACKET_TYPE_LOBBY_JOIN, 
                 slobby, sizeof (SLobby));
             if (lobby_packet) {
                 packet_set_network_values (lobby_packet, cerver, client, connection, lobby);

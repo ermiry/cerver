@@ -7,8 +7,8 @@
 
 typedef struct Pool {
 
-    DoubleList *dlist;
-    void (*destroy)(void *data);
+	DoubleList *dlist;
+	void (*destroy)(void *data);
 
 } Pool;
 
@@ -20,8 +20,8 @@ extern Pool *pool_create (void (*destroy)(void *data));
 
 // uses the create method to populate the pool with n elements
 // returns 0 on no error, 1 if at least one element failed to be inserted
-extern int pool_init (Pool *pool, 
-    void *(*create)(void), unsigned int n_elements);
+extern int pool_init (Pool *pool,
+	void *(*create)(void), unsigned int n_elements);
 
 // deletes the pool and all of its members using the destroy method
 extern void pool_delete (Pool *pool);

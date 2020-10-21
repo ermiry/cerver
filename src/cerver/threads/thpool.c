@@ -167,7 +167,7 @@ static void *thread_do (void *thread_ptr) {
 				if (job) {
 					if (job->method)
 						job->method (job->args);
-					
+
 					job_delete (job);
 				}
 
@@ -259,7 +259,7 @@ void thpool_set_name (Thpool *thpool, const char *name) {
 		char *from = (char *) name;
 
 		while (*from) *to++ = *from++;
-    	*to = '\0';
+		*to = '\0';
 	}
 
 }
@@ -303,7 +303,7 @@ bool thpool_is_empty (Thpool *thpool) {
 		pthread_mutex_lock (thpool->mutex);
 
 		retval = (thpool->num_threads_working == 0);
-		
+
 		pthread_mutex_unlock (thpool->mutex);
 	}
 
@@ -320,7 +320,7 @@ bool thpool_is_full (Thpool *thpool) {
 		pthread_mutex_lock (thpool->mutex);
 
 		retval = (thpool->num_threads_working == thpool->num_threads_alive);
-		
+
 		pthread_mutex_unlock (thpool->mutex);
 	}
 
@@ -355,7 +355,7 @@ void thpool_wait (Thpool *thpool) {
 
 		pthread_mutex_unlock (thpool->mutex);
 	}
-	
+
 }
 
 // destroys the thpool and deletes all of its data

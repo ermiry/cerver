@@ -5,6 +5,8 @@
 #include <time.h>
 #include <signal.h>
 
+#include <cerver/types/string.h>
+
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 
@@ -17,19 +19,12 @@ typedef enum AppRequest {
 
 	TEST_MSG		= 0,
 
-	GET_MSG			= 1
-
 } AppRequest;
 
-// message from the cerver
-typedef struct AppMessage {
-
-	unsigned int len;
-	char message[128];
-
-} AppMessage;
-
 static Cerver *client_cerver = NULL;
+
+static String *action = NULL;
+static String *filename = NULL;
 
 #pragma region end
 
@@ -91,30 +86,6 @@ static void cerver_app_handler_direct (void *data) {
 
 #pragma region client
 
-static void client_app_handler_direct (void *packet_ptr) {
-
-	if (packet_ptr) {
-		Packet *packet = (Packet *) packet_ptr;
-		if (packet) {
-			switch (packet->header->request_type) {
-				case TEST_MSG: cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from cerver!"); break;
-
-				case GET_MSG: {
-					char *end = (char *) packet->data;
-
-					AppMessage *app_message = (AppMessage *) end;
-					printf ("%s - %d\n", app_message->message, app_message->len);
-				} break;
-
-				default:
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got an unknown app request.");
-					break;
-			}
-		}
-	}
-
-}
-
 static void client_app_handler (void *data) {
 
 	if (data) {
@@ -134,101 +105,6 @@ static void client_app_handler (void *data) {
 	}
 
 }
-
-static Connection *cerver_client_connect (Client *client) {
-
-	Connection *connection = NULL;
-
-	if (client) {
-		connection = client_connection_create (client, "127.0.0.1", 7000, PROTOCOL_TCP, false);
-		if (connection) {
-			connection_set_max_sleep (connection, 30);
-
-			if (!client_connect_to_cerver (client, connection)) {
-				cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
-			}
-
-			else {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
-			}
-		}
-	}
-
-	return connection;
-
-}
-
-static int request_message (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	// manually create a packet to send
-	Packet *packet = packet_new ();
-	if (packet) {
-		size_t packet_len = sizeof (PacketHeader);
-		packet->packet = malloc (packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_APP;
-		header->packet_size = packet_len;
-		header->handler_id = 0;
-		header->request_type = GET_MSG;
-
-		printf ("Requesting to cerver...\n");
-		if (client_request_to_cerver (client, connection, packet)) {
-			cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send message request to cerver");
-		}
-		printf ("Request has ended\n");
-
-		packet_delete (packet);
-	}
-
-	return retval;
-
-}
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-
-// create a new client that will connect to a cerver & make a test request
-static void *cerver_client_request (void *args) {
-
-	Client *client = client_create ();
-	if (client) {
-		client_set_name (client, "test-client");
-
-		Handler *app_handler = handler_create (client_app_handler_direct);
-		handler_set_direct_handle (app_handler, true);
-		client_set_app_handlers (client, app_handler, NULL);
-
-		// wait 2 seconds before connecting to cerver
-		sleep (2);
-		Connection *connection = cerver_client_connect (client);
-
-		// send 1 request message every second
-		for (unsigned int i = 0; i < 10; i++) {
-			request_message (client, connection);
-
-			sleep (1);
-		}
-
-		// destroy the client and its connection
-		if (!client_teardown (client)) {
-			cerver_log_success ("client_teardown ()");
-		}
-
-		else {
-			cerver_log_error ("client_teardown () has failed!");
-		}
-	}
-
-	return NULL;
-
-}
-
-#pragma GCC diagnostic pop
 
 static int test_app_msg_send (Client *client, Connection *connection) {
 
@@ -256,8 +132,29 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
+static void request_file (Client *client, Connection *connection, const char *filename) {
+
+	if (!client_file_get (client, connection, filename)) {
+		cerver_log_success ("REQUESTED file to cerver!");
+	}
+
+	else {
+		cerver_log_error ("Failed to REQUEST file to cerver!");
+	}
+
+}
+
+static void send_file (Client *client, Connection *connection, const char *filename) {
+
+	if (!client_file_send (client, connection, filename)) {
+		cerver_log_success ("SENT file to cerver!");
+	}
+
+	else {
+		cerver_log_error ("Failed to SEND file to cerver!");
+	}
+
+}
 
 static void *cerver_client_connect_and_start (void *args) {
 
@@ -269,8 +166,12 @@ static void *cerver_client_connect_and_start (void *args) {
 		// handler_set_direct_handle (app_handler, true);
 		client_set_app_handlers (client, app_handler, NULL);
 
-		// wait 2 seconds before connecting to cerver
-		sleep (2);
+		// add client's files configuration
+		client_files_add_path (client, "./data");
+		client_files_set_uploads_path (client, "./uploads");
+
+		// wait 1 seconds before connecting to cerver
+		sleep (1);
 		Connection *connection = client_connection_create (client, "127.0.0.1", 7000, PROTOCOL_TCP, false);
 		if (connection) {
 			connection_set_max_sleep (connection, 30);
@@ -284,12 +185,29 @@ static void *cerver_client_connect_and_start (void *args) {
 			}
 		}
 
-		// send 1 request message every second
-		for (unsigned int i = 0; i < 5; i++) {
-			test_app_msg_send (client, connection);
+		sleep (2);
 
-			sleep (1);
+		for (unsigned int i = 0; i < 10; i++) {
+			test_app_msg_send (client, connection);
 		}
+
+		if (!strcmp ("get", action->str)) request_file (client, connection, filename->str);
+		else if (!strcmp ("send", action->str)) send_file (client, connection, filename->str);
+		else {
+			char *status = c_string_create ("Unknown action %s", action->str);
+			if (status) {
+				printf ("\n");
+				cerver_log_error (status);
+				printf ("\n");
+				free (status);
+			}
+		}
+
+		for (unsigned int i = 0; i < 10; i++) {
+			test_app_msg_send (client, connection);
+		}
+
+		sleep (5);
 
 		client_connection_end (client, connection);
 
@@ -310,13 +228,11 @@ static void *cerver_client_connect_and_start (void *args) {
 
 }
 
-#pragma GCC diagnostic pop
-
 #pragma endregion
 
 #pragma region start
 
-int main (void) {
+static void start (void) {
 
 	srand (time (NULL));
 
@@ -327,14 +243,14 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Cerver Client Example");
+	cerver_log_debug ("Cerver Client Files Example");
 	printf ("\n");
-	cerver_log_debug ("Cerver creates a new client that will use to make requests to another cerver");
+	cerver_log_debug ("Cerver creates a new client that will use to make files requests to another cerver");
 	printf ("\n");
 
 	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
 	if (client_cerver) {
-		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Example");
+		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Files Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
@@ -345,7 +261,6 @@ int main (void) {
 		cerver_set_app_handlers (client_cerver, app_handler, NULL);
 
 		pthread_t client_thread = 0;
-		// thread_create_detachable (&client_thread, cerver_client_request, NULL);
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
 		if (cerver_start (client_cerver)) {
@@ -364,6 +279,20 @@ int main (void) {
 		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (client_cerver);
+	}
+
+}
+
+int main (int argc, const char **argv) {
+
+	if (argc >= 3) {
+		action = str_new (argv[1]);
+		filename = str_new (argv[2]);
+		start ();
+	}
+
+	else {
+		printf ("\nUsage: %s get/send [filename]\n\n", argv[0]);
 	}
 
 	return 0;
