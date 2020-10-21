@@ -274,9 +274,10 @@ static u8 file_cerver_receive (
 
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
-		"%s/%ld-%s", 
+		"%s/%ld-%d-%s", 
 		file_cerver->uploads_path->str, 
-		time (NULL), file_header->filename
+		time (NULL), random_int_in_range (0, 1000),
+		file_header->filename
 	);
 
 	if (*saved_filename) {
