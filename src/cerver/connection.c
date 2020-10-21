@@ -12,14 +12,16 @@
 #include "cerver/collections/htab.h"
 #include "cerver/collections/dlist.h"
 
-#include "cerver/socket.h"
-#include "cerver/network.h"
-#include "cerver/cerver.h"
-#include "cerver/handler.h"
-#include "cerver/client.h"
-#include "cerver/packets.h"
-#include "cerver/auth.h"
 #include "cerver/admin.h"
+#include "cerver/auth.h"
+#include "cerver/cerver.h"
+#include "cerver/client.h"
+#include "cerver/handler.h"
+#include "cerver/network.h"
+#include "cerver/packets.h"
+#include "cerver/socket.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -110,6 +112,7 @@ Connection *connection_new (void) {
 
 		connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
 		connection->active = false;
+		connection->updating = false;
 
 		connection->auth_tries = DEFAULT_AUTH_TRIES;
 		connection->bad_packets = 0;
@@ -139,6 +142,9 @@ Connection *connection_new (void) {
 		connection->auth_packet = NULL;
 
 		connection->stats = NULL;
+
+		connection->cond = NULL;
+		connection->mutex = NULL;
 	}
 
 	return connection;
@@ -174,6 +180,9 @@ void connection_delete (void *ptr) {
 		connection_remove_auth_data (connection);
 
 		connection_stats_delete (connection->stats);
+
+		pthread_cond_delete (connection->cond);
+		pthread_mutex_delete (connection->mutex);
 
 		free (connection);
 	}
@@ -785,6 +794,8 @@ void connection_update (void *ptr) {
 
 		(void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
 
+		cc->connection->updating = true;
+
 		while (cc->client->running && cc->connection->active) {
 			// pthread_mutex_lock (cc->client->lock);
 
@@ -804,6 +815,12 @@ void connection_update (void *ptr) {
 
 			// pthread_mutex_unlock (cc->client->lock);
 		}
+
+		// signal waiting thread
+		pthread_mutex_lock (cc->connection->mutex);
+		cc->connection->updating = false;
+		pthread_cond_signal (cc->connection->cond);
+		pthread_mutex_unlock (cc->connection->mutex);
 
 		connection_custom_receive_data_delete (custom_data);
 		client_connection_aux_delete (cc);

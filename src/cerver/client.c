@@ -1807,6 +1807,9 @@ Connection *client_connection_create (
 			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
 			connection_init (connection);
 			connection_register_to_client (client, connection);
+
+			connection->cond = pthread_cond_new ();
+			connection->mutex = pthread_mutex_new ();
 		}
 	}
 
@@ -3143,7 +3146,7 @@ static void client_receive_handle_buffer (
 // end sthe connection to prevent seg faults or signals for bad sock fd
 static void client_receive_handle_failed (Client *client, Connection *connection) {
 
-	if (client && connection) {
+	if (connection->active) {
 		if (!client_connection_end (client, connection)) {
 			// check if the client has any other active connection
 			if (client->connections->size <= 0) {
@@ -3308,6 +3311,18 @@ int client_connection_end (Client *client, Connection *connection) {
 		client_connection_close (client, connection);
 
 		dlist_remove (client->connections, connection, NULL);
+
+		if (connection->updating) {
+			// wait until connection has finished updating
+			pthread_mutex_lock (connection->mutex);
+
+			while (connection->updating) {
+				printf ("client_connection_end () waiting...\n");
+				pthread_cond_wait (connection->cond, connection->mutex);
+			}
+
+			pthread_mutex_unlock (connection->mutex);
+		}
 
 		connection_delete (connection);
 
