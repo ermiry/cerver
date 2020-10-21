@@ -2974,8 +2974,10 @@ static void client_receive_handle_spare_packet (Client *client, Connection *conn
 }
 
 // splits the entry buffer in packets of the correct size
-static void client_receive_handle_buffer (Client *client, Connection *connection,
-	char *buffer, size_t buffer_size) {
+static void client_receive_handle_buffer (
+	Client *client, Connection *connection,
+	char *buffer, size_t buffer_size
+) {
 
 	if (buffer && (buffer_size > 0)) {
 		char *end = buffer;
@@ -3068,7 +3070,14 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 						}
 
 						else {
-							to_copy_size = packet_real_size;
+							if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+								to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+							}
+
+							else {
+								to_copy_size = packet_real_size;
+							}
+
 							packet_delete (sock_receive->spare_packet);
 							sock_receive->spare_packet = NULL;
 						}
