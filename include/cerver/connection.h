@@ -72,6 +72,7 @@ struct _Connection {
 
 	u32 max_sleep;
 	bool active;
+	bool updating;
 
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
@@ -103,6 +104,9 @@ struct _Connection {
 	struct _Packet *auth_packet;
 
 	ConnectionStats *stats;
+
+	pthread_cond_t *cond;
+	pthread_mutex_t *mutex;
 
 };
 
