@@ -1544,6 +1544,8 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
 				free (s);
 			}
+
+			errors |= 1;
 		}
 	}
 
