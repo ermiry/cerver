@@ -34,7 +34,9 @@ static void client_error_delete (void *client_error_ptr);
 
 static u8 client_file_receive (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 );
 
 unsigned int client_receive (Client *client, Connection *connection);
@@ -1011,7 +1013,11 @@ Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
 }
 
 // broadcast a packet to all clients inside an avl structure
-void client_broadcast_to_all_avl (AVLNode *node, Cerver *cerver, Packet *packet) {
+void client_broadcast_to_all_avl (
+	AVLNode *node,
+	Cerver *cerver,
+	Packet *packet
+) {
 
 	if (node && cerver && packet) {
 		client_broadcast_to_all_avl (node->right, cerver, packet);
@@ -2159,7 +2165,9 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 
 static u8 client_file_receive (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 ) {
 
 	u8 retval = 1;
@@ -2174,7 +2182,9 @@ static u8 client_file_receive (
 	if (*saved_filename) {
 		retval = file_receive_actual (
 			client, connection,
-			file_header, saved_filename
+			file_header,
+			file_data, file_data_len,
+			saved_filename
 		);
 	}
 
@@ -2216,7 +2226,9 @@ void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	)
 ) {
 
@@ -2516,10 +2528,23 @@ static void client_request_send_file_actual (Packet *packet) {
 		char *end = packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
 		char *saved_filename = NULL;
 		if (!client->file_upload_handler (
 			client, packet->connection,
-			file_header, &saved_filename
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
 		)) {
 			client->file_stats->n_success_files_uploaded += 1;
 
