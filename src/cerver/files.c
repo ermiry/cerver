@@ -42,12 +42,16 @@ static int file_send_open (const char *filename, struct stat *filestatus, const 
 
 static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 );
 
 u8 file_receive_actual (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 );
 
 #pragma region cerver
@@ -168,7 +172,9 @@ void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	)
 ) {
 
@@ -257,7 +263,9 @@ ssize_t file_cerver_send_file (
 
 static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 ) {
 
 	u8 retval = 1;
@@ -274,7 +282,9 @@ static u8 file_cerver_receive (
 	if (*saved_filename) {
 		retval = file_receive_actual (
 			client, connection,
-			file_header, saved_filename
+			file_header,
+			file_data, file_data_len,
+			saved_filename
 		);
 	}
 
@@ -867,7 +877,9 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 // and use the fd to receive and save the file
 u8 file_receive_actual (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 ) {
 
 	u8 retval = 1;
@@ -881,21 +893,52 @@ u8 file_receive_actual (
 		// 	0
 		// );
 
-		if (!file_receive_internal (
-			connection,
-			file_header->len,
-			file_fd
-		)) {
-			#ifdef FILES_DEBUG
-			cerver_log_success ("file_receive_internal () has finished");
-			#endif
+		// we received some part of the file when reading packets,
+		// they should be the first ones to be saved into the file
+		if (file_data && file_data_len) {
+			ssize_t wrote = write (file_fd, file_data, file_data_len);
+			if (wrote < 0) {
+				cerver_log_error ("file_receive_actual () - write () has failed!");
+				perror ("Error");
+				printf ("\n");
+			}
 
-			retval = 0;
+			else {
+				#ifdef FILES_DEBUG
+				printf (
+					"\n\nwrote %ld of file_data_len %ld\n\n",
+					wrote,
+					file_data_len
+				);
+				#endif
+			}
 		}
 
-		else {
-			free (*saved_filename);
-			*saved_filename = NULL;
+		// there is still more data to be received
+		if (file_data_len < file_header->len) {
+			size_t real_filelen = file_header->len - file_data_len;
+			#ifdef FILES_DEBUG
+			printf (
+				"\nfilelen: %ld - file data len %ld = %ld\n\n", 
+				file_header->len, file_data_len, real_filelen
+			);
+			#endif
+			if (!file_receive_internal (
+				connection,
+				real_filelen,
+				file_fd
+			)) {
+				#ifdef FILES_DEBUG
+				cerver_log_success ("file_receive_internal () has finished");
+				#endif
+
+				retval = 0;
+			}
+
+			else {
+				free (*saved_filename);
+				*saved_filename = NULL;
+			}
 		}
 
 		close (file_fd);
