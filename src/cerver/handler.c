@@ -571,18 +571,15 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 				file_cerver->stats->n_bytes_sent += sent;
 
 				#ifdef HANDLER_DEBUG
-				char *status = c_string_create ("Sent file %s", actual_filename->str);
-				if (status) {
-					cerver_log_success (status);
-					free (status);
-				}
+				cerver_log_success (
+					"Sent file %s", actual_filename->str
+				);
 				#endif
 			}
 
 			else {
 				cerver_log_error (
-					"Failed to send file %s",
-					actual_filename->str
+					"Failed to send file %s", actual_filename->str
 				);
 
 				file_cerver->stats->n_bad_files_sent += 1;
@@ -660,10 +657,23 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		char *end = packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
 		char *saved_filename = NULL;
 		if (!file_cerver->file_upload_handler (
 			packet->cerver, packet->client, packet->connection,
-			file_header, &saved_filename
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
 		)) {
 			file_cerver->stats->n_success_files_uploaded += 1;
 
@@ -755,8 +765,7 @@ void cerver_test_packet_handler (Packet *packet) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_PACKET,
-		"Got a test packet in cerver %s.",
-		packet->cerver->info->name->str
+		"Got a test packet in cerver %s.", packet->cerver->info->name->str
 	);
 	#endif
 
@@ -1431,7 +1440,14 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 								}
 
 								else {
-									to_copy_size = packet_real_size;
+									if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+										to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+									}
+
+									else {
+										to_copy_size = packet_real_size;
+									}
+
 									packet_delete (sock_receive->spare_packet);
 									sock_receive->spare_packet = NULL;
 								}
@@ -2297,8 +2313,10 @@ static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connecti
 
 }
 
-static void cerver_register_new_connection (Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
+static void cerver_register_new_connection (
+	Cerver *cerver,
+	const i32 new_fd, const struct sockaddr_storage client_address
+) {
 
 	Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
 	if (connection) {
@@ -2483,6 +2501,7 @@ u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 				cerver->info->name->str
 			);
 			#endif
+
 			if (cerver_realloc_main_poll_fds (cerver)) {
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_NONE,
