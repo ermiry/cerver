@@ -195,7 +195,7 @@ CERVER_PUBLIC ssize_t file_send_by_fd (
 // opens the file using an already created filename
 // and use the fd to receive and save the file
 CERVER_PRIVATE u8 file_receive_actual (
-	Client *client, Connection *connection,
+	struct _Client *client, struct _Connection *connection,
 	FileHeader *file_header,
 	const char *file_data, size_t file_data_len,
 	char **saved_filename

@@ -635,7 +635,6 @@ static ssize_t file_send_actual (
 
 	else {
 		cerver_log (
-			stderr, 
 			LOG_TYPE_ERROR, LOG_TYPE_FILE, 
 			"file_send_actual () - failed to send file header"
 		);
