@@ -674,10 +674,23 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		char *end = packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
 		char *saved_filename = NULL;
 		if (!file_cerver->file_upload_handler (
 			packet->cerver, packet->client, packet->connection,
-			file_header, &saved_filename
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
 		)) {
 			file_cerver->stats->n_success_files_uploaded += 1;
 
