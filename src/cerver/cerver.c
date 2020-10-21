@@ -1529,6 +1529,8 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Failed to init cerver %s!", cerver->info->name->str
 			);
+
+			errors |= 1;
 		}
 	}
 
