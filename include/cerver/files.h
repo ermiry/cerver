@@ -56,7 +56,9 @@ struct _FileCerver {
 
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	);
 
 	void (*file_upload_cb) (
@@ -89,8 +91,10 @@ CERVER_EXPORT void file_cerver_set_uploads_path (FileCerver *file_cerver, const 
 CERVER_EXPORT void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
 	u8 (*file_upload_handler) (
-		struct _Cerver *, struct _Client *, struct _Connection *, 
-		struct _FileHeader *, char **saved_filename
+		struct _Cerver *, struct _Client *, struct _Connection *,
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	)
 );
 
@@ -191,8 +195,10 @@ CERVER_PUBLIC ssize_t file_send_by_fd (
 // opens the file using an already created filename
 // and use the fd to receive and save the file
 CERVER_PRIVATE u8 file_receive_actual (
-	struct _Client *client, struct _Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	Client *client, Connection *connection,
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 );
 
 #pragma endregion
