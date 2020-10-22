@@ -11,14 +11,15 @@
 
 #include "cerver/collections/htab.h"
 
-#include "cerver/socket.h"
+#include "cerver/auth.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
-#include "cerver/packets.h"
-#include "cerver/handler.h"
-#include "cerver/auth.h"
 #include "cerver/events.h"
+#include "cerver/files.h"
+#include "cerver/handler.h"
+#include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
@@ -49,10 +50,10 @@ static HandlerData *handler_data_new (void) {
 
 }
 
-static void handler_data_delete (HandlerData *handler_data) { 
+static void handler_data_delete (HandlerData *handler_data) {
 
     if (handler_data) free (handler_data);
-    
+
 }
 
 static Handler *handler_new (void) {
@@ -139,7 +140,7 @@ void handler_set_data (Handler *handler, void *data) {
 
 // set a method to create the handler's data before it starts handling any packet
 // this data will be passed to the handler method using a HandlerData structure
-void handler_set_data_create (Handler *handler, 
+void handler_set_data_create (Handler *handler,
     void *(*data_create) (void *args), void *data_create_args) {
 
     if (handler) {
@@ -170,7 +171,7 @@ static void handler_do_while_cerver (Handler *handler) {
     if (handler) {
         Job *job = NULL;
         Packet *packet = NULL;
-        PacketType packet_type = DONT_CHECK_TYPE;
+        PacketType packet_type = PACKET_TYPE_NONE;
         HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
@@ -195,9 +196,9 @@ static void handler_do_while_cerver (Handler *handler) {
                     job_delete (job);
 
                     switch (packet_type) {
-                        case APP_PACKET: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
-                        case APP_ERROR_PACKET: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-                        case CUSTOM_PACKET: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP_ERROR: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_CUSTOM: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
 
                         default: packet_delete (packet); break;
                     }
@@ -233,7 +234,7 @@ static void handler_do_while_client (Handler *handler) {
                 job = job_queue_pull (handler->job_queue);
                 if (job) {
                     packet = (Packet *) job->args;
-                    
+
                     handler_data->handler_id = handler->id;
                     handler_data->data = handler->data;
                     handler_data->packet = packet;
@@ -261,7 +262,7 @@ static void handler_do_while_admin (Handler *handler) {
     if (handler) {
         Job *job = NULL;
         Packet *packet = NULL;
-        PacketType packet_type = DONT_CHECK_TYPE;
+        PacketType packet_type = PACKET_TYPE_NONE;
         HandlerData *handler_data = handler_data_new ();
         while (handler->cerver->isRunning) {
             bsem_wait (handler->job_queue->has_jobs);
@@ -282,13 +283,13 @@ static void handler_do_while_admin (Handler *handler) {
                     handler_data->packet = packet;
 
                     handler->handler (handler_data);
-                    
+
                     job_delete (job);
 
                     switch (packet_type) {
-                        case APP_PACKET: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
-                        case APP_ERROR_PACKET: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-                        case CUSTOM_PACKET: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_APP_ERROR: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
+                        case PACKET_TYPE_CUSTOM: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
 
                         default: packet_delete (packet); break;
                     }
@@ -335,7 +336,7 @@ static void *handler_do (void *handler_ptr) {
 
         // TODO: register to signals to handle multiple actions
 
-        if (handler->data_create) 
+        if (handler->data_create)
             handler->data = handler->data_create (handler->data_create_args);
 
         // mark the handler as alive and ready
@@ -389,8 +390,8 @@ int handler_start (Handler *handler) {
             // );
 
 
-            // 26/05/2020 -- 12:54 
-            // handler's threads are not explicitly joined by pthread_join () 
+            // 26/05/2020 -- 12:54
+            // handler's threads are not explicitly joined by pthread_join ()
             // on cerver teardown
             if (!thread_create_detachable (
                 &handler->thread_id,
@@ -398,11 +399,11 @@ int handler_start (Handler *handler) {
                 (void *) handler
             )) {
                 #ifdef HANDLER_DEBUG
-                char *s = c_string_create ("Created handler %d thread!", handler->unique_id);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+                    "Created handler %d thread!",
+                    handler->unique_id
+                );
                 #endif
 
                 retval = 0;
@@ -410,12 +411,10 @@ int handler_start (Handler *handler) {
         }
 
         else {
-            char *s = c_string_create ("handler_start () - Handler %d is of invalid type!",
-                handler->unique_id);
-            if (s) {
-                cerver_log_error (s);
-                free (s);
-            }
+            cerver_log_error (
+                "handler_start () - Handler %d is of invalid type!",
+                handler->unique_id
+            );
         }
     }
 
@@ -439,7 +438,7 @@ SockReceive *sock_receive_new (void) {
         // sr->curr_header_pos = 0;
         sr->remaining_header = 0;
         sr->complete_header = false;
-    } 
+    }
 
     return sr;
 
