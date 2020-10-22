@@ -24,7 +24,7 @@ static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void end (int dummy) {
-
+	
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
@@ -44,19 +44,19 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
-
-		Packet *test_packet = packet_generate_request (APP_PACKET, TEST_MSG, NULL, 0);
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
+		
+		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
 			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
 			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false))
+			if (packet_send (test_packet, 0, &sent, false)) 
 				cerver_log_error ("Failed to send test packet to client!");
 
 			else {
 				// printf ("Response packet sent: %ld\n", sent);
 			}
-
+			
 			packet_delete (test_packet);
 		}
 	}
@@ -67,12 +67,12 @@ static void handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-
+		
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
-			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+			default: 
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -88,16 +88,12 @@ static void on_cever_started (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
-			"Cerver %s has started!\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s has started!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
 
 		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
 	}
@@ -109,16 +105,12 @@ static void on_cever_teardown (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
-			"Cerver %s is going to be destroyed!\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s is going to be destroyed!\n", 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CERVER, status);
-			free (status);
-		}
 	}
 
 }
@@ -128,18 +120,14 @@ static void on_client_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
-			event_data->connection->socket->sock_fd,
+			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -149,16 +137,12 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -167,7 +151,35 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
-int main (void) {
+static u16 get_port (int argc, char **argv) {
+
+	u16 port = 7000;
+	if (argc > 1) {
+		int j = 0;
+		const char *curr_arg = NULL;
+		for (int i = 1; i < argc; i++) {
+			curr_arg = argv[i];
+
+			// port
+			if (!strcmp (curr_arg, "-p")) {
+				j = i + 1;
+				if (j <= argc) {
+					port = (u16) atoi (argv[j]);
+					i++;
+				}
+			}
+
+			else {
+				cerver_log_warning ("Unknown argument: %s", curr_arg);
+			}
+		}
+	}
+
+	return port;
+
+}
+
+int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
@@ -185,7 +197,7 @@ int main (void) {
 	cerver_log_debug ("Single app handler with direct handle option enabled");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", get_port (argc, argv), PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
 
@@ -200,28 +212,28 @@ int main (void) {
 
 		String *test = str_new ("This is a test!");
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_STARTED,
 			on_cever_started, test, str_delete,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_TEARDOWN,
 			on_cever_teardown, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_CLIENT_CONNECTED,
 			on_client_connected, NULL, NULL,
 			false, false
 		);
 
 		cerver_event_register (
-			my_cerver,
+			my_cerver, 
 			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
 			on_client_close_connection, NULL, NULL,
 			false, false
@@ -240,7 +252,7 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_error ("Failed to create cerver!");
+        cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}

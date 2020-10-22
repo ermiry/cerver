@@ -18,7 +18,7 @@ static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
 static void my_game_end (int dummy) {
-
+	
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		printf ("\nGame Stats:\n");
@@ -43,7 +43,7 @@ static int my_game_init (void) {
 
 static void my_game_packet_handler (void *data) {
 
-	// method to handle APP_PACKET type packets that are specific for your application
+	// method to handle PACKET_TYPE_APP type packets that are specific for your application 
 
 }
 
@@ -106,7 +106,7 @@ int main (void) {
 			GameCerver *game_cerver = (GameCerver *) my_cerver->cerver_data;
 
 			// register the arcade game type
-			GameType *arcade_game_type = game_type_create ("arcade", NULL, NULL,
+			GameType *arcade_game_type = game_type_create ("arcade", NULL, NULL, 
 				arcade_game_start, arcade_game_end);
 			game_type_add_lobby_config (arcade_game_type, true, NULL, 4);
 			game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
@@ -134,8 +134,10 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			"Failed to init my game!");
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to init my game!"
+		);
 	}
 
 	cerver_end ();
