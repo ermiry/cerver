@@ -538,86 +538,225 @@ static void cerver_client_packet_handler (Packet *packet) {
 
 }
 
+static inline void cerver_request_get_file_actual (Packet *packet) {
+
+	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
+
+	file_cerver->stats->n_files_requests += 1;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		// search for the requested file in the configured paths
+		String *actual_filename = file_cerver_search_file (file_cerver, file_header->filename);
+		if (actual_filename) {
+			#ifdef HANDLER_DEBUG
+			cerver_log_debug (
+				"cerver_request_get_file () - Sending %s...\n",
+				actual_filename->str
+			);
+			#endif
+
+			// if found, pipe the file contents to the client's socket fd
+			// the socket should be blocked during the entire operation
+			ssize_t sent = file_cerver_send_file (
+				packet->cerver, packet->client, packet->connection,
+				actual_filename->str
+			);
+
+			if (sent > 0) {
+				file_cerver->stats->n_success_files_requests += 1;
+				file_cerver->stats->n_files_sent += 1;
+				file_cerver->stats->n_bytes_sent += sent;
+
+				#ifdef HANDLER_DEBUG
+				cerver_log_success (
+					"Sent file %s", actual_filename->str
+				);
+				#endif
+			}
+
+			else {
+				cerver_log_error (
+					"Failed to send file %s", actual_filename->str
+				);
+
+				file_cerver->stats->n_bad_files_sent += 1;
+			}
+
+			str_delete (actual_filename);
+		}
+
+		else {
+			#ifdef HANDLER_DEBUG
+			cerver_log_warning ("cerver_request_get_file () - file not found");
+			#endif
+
+			// if not found, return an error to the client
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_FILE_NOT_FOUND, "File not found",
+				packet->cerver, packet->client, packet->connection
+			);
+
+			file_cerver->stats->n_bad_files_requests += 1;
+		}
+
+	}
+
+	else {
+		#ifdef HANDLER_DEBUG
+		cerver_log_warning ("cerver_request_get_file () - missing file header");
+		#endif
+
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_GET_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
+
+		file_cerver->stats->n_bad_files_requests += 1;
+	}
+
+}
+
+// handles a request from a client to get a file
+static void cerver_request_get_file (Packet *packet) {
+
+	switch (packet->cerver->type) {
+		case CERVER_TYPE_CUSTOM:
+		case CERVER_TYPE_FILES: {
+			cerver_request_get_file_actual (packet);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log_warning (
+				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_GET_FILE requests",
+				packet->cerver->info->name->str
+			);
+			#endif
+
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "Unable to process request",
+				packet->cerver, packet->client, packet->connection
+			);
+		} break;
+	}
+
+}
+
+static inline void cerver_request_send_file_actual (Packet *packet) {
+
+	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
+
+	file_cerver->stats->n_files_upload_requests += 1;
+
+	// get the necessary information to fulfil the request
+	if (packet->data_size >= sizeof (FileHeader)) {
+		char *end = packet->data;
+		FileHeader *file_header = (FileHeader *) end;
+
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
+		char *saved_filename = NULL;
+		if (!file_cerver->file_upload_handler (
+			packet->cerver, packet->client, packet->connection,
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
+		)) {
+			file_cerver->stats->n_success_files_uploaded += 1;
+
+			file_cerver->stats->n_bytes_received += file_header->len;
+
+			if (file_cerver->file_upload_cb) {
+				file_cerver->file_upload_cb (
+					packet->cerver, packet->client, packet->connection,
+					saved_filename
+				);
+			}
+			
+			if (saved_filename) free (saved_filename);
+		}
+
+		else {
+			cerver_log_error ("Failed to receive file");
+
+			file_cerver->stats->n_bad_files_received += 1;
+		}
+	}
+
+	else {
+		// return a bad request error packet
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_SEND_FILE, "Missing file header",
+			packet->cerver, packet->client, packet->connection
+		);
+
+		file_cerver->stats->n_bad_files_upload_requests += 1;
+	}
+
+}
+
+// handles a request from a client to upload a file
+static void cerver_request_send_file (Packet *packet) {
+
+	switch (packet->cerver->type) {
+		case CERVER_TYPE_CUSTOM:
+		case CERVER_TYPE_FILES: {
+			cerver_request_send_file_actual (packet);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log_warning (
+				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_SEND_FILE requests",
+				packet->cerver->info->name->str
+			);
+			#endif
+
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_GET_FILE, "Unable to process request",
+				packet->cerver, packet->client, packet->connection
+			);
+		} break;
+	}	
+
+}
+
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
-    if (packet) {
-        if (packet->header) {
-            switch (packet->header->request_type) {
-                // the client is going to close its current connection
-                // but will remain in the cerver if it has another connection active
-                // if not, it will be dropped
-                case CLIENT_CLOSE_CONNECTION: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Client %ld requested to close the connection",
-                        packet->client->id);
-                    if (s) {
-                        cerver_log_debug (s);
-                        free (s);
-                    }
-                    #endif
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// request from a client to get a file
+			case REQUEST_PACKET_TYPE_GET_FILE: cerver_request_get_file (packet); break;
 
-                    // check if the client is inside a lobby
-                    if (packet->lobby) {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str);
-                        if (s) {
-                            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                            free (s);
-                        }
-                        #endif
+			// request from a client to upload a file
+			case REQUEST_PACKET_TYPE_SEND_FILE: cerver_request_send_file (packet); break;
 
-                        // remove the player from the lobby
-                        Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
-                        player_unregister_from_lobby (packet->lobby, player);
-                    }
-
-                    client_remove_connection_by_sock_fd (packet->cerver, 
-                        packet->client, packet->connection->socket->sock_fd); 
-                } break;
-
-                // the client is going to disconnect and will close all of its active connections
-                // so drop it from the server
-                case CLIENT_DISCONNET: {
-                    // check if the client is inside a lobby
-                    if (packet->lobby) {
-                        #ifdef CERVER_DEBUG
-                        char *s = c_string_create ("Client %ld inside lobby %s wants to close the connection...",
-                            packet->client->id, packet->lobby->id->str);
-                        if (s) {
-                            cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_GAME, s);
-                            free (s);
-                        }
-                        #endif
-
-                        // remove the player from the lobby
-                        Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
-                        player_unregister_from_lobby (packet->lobby, player);
-                    }
-
-                    client_drop (packet->cerver, packet->client);
-
-                    cerver_event_trigger (
-                        CERVER_EVENT_CLIENT_DISCONNECTED,
-                        packet->cerver,
-                        NULL, NULL
-                    );
-                } break;
-
-                default: {
-                    #ifdef CERVER_DEBUG
-                    char *s = c_string_create ("Got an unknown request in cerver %s",
-                        packet->cerver->info->name->str);
-                    if (s) {
-                        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
-                        free (s);
-                    }
-                    #endif
-                } break;
-            }
-        }
-    }
+			default: {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+					"Got an unknown request packet in cerver %s",
+					packet->cerver->info->name->str
+				);
+				#endif
+			} break;
+		}
+	}
 
 }
 
