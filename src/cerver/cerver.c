@@ -1386,8 +1386,8 @@ static u8 cerver_init_internal (Cerver *cerver) {
 			"Initializing cerver %s...", cerver->info->name->str
 		);
 
-		cerver_log_msg ("Cerver type: %s\n", cerver_type_to_string (cerver->type));
-		cerver_log_msg ("Cerver handler type: %s\n", cerver_handler_type_to_string (cerver->handler_type));
+		cerver_log_msg ("Cerver type: %s", cerver_type_to_string (cerver->type));
+		cerver_log_msg ("Cerver handler type: %s", cerver_handler_type_to_string (cerver->handler_type));
 
 		if (!cerver_network_init (cerver)) {
 			if (!cerver_init_data_structures (cerver)) {
@@ -1764,10 +1764,17 @@ static u8 cerver_custom_handler_start (Cerver *cerver) {
 		}
 
 		else {
-			cerver_log_warning (
-				"Cerver %s does not have an custom_packet_handler",
-				cerver->info->name->str
-			);
+			switch (cerver->type) {
+				case CERVER_TYPE_WEB: break;
+				case CERVER_TYPE_FILES: break;
+
+				default: {
+					cerver_log_warning (
+						"Cerver %s does not have a custom_packet_handler",
+						cerver->info->name->str
+					);
+				} break;
+			}
 		}
 	}
 
