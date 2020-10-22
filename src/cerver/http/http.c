@@ -1064,69 +1064,71 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	http_multi_part_headers_print (multi_part);
 	#endif
 
-	if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
-		char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
-		end += strlen ("form-data;");
+	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
+		if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
+			end += strlen ("form-data;");
 
-		multi_part->params = http_mpart_attributes_parse (end);
-		// key_value_pairs_print (multi_part->params);
+			multi_part->params = http_mpart_attributes_parse (end);
+			// key_value_pairs_print (multi_part->params);
 
-		multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
-		multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
+			multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
 
-		if (multi_part->filename) {
-			http_receive->request->n_files += 1;
+			if (multi_part->filename) {
+				http_receive->request->n_files += 1;
 
-			if (http_receive->http_cerver->uploads_path) {
-				char *filename = NULL;
+				if (http_receive->http_cerver->uploads_path) {
+					char *filename = NULL;
 
-				if (http_receive->request->dirname) {
-					filename = c_string_create (
-						"%s/%s/%s",
-						http_receive->http_cerver->uploads_path->str,
-						http_receive->request->dirname->str,
-						multi_part->filename->str
-					);
+					if (http_receive->request->dirname) {
+						filename = c_string_create (
+							"%s/%s/%s",
+							http_receive->http_cerver->uploads_path->str,
+							http_receive->request->dirname->str,
+							multi_part->filename->str
+						);
+					}
+
+					else {
+						filename = c_string_create (
+							"%s/%s", 
+							http_receive->http_cerver->uploads_path->str, multi_part->filename->str
+						);
+					}
+
+					multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
+					switch (multi_part->fd) {
+						case -1: {
+							cerver_log_error (
+								"Failed to open %s filename to save multipart file!",
+								filename
+							);
+							perror ("Error");
+
+							free (filename);
+						} break;
+
+						default: {
+							#ifdef HTTP_DEBUG
+							cerver_log_debug ("Opened %s to save multipart file!", filename);
+							#endif
+
+							multi_part->saved_filename = str_new (NULL);
+							multi_part->saved_filename->str = filename;
+							multi_part->saved_filename->len = strlen (filename);
+						} break;
+					}
 				}
 
 				else {
-					filename = c_string_create (
-						"%s/%s", 
-						http_receive->http_cerver->uploads_path->str, multi_part->filename->str
-					);
-				}
-
-				multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
-				switch (multi_part->fd) {
-					case -1: {
-						cerver_log_error (
-							"Failed to open %s filename to save multipart file!",
-							filename
-						);
-						perror ("Error");
-
-						free (filename);
-					} break;
-
-					default: {
-						#ifdef HTTP_DEBUG
-						cerver_log_debug ("Opened %s to save multipart file!", filename);
-						#endif
-
-						multi_part->saved_filename = str_new (NULL);
-						multi_part->saved_filename->str = filename;
-						multi_part->saved_filename->len = strlen (filename);
-					} break;
+					cerver_log_error ("Can't save multipart file - no uploads path!");
 				}
 			}
 
 			else {
-				cerver_log_error ("Can't save multipart file - no uploads path!");
+				http_receive->request->n_values += 1;
 			}
-		}
-
-		else {
-			http_receive->request->n_values += 1;
 		}
 	}
 
