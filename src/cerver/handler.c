@@ -915,10 +915,10 @@ static void cerver_custom_packet_handler (Packet *packet) {
 }
 
 // handle packet based on type
-static void cerver_packet_handler (void *ptr) {
+static void cerver_packet_handler (void *packet_ptr) {
 
-	if (ptr) {
-		Packet *packet = (Packet *) ptr;
+	if (packet_ptr) {
+		Packet *packet = (Packet *) packet_ptr;
 
 		packet->cerver->stats->client_n_packets_received += 1;
 		packet->cerver->stats->total_n_packets_received += 1;
@@ -941,28 +941,31 @@ static void cerver_packet_handler (void *ptr) {
 
 		if (good) {
 			switch (packet->header->packet_type) {
+				case PACKET_TYPE_NONE: break;
+
+				case PACKET_TYPE_CERVER: break;
+
+				case PACKET_TYPE_CLIENT:
+					packet->cerver->stats->received_packets->n_client_packets += 1;
+					packet->client->stats->received_packets->n_client_packets += 1;
+					packet->connection->stats->received_packets->n_client_packets += 1;
+					if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
+					cerver_client_packet_handler (packet);
+					packet_delete (packet);
+					break;
+
 				// handles an error from the client
-				case ERROR_PACKET:
+				case PACKET_TYPE_ERROR:
 					packet->cerver->stats->received_packets->n_error_packets += 1;
 					packet->client->stats->received_packets->n_error_packets += 1;
 					packet->connection->stats->received_packets->n_error_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
-					/* TODO: */
-					packet_delete (packet);
-					break;
-
-				// handles authentication packets
-				case AUTH_PACKET:
-					packet->cerver->stats->received_packets->n_auth_packets += 1;
-					packet->client->stats->received_packets->n_auth_packets += 1;
-					packet->connection->stats->received_packets->n_auth_packets += 1;
-					if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
-					/* TODO: */
+					cerver_error_packet_handler (packet);
 					packet_delete (packet);
 					break;
 
 				// handles a request made from the client
-				case REQUEST_PACKET:
+				case PACKET_TYPE_REQUEST:
 					packet->cerver->stats->received_packets->n_request_packets += 1;
 					packet->client->stats->received_packets->n_request_packets += 1;
 					packet->connection->stats->received_packets->n_request_packets += 1;
@@ -971,8 +974,18 @@ static void cerver_packet_handler (void *ptr) {
 					packet_delete (packet);
 					break;
 
+				// handles authentication packets
+				case PACKET_TYPE_AUTH:
+					packet->cerver->stats->received_packets->n_auth_packets += 1;
+					packet->client->stats->received_packets->n_auth_packets += 1;
+					packet->connection->stats->received_packets->n_auth_packets += 1;
+					if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
+					/* TODO: */
+					packet_delete (packet);
+					break;
+
 				// handles a game packet sent from the client
-				case GAME_PACKET:
+				case PACKET_TYPE_GAME:
 					packet->cerver->stats->received_packets->n_game_packets += 1;
 					packet->client->stats->received_packets->n_game_packets += 1;
 					packet->connection->stats->received_packets->n_game_packets += 1;
@@ -981,7 +994,7 @@ static void cerver_packet_handler (void *ptr) {
 					break;
 
 				// user set handler to handle app specific packets
-				case APP_PACKET:
+				case PACKET_TYPE_APP:
 					packet->cerver->stats->received_packets->n_app_packets += 1;
 					packet->client->stats->received_packets->n_app_packets += 1;
 					packet->connection->stats->received_packets->n_app_packets += 1;
@@ -990,7 +1003,7 @@ static void cerver_packet_handler (void *ptr) {
 					break;
 
 				// user set handler to handle app specific errors
-				case APP_ERROR_PACKET:
+				case PACKET_TYPE_APP_ERROR:
 					packet->cerver->stats->received_packets->n_app_error_packets += 1;
 					packet->client->stats->received_packets->n_app_error_packets += 1;
 					packet->connection->stats->received_packets->n_app_error_packets += 1;
@@ -999,7 +1012,7 @@ static void cerver_packet_handler (void *ptr) {
 					break;
 
 				// custom packet hanlder
-				case CUSTOM_PACKET:
+				case PACKET_TYPE_CUSTOM:
 					packet->cerver->stats->received_packets->n_custom_packets += 1;
 					packet->client->stats->received_packets->n_custom_packets += 1;
 					packet->connection->stats->received_packets->n_custom_packets += 1;
@@ -1008,7 +1021,7 @@ static void cerver_packet_handler (void *ptr) {
 					break;
 
 				// acknowledge the client we have received his test packet
-				case TEST_PACKET:
+				case PACKET_TYPE_TEST:
 					packet->cerver->stats->received_packets->n_test_packets += 1;
 					packet->client->stats->received_packets->n_test_packets += 1;
 					packet->connection->stats->received_packets->n_test_packets += 1;
@@ -1022,13 +1035,12 @@ static void cerver_packet_handler (void *ptr) {
 					packet->client->stats->received_packets->n_bad_packets += 1;
 					packet->connection->stats->received_packets->n_bad_packets += 1;
 					if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
-					#ifdef CERVER_DEBUG
-					char *s = c_string_create ("Got a packet of unknown type in cerver %s.",
-						packet->cerver->info->name->str);
-					if (s) {
-						cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, s);
-						free (s);
-					}
+					#ifdef HANDLER_DEBUG
+					cerver_log (
+						LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+						"Got a packet of unknown type in cerver %s.",
+						packet->cerver->info->name->str
+					);
 					#endif
 					packet_delete (packet);
 				} break;
