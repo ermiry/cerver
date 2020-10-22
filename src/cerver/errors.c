@@ -15,34 +15,48 @@
 
 #include "cerver/threads/thread.h"
 
-static SError *error_serialize (CerverError *error);
-static inline void serror_delete (void *ptr);
-
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type);
+
+#pragma region types
+
+// get the description for the current error type
+const char *cerver_error_type_description (CerverErrorType type) {
+
+    switch (type) {
+        #define XX(num, name, description) case CERVER_ERROR_##name: return #description;
+        CERVER_ERROR_MAP(XX)
+        #undef XX
+    }
+
+    return cerver_error_type_description (CERVER_ERROR_UNKNOWN);
+
+}
+
+#pragma endregion
 
 #pragma region data
 
 static CerverErrorEventData *cerver_error_event_data_new (void) {
 
-	CerverErrorEventData *error_event_data = (CerverErrorEventData *) malloc (sizeof (CerverErrorEventData));
-	if (error_event_data) {
-		error_event_data->cerver = NULL;
+    CerverErrorEventData *error_event_data = (CerverErrorEventData *) malloc (sizeof (CerverErrorEventData));
+    if (error_event_data) {
+        error_event_data->cerver = NULL;
 
-		error_event_data->client = NULL;
-		error_event_data->connection = NULL;
+        error_event_data->client = NULL;
+        error_event_data->connection = NULL;
 
-		error_event_data->action_args = NULL;
+        error_event_data->action_args = NULL;
 
         error_event_data->error_message = NULL;
-	}
+    }
 
-	return error_event_data;
+    return error_event_data;
 
 }
 
 void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
-	if (error_event_data) {
+    if (error_event_data) {
         str_delete (error_event_data->error_message);
 
         free (error_event_data);
@@ -52,24 +66,24 @@ void cerver_error_event_data_delete (CerverErrorEventData *error_event_data) {
 
 static CerverErrorEventData *cerver_error_event_data_create (
     const Cerver *cerver,
-	const Client *client, const Connection *connection, 
-	void *action_args,
+    const Client *client, const Connection *connection,
+    void *action_args,
     const char *error_message
 ) {
 
-	CerverErrorEventData *error_event_data = cerver_error_event_data_new ();
-	if (error_event_data) {
-		error_event_data->cerver = cerver;
+    CerverErrorEventData *error_event_data = cerver_error_event_data_new ();
+    if (error_event_data) {
+        error_event_data->cerver = cerver;
 
-		error_event_data->client = client;
-		error_event_data->connection = connection;
+        error_event_data->client = client;
+        error_event_data->connection = connection;
 
-		error_event_data->action_args = action_args;
+        error_event_data->action_args = action_args;
 
         error_event_data->error_message = error_message ? str_new (error_message) : NULL;
-	}
+    }
 
-	return error_event_data;
+    return error_event_data;
 
 }
 
@@ -79,127 +93,89 @@ static CerverErrorEventData *cerver_error_event_data_create (
 
 static CerverErrorEvent *cerver_error_event_new (void) {
 
-	CerverErrorEvent *cerver_error_event = (CerverErrorEvent *) malloc (sizeof (CerverErrorEvent));
-	if (cerver_error_event) {
-		cerver_error_event->type = CERVER_ERROR_NONE;
+    CerverErrorEvent *cerver_error_event = (CerverErrorEvent *) malloc (sizeof (CerverErrorEvent));
+    if (cerver_error_event) {
+        cerver_error_event->type = CERVER_ERROR_NONE;
 
-		cerver_error_event->create_thread = false;
-		cerver_error_event->drop_after_trigger = false;
+        cerver_error_event->create_thread = false;
+        cerver_error_event->drop_after_trigger = false;
 
-		cerver_error_event->action = NULL;
-		cerver_error_event->action_args = NULL;
-		cerver_error_event->delete_action_args = NULL;
-	}
+        cerver_error_event->action = NULL;
+        cerver_error_event->action_args = NULL;
+        cerver_error_event->delete_action_args = NULL;
+    }
 
-	return cerver_error_event;
+    return cerver_error_event;
 
 }
 
 void cerver_error_event_delete (void *event_ptr) {
 
-	if (event_ptr) {
-		CerverErrorEvent *event = (CerverErrorEvent *) event_ptr;
-		
-		if (event->action_args) {
-			if (event->delete_action_args)
-				event->delete_action_args (event->action_args);
-		}
+    if (event_ptr) {
+        CerverErrorEvent *event = (CerverErrorEvent *) event_ptr;
 
-		free (event);
-	}
-
-}
-
-static CerverErrorEvent *cerver_error_event_get (const Cerver *cerver, const CerverErrorType error_type, 
-    ListElement **le_ptr) {
-
-    if (cerver) {
-        if (cerver->errors) {
-            CerverErrorEvent *error = NULL;
-            for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
-                error = (CerverErrorEvent *) le->data;
-                if (error->type == error_type) {
-                    if (le_ptr) *le_ptr = le;
-                    return error;
-                } 
-            }
+        if (event->action_args) {
+            if (event->delete_action_args)
+                event->delete_action_args (event->action_args);
         }
-    }
 
-    return NULL;
-
-}
-
-static void cerver_error_event_pop (DoubleList *list, ListElement *le) {
-
-    if (le) {
-        void *data = dlist_remove_element (list, le);
-        if (data) cerver_error_event_delete (data);
+        free (event);
     }
 
 }
 
 // registers an action to be triggered when the specified error event occurs
 // if there is an existing action registered to an error event, it will be overrided
-// a newly allocated CerverErrorEventData structure will be passed to your method 
+// a newly allocated CerverErrorEventData structure will be passed to your method
 // that should be free using the cerver_error_event_data_delete () method
 // returns 0 on success, 1 on error
-u8 cerver_error_event_register (Cerver *cerver, const CerverErrorType error_type, 
-    Action action, void *action_args, Action delete_action_args, 
-    bool create_thread, bool drop_after_trigger) {
+u8 cerver_error_event_register (
+    Cerver *cerver,
+    const CerverErrorType error_type,
+    Action action, void *action_args, Action delete_action_args,
+    bool create_thread, bool drop_after_trigger
+) {
 
     u8 retval = 1;
 
     if (cerver) {
-        if (cerver->errors) {
-            CerverErrorEvent *error = cerver_error_event_new ();
-            if (error) {
-                error->type = error_type;
+        CerverErrorEvent *error = cerver_error_event_new ();
+        if (error) {
+            error->type = error_type;
 
-                error->create_thread = create_thread;
-                error->drop_after_trigger = drop_after_trigger;
+            error->create_thread = create_thread;
+            error->drop_after_trigger = drop_after_trigger;
 
-                error->action = action;
-                error->action_args = action_args;
-                error->delete_action_args = delete_action_args;
+            error->action = action;
+            error->action_args = action_args;
+            error->delete_action_args = delete_action_args;
 
-                // search if there is an action already registred for that error and remove it
-                (void) cerver_error_event_unregister (cerver, error_type);
+            // search if there is an action already registred for that error and remove it
+            (void) cerver_error_event_unregister (cerver, error_type);
 
-                if (!dlist_insert_after (
-                    cerver->errors, 
-                    dlist_end (cerver->errors),
-                    error
-                )) {
-                    retval = 0;
-                }
-            }
+            cerver->errors[error_type] = error;
+
+            retval = 0;
         }
     }
 
     return retval;
-    
+
 }
 
 // unregister the action associated with an error event
 // deletes the action args using the delete_action_args () if NOT NULL
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if error is NOT registered
 u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type) {
 
     u8 retval = 1;
 
     if (cerver) {
-        if (cerver->errors) {
-            CerverErrorEvent *error = NULL;
-            for (ListElement *le = dlist_start (cerver->errors); le; le = le->next) {
-                error = (CerverErrorEvent *) le->data;
-                if (error->type == error_type) {
-                    cerver_error_event_delete (dlist_remove_element (cerver->errors, le));
-                    retval = 0;
+        if (cerver->errors[error_type]) {
+            cerver_error_event_delete (cerver->errors[error_type]);
+            cerver->errors[error_type] = NULL;
 
-                    break;
-                }
-            }
+            retval = 0;
         }
     }
 
@@ -208,15 +184,15 @@ u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_ty
 }
 
 // triggers all the actions that are registred to an error
-void cerver_error_event_trigger (const CerverErrorType error_type, 
-    const Cerver *cerver, 
-	const Client *client, const Connection *connection,
+void cerver_error_event_trigger (
+    const CerverErrorType error_type,
+    const Cerver *cerver,
+    const Client *client, const Connection *connection,
     const char *error_message
 ) {
 
     if (cerver) {
-        ListElement *le = NULL;
-        CerverErrorEvent *error = cerver_error_event_get (cerver, error_type, &le);
+        CerverErrorEvent *error = cerver->errors[error_type];
         if (error) {
             // trigger the action
             if (error->action) {
@@ -224,9 +200,9 @@ void cerver_error_event_trigger (const CerverErrorType error_type,
                     pthread_t thread_id = 0;
                     thread_create_detachable (
                         &thread_id,
-                        (void *(*)(void *)) error->action, 
+                        (void *(*)(void *)) error->action,
                         cerver_error_event_data_create (
-							cerver,
+                            cerver,
                             client, connection,
                             error->action_args,
                             error_message
@@ -236,14 +212,16 @@ void cerver_error_event_trigger (const CerverErrorType error_type,
 
                 else {
                     error->action (cerver_error_event_data_create (
-						cerver,
-                        client, connection, 
+                        cerver,
+                        client, connection,
                         error->action_args,
                         error_message
                     ));
                 }
-                
-                if (error->drop_after_trigger) cerver_error_event_pop (cerver->errors, le);
+
+                if (error->drop_after_trigger) {
+                    (void) cerver_error_event_unregister ((Cerver *) cerver, error_type);
+                }
             }
         }
     }
@@ -252,29 +230,57 @@ void cerver_error_event_trigger (const CerverErrorType error_type,
 
 #pragma endregion
 
-#pragma region error
+#pragma region handler
 
-CerverError *cerver_error_new (const CerverErrorType type, const char *msg) {
+// TODO: differentiate local errors from the ones coming from the clients
+// handles error packets
+void cerver_error_packet_handler (Packet *packet) {
 
-    CerverError *error = (CerverError *) malloc (sizeof (CerverError));
-    if (error) {
-        error->type = type;
-        time (&error->timestamp);
-        error->msg = msg ? str_new (msg) : NULL;
-    }
+    if (packet->data_size >= sizeof (SError)) {
+        char *end = (char *) packet->data;
+        SError *s_error = (SError *) end;
 
-    return error;
+        switch (s_error->error_type) {
+            case CERVER_ERROR_NONE: break;
 
-}
+            case CERVER_ERROR_PACKET_ERROR:
+                cerver_error_event_trigger (
+                    CERVER_ERROR_PACKET_ERROR,
+                    packet->cerver, packet->client, packet->connection,
+                    s_error->msg
+                );
+                break;
 
-void cerver_error_delete (void *cerver_error_ptr) {
+            case CERVER_ERROR_GET_FILE:
+                cerver_error_event_trigger (
+                    CERVER_ERROR_GET_FILE,
+                    packet->cerver, packet->client, packet->connection,
+                    s_error->msg
+                );
+                break;
+            case CERVER_ERROR_SEND_FILE:
+                cerver_error_event_trigger (
+                    CERVER_ERROR_SEND_FILE,
+                    packet->cerver, packet->client, packet->connection,
+                    s_error->msg
+                );
+                break;
+            case CERVER_ERROR_FILE_NOT_FOUND:
+                client_error_trigger (
+                    CERVER_ERROR_FILE_NOT_FOUND,
+                    packet->client, packet->connection,
+                    s_error->msg
+                );
+                break;
 
-    if (cerver_error_ptr) {
-        CerverError *error = (CerverError *) cerver_error_ptr;
-
-        str_delete (error->msg);
-        
-        free (error);
+            default: {
+                cerver_error_event_trigger (
+                    CERVER_ERROR_UNKNOWN,
+                    packet->cerver, packet->client, packet->connection,
+                    s_error->msg
+                );
+            } break;
+        }
     }
 
 }
@@ -286,19 +292,27 @@ void cerver_error_delete (void *cerver_error_ptr) {
 // creates an error packet ready to be sent
 Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
-    Packet *packet = NULL;
+    Packet *packet = packet_new ();
+    if (packet) {
+        size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
 
-    CerverError *error = cerver_error_new (type, msg);
-    if (error) {
-        SError *serror = error_serialize (error);
-        if (serror) {
-            packet = packet_create (ERROR_PACKET, serror, sizeof (SError));
-            packet_generate (packet);
+        packet->packet = malloc (packet_len);
+        packet->packet_size = packet_len;
 
-            serror_delete (serror);
-        }
+        char *end = (char *) packet->packet;
+        PacketHeader *header = (PacketHeader *) end;
+        header->packet_type = PACKET_TYPE_ERROR;
+        header->packet_size = packet_len;
 
-        cerver_error_delete (error);
+        header->request_type = REQUEST_PACKET_TYPE_NONE;
+
+        end += sizeof (PacketHeader);
+
+        SError *s_error = (SError *) end;
+        s_error->error_type = type;
+        s_error->timestamp = time (NULL);
+        memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
+        if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
     }
 
     return packet;
@@ -307,8 +321,10 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
 // creates and send a new error packet
 // returns 0 on success, 1 on error
-u8 error_packet_generate_and_send (const CerverErrorType type, const char *msg,
-    Cerver *cerver, Client *client, Connection *connection) {
+u8 error_packet_generate_and_send (
+    const CerverErrorType type, const char *msg,
+    Cerver *cerver, Client *client, Connection *connection
+) {
 
     u8 retval = 1;
 
@@ -320,36 +336,6 @@ u8 error_packet_generate_and_send (const CerverErrorType type, const char *msg,
     }
 
     return retval;
-
-}
-
-#pragma endregion
-
-#pragma region serialization
-
-static inline SError *serror_new (void) { 
-
-    SError *serror = (SError *) malloc (sizeof (SError));
-    if (serror) memset (serror, 0, sizeof (SError));
-    return serror;
-
-}
-
-static inline void serror_delete (void *ptr) { if (ptr) free (ptr); }
-
-static SError *error_serialize (CerverError *error) {
-
-    SError *serror = NULL;
-
-    if (error) {
-        serror = serror_new ();
-        serror->timestamp = error->timestamp;
-        serror->error_type = error->type;
-        memset (serror->msg, 0, ERROR_MESSAGE_LENGTH);
-        if (error->msg) strncpy (serror->msg, error->msg->str, ERROR_MESSAGE_LENGTH);
-    }
-
-    return serror;
 
 }
 
