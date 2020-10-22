@@ -11,8 +11,8 @@
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/config.h"
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
@@ -49,7 +49,7 @@ struct _AdminCerverStats {
 
 typedef struct _AdminCerverStats AdminCerverStats;
 
-extern void admin_cerver_stats_print (AdminCerverStats *stats);
+CERVER_PUBLIC void admin_cerver_stats_print (AdminCerverStats *stats);
 
 #pragma endregion
 
@@ -205,24 +205,24 @@ CERVER_EXPORT void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_
 // sets a custom poll time out to use for admins
 CERVER_EXPORT void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
 
-// sets customs APP_PACKET and APP_ERROR_PACKET packet types handlers
+// sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 CERVER_EXPORT void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, 
 	struct _Handler *app_handler, struct _Handler *app_error_handler);
 
-// sets option to automatically delete APP_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
-// sets option to automatically delete APP_ERROR_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
-// sets a CUSTOM_PACKET packet type handler
+// sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _Handler *custom_handler);
 
-// sets option to automatically delete CUSTOM_PACKET packets after use
+// sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy 
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
