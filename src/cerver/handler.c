@@ -1936,7 +1936,7 @@ static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *htt
 
 						default: {
 							#ifdef HANDLER_DEBUG
-							cerver_log_msg (
+							cerver_log (
 								LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 								"cerver_receive_http () - rc < 0 - sock fd: %d",
 								cr->socket->sock_fd
@@ -1951,7 +1951,7 @@ static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *htt
 
 			case 0: {
 				#ifdef HANDLER_DEBUG
-				cerver_log_msg (
+				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 					"cerver_receive_http () - rc == 0 - sock fd: %d",
 					cr->socket->sock_fd
@@ -1984,7 +1984,7 @@ static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *htt
 	}
 
 	else {
-		cerver_log_msg (
+		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
 			"cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
 			cr->connection->socket->sock_fd
