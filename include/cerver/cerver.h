@@ -65,32 +65,32 @@ CERVER_EXPORT void cerver_end (void);
 #pragma region types
 
 #define CERVER_TYPE_MAP(XX)					\
-    XX(0,	NONE, 		None)				\
-    XX(1,	CUSTOM, 	Custom)				\
-    XX(2,	GAME, 		Game)				\
-    XX(3,	WEB, 		Web)				\
-    XX(4,	FILES, 		Files)
+	XX(0,	NONE, 		None)				\
+	XX(1,	CUSTOM, 	Custom)				\
+	XX(2,	GAME, 		Game)				\
+	XX(3,	WEB, 		Web)				\
+	XX(4,	FILES, 		Files)
 
 typedef enum CerverType {
 
-    #define XX(num, name, string) CERVER_TYPE_##name = num,
-    CERVER_TYPE_MAP (XX)
-    #undef XX
+	#define XX(num, name, string) CERVER_TYPE_##name = num,
+	CERVER_TYPE_MAP (XX)
+	#undef XX
 
 } CerverType;
 
 CERVER_EXPORT const char *cerver_type_to_string (CerverType type);
 
 #define CERVER_HANDLER_TYPE_MAP(XX)																\
-    XX(0,	NONE, 		None, 		None)														\
-    XX(1,	POLL, 		Poll, 		Handle connections using a single thread & poll ())			\
-    XX(2,	THREADS, 	Threads, 	Handle each new connection in a dedicated thread)
+	XX(0,	NONE, 		None, 		None)														\
+	XX(1,	POLL, 		Poll, 		Handle connections using a single thread & poll ())			\
+	XX(2,	THREADS, 	Threads, 	Handle each new connection in a dedicated thread)
 
 typedef enum CerverHandlerType {
 
-    #define XX(num, name, string, description) CERVER_HANDLER_TYPE_##name = num,
-    CERVER_HANDLER_TYPE_MAP (XX)
-    #undef XX
+	#define XX(num, name, string, description) CERVER_HANDLER_TYPE_##name = num,
+	CERVER_HANDLER_TYPE_MAP (XX)
+	#undef XX
 
 } CerverHandlerType;
 
@@ -104,12 +104,12 @@ CERVER_EXPORT const char *cerver_handler_type_description (CerverHandlerType typ
 
 typedef struct CerverInfo {
 
-    String *name;
-    String *welcome_msg;                  // this msg is sent to the client when it first connects
-    struct _Packet *cerver_info_packet;    // useful info that we can send to clients
+	String *name;
+	String *welcome_msg;                  // this msg is sent to the client when it first connects
+	struct _Packet *cerver_info_packet;    // useful info that we can send to clients
 
-    time_t time_started;                   // the actual time the cerver was started
-    u64 uptime;                            // the seconds the cerver has been up
+	time_t time_started;                   // the actual time the cerver was started
+	u64 uptime;                            // the seconds the cerver has been up
 
 } CerverInfo;
 
@@ -120,7 +120,7 @@ CERVER_EXPORT u8 cerver_set_welcome_msg (struct _Cerver *cerver, const char *msg
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
 CERVER_PUBLIC u8 cerver_info_send_info_packet (struct _Cerver *cerver,
-    struct _Client *client, struct _Connection *connection);
+	struct _Client *client, struct _Connection *connection);
 
 #pragma endregion
 
@@ -128,33 +128,33 @@ CERVER_PUBLIC u8 cerver_info_send_info_packet (struct _Cerver *cerver,
 
 typedef struct CerverStats {
 
-    time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
+	time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
 
-    u64 client_n_packets_received;                  // packets received from clients
-    u64 client_receives_done;                       // receives done to clients
-    u64 client_bytes_received;                      // bytes received from clients
+	u64 client_n_packets_received;                  // packets received from clients
+	u64 client_receives_done;                       // receives done to clients
+	u64 client_bytes_received;                      // bytes received from clients
 
-    u64 on_hold_n_packets_received;                 // packets received from on hold connections
-    u64 on_hold_receives_done;                      // received done to on hold connections
-    u64 on_hold_bytes_received;                     // bytes received from on hold connections
+	u64 on_hold_n_packets_received;                 // packets received from on hold connections
+	u64 on_hold_receives_done;                      // received done to on hold connections
+	u64 on_hold_bytes_received;                     // bytes received from on hold connections
 
-    u64 total_n_packets_received;                   // total number of cerver packets received (packet header + data)
-    u64 total_n_receives_done;                      // total amount of actual calls to recv ()
-    u64 total_bytes_received;                       // total amount of bytes received in the cerver
+	u64 total_n_packets_received;                   // total number of cerver packets received (packet header + data)
+	u64 total_n_receives_done;                      // total amount of actual calls to recv ()
+	u64 total_bytes_received;                       // total amount of bytes received in the cerver
 
-    u64 n_packets_sent;                             // total number of packets that were sent
-    u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
+	u64 n_packets_sent;                             // total number of packets that were sent
+	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
-    u64 current_active_client_connections;          // all of the current active connections for all current clients (active in main poll array)
-    u64 current_n_connected_clients;                // the current number of clients connected
-    u64 current_n_hold_connections;                 // current numbers of on hold connections (only if the cerver requires authentication)
-    u64 total_on_hold_connections;                  // the total amount of on hold connections
-    u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
-    u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
-    u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
+	u64 current_active_client_connections;          // all of the current active connections for all current clients (active in main poll array)
+	u64 current_n_connected_clients;                // the current number of clients connected
+	u64 current_n_hold_connections;                 // current numbers of on hold connections (only if the cerver requires authentication)
+	u64 total_on_hold_connections;                  // the total amount of on hold connections
+	u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
+	u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
+	u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
 
-    struct _PacketsPerType *received_packets;
-    struct _PacketsPerType *sent_packets;
+	struct _PacketsPerType *received_packets;
+	struct _PacketsPerType *sent_packets;
 
 } CerverStats;
 
@@ -171,127 +171,127 @@ CERVER_EXPORT void cerver_stats_print (struct _Cerver *cerver, bool received, bo
 // this is the generic cerver struct, used to create different server types
 struct _Cerver {
 
-    CerverType type;
+	CerverType type;
 
-    i32 sock;                           // server socket
-    struct sockaddr_storage address;
+	i32 sock;                           // server socket
+	struct sockaddr_storage address;
 
-    u16 port;
-    Protocol protocol;                  // we only support either tcp or udp
-    bool use_ipv6;
-    u16 connection_queue;               // each server can handle connection differently
-    u32 receive_buffer_size;
+	u16 port;
+	Protocol protocol;                  // we only support either tcp or udp
+	bool use_ipv6;
+	u16 connection_queue;               // each server can handle connection differently
+	u32 receive_buffer_size;
 
-    bool isRunning;                     // the server is recieving and/or sending packetss
-    bool blocking;                      // sokcet fd is blocking?
+	bool isRunning;                     // the server is recieving and/or sending packetss
+	bool blocking;                      // sokcet fd is blocking?
 
-    void *cerver_data;
-    Action delete_cerver_data;
+	void *cerver_data;
+	Action delete_cerver_data;
 
-    u16 n_thpool_threads;
-    Thpool *thpool;
+	u16 n_thpool_threads;
+	Thpool *thpool;
 
-    // 29/05/2020
-    // using this pool to avoid completely destroying connection's sockets
-    // as another thread might be blocked by the socket's mutex
-    unsigned int sockets_pool_init;
-    Pool *sockets_pool;
+	// 29/05/2020
+	// using this pool to avoid completely destroying connection's sockets
+	// as another thread might be blocked by the socket's mutex
+	unsigned int sockets_pool_init;
+	Pool *sockets_pool;
 
-    AVLTree *clients;                   // connected clients
-    Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
+	AVLTree *clients;                   // connected clients
+	Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
 
-    // 17/06/2020 - ability to check for inactive clients
-    // clients that have not been sent or received from a packet in x time
-    // will be automatically dropped from the cerver
-    bool inactive_clients;              // enable / disable checking
-    u32 max_inactive_time;              // max secs allowed for a client to be inactive
-    u32 check_inactive_interval;        // how often to check for inactive clients
-    pthread_t inactive_thread_id;
+	// 17/06/2020 - ability to check for inactive clients
+	// clients that have not been sent or received from a packet in x time
+	// will be automatically dropped from the cerver
+	bool inactive_clients;              // enable / disable checking
+	u32 max_inactive_time;              // max secs allowed for a client to be inactive
+	u32 check_inactive_interval;        // how often to check for inactive clients
+	pthread_t inactive_thread_id;
 
-    CerverHandlerType handler_type;
+	CerverHandlerType handler_type;
 
-    // if set & CERVER_HANDLER_TYPE_THREADS, connections will be handled
-    // by creating a new detachable thread each time, if not,
-    // the thpoll will be used instead; if the thpool is full or unavailable,
-    // a detachable thread will be created anyway
-    bool handle_detachable_threads;
+	// if set & CERVER_HANDLER_TYPE_THREADS, connections will be handled
+	// by creating a new detachable thread each time, if not,
+	// the thpoll will be used instead; if the thpool is full or unavailable,
+	// a detachable thread will be created anyway
+	bool handle_detachable_threads;
 
-    struct pollfd *fds;
-    u32 max_n_fds;                      // current max n fds in pollfd
-    u16 current_n_fds;                  // n of active fds in the pollfd array
-    u32 poll_timeout;
-    pthread_mutex_t *poll_lock;
+	struct pollfd *fds;
+	u32 max_n_fds;                      // current max n fds in pollfd
+	u16 current_n_fds;                  // n of active fds in the pollfd array
+	u32 poll_timeout;
+	pthread_mutex_t *poll_lock;
 
-    /*** auth ***/
-    bool auth_required;                 // does the server requires authentication?
-    struct _Packet *auth_packet;        // requests client authentication
-    u8 max_auth_tries;                  // client's chances of auth before being dropped
-    delegate authenticate;              // authentication function
+	/*** auth ***/
+	bool auth_required;                 // does the server requires authentication?
+	struct _Packet *auth_packet;        // requests client authentication
+	u8 max_auth_tries;                  // client's chances of auth before being dropped
+	delegate authenticate;              // authentication function
 
-    AVLTree *on_hold_connections;       // hold on the connections until they authenticate
-    Htab *on_hold_connection_sock_fd_map;
-    struct pollfd *hold_fds;
-    u32 on_hold_poll_timeout;
-    u32 max_on_hold_connections;
-    u16 current_on_hold_nfds;
-    pthread_t on_hold_poll_id;
-    pthread_mutex_t *on_hold_poll_lock;
-    u8 on_hold_max_bad_packets;
-    bool on_hold_check_packets;
+	AVLTree *on_hold_connections;       // hold on the connections until they authenticate
+	Htab *on_hold_connection_sock_fd_map;
+	struct pollfd *hold_fds;
+	u32 on_hold_poll_timeout;
+	u32 max_on_hold_connections;
+	u16 current_on_hold_nfds;
+	pthread_t on_hold_poll_id;
+	pthread_mutex_t *on_hold_poll_lock;
+	u8 on_hold_max_bad_packets;
+	bool on_hold_check_packets;
 
-    // allow the clients to use sessions (have multiple connections)
-    bool use_sessions;
-    // admin defined function to generate session ids, it takes a session data struct
-    void *(*session_id_generator) (const void *);
+	// allow the clients to use sessions (have multiple connections)
+	bool use_sessions;
+	// admin defined function to generate session ids, it takes a session data struct
+	void *(*session_id_generator) (const void *);
 
-    // the admin can define a function to handle the recieve buffer if they are using a custom protocol
-    // otherwise, it will be set to the default one
-    Action handle_received_buffer;
+	// the admin can define a function to handle the recieve buffer if they are using a custom protocol
+	// otherwise, it will be set to the default one
+	Action handle_received_buffer;
 
-    // 27/05/2020 - changed form Action to Handler
-    // custom packet hanlders
-    struct _Handler *app_packet_handler;
-    struct _Handler *app_error_packet_handler;
-    struct _Handler *custom_packet_handler;
+	// 27/05/2020 - changed form Action to Handler
+	// custom packet hanlders
+	struct _Handler *app_packet_handler;
+	struct _Handler *app_error_packet_handler;
+	struct _Handler *custom_packet_handler;
 
-    bool app_packet_handler_delete_packet;
-    bool app_error_packet_handler_delete_packet;
-    bool custom_packet_handler_delete_packet;
+	bool app_packet_handler_delete_packet;
+	bool app_error_packet_handler_delete_packet;
+	bool custom_packet_handler_delete_packet;
 
-    // 10/05/2020
-    bool multiple_handlers;
-    // DoubleList *handlers;
-    struct _Handler **handlers;
-    unsigned int n_handlers;
-    unsigned int num_handlers_alive;       // handlers currently alive
-    unsigned int num_handlers_working;     // handlers currently working
-    pthread_mutex_t *handlers_lock;
-    // TODO: add ability to control handler execution
-    // pthread_cond_t *handlers_wait;
+	// 10/05/2020
+	bool multiple_handlers;
+	// DoubleList *handlers;
+	struct _Handler **handlers;
+	unsigned int n_handlers;
+	unsigned int num_handlers_alive;       // handlers currently alive
+	unsigned int num_handlers_working;     // handlers currently working
+	pthread_mutex_t *handlers_lock;
+	// TODO: add ability to control handler execution
+	// pthread_cond_t *handlers_wait;
 
-    bool check_packets;                     // enable / disbale packet checking
+	bool check_packets;                     // enable / disbale packet checking
 
-    pthread_t update_thread_id;
-    Action update;                          // method to be executed every tick
-    void *update_args;                      // args to pass to custom update method
-    void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
-    u8 update_ticks;                        // like fps
+	pthread_t update_thread_id;
+	Action update;                          // method to be executed every tick
+	void *update_args;                      // args to pass to custom update method
+	void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
+	u8 update_ticks;                        // like fps
 
-    pthread_t update_interval_thread_id;
-    Action update_interval;                 // the actual method to execute every x seconds
-    void *update_interval_args;             // args to pass to the update method
-    // method to delete update interval args at cerver teardown
-    void (*delete_update_interval_args)(void *);
-    u32 update_interval_secs;               // the interval in seconds
+	pthread_t update_interval_thread_id;
+	Action update_interval;                 // the actual method to execute every x seconds
+	void *update_interval_args;             // args to pass to the update method
+	// method to delete update interval args at cerver teardown
+	void (*delete_update_interval_args)(void *);
+	u32 update_interval_secs;               // the interval in seconds
 
-    struct _AdminCerver *admin;
-    pthread_t admin_thread_id;
+	struct _AdminCerver *admin;
+	pthread_t admin_thread_id;
 
-    CerverEvent *events[CERVER_MAX_EVENTS];
-    CerverErrorEvent *errors[CERVER_MAX_ERRORS];
+	CerverEvent *events[CERVER_MAX_EVENTS];
+	CerverErrorEvent *errors[CERVER_MAX_ERRORS];
 
-    CerverInfo *info;
-    CerverStats *stats;
+	CerverInfo *info;
+	CerverStats *stats;
 
 };
 
@@ -303,9 +303,9 @@ CERVER_PRIVATE void cerver_delete (void *ptr);
 
 // sets the cerver main network values
 CERVER_EXPORT void cerver_set_network_values (
-    Cerver *cerver,
-    const u16 port, const Protocol protocol,
-    bool use_ipv6, const u16 connection_queue
+	Cerver *cerver,
+	const u16 port, const Protocol protocol,
+	bool use_ipv6, const u16 connection_queue
 );
 
 // sets the cerver connection queue (how many connections to queue for accept)
@@ -335,8 +335,8 @@ CERVER_EXPORT void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_
 // max_inactive_time - max secs allowed for a client to be inactive, 0 for default
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
 CERVER_EXPORT void cerver_set_inactive_clients (
-    Cerver *cerver,
-    u32 max_inactive_time, u32 check_inactive_interval
+	Cerver *cerver,
+	u32 max_inactive_time, u32 check_inactive_interval
 );
 
 // sets the cerver handler type
@@ -396,8 +396,8 @@ CERVER_EXPORT void cerver_set_handle_recieved_buffer (Cerver *cerver, Action han
 // 27/05/2020 - changed form Action to Handler
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 CERVER_EXPORT void cerver_set_app_handlers (
-    Cerver *cerver,
-    struct _Handler *app_handler, struct _Handler *app_error_handler
+	Cerver *cerver,
+	struct _Handler *app_handler, struct _Handler *app_error_handler
 );
 
 // sets option to automatically delete PACKET_TYPE_APP packets after use
@@ -435,9 +435,9 @@ CERVER_EXPORT void cerver_set_check_packets (Cerver *cerver, bool check_packets)
 // the update args will be passed to your method as a CerverUpdate &
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update (
-    Cerver *cerver,
-    Action update, void *update_args, void (*delete_update_args)(void *),
-    const u8 fps
+	Cerver *cerver,
+	Action update, void *update_args, void (*delete_update_args)(void *),
+	const u8 fps
 );
 
 // sets a custom cerver update method to be executed every x seconds (in intervals)
@@ -445,9 +445,9 @@ CERVER_EXPORT void cerver_set_update (
 // the update args will be passed to your method as a CerverUpdate &
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update_interval (
-    Cerver *cerver,
-    Action update, void *update_args, void (*delete_update_args)(void *),
-    const u32 interval
+	Cerver *cerver,
+	Action update, void *update_args, void (*delete_update_args)(void *),
+	const u32 interval
 );
 
 // enables admin connections to cerver
@@ -489,9 +489,9 @@ CERVER_EXPORT unsigned int cerver_get_n_handlers_working (Cerver *cerver);
 
 // returns a new cerver with the specified parameters
 CERVER_EXPORT Cerver *cerver_create (
-    const CerverType type, const char *name,
-    const u16 port, const Protocol protocol, bool use_ipv6,
-    u16 connection_queue, u32 poll_timeout
+	const CerverType type, const char *name,
+	const u16 port, const Protocol protocol, bool use_ipv6,
+	u16 connection_queue, u32 poll_timeout
 );
 
 #pragma endregion
@@ -511,8 +511,8 @@ CERVER_EXPORT u8 cerver_start (Cerver *cerver);
 // aux structure for cerver update methods
 struct _CerverUpdate {
 
-    Cerver *cerver;
-    void *args;
+	Cerver *cerver;
+	void *args;
 
 };
 
@@ -541,17 +541,17 @@ CERVER_EXPORT u8 cerver_teardown (Cerver *cerver);
 // information that we get from another cerver when connecting to it
 struct _CerverReport {
 
-    CerverType type;
+	CerverType type;
 
-    String *name;
-    String *welcome;
+	String *name;
+	String *welcome;
 
-    bool use_ipv6;
-    Protocol protocol;
-    u16 port;
+	bool use_ipv6;
+	Protocol protocol;
+	u16 port;
 
-    bool auth_required;
-    bool uses_sessions;
+	bool auth_required;
+	bool uses_sessions;
 
 };
 
@@ -560,8 +560,8 @@ typedef struct _CerverReport CerverReport;
 CERVER_PRIVATE void cerver_report_delete (void *ptr);
 
 CERVER_PRIVATE u8 cerver_report_check_info (
-    CerverReport *cerver_report,
-    struct _Client *client, struct _Connection *connection
+	CerverReport *cerver_report,
+	struct _Client *client, struct _Connection *connection
 );
 
 #pragma endregion
@@ -574,17 +574,17 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 // serialized cerver structure
 typedef struct SCerver {
 
-    CerverType type;
+	CerverType type;
 
-    char name[S_CERVER_NAME_LENGTH];
-    char welcome[S_CERVER_WELCOME_LENGTH];
+	char name[S_CERVER_NAME_LENGTH];
+	char welcome[S_CERVER_WELCOME_LENGTH];
 
-    bool use_ipv6;
-    Protocol protocol;
-    u16 port;
+	bool use_ipv6;
+	Protocol protocol;
+	u16 port;
 
-    bool auth_required;
-    bool uses_sessions;
+	bool auth_required;
+	bool uses_sessions;
 
 } SCerver;
 

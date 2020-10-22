@@ -9,7 +9,7 @@
 #define CERVER_VERSION_TIME			    "19:17 CST"
 #define CERVER_VERSION_AUTHOR			"Erick Salas"
 
-// print full cerver version information 
+// print full cerver version information
 CERVER_EXPORT void cerver_version_print_full (void);
 
 // print the version id

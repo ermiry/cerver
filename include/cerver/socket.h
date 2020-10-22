@@ -11,7 +11,7 @@ struct _Cerver;
 
 struct _Socket {
 
-    int sock_fd;
+	int sock_fd;
 
 	char *packet_buffer;
 	size_t packet_buffer_size;

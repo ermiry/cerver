@@ -9,9 +9,9 @@ struct _AuthData;
 // auxiliary struct that is passed to cerver session id generator
 typedef struct SessionData {
 
-    Packet *packet;
-    struct _AuthData *auth_data;
-    Client *client;
+	Packet *packet;
+	struct _AuthData *auth_data;
+	Client *client;
 
 } SessionData;
 
@@ -29,7 +29,7 @@ CERVER_PRIVATE void *session_default_generate_id (const void *session_data);
 // serialized session id - token
 struct _SToken {
 
-    char token[TOKEN_SIZE];
+	char token[TOKEN_SIZE];
 
 };
 

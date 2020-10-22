@@ -10,10 +10,10 @@
 
 typedef struct ScoreBoard {
 
-    Htab *scores;
-    u8 registeredPlayers;
-    u8 scoresNum;
-    char **scoreTypes;
+	Htab *scores;
+	u8 registeredPlayers;
+	u8 scoresNum;
+	char **scoreTypes;
 
 } ScoreBoard;
 

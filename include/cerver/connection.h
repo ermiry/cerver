@@ -32,18 +32,18 @@ struct _AdminCerver;
 
 struct _ConnectionStats {
 
-    time_t threshold_time;                  // every time we want to reset the connection's stats
+	time_t threshold_time;                  // every time we want to reset the connection's stats
 
-    u64 n_receives_done;                    // n calls to recv ()
+	u64 n_receives_done;                    // n calls to recv ()
 
-    u64 total_bytes_received;               // total amount of bytes received from this connection
-    u64 total_bytes_sent;                   // total amount of bytes that have been sent to the connection
+	u64 total_bytes_received;               // total amount of bytes received from this connection
+	u64 total_bytes_sent;                   // total amount of bytes that have been sent to the connection
 
-    u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
-    u64 n_packets_sent;                     // total number of packets sent to this connection
+	u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
+	u64 n_packets_sent;                     // total number of packets sent to this connection
 
-    struct _PacketsPerType *received_packets;
-    struct _PacketsPerType *sent_packets;
+	struct _PacketsPerType *received_packets;
+	struct _PacketsPerType *sent_packets;
 
 };
 
@@ -56,57 +56,57 @@ CERVER_PUBLIC void connection_stats_print (struct _Connection *connection);
 // a connection from a client
 struct _Connection {
 
-    String *name;
+	String *name;
 
-    struct _Socket *socket;
-    u16 port;
-    Protocol protocol;
-    bool use_ipv6;
+	struct _Socket *socket;
+	u16 port;
+	Protocol protocol;
+	bool use_ipv6;
 
-    String *ip;
-    struct sockaddr_storage address;
+	String *ip;
+	struct sockaddr_storage address;
 
-    time_t connected_timestamp;             // when the connection started
+	time_t connected_timestamp;             // when the connection started
 
-    struct _CerverReport *cerver_report;    // info about the cerver we are connecting to
+	struct _CerverReport *cerver_report;    // info about the cerver we are connecting to
 
-    u32 max_sleep;
-    bool active;
-    bool updating;
+	u32 max_sleep;
+	bool active;
+	bool updating;
 
-    u8 auth_tries;                          // remaining attempts to authenticate
-    u8 bad_packets;                         // number of bad packets before being disconnected
+	u8 auth_tries;                          // remaining attempts to authenticate
+	u8 bad_packets;                         // number of bad packets before being disconnected
 
-    u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
-    struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
+	u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
+	struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
 
-    pthread_t update_thread_id;
-    u32 update_timeout;
+	pthread_t update_thread_id;
+	u32 update_timeout;
 
-    // 16/06/2020 - used for direct requests to cerver
-    bool full_packet;
+	// 16/06/2020 - used for direct requests to cerver
+	bool full_packet;
 
-    // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
-    void *received_data;
-    size_t received_data_size;
-    Action received_data_delete;
+	// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+	void *received_data;
+	size_t received_data_size;
+	Action received_data_delete;
 
-    bool receive_packets;                   		// set if the connection will receive packets or not (default true)
-    delegate custom_receive;                		// custom receive method to handle incomming packets in the connection
-    void *custom_receive_args;              		// arguments to be passed to the custom receive method
-    void (*custom_receive_args_delete)(void *);		// method to delete the arguments when the connection gets deleted
+	bool receive_packets;                   		// set if the connection will receive packets or not (default true)
+	delegate custom_receive;                		// custom receive method to handle incomming packets in the connection
+	void *custom_receive_args;              		// arguments to be passed to the custom receive method
+	void (*custom_receive_args_delete)(void *);		// method to delete the arguments when the connection gets deleted
 
-    bool authenticated;                     // the connection has been authenticated to the cerver
-    void *auth_data;                        // maybe auth credentials
-    size_t auth_data_size;
-    Action delete_auth_data;                // destroys the auth data when the connection ends
-    bool admin_auth;                        // attempt to connect as an admin
-    struct _Packet *auth_packet;
+	bool authenticated;                     // the connection has been authenticated to the cerver
+	void *auth_data;                        // maybe auth credentials
+	size_t auth_data_size;
+	Action delete_auth_data;                // destroys the auth data when the connection ends
+	bool admin_auth;                        // attempt to connect as an admin
+	struct _Packet *auth_packet;
 
-    ConnectionStats *stats;
+	ConnectionStats *stats;
 
-    pthread_cond_t *cond;
-    pthread_mutex_t *mutex;
+	pthread_cond_t *cond;
+	pthread_mutex_t *mutex;
 
 };
 
@@ -120,8 +120,8 @@ CERVER_PUBLIC Connection *connection_create_empty (void);
 
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
-    const i32 sock_fd, const struct sockaddr_storage address,
-    Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage address,
+	Protocol protocol
 );
 
 // compare two connections by their socket fds
@@ -135,8 +135,8 @@ CERVER_PUBLIC void connection_get_values (Connection *connection);
 
 // sets the connection's newtwork values
 CERVER_PUBLIC void connection_set_values (
-    Connection *connection,
-    const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
+	Connection *connection,
+	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
 );
 
 // sets the connection max sleep (wait time) to try to connect to the cerver
@@ -161,9 +161,9 @@ CERVER_EXPORT void connection_set_update_timeout (Connection *connection, u32 ti
 
 typedef struct ConnectionCustomReceiveData {
 
-    struct _Client *client;
-    struct _Connection *connection;
-    void *args;
+	struct _Client *client;
+	struct _Connection *connection;
+	void *args;
 
 } ConnectionCustomReceiveData;
 
@@ -172,18 +172,18 @@ typedef struct ConnectionCustomReceiveData {
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 CERVER_PUBLIC void connection_set_custom_receive (
-    Connection *connection,
-    delegate custom_receive,
-    void *args, void (*args_delete)(void *)
+	Connection *connection,
+	delegate custom_receive,
+	void *args, void (*args_delete)(void *)
 );
 
 // sets the connection auth data to send whenever the cerver requires authentication
 // and a method to destroy it once the connection has ended,
 // if delete_auth_data is NULL, the auth data won't be deleted
 CERVER_PUBLIC void connection_set_auth_data (
-    Connection *connection,
-    void *auth_data, size_t auth_data_size, Action delete_auth_data,
-    bool admin_auth
+	Connection *connection,
+	void *auth_data, size_t auth_data_size, Action delete_auth_data,
+	bool admin_auth
 );
 
 // removes the connection auth data using the connection's delete_auth_data method
@@ -227,8 +227,8 @@ CERVER_PRIVATE u8 connection_register_to_client (struct _Client *client, Connect
 // registers the client connection to the cerver's strcutures (like maps)
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 connection_register_to_cerver (
-    struct _Cerver *cerver,
-    struct _Client *client, Connection *connection
+	struct _Cerver *cerver,
+	struct _Client *client, Connection *connection
 );
 
 // unregister the client connection from the cerver's structures (like maps)
