@@ -553,7 +553,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
 		// search for the requested file in the configured paths
@@ -561,7 +561,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 		if (actual_filename) {
 			#ifdef HANDLER_DEBUG
 			cerver_log_debug (
-				"cerver_request_get_file () - Sending %s...",
+				"cerver_request_get_file () - Sending %s...\n",
 				actual_filename->str
 			);
 			#endif
@@ -586,7 +586,9 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 			}
 
 			else {
-				cerver_log_error ("Failed to send file %s", actual_filename->str);
+				cerver_log_error (
+					"Failed to send file %s", actual_filename->str
+				);
 
 				file_cerver->stats->n_bad_files_sent += 1;
 			}
@@ -660,13 +662,26 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
+
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
 
 		char *saved_filename = NULL;
 		if (!file_cerver->file_upload_handler (
 			packet->cerver, packet->client, packet->connection,
-			file_header, &saved_filename
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
 		)) {
 			file_cerver->stats->n_success_files_uploaded += 1;
 
@@ -1188,7 +1203,9 @@ CerverReceive *cerver_receive_new (void) {
 
 void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
 
-static inline void cerver_receive_create_normal (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_normal (
+	CerverReceive *cr, Cerver *cerver, const i32 sock_fd
+) {
 
 	if (cr) {
 		cr->client = client_get_by_sock_fd (cerver, sock_fd);
@@ -1221,7 +1238,9 @@ static inline void cerver_receive_create_normal (CerverReceive *cr, Cerver *cerv
 
 }
 
-static inline void cerver_receive_create_on_hold (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_on_hold (
+	CerverReceive *cr, Cerver *cerver, const i32 sock_fd
+) {
 
 	if (cr) {
 		cr->connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
@@ -1247,7 +1266,9 @@ static inline void cerver_receive_create_on_hold (CerverReceive *cr, Cerver *cer
 
 }
 
-static inline void cerver_receive_create_admin (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_admin (
+	CerverReceive *cr, Cerver *cerver, const i32 sock_fd
+) {
 
 	if (cr) {
 		cr->admin = admin_get_by_sock_fd (cerver->admin, sock_fd);
@@ -1277,7 +1298,9 @@ static inline void cerver_receive_create_admin (CerverReceive *cr, Cerver *cerve
 
 }
 
-CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, const i32 sock_fd) {
+CerverReceive *cerver_receive_create (
+	ReceiveType receive_type, Cerver *cerver, const i32 sock_fd
+) {
 
 	CerverReceive *cr = cerver_receive_new ();
 	if (cr) {
@@ -1302,7 +1325,8 @@ CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, 
 
 }
 
-CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
+CerverReceive *cerver_receive_create_full (
+	ReceiveType receive_type,
 	Cerver *cerver,
 	Client *client, Connection *connection
 ) {
@@ -1322,9 +1346,11 @@ CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
 
 }
 
-static void cerver_receive_handle_spare_packet (ReceiveHandle *receive_handle,
+static void cerver_receive_handle_spare_packet (
+	ReceiveHandle *receive_handle,
 	SockReceive *sock_receive,
-	size_t buffer_size, char **end, size_t *buffer_pos) {
+	size_t buffer_size, char **end, size_t *buffer_pos
+) {
 
 	if (sock_receive) {
 		if (sock_receive->header) {
@@ -1479,7 +1505,14 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 								}
 
 								else {
-									to_copy_size = packet_real_size;
+									if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+										to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+									}
+
+									else {
+										to_copy_size = packet_real_size;
+									}
+
 									packet_delete (sock_receive->spare_packet);
 									sock_receive->spare_packet = NULL;
 								}
