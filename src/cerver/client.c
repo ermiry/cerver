@@ -34,7 +34,9 @@ static void client_error_delete (void *client_error_ptr);
 
 static u8 client_file_receive (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 );
 
 unsigned int client_receive (Client *client, Connection *connection);
@@ -983,7 +985,11 @@ Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
 }
 
 // broadcast a packet to all clients inside an avl structure
-void client_broadcast_to_all_avl (AVLNode *node, Cerver *cerver, Packet *packet) {
+void client_broadcast_to_all_avl (
+	AVLNode *node,
+	Cerver *cerver,
+	Packet *packet
+) {
 
 	if (node && cerver && packet) {
 		client_broadcast_to_all_avl (node->right, cerver, packet);
@@ -1464,9 +1470,7 @@ static void client_error_packet_handler (Packet *packet) {
 					s_error->msg
 				)) {
 					// not error action is registered to handle the error
-					cerver_log_error (
-						"Failed to authenticate - %s", s_error->msg
-					);
+					cerver_log_error ("Failed to authenticate - %s", s_error->msg);
 				}
 			} break;
 
@@ -1545,6 +1549,56 @@ static void client_error_packet_handler (Packet *packet) {
 			} break;
 		}
 	}
+
+}
+
+// creates an error packet ready to be sent
+Packet *client_error_packet_generate (const ClientErrorType type, const char *msg) {
+
+	Packet *packet = packet_new ();
+	if (packet) {
+		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
+
+		packet->packet = malloc (packet_len);
+		packet->packet_size = packet_len;
+
+		char *end = (char *) packet->packet;
+		PacketHeader *header = (PacketHeader *) end;
+		header->packet_type = PACKET_TYPE_ERROR;
+		header->packet_size = packet_len;
+
+		header->request_type = REQUEST_PACKET_TYPE_NONE;
+
+		end += sizeof (PacketHeader);
+
+		SError *s_error = (SError *) end;
+		s_error->error_type = type;
+		s_error->timestamp = time (NULL);
+		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
+		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+	}
+
+	return packet;
+
+}
+
+// creates and send a new error packet
+// returns 0 on success, 1 on error
+u8 client_error_packet_generate_and_send (
+	const ClientErrorType type, const char *msg,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	Packet *error_packet = client_error_packet_generate (type, msg);
+	if (error_packet) {
+		packet_set_network_values (error_packet, NULL, client, connection, NULL);
+		retval = packet_send (error_packet, 0, NULL, false);
+		packet_delete (error_packet);
+	}
+
+	return retval;
 
 }
 
@@ -1749,6 +1803,9 @@ Connection *client_connection_create (
 			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
 			connection_init (connection);
 			connection_register_to_client (client, connection);
+
+			connection->cond = pthread_cond_new ();
+			connection->mutex = pthread_mutex_new ();
 		}
 	}
 
@@ -2101,7 +2158,9 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 
 static u8 client_file_receive (
 	Client *client, Connection *connection,
-	FileHeader *file_header, char **saved_filename
+	FileHeader *file_header,
+	const char *file_data, size_t file_data_len,
+	char **saved_filename
 ) {
 
 	u8 retval = 1;
@@ -2116,7 +2175,9 @@ static u8 client_file_receive (
 	if (*saved_filename) {
 		retval = file_receive_actual (
 			client, connection,
-			file_header, saved_filename
+			file_header,
+			file_data, file_data_len,
+			saved_filename
 		);
 	}
 
@@ -2158,7 +2219,9 @@ void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	)
 ) {
 
@@ -2256,7 +2319,7 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 	u8 retval = 1;
 
 	if (client && connection && filename) {
-		char *last = strrchr (filename, '/');
+		char *last = strrchr ((char *) filename, '/');
 		const char *actual_filename = last ? last + 1 : NULL;
 		if (actual_filename) {
 			// try to open the file
@@ -2271,7 +2334,7 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 				client->file_stats->n_files_sent += 1;
 				client->file_stats->n_bytes_sent += sent;
 
-				if (sent == filestatus.st_size) retval = 0;
+				if (sent == (size_t) filestatus.st_size) retval = 0;
 
 				close (file_fd);
 			}
@@ -2302,8 +2365,8 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 	if (packet->data && (packet->data_size > 0)) {
 		char *end = (char *) packet->data;
 
-		 #ifdef CLIENT_DEBUG
-		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver info packet");
+		#ifdef CLIENT_DEBUG
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver info packet.");
 		#endif
 
 		CerverReport *cerver_report = cerver_deserialize ((SCerver *) end);
@@ -2319,7 +2382,7 @@ void client_cerver_packet_handler (Packet *packet) {
 	switch (packet->header->request_type) {
 		case CERVER_PACKET_TYPE_INFO:
 			client_cerver_packet_handle_info (packet);
-		break;
+			break;
 
 		// the cerves is going to be teardown, we have to disconnect
 		case CERVER_PACKET_TYPE_TEARDOWN:
@@ -2368,7 +2431,7 @@ static void client_request_get_file (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
 		// search for the requested file in the configured paths
@@ -2376,7 +2439,8 @@ static void client_request_get_file (Packet *packet) {
 		if (actual_filename) {
 			#ifdef CLIENT_DEBUG
 			cerver_log_debug (
-				"client_request_get_file () - Sending %s...", actual_filename->str
+				"client_request_get_file () - Sending %s...\n",
+				actual_filename->str
 			);
 			#endif
 
@@ -2410,9 +2474,9 @@ static void client_request_get_file (Packet *packet) {
 			#endif
 
 			// if not found, return an error to the client
-			(void) error_packet_generate_and_send (
+			(void) client_error_packet_generate_and_send (
 				CLIENT_ERROR_FILE_NOT_FOUND, "File not found",
-				NULL, packet->client, packet->connection
+				packet->client, packet->connection
 			);
 
 			client->file_stats->n_bad_files_requests += 1;
@@ -2426,9 +2490,9 @@ static void client_request_get_file (Packet *packet) {
 		#endif
 
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_GET_FILE, "Missing file header",
-			NULL, packet->client, packet->connection
+			packet->client, packet->connection
 		);
 
 		client->file_stats->n_bad_files_requests += 1;
@@ -2444,13 +2508,26 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
+
+		const char *file_data = NULL;
+		size_t file_data_len = 0;
+		// printf (
+		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
+		// 	packet->data_size, sizeof (FileHeader)
+		// );
+		if (packet->data_size > sizeof (FileHeader)) {
+			file_data = end += sizeof (FileHeader);
+			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
 
 		char *saved_filename = NULL;
 		if (!client->file_upload_handler (
 			client, packet->connection,
-			file_header, &saved_filename
+			file_header,
+			file_data, file_data_len,
+			&saved_filename
 		)) {
 			client->file_stats->n_success_files_uploaded += 1;
 
@@ -2479,9 +2556,9 @@ static void client_request_send_file_actual (Packet *packet) {
 		#endif
 
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_SEND_FILE, "Missing file header",
-			NULL, client, packet->connection
+			client, packet->connection
 		);
 
 		client->file_stats->n_bad_files_upload_requests += 1;
@@ -2499,9 +2576,9 @@ static void client_request_send_file (Packet *packet) {
 
 	else {
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_SEND_FILE, "Unable to process request",
-			NULL, packet->client, packet->connection
+			packet->client, packet->connection
 		);
 
 		#ifdef CLIENT_DEBUG
@@ -2592,7 +2669,7 @@ static void client_auth_packet_handler (Packet *packet) {
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown auth packet type");
+			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown auth packet type.");
 			break;
 	}
 
@@ -2816,8 +2893,10 @@ static void client_packet_handler (void *packet_ptr) {
 
 }
 
-static void client_receive_handle_spare_packet (Client *client, Connection *connection,
-	size_t buffer_size, char **end, size_t *buffer_pos) {
+static void client_receive_handle_spare_packet (
+	Client *client, Connection *connection,
+	size_t buffer_size, char **end, size_t *buffer_pos
+) {
 
 	if (connection->sock_receive->header) {
 		// copy the remaining header size
@@ -2861,8 +2940,10 @@ static void client_receive_handle_spare_packet (Client *client, Connection *conn
 }
 
 // splits the entry buffer in packets of the correct size
-static void client_receive_handle_buffer (Client *client, Connection *connection,
-	char *buffer, size_t buffer_size) {
+static void client_receive_handle_buffer (
+	Client *client, Connection *connection,
+	char *buffer, size_t buffer_size
+) {
 
 	if (buffer && (buffer_size > 0)) {
 		char *end = buffer;
@@ -2955,7 +3036,14 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 						}
 
 						else {
-							to_copy_size = packet_real_size;
+							if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+								to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+							}
+
+							else {
+								to_copy_size = packet_real_size;
+							}
+
 							packet_delete (sock_receive->spare_packet);
 							sock_receive->spare_packet = NULL;
 						}
@@ -3022,7 +3110,7 @@ static void client_receive_handle_buffer (Client *client, Connection *connection
 // end sthe connection to prevent seg faults or signals for bad sock fd
 static void client_receive_handle_failed (Client *client, Connection *connection) {
 
-	if (client && connection) {
+	if (connection->active) {
 		if (!client_connection_end (client, connection)) {
 			// check if the client has any other active connection
 			if (client->connections->size <= 0) {
@@ -3050,7 +3138,8 @@ unsigned int client_receive (Client *client, Connection *connection) {
 						#ifdef CLIENT_DEBUG
 						cerver_log (
 							LOG_TYPE_ERROR, LOG_TYPE_NONE,
-							"client_receive () - rc < 0 - sock fd: %d", connection->socket->sock_fd 
+							"client_receive () - rc < 0 - sock fd: %d",
+							connection->socket->sock_fd
 						);
 						perror ("Error");
 						#endif
@@ -3075,12 +3164,11 @@ unsigned int client_receive (Client *client, Connection *connection) {
 				} break;
 
 				default: {
-					// char *s = c_string_create ("Connection %s rc: %ld",
-					//     connection->name->str, rc);
-					// if (s) {
-					//     cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
-					//     free (s);
-					// }
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+						"Connection %s rc: %ld",
+						connection->name->str, rc
+					);
 
 					client->stats->n_receives_done += 1;
 					client->stats->total_bytes_received += rc;
@@ -3187,6 +3275,18 @@ int client_connection_end (Client *client, Connection *connection) {
 		client_connection_close (client, connection);
 
 		dlist_remove (client->connections, connection, NULL);
+
+		if (connection->updating) {
+			// wait until connection has finished updating
+			pthread_mutex_lock (connection->mutex);
+
+			while (connection->updating) {
+				// printf ("client_connection_end () waiting...\n");
+				pthread_cond_wait (connection->cond, connection->mutex);
+			}
+
+			pthread_mutex_unlock (connection->mutex);
+		}
 
 		connection_delete (connection);
 

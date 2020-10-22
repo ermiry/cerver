@@ -136,7 +136,9 @@ struct _Client {
 
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	);
 
 	void (*file_upload_cb) (
@@ -275,8 +277,11 @@ CERVER_PUBLIC Client *client_get_by_sock_fd (struct _Cerver *cerver, i32 sock_fd
 CERVER_PUBLIC Client *client_get_by_session_id (struct _Cerver *cerver, const char *session_id);
 
 // broadcast a packet to all clients inside an avl structure
-CERVER_PUBLIC void client_broadcast_to_all_avl (AVLNode *node, struct _Cerver *cerver,
-	struct _Packet *packet);
+CERVER_PUBLIC void client_broadcast_to_all_avl (
+	AVLNode *node,
+	struct _Cerver *cerver,
+	struct _Packet *packet
+);
 
 #pragma endregion
 
@@ -462,6 +467,16 @@ typedef struct ClientErrorData {
 
 CERVER_PUBLIC void client_error_data_delete (ClientErrorData *error_data);
 
+// creates an error packet ready to be sent
+CERVER_PUBLIC struct _Packet *client_error_packet_generate (const ClientErrorType type, const char *msg);
+
+// creates and send a new error packet
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 client_error_packet_generate_and_send (
+	const ClientErrorType type, const char *msg,
+	Client *client, Connection *connection
+);
+
 #pragma endregion
 
 #pragma region client
@@ -572,7 +587,9 @@ CERVER_EXPORT void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *, char **saved_filename
+		struct _FileHeader *,
+		const char *file_data, size_t file_data_len,
+		char **saved_filename
 	)
 );
 
