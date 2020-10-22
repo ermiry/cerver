@@ -467,6 +467,16 @@ typedef struct ClientErrorData {
 
 CERVER_PUBLIC void client_error_data_delete (ClientErrorData *error_data);
 
+// creates an error packet ready to be sent
+CERVER_PUBLIC struct _Packet *client_error_packet_generate (const ClientErrorType type, const char *msg);
+
+// creates and send a new error packet
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 client_error_packet_generate_and_send (
+	const ClientErrorType type, const char *msg,
+	Client *client, Connection *connection
+);
+
 #pragma endregion
 
 #pragma region client

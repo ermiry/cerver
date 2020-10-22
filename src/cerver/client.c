@@ -1552,6 +1552,56 @@ static void client_error_packet_handler (Packet *packet) {
 
 }
 
+// creates an error packet ready to be sent
+Packet *client_error_packet_generate (const ClientErrorType type, const char *msg) {
+
+	Packet *packet = packet_new ();
+	if (packet) {
+		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
+
+		packet->packet = malloc (packet_len);
+		packet->packet_size = packet_len;
+
+		char *end = (char *) packet->packet;
+		PacketHeader *header = (PacketHeader *) end;
+		header->packet_type = PACKET_TYPE_ERROR;
+		header->packet_size = packet_len;
+
+		header->request_type = REQUEST_PACKET_TYPE_NONE;
+
+		end += sizeof (PacketHeader);
+
+		SError *s_error = (SError *) end;
+		s_error->error_type = type;
+		s_error->timestamp = time (NULL);
+		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
+		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+	}
+
+	return packet;
+
+}
+
+// creates and send a new error packet
+// returns 0 on success, 1 on error
+u8 client_error_packet_generate_and_send (
+	const ClientErrorType type, const char *msg,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	Packet *error_packet = client_error_packet_generate (type, msg);
+	if (error_packet) {
+		packet_set_network_values (error_packet, NULL, client, connection, NULL);
+		retval = packet_send (error_packet, 0, NULL, false);
+		packet_delete (error_packet);
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region client
@@ -2269,7 +2319,7 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 	u8 retval = 1;
 
 	if (client && connection && filename) {
-		char *last = strrchr (filename, '/');
+		char *last = strrchr ((char *) filename, '/');
 		const char *actual_filename = last ? last + 1 : NULL;
 		if (actual_filename) {
 			// try to open the file
@@ -2284,7 +2334,7 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 				client->file_stats->n_files_sent += 1;
 				client->file_stats->n_bytes_sent += sent;
 
-				if (sent == filestatus.st_size) retval = 0;
+				if (sent == (size_t) filestatus.st_size) retval = 0;
 
 				close (file_fd);
 			}
@@ -2381,7 +2431,7 @@ static void client_request_get_file (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
 		// search for the requested file in the configured paths
@@ -2424,9 +2474,9 @@ static void client_request_get_file (Packet *packet) {
 			#endif
 
 			// if not found, return an error to the client
-			(void) error_packet_generate_and_send (
+			(void) client_error_packet_generate_and_send (
 				CLIENT_ERROR_FILE_NOT_FOUND, "File not found",
-				NULL, packet->client, packet->connection
+				packet->client, packet->connection
 			);
 
 			client->file_stats->n_bad_files_requests += 1;
@@ -2440,9 +2490,9 @@ static void client_request_get_file (Packet *packet) {
 		#endif
 
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_GET_FILE, "Missing file header",
-			NULL, packet->client, packet->connection
+			packet->client, packet->connection
 		);
 
 		client->file_stats->n_bad_files_requests += 1;
@@ -2458,7 +2508,7 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = packet->data;
+		char *end = (char *) packet->data;
 		FileHeader *file_header = (FileHeader *) end;
 
 		const char *file_data = NULL;
@@ -2506,9 +2556,9 @@ static void client_request_send_file_actual (Packet *packet) {
 		#endif
 
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_SEND_FILE, "Missing file header",
-			NULL, client, packet->connection
+			client, packet->connection
 		);
 
 		client->file_stats->n_bad_files_upload_requests += 1;
@@ -2526,9 +2576,9 @@ static void client_request_send_file (Packet *packet) {
 
 	else {
 		// return a bad request error packet
-		(void) error_packet_generate_and_send (
+		(void) client_error_packet_generate_and_send (
 			CLIENT_ERROR_SEND_FILE, "Unable to process request",
-			NULL, packet->client, packet->connection
+			packet->client, packet->connection
 		);
 
 		#ifdef CLIENT_DEBUG
@@ -3117,7 +3167,7 @@ unsigned int client_receive (Client *client, Connection *connection) {
 					cerver_log (
 						LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 						"Connection %s rc: %ld",
-					    connection->name->str, rc
+						connection->name->str, rc
 					);
 
 					client->stats->n_receives_done += 1;
