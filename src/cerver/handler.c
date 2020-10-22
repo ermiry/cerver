@@ -2085,11 +2085,11 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
 
 	if (!on_hold_connection (cerver, connection)) {
 		#ifdef CERVER_DEBUG
-		char *status = c_string_create ("Connection is on hold on cerver %s!", cerver->info->name->str);
-		if (status) {
-			cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, status);
-			free (status);
-		}
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Connection is on hold on cerver %s!",
+			cerver->info->name->str
+		);
 		#endif
 
 		cerver->stats->total_on_hold_connections += 1;
@@ -2108,12 +2108,10 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
 	}
 
 	else {
-		char *status = c_string_create ("Failed to put connection on hold in cerver %s",
-			cerver->info->name->str);
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
+		cerver_log_error (
+			"Failed to put connection on hold in cerver %s",
+			cerver->info->name->str
+		);
 	}
 
 	return retval;
@@ -2133,15 +2131,11 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 	if (cr) {
 		if (thpool_is_full (cerver->thpool)) {
 			#ifdef HANDLER_DEBUG
-			char *status = c_string_create (
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 				"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
 				cerver->info->name->str, connection->socket->sock_fd
 			);
-
-			if (status) {
-				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-				free (status);
-			}
 			#endif
 
 			pthread_t thread_id = 0;
@@ -2166,27 +2160,19 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 				cr
 			)) {
 				#ifdef HANDLER_DEBUG
-				char *status = c_string_create (
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 					"Added work for sock fd <%d> connection to the thpool!",
 					connection->socket->sock_fd
 				);
 
-				if (status) {
-					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-					free (status);
-				}
-
-				status = c_string_create (
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 					"Cerver %s thpool - %d / %d threads working",
 					cerver->info->name->str,
 					thpool_get_num_threads_working (cerver->thpool),
 					cerver->thpool->num_threads_alive
 				);
-
-				if (status) {
-					cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-					free (status);
-				}
 				#endif
 
 				retval = 0;     // success
@@ -2213,30 +2199,21 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
 		cr
 	)) {
 		#ifdef HANDLER_DEBUG
-		char *status = c_string_create (
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 			"Created detachable thread for sock fd <%d> connection",
 			cr->connection->socket->sock_fd
 		);
-
-		if (status) {
-			cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-			free (status);
-		}
 		#endif
 
 		retval = 0;     // success
 	}
 
 	else {
-		char *status = c_string_create (
+		cerver_log_error (
 			"cerver_register_new_connection_normal_default () - Failed to create detachable thread for sock fd <%d> connection!",
 			cr->connection->socket->sock_fd
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 
 		cerver_receive_delete (cr);
 	}
@@ -2290,15 +2267,11 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 						else {
 							if (thpool_is_full (cerver->thpool)) {
 								#ifdef HANDLER_DEBUG
-								char *status = c_string_create (
+								cerver_log (
+									LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 									"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
 									cerver->info->name->str, connection->socket->sock_fd
 								);
-
-								if (status) {
-									cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-									free (status);
-								}
 								#endif
 
 								retval = cerver_register_new_connection_normal_default_create_detachable (cr);
@@ -2311,27 +2284,19 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 									cr
 								)) {
 									#ifdef HANDLER_DEBUG
-									char *status = c_string_create (
+									cerver_log (
+										LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 										"Added work for sock fd <%d> connection to the thpool!",
 										connection->socket->sock_fd
 									);
 
-									if (status) {
-										cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-										free (status);
-									}
-
-									status = c_string_create (
+									cerver_log (
+										LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 										"Cerver %s thpool - %d / %d threads working",
 										cerver->info->name->str,
 										thpool_get_num_threads_working (cerver->thpool),
 										cerver->thpool->num_threads_alive
 									);
-
-									if (status) {
-										cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, status);
-										free (status);
-									}
 									#endif
 
 									retval = 0;     // success
@@ -2351,15 +2316,10 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 	}
 
 	else {
-		char *status = c_string_create (
+		cerver_log_error (
 			"cerver_register_new_connection_normal_default () - Failed to create new client for new connection with sock fd <%d>!",
 			connection->socket->sock_fd
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 	}
 
 	return retval;
@@ -2392,43 +2352,38 @@ static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connecti
 
 }
 
-static void cerver_register_new_connection (Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
+static void cerver_register_new_connection (
+	Cerver *cerver,
+	const i32 new_fd, const struct sockaddr_storage client_address
+) {
 
 	Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
 	if (connection) {
 		// #ifdef CERVER_DEBUG
-		char *s = c_string_create ("New connection from IP address: %s -- Port: %d",
-			connection->ip->str, connection->port);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CLIENT, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+			"New connection from IP address: %s -- Port: %d",
+			connection->ip->str, connection->port
+		);
 		// #endif
 
 		connection->active = true;
 
 		if (!cerver_register_new_connection_select (cerver, connection)) {
 			#ifdef CERVER_DEBUG
-			s = c_string_create ("New connection to cerver %s!", cerver->info->name->str);
-			if (s) {
-				cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+				"New connection to cerver %s!", cerver->info->name->str
+			);
 			#endif
 		}
 
 		// internal server error - failed to handle the new connection
 		else {
-			char *status = c_string_create (
+			cerver_log_error (
 				"cerver_register_new_connection () - internal error - dropping sock fd <%d> connection...",
 				connection->socket->sock_fd
 			);
-
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
 
 			connection_drop (cerver, connection);
 		}
@@ -2436,8 +2391,8 @@ static void cerver_register_new_connection (Cerver *cerver,
 
 	else {
 		// #ifdef CERVER_DEBUG
-		cerver_log_msg (
-			stdout, LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 			"cerver_register_new_connection () - failed to create a new connection!"
 		);
 		// #endif
@@ -2465,7 +2420,7 @@ static void cerver_accept (void *cerver_ptr) {
 		else {
 			// if we get EWOULDBLOCK, we have accepted all connections
 			if (errno != EWOULDBLOCK) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
 				perror ("Error");
 			}
 		}
@@ -2541,21 +2496,19 @@ static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *
 		cerver->stats->current_active_client_connections++;
 
 		#ifdef CERVER_DEBUG
-		char *s = c_string_create ("Added sock fd <%d> to cerver %s MAIN poll, idx: %i",
-			connection->socket->sock_fd, cerver->info->name->str, idx);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Added sock fd <%d> to cerver %s MAIN poll, idx: %i",
+			connection->socket->sock_fd, cerver->info->name->str, idx
+		);
 		#endif
 
 		#ifdef CERVER_STATS
-		char *status = c_string_create ("Cerver %s current active connections: %ld",
-			cerver->info->name->str, cerver->stats->current_active_client_connections);
-		if (status) {
-			cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, status);
-			free (status);
-		}
+		cerver_log (
+			LOG_TYPE_CERVER, LOG_TYPE_NONE,
+			"Cerver %s current active connections: %ld",
+			cerver->info->name->str, cerver->stats->current_active_client_connections
+		);
 		#endif
 
 		retval = 0;
@@ -2581,20 +2534,19 @@ u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 
 		else {
 			#ifdef CERVER_DEBUG
-			char *s = c_string_create ("Cerver %s main poll is full -- we need to realloc...",
-				cerver->info->name->str);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Cerver %s main poll is full -- we need to realloc...",
+				cerver->info->name->str
+			);
 			#endif
+
 			if (cerver_realloc_main_poll_fds (cerver)) {
-				char *s = c_string_create ("Failed to realloc cerver %s main poll fds!",
-					cerver->info->name->str);
-				if (s) {
-					cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
-					free (s);
-				}
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_NONE,
+					"Failed to realloc cerver %s main poll fds!",
+					cerver->info->name->str
+				);
 			}
 
 			// try again to register the connection
@@ -2629,21 +2581,19 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			cerver->stats->current_active_client_connections--;
 
 			#ifdef CERVER_DEBUG
-			char *s = c_string_create ("Removed sock fd <%d> from cerver %s MAIN poll, idx: %d",
-				sock_fd, cerver->info->name->str, idx);
-			if (s) {
-				cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"Removed sock fd <%d> from cerver %s MAIN poll, idx: %d",
+				sock_fd, cerver->info->name->str, idx
+			);
 			#endif
 
 			#ifdef CERVER_STATS
-			char *status = c_string_create ("Cerver %s current active connections: %ld",
-				cerver->info->name->str, cerver->stats->current_active_client_connections);
-			if (status) {
-				cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, status);
-				free (status);
-			}
+			cerver_log (
+				LOG_TYPE_CERVER, LOG_TYPE_NONE,
+				"Cerver %s current active connections: %ld",
+				cerver->info->name->str, cerver->stats->current_active_client_connections
+			);
 			#endif
 
 			retval = 0;     // removed the sock fd form the cerver poll
@@ -2651,12 +2601,11 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 
 		else {
 			// #ifdef CERVER_DEBUG
-			char *s = c_string_create ("Sock fd <%d> was NOT found in cerver %s MAIN poll!",
-				sock_fd, cerver->info->name->str);
-			if (s) {
-				cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_CERVER, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
+				"Sock fd <%d> was NOT found in cerver %s MAIN poll!",
+				sock_fd, cerver->info->name->str
+			);
 			// #endif
 		}
 
@@ -2680,15 +2629,10 @@ static inline void cerver_poll_handle_actual_accept (Cerver *cerver) {
 
 	if (cerver->thpool) {
 		if (thpool_add_work (cerver->thpool, cerver_accept, cerver))  {
-			char *s = c_string_create (
+			cerver_log_error (
 				"Failed to add cerver_accept () to cerver's %s thpool!",
 				cerver->info->name->str
 			);
-
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
 		}
 	}
 
@@ -2710,12 +2654,11 @@ static inline void cerver_poll_handle_actual_receive (Cerver *cerver, const u32 
 
 				// handle received packets using multiple threads
 				// if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
-				//     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!",
-				//         cerver->info->name->str);
-				//     if (s) {
-				//         cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
-				//         free (s);
-				//     }
+				// 	cerver_log (
+				// 		LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				// 		"Failed to add cerver_receive () to cerver's %s thpool!",
+				//         cerver->info->name->str
+				// 	);
 				// }
 
 				// 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
@@ -2795,13 +2738,14 @@ u8 cerver_poll (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		char *s = c_string_create ("Cerver %s ready in port %d!", cerver->info->name->str, cerver->port);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+			"Cerver %s ready in port %d!",
+			cerver->info->name->str, cerver->port
+		);
+
 		#ifdef CERVER_DEBUG
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections...");
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections...");
 		#endif
 
 		int poll_retval = 0;
@@ -2810,11 +2754,10 @@ u8 cerver_poll (Cerver *cerver) {
 
 			switch (poll_retval) {
 				case -1: {
-					char *s = c_string_create ("Cerver %s main poll has failed!", cerver->info->name->str);
-					if (s) {
-						cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
-						free (s);
-					}
+					cerver_log (
+						LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+						"Cerver %s main poll has failed!", cerver->info->name->str
+					);
 
 					perror ("Error");
 					cerver->isRunning = false;
@@ -2822,11 +2765,9 @@ u8 cerver_poll (Cerver *cerver) {
 
 				case 0: {
 					// #ifdef CERVER_DEBUG
-					// char *status = c_string_create ("Cerver %s MAIN poll timeout", cerver->info->name->str);
-					// if (status) {
-					//     cerver_log_debug (status);
-					//     free (status);
-					// }
+					// cerver_log_debug (
+					// 	"Cerver %s MAIN poll timeout", cerver->info->name->str
+					// );
 					// #endif
 				} break;
 
@@ -2837,19 +2778,17 @@ u8 cerver_poll (Cerver *cerver) {
 		}
 
 		#ifdef CERVER_DEBUG
-		s = c_string_create ("Cerver %s main poll has stopped!", cerver->info->name->str);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_CERVER, LOG_TYPE_NONE,
+			"Cerver %s main poll has stopped!", cerver->info->name->str
+		);
 		#endif
 
 		retval = 0;
 	}
 
 	else {
-		cerver_log_msg (
-			stderr,
+		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 			"Can't listen for connections on a NULL cerver!"
 		);
@@ -2869,13 +2808,14 @@ u8 cerver_threads (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		char *s = c_string_create ("Cerver %s ready in port %d!", cerver->info->name->str, cerver->port);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CERVER, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+			"Cerver %s ready in port %d!",
+			cerver->info->name->str, cerver->port
+		);
+
 		#ifdef CERVER_DEBUG
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections...");
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections...");
 		#endif
 
 		while (cerver->isRunning) {
@@ -2883,19 +2823,17 @@ u8 cerver_threads (Cerver *cerver) {
 		}
 
 		#ifdef CERVER_DEBUG
-		s = c_string_create ("Cerver %s accept thread has stopped!", cerver->info->name->str);
-		if (s) {
-			cerver_log_msg (stdout, LOG_TYPE_CERVER, LOG_TYPE_NONE, s);
-			free (s);
-		}
+		cerver_log (
+			LOG_TYPE_CERVER, LOG_TYPE_NONE,
+			"Cerver %s accept thread has stopped!", cerver->info->name->str
+		);
 		#endif
 
 		retval = 0;
 	}
 
 	else {
-		cerver_log_msg (
-			stderr,
+		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 			"Can't listen for connections on a NULL cerver!"
 		);
