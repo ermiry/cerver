@@ -79,7 +79,7 @@ const char *cerver_handler_type_to_string (CerverHandlerType type) {
 		#undef XX
 	}
 
-	return cerver_handler_type_to_string (CERVER_TYPE_NONE);
+	return cerver_handler_type_to_string (CERVER_HANDLER_TYPE_NONE);
 
 }
 
@@ -91,7 +91,7 @@ const char *cerver_handler_type_description (CerverHandlerType type) {
 		#undef XX
 	}
 
-	return cerver_handler_type_description (CERVER_TYPE_NONE);
+	return cerver_handler_type_description (CERVER_HANDLER_TYPE_NONE);
 
 }
 
