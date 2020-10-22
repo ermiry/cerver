@@ -12,14 +12,16 @@
 #include "cerver/collections/htab.h"
 #include "cerver/collections/dlist.h"
 
-#include "cerver/socket.h"
-#include "cerver/network.h"
-#include "cerver/cerver.h"
-#include "cerver/handler.h"
-#include "cerver/client.h"
-#include "cerver/packets.h"
-#include "cerver/auth.h"
 #include "cerver/admin.h"
+#include "cerver/auth.h"
+#include "cerver/cerver.h"
+#include "cerver/client.h"
+#include "cerver/handler.h"
+#include "cerver/network.h"
+#include "cerver/packets.h"
+#include "cerver/socket.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
@@ -35,28 +37,27 @@ ConnectionStats *connection_stats_new (void) {
         memset (stats, 0, sizeof (ConnectionStats));
         stats->received_packets = packets_per_type_new ();
         stats->sent_packets = packets_per_type_new ();
-    } 
+    }
 
     return stats;
 
 }
 
-static inline void connection_stats_delete (ConnectionStats *stats) { 
-    
+static inline void connection_stats_delete (ConnectionStats *stats) {
+
     if (stats) {
         packets_per_type_delete (stats->received_packets);
         packets_per_type_delete (stats->sent_packets);
 
-        free (stats); 
-    } 
-    
+        free (stats);
+    }
+
 }
 
 void connection_stats_print (Connection *connection) {
 
     if (connection) {
         if (connection->stats) {
-            printf ("\nConnection's stats:\n");
             printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
 
             printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
@@ -75,14 +76,18 @@ void connection_stats_print (Connection *connection) {
         }
 
         else {
-            cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
-                "Connection does not have a reference to a connection stats!");
+            cerver_log (
+                LOG_TYPE_ERROR, LOG_TYPE_NONE,
+                "Connection does not have a reference to a connection stats!"
+            );
         }
     }
 
     else {
-        cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE, 
-            "Can't get stats of a NULL connection!");
+        cerver_log (
+            LOG_TYPE_WARNING, LOG_TYPE_NONE,
+            "Can't get stats of a NULL connection!"
+        );
     }
 
 }
@@ -111,6 +116,7 @@ Connection *connection_new (void) {
 
         connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
         connection->active = false;
+        connection->updating = false;
 
         connection->auth_tries = DEFAULT_AUTH_TRIES;
         connection->bad_packets = 0;
@@ -119,7 +125,7 @@ Connection *connection_new (void) {
         connection->sock_receive = NULL;
 
         connection->update_thread_id = 0;
-        connection->update_sleep = DEFAULT_CONNECTION_UPDATE_SLEEP;
+        connection->update_timeout = DEFAULT_CONNECTION_TIMEOUT;
 
         connection->full_packet = false;
 
@@ -130,6 +136,7 @@ Connection *connection_new (void) {
         connection->receive_packets = true;
         connection->custom_receive = NULL;
         connection->custom_receive_args = NULL;
+        connection->custom_receive_args_delete = NULL;
 
         connection->authenticated = false;
         connection->auth_data = NULL;
@@ -137,8 +144,11 @@ Connection *connection_new (void) {
         connection->delete_auth_data = NULL;
         connection->admin_auth = false;
         connection->auth_packet = NULL;
-        
+
         connection->stats = NULL;
+
+        connection->cond = NULL;
+        connection->mutex = NULL;
     }
 
     return connection;
@@ -165,9 +175,18 @@ void connection_delete (void *ptr) {
         if (connection->received_data && connection->received_data_delete)
             connection->received_data_delete (connection->received_data);
 
+        if (connection->custom_receive_args) {
+            if (connection->custom_receive_args_delete) {
+                connection->custom_receive_args_delete (connection->custom_receive_args);
+            }
+        }
+
         connection_remove_auth_data (connection);
 
         connection_stats_delete (connection->stats);
+
+        pthread_cond_delete (connection->cond);
+        pthread_mutex_delete (connection->mutex);
 
         free (connection);
     }
@@ -215,7 +234,7 @@ int connection_comparator (const void *a, const void *b) {
         if (con_a->socket && con_b->socket) {
             if (con_a->socket->sock_fd < con_b->socket->sock_fd) return -1;
             else if (con_a->socket->sock_fd == con_b->socket->sock_fd) return 0;
-            else return 1; 
+            else return 1;
         }
     }
 
@@ -282,12 +301,12 @@ void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 
 }
 
-// 17/06/2020
-// sets the waiting time (sleep) in micro secs between each call to recv () in connection_update () thread
-// the dault value is 200000 (DEFAULT_CONNECTION_UPDATE_SLEEP)
-void connection_set_update_sleep (Connection *connection, u32 sleep) {
+// sets the timeout (in secs) the connection's socket will have
+// this refers to the time the socket will block waiting for new data to araive
+// note that this only has effect in connection_update ()
+void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
-    if (connection) connection->update_sleep = sleep;
+    if (connection) connection->update_timeout = timeout;
 
 }
 
@@ -306,22 +325,29 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 // sets a custom receive method to handle incomming packets in the connection
 // a reference to the client and connection will be passed to the action as ClientConnection structure
 // the method must return 0 on success & 1 on error
-void connection_set_custom_receive (Connection *connection, delegate custom_receive, void *args) {
+void connection_set_custom_receive (
+    Connection *connection, 
+    delegate custom_receive, 
+    void *args, void (*args_delete)(void *)
+) {
 
     if (connection) {
         connection->custom_receive = custom_receive;
         connection->custom_receive_args = args;
+        connection->custom_receive_args_delete = args_delete;
         if (connection->custom_receive) connection->receive_packets = true;
     }
 
 }
 
-// sets the connection auth data to send whenever the cerver requires authentication 
+// sets the connection auth data to send whenever the cerver requires authentication
 // and a method to destroy it once the connection has ended,
 // if delete_auth_data is NULL, the auth data won't be deleted
-void connection_set_auth_data (Connection *connection, 
+void connection_set_auth_data (
+    Connection *connection,
     void *auth_data, size_t auth_data_size, Action delete_auth_data,
-    bool admin_auth) {
+    bool admin_auth
+) {
 
     if (connection && auth_data) {
         connection_remove_auth_data (connection);
@@ -330,7 +356,7 @@ void connection_set_auth_data (Connection *connection,
         connection->auth_data_size = auth_data_size;
         connection->delete_auth_data = delete_auth_data;
         connection->admin_auth = admin_auth;
-    } 
+    }
 
 }
 
@@ -341,7 +367,7 @@ void connection_remove_auth_data (Connection *connection) {
 
     if (connection) {
         if (connection->auth_data) {
-            if (connection->delete_auth_data) 
+            if (connection->delete_auth_data)
                 connection->delete_auth_data (connection->auth_data);
         }
 
@@ -367,8 +393,8 @@ u8 connection_generate_auth_packet (Connection *connection) {
     if (connection) {
         if (connection->auth_data) {
             connection->auth_packet = packet_generate_request (
-                AUTH_PACKET, 
-                connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH, 
+                PACKET_TYPE_AUTH,
+                connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH,
                 connection->auth_data, connection->auth_data_size
             );
 
@@ -389,14 +415,14 @@ u8 connection_init (Connection *connection) {
         if (!connection->active) {
             // init the new connection socket
             switch (connection->protocol) {
-                case IPPROTO_TCP: 
+                case IPPROTO_TCP:
                     connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
                     break;
                 case IPPROTO_UDP:
                     connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
                     break;
 
-                default: cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
+                default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
             }
 
             if (connection->socket->sock_fd > 0) {
@@ -410,7 +436,7 @@ u8 connection_init (Connection *connection) {
                             addr->sin6_family = AF_INET6;
                             addr->sin6_addr = in6addr_any;
                             addr->sin6_port = htons (connection->port);
-                        } 
+                        }
 
                         else {
                             struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
@@ -424,7 +450,7 @@ u8 connection_init (Connection *connection) {
 
                     // else {
                     //     #ifdef CLIENT_DEBUG
-                    //     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
+                    //     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
                     //         "Failed to set the socket to non blocking mode!");
                     //     #endif
                     //     close (connection->sock_fd);
@@ -433,16 +459,20 @@ u8 connection_init (Connection *connection) {
             }
 
             else {
-                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
-                    "Failed to create new socket!");
+                cerver_log (
+                    LOG_TYPE_ERROR, LOG_TYPE_NONE,
+                    "Failed to create new socket!"
+                );
             }
         }
 
         else {
-            cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_NONE,
-                "Failed to init connection -- it is already active!");
+            cerver_log (
+                LOG_TYPE_WARNING, LOG_TYPE_NONE,
+                "Failed to init connection -- it is already active!"
+            );
         }
-        
+
     }
 
     return retval;
@@ -454,13 +484,13 @@ static u8 connection_try (Connection *connection, const struct sockaddr_storage 
 
     u32 numsec;
     for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
-        if (!connect (connection->socket->sock_fd, 
-            (const struct sockaddr *) &address, 
-            sizeof (struct sockaddr))) 
+        if (!connect (connection->socket->sock_fd,
+            (const struct sockaddr *) &address,
+            sizeof (struct sockaddr)))
             return 0;
 
         if (numsec <= connection->max_sleep / 2) sleep (numsec);
-    } 
+    }
 
     return 1;
 
@@ -516,7 +546,7 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 so
             cerver->on_hold_connection_sock_fd_map,
             key, sizeof (i32)
         );
-        
+
         if (connection_data) connection = (Connection *) connection_data;
     }
 
@@ -589,21 +619,19 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
         if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
             #ifdef CERVER_DEBUG
             if (client->session_id) {
-                char *s = c_string_create ("Registered a new connection to client with session id: %s",
-                    client->session_id->str);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
+                    "Registered a new connection to client with session id: %s",
+                    client->session_id->str
+                );
             }
 
             else {
-                char *s = c_string_create ("Registered a new connection to client (id): %ld",
-                    client->id);
-                if (s) {
-                    cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT, s);
-                    free (s);
-                }
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
+                    "Registered a new connection to client (id): %ld",
+                    client->id
+                );
             }
             #endif
 
@@ -624,7 +652,7 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
     if (cerver && client && connection) {
         // map the socket fd with the client
         const void *key = &connection->socket->sock_fd;
-        retval = (u8) htab_insert (cerver->client_sock_fd_map, key, sizeof (i32), 
+        retval = (u8) htab_insert (cerver->client_sock_fd_map, key, sizeof (i32),
             client, sizeof (Client));
     }
 
@@ -642,24 +670,21 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
         // remove the sock fd from each map
         const void *key = &connection->socket->sock_fd;
         if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
-            // char *s = c_string_create ("Removed sock fd %d from cerver's %s client sock map.", 
-            //     connection->socket->sock_fd, cerver->info->name->str);
-            // if (s) {
-            //     cerver_log_success (s);
-            //     free (s);
-            // }
+            // cerver_log_success (
+            // 	"Removed sock fd %d from cerver's %s client sock map.",
+            //     connection->socket->sock_fd, cerver->info->name->str
+            // );
 
             retval = 0;
         }
 
         else {
             #ifdef CERVER_DEBUG
-            char *s = c_string_create ("Failed to remove sock fd %d from cerver's %s client sock map.", 
-                connection->socket->sock_fd, cerver->info->name->str);
-            if (s) {
-                cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_CERVER, s);
-                free (s);
-            }
+            cerver_log (
+                LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+                "Failed to remove sock fd %d from cerver's %s client sock map.",
+                connection->socket->sock_fd, cerver->info->name->str
+            );
             #endif
         }
     }
@@ -673,7 +698,7 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
 // returns 0 on success, 1 on error
 u8 connection_register_to_cerver_poll (Cerver *cerver, Connection *connection) {
 
-    return (cerver && connection) ? 
+    return (cerver && connection) ?
         cerver_poll_register_connection (cerver, connection) : 1;
 
 }
@@ -716,13 +741,13 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
 
     if (cerver && connection) {
         switch (cerver->handler_type) {
-            case CERVER_HANDLER_TYPE_POLL: 
+            case CERVER_HANDLER_TYPE_POLL:
                 errors |= connection_unregister_from_cerver_poll (cerver, connection);
                 break;
 
             default: break;
         }
-        
+
         errors |= connection_unregister_from_cerver (cerver, connection);
     }
 
@@ -734,7 +759,10 @@ u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
 
 #pragma region receive
 
-static ConnectionCustomReceiveData *connection_custom_receive_data_new (Client *client, Connection *connection, void *args) {
+static ConnectionCustomReceiveData *connection_custom_receive_data_new (
+    Client *client, Connection *connection, 
+    void *args
+) {
 
     ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
     if (custom_data) {
@@ -760,38 +788,42 @@ void connection_update (void *ptr) {
         ClientConnection *cc = (ClientConnection *) ptr;
         // thread_set_name (c_string_create ("connection-%s", cc->connection->name->str));
 
-        ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (cc->client, cc->connection, 
-            cc->connection->custom_receive_args);
+        ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (
+            cc->client, cc->connection,
+            cc->connection->custom_receive_args
+        );
 
         if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
 
-        // 17/06/2020 - non blocking recv () to correctly use client mutex
-        // when destroying client
-        if (sock_set_blocking (cc->connection->socket->sock_fd, true)) {
-            // if (cc->connection->receive_packets) {
-                while (cc->client->running && cc->connection->active) {
-                    pthread_mutex_lock (cc->client->lock);
+        (void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
 
-                    if (cc->connection->custom_receive) {
-                        // if a custom receive method is set, use that one directly
-                        if (cc->connection->custom_receive (custom_data)) {
-                            // break;      // an error has ocurred
-                        }
-                    } 
+        cc->connection->updating = true;
 
-                    else {
-                        // use the default receive method that expects cerver type packages
-                        if (client_receive (cc->client, cc->connection)) {
-                            // break;      // an error has ocurred
-                        }
-                    }
+        while (cc->client->running && cc->connection->active) {
+            // pthread_mutex_lock (cc->client->lock);
 
-                    pthread_mutex_unlock (cc->client->lock);
-
-                    usleep (cc->connection->update_sleep);
+            if (cc->connection->custom_receive) {
+                // if a custom receive method is set, use that one directly
+                if (cc->connection->custom_receive (custom_data)) {
+                    // break;      // an error has ocurred
                 }
-            // }    
+            }
+
+            else {
+                // use the default receive method that expects cerver type packages
+                if (client_receive (cc->client, cc->connection)) {
+                    // break;      // an error has ocurred
+                }
+            }
+
+            // pthread_mutex_unlock (cc->client->lock);
         }
+
+        // signal waiting thread
+        pthread_mutex_lock (cc->connection->mutex);
+        cc->connection->updating = false;
+        pthread_cond_signal (cc->connection->cond);
+        pthread_mutex_unlock (cc->connection->mutex);
 
         connection_custom_receive_data_delete (custom_data);
         client_connection_aux_delete (cc);
