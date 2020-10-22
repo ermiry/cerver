@@ -635,7 +635,7 @@ static int file_send_open (
 
 	int file_fd = -1;
 
-	char *last = strrchr (filename, '/');
+	char *last = strrchr ((char *) filename, '/');
 	*actual_filename = last ? last + 1 : NULL;
 	if (actual_filename) {
 		// try to open the file
@@ -795,7 +795,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 
 	u8 retval = 1;
 
-	int buff_size = 4096;
+	size_t buff_size = 4096;
 	int pipefds[2] = { 0 };
 	ssize_t received = 0;
 	ssize_t moved = 0;
