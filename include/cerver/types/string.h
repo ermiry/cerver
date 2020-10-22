@@ -1,5 +1,5 @@
-#ifndef _CERVER_ESTRING_H_
-#define _CERVER_ESTRING_H_
+#ifndef _CERVER_STRING_H_
+#define _CERVER_STRING_H_
 
 #include "cerver/types/types.h"
 
@@ -7,8 +7,8 @@
 
 typedef struct String {
 
-    unsigned int len;
-    char *str;
+	unsigned int len;
+	char *str;
 
 } String;
 
@@ -58,42 +58,42 @@ CERVER_PUBLIC int str_contains (String *str, char *to_find);
 
 typedef enum SStringSize {
 
-    SS_SMALL = 64,
-    SS_MEDIUM = 128,
-    SS_LARGE = 256,
-    SS_EXTRA_LARGE = 512
+	SS_SMALL = 64,
+	SS_MEDIUM = 128,
+	SS_LARGE = 256,
+	SS_EXTRA_LARGE = 512
 
 } SStringSize;
 
 // serialized str (small)
 typedef struct SStringS {
 
-    u16 len;
-    char str[64];
+	u16 len;
+	char str[64];
 
 } SStringS;
 
 // serialized str (medium)
 typedef struct SStringM {
 
-    u16 len;
-    char str[128];
+	u16 len;
+	char str[128];
 
 } SStringM;
 
 // serialized str (large)
 typedef struct SStringL {
 
-    u16 len;
-    char str[256];
+	u16 len;
+	char str[256];
 
 } SStringL;
 
 // serialized str (extra large)
 typedef struct SStringXL {
 
-    u16 len;
-    char str[512];
+	u16 len;
+	char str[512];
 
 } SStringXL;
 

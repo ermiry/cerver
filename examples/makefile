@@ -3,8 +3,6 @@ TARGET      := cerver
 PTHREAD 	:= -l pthread
 MATH		:= -lm
 
-CMONGO 		:= `pkg-config --libs --cflags libmongoc-1.0`
-
 # print additional information
 DEFINES = -D CERVER_DEBUG -D CERVER_STATS
 

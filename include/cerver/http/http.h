@@ -52,8 +52,8 @@ CERVER_PUBLIC const char *http_content_type_by_extension (const char *ext);
 
 typedef struct KeyValuePair { 
 
-    String *key;
-    String *value;
+	String *key;
+	String *value;
 
 } KeyValuePair;
 
@@ -73,33 +73,33 @@ CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
 
 struct _HttpCerver {
 
-    struct _Cerver *cerver;
+	struct _Cerver *cerver;
 
-    // paths to serve static files
-    DoubleList *static_paths;
+	// paths to serve static files
+	DoubleList *static_paths;
 
-    // list of top level routes
-    DoubleList *routes;
+	// list of top level routes
+	DoubleList *routes;
 
-    // catch all route (/*)
-    void (*default_handler)(CerverReceive *cr, HttpRequest *request);
+	// catch all route (/*)
+	void (*default_handler)(CerverReceive *cr, HttpRequest *request);
 
-    // uploads
-    String *uploads_path;              // default uploads path
-    String *(*uploads_dirname_generator)(CerverReceive *cr);
+	// uploads
+	String *uploads_path;              // default uploads path
+	String *(*uploads_dirname_generator)(CerverReceive *cr);
 
-    // auth
-    jwt_alg_t jwt_alg;
+	// auth
+	jwt_alg_t jwt_alg;
 
-    String *jwt_opt_key_name;          // jwt private key filename
-    String *jwt_private_key;           // jwt actual private key
+	String *jwt_opt_key_name;          // jwt private key filename
+	String *jwt_private_key;           // jwt actual private key
 
-    String *jwt_opt_pub_key_name;      // jwt public key filename
-    String *jwt_public_key;            // jwt actual public key
+	String *jwt_opt_pub_key_name;      // jwt public key filename
+	String *jwt_public_key;            // jwt actual public key
 
-    // stats
-    size_t n_cath_all_requests;        // failed to match a route
-    size_t n_failed_auth_requests;     // failed to auth with private route 
+	// stats
+	size_t n_cath_all_requests;        // failed to match a route
+	size_t n_failed_auth_requests;     // failed to auth with private route 
 
 };
 
@@ -119,9 +119,9 @@ CERVER_PRIVATE void http_cerver_init (HttpCerver *http_cerver);
 
 typedef struct HttpStaticPath {
 
-    String *path;
+	String *path;
 
-    HttpRouteAuthType auth_type;
+	HttpRouteAuthType auth_type;
 
 } HttpStaticPath;
 
@@ -218,28 +218,28 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 
 typedef struct HttpReceive {
 
-    CerverReceive *cr;
+	CerverReceive *cr;
 
-    // keep connection alive - don't close after request has ended
-    bool keep_alive;
+	// keep connection alive - don't close after request has ended
+	bool keep_alive;
 
-    void (*handler)(struct HttpReceive *, ssize_t, char *);
+	void (*handler)(struct HttpReceive *, ssize_t, char *);
 
-    HttpCerver *http_cerver;
+	HttpCerver *http_cerver;
 
 	http_parser *parser;
 	http_parser_settings settings;
 
-    multipart_parser *mpart_parser;
-    multipart_parser_settings mpart_settings;
-    
+	multipart_parser *mpart_parser;
+	multipart_parser_settings mpart_settings;
+	
 	HttpRequest *request;
 
-    // websockets
-    unsigned char fin_rsv_opcode;
-    size_t fragmented_message_len;
-    char *fragmented_message;
-    void (*ws_on_open)(struct _Cerver *, struct _Connection *);
+	// websockets
+	unsigned char fin_rsv_opcode;
+	size_t fragmented_message_len;
+	char *fragmented_message;
+	void (*ws_on_open)(struct _Cerver *, struct _Connection *);
 	void (*ws_on_close)(struct _Cerver *, const char *reason);
 	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
 	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);

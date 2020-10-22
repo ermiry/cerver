@@ -42,6 +42,15 @@ void end (int dummy) {
 
 #pragma region routes
 
+// GET /
+void main_handler (CerverReceive *cr, HttpRequest *request) {
+
+	if (http_response_render_file (cr, "./examples/web/public/echo.html")) {
+		cerver_log_error ("Failed to send ./examples/web/public/echo.html");
+	}
+
+}
+
 void test_handler (CerverReceive *cr, HttpRequest *request) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
@@ -132,6 +141,12 @@ int main (int argc, char **argv) {
 
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
+
+		http_cerver_static_path_add (http_cerver, "./examples/web/public");
+
+		// GET /
+		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
+		http_cerver_route_register (http_cerver, main_route);
 
 		// /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);

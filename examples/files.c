@@ -8,6 +8,7 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
+#include <cerver/files.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -72,7 +73,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log ( LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -82,6 +83,36 @@ static void handler (void *data) {
 #pragma endregion
 
 #pragma region events
+
+static void on_cever_started (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s has started!\n", 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
+static void on_cever_teardown (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s is going to be destroyed!\n", 
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
 
 static void on_client_connected (void *event_data_ptr) {
 
@@ -132,14 +163,14 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Dedicated Connection Thread Example");
+	cerver_log_debug ("Simple File Cerver Example");
 	printf ("\n");
-	cerver_log_debug ("Handling each connection in a dedicated thread");
+	cerver_log_debug ("Cerver is configured to accept & handle files requests");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_FILES, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Dedicated threads for each conenction");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Simple file cerver example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
@@ -151,6 +182,20 @@ int main (void) {
 		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_STARTED,
+			on_cever_started, NULL, NULL,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver, 
+			CERVER_EVENT_TEARDOWN,
+			on_cever_teardown, NULL, NULL,
+			false, false
+		);
 
 		cerver_event_register (
 			my_cerver, 
@@ -166,6 +211,12 @@ int main (void) {
 			false, false
 		);
 
+		/*** file cerver configuration ***/
+		FileCerver *file_cerver = (FileCerver *) my_cerver->cerver_data;
+
+		file_cerver_add_path (file_cerver, "./data");
+		file_cerver_set_uploads_path (file_cerver, "./uploads");
+
 		if (cerver_start (my_cerver)) {
 			char *s = c_string_create ("Failed to start %s!",
 				my_cerver->info->name->str);
@@ -179,7 +230,7 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}

@@ -279,30 +279,20 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 
 		// printf ("\n%s\n", http_cerver->jwt_private_key->str);
 
-		char *status = c_string_create (
+		cerver_log_success (
 			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
 			http_cerver->cerver->info->name->str,
 			http_cerver->jwt_private_key->len
 		);
 
-		if (status) {
-			cerver_log_success (status);
-			free (status);
-		}
-
 		retval = 0;
 	}
 
 	else {
-		char *status = c_string_create (
+		cerver_log_error (
 			"Failed to load cerver's %s http jwt PRIVATE key!",
 			http_cerver->cerver->info->name->str
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 	}
 
 	return retval;
@@ -322,30 +312,20 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 
 		// printf ("\n%s\n", http_cerver->jwt_public_key->str);
 
-		char *status = c_string_create (
+		cerver_log_success (
 			"Loaded cerver's %s http jwt PUBLIC key (size %ld)!",
 			http_cerver->cerver->info->name->str,
 			http_cerver->jwt_public_key->len
 		);
 
-		if (status) {
-			cerver_log_success (status);
-			free (status);
-		}
-
 		retval = 0;
 	}
 
 	else {
-		char *status = c_string_create (
+		cerver_log_error (
 			"Failed to load cerver's %s http jwt PUBLIC key!",
 			http_cerver->cerver->info->name->str
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 	}
 
 	return retval;
@@ -1084,75 +1064,71 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	http_multi_part_headers_print (multi_part);
 	#endif
 
-	if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
-		char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
-		end += strlen ("form-data;");
+	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
+		if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
+			end += strlen ("form-data;");
 
-		multi_part->params = http_mpart_attributes_parse (end);
-		// key_value_pairs_print (multi_part->params);
+			multi_part->params = http_mpart_attributes_parse (end);
+			// key_value_pairs_print (multi_part->params);
 
-		multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
-		multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
+			multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
 
-		if (multi_part->filename) {
-			http_receive->request->n_files += 1;
+			if (multi_part->filename) {
+				http_receive->request->n_files += 1;
 
-			if (http_receive->http_cerver->uploads_path) {
-				char *filename = NULL;
+				if (http_receive->http_cerver->uploads_path) {
+					char *filename = NULL;
 
-				if (http_receive->request->dirname) {
-					filename = c_string_create (
-						"%s/%s/%s",
-						http_receive->http_cerver->uploads_path->str,
-						http_receive->request->dirname->str,
-						multi_part->filename->str
-					);
+					if (http_receive->request->dirname) {
+						filename = c_string_create (
+							"%s/%s/%s",
+							http_receive->http_cerver->uploads_path->str,
+							http_receive->request->dirname->str,
+							multi_part->filename->str
+						);
+					}
+
+					else {
+						filename = c_string_create (
+							"%s/%s", 
+							http_receive->http_cerver->uploads_path->str, multi_part->filename->str
+						);
+					}
+
+					multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
+					switch (multi_part->fd) {
+						case -1: {
+							cerver_log_error (
+								"Failed to open %s filename to save multipart file!",
+								filename
+							);
+							perror ("Error");
+
+							free (filename);
+						} break;
+
+						default: {
+							#ifdef HTTP_DEBUG
+							cerver_log_debug ("Opened %s to save multipart file!", filename);
+							#endif
+
+							multi_part->saved_filename = str_new (NULL);
+							multi_part->saved_filename->str = filename;
+							multi_part->saved_filename->len = strlen (filename);
+						} break;
+					}
 				}
 
 				else {
-					filename = c_string_create (
-						"%s/%s", 
-						http_receive->http_cerver->uploads_path->str, multi_part->filename->str
-					);
-				}
-
-				multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
-				switch (multi_part->fd) {
-					case -1: {
-						char *status = c_string_create ("Failed to open %s filename to save multipart file!", filename);
-						if (status) {
-							cerver_log_error (status);
-							free (status);
-						}
-
-						perror ("Error");
-
-						free (filename);
-					} break;
-
-					default: {
-						#ifdef HTTP_DEBUG
-						char *status = c_string_create ("Opened %s to save multipart file!", filename);
-						if (status) {
-							cerver_log_debug (status);
-							free (status);
-						}
-						#endif
-
-						multi_part->saved_filename = str_new (NULL);
-						multi_part->saved_filename->str = filename;
-						multi_part->saved_filename->len = strlen (filename);
-					} break;
+					cerver_log_error ("Can't save multipart file - no uploads path!");
 				}
 			}
 
 			else {
-				cerver_log_error ("Can't save multipart file - no uploads path!");
+				http_receive->request->n_values += 1;
 			}
-		}
-
-		else {
-			http_receive->request->n_values += 1;
 		}
 	}
 
@@ -1300,16 +1276,11 @@ static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *r
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request) {
 
-	char *status = c_string_create (
+	cerver_log_warning (
 		"No matching route for %s %s",
 		http_method_str ((enum http_method) request->method),
 		request->url->str
 	);
-
-	if (status) {
-		cerver_log_warning (status);
-		free (status);
-	}
 
 	// handle with default route
 	http_cerver->default_handler (cr, request);
@@ -1369,15 +1340,10 @@ static void http_receive_handle_match_web_socket (
 
 			// set the sockets timeout to prevent threads from getting stuck if no more data to read
 			if (sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
-				char *status = c_string_create (
+				cerver_log_error (
 					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
 					cr->connection->socket->sock_fd
 				);
-
-				if (status) {
-					cerver_log_error (status);
-					free (status);
-				}
 
 				// FIXME: end connection with error
 			}
@@ -1593,15 +1559,10 @@ static void http_receive_handle_select_auth_bearer (
 			}
 
 			else {
-				char *status = c_string_create (
+				cerver_log_error (
 					"Failed to validate JWT: %08x", 
 					jwt_valid_get_status(jwt_valid)
 				);
-
-				if (status) {
-					cerver_log_error (status);
-					free (status);
-				}
 
 				http_receive_handle_select_failed_auth (cr);
 
@@ -1774,15 +1735,10 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 	if (!found) {
 		// TODO: what to do here? - maybe something similar to catch all route
-		char *status = c_string_create (
+		cerver_log_warning (
 			"Unable to find file %s",
 			http_receive->request->url->str
 		);
-
-		if (status) {
-			cerver_log_warning (status);
-			free (status);
-		}
 
 		http_receive_handle_default_route (http_receive->cr, http_receive->request);
 	}
@@ -1798,16 +1754,12 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	http_receive->request->method = (RequestMethod) http_receive->parser->method;
 
 	#ifdef HTTP_DEBUG
-	char *status = c_string_create (
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
 		"%s %s",
 		http_method_str ((enum http_method) http_receive->request->method),
 		http_receive->request->url->str
 	);
-
-	if (status) {
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_HTTP, status);
-		free (status);
-	}
 	#endif
 
 	// select method handler
@@ -1851,15 +1803,10 @@ static void http_receive_handle (
 
 	ssize_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
 	if (n_parsed != rc) {
-		char *status = c_string_create (
+		cerver_log_error (
 			"http_parser_execute () failed - n parsed %ld / received %ld",
 			n_parsed, rc
 		);
-
-		if (status) {
-			cerver_log_error (status);
-			free (status);
-		}
 
 		// send back error message
 		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
