@@ -462,6 +462,82 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 #pragma region handlers
 
+// handles a packet of type PACKET_TYPE_CLIENT
+static void cerver_client_packet_handler (Packet *packet) {
+
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// the client is going to close its current connection
+			// but will remain in the cerver if it has another connection active
+			// if not, it will be dropped
+			case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+				#ifdef CERVER_DEBUG
+				cerver_log_debug (
+					"Client %ld requested to close the connection",
+					packet->client->id
+				);
+				#endif
+
+				// check if the client is inside a lobby
+				if (packet->lobby) {
+					#ifdef CERVER_DEBUG
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+						"Client %ld inside lobby %s wants to close the connection...",
+						packet->client->id, packet->lobby->id->str
+					);
+					#endif
+
+					// remove the player from the lobby
+					Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
+					player_unregister_from_lobby (packet->lobby, player);
+				}
+
+				client_remove_connection_by_sock_fd (packet->cerver,
+					packet->client, packet->connection->socket->sock_fd);
+			} break;
+
+			// the client is going to disconnect and will close all of its active connections
+			// so drop it from the server
+			case CLIENT_PACKET_TYPE_DISCONNECT: {
+				// check if the client is inside a lobby
+				if (packet->lobby) {
+					#ifdef CERVER_DEBUG
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+						"Client %ld inside lobby %s wants to close the connection...",
+						packet->client->id, packet->lobby->id->str
+					);
+					#endif
+
+					// remove the player from the lobby
+					Player *player = player_get_by_sock_fd_list (packet->lobby, packet->connection->socket->sock_fd);
+					player_unregister_from_lobby (packet->lobby, player);
+				}
+
+				client_drop (packet->cerver, packet->client);
+
+				cerver_event_trigger (
+					CERVER_EVENT_CLIENT_DISCONNECTED,
+					packet->cerver,
+					NULL, NULL
+				);
+			} break;
+
+			default: {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+					"Got an unknown client packet in cerver %s",
+					packet->cerver->info->name->str
+				);
+				#endif
+			} break;
+		}
+	}
+
+}
+
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
