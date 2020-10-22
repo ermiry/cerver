@@ -274,8 +274,8 @@ static u8 file_cerver_receive (
 
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
-		"%s/%ld-%d-%s", 
-		file_cerver->uploads_path->str, 
+		"%s/%ld-%d-%s",
+		file_cerver->uploads_path->str,
 		time (NULL), random_int_in_range (0, 1000),
 		file_header->filename
 	);
@@ -635,7 +635,7 @@ static ssize_t file_send_actual (
 
 	else {
 		cerver_log (
-			LOG_TYPE_ERROR, LOG_TYPE_FILE, 
+			LOG_TYPE_ERROR, LOG_TYPE_FILE,
 			"file_send_actual () - failed to send file header"
 		);
 	}
@@ -653,7 +653,7 @@ static int file_send_open (
 
 	int file_fd = -1;
 
-	char *last = strrchr (filename, '/');
+	char *last = strrchr ((char *) filename, '/');
 	*actual_filename = last ? last + 1 : NULL;
 	if (actual_filename) {
 		// try to open the file
@@ -813,7 +813,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 
 	u8 retval = 1;
 
-	int buff_size = 4096;
+	size_t buff_size = 4096;
 	int pipefds[2] = { 0 };
 	ssize_t received = 0;
 	ssize_t moved = 0;
@@ -830,7 +830,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 		}
 
 		close (pipefds[0]);
-    	close (pipefds[1]);
+		close (pipefds[1]);
 
 		if (len <= 0) retval = 0;
 	}
@@ -885,7 +885,7 @@ u8 file_receive_actual (
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
 			printf (
-				"\nfilelen: %ld - file data len %ld = %ld\n\n", 
+				"\nfilelen: %ld - file data len %ld = %ld\n\n",
 				file_header->len, file_data_len, real_filelen
 			);
 			#endif
