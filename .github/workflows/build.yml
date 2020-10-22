@@ -18,6 +18,8 @@ jobs:
         run: make
       - name: gcc examples
         run: make examples
+      - name: clean
+        run: make clean
       - name: g++ make
         run: make CC=g++
       - name: g++ examples
