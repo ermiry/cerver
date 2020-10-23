@@ -149,7 +149,7 @@ void balancer_delete (void *balancer_ptr) {
 		client_delete (balancer->client);
 
 		if (balancer->services) {
-			for (unsigned int i = 0; i < balancer->n_services; i++)
+			for (int i = 0; i < balancer->n_services; i++)
 				balancer_service_delete (balancer->services[i]);
 
 			free (balancer->services);
@@ -191,7 +191,7 @@ Balancer *balancer_create (
 		balancer->n_services = n_services;
 		balancer->services = (Service **) calloc (balancer->n_services, sizeof (Service *));
 		if (balancer->services) {
-			for (unsigned int i = 0; i < balancer->n_services; i++)
+			for (int i = 0; i < balancer->n_services; i++)
 				balancer->services[i] = NULL;
 		}
 
@@ -604,7 +604,7 @@ static u8 balancer_start_client (Balancer *balancer) {
 
 	u8 errors = 0;
 
-	for (unsigned int i = 0; i < balancer->n_services; i++) {
+	for (int i = 0; i < balancer->n_services; i++) {
 		errors |= balancer_service_connect (balancer, balancer->services[i]);
 	}
 
