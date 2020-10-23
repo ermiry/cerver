@@ -33,7 +33,7 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := $(DEVELOPMENT) $(DEFINES) -Wall -Wno-unknown-pragmas -std=gnu99 -fPIC
+CFLAGS      := $(DEVELOPMENT) $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
 LIB         := $(PTHREAD) $(MATH)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
