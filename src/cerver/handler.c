@@ -1670,7 +1670,9 @@ void cerver_switch_receive_handle_failed (CerverReceive *cr) {
 
 }
 
-static inline void cerver_receive_success_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
+static inline void cerver_receive_success_receive_handle (
+	CerverReceive *cr, ssize_t rc, char *packet_buffer
+) {
 
 	ReceiveHandle *receive_handle = receive_handle_new ();
 	if (receive_handle) {
@@ -2251,8 +2253,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 #pragma region accept
 
 // 07/06/2020 - create a new connection but check if we can use the cerver's socket pool first
-static Connection *cerver_connection_create (Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
+static Connection *cerver_connection_create (
+	Cerver *cerver,
+	const i32 new_fd, const struct sockaddr_storage client_address
+) {
 
 	Connection *retval = NULL;
 
@@ -2558,7 +2562,9 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
 
 }
 
-static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connection *connection) {
+static inline u8 cerver_register_new_connection_select (
+	Cerver *cerver, Connection *connection
+) {
 
 	return cerver->auth_required ?
 		cerver_register_new_connection_auth_required (cerver, connection) :
@@ -2566,8 +2572,10 @@ static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connecti
 
 }
 
-static void cerver_register_new_connection (Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
+static void cerver_register_new_connection (
+	Cerver *cerver,
+	const i32 new_fd, const struct sockaddr_storage client_address
+) {
 
 	Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
 	if (connection) {
