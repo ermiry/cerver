@@ -363,6 +363,23 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 }
 
+static u8 balancer_service_pipe_create (Service *service) {
+
+	// TODO: error handling
+	pipe (service->pipefds);
+
+	return 0;
+
+}
+
+static void balancer_service_pipe_destroy (Service *service) {
+
+	// TODO: error handling
+	close (service->pipefds[0]);
+	close (service->pipefds[1]);
+
+}
+
 // static ServiceStatus balancer_service_get_status (Service *service) {
 
 // 	ServiceStatus retval = SERVICE_STATUS_NONE;
@@ -605,6 +622,7 @@ static u8 balancer_start_client (Balancer *balancer) {
 	u8 errors = 0;
 
 	for (int i = 0; i < balancer->n_services; i++) {
+		balancer_service_pipe_create (balancer->services[i]);
 		errors |= balancer_service_connect (balancer, balancer->services[i]);
 	}
 
@@ -649,6 +667,136 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region route
 
+// move from socket to pipe buffer
+static inline u8 balancer_route_to_service_receive (
+	int from_fd, int pipefd, int buff_size,
+	ssize_t *received
+) {
+
+	u8 retval = 1;
+
+	*received = splice (
+		from_fd, NULL,
+		pipefd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*received) {
+		case -1: {
+			#ifdef BALANCER_DEBUG
+			perror ("balancer_route_to_service_receive () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef BALANCER_DEBUG
+			perror ("balancer_route_to_service_receive () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef BALANCER_DEBUG
+			cerver_log_debug ("balancer_route_to_service_receive () - spliced %ld bytes", *received);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+// move from pipe buffer to service
+static inline u8 balancer_route_to_service_move (
+	int pipefd, int to_fd, int buff_size,
+	ssize_t *moved
+) {
+
+	u8 retval = 1;
+
+	*moved = splice (
+		pipefd, NULL,
+		to_fd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*moved) {
+		case -1: {
+			#ifdef BALANCER_DEBUG
+			perror ("balancer_route_to_service_move () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef BALANCER_DEBUG
+			perror ("balancer_route_to_service_move () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef BALANCER_DEBUG
+			cerver_log_debug ("balancer_route_to_service_move () - spliced %ld bytes", *moved);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+static u8 balancer_route_to_service_actual (
+	Service *service,
+	Connection *from, Connection *to,
+	PacketHeader *header, size_t *sent
+) {
+
+	u8 retval = 1;
+
+	pthread_mutex_lock (to->socket->write_mutex);
+
+	// first send the header
+	ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
+	if (s > 0) {
+		size_t left = header->packet_size - sizeof (PacketHeader);
+		if (left) {
+			ssize_t received = 0;
+			ssize_t moved = 0;
+			size_t buff_size = 4096;
+			while (left > 0) {
+				if (buff_size > left) buff_size = left;
+
+				if (balancer_route_to_service_receive (from->socket->sock_fd, service->pipefds[1], buff_size, &received)) break;
+
+				if (balancer_route_to_service_move (service->pipefds[0], to->socket->sock_fd, buff_size, &moved)) break;
+
+				*sent += moved;
+
+				left -= buff_size;
+			}
+
+			// we are done!
+			if (left <= 0) retval = 0;
+		}
+
+		else {
+			// we are done
+			if (sent) *sent = s;
+			retval = 0;
+		}
+	}
+
+	pthread_mutex_unlock (to->socket->write_mutex);
+
+
+	return retval;
+
+}
+
 // routes the received packet to a service to be handled
 // first sends the packet header with the correct sock fd
 // if any data, it is forwarded from one sock fd to another using splice ()
@@ -665,7 +813,8 @@ void balancer_route_to_service (
 		header->sock_fd = connection->socket->sock_fd;
 
 		size_t sent = 0;
-		if (!packet_route_between_connections (
+		if (!balancer_route_to_service_actual (
+			service,
 			connection, service->connection,
 			header, &sent
 		)) {
@@ -1034,6 +1183,10 @@ u8 balancer_teardown (Balancer *balancer) {
 
 		client_teardown (balancer->client);
 		balancer->client = NULL;
+
+		// end services
+		for (int i = 0; i < balancer->n_services; i++)
+			balancer_service_pipe_destroy (balancer->services[i]);
 
 		balancer_delete (balancer);
 	}
