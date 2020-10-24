@@ -397,7 +397,7 @@ CERVER_EXPORT u8 packet_send_to_socket (
 
 // routes a packet from one connection's sock fd to another connection's sock fd
 // the header is sent first and then the packet's body (if any) is handled directly between fds
-// by calling the splice method
+// by calling the splice method using a pipe as the middleman
 // this method is thread safe, since it will block the socket until the entire packet has been routed
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 packet_route_between_connections (
