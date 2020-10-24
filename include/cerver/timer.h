@@ -1,5 +1,5 @@
-#ifndef _CERVER_TIMER_H_
-#define _CERVER_TIMER_H_
+#ifndef _CERVER_TIME_H_
+#define _CERVER_TIME_H_
 
 #ifndef __USE_POSIX199309
 	#define __USE_POSIX199309
@@ -26,7 +26,7 @@ CERVER_EXPORT struct tm *timer_get_gmt_time (void);
 
 CERVER_EXPORT struct tm *timer_get_local_time (void);
 
-// returns a string representing the 24h time
+// returns a string representing the 24h time 
 CERVER_EXPORT String *timer_time_to_string (struct tm *timeinfo);
 
 // returns a string with day/month/year

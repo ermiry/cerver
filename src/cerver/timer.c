@@ -70,7 +70,7 @@ struct tm *timer_get_local_time (void) {
 
 }
 
-// returns a string representing the 24h time
+// returns a string representing the 24h time 
 String *timer_time_to_string (struct tm *timeinfo) {
 
 	if (timeinfo) {
@@ -117,7 +117,7 @@ String *timer_time_to_string_custom (struct tm *timeinfo, const char *format) {
 		strftime (buffer, 128, format, timeinfo);
 		return str_new (buffer);
 	}
-
+	
 	return NULL;
 
 }
