@@ -77,7 +77,7 @@ static void handle_test_request (Packet *packet) {
 		if (test_packet) {
 			packet_set_header_values (test_packet, PACKET_TYPE_APP, sizeof (PacketHeader), 0, TEST_MSG, packet->header->sock_fd);
 			(void) packet_generate (test_packet);
-			packet_set_network_values (test_packet, NULL, packet->client, packet->connection, NULL);
+			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
@@ -92,14 +92,58 @@ static void handle_test_request (Packet *packet) {
 
 }
 
+static unsigned int send_response (Packet *packet, Client *client, Connection *connection) {
+
+	unsigned int retval = 1;
+
+	packet_set_network_values (packet, my_cerver, client, connection, NULL);
+	size_t sent = 0;
+	if (packet_send (packet, 0, &sent, false)) {
+		cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send packet!");
+	}
+
+	else {
+		printf ("Sent to client: %ld\n", sent);
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static void handle_app_message (Packet *packet) {
 
 	if (packet) {
-		char *end = (char *) packet->data;
+		char *final = (char *) packet->data;
 
-		AppData *app_data = (AppData *) end;
+		AppData *app_data = (AppData *) final;
 		app_data_print (app_data);
 		printf ("\n");
+
+		// send the packet back to the client
+		Packet *response = packet_new ();
+		if (response) {
+			size_t packet_len = sizeof (PacketHeader) + sizeof (AppData);
+			response->packet = malloc (packet_len);
+			response->packet_size = packet_len;
+
+			char *end = (char *) response->packet;
+			PacketHeader *header = (PacketHeader *) end;
+			header->packet_type = PACKET_TYPE_APP;
+			header->packet_size = packet_len;
+
+			header->request_type = APP_MSG;
+
+			header->sock_fd = packet->header->sock_fd;
+
+			end += sizeof (PacketHeader);
+
+			memcpy (end, final, sizeof (AppData));
+
+			send_response (response, packet->client, packet->connection);
+
+			packet_delete (response);
+		}
 	}
 
 }
