@@ -1934,62 +1934,78 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 
 }
 
-static void balancer_receive (void *cerver_receive_ptr) {
+static u8 balancer_receive (CerverReceive *cr) {
 
-	if (cerver_receive_ptr) {
-		CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+	u8 retval = 1;
 
-		if (cr->cerver && cr->socket) {
-			if (cr->socket->sock_fd > 0) {
-				char header_buffer[sizeof (PacketHeader)] = { 0 };
-				ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
+	if (cr->cerver && cr->socket) {
+		if (cr->socket->sock_fd > 0) {
+			char header_buffer[sizeof (PacketHeader)] = { 0 };
+			ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
+			// ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
 
-				switch (rc) {
-					case -1: {
-						// no more data to read
-						if (errno != EWOULDBLOCK) {
-							// #ifdef HANDLER_DEBUG
-							cerver_log (
-								LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-								"balancer_receive () - rc < 0 - sock fd: %d",
-								cr->socket->sock_fd
-							);
-
-							perror ("Error");
-							// #endif
-
-							cerver_switch_receive_handle_failed (cr);
-						}
-					} break;
-
-					case 0: {
+			switch (rc) {
+				case -1: {
+					if (errno == EAGAIN) {
 						#ifdef HANDLER_DEBUG
-						cerver_log (
-							LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-							"balancer_receive () - rc == 0 - sock fd: %d",
+						cerver_log_debug (
+							"balancer_receive () - sock fd: %d timed out",
 							cr->socket->sock_fd
 						);
 						#endif
 
+						retval = 0;
+					}
+
+					else {
+						#ifdef HANDLER_DEBUG
+						cerver_log (
+							LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+							"balancer_receive () - rc < 0 - sock fd: %d",
+							cr->socket->sock_fd
+						);
+
+						perror ("Error");
+						#endif
+
+						if (cr->cerver->handler_type != CERVER_HANDLER_TYPE_THREADS) {
+							cerver_switch_receive_handle_failed (cr);
+						}
+					}
+				} break;
+
+				case 0: {
+					#ifdef HANDLER_DEBUG
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+						"balancer_receive () - rc == 0 - sock fd: %d",
+						cr->socket->sock_fd
+					);
+					#endif
+
+					if (cr->cerver->handler_type != CERVER_HANDLER_TYPE_THREADS) {
 						cerver_switch_receive_handle_failed (cr);
-					} break;
+					}
+				} break;
 
-					default: {
-						balancer_receive_success (cr, (PacketHeader *) header_buffer);
-					} break;
-				}
-			}
-
-			else {
-				cerver_log_warning ("balancer_receive () - cr->socket <= 0");
-				cerver_receive_delete (cr);
+				default: {
+					balancer_receive_success (cr, (PacketHeader *) header_buffer);
+					retval = 0;
+				} break;
 			}
 		}
 
 		else {
+			cerver_log_warning ("balancer_receive () - cr->socket <= 0");
 			cerver_receive_delete (cr);
 		}
 	}
+
+	else {
+		cerver_receive_delete (cr);
+	}
+
+	return retval;
 
 }
 
@@ -2158,14 +2174,17 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	// set the socket's timeout to prevent thread from getting stuck if no more data to read
 	(void) sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
-	while (!cerver_receive_threads_actual (cr) && (cr->socket->sock_fd > 0) && cr->cerver->isRunning);
+	u8 (*receive)(CerverReceive *) = cr->cerver->type == CERVER_TYPE_BALANCER ? 
+		balancer_receive : cerver_receive_threads_actual;
+
+	while (!receive (cr) && (cr->socket->sock_fd > 0) && cr->cerver->isRunning);
 
 	// check if the connection has already ended
 	if (cr->socket->sock_fd > 0) {
 		client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
 	}
 
-	cerver_receive_delete (cr);
+	if (cr->cerver->type != CERVER_TYPE_BALANCER) cerver_receive_delete (cr);
 
 	#ifdef HANDLER_DEBUG
 	cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_HANDLER, "cerver_receive_threads () - loop has ended");
@@ -2894,7 +2913,7 @@ static inline void cerver_poll_handle_actual_receive (Cerver *cerver, const u32 
 			else {
 				// handle all received packets in the same thread
 				switch (cr->cerver->type) {
-					case CERVER_TYPE_BALANCER: balancer_receive (cr); break;
+					case CERVER_TYPE_BALANCER: (void) balancer_receive (cr); break;
 
 					default: cerver_receive (cr); break;
 				}
