@@ -306,12 +306,10 @@ static void start (HandlersType type) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
@@ -375,11 +373,7 @@ int main (int argc, char **argv) {
 			}
 
 			else {
-				char *status = c_string_create ("Unknown argument: %s", curr_arg);
-				if (status) {
-					cerver_log_warning (status);
-					free (status);
-				}
+				cerver_log_warning ("Unknown argument: %s", curr_arg);
 			}
 		}
 
@@ -387,11 +381,7 @@ int main (int argc, char **argv) {
 			if (!strcmp (type, "d")) start (HANDLERS_TYPE_DIRECT);
 			else if (!strcmp (type, "q")) start (HANDLERS_TYPE_QUEUE);
 			else {
-				char *status = c_string_create ("Unknown type: %s", type);
-				if (status) {
-					cerver_log_error (status);
-					free (status);
-				}
+				cerver_log_error ("Unknown type: %s", type);
 			}
 		}
 	}

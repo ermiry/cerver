@@ -132,11 +132,9 @@ static void end (int dummy) {
 static void handle_test_request (Packet *packet, unsigned int handler_id) {
 
 	if (packet) {
-		char *status = c_string_create ("Got a test message in handler <%d>! Sending another one back...", handler_id);
-		if (status) {
-			cerver_log_debug (status);
-			free (status);
-		}
+		cerver_log_debug (
+			"Got a test message in handler <%d>! Sending another one back...", handler_id
+		);
 		
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -384,12 +382,10 @@ int main (void) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
