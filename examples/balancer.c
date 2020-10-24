@@ -120,6 +120,10 @@ int main (void) {
 
 	load_balancer = balancer_create ("test-balancer", BALANCER_TYPE_ROUND_ROBIN, 7000, 10, 2);
 	if (load_balancer) {
+		/*** cerver configuration ***/
+		cerver_set_handler_type (load_balancer->cerver, CERVER_HANDLER_TYPE_THREADS);
+		cerver_set_handle_detachable_threads (load_balancer->cerver, true);
+
 		/*** register services ***/
 		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {
 			cerver_log_error ("Failed to register FIRST service!");
