@@ -993,6 +993,136 @@ static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeade
 
 }
 
+// move from socket to pipe buffer
+static inline u8 balancer_client_route_receive (
+	int from_fd, int pipefd, int buff_size,
+	ssize_t *received
+) {
+
+	u8 retval = 1;
+
+	*received = splice (
+		from_fd, NULL,
+		pipefd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*received) {
+		case -1: {
+			#ifdef SERVICE_DEBUG
+			perror ("balancer_client_route_receive () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef SERVICE_DEBUG
+			perror ("balancer_client_route_receive () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef SERVICE_DEBUG
+			cerver_log_debug ("balancer_client_route_receive () - spliced %ld bytes", *received);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+// move from pipe buffer to service
+static inline u8 balancer_client_route_move (
+	int pipefd, int to_fd, int buff_size,
+	ssize_t *moved
+) {
+
+	u8 retval = 1;
+
+	*moved = splice (
+		pipefd, NULL,
+		to_fd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*moved) {
+		case -1: {
+			#ifdef SERVICE_DEBUG
+			perror ("balancer_client_route_move () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef SERVICE_DEBUG
+			perror ("balancer_client_route_move () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef SERVICE_DEBUG
+			cerver_log_debug ("balancer_client_route_move () - spliced %ld bytes", *moved);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+static u8 balancer_client_route_actual (
+	Service *service,
+	Connection *from, Connection *to,
+	PacketHeader *header, size_t *sent
+) {
+
+	u8 retval = 1;
+
+	pthread_mutex_lock (to->socket->write_mutex);
+
+	// first send the header
+	ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
+	if (s > 0) {
+		size_t left = header->packet_size - sizeof (PacketHeader);
+		if (left) {
+			ssize_t received = 0;
+			ssize_t moved = 0;
+			size_t buff_size = 4096;
+			while (left > 0) {
+				if (buff_size > left) buff_size = left;
+
+				if (balancer_client_route_receive (from->socket->sock_fd, service->receive_pipe_fds[1], buff_size, &received)) break;
+
+				if (balancer_client_route_move (service->receive_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
+
+				*sent += moved;
+
+				left -= buff_size;
+			}
+
+			// we are done!
+			if (left <= 0) retval = 0;
+		}
+
+		else {
+			// we are done
+			if (sent) *sent = s;
+			retval = 0;
+		}
+	}
+
+	pthread_mutex_unlock (to->socket->write_mutex);
+
+
+	return retval;
+
+}
+
 // route the service's response back to the original client
 static void balancer_client_route_response (
 	BalancerService *bs,
@@ -1006,7 +1136,8 @@ static void balancer_client_route_response (
 		Connection *original_connection = connection_get_by_sock_fd_from_client (original_client, header->sock_fd);
 		if (original_connection) {
 			size_t sent = 0;
-			if (!packet_route_between_connections (
+			if (!balancer_client_route_actual (
+				bs->service,
 				connection, original_connection,
 				header, &sent
 			)) {
