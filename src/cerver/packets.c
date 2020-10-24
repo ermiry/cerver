@@ -283,10 +283,10 @@ void packet_set_network_values (Packet *packet, Cerver *cerver,
 // copies the header's values into the packet
 void packet_set_header (Packet *packet, PacketHeader *header) {
 
-    if (packet && header) {
-        if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
-        if (packet->header) memcpy (&packet->header, header, sizeof (PacketHeader));
-    }
+	if (packet && header) {
+		if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
+		if (packet->header) memcpy (&packet->header, header, sizeof (PacketHeader));
+	}
 
 }
 
