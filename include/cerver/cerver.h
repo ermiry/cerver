@@ -42,6 +42,7 @@
 #define DEFAULT_UPDATE_TICKS                15
 #define DEFAULT_UPDATE_INTERVAL_SECS        1
 
+struct _Balancer;
 struct _Cerver;
 struct _AdminCerver;
 struct _Client;
@@ -50,12 +51,27 @@ struct _Packet;
 struct _PacketsPerType;
 struct _Handler;
 
+#pragma region global
+
+// initializes global cerver values
+// should be called only once at the start of the program
+CERVER_EXPORT void cerver_init (void);
+
+// correctly disposes global values
+// should be called only once at the very end of the program
+CERVER_EXPORT void cerver_end (void);
+
+#pragma endregion
+
+#pragma region types
+
 #define CERVER_TYPE_MAP(XX)					\
 	XX(0,	NONE, 		None)				\
 	XX(1,	CUSTOM, 	Custom)				\
 	XX(2,	GAME, 		Game)				\
 	XX(3,	WEB, 		Web)				\
-	XX(4,	FILES, 		Files)
+	XX(4,	FILES, 		Files)				\
+	XX(5,	BALANCER, 	Balancer)
 
 typedef enum CerverType {
 
@@ -83,6 +99,8 @@ typedef enum CerverHandlerType {
 CERVER_EXPORT const char *cerver_handler_type_to_string (CerverHandlerType type);
 
 CERVER_EXPORT const char *cerver_handler_type_description (CerverHandlerType type);
+
+#pragma endregion
 
 #pragma region info
 
@@ -276,6 +294,9 @@ struct _Cerver {
 
 	CerverInfo *info;
 	CerverStats *stats;
+
+	// reference to the parent load balancer
+	struct _Balancer *balancer;
 
 };
 
