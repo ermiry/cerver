@@ -8,17 +8,44 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
+#include <cerver/timer.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#define APP_MESSAGE_LEN			512
+
+static Cerver *my_cerver = NULL;
+
 typedef enum AppRequest {
 
-	TEST_MSG		= 0
+	TEST_MSG		= 0,
+	APP_MSG			= 1,
+	MULTI_MSG		= 2,
 
 } AppRequest;
 
-static Cerver *my_cerver = NULL;
+typedef struct AppData {
+
+	time_t timestamp;
+	size_t message_len;
+	char message[APP_MESSAGE_LEN];
+
+} AppData;
+
+static void app_data_print (AppData *app_data) {
+
+	if (app_data) {
+		String *date = timer_time_to_string (gmtime (&app_data->timestamp));
+		if (date) {
+			printf ("Timestamp: %s\n", date->str);
+			str_delete (date);
+		}
+
+		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+	}
+
+}
 
 #pragma region end
 
@@ -65,6 +92,37 @@ static void handle_test_request (Packet *packet) {
 
 }
 
+static void handle_app_message (Packet *packet) {
+
+	if (packet) {
+		char *end = (char *) packet->data;
+
+		AppData *app_data = (AppData *) end;
+		app_data_print (app_data);
+		printf ("\n");
+	}
+
+}
+
+static void handle_multi_message (Packet *packet) {
+
+	if (packet) {
+		cerver_log_debug ("MULTI message!");
+
+		char *end = (char *) packet->data;
+
+		AppData *app_data = NULL;
+		for (u32 i = 0; i < 5; i++) {
+			app_data = (AppData *) end;
+			printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+			printf ("\n");
+
+			end += sizeof (AppData);
+		}
+	}
+
+}
+
 static void handler (void *data) {
 
 	if (data) {
@@ -72,6 +130,10 @@ static void handler (void *data) {
 
 		switch (packet->header->request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
+
+			case APP_MSG: handle_app_message (packet); break;
+
+			case MULTI_MSG: handle_multi_message (packet); break;
 
 			default:
 				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
