@@ -365,18 +365,40 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 static u8 balancer_service_pipe_create (Service *service) {
 
-	// TODO: error handling
-	pipe (service->pipefds);
+	u8 retval = 1;
 
-	return 0;
+	if (service) {
+		if (!pipe (service->pipefds)) {
+			#ifdef SERVICE_DEBUG
+			cerver_log_debug (
+				"balancer_service_pipe_create () - created %s pipe",
+				service->connection->name->str
+			);
+			#endif
+
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"balancer_service_pipe_create () - %s pipe () failed!",
+				service->connection->name->str
+			);
+			perror ("Error");
+			printf ("\n");
+		}
+	}
+
+	return retval;
 
 }
 
 static void balancer_service_pipe_destroy (Service *service) {
 
-	// TODO: error handling
-	close (service->pipefds[0]);
-	close (service->pipefds[1]);
+	if (service) {
+		close (service->pipefds[0]);
+		close (service->pipefds[1]);
+	}
 
 }
 
@@ -617,12 +639,23 @@ static u8 balancer_start_check (Balancer *balancer) {
 
 }
 
+static u8 balancer_start_services (Balancer *balancer) {
+
+	u8 errors = 0;
+
+	for (int i = 0; i < balancer->n_services; i++) {
+		errors |= balancer_service_pipe_create (balancer->services[i]);
+	}
+
+	return errors;
+
+}
+
 static u8 balancer_start_client (Balancer *balancer) {
 
 	u8 errors = 0;
 
 	for (int i = 0; i < balancer->n_services; i++) {
-		balancer_service_pipe_create (balancer->services[i]);
 		errors |= balancer_service_connect (balancer, balancer->services[i]);
 	}
 
@@ -653,8 +686,10 @@ u8 balancer_start (Balancer *balancer) {
 
 	if (balancer) {
 		if (!balancer_start_check (balancer)) {
-			if (!balancer_start_client (balancer)) {
-				retval = balancer_start_cerver (balancer);
+			if (!balancer_start_services (balancer)) {
+				if (!balancer_start_client (balancer)) {
+					retval = balancer_start_cerver (balancer);
+				}
 			}
 		}
 	}
