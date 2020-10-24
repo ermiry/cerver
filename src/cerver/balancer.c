@@ -363,15 +363,15 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 }
 
-static u8 balancer_service_pipe_create (Service *service) {
+static u8 balancer_service_forward_pipe_create (Service *service) {
 
 	u8 retval = 1;
 
 	if (service) {
-		if (!pipe (service->pipefds)) {
+		if (!pipe (service->forward_pipe_fds)) {
 			#ifdef SERVICE_DEBUG
 			cerver_log_debug (
-				"balancer_service_pipe_create () - created %s pipe",
+				"balancer_service_forward_pipe_create () - created %s FORWARD pipe",
 				service->connection->name->str
 			);
 			#endif
@@ -381,7 +381,37 @@ static u8 balancer_service_pipe_create (Service *service) {
 
 		else {
 			cerver_log_error (
-				"balancer_service_pipe_create () - %s pipe () failed!",
+				"balancer_service_forward_pipe_create () - %s FORWARD pipe () failed!",
+				service->connection->name->str
+			);
+			perror ("Error");
+			printf ("\n");
+		}
+	}
+
+	return retval;
+
+}
+
+static u8 balancer_service_receive_pipe_create (Service *service) {
+
+	u8 retval = 1;
+
+	if (service) {
+		if (!pipe (service->receive_pipe_fds)) {
+			#ifdef SERVICE_DEBUG
+			cerver_log_debug (
+				"balancer_service_receive_pipe_create () - created %s RECEIVE pipe",
+				service->connection->name->str
+			);
+			#endif
+
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"balancer_service_receive_pipe_create () - %s RECEIVE pipe () failed!",
 				service->connection->name->str
 			);
 			perror ("Error");
@@ -396,8 +426,11 @@ static u8 balancer_service_pipe_create (Service *service) {
 static void balancer_service_pipe_destroy (Service *service) {
 
 	if (service) {
-		close (service->pipefds[0]);
-		close (service->pipefds[1]);
+		close (service->forward_pipe_fds[0]);
+		close (service->forward_pipe_fds[1]);
+
+		close (service->receive_pipe_fds[0]);
+		close (service->receive_pipe_fds[1]);
 	}
 
 }
@@ -644,7 +677,8 @@ static u8 balancer_start_services (Balancer *balancer) {
 	u8 errors = 0;
 
 	for (int i = 0; i < balancer->n_services; i++) {
-		errors |= balancer_service_pipe_create (balancer->services[i]);
+		errors |= balancer_service_forward_pipe_create (balancer->services[i]);
+		errors |= balancer_service_receive_pipe_create (balancer->services[i]);
 	}
 
 	return errors;
@@ -805,9 +839,9 @@ static u8 balancer_route_to_service_actual (
 			while (left > 0) {
 				if (buff_size > left) buff_size = left;
 
-				if (balancer_route_to_service_receive (from->socket->sock_fd, service->pipefds[1], buff_size, &received)) break;
+				if (balancer_route_to_service_receive (from->socket->sock_fd, service->forward_pipe_fds[1], buff_size, &received)) break;
 
-				if (balancer_route_to_service_move (service->pipefds[0], to->socket->sock_fd, buff_size, &moved)) break;
+				if (balancer_route_to_service_move (service->forward_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
 
 				*sent += moved;
 

@@ -164,7 +164,8 @@ struct _Service {
 	Connection *connection;
 	unsigned int reconnect_wait_time;
 
-	int pipefds[2];
+	int forward_pipe_fds[2];
+	int receive_pipe_fds[2];
 
 	ServiceStats *stats;
 
