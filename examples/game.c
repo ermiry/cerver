@@ -24,7 +24,9 @@ static void my_game_end (int dummy) {
 		printf ("\nGame Stats:\n");
 		game_cerver_stats_print (my_cerver);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -77,6 +79,8 @@ int main (void) {
 	// register to the quit signal
 	signal (SIGINT, my_game_end);
 
+	cerver_init ();
+
 	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
@@ -109,12 +113,10 @@ int main (void) {
 			game_type_register (game_cerver->game_types, arcade_game_type);
 
 			if (cerver_start (my_cerver)) {
-				char *s = c_string_create ("Failed to start %s!",
-					my_cerver->info->name->str);
-				if (s) {
-					cerver_log_error (s);
-					free (s);
-				}
+				cerver_log_error (
+					"Failed to start %s!",
+					my_cerver->info->name->str
+				);
 
 				cerver_delete (my_cerver);
 			}
@@ -130,9 +132,13 @@ int main (void) {
 	}
 
 	else {
-		cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			"Failed to init my game!");
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to init my game!"
+		);
 	}
+
+	cerver_end ();
 
 	return 0;
 

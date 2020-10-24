@@ -28,7 +28,9 @@ static void end (int dummy) {
 	if (my_cerver) {
 		cerver_stats_print (my_cerver, true, true);
 		cerver_teardown (my_cerver);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -42,7 +44,7 @@ static void handle_test_request (Packet *packet) {
 
 	if (packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log_msg (stdout, LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 		
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -70,7 +72,7 @@ static void handler (void *data) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log ( LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -86,18 +88,14 @@ static void on_client_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -107,16 +105,12 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -131,6 +125,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -171,12 +167,10 @@ int main (void) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
@@ -187,6 +181,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

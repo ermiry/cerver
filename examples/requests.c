@@ -109,7 +109,9 @@ static void end (int dummy) {
 		cerver_teardown (my_cerver);
 
 		app_data_delete (app_data);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -182,7 +184,7 @@ static void app_packet_handler (void *data) {
 				case GET_MSG: handle_msg_request(packet, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -196,6 +198,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -223,12 +227,10 @@ int main (void) {
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 		
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
@@ -239,6 +241,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 
 	return 0;
 

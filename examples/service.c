@@ -5,8 +5,6 @@
 #include <time.h>
 #include <signal.h>
 
-#include <cerver/types/string.h>
-
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
@@ -15,14 +13,9 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
-static Cerver *my_cerver = NULL;
-
-#pragma region app
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-
 #define APP_MESSAGE_LEN			512
+
+static Cerver *my_cerver = NULL;
 
 typedef enum AppRequest {
 
@@ -40,39 +33,6 @@ typedef struct AppData {
 
 } AppData;
 
-static AppData *app_data_new (void) {
-
-	AppData *app_data = (AppData *) malloc (sizeof (AppData));
-	if (app_data) {
-		memset (app_data, 0, sizeof (AppData));
-	}
-
-	return app_data;
-
-}
-
-static void app_data_delete (void *app_data_ptr) {
-
-	if (app_data_ptr) free (app_data_ptr);
-
-}
-
-static AppData *app_data_create (const char *message) {
-
-	AppData *app_data = app_data_new ();
-	if (app_data) {
-		time (&app_data->timestamp);
-
-		if (message) {
-			app_data->message_len = strlen (message);
-			strncpy (app_data->message, message, APP_MESSAGE_LEN);
-		}
-	}
-
-	return app_data;
-
-}
-
 static void app_data_print (AppData *app_data) {
 
 	if (app_data) {
@@ -86,10 +46,6 @@ static void app_data_print (AppData *app_data) {
 	}
 
 }
-
-#pragma GCC diagnostic pop
-
-#pragma endregion
 
 #pragma region end
 
@@ -117,9 +73,11 @@ static void handle_test_request (Packet *packet) {
 		// cerver_log_debug ("Got a test message from client. Sending another one back...");
 		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
 
-		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
+		Packet *test_packet = packet_new ();
 		if (test_packet) {
-			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
+			packet_set_header_values (test_packet, PACKET_TYPE_APP, sizeof (PacketHeader), 0, TEST_MSG, packet->header->sock_fd);
+			(void) packet_generate (test_packet);
+			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
 			if (packet_send (test_packet, 0, &sent, false))
 				cerver_log_error ("Failed to send test packet to client!");
@@ -134,14 +92,58 @@ static void handle_test_request (Packet *packet) {
 
 }
 
+static unsigned int send_response (Packet *packet, Client *client, Connection *connection) {
+
+	unsigned int retval = 1;
+
+	packet_set_network_values (packet, my_cerver, client, connection, NULL);
+	size_t sent = 0;
+	if (packet_send (packet, 0, &sent, false)) {
+		cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send packet!");
+	}
+
+	else {
+		printf ("Sent to client: %ld\n", sent);
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static void handle_app_message (Packet *packet) {
 
 	if (packet) {
-		char *end = (char *) packet->data;
+		char *final = (char *) packet->data;
 
-		AppData *app_data = (AppData *) end;
+		AppData *app_data = (AppData *) final;
 		app_data_print (app_data);
 		printf ("\n");
+
+		// send the packet back to the client
+		Packet *response = packet_new ();
+		if (response) {
+			size_t packet_len = sizeof (PacketHeader) + sizeof (AppData);
+			response->packet = malloc (packet_len);
+			response->packet_size = packet_len;
+
+			char *end = (char *) response->packet;
+			PacketHeader *header = (PacketHeader *) end;
+			header->packet_type = PACKET_TYPE_APP;
+			header->packet_size = packet_len;
+
+			header->request_type = APP_MSG;
+
+			header->sock_fd = packet->header->sock_fd;
+
+			end += sizeof (PacketHeader);
+
+			memcpy (end, final, sizeof (AppData));
+
+			send_response (response, packet->client, packet->connection);
+
+			packet_delete (response);
+		}
 	}
 
 }
@@ -189,13 +191,47 @@ static void handler (void *data) {
 
 #pragma region events
 
+static void on_cever_started (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s has started!\n",
+			event_data->cerver->info->name->str
+		);
+
+		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
+	}
+
+}
+
+static void on_cever_teardown (void *event_data_ptr) {
+
+	if (event_data_ptr) {
+		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
+
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
+			"Cerver %s is going to be destroyed!\n",
+			event_data->cerver->info->name->str
+		);
+	}
+
+}
+
 static void on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		printf (
-			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
+			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name->str
@@ -209,8 +245,10 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		printf (
-			"\nA client closed a connection to cerver %s!\n\n",
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
+			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
 	}
@@ -221,7 +259,37 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
-int main (void) {
+static u16 get_port (int argc, char **argv) {
+
+	u16 port = 7000;
+	if (argc > 1) {
+		int j = 0;
+		const char *curr_arg = NULL;
+		for (int i = 1; i < argc; i++) {
+			curr_arg = argv[i];
+
+			// port
+			if (!strcmp (curr_arg, "-p")) {
+				j = i + 1;
+				if (j <= argc) {
+					port = (u16) atoi (argv[j]);
+					i++;
+				}
+			}
+
+			else {
+				cerver_log_warning (
+					"Unknown argument: %s", curr_arg
+				);
+			}
+		}
+	}
+
+	return port;
+
+}
+
+int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
@@ -234,14 +302,14 @@ int main (void) {
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Packets Example");
+	cerver_log_debug ("Simple Test Message Example");
 	printf ("\n");
-	cerver_log_debug ("We should always receive the same message no matter the method the client is using to send it");
+	cerver_log_debug ("Single app handler with direct handle option enabled");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", get_port (argc, argv), PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Packets Example");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
@@ -251,6 +319,21 @@ int main (void) {
 		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
+
+		String *test = str_new ("This is a test!");
+		cerver_event_register (
+			my_cerver,
+			CERVER_EVENT_STARTED,
+			on_cever_started, test, str_delete,
+			false, false
+		);
+
+		cerver_event_register (
+			my_cerver,
+			CERVER_EVENT_TEARDOWN,
+			on_cever_teardown, NULL, NULL,
+			false, false
+		);
 
 		cerver_event_register (
 			my_cerver,

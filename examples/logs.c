@@ -8,7 +8,6 @@
 #include <cerver/version.h>
 #include <cerver/cerver.h>
 #include <cerver/events.h>
-#include <cerver/files.h>
 
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
@@ -37,29 +36,35 @@ static void end (int dummy) {
 
 }
 
+static void quit (int dummy) {
+
+	cerver_end ();
+
+	exit (0);
+
+}
+
 #pragma endregion
 
 #pragma region handler
 
 static void handle_test_request (Packet *packet) {
 
-	if (packet) {
-		// cerver_log_debug ("Got a test message from client. Sending another one back...");
-		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
-		
-		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
-		if (test_packet) {
-			packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
-			size_t sent = 0;
-			if (packet_send (test_packet, 0, &sent, false)) 
-				cerver_log_error ("Failed to send test packet to client!");
+	// cerver_log_debug ("Got a test message from client. Sending another one back...");
+	cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from client. Sending another one back...");
+	
+	Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
+	if (test_packet) {
+		packet_set_network_values (test_packet, NULL, NULL, packet->connection, NULL);
+		size_t sent = 0;
+		if (packet_send (test_packet, 0, &sent, false)) 
+			cerver_log_error ("Failed to send test packet to client!");
 
-			else {
-				// printf ("Response packet sent: %ld\n", sent);
-			}
-			
-			packet_delete (test_packet);
+		else {
+			// printf ("Response packet sent: %ld\n", sent);
 		}
+		
+		packet_delete (test_packet);
 	}
 
 }
@@ -83,36 +88,6 @@ static void handler (void *data) {
 #pragma endregion
 
 #pragma region events
-
-static void on_cever_started (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		printf ("\n");
-		cerver_log (
-			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
-			"Cerver %s has started!\n", 
-			event_data->cerver->info->name->str
-		);
-	}
-
-}
-
-static void on_cever_teardown (void *event_data_ptr) {
-
-	if (event_data_ptr) {
-		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-
-		printf ("\n");
-		cerver_log (
-			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
-			"Cerver %s is going to be destroyed!\n", 
-			event_data->cerver->info->name->str
-		);
-	}
-
-}
 
 static void on_client_connected (void *event_data_ptr) {
 
@@ -150,52 +125,41 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
-int main (void) {
+int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
 	// register to the quit signal
 	signal (SIGINT, end);
+	signal (SIGSEGV, quit);
+
+	cerver_log_set_output_type (LOG_OUTPUT_TYPE_BOTH);
+	cerver_log_set_path ("./logs");
+	cerver_log_set_time_config (LOG_TIME_TYPE_TIME);
+	cerver_log_set_local_time (true);
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
 	printf ("\n");
 
-	cerver_log_debug ("Simple File Cerver Example");
+	cerver_log_debug ("Simple Logs Example");
 	printf ("\n");
-	cerver_log_debug ("Cerver is configured to accept & handle files requests");
+	cerver_log_debug ("Simple test cerver with custom logs configuartions");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_FILES, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
 	if (my_cerver) {
-		cerver_set_welcome_msg (my_cerver, "Welcome - Simple file cerver example");
+		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
-		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
-		cerver_set_handle_detachable_threads (my_cerver, true);
-		// cerver_set_thpool_n_threads (my_cerver, 4);
+		cerver_set_thpool_n_threads (my_cerver, 4);
 
 		Handler *app_handler = handler_create (handler);
 		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
-
-		cerver_event_register (
-			my_cerver, 
-			CERVER_EVENT_STARTED,
-			on_cever_started, NULL, NULL,
-			false, false
-		);
-
-		cerver_event_register (
-			my_cerver, 
-			CERVER_EVENT_TEARDOWN,
-			on_cever_teardown, NULL, NULL,
-			false, false
-		);
 
 		cerver_event_register (
 			my_cerver, 
@@ -211,12 +175,6 @@ int main (void) {
 			false, false
 		);
 
-		/*** file cerver configuration ***/
-		FileCerver *file_cerver = (FileCerver *) my_cerver->cerver_data;
-
-		file_cerver_add_path (file_cerver, "./data");
-		file_cerver_set_uploads_path (file_cerver, "./uploads");
-
 		if (cerver_start (my_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
@@ -228,7 +186,7 @@ int main (void) {
 	}
 
 	else {
-        cerver_log_error ("Failed to create cerver!");
+		cerver_log_error ("Failed to create cerver!");
 
 		cerver_delete (my_cerver);
 	}
