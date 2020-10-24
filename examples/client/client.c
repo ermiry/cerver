@@ -353,12 +353,10 @@ int main (void) {
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
 		if (cerver_start (client_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				client_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				client_cerver->info->name->str
+			);
 
 			cerver_delete (client_cerver);
 		}
