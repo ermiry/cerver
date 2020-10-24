@@ -6,8 +6,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
+#include "cerver/collections/avl.h"
 
 #include "cerver/cerver.h"
 #include "cerver/packets.h"
