@@ -1911,84 +1911,66 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 }
 
-static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *http_receive) {
+static inline u8 cerver_receive_http_actual (CerverReceive *cr, HttpReceive *http_receive, char *buffer) {
 
 	u8 retval = 1;
 
-	char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-	if (packet_buffer) {
-		ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
+	ssize_t rc = recv (cr->socket->sock_fd, buffer, cr->cerver->receive_buffer_size, 0);
+	switch (rc) {
+		case -1: {
+			if (errno == EAGAIN) {
+				#ifdef HANDLER_DEBUG
+				cerver_log_debug (
+					"cerver_receive_http () - sock fd: %d timed out",
+					cr->socket->sock_fd
+				);
+				#endif
 
-		switch (rc) {
-			case -1: {
-				if (cr->socket->sock_fd > -1) {
-					switch (errno) {
-						case EAGAIN: {
-							#ifdef HANDLER_DEBUG
-							cerver_log_debug (
-								"cerver_receive_http () - sock fd: %d timed out",
-								cr->socket->sock_fd
-							);
-							#endif
+				if (http_receive->keep_alive) retval = 0;
+			}
 
-							if (http_receive->keep_alive) retval = 0;
-						} break;
-
-						default: {
-							#ifdef HANDLER_DEBUG
-							cerver_log (
-								LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-								"cerver_receive_http () - rc < 0 - sock fd: %d",
-								cr->socket->sock_fd
-							);
-
-							perror ("Error ");
-							#endif
-						} break;
-					}
-				}
-			} break;
-
-			case 0: {
+			else {
 				#ifdef HANDLER_DEBUG
 				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-					"cerver_receive_http () - rc == 0 - sock fd: %d",
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"cerver_receive_http () - rc < 0 - sock fd: %d",
 					cr->socket->sock_fd
 				);
 
-				// perror ("Error ");
+				perror ("Error ");
 				#endif
-			} break;
+			}
+		} break;
 
-			default: {
-				// cerver_log_msg (
-				// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				// 	"Cerver %s rc: %ld for sock fd: %d",
-				//     cr->cerver->info->name->str, rc, cr->socket->sock_fd
-				// );
+		case 0: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"cerver_receive_http () - rc == 0 - sock fd: %d",
+				cr->socket->sock_fd
+			);
 
-				// update cerver stats
-				cr->socket->packet_buffer_size = rc;
+			// perror ("Error ");
+			#endif
+		} break;
 
-				cr->cerver->stats->total_n_receives_done += 1;
-				cr->cerver->stats->total_bytes_received += rc;
+		default: {
+			// cerver_log (
+			// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			// 	"Cerver %s rc: %ld for sock fd: %d",
+			//     cr->cerver->info->name->str, rc, cr->socket->sock_fd
+			// );
 
-				http_receive->handler (http_receive, rc, packet_buffer);
+			// update cerver stats
+			cr->socket->packet_buffer_size = rc;
 
-				retval = 0;
-			} break;
-		}
+			cr->cerver->stats->total_n_receives_done += 1;
+			cr->cerver->stats->total_bytes_received += rc;
 
-		free (packet_buffer);
-	}
+			http_receive->handler (http_receive, rc, buffer);
 
-	else {
-		cerver_log (
-			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
-			"cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
-			cr->connection->socket->sock_fd
-		);
+			retval = 0;
+		} break;
 	}
 
 	return retval;
@@ -2010,7 +1992,24 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	// set the socket's timeout to prevent thread from getting stuck if no more data to read
 	(void) sock_set_timeout (sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
-	while (!cerver_receive_http_actual (cr, http_receive) && cr->cerver->isRunning);
+	char *buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
+	if (buffer) {
+		while (
+			(cr->socket->sock_fd > -1)
+			&& cr->cerver->isRunning
+			&& !cerver_receive_http_actual (cr, http_receive, buffer) 
+		);
+
+		free (buffer);
+	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
+			"cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+			cr->connection->socket->sock_fd
+		);
+	}
 
 	http_receive_delete (http_receive);
 
