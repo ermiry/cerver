@@ -1827,7 +1827,6 @@ static void http_receive_handle (
 
 #pragma region websockets
 
-// FIXME: handle msg_len >= 126 packets
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
 u8 http_web_sockets_send (
@@ -1839,27 +1838,65 @@ u8 http_web_sockets_send (
 
 	unsigned char fin_rsv_opcode = 129;
 
+	size_t header_len = 0;
 	unsigned char res[128] = { 0 };
 
+	unsigned char *end = res;
 	res[0] = fin_rsv_opcode;
-	res[1] = (unsigned char) msg_len;
 
+	ssize_t sent = 0;
+
+	// Unmasked (first length byte < 128)
 	if (msg_len >= 126) {
-		// TODO:
+		ssize_t num_bytes = 0;
+		if (msg_len > 0xffff) {
+			num_bytes = 8;
+			res[1] = 127;
+		}
+
+		else {
+			num_bytes = 2;
+			res[1] = 126;
+		}
+
+		header_len = 2;
+		end += 2;
+		for (ssize_t c = num_bytes -1; c != -1; c--) {
+			*end++ = ((unsigned long long) msg_len >> (8 * c)) % 256;
+			header_len += 1;
+		}
+
+		// first send the header
+		ssize_t s = send (connection->socket->sock_fd, res, header_len, 0);
+		if (s > 0) {
+			sent = s;
+
+			// send the message contents
+			s = send (connection->socket->sock_fd, msg, msg_len, 0);
+			if (s > 0) {
+				sent += s;
+				retval = 0;
+			}
+		}
 	}
 
 	else {
-		for (unsigned int i = 0; i < msg_len; i++) {
-			res[i + 2] = msg[i];
-		}
+		res[1] = (unsigned char) msg_len;
+		end += 2;
+
+		// for (unsigned int i = 0; i < msg_len; i++) {
+		// 	res[i + 2] = msg[i];
+		// }
+
+		memcpy (end, msg, msg_len);
+
+		// send the message contents
+		sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
+		if (sent > 0) retval = 0;
 	}
 
 	printf ("fin_rsv_opcode: %d\n", res[0]);
 	printf ("res len: %d\n", res[1]);
-	printf ("response: %s\n", res + 2);
-
-	ssize_t sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
-	if (sent > 0) retval = 0;
 
 	printf ("sent: %ld\n", sent);
 	printf ("\n");
@@ -1877,22 +1914,25 @@ static void http_web_sockets_handler (
 
 	// if connection close
 	if ((fin_rsv_opcode & 0x0f) == 8) {
-
+		// TODO:
+		printf ("connection close\n");
 	}
 
 	// if ping
 	else if ((fin_rsv_opcode & 0x0f) == 9) {
 		printf ("\nPING!\n\n");
+		// TODO:
 	}
 
 	// if pong
 	else if ((fin_rsv_opcode & 0x0f) == 10) {
 		printf ("\nPONG\n\n");
+		// TODO:
 	}
 
 	// if fragmented message and not final fragment
 	else if ((fin_rsv_opcode & 0x80) == 0) {
-
+		// TODO: read the next message
 	}
 
 	else {
@@ -1924,10 +1964,11 @@ static void http_web_sockets_read_message_content (
 
 	// if fragmented message
 	if ((fin_rsv_opcode & 0x80) == 0 || (fin_rsv_opcode & 0x0f) == 0) {
+		printf ("fragmented message\n");
 		if (!http_receive->fragmented_message) {
-			http_receive->fin_rsv_opcode = fin_rsv_opcode;
+			http_receive->fin_rsv_opcode = fin_rsv_opcode |= 0x80;
 			http_receive->fragmented_message = (char *) calloc (message_size, sizeof (char));
-			http_receive->fragmented_message_len = message_size;
+			// http_receive->fragmented_message_len = message_size;
 		}
 
 		else {
@@ -1937,6 +1978,7 @@ static void http_web_sockets_read_message_content (
 		message = http_receive->fragmented_message;
 	}
 
+	// complete message
 	else {
 		message = (char *) calloc (message_size, sizeof (char));
 	}
@@ -1989,7 +2031,7 @@ static void http_web_sockets_receive_handle (
 			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
 		}
 
-		printf ("length: %ld\n", length);
+		printf ("message length: %ld\n", length);
 
 		http_web_sockets_read_message_content (
 			http_receive, 
@@ -2015,6 +2057,8 @@ static void http_web_sockets_receive_handle (
 			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
 		}
 
+		printf ("message length: %ld\n", length);
+
 		http_web_sockets_read_message_content (
 			http_receive, 
 			rc - 10, packet_buffer + 10,
@@ -2023,7 +2067,7 @@ static void http_web_sockets_receive_handle (
 	}
 
 	else {
-		printf ("length: %ld\n", length);
+		printf ("message length: %ld\n", length);
 
 		http_web_sockets_read_message_content (
 			http_receive,
