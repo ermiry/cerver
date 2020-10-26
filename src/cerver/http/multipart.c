@@ -66,9 +66,9 @@ void http_multi_part_headers_print (MultiPart *mpart) {
 			header = mpart->headers[i];
 
 			switch (i) {
-				case MULTI_PART_HEADER_CONTENT_DISPOSITION		: cerver_log_msg ("Content-Disposition: %s\n", header ? header->str : null); break;
-				case MULTI_PART_HEADER_CONTENT_LENGTH			: cerver_log_msg ("Content-Length: %s\n", header ? header->str : null); break;
-				case MULTI_PART_HEADER_CONTENT_TYPE				: cerver_log_msg ("Content-Type: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_DISPOSITION		: cerver_log_msg ("Content-Disposition: %s", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_LENGTH			: cerver_log_msg ("Content-Length: %s", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_TYPE				: cerver_log_msg ("Content-Type: %s", header ? header->str : null); break;
 
 				default: break;
 			}

@@ -108,40 +108,40 @@ void http_request_headers_print (HttpRequest *http_request) {
 			header = http_request->headers[i];
 
 			switch (i) {
-				case REQUEST_HEADER_ACCEPT							: cerver_log_msg ("Accept: %s\n", header ? header->str : null); break;
-				case REQUEST_HEADER_ACCEPT_CHARSET					: cerver_log_msg ("Accept-Charset: %s\n", header ? header->str : null); break;
-				case REQUEST_HEADER_ACCEPT_ENCODING					: cerver_log_msg ("Accept-Encoding: %s\n", header ? header->str : null); break;
-				case REQUEST_HEADER_ACCEPT_LANGUAGE					: cerver_log_msg ("Accept-Language: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_ACCEPT							: cerver_log_msg ("Accept: %s", header ? header->str : null); break;
+				case REQUEST_HEADER_ACCEPT_CHARSET					: cerver_log_msg ("Accept-Charset: %s", header ? header->str : null); break;
+				case REQUEST_HEADER_ACCEPT_ENCODING					: cerver_log_msg ("Accept-Encoding: %s", header ? header->str : null); break;
+				case REQUEST_HEADER_ACCEPT_LANGUAGE					: cerver_log_msg ("Accept-Language: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS	: cerver_log_msg ("Access-Control-Request-Headers: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS	: cerver_log_msg ("Access-Control-Request-Headers: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_AUTHORIZATION					: cerver_log_msg ("Authorization: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_AUTHORIZATION					: cerver_log_msg ("Authorization: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_CACHE_CONTROL					: cerver_log_msg ("Cache-Control: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_CACHE_CONTROL					: cerver_log_msg ("Cache-Control: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_CONNECTION						: cerver_log_msg ("Connection: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_CONNECTION						: cerver_log_msg ("Connection: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_CONTENT_LENGTH					: cerver_log_msg ("Content-Length: %s\n", header ? header->str : null); break;
-				case REQUEST_HEADER_CONTENT_TYPE					: cerver_log_msg ("Content-Type: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_CONTENT_LENGTH					: cerver_log_msg ("Content-Length: %s", header ? header->str : null); break;
+				case REQUEST_HEADER_CONTENT_TYPE					: cerver_log_msg ("Content-Type: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_COOKIE							: cerver_log_msg ("Cookie: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_COOKIE							: cerver_log_msg ("Cookie: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_DATE							: cerver_log_msg ("Date: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_DATE							: cerver_log_msg ("Date: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_EXPECT							: cerver_log_msg ("Expect: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_EXPECT							: cerver_log_msg ("Expect: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_HOST							: cerver_log_msg ("Host: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_HOST							: cerver_log_msg ("Host: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_ORIGIN							: cerver_log_msg ("Origin: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_ORIGIN							: cerver_log_msg ("Origin: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_PROXY_AUTHORIZATION				: cerver_log_msg ("Proxy-Authorization: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_PROXY_AUTHORIZATION				: cerver_log_msg ("Proxy-Authorization: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_UPGRADE							: cerver_log_msg ("Upgrade: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_UPGRADE							: cerver_log_msg ("Upgrade: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_USER_AGENT						: cerver_log_msg ("User-Agent: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_USER_AGENT						: cerver_log_msg ("User-Agent: %s", header ? header->str : null); break;
 
-				case REQUEST_HEADER_WEB_SOCKET_KEY					: cerver_log_msg ("Sec-WebSocket-Key: %s\n", header ? header->str : null); break;
-				case REQUEST_HEADER_WEB_SOCKET_VERSION				: cerver_log_msg ("Sec-WebSocket-Version: %s\n", header ? header->str : null); break;
+				case REQUEST_HEADER_WEB_SOCKET_KEY					: cerver_log_msg ("Sec-WebSocket-Key: %s", header ? header->str : null); break;
+				case REQUEST_HEADER_WEB_SOCKET_VERSION				: cerver_log_msg ("Sec-WebSocket-Version: %s", header ? header->str : null); break;
 
 				default: break;
 			}
