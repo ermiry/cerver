@@ -1060,7 +1060,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = (http_receive)->request->current_part;
 
-	#ifdef HTTP_DEBUG
+	#ifdef HTTP_MPART_DEBUG
 	http_multi_part_headers_print (multi_part);
 	#endif
 
@@ -1110,7 +1110,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						} break;
 
 						default: {
-							#ifdef HTTP_DEBUG
+							#ifdef HTTP_MPART_DEBUG
 							cerver_log_debug ("Opened %s to save multipart file!", filename);
 							#endif
 
@@ -1461,7 +1461,7 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 						fail = false;
 						// printf ("routes_tokens->id: %d\n", routes_tokens->id);
 						for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
-							printf ("%s\n", routes_tokens->tokens[main_idx][sub_idx]);
+							// printf ("%s\n", routes_tokens->tokens[main_idx][sub_idx]);
 							if (routes_tokens->tokens[main_idx][sub_idx][0] != '*') {
 								if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
 									// printf ("fail!\n");
@@ -1470,9 +1470,9 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 								}
 							}
 
-							else {
-								printf ("*\n");
-							}
+							// else {
+							// 	printf ("*\n");
+							// }
 						}
 
 						if (!fail) {
@@ -1539,12 +1539,15 @@ static void http_receive_handle_select_auth_bearer (
 		jwt_valid->hdr = 1;
 		jwt_valid->now = time (NULL);
 
-		int ret = jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len);
-		if (!ret) {
+		if (!jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len)) {
+			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_debug ("JWT decoded successfully!");
+			#endif
 
 			if (!jwt_validate (jwt, jwt_valid)) {
+				#ifdef HTTP_AUTH_DEBUG
 				cerver_log_success ("JWT is authentic!");
+				#endif
 
 				if (found->decode_data) {
 					request->decoded_data = found->decode_data (jwt->grants);
@@ -1560,10 +1563,12 @@ static void http_receive_handle_select_auth_bearer (
 			}
 
 			else {
+				#ifdef HTTP_AUTH_DEBUG
 				cerver_log_error (
 					"Failed to validate JWT: %08x", 
 					jwt_valid_get_status(jwt_valid)
 				);
+				#endif
 
 				http_receive_handle_select_failed_auth (cr);
 
@@ -1574,7 +1579,10 @@ static void http_receive_handle_select_auth_bearer (
 		}
 
 		else {
+			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_error ("Invalid JWT!");
+			#endif
+
 			http_receive_handle_select_failed_auth (cr);
 			http_cerver->n_failed_auth_requests += 1;
 		}
@@ -1654,7 +1662,9 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	// http_request_headers_print (http_receive->request);
+	#ifdef HTTP_HEADERS_DEBUG
+	http_request_headers_print (http_receive->request);
+	#endif
 
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
