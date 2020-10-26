@@ -66,9 +66,11 @@ void http_multi_part_headers_print (MultiPart *mpart) {
 			header = mpart->headers[i];
 
 			switch (i) {
-				case MULTI_PART_HEADER_CONTENT_DISPOSITION		: printf ("Content-Disposition: %s\n", header ? header->str : null); break;
-				case MULTI_PART_HEADER_CONTENT_LENGTH			: printf ("Content-Length: %s\n", header ? header->str : null); break;
-				case MULTI_PART_HEADER_CONTENT_TYPE				: printf ("Content-Type: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_DISPOSITION		: cerver_log_msg ("Content-Disposition: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_LENGTH			: cerver_log_msg ("Content-Length: %s\n", header ? header->str : null); break;
+				case MULTI_PART_HEADER_CONTENT_TYPE				: cerver_log_msg ("Content-Type: %s\n", header ? header->str : null); break;
+
+				default: break;
 			}
 		}
 	}
@@ -164,13 +166,13 @@ multipart_parser *multipart_parser_init (const char *boundary, const multipart_p
 
 }
 
-void multipart_parser_free (multipart_parser *p) { if (p) free(p); }
+void multipart_parser_free (multipart_parser *p) { if (p) free (p); }
 
-size_t multipart_parser_execute(multipart_parser *p, const char *buf, size_t len) {
+size_t multipart_parser_execute (multipart_parser *p, const char *buf, size_t len) {
 
 	size_t i = 0;
 	size_t mark = 0;
-	char c, cl;
+	char c = 0, cl = 0;
 	int is_last = 0;
 
 	while (i < len) {
