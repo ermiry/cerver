@@ -1308,7 +1308,7 @@ static void http_receive_handle_match_web_socket (
 			char buffer[128] = { 0 };
 			snprintf (buffer, 128, "%s%s", web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
 
-			unsigned char hash[SHA_DIGEST_LENGTH];
+			unsigned char hash[SHA_DIGEST_LENGTH] = { 0 };
 			SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
 
 			memset (buffer, 0, 128);
@@ -1345,7 +1345,8 @@ static void http_receive_handle_match_web_socket (
 					cr->connection->socket->sock_fd
 				);
 
-				// FIXME: end connection with error
+				// end connection to avoid wasting a thread
+				connection_end (http_receive->cr->connection);
 			}
 		}
 
@@ -1569,7 +1570,7 @@ static void http_receive_handle_select_auth_bearer (
 				http_cerver->n_failed_auth_requests += 1;
 			}
 
-			jwt_free(jwt);
+			jwt_free (jwt);
 		}
 
 		else {
