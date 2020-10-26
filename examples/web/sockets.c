@@ -92,7 +92,7 @@ void echo_handler_on_message (
 
 	printf ("echo_handler_on_message ()\n");
 
-	printf ("message[%ld]: %s\n", msg_len, msg);
+	printf ("message[%ld]: %.*s\n", msg_len, (int) msg_len, msg);
 
 	http_web_sockets_send (
 		cerver, connection,
