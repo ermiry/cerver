@@ -513,7 +513,7 @@ char *file_read (const char *filename, size_t *file_size) {
 				#ifdef FILES_DEBUG
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_FILE,
-					"Failed to read file (%s) contents!"
+					"Failed to read file (%s) contents!", filename
 				);
 				#endif
 
