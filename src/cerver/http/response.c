@@ -188,7 +188,7 @@ void http_response_compile_header (HttpResponse *res) {
 
 	if (res->n_headers) {
 		char *main_header = c_string_create (
-			"HTTP/1.1 %d %s\nServer: Cerver/%s\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
 			res->status, http_status_str (res->status),
 			CERVER_VERSION
 		);
@@ -226,7 +226,7 @@ void http_response_compile_header (HttpResponse *res) {
 	// create the default header
 	else {
 		res->header = c_string_create (
-			"HTTP/1.1 %d %s\nServer: Cerver/%s\n\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
 			res->status, http_status_str (res->status),
 			CERVER_VERSION
 		);
@@ -245,7 +245,7 @@ u8 http_response_compile (HttpResponse *res) {
 	if (res) {
 		if (!res->header) {
 			// res->header = c_string_create (
-			// 	"HTTP/1.1 %d %s\nServer: Cerver/%s\n\n", 
+			// 	"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
 			// 	res->status, http_status_str (res->status),
 			// 	CERVER_VERSION
 			// );
@@ -395,7 +395,7 @@ u8 http_response_send_file (CerverReceive *cr, int file, const char *filename, s
 
 		// prepare & send the header
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: %s\nContent-Length: %ld\n\n", 
+			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
 			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			content_type,
@@ -480,7 +480,7 @@ u8 http_response_render_text (CerverReceive *cr, const char *text, const size_t 
 
 	if (cr && text) {
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: text/html; charset=UTF-8\nContent-Length: %ld\n\n", 
+			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
 			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			text_len
@@ -512,7 +512,7 @@ u8 http_response_render_json (CerverReceive *cr, const char *json, const size_t 
 
 	if (cr && json) {
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\nServer: Cerver/%s\nContent-Type: application/json\nContent-Length: %ld\n\n", 
+			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
 			http_status_str ((enum http_status) 200),
 			CERVER_VERSION,
 			json_len
@@ -587,7 +587,7 @@ static HttpResponse *http_response_json_internal (http_status status, const char
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
 		res->header = c_string_create (
-			"HTTP/1.1 %d %s\nServer: Cerver/%s\nContent-Type: application/json\nContent-Length: %ld\n\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
 			res->status, http_status_str (res->status),
 			CERVER_VERSION,
 			res->data_len
