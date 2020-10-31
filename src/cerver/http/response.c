@@ -568,15 +568,10 @@ static HttpResponse *http_response_json_internal (http_status status, const char
 		res->status = status;
 
 		// body
-		json_t *json = json_pack ("{s:s}", key, value);
+		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
 		if (json) {
-			char *json_str = json_dumps (json, 0);
-			if (json_str) {
-				res->data = json_str;
-				res->data_len = strlen (json_str);
-			}
-
-			json_delete (json);
+			res->data = json;
+			res->data_len = strlen (json);
 		}
 
 		// header
