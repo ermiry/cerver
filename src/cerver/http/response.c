@@ -111,7 +111,7 @@ u8 http_response_add_header (HttpResponse *res, ResponseHeader type, const char 
 		if (res->headers[type]) str_delete (res->headers[type]);
 		else res->n_headers += 1;
 		
-		res->headers[type] = str_create ("%s: %s\n", http_response_header_str (type), actual_header);
+		res->headers[type] = str_create ("%s: %s\r\n", http_response_header_str (type), actual_header);
 	}
 
 	return retval;
@@ -201,7 +201,7 @@ void http_response_compile_header (HttpResponse *res) {
 			if (res->headers[i]) res->header_len += res->headers[i]->len;
 		}
 
-		res->header_len += 1;	// \n
+		res->header_len += 2;	// \r\n
 
 		res->header = calloc (res->header_len, sizeof (char));
 
@@ -216,9 +216,9 @@ void http_response_compile_header (HttpResponse *res) {
 		}
 
 		// append header end
+		*end = '\r';
+		end += 1;
 		*end = '\n';
-		// end += 1;
-		// *end = '\0';
 
 		free (main_header);
 	}
