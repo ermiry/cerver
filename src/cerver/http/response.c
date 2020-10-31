@@ -403,7 +403,9 @@ u8 http_response_send_file (CerverReceive *cr, int file, const char *filename, s
 		);
 
 		if (header) {
-			// printf ("\n%s\n", header);
+			#ifdef HTTP_RESPONSE_DEBUG
+			cerver_log_msg ("\n%s\n", header);
+			#endif
 
 			if (!http_response_send_actual (
 				cr->connection->socket,
@@ -487,7 +489,9 @@ u8 http_response_render_text (CerverReceive *cr, const char *text, const size_t 
 		);
 
 		if (header) {
-			printf ("\n%s\n", header);
+			#ifdef HTTP_RESPONSE_DEBUG
+			cerver_log_msg ("\n%s\n", header);
+			#endif
 
 			retval = http_response_render_send (
 				cr,
@@ -519,7 +523,9 @@ u8 http_response_render_json (CerverReceive *cr, const char *json, const size_t 
 		);
 
 		if (header) {
-			printf ("\n%s\n", header);
+			#ifdef HTTP_RESPONSE_DEBUG
+			cerver_log_msg ("\n%s\n", header);
+			#endif
 
 			retval = http_response_render_send (
 				cr,
@@ -613,7 +619,9 @@ u8 http_response_json_msg_send (CerverReceive *cr, unsigned int status, const ch
 
 	HttpResponse *res = http_response_json_msg ((http_status) status, msg);
 	if (res) {
-		// http_response_print (res);
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (res);
+		#endif
 		retval = http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
@@ -638,7 +646,9 @@ u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const 
 
 	HttpResponse *res = http_response_json_error ((http_status) status, error_msg);
 	if (res) {
-		// http_response_print (res);
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (res);
+		#endif
 		retval = http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
 	}
