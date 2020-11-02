@@ -168,12 +168,10 @@ int main (int argc, char **argv) {
 		http_cerver_route_register (http_cerver, adios_route);
 
 		if (cerver_start (web_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				web_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				web_cerver->info->name->str
+			);
 
 			cerver_delete (web_cerver);
 		}

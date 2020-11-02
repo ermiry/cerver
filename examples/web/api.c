@@ -415,12 +415,10 @@ int main (int argc, char **argv) {
 		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
 
 		if (cerver_start (api_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				api_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				api_cerver->info->name->str
+			);
 
 			cerver_delete (api_cerver);
 		}
