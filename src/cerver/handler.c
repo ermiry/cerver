@@ -20,6 +20,7 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 #include "cerver/socket.h"
+#include "cerver/timer.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
@@ -1878,6 +1879,10 @@ static inline u8 cerver_receive_threads_actual (
 
 static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
+	#ifdef HANDLER_DEBUG
+	double start_time = timer_get_current_time ();
+	#endif
+
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
 	i32 sock_fd = cr->socket->sock_fd;
@@ -1918,6 +1923,10 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 		"cerver_receive_threads () - loop has ended - dropping sock fd <%d> connection...",
 		sock_fd
 	);
+	#endif
+
+	#ifdef HANDLER_DEBUG
+	cerver_log_debug ("cerver_receive_threads () ended in %f seconds", timer_get_current_time () - start_time);
 	#endif
 
 	return NULL;
@@ -1997,6 +2006,10 @@ static inline u8 cerver_receive_http_actual (
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
+	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
+	double start_time = timer_get_current_time ();
+	#endif
+
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
 
 	HttpReceive *http_receive = http_receive_new ();
@@ -2042,6 +2055,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	connection_drop (cr->cerver, cr->connection);
 
 	cerver_receive_delete (cr);
+
+	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
+	cerver_log_debug ("cerver_receive_http () ended in %f seconds", timer_get_current_time () - start_time);
+	#endif
 
 	return NULL;
 
