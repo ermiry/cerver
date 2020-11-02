@@ -4,6 +4,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/handler.h"
+
 #include "cerver/http/status.h"
 
 #define RESPONSE_HEADERS_SIZE			8
@@ -148,6 +150,27 @@ CERVER_EXPORT HttpResponse *http_response_json_error (http_status status, const 
 // creates and sends a http json error response with the defined status code & message
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const char *error_msg);
+
+// creates a http response with the defined status code ready to be sent
+// and a data (body) with a json meesage of type { key: value }
+CERVER_EXPORT HttpResponse *http_response_json_key_value (http_status status, const char *key, const char *value);
+
+// creates and sends a http custom json response with the defined status code & key-value
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_key_value_send (
+	CerverReceive *cr,
+	unsigned int status, const char *key, const char *value
+);
+
+// creates a http response with the defined status code and the body with the custom json
+CERVER_EXPORT HttpResponse *http_response_json_custom (http_status status, const char *json);
+
+// creates and sends a http custom json response with the defined status code
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_custom_send (
+	CerverReceive *cr,
+	unsigned int status, const char *json
+);
 
 #pragma endregion
 

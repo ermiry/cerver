@@ -657,4 +657,87 @@ u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const 
 
 }
 
+// creates a http response with the defined status code ready to be sent
+// and a data (body) with a json meesage of type { key: value }
+HttpResponse *http_response_json_key_value (http_status status, const char *key, const char *value) {
+
+	return (key && value) ? http_response_json_internal (status, key, value) : NULL;
+
+}
+
+// creates and sends a http custom json response with the defined status code & key-value
+// returns 0 on success, 1 on error
+u8 http_response_json_key_value_send (
+	CerverReceive *cr,
+	unsigned int status, const char *key, const char *value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_json_key_value ((http_status) status, key, value);
+	if (res) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (res);
+		#endif
+		retval = http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+	return retval;
+
+}
+
+// creates a http response with the defined status code and the body with the custom json
+HttpResponse *http_response_json_custom (http_status status, const char *json) {
+
+	HttpResponse *res = NULL;
+	if (json) {
+		res = http_response_new ();
+		if (res) {
+			res->status = status;
+
+			// body
+			res->data = strdup (json);
+			res->data_len = strlen (json);
+
+			// header
+			res->header = c_string_create (
+				"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+				res->status, http_status_str (res->status),
+				CERVER_VERSION,
+				res->data_len
+			);
+
+			res->header_len = strlen ((const char *) res->header);
+
+			(void) http_response_compile (res);
+		}
+	}
+
+	return res;
+
+}
+
+// creates and sends a http custom json response with the defined status code
+// returns 0 on success, 1 on error
+u8 http_response_json_custom_send (
+	CerverReceive *cr,
+	unsigned int status, const char *json
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_json_custom ((http_status) status, json);
+	if (res) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (res);
+		#endif
+		retval = http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+	return retval;
+
+}
+
 #pragma endregion

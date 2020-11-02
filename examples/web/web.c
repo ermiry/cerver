@@ -111,6 +111,26 @@ void adios_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// GET /key
+void key_handler (CerverReceive *cr, HttpRequest *request) {
+
+	(void) http_response_json_key_value_send (
+		cr,
+		(http_status) 200, "key", "value"
+	);
+
+}
+
+// GET /custom
+void custom_handler (CerverReceive *cr, HttpRequest *request) {
+
+	(void) http_response_json_custom_send (
+		cr,
+		(http_status) 200, "{\"oki\": \"doki\"}"
+	);
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -166,6 +186,14 @@ int main (int argc, char **argv) {
 		// GET /adios
 		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
 		http_cerver_route_register (http_cerver, adios_route);
+
+		// GET /key
+		HttpRoute *key_route = http_route_create (REQUEST_METHOD_GET, "key", key_handler);
+		http_cerver_route_register (http_cerver, key_route);
+
+		// GET /custom
+		HttpRoute *custom_route = http_route_create (REQUEST_METHOD_GET, "custom", custom_handler);
+		http_cerver_route_register (http_cerver, custom_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
