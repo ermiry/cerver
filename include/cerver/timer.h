@@ -22,6 +22,8 @@ CERVER_EXPORT double timer_elapsed_time (TimeSpec *start, TimeSpec *end);
 
 CERVER_EXPORT void timer_sleep_for_seconds (double seconds);
 
+CERVER_EXPORT double timer_get_current_time (void);
+
 CERVER_EXPORT struct tm *timer_get_gmt_time (void);
 
 CERVER_EXPORT struct tm *timer_get_local_time (void);

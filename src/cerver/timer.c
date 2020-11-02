@@ -4,6 +4,8 @@
 #include <time.h>
 #include <errno.h>
 
+#include <sys/time.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -51,6 +53,14 @@ void timer_sleep_for_seconds (double seconds) {
 	do {
 		result = nanosleep (&timespc, &timespc);
 	} while (result == -1 && errno == EINTR);
+
+}
+
+double timer_get_current_time (void) {
+
+	struct timeval time = { 0 };
+	return !gettimeofday (&time, NULL) ?
+		(double) time.tv_sec + (double) time.tv_usec * .000001 : 0;
 
 }
 
