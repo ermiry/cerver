@@ -657,4 +657,34 @@ u8 http_response_json_error_send (CerverReceive *cr, unsigned int status, const 
 
 }
 
+// creates a http response with the defined status code ready to be sent
+// and a data (body) with a json meesage of type { key: value }
+HttpResponse *http_response_json_key_value (http_status status, const char *key, const char *value) {
+
+	return (key && value) ? http_response_json_internal (status, key, value) : NULL;
+
+}
+
+// creates and sends a http custom json response with the defined status code & key-value
+// returns 0 on success, 1 on error
+u8 http_response_json_key_value_send (
+	CerverReceive *cr,
+	unsigned int status, const char *key, const char *value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *res = http_response_json_key_value ((http_status) status, key, value);
+	if (res) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (res);
+		#endif
+		retval = http_response_send (res, cr->cerver, cr->connection);
+		http_respponse_delete (res);
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
