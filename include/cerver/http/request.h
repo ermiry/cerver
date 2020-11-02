@@ -113,13 +113,17 @@ CERVER_PUBLIC HttpRequest *http_request_create (void);
 
 CERVER_PUBLIC void http_request_headers_print (HttpRequest *http_request);
 
-// searches the request's multi parts values for a file with matching key
+// searches the request's multi parts values for one with matching key & type
 // returns a constant Stirng that should not be deleted if found, NULL if not match
-CERVER_EXPORT const String *http_request_multi_parts_get_file (HttpRequest *http_request, const char *key);
+CERVER_EXPORT const MultiPart *http_request_multi_parts_get (HttpRequest *http_request, const char *key);
 
 // searches the request's multi parts values for a value with matching key
-// returns a constant Stirng that should not be deleted if found, NULL if not match
+// returns a constant String that should not be deleted if found, NULL if not match
 CERVER_EXPORT const String *http_request_multi_parts_get_value (HttpRequest *http_request, const char *key);
+
+// searches the request's multi parts values for a file with matching key
+// returns a constant String that should not be deleted if found, NULL if not match
+CERVER_EXPORT const String *http_request_multi_parts_get_file (HttpRequest *http_request, const char *key);
 
 // returns a dlist with constant strings values (that should not be deleted) with all the filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()

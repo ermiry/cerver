@@ -150,19 +150,17 @@ void http_request_headers_print (HttpRequest *http_request) {
 
 }
 
-// searches the request's multi parts values for a file with matching key
-// returns a constant Stirng that should not be deleted if found, NULL if not match
-const String *http_request_multi_parts_get_file (HttpRequest *http_request, const char *key) {
+static MultiPart *http_request_multi_parts_get_internal (
+	HttpRequest *http_request, const char *key
+) {
 
-	if (http_request && key) {
-		MultiPart *mpart = NULL;
-		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
-			mpart = (MultiPart *) le->data;
+	MultiPart *mpart = NULL;
+	for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+		mpart = (MultiPart *) le->data;
 
-			if (mpart->filename) {
-				if (!strcmp (mpart->filename->str, key)) {
-					return mpart->filename;
-				}
+		if (mpart->name) {
+			if (!strcmp (mpart->name->str, key)) {
+				return mpart;
 			}
 		}
 	}
@@ -171,21 +169,35 @@ const String *http_request_multi_parts_get_file (HttpRequest *http_request, cons
 
 }
 
-// searches the request's multi parts values for a value with matching key
+// searches the request's multi parts values for one with matching key & type
 // returns a constant Stirng that should not be deleted if found, NULL if not match
+const MultiPart *http_request_multi_parts_get (HttpRequest *http_request, const char *key) {
+
+	return (http_request && key) ?
+		http_request_multi_parts_get_internal (http_request, key) : NULL;
+
+}
+
+// searches the request's multi parts values for a value with matching key
+// returns a constant String that should not be deleted if found, NULL if not match
 const String *http_request_multi_parts_get_value (HttpRequest *http_request, const char *key) {
 
 	if (http_request && key) {
-		MultiPart *mpart = NULL;
-		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
-			mpart = (MultiPart *) le->data;
+		MultiPart *mpart = http_request_multi_parts_get_internal (http_request, key);
+		if (mpart) return mpart->value;
+	}
 
-			if (mpart->value) {
-				if (!strcmp (mpart->name->str, key)) {
-					return mpart->value;
-				}
-			}
-		}
+	return NULL;
+
+}
+
+// searches the request's multi parts values for a file with matching key
+// returns a constant String that should not be deleted if found, NULL if not match
+const String *http_request_multi_parts_get_file (HttpRequest *http_request, const char *key) {
+
+	if (http_request && key) {
+		MultiPart *mpart = http_request_multi_parts_get_internal (http_request, key);
+		if (mpart) return mpart->filename;
 	}
 
 	return NULL;
