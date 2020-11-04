@@ -60,11 +60,41 @@ void upload_handler (CerverReceive *cr, HttpRequest *request) {
 
 	http_request_multi_parts_print (request);
 
+	const String *key = http_request_multi_parts_get_value (request, "key");
+	if (strcmp (key->str, "value")) {
+
+	}
+
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Upload route works!");
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, cr->cerver, cr->connection);
 		http_respponse_delete (res);
+	}
+
+}
+
+// POST /discard
+void discard_handler (CerverReceive *cr, HttpRequest *request) {
+
+	http_request_multi_parts_print (request);
+
+	const String *key = http_request_multi_parts_get_value (request, "key");
+	if (!strcmp (key->str, "value")) {
+		cerver_log_success ("Success request, keeping multi part files...");
+		HttpResponse *res = http_response_json_msg ((http_status) 200, "Success request!");
+		if (res) {
+			http_response_print (res);
+			http_response_send (res, cr->cerver, cr->connection);
+			http_respponse_delete (res);
+		}
+	}
+
+	else {
+		cerver_log_error ("key != value");
+		cerver_log_debug ("Discarding multi part files...");
+		http_request_multi_part_discard_files (request);
+		http_response_json_error_send (cr, 400, "Bad request!");
 	}
 
 }
@@ -109,6 +139,10 @@ int main (int argc, char **argv) {
 		// POST /upload
 		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
 		http_cerver_route_register (http_cerver, upload_route);
+
+		// POST /discard
+		HttpRoute *discard_route = http_route_create (REQUEST_METHOD_POST, "discard", discard_handler);
+		http_cerver_route_register (http_cerver, discard_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
