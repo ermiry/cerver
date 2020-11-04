@@ -295,18 +295,18 @@ static u8 file_cerver_receive (
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		printf ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
-		printf ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
-		printf ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
-		printf ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
-		printf ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
-		printf ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
+		cerver_log_msg ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
+		cerver_log_msg ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
+		cerver_log_msg ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
+		cerver_log_msg ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
+		cerver_log_msg ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
+		cerver_log_msg ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
 
-		printf ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
-		printf ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
-		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
-		printf ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
-		printf ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
+		cerver_log_msg ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
+		cerver_log_msg ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
+		cerver_log_msg ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
+		cerver_log_msg ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
+		cerver_log_msg ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
 	}
 
 }
@@ -853,7 +853,7 @@ u8 file_receive_actual (
 
 			else {
 				#ifdef FILES_DEBUG
-				printf (
+				cerver_log_debug (
 					"\n\nwrote %ld of file_data_len %ld\n\n",
 					wrote,
 					file_data_len
@@ -866,7 +866,7 @@ u8 file_receive_actual (
 		if (file_data_len < file_header->len) {
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
-			printf (
+			cerver_log_debug (
 				"\nfilelen: %ld - file data len %ld = %ld\n\n",
 				file_header->len, file_data_len, real_filelen
 			);
