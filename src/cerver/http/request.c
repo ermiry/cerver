@@ -261,6 +261,22 @@ void http_request_multi_parts_all_filenames_delete (DoubleList *all_filenames) {
 
 }
 
+// discards all the saved files from the multipart request
+void http_request_multi_part_discard_files (HttpRequest *http_request) {
+
+	if (http_request) {
+		MultiPart *mpart = NULL;
+		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+			mpart = (MultiPart *) le->data;
+
+			if (mpart->saved_filename) {
+				(void) remove (mpart->saved_filename->str);
+			}
+		}
+	}
+
+}
+
 void http_request_multi_parts_print (HttpRequest *http_request) {
 
 	if (http_request) {
