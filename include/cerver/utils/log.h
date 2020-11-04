@@ -24,6 +24,8 @@
 #define LOG_COLOR_CYAN      "\x1b[36m"
 #define LOG_COLOR_RESET     "\x1b[0m"
 
+#define LOG_DEFAULT_UPDATE_INTERVAL			1
+
 #pragma region types
 
 #define LOG_TYPE_MAP(XX)						\
@@ -75,6 +77,10 @@ CERVER_EXPORT void cerver_log_set_output_type (LogOutputType type);
 // sets the path where logs files will be stored
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
+
+// sets the interval in secs which will be used to sync the contents of the log file to disk
+// the default values is 1 second
+CERVER_EXPORT void cerver_log_set_update_interval (unsigned int interval);
 
 #define LOG_TIME_TYPE_MAP(XX)										\
 	XX(0, 	NONE, 		None,		Logs without time)				\
