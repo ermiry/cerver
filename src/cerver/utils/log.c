@@ -5,6 +5,7 @@
 
 #include <stdarg.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "cerver/types/string.h"
 
@@ -12,6 +13,8 @@
 
 #include "cerver/files.h"
 #include "cerver/version.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
@@ -41,6 +44,10 @@ static bool use_local_time = false;
 
 static String *logs_pathname = NULL;
 static FILE *logfile = NULL;
+
+static pthread_t update_log_thread_id = 0;
+static bool update_log_file = false;
+static unsigned int log_file_update_interval = LOG_DEFAULT_UPDATE_INTERVAL;
 
 // returns the current log output type
 LogOutputType cerver_log_get_output_type (void) {
@@ -77,6 +84,13 @@ unsigned int cerver_log_set_path (const char *pathname) {
 	}
 
 	return retval;
+
+}
+
+// sets the interval in secs which will be used to sync the contents of the log file to disk
+void cerver_log_set_update_interval (unsigned int interval) {
+
+	log_file_update_interval = interval;
 
 }
 
@@ -552,9 +566,39 @@ void cerver_log_debug (const char *msg, ...) {
 
 }
 
+// prints a line break, equivalent to printf ("\n")
+void cerver_log_line_break (void) {
+
+	switch (log_output_type) {
+		case LOG_OUTPUT_TYPE_STD: (void) fprintf (stdout, "\n"); break;
+		case LOG_OUTPUT_TYPE_FILE: (void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n"); break;
+
+		case LOG_OUTPUT_TYPE_BOTH:
+			(void) fprintf (stdout, "\n");
+			(void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n");
+			break;
+
+		default: break;
+	}
+
+}
+
 #pragma endregion
 
 #pragma region main
+
+static void *cerver_log_update (void *data) {
+
+	sleep (log_file_update_interval);
+
+	while (update_log_file) {
+		(void) fflush (logfile);
+		sleep (log_file_update_interval);
+	}
+
+	return NULL;
+
+}
 
 void cerver_log_init (void) {
 
@@ -580,6 +624,9 @@ void cerver_log_init (void) {
 				fprintf (logfile, "\nCerver Version: %s\n", CERVER_VERSION_NAME);
 				fprintf (logfile, "Release Date & time: %s - %s\n", CERVER_VERSION_DATE, CERVER_VERSION_TIME);
 				fprintf (logfile, "Author: %s\n\n", CERVER_VERSION_AUTHOR);
+
+				update_log_file = true;
+				(void) thread_create_detachable (&update_log_thread_id, cerver_log_update, NULL);
 			}
 
 			else {
@@ -595,6 +642,8 @@ void cerver_log_init (void) {
 }
 
 void cerver_log_end (void) {
+
+	update_log_file = false;
 
 	if (logfile) {
 		fclose (logfile);

@@ -24,6 +24,8 @@
 #define LOG_COLOR_CYAN      "\x1b[36m"
 #define LOG_COLOR_RESET     "\x1b[0m"
 
+#define LOG_DEFAULT_UPDATE_INTERVAL			1
+
 #pragma region types
 
 #define LOG_TYPE_MAP(XX)						\
@@ -35,15 +37,16 @@
 	XX(5, 	TEST, 		[TEST])					\
 	XX(6, 	CERVER, 	[CERVER])				\
 	XX(7, 	CLIENT, 	[CLIENT])				\
-	XX(8, 	HANDLER, 	[HANDLER])				\
-	XX(9, 	ADMIN, 		[ADMIN])				\
-	XX(10, 	EVENT, 		[EVENT])				\
-	XX(11, 	PACKET, 	[PACKET])				\
-	XX(12, 	REQ, 		[REQ])					\
-	XX(13, 	FILE, 		[FILE])					\
-	XX(14, 	HTTP, 		[HTTP])					\
-	XX(15, 	GAME, 		[GAME])					\
-	XX(16, 	PLAYER, 	[PLAYER)				\
+	XX(8, 	CONNECTION, [CONNECTION])			\
+	XX(9, 	HANDLER, 	[HANDLER])				\
+	XX(10, 	ADMIN, 		[ADMIN])				\
+	XX(11, 	EVENT, 		[EVENT])				\
+	XX(12, 	PACKET, 	[PACKET])				\
+	XX(13, 	REQ, 		[REQ])					\
+	XX(14, 	FILE, 		[FILE])					\
+	XX(15, 	HTTP, 		[HTTP])					\
+	XX(16, 	GAME, 		[GAME])					\
+	XX(17, 	PLAYER, 	[PLAYER)				\
 
 typedef enum LogType {
 
@@ -75,6 +78,10 @@ CERVER_EXPORT void cerver_log_set_output_type (LogOutputType type);
 // sets the path where logs files will be stored
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
+
+// sets the interval in secs which will be used to sync the contents of the log file to disk
+// the default values is 1 second
+CERVER_EXPORT void cerver_log_set_update_interval (unsigned int interval);
 
 #define LOG_TIME_TYPE_MAP(XX)										\
 	XX(0, 	NONE, 		None,		Logs without time)				\
@@ -132,6 +139,9 @@ CERVER_PUBLIC void cerver_log_success (const char *msg, ...);
 
 // prints a debug message to stdout
 CERVER_PUBLIC void cerver_log_debug (const char *msg, ...);
+
+// prints a line break, equivalent to printf ("\n")
+CERVER_PUBLIC void cerver_log_line_break (void);
 
 #pragma endregion
 

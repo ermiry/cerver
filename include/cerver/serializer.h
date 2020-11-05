@@ -12,8 +12,8 @@ typedef i32 SRelativePtr;
 
 struct _SArray {
 
-    i32 n_elems;
-    SRelativePtr begin;
+	i32 n_elems;
+	SRelativePtr begin;
 
 };
 

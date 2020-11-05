@@ -18,7 +18,7 @@ static char base64_low6 (unsigned char c) {
 	} else {
 		return '/';
 	}
-	
+
 }
 
 static unsigned char low6_base64(char c) {

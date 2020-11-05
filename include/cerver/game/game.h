@@ -26,8 +26,8 @@ struct _Packet;
 
 typedef struct GameCerverStats {
 
-    u32 current_active_lobbys;      // total current lobbys 
-    u32 lobbys_created;             // total amount of lobbys that were created in cerver life span
+	u32 current_active_lobbys;      // total current lobbys 
+	u32 lobbys_created;             // total amount of lobbys that were created in cerver life span
 
 } GameCerverStats;
 
@@ -35,26 +35,26 @@ extern void game_cerver_stats_print (struct _Cerver *cerver);
 
 struct _GameCerver {
 
-    struct _Cerver *cerver;                         // refernce to the cerver this is located
+	struct _Cerver *cerver;                         // refernce to the cerver this is located
 
-    DoubleList *current_lobbys;                     // a list of the current lobbys
-    void *(*lobby_id_generator) (const void *);
+	DoubleList *current_lobbys;                     // a list of the current lobbys
+	void *(*lobby_id_generator) (const void *);
 
-    DoubleList *game_types;
+	DoubleList *game_types;
 
-    Comparator player_comparator;
+	Comparator player_comparator;
 
-    // we can define a function to load game data at start, 
-    // for example to connect to a db or something like that
-    Action load_game_data;
-    Action delete_game_data;
-    void *game_data;
+	// we can define a function to load game data at start, 
+	// for example to connect to a db or something like that
+	Action load_game_data;
+	Action delete_game_data;
+	void *game_data;
 
-    // action to be performed right before the game server teardown
-    Action final_game_action;
-    void *final_action_args;
+	// action to be performed right before the game server teardown
+	Action final_game_action;
+	void *final_action_args;
 
-    GameCerverStats *stats;
+	GameCerverStats *stats;
 
 };
 
@@ -73,20 +73,20 @@ extern void *lobby_default_id_generator (const void *data_ptr);
 
 // option to set the game cerver lobby id generator
 extern void game_set_lobby_id_generator (GameCerver *game_cerver, 
-    void *(*lobby_id_generator) (const void *));
+	void *(*lobby_id_generator) (const void *));
 
 // option to set the game cerver comparator
 extern void game_set_player_comparator (GameCerver *game_cerver, 
-    Comparator player_comparator);
+	Comparator player_comparator);
 
 // sets a way to get and destroy game cerver game data
 extern void game_set_load_game_data (GameCerver *game_cerver, 
-    Action load_game_data, Action delete_game_data);
+	Action load_game_data, Action delete_game_data);
 
 // option to set an action to be performed right before the game cerver teardown
 // eg. send a message to all players
 extern void game_set_final_action (GameCerver *game_cerver, 
-    Action final_action, void *final_action_args);
+	Action final_action, void *final_action_args);
 
 // handles a game type packet
 extern void game_packet_handler (struct _Packet *packet);
@@ -101,8 +101,8 @@ extern void game_cerver_unregister_lobby (GameCerver *game_cerver, struct _Lobby
 
 typedef struct LobbyPlayer {
 
-    struct _Lobby *lobby;
-    struct _Player *player;
+	struct _Lobby *lobby;
+	struct _Player *player;
 
 } LobbyPlayer;
 

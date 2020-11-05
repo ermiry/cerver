@@ -56,30 +56,26 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 void admin_cerver_stats_print (AdminCerverStats *stats) {
 
 	if (stats) {
-		printf ("\nAdmin stats: \n");
-		printf ("Threshold_time: %ld\n", stats->threshold_time);
+		cerver_log_msg ("\nAdmin stats:");
+		cerver_log_msg ("Threshold_time: %ld\n", stats->threshold_time);
 
-		printf ("\n");
-		printf ("Total n receives done:                  %ld\n", stats->total_n_receives_done);
-		printf ("Total n packets received:               %ld\n", stats->total_n_packets_received);
-		printf ("Total bytes received:                   %ld\n", stats->total_bytes_received);
+		cerver_log_msg ("Total n receives done:                  %ld", stats->total_n_receives_done);
+		cerver_log_msg ("Total n packets received:               %ld", stats->total_n_packets_received);
+		cerver_log_msg ("Total bytes received:                   %ld\n", stats->total_bytes_received);
 
-		printf ("\n");
-		printf ("Total n packets sent:                   %ld\n", stats->total_n_packets_sent);
-		printf ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
+		cerver_log_msg ("Total n packets sent:                   %ld", stats->total_n_packets_sent);
+		cerver_log_msg ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
 
-		printf ("\n");
-		printf ("Current connections:                    %ld\n", stats->current_connections);
-		printf ("Current connected admins:               %ld\n", stats->current_connected_admins);
+		cerver_log_msg ("Current connections:                    %ld", stats->current_connections);
+		cerver_log_msg ("Current connected admins:               %ld\n", stats->current_connected_admins);
 
-		printf ("\n");
-		printf ("Total admin connections:                %ld\n", stats->total_admin_connections);
-		printf ("Total n admins:                         %ld\n", stats->total_n_admins);
+		cerver_log_msg ("Total admin connections:                %ld", stats->total_admin_connections);
+		cerver_log_msg ("Total n admins:                         %ld", stats->total_n_admins);
 
-		printf ("\nReceived packets:\n");
+		cerver_log_msg ("\nReceived packets:");
 		packets_per_type_print (stats->received_packets);
 
-		printf ("\nSent packets:\n");
+		cerver_log_msg ("\nSent packets:");
 		packets_per_type_print (stats->sent_packets);
 	}
 
@@ -1460,10 +1456,10 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 			} break;
 
 			default: {
-				#ifdef CERVER_DEBUG
+				#ifdef ADMIN_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
-					"admin_cerver_client_packet_handler () - Got an unknown client packet in cerver %s",
+					"admin_cerver_client_packet_handler () - Got an unknown client packet in ADMIN cerver %s",
 					packet->cerver->info->name->str
 				);
 				#endif
@@ -1476,7 +1472,25 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 // handles a request made from the admin
 static void admin_cerver_request_packet_handler (Packet *packet) {
 
-	// TODO:
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// request from a client to get a file
+			case REQUEST_PACKET_TYPE_GET_FILE: cerver_request_get_file (packet); break;
+
+			// request from a client to upload a file
+			case REQUEST_PACKET_TYPE_SEND_FILE: cerver_request_send_file (packet); break;
+
+			default: {
+				#ifdef ADMIN_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+					"Got an unknown request packet in ADMIN cerver %s",
+					packet->cerver->info->name->str
+				);
+				#endif
+			} break;
+		}
+	}
 
 }
 
