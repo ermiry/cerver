@@ -93,20 +93,20 @@ void client_stats_print (Client *client) {
 	if (client) {
 		if (client->stats) {
 			cerver_log_msg ("\nClient's stats:\n");
-			cerver_log_msg ("Threshold time:            %ld\n", client->stats->threshold_time);
+			cerver_log_msg ("Threshold time:            %ld", client->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld\n", client->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %ld", client->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld\n", client->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld\n", client->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %ld", client->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %ld", client->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld\n", client->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld\n", client->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %ld", client->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %ld", client->stats->n_packets_sent);
 
-			cerver_log_msg ("\nReceived packets:\n");
+			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (client->stats->received_packets);
 
-			cerver_log_msg ("\nSent packets:\n");
+			cerver_log_msg ("\nSent packets:");
 			packets_per_type_print (client->stats->sent_packets);
 		}
 

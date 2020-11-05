@@ -606,13 +606,13 @@ static size_t http_cerver_stats_get_children_routes (HttpCerver *http_cerver, si
 void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Main routes: %ld\n", http_cerver->routes->size);
+		cerver_log_msg ("Main routes: %ld", http_cerver->routes->size);
 
 		size_t total_handlers = 0;
 		size_t children_routes = http_cerver_stats_get_children_routes (http_cerver, &total_handlers);
 
-		cerver_log_msg ("Children routes: %ld\n", children_routes);
-		cerver_log_msg ("Total handlers: %ld\n", total_handlers);
+		cerver_log_msg ("Children routes: %ld", children_routes);
+		cerver_log_msg ("Total handlers: %ld", total_handlers);
 	}
 
 }
@@ -623,31 +623,31 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 	if (route) {
 		unsigned int i = 0;
 
-		cerver_log_msg ("\t%s:\n", route->route->str);
+		cerver_log_msg ("\t%s:", route->route->str);
 		
 		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (route->handlers[i]) 
-				cerver_log_msg ("\t\t%s\t%ld\n", http_request_method_str ((RequestMethod) i), route->n_requests[i]);
+				cerver_log_msg ("\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), route->n_requests[i]);
 		}
 
 		if (route->children->size) {
-			cerver_log_msg ("\t%ld children: \n", route->children->size);
+			cerver_log_msg ("\t\t%ld children:", route->children->size);
 
 			HttpRoute *child = NULL;
 			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
 				child = (HttpRoute *) le->data;
 
-				cerver_log_msg ("\t\t%s:\n", child->actual->str);
+				cerver_log_msg ("\t\t%s:", child->actual->str);
 
 				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 					if (child->handlers[i]) 
-						cerver_log_msg ("\t\t\t%s\t%ld\n", http_request_method_str ((RequestMethod) i), child->n_requests[i]);
+						cerver_log_msg ("\t\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), child->n_requests[i]);
 				}
 			}
 		}
 
 		else {
-			cerver_log_msg ("\tNo children\n");
+			cerver_log_msg ("\t\tNo children");
 		}
 	}
 
