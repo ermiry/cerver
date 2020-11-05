@@ -1934,75 +1934,55 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 
 }
 
-static u8 balancer_receive (CerverReceive *cr) {
+static u8 balancer_receive (
+	CerverReceive *cr,
+	char *buffer, const size_t buffer_size
+) {
 
 	u8 retval = 1;
 
-	if (cr->cerver && cr->socket) {
-		if (cr->socket->sock_fd > 0) {
-			char header_buffer[sizeof (PacketHeader)] = { 0 };
-			ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
-			// ssize_t rc = recv (cr->socket->sock_fd, header_buffer, sizeof (PacketHeader), MSG_DONTWAIT);
+	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
+	// ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, MSG_DONTWAIT);
+	switch (rc) {
+		case -1: {
+			if (errno == EAGAIN) {
+				#ifdef HANDLER_DEBUG
+				cerver_log_debug (
+					"balancer_receive () - sock fd: %d timed out",
+					cr->socket->sock_fd
+				);
+				#endif
 
-			switch (rc) {
-				case -1: {
-					if (errno == EAGAIN) {
-						#ifdef HANDLER_DEBUG
-						cerver_log_debug (
-							"balancer_receive () - sock fd: %d timed out",
-							cr->socket->sock_fd
-						);
-						#endif
-
-						retval = 0;
-					}
-
-					else {
-						#ifdef HANDLER_DEBUG
-						cerver_log (
-							LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-							"balancer_receive () - rc < 0 - sock fd: %d",
-							cr->socket->sock_fd
-						);
-
-						perror ("Error");
-						#endif
-
-						if (cr->cerver->handler_type != CERVER_HANDLER_TYPE_THREADS) {
-							cerver_switch_receive_handle_failed (cr);
-						}
-					}
-				} break;
-
-				case 0: {
-					#ifdef HANDLER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-						"balancer_receive () - rc == 0 - sock fd: %d",
-						cr->socket->sock_fd
-					);
-					#endif
-
-					if (cr->cerver->handler_type != CERVER_HANDLER_TYPE_THREADS) {
-						cerver_switch_receive_handle_failed (cr);
-					}
-				} break;
-
-				default: {
-					balancer_receive_success (cr, (PacketHeader *) header_buffer);
-					retval = 0;
-				} break;
+				retval = 0;
 			}
-		}
 
-		else {
-			cerver_log_warning ("balancer_receive () - cr->socket <= 0");
-			cerver_receive_delete (cr);
-		}
-	}
+			else {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"balancer_receive () - rc < 0 - sock fd: %d",
+					cr->socket->sock_fd
+				);
 
-	else {
-		cerver_receive_delete (cr);
+				perror ("Error");
+				#endif
+			}
+		} break;
+
+		case 0: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"balancer_receive () - rc == 0 - sock fd: %d",
+				cr->socket->sock_fd
+			);
+			#endif
+		} break;
+
+		default: {
+			balancer_receive_success (cr, (PacketHeader *) buffer);
+			retval = 0;
+		} break;
 	}
 
 	return retval;
