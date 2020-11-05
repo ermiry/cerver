@@ -141,8 +141,10 @@ void handler_set_data (Handler *handler, void *data) {
 
 // set a method to create the handler's data before it starts handling any packet
 // this data will be passed to the handler method using a HandlerData structure
-void handler_set_data_create (Handler *handler,
-	void *(*data_create) (void *args), void *data_create_args) {
+void handler_set_data_create (
+	Handler *handler,
+	void *(*data_create) (void *args), void *data_create_args
+) {
 
 	if (handler) {
 		handler->data_create = data_create;
@@ -629,7 +631,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 }
 
 // handles a request from a client to get a file
-static void cerver_request_get_file (Packet *packet) {
+void cerver_request_get_file (Packet *packet) {
 
 	switch (packet->cerver->type) {
 		case CERVER_TYPE_CUSTOM:
@@ -717,7 +719,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 }
 
 // handles a request from a client to upload a file
-static void cerver_request_send_file (Packet *packet) {
+void cerver_request_send_file (Packet *packet) {
 
 	switch (packet->cerver->type) {
 		case CERVER_TYPE_CUSTOM:

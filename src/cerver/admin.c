@@ -1460,10 +1460,10 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 			} break;
 
 			default: {
-				#ifdef CERVER_DEBUG
+				#ifdef ADMIN_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
-					"admin_cerver_client_packet_handler () - Got an unknown client packet in cerver %s",
+					"admin_cerver_client_packet_handler () - Got an unknown client packet in ADMIN cerver %s",
 					packet->cerver->info->name->str
 				);
 				#endif
@@ -1476,7 +1476,25 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 // handles a request made from the admin
 static void admin_cerver_request_packet_handler (Packet *packet) {
 
-	// TODO:
+	if (packet->header) {
+		switch (packet->header->request_type) {
+			// request from a client to get a file
+			case REQUEST_PACKET_TYPE_GET_FILE: cerver_request_get_file (packet); break;
+
+			// request from a client to upload a file
+			case REQUEST_PACKET_TYPE_SEND_FILE: cerver_request_send_file (packet); break;
+
+			default: {
+				#ifdef ADMIN_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+					"Got an unknown request packet in ADMIN cerver %s",
+					packet->cerver->info->name->str
+				);
+				#endif
+			} break;
+		}
+	}
 
 }
 
