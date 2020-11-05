@@ -23,7 +23,10 @@ static void balancer_service_delete (void *service_ptr);
 
 void balancer_service_stats_print (Service *service);
 
-static u8 balancer_client_receive (void *custom_data_ptr);
+static u8 balancer_client_receive (
+	void *custom_data_ptr,
+	char *buffer, const size_t buffer_size
+);
 
 #pragma region types
 
@@ -513,6 +516,7 @@ u8 balancer_service_register (
 					connection_set_name (connection, name);
 					connection_set_max_sleep (connection, 30);
 
+					connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
 					connection_set_custom_receive (
 						connection, 
 						balancer_client_receive,
@@ -1299,15 +1303,17 @@ static void balancer_client_receive_handle_failed (
 
 // custom receive method for packets comming from the services
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
-static u8 balancer_client_receive (void *custom_data_ptr) {
+static u8 balancer_client_receive (
+	void *custom_data_ptr,
+	char *buffer, const size_t buffer_size
+) {
 
 	unsigned int retval = 1;
 
 	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) custom_data_ptr;
 
 	if (custom_data->client && custom_data->connection) {
-		char header_buffer[sizeof (PacketHeader)] = { 0 };
-		ssize_t rc = recv (custom_data->connection->socket->sock_fd, header_buffer, sizeof (PacketHeader), 0);
+		ssize_t rc = recv (custom_data->connection->socket->sock_fd, buffer, buffer_size, 0);
 
 		switch (rc) {
 			case -1: {
@@ -1353,7 +1359,7 @@ static u8 balancer_client_receive (void *custom_data_ptr) {
 				balancer_client_receive_success (
 					(BalancerService *) custom_data->args,
 					custom_data->client, custom_data->connection,
-					(PacketHeader *) header_buffer
+					(PacketHeader *) buffer
 				);
 
 				retval = 0;
