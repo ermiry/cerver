@@ -216,46 +216,45 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
 	if (cerver) {
 		if (cerver->stats) {
-			cerver_log_msg ("\nCerver's %s stats: \n", cerver->info->name->str);
+			cerver_log_msg ("\nCerver's %s stats:\n", cerver->info->name->str);
 			cerver_log_msg ("Threshold time:                %ld\n", cerver->stats->threshold_time);
 
 			if (cerver->auth_required) {
-				cerver_log_msg ("Client packets received:       %ld\n", cerver->stats->client_n_packets_received);
-				cerver_log_msg ("Client receives done:          %ld\n", cerver->stats->client_receives_done);
-				cerver_log_msg ("Client bytes received:         %ld\n\n", cerver->stats->client_bytes_received);
+				cerver_log_msg ("Client packets received:       %ld", cerver->stats->client_n_packets_received);
+				cerver_log_msg ("Client receives done:          %ld", cerver->stats->client_receives_done);
+				cerver_log_msg ("Client bytes received:         %ld\n", cerver->stats->client_bytes_received);
 
-				cerver_log_msg ("On hold packets received:       %ld\n", cerver->stats->on_hold_n_packets_received);
-				cerver_log_msg ("On hold receives done:          %ld\n", cerver->stats->on_hold_receives_done);
-				cerver_log_msg ("On hold bytes received:         %ld\n\n", cerver->stats->on_hold_bytes_received);
+				cerver_log_msg ("On hold packets received:      %ld", cerver->stats->on_hold_n_packets_received);
+				cerver_log_msg ("On hold receives done:         %ld", cerver->stats->on_hold_receives_done);
+				cerver_log_msg ("On hold bytes received:        %ld\n", cerver->stats->on_hold_bytes_received);
 			}
 
-			cerver_log_msg ("\n");
-			cerver_log_msg ("Total packets received:        %ld\n", cerver->stats->total_n_packets_received);
-			cerver_log_msg ("Total receives done:           %ld\n", cerver->stats->total_n_receives_done);
-			cerver_log_msg ("Total bytes received:          %ld\n\n", cerver->stats->total_bytes_received);
+			cerver_log_msg ("Total packets received:        %ld", cerver->stats->total_n_packets_received);
+			cerver_log_msg ("Total receives done:           %ld", cerver->stats->total_n_receives_done);
+			cerver_log_msg ("Total bytes received:          %ld\n", cerver->stats->total_bytes_received);
 
-			cerver_log_msg ("\n");
-			cerver_log_msg ("N packets sent:                %ld\n", cerver->stats->n_packets_sent);
+			cerver_log_msg ("N packets sent:                %ld", cerver->stats->n_packets_sent);
 			cerver_log_msg ("Total bytes sent:              %ld\n", cerver->stats->total_bytes_sent);
 
-			cerver_log_msg ("\n");
-			cerver_log_msg ("Current active client connections:         %ld\n", cerver->stats->current_active_client_connections);
-			cerver_log_msg ("Current connected clients:                 %ld\n", cerver->stats->current_n_connected_clients);
-			cerver_log_msg ("Current on hold connections:               %ld\n", cerver->stats->current_n_hold_connections);
-			cerver_log_msg ("Total on hold connections:                 %ld\n", cerver->stats->total_on_hold_connections);
-			cerver_log_msg ("Total clients:                             %ld\n", cerver->stats->total_n_clients);
-			cerver_log_msg ("Unique clients:                            %ld\n", cerver->stats->unique_clients);
-			cerver_log_msg ("Total client connections:                  %ld\n", cerver->stats->total_client_connections);
+			cerver_log_msg ("Current active client connections:         %ld", cerver->stats->current_active_client_connections);
+			cerver_log_msg ("Current connected clients:                 %ld", cerver->stats->current_n_connected_clients);
+			cerver_log_msg ("Current on hold connections:               %ld", cerver->stats->current_n_hold_connections);
+			cerver_log_msg ("Total on hold connections:                 %ld", cerver->stats->total_on_hold_connections);
+			cerver_log_msg ("Total clients:                             %ld", cerver->stats->total_n_clients);
+			cerver_log_msg ("Unique clients:                            %ld", cerver->stats->unique_clients);
+			cerver_log_msg ("Total client connections:                  %ld", cerver->stats->total_client_connections);
 
 			if (received) {
-				cerver_log_msg ("\nReceived packets:\n");
+				cerver_log_msg ("\nReceived packets:");
 				packets_per_type_print (cerver->stats->received_packets);
 			}
 
 			if (sent) {
-				cerver_log_msg ("\nSent packets:\n");
+				cerver_log_msg ("\nSent packets:");
 				packets_per_type_print (cerver->stats->sent_packets);
 			}
+
+			cerver_log_msg ("\n");
 		}
 
 		else {
