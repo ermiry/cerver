@@ -58,20 +58,20 @@ void connection_stats_print (Connection *connection) {
 
 	if (connection) {
 		if (connection->stats) {
-			printf ("Threshold time:            %ld\n", connection->stats->threshold_time);
+			cerver_log_msg ("Threshold time:            %ld", connection->stats->threshold_time);
 
-			printf ("N receives done:           %ld\n", connection->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %ld", connection->stats->n_receives_done);
 
-			printf ("Total bytes received:      %ld\n", connection->stats->total_bytes_received);
-			printf ("Total bytes sent:          %ld\n", connection->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %ld", connection->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %ld", connection->stats->total_bytes_sent);
 
-			printf ("N packets received:        %ld\n", connection->stats->n_packets_received);
-			printf ("N packets sent:            %ld\n", connection->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %ld", connection->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %ld", connection->stats->n_packets_sent);
 
-			printf ("\nReceived packets:\n");
+			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (connection->stats->received_packets);
 
-			printf ("\nSent packets:\n");
+			cerver_log_msg ("\nSent packets:");
 			packets_per_type_print (connection->stats->sent_packets);
 		}
 

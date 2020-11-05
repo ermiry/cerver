@@ -66,49 +66,48 @@ static void balancer_stats_delete (BalancerStats *stats) {
 void balancer_stats_print (Balancer *balancer) {
 
 	if (balancer) {
-		fprintf (stdout, LOG_COLOR_BLUE "Balancer: %s\n" LOG_COLOR_RESET, balancer->name->str);
+		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
+			cerver_log_msg (LOG_COLOR_BLUE "Balancer: %s\n" LOG_COLOR_RESET, balancer->name->str);
+
+		else cerver_log_msg ("Balancer: %s\n", balancer->name->str);
 	
 		// good types packets that the balancer can handle
-		printf ("Receives done:               %ld\n", balancer->stats->receives_done);
-		printf ("Received packets:            %ld\n", balancer->stats->n_packets_received);
-		printf ("Received bytes:              %ld\n", balancer->stats->bytes_received);
+		cerver_log_msg ("Receives done:               %ld", balancer->stats->receives_done);
+		cerver_log_msg ("Received packets:            %ld", balancer->stats->n_packets_received);
+		cerver_log_msg ("Received bytes:              %ld\n", balancer->stats->bytes_received);
 
 		// bad types packets - consumed data from sock fd until next header
-		printf ("Bad receives done:           %ld\n", balancer->stats->bad_receives_done);
-		printf ("Bad received packets:        %ld\n", balancer->stats->bad_n_packets_received);
-		printf ("Bad received bytes:          %ld\n", balancer->stats->bad_bytes_received);
+		cerver_log_msg ("Bad receives done:           %ld", balancer->stats->bad_receives_done);
+		cerver_log_msg ("Bad received packets:        %ld", balancer->stats->bad_n_packets_received);
+		cerver_log_msg ("Bad received bytes:          %ld\n", balancer->stats->bad_bytes_received);
 
 		// routed packets to services
-		printf ("Routed packets:              %ld\n", balancer->stats->n_packets_routed);
-		printf ("Routed bytes:                %ld\n", balancer->stats->total_bytes_routed);
+		cerver_log_msg ("Routed packets:              %ld", balancer->stats->n_packets_routed);
+		cerver_log_msg ("Routed bytes:                %ld\n", balancer->stats->total_bytes_routed);
 
 		// responses sent to the original clients
-		printf ("Responses sent packets:      %ld\n", balancer->stats->n_packets_sent);
-		printf ("Responses sent bytes:        %ld\n", balancer->stats->total_bytes_sent);
+		cerver_log_msg ("Responses sent packets:      %ld", balancer->stats->n_packets_sent);
+		cerver_log_msg ("Responses sent bytes:        %ld\n", balancer->stats->total_bytes_sent);
 
 		// packets that the balancer was unable to handle
-		printf ("Unhandled packets:           %ld\n", balancer->stats->unhandled_packets);
-		printf ("Unhandled bytes:             %ld\n", balancer->stats->unhandled_bytes);
+		cerver_log_msg ("Unhandled packets:           %ld", balancer->stats->unhandled_packets);
+		cerver_log_msg ("Unhandled bytes:             %ld\n", balancer->stats->unhandled_bytes);
 
-		printf ("\n");
-		printf ("Received packets:");
-		printf ("\n");
+		cerver_log_msg ("Received packets:");
 		packets_per_type_array_print (balancer->stats->received_packets);
 
-		printf ("\n");
-		printf ("Routed packets:");
-		printf ("\n");
+		cerver_log_line_break ();
+		cerver_log_msg ("Routed packets:");
 		packets_per_type_array_print (balancer->stats->routed_packets);
 
-		printf ("\n");
-		printf ("Responses packets:");
-		printf ("\n");
+		cerver_log_line_break ();
+		cerver_log_msg ("Responses packets:");
 		packets_per_type_array_print (balancer->stats->sent_packets);
 
 		for (int i = 0; i < balancer->n_services; i++) {
-			printf ("\n");
+			cerver_log_line_break ();
 			balancer_service_stats_print (balancer->services[i]);
-			printf ("\n");
+			cerver_log_line_break ();
 		}
 	}
 
@@ -288,30 +287,30 @@ static void balancer_service_stats_delete (ServiceStats *stats) {
 void balancer_service_stats_print (Service *service) {
 
 	if (service) {
-		fprintf (stdout, LOG_COLOR_BLUE "Service: %s\n" LOG_COLOR_RESET, service->connection->name->str);
-	
+		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
+			cerver_log_msg (LOG_COLOR_BLUE "Service: %s\n" LOG_COLOR_RESET, service->connection->name->str);
+
+		else cerver_log_msg ("Service: %s\n", service->connection->name->str);
+
 		// routed packets to the service
-		printf ("Routed packets:              %ld\n", service->stats->n_packets_routed);
-		printf ("Routed bytes:                %ld\n", service->stats->total_bytes_routed);
+		cerver_log_msg ("Routed packets:              %ld", service->stats->n_packets_routed);
+		cerver_log_msg ("Routed bytes:                %ld\n", service->stats->total_bytes_routed);
 
 		// good types packets received from the service
-		printf ("Receives done:               %ld\n", service->stats->receives_done);
-		printf ("Received packets:            %ld\n", service->stats->n_packets_received);
-		printf ("Received bytes:              %ld\n", service->stats->bytes_received);
+		cerver_log_msg ("Receives done:               %ld", service->stats->receives_done);
+		cerver_log_msg ("Received packets:            %ld", service->stats->n_packets_received);
+		cerver_log_msg ("Received bytes:              %ld\n", service->stats->bytes_received);
 
 		// bad types packets - consumed data from sock fd until next header
-		printf ("Bad receives done:           %ld\n", service->stats->bad_receives_done);
-		printf ("Bad received packets:        %ld\n", service->stats->bad_n_packets_received);
-		printf ("Bad received bytes:          %ld\n", service->stats->bad_bytes_received);
+		cerver_log_msg ("Bad receives done:           %ld", service->stats->bad_receives_done);
+		cerver_log_msg ("Bad received packets:        %ld", service->stats->bad_n_packets_received);
+		cerver_log_msg ("Bad received bytes:          %ld\n", service->stats->bad_bytes_received);
 
-		printf ("\n");
-		printf ("Routed packets:");
-		printf ("\n");
+		cerver_log_msg ("Routed packets:");
 		packets_per_type_array_print (service->stats->routed_packets);
 
-		printf ("\n");
-		printf ("Received packets:");
-		printf ("\n");
+		cerver_log_line_break ();
+		cerver_log_msg ("Received packets:");
 		packets_per_type_array_print (service->stats->received_packets);
 	}
 
