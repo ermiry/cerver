@@ -35,15 +35,16 @@
 	XX(5, 	TEST, 		[TEST])					\
 	XX(6, 	CERVER, 	[CERVER])				\
 	XX(7, 	CLIENT, 	[CLIENT])				\
-	XX(8, 	HANDLER, 	[HANDLER])				\
-	XX(9, 	ADMIN, 		[ADMIN])				\
-	XX(10, 	EVENT, 		[EVENT])				\
-	XX(11, 	PACKET, 	[PACKET])				\
-	XX(12, 	REQ, 		[REQ])					\
-	XX(13, 	FILE, 		[FILE])					\
-	XX(14, 	HTTP, 		[HTTP])					\
-	XX(15, 	GAME, 		[GAME])					\
-	XX(16, 	PLAYER, 	[PLAYER)				\
+	XX(8, 	CONNECTION, [CONNECTION])			\
+	XX(9, 	HANDLER, 	[HANDLER])				\
+	XX(10, 	ADMIN, 		[ADMIN])				\
+	XX(11, 	EVENT, 		[EVENT])				\
+	XX(12, 	PACKET, 	[PACKET])				\
+	XX(13, 	REQ, 		[REQ])					\
+	XX(14, 	FILE, 		[FILE])					\
+	XX(15, 	HTTP, 		[HTTP])					\
+	XX(16, 	GAME, 		[GAME])					\
+	XX(17, 	PLAYER, 	[PLAYER)				\
 
 typedef enum LogType {
 
