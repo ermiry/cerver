@@ -7,15 +7,15 @@ MATH		:= -lm
 DEFINES		:= -D _GNU_SOURCE
 
 DEVELOPMENT	:= -g \
-				-D CERVER_DEBUG -D CERVER_STATS \
-				-D CLIENT_DEBUG -D CLIENT_STATS \
-				-D CONNECTION_STATS 			\
-				-D HANDLER_DEBUG 				\
-				-D PACKETS_DEBUG 				\
-				-D AUTH_DEBUG 					\
-				-D ADMIN_DEBUG					\
-				-D FILES_DEBUG					\
-				-D BALANCER_DEBUG				\
+				-D CERVER_DEBUG -D CERVER_STATS 			\
+				-D CLIENT_DEBUG -D CLIENT_STATS 			\
+				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
+				-D HANDLER_DEBUG 							\
+				-D PACKETS_DEBUG 							\
+				-D AUTH_DEBUG 								\
+				-D ADMIN_DEBUG								\
+				-D FILES_DEBUG								\
+				-D BALANCER_DEBUG							\
 				-D SERVICE_DEBUG
 
 CC          := gcc
