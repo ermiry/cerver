@@ -75,7 +75,7 @@ static void cerver_app_handler_direct (void *data) {
 			case TEST_MSG: cerver_handle_test_request (packet); break;
 
 			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -99,7 +99,7 @@ static void client_app_handler (void *data) {
 			} break;
 
 			default:
-				cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 				break;
 		}
 	}
@@ -116,7 +116,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 			packet_set_network_values (packet, NULL, client, connection, NULL);
 			size_t sent = 0;
 			if (packet_send (packet, 0, &sent, false)) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send test to cerver");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send test to cerver");
 			}
 
 			else {
@@ -177,11 +177,11 @@ static void *cerver_client_connect_and_start (void *args) {
 			connection_set_max_sleep (connection, 30);
 
 			if (!client_connect_and_start (client, connection)) {
-				cerver_log_msg (stdout, LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
+				cerver_log (LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
 			}
 
 			else {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to connect to cerver!");
 			}
 		}
 
@@ -194,13 +194,9 @@ static void *cerver_client_connect_and_start (void *args) {
 		if (!strcmp ("get", action->str)) request_file (client, connection, filename->str);
 		else if (!strcmp ("send", action->str)) send_file (client, connection, filename->str);
 		else {
-			char *status = c_string_create ("Unknown action %s", action->str);
-			if (status) {
-				printf ("\n");
-				cerver_log_error (status);
-				printf ("\n");
-				free (status);
-			}
+			printf ("\n");
+			cerver_log_error ("Unknown action %s", action->str);
+			printf ("\n");
 		}
 
 		for (unsigned int i = 0; i < 10; i++) {
@@ -210,10 +206,6 @@ static void *cerver_client_connect_and_start (void *args) {
 		sleep (5);
 
 		client_connection_end (client, connection);
-
-		// destroy the client and its connection
-		// client_teardown_async (client);
-		// cerver_log_success ("client_teardown ()");
 
 		if (!client_teardown (client)) {
 			cerver_log_success ("client_teardown ()");
@@ -264,12 +256,10 @@ static void start (void) {
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
 		if (cerver_start (client_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				client_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				client_cerver->info->name->str
+			);
 
 			cerver_delete (client_cerver);
 		}
