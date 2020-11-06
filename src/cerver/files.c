@@ -274,8 +274,8 @@ static u8 file_cerver_receive (
 
 	// generate a custom filename taking into account the uploads path
 	*saved_filename = c_string_create (
-		"%s/%ld-%d-%s", 
-		file_cerver->uploads_path->str, 
+		"%s/%ld-%d-%s",
+		file_cerver->uploads_path->str,
 		time (NULL), random_int_in_range (0, 1000),
 		file_header->filename
 	);
@@ -296,18 +296,18 @@ static u8 file_cerver_receive (
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		printf ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
-		printf ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
-		printf ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
-		printf ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
-		printf ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
-		printf ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
+		cerver_log_msg ("Files requests:                %ld", file_cerver->stats->n_files_requests);
+		cerver_log_msg ("Success requests:              %ld", file_cerver->stats->n_success_files_requests);
+		cerver_log_msg ("Bad requests:                  %ld", file_cerver->stats->n_bad_files_requests);
+		cerver_log_msg ("Files sent:                    %ld", file_cerver->stats->n_files_sent);
+		cerver_log_msg ("Failed files sent:             %ld", file_cerver->stats->n_bad_files_sent);
+		cerver_log_msg ("Files bytes sent:              %ld\n", file_cerver->stats->n_bytes_sent);
 
-		printf ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
-		printf ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
-		printf ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
-		printf ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
-		printf ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
+		cerver_log_msg ("Files upload requests:         %ld", file_cerver->stats->n_files_upload_requests);
+		cerver_log_msg ("Success uploads:               %ld", file_cerver->stats->n_success_files_uploaded);
+		cerver_log_msg ("Bad uploads:                   %ld", file_cerver->stats->n_bad_files_upload_requests);
+		cerver_log_msg ("Bad files received:            %ld", file_cerver->stats->n_bad_files_received);
+		cerver_log_msg ("Files bytes received:          %ld\n", file_cerver->stats->n_bytes_received);
 	}
 
 }
@@ -332,19 +332,11 @@ unsigned int files_create_dir (const char *dir_path, mode_t mode) {
 				}
 
 				else {
-					char *s = c_string_create ("Failed to create dir %s!", dir_path);
-					if (s) {
-						cerver_log_error (s);
-						free (s);
-					}
+					cerver_log_error ("Failed to create dir %s!", dir_path);
 				}
 			} break;
 			case 0: {
-				char *s = c_string_create ("Dir %s already exists!", dir_path);
-				if (s) {
-					cerver_log_warning (s);
-					free (s);
-				}
+				cerver_log_warning ("Dir %s already exists!", dir_path);
 			} break;
 
 			default: break;
@@ -408,11 +400,7 @@ DoubleList *files_get_from_dir (const char *dir) {
 		}
 
 		else {
-			char *status = c_string_create ("Failed to open dir %s", dir);
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
+			cerver_log_error ("Failed to open dir %s", dir);
 		}
 	}
 
@@ -459,11 +447,7 @@ DoubleList *file_get_lines (const char *filename) {
 		}
 
 		else {
-			char *status = c_string_create ("Failed to open file: %s", filename);
-			if (status) {
-				cerver_log_error (status);
-				free (status);
-			}
+			cerver_log_error ("Failed to open file: %s", filename);
 		}
 	}
 
@@ -499,11 +483,10 @@ FILE *file_open_as_file (const char *filename, const char *modes, struct stat *f
 
 		else {
 			#ifdef FILES_DEBUG
-			char *s = c_string_create ("File %s not found!", filename);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_FILE,
+				"File %s not found!", filename
+			);
 			#endif
 		}
 	}
@@ -528,11 +511,10 @@ char *file_read (const char *filename, size_t *file_size) {
 			// read the entire file into the buffer
 			if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
 				#ifdef FILES_DEBUG
-				char *s = c_string_create ("Failed to read file (%s) contents!");
-				if (s) {
-					cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-					free (s);
-				}
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_FILE,
+					"Failed to read file (%s) contents!", filename
+				);
 				#endif
 
 				free (file_contents);
@@ -543,11 +525,10 @@ char *file_read (const char *filename, size_t *file_size) {
 
 		else {
 			#ifdef FILES_DEBUG
-			char *s = c_string_create ("Unable to open file %s.", filename);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_FILE,
+				"Unable to open file %s.", filename
+			);
 			#endif
 		}
 	}
@@ -653,9 +634,8 @@ static ssize_t file_send_actual (
 	}
 
 	else {
-		cerver_log_msg (
-			stderr, 
-			LOG_TYPE_ERROR, LOG_TYPE_FILE, 
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_FILE,
 			"file_send_actual () - failed to send file header"
 		);
 	}
@@ -673,17 +653,16 @@ static int file_send_open (
 
 	int file_fd = -1;
 
-	char *last = strrchr (filename, '/');
+	char *last = strrchr ((char *) filename, '/');
 	*actual_filename = last ? last + 1 : NULL;
 	if (actual_filename) {
 		// try to open the file
 		file_fd = file_open_as_fd (filename, filestatus, O_RDONLY);
 		if (file_fd <= 0) {
-			char *s = c_string_create ("file_send () - Failed to open file %s", filename);
-			if (s) {
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_FILE, s);
-				free (s);
-			}
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_FILE,
+				"file_send () - Failed to open file %s", filename
+			);
 		}
 	}
 
@@ -778,14 +757,7 @@ static inline u8 file_receive_internal_receive (
 
 		default: {
 			#ifdef FILES_DEBUG
-			char *status = c_string_create (
-				"file_receive_internal_receive () - spliced %ld bytes", *received
-			);
-
-			if (status) {
-				cerver_log_debug (status);
-				free (status);
-			}
+			cerver_log_debug ("file_receive_internal_receive () - spliced %ld bytes", *received);
 			#endif
 
 			retval = 0;
@@ -826,14 +798,7 @@ static inline u8 file_receive_internal_move (
 
 		default: {
 			#ifdef FILES_DEBUG
-			char *status = c_string_create (
-				"file_receive_internal_move () - spliced %ld bytes", *moved
-			);
-
-			if (status) {
-				cerver_log_debug (status);
-				free (status);
-			}
+			cerver_log_debug ("file_receive_internal_move () - spliced %ld bytes", *moved);
 			#endif
 
 			retval = 0;
@@ -848,7 +813,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 
 	u8 retval = 1;
 
-	int buff_size = 4096;
+	size_t buff_size = 4096;
 	int pipefds[2] = { 0 };
 	ssize_t received = 0;
 	ssize_t moved = 0;
@@ -865,7 +830,7 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 		}
 
 		close (pipefds[0]);
-    	close (pipefds[1]);
+		close (pipefds[1]);
 
 		if (len <= 0) retval = 0;
 	}
@@ -906,7 +871,7 @@ u8 file_receive_actual (
 
 			else {
 				#ifdef FILES_DEBUG
-				printf (
+				cerver_log_debug (
 					"\n\nwrote %ld of file_data_len %ld\n\n",
 					wrote,
 					file_data_len
@@ -919,8 +884,8 @@ u8 file_receive_actual (
 		if (file_data_len < file_header->len) {
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
-			printf (
-				"\nfilelen: %ld - file data len %ld = %ld\n\n", 
+			cerver_log_debug (
+				"\nfilelen: %ld - file data len %ld = %ld\n\n",
 				file_header->len, file_data_len, real_filelen
 			);
 			#endif
