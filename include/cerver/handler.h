@@ -109,8 +109,10 @@ CERVER_EXPORT void handler_set_data (Handler *handler, void *data);
 
 // set a method to create the handler's data before it starts handling any packet
 // this data will be passed to the handler method using a HandlerData structure
-CERVER_EXPORT void handler_set_data_create (Handler *handler,
-	void *(*data_create) (void *args), void *data_create_args);
+CERVER_EXPORT void handler_set_data_create (
+	Handler *handler,
+	void *(*data_create) (void *args), void *data_create_args
+);
 
 // set the method to be used to delete the handler's data
 CERVER_EXPORT void handler_set_data_delete (Handler *handler, Action data_delete);
@@ -130,6 +132,12 @@ CERVER_PRIVATE int handler_start (Handler *handler);
 #pragma endregion
 
 #pragma region handlers
+
+// handles a request from a client to get a file
+CERVER_PRIVATE void cerver_request_get_file (struct _Packet *packet);
+
+// handles a request from a client to upload a file
+CERVER_PRIVATE void cerver_request_send_file (struct _Packet *packet);
 
 // sends back a test packet to the client!
 CERVER_PRIVATE void cerver_test_packet_handler (struct _Packet *packet);
@@ -206,7 +214,8 @@ CERVER_PRIVATE void cerver_receive_delete (void *ptr);
 
 CERVER_PRIVATE CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
 
-CERVER_PRIVATE CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
+CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
+	ReceiveType receive_type,
 	struct _Cerver *cerver,
 	struct _Client *client, struct _Connection *connection
 );

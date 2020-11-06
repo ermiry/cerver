@@ -92,18 +92,18 @@ void packets_per_type_delete (void *ptr) { if (ptr) free (ptr); }
 void packets_per_type_print (PacketsPerType *packets_per_type) {
 
 	if (packets_per_type) {
-		printf ("Cerver:            %ld\n", packets_per_type->n_cerver_packets);
-		printf ("Client:            %ld\n", packets_per_type->n_client_packets);
-		printf ("Error:             %ld\n", packets_per_type->n_error_packets);
-		printf ("Request:           %ld\n", packets_per_type->n_request_packets);
-		printf ("Auth:              %ld\n", packets_per_type->n_auth_packets);
-		printf ("Game:              %ld\n", packets_per_type->n_game_packets);
-		printf ("App:               %ld\n", packets_per_type->n_app_packets);
-		printf ("App Error:         %ld\n", packets_per_type->n_app_error_packets);
-		printf ("Custom:            %ld\n", packets_per_type->n_custom_packets);
-		printf ("Test:              %ld\n", packets_per_type->n_test_packets);
-		printf ("Unknown:           %ld\n", packets_per_type->n_unknown_packets);
-		printf ("Bad:               %ld\n", packets_per_type->n_bad_packets);
+		cerver_log_msg ("Cerver:            %ld", packets_per_type->n_cerver_packets);
+		cerver_log_msg ("Client:            %ld", packets_per_type->n_client_packets);
+		cerver_log_msg ("Error:             %ld", packets_per_type->n_error_packets);
+		cerver_log_msg ("Request:           %ld", packets_per_type->n_request_packets);
+		cerver_log_msg ("Auth:              %ld", packets_per_type->n_auth_packets);
+		cerver_log_msg ("Game:              %ld", packets_per_type->n_game_packets);
+		cerver_log_msg ("App:               %ld", packets_per_type->n_app_packets);
+		cerver_log_msg ("App Error:         %ld", packets_per_type->n_app_error_packets);
+		cerver_log_msg ("Custom:            %ld", packets_per_type->n_custom_packets);
+		cerver_log_msg ("Test:              %ld", packets_per_type->n_test_packets);
+		cerver_log_msg ("Unknown:           %ld", packets_per_type->n_unknown_packets);
+		cerver_log_msg ("Bad:               %ld", packets_per_type->n_bad_packets);
 	}
 
 }
@@ -146,11 +146,11 @@ PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, 
 void packet_header_print (PacketHeader *header) {
 
 	if (header) {
-		printf ("Packet type: %d\n", header->packet_type);
-		printf ("Packet size: %ld\n", header->packet_size);
-		printf ("Handler id: %d\n", header->handler_id);
-		printf ("Request type: %d\n", header->request_type);
-		printf ("Sock fd: %d\n", header->sock_fd);
+		cerver_log_msg ("Packet type: %d\n", header->packet_type);
+		cerver_log_msg ("Packet size: %ld\n", header->packet_size);
+		cerver_log_msg ("Handler id: %d\n", header->handler_id);
+		cerver_log_msg ("Request type: %d\n", header->request_type);
+		cerver_log_msg ("Sock fd: %d\n", header->sock_fd);
 	}
 
 }
@@ -357,7 +357,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to realloc packet data!");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to realloc packet data!");
 				#endif
 				packet->data = NULL;
 				packet->data_size = 0;
@@ -382,7 +382,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to allocate packet data!");
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to allocate packet data!");
 				#endif
 				packet->data = NULL;
 				packet->data_size = 0;
@@ -1013,14 +1013,14 @@ bool packet_check (Packet *packet) {
 
 				else {
 					#ifdef PACKETS_DEBUG
-					cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with incompatible version.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with incompatible version.");
 					#endif
 				}
 			}
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log_msg (stdout, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with unknown protocol ID.");
+				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with unknown protocol ID.");
 				#endif
 			}
 		}

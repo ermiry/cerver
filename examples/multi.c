@@ -117,7 +117,9 @@ static void end (int dummy) {
 		app_data_delete (app_data_1);
 		app_data_delete (app_data_2);
 		app_data_delete (app_data_3);
-	} 
+	}
+
+	cerver_end ();
 
 	exit (0);
 
@@ -156,11 +158,9 @@ static void handle_test_request (Packet *packet, unsigned int handler_id) {
 static void handle_msg_request (Packet *packet, unsigned int handler_id, String *msg) {
 
 	if (packet && msg) {
-		char *status = c_string_create ("Got a request for handler's <%d> message!", handler_id);
-		if (status) {
-			cerver_log_debug (status);
-			free (status);
-		}
+		cerver_log_debug (
+			"Got a request for handler's <%d> message!", handler_id
+		);
 
 		printf ("%s - %d\n", msg->str, msg->len);
 
@@ -202,7 +202,7 @@ static void handler_cero (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -224,7 +224,7 @@ static void handler_one (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -246,7 +246,7 @@ static void handler_two (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -268,7 +268,7 @@ static void handler_three (void *data) {
 				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
-					cerver_log_msg (stderr, LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
+					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
 					break;
 			}
 		}
@@ -285,18 +285,14 @@ static void on_client_connected (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -306,16 +302,12 @@ static void on_client_close_connection (void *event_data_ptr) {
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
-		char *status = c_string_create (
+		printf ("\n");
+		cerver_log (
+			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
-
-		if (status) {
-			printf ("\n");
-			cerver_log_msg (stdout, LOG_TYPE_EVENT, LOG_TYPE_CLIENT, status);
-			free (status);
-		}
 	}
 
 }
@@ -330,6 +322,8 @@ int main (void) {
 
 	// register to the quit signal
 	signal (SIGINT, end);
+
+	cerver_init ();
 
 	printf ("\n");
 	cerver_version_print_full ();
@@ -406,6 +400,8 @@ int main (void) {
 
 		cerver_delete (my_cerver);
 	}
+
+	cerver_end ();
 	
 	return 0;
 
