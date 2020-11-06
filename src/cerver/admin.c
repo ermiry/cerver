@@ -56,30 +56,26 @@ static void admin_cerver_stats_delete (AdminCerverStats *admin_cerver_stats) {
 void admin_cerver_stats_print (AdminCerverStats *stats) {
 
 	if (stats) {
-		cerver_log_msg ("\nAdmin stats: \n");
+		cerver_log_msg ("\nAdmin stats:");
 		cerver_log_msg ("Threshold_time: %ld\n", stats->threshold_time);
 
-		cerver_log_msg ("\n");
-		cerver_log_msg ("Total n receives done:                  %ld\n", stats->total_n_receives_done);
-		cerver_log_msg ("Total n packets received:               %ld\n", stats->total_n_packets_received);
+		cerver_log_msg ("Total n receives done:                  %ld", stats->total_n_receives_done);
+		cerver_log_msg ("Total n packets received:               %ld", stats->total_n_packets_received);
 		cerver_log_msg ("Total bytes received:                   %ld\n", stats->total_bytes_received);
 
-		cerver_log_msg ("\n");
-		cerver_log_msg ("Total n packets sent:                   %ld\n", stats->total_n_packets_sent);
+		cerver_log_msg ("Total n packets sent:                   %ld", stats->total_n_packets_sent);
 		cerver_log_msg ("Total bytes sent:                       %ld\n", stats->total_bytes_sent);
 
-		cerver_log_msg ("\n");
-		cerver_log_msg ("Current connections:                    %ld\n", stats->current_connections);
+		cerver_log_msg ("Current connections:                    %ld", stats->current_connections);
 		cerver_log_msg ("Current connected admins:               %ld\n", stats->current_connected_admins);
 
-		cerver_log_msg ("\n");
-		cerver_log_msg ("Total admin connections:                %ld\n", stats->total_admin_connections);
-		cerver_log_msg ("Total n admins:                         %ld\n", stats->total_n_admins);
+		cerver_log_msg ("Total admin connections:                %ld", stats->total_admin_connections);
+		cerver_log_msg ("Total n admins:                         %ld", stats->total_n_admins);
 
-		cerver_log_msg ("\nReceived packets:\n");
+		cerver_log_msg ("\nReceived packets:");
 		packets_per_type_print (stats->received_packets);
 
-		cerver_log_msg ("\nSent packets:\n");
+		cerver_log_msg ("\nSent packets:");
 		packets_per_type_print (stats->sent_packets);
 	}
 

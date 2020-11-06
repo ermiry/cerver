@@ -296,18 +296,18 @@ static u8 file_cerver_receive (
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		cerver_log_msg ("Files requests:                %ld\n", file_cerver->stats->n_files_requests);
-		cerver_log_msg ("Success requests:              %ld\n", file_cerver->stats->n_success_files_requests);
-		cerver_log_msg ("Bad requests:                  %ld\n\n", file_cerver->stats->n_bad_files_requests);
-		cerver_log_msg ("Files sent:                    %ld\n\n", file_cerver->stats->n_files_sent);
-		cerver_log_msg ("Failed files sent:             %ld\n\n", file_cerver->stats->n_bad_files_sent);
-		cerver_log_msg ("Files bytes sent:              %ld\n\n", file_cerver->stats->n_bytes_sent);
+		cerver_log_msg ("Files requests:                %ld", file_cerver->stats->n_files_requests);
+		cerver_log_msg ("Success requests:              %ld", file_cerver->stats->n_success_files_requests);
+		cerver_log_msg ("Bad requests:                  %ld", file_cerver->stats->n_bad_files_requests);
+		cerver_log_msg ("Files sent:                    %ld", file_cerver->stats->n_files_sent);
+		cerver_log_msg ("Failed files sent:             %ld", file_cerver->stats->n_bad_files_sent);
+		cerver_log_msg ("Files bytes sent:              %ld\n", file_cerver->stats->n_bytes_sent);
 
-		cerver_log_msg ("Files upload requests:         %ld\n", file_cerver->stats->n_files_upload_requests);
-		cerver_log_msg ("Success uploads:               %ld\n", file_cerver->stats->n_success_files_uploaded);
-		cerver_log_msg ("Bad uploads:                   %ld\n", file_cerver->stats->n_bad_files_upload_requests);
-		cerver_log_msg ("Bad files received:            %ld\n", file_cerver->stats->n_bad_files_received);
-		cerver_log_msg ("Files bytes received:          %ld\n\n", file_cerver->stats->n_bytes_received);
+		cerver_log_msg ("Files upload requests:         %ld", file_cerver->stats->n_files_upload_requests);
+		cerver_log_msg ("Success uploads:               %ld", file_cerver->stats->n_success_files_uploaded);
+		cerver_log_msg ("Bad uploads:                   %ld", file_cerver->stats->n_bad_files_upload_requests);
+		cerver_log_msg ("Bad files received:            %ld", file_cerver->stats->n_bad_files_received);
+		cerver_log_msg ("Files bytes received:          %ld\n", file_cerver->stats->n_bytes_received);
 	}
 
 }

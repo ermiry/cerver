@@ -499,8 +499,6 @@ static u8 auth_try_common (Packet *packet, delegate authenticate, Client **clien
 
 }
 
-// static void *auth_try_register_connection ()
-
 // try to authenticate a connection using the values he sent to use
 static void auth_try (Packet *packet) {
 
@@ -537,6 +535,11 @@ static void auth_try (Packet *packet) {
 								NULL, 0
 							);
 						}
+
+						// select how client connection will be handled based on cerver's handler type
+						(void) cerver_register_new_connection_normal_default_select_handler (
+							packet->cerver, client, packet->connection
+						);
 
 						cerver_event_trigger (
 							CERVER_EVENT_CLIENT_SUCCESS_AUTH,
@@ -579,11 +582,18 @@ static void auth_try (Packet *packet) {
 				else {
 					Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
 					if (match) {
-						// add connection's sock fd to cerver's main poll array
-						connection_register_to_cerver_poll (packet->cerver, packet->connection);
+						// FIXME:
+						// register the new client's connection to the cerver main structures
+						// based on the cerver's handler type
+
+						// FIXME: handle connection either on poll or thread
 
 						// send success auth packet to client
-						auth_send_success_packet (packet->cerver, match, packet->connection, NULL, 0);
+						auth_send_success_packet (
+							packet->cerver,
+							match, packet->connection,
+							NULL, 0
+						);
 
 						cerver_event_trigger (
 							CERVER_EVENT_CLIENT_NEW_CONNECTION,
@@ -648,6 +658,11 @@ static void admin_auth_try (Packet *packet) {
 								);
 							}
 
+							// select how client connection will be handled based on cerver's handler type
+							(void) cerver_register_new_connection_normal_default_select_handler (
+								packet->cerver, client, packet->connection
+							);
+
 							cerver_event_trigger (
 								CERVER_EVENT_ADMIN_CONNECTED,
 								packet->cerver,
@@ -683,11 +698,22 @@ static void admin_auth_try (Packet *packet) {
 					else {
 						Admin *admin = admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd);
 						if (admin) {
+							// FIXME: shoud be removed?
 							// register the new connection to the cerver admin's poll array
-							admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
+							// admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
+
+							// FIXME:
+							// register the new client's connection to the cerver main structures
+							// based on the cerver's handler type
+
+							// FIXME: handle connection either on poll or thread
 
 							// send success auth packet to client
-							auth_send_success_packet (packet->cerver, admin->client, packet->connection, NULL, 0);
+							auth_send_success_packet (
+								packet->cerver,
+								admin->client, packet->connection,
+								NULL, 0
+							);
 
 							cerver_event_trigger (
 								CERVER_EVENT_ADMIN_NEW_CONNECTION,

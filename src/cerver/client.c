@@ -93,20 +93,20 @@ void client_stats_print (Client *client) {
 	if (client) {
 		if (client->stats) {
 			cerver_log_msg ("\nClient's stats:\n");
-			cerver_log_msg ("Threshold time:            %ld\n", client->stats->threshold_time);
+			cerver_log_msg ("Threshold time:            %ld", client->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld\n", client->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %ld", client->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld\n", client->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld\n", client->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %ld", client->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %ld", client->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld\n", client->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld\n", client->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %ld", client->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %ld", client->stats->n_packets_sent);
 
-			cerver_log_msg ("\nReceived packets:\n");
+			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (client->stats->received_packets);
 
-			cerver_log_msg ("\nSent packets:\n");
+			cerver_log_msg ("\nSent packets:");
 			packets_per_type_print (client->stats->sent_packets);
 		}
 
@@ -148,18 +148,18 @@ void client_file_stats_print (Client *client) {
 
 	if (client) {
 		if (client->file_stats) {
-			cerver_log_msg ("Files requests:                %ld\n", client->file_stats->n_files_requests);
-			cerver_log_msg ("Success requests:              %ld\n", client->file_stats->n_success_files_requests);
-			cerver_log_msg ("Bad requests:                  %ld\n\n", client->file_stats->n_bad_files_requests);
-			cerver_log_msg ("Files sent:                    %ld\n\n", client->file_stats->n_files_sent);
-			cerver_log_msg ("Failed files sent:             %ld\n\n", client->file_stats->n_bad_files_sent);
-			cerver_log_msg ("Files bytes sent:              %ld\n\n", client->file_stats->n_bytes_sent);
+			cerver_log_msg ("Files requests:                %ld", client->file_stats->n_files_requests);
+			cerver_log_msg ("Success requests:              %ld", client->file_stats->n_success_files_requests);
+			cerver_log_msg ("Bad requests:                  %ld", client->file_stats->n_bad_files_requests);
+			cerver_log_msg ("Files sent:                    %ld", client->file_stats->n_files_sent);
+			cerver_log_msg ("Failed files sent:             %ld", client->file_stats->n_bad_files_sent);
+			cerver_log_msg ("Files bytes sent:              %ld\n", client->file_stats->n_bytes_sent);
 
-			cerver_log_msg ("Files upload requests:         %ld\n", client->file_stats->n_files_upload_requests);
-			cerver_log_msg ("Success uploads:               %ld\n", client->file_stats->n_success_files_uploaded);
-			cerver_log_msg ("Bad uploads:                   %ld\n", client->file_stats->n_bad_files_upload_requests);
-			cerver_log_msg ("Bad files received:            %ld\n", client->file_stats->n_bad_files_received);
-			cerver_log_msg ("Files bytes received:          %ld\n\n", client->file_stats->n_bytes_received);
+			cerver_log_msg ("Files upload requests:         %ld", client->file_stats->n_files_upload_requests);
+			cerver_log_msg ("Success uploads:               %ld", client->file_stats->n_success_files_uploaded);
+			cerver_log_msg ("Bad uploads:                   %ld", client->file_stats->n_bad_files_upload_requests);
+			cerver_log_msg ("Bad files received:            %ld", client->file_stats->n_bad_files_received);
+			cerver_log_msg ("Files bytes received:          %ld\n", client->file_stats->n_bytes_received);
 		}
 	}
 

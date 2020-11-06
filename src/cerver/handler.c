@@ -2204,6 +2204,103 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
 
 }
 
+static u8 cerver_register_new_connection_normal_default_select_handler_threads (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	CerverReceive *cr = cerver_receive_create_full (
+		RECEIVE_TYPE_NORMAL,
+		cerver,
+		client, connection
+	);
+
+	if (cr) {
+		// create a new detachable thread directly
+		if (cerver->handle_detachable_threads) {
+			retval = cerver_register_new_connection_normal_default_create_detachable (cr);
+		}
+
+		else {
+			if (thpool_is_full (cerver->thpool)) {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+					"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
+					cerver->info->name->str, connection->socket->sock_fd
+				);
+				#endif
+
+				retval = cerver_register_new_connection_normal_default_create_detachable (cr);
+			}
+
+			else {
+				if (!thpool_add_work (
+					cerver->thpool,
+					(void (*) (void *)) cerver_receive_threads,
+					cr
+				)) {
+					#ifdef HANDLER_DEBUG
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+						"Added work for sock fd <%d> connection to the thpool!",
+						connection->socket->sock_fd
+					);
+
+					cerver_log (
+						LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+						"Cerver %s thpool - %d / %d threads working",
+						cerver->info->name->str,
+						thpool_get_num_threads_working (cerver->thpool),
+						cerver->thpool->num_threads_alive
+					);
+					#endif
+
+					retval = 0;     // success
+				}
+
+				else {
+					cerver_receive_delete (cr);
+				}
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// select how client connection will be handled based on cerver's handler type
+u8 cerver_register_new_connection_normal_default_select_handler (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	switch (cerver->handler_type) {
+		case CERVER_HANDLER_TYPE_NONE: break;
+
+		case CERVER_HANDLER_TYPE_POLL: {
+			// nothing to be done, as connection will be handled by poll ()
+			// after being registered to the cerver
+			retval = 0;     // success
+		} break;
+
+		// handle connection in dedicated thread
+		case CERVER_HANDLER_TYPE_THREADS: {
+			retval = cerver_register_new_connection_normal_default_select_handler_threads (
+				cerver, client, connection
+			);
+		} break;
+
+		default: break;
+	}
+
+	return retval;
+
+}
+
 static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connection *connection) {
 
 	u8 retval = 1;
@@ -2215,84 +2312,19 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 		if (!client_register_to_cerver (cerver, client)) {
 			connection->active = true;
 
-			cerver_info_send_info_packet (cerver, client, connection);
+			(void) cerver_info_send_info_packet (cerver, client, connection);
 
-			cerver_event_trigger (
-				CERVER_EVENT_CLIENT_CONNECTED,
-				cerver,
-				client, connection
-			);
+			// TODO: better error handling
+			if (!cerver_register_new_connection_normal_default_select_handler (
+				cerver, client, connection
+			)) {
+				cerver_event_trigger (
+					CERVER_EVENT_CLIENT_CONNECTED,
+					cerver,
+					client, connection
+				);
 
-			switch (cerver->handler_type) {
-				case CERVER_HANDLER_TYPE_NONE: break;
-
-				case CERVER_HANDLER_TYPE_POLL:
-					// nothing to be done, as connection will be handled by poll ()
-					// after being registered to the cerver
-					retval = 0;     // success
-					break;
-
-				// handle connection in dedicated thread
-				case CERVER_HANDLER_TYPE_THREADS: {
-					CerverReceive *cr = cerver_receive_create_full (
-						RECEIVE_TYPE_NORMAL,
-						cerver,
-						client, connection
-					);
-
-					if (cr) {
-						// create a new detachable thread directly
-						if (cerver->handle_detachable_threads) {
-							retval = cerver_register_new_connection_normal_default_create_detachable (cr);
-						}
-
-						else {
-							if (thpool_is_full (cerver->thpool)) {
-								#ifdef HANDLER_DEBUG
-								cerver_log (
-									LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-									"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
-									cerver->info->name->str, connection->socket->sock_fd
-								);
-								#endif
-
-								retval = cerver_register_new_connection_normal_default_create_detachable (cr);
-							}
-
-							else {
-								if (!thpool_add_work (
-									cerver->thpool,
-									(void (*) (void *)) cerver_receive_threads,
-									cr
-								)) {
-									#ifdef HANDLER_DEBUG
-									cerver_log (
-										LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-										"Added work for sock fd <%d> connection to the thpool!",
-										connection->socket->sock_fd
-									);
-
-									cerver_log (
-										LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-										"Cerver %s thpool - %d / %d threads working",
-										cerver->info->name->str,
-										thpool_get_num_threads_working (cerver->thpool),
-										cerver->thpool->num_threads_alive
-									);
-									#endif
-
-									retval = 0;     // success
-								}
-
-								else {
-									cerver_receive_delete (cr);
-								}
-							}
-						}
-					}
-				} break;
-
-				default: break;
+				retval = 0;
 			}
 		}
 	}
@@ -2395,7 +2427,9 @@ static void cerver_accept (void *cerver_ptr) {
 		// accept the new connection
 		i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
 		if (new_fd > 0) {
-			printf ("Accepted fd: %d\n", new_fd);
+			#ifdef HANDLER_DEBUG
+			cerver_log_debug ("Accepted fd: %d", new_fd);
+			#endif
 			cerver_register_new_connection (cerver, new_fd, client_address);
 		}
 
