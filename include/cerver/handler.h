@@ -227,6 +227,15 @@ CERVER_PRIVATE void cerver_receive (void *ptr);
 
 #pragma endregion
 
+#pragma region register
+
+// select how client connection will be handled based on cerver's handler type
+CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
+	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection
+);
+
+#pragma endregion
+
 #pragma region poll
 
 // reallocs main cerver poll fds
