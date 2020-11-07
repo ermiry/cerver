@@ -458,4 +458,10 @@ extern int utf8_check_string(const char *string, size_t length);
 
 #pragma endregion
 
+#pragma region print
+
+extern void json_print (json_t *root);
+
+#pragma endregion
+
 #endif
