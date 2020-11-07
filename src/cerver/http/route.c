@@ -159,6 +159,15 @@ HttpRoute *http_route_create (
 
 }
 
+// sets the route's handler for the selected http method
+void http_route_set_handler (HttpRoute *route, RequestMethod method, HttpHandler handler) {
+
+	if (route) {
+		route->handlers[method] = handler;
+	}
+
+}
+
 void http_route_init (HttpRoute *route) {
 
 	if (route) {
@@ -258,8 +267,10 @@ void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type) {
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
 // if no delete method is set, data won't be freed
-void http_route_set_decode_data (HttpRoute *route, 
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)) {
+void http_route_set_decode_data (
+	HttpRoute *route, 
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+) {
 
 	if (route) {
 		route->decode_data = decode_data;
@@ -270,8 +281,10 @@ void http_route_set_decode_data (HttpRoute *route,
 
 // sets a callback to be executed whenever a websocket connection is correctly
 // opened in the selected route
-void http_route_set_ws_on_open (HttpRoute *route, 
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *)) {
+void http_route_set_ws_on_open (
+	HttpRoute *route, 
+	void (*ws_on_open)(struct _Cerver *, struct _Connection *)
+) {
 
 	if (route) route->ws_on_open = ws_on_open;
 
@@ -279,8 +292,10 @@ void http_route_set_ws_on_open (HttpRoute *route,
 
 // sets a callback to be executed whenever a websocket connection
 // gets closed from the selected route
-void http_route_set_ws_on_close (HttpRoute *route, 
-	void (*ws_on_close)(struct _Cerver *, const char *reason)) {
+void http_route_set_ws_on_close (
+	HttpRoute *route, 
+	void (*ws_on_close)(struct _Cerver *, const char *reason)
+) {
 
 	if (route) route->ws_on_close = ws_on_close;
 	
@@ -288,8 +303,10 @@ void http_route_set_ws_on_close (HttpRoute *route,
 
 // sets a callback to be executed whenever a websocket ping message
 // is received in the selected route
-void http_route_set_ws_on_ping (HttpRoute *route, 
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)) {
+void http_route_set_ws_on_ping (
+	HttpRoute *route, 
+	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)
+) {
 
 	if (route) route->ws_on_ping = ws_on_ping;
 	
@@ -297,8 +314,10 @@ void http_route_set_ws_on_ping (HttpRoute *route,
 
 // sets a callback to be executed whenever a websocket pong message
 // is received in the selected route
-void http_route_set_ws_on_pong (HttpRoute *route, 
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)) {
+void http_route_set_ws_on_pong (
+	HttpRoute *route, 
+	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)
+) {
 
 	if (route) route->ws_on_pong = ws_on_pong;
 	
@@ -306,16 +325,22 @@ void http_route_set_ws_on_pong (HttpRoute *route,
 
 // sets a callback to be executed whenever a complete websocket message
 // is received in the selected route
-void http_route_set_ws_on_message (HttpRoute *route, 
-	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len)) {
+void http_route_set_ws_on_message (
+	HttpRoute *route, 
+	void (*ws_on_message)(
+		struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len
+	)
+) {
 	
 	if (route) route->ws_on_message = ws_on_message;
 
 }
 
 // sets a callback to be executed whenever an error ocurred in the selected route
-void http_route_set_ws_on_error (HttpRoute *route, 
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)) {
+void http_route_set_ws_on_error (
+	HttpRoute *route, 
+	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
+) {
 
 	if (route) route->ws_on_error = ws_on_error;
 	

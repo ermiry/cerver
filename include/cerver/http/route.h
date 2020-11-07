@@ -95,6 +95,9 @@ CERVER_EXPORT HttpRoute *http_route_create (
 	HttpHandler handler
 );
 
+// sets the route's handler for the selected http method
+CERVER_EXPORT void http_route_set_handler (HttpRoute *route, RequestMethod method, HttpHandler handler);
+
 CERVER_PRIVATE void http_route_init (HttpRoute *route);
 
 // registers a route as a child of a parent route
@@ -108,36 +111,52 @@ CERVER_EXPORT void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
 // if no delete method is set, data won't be freed
-CERVER_EXPORT void http_route_set_decode_data (HttpRoute *route, 
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *));
+CERVER_EXPORT void http_route_set_decode_data (
+	HttpRoute *route, 
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+);
 
 // sets a callback to be executed whenever a websocket connection is correctly
 // opened in the selected route
-CERVER_EXPORT void http_route_set_ws_on_open (HttpRoute *route, 
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *));
+CERVER_EXPORT void http_route_set_ws_on_open (
+	HttpRoute *route, 
+	void (*ws_on_open)(struct _Cerver *, struct _Connection *)
+);
 
 // sets a callback to be executed whenever a websocket connection
 // gets closed from the selected route
-CERVER_EXPORT void http_route_set_ws_on_close (HttpRoute *route, 
-	void (*ws_on_close)(struct _Cerver *, const char *reason));
+CERVER_EXPORT void http_route_set_ws_on_close (
+	HttpRoute *route, 
+	void (*ws_on_close)(struct _Cerver *, const char *reason)
+);
 
 // sets a callback to be executed whenever a websocket ping message
 // is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_ping (HttpRoute *route, 
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *));
+CERVER_EXPORT void http_route_set_ws_on_ping (
+	HttpRoute *route, 
+	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)
+);
 
 // sets a callback to be executed whenever a websocket pong message
 // is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_pong (HttpRoute *route, 
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *));
+CERVER_EXPORT void http_route_set_ws_on_pong (
+	HttpRoute *route, 
+	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)
+);
 
 // sets a callback to be executed whenever a complete websocket message
 // is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_message (HttpRoute *route, 
-	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len));
+CERVER_EXPORT void http_route_set_ws_on_message (
+	HttpRoute *route, 
+	void (*ws_on_message)(
+		struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len
+	)
+);
 
 // sets a callback to be executed whenever an error ocurred in the selected route
-CERVER_EXPORT void http_route_set_ws_on_error (HttpRoute *route, 
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError));
+CERVER_EXPORT void http_route_set_ws_on_error (
+	HttpRoute *route, 
+	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
+);
 
 #endif
