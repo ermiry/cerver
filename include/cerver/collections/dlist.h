@@ -27,8 +27,6 @@ typedef struct DoubleList {
 
 } DoubleList;
 
-// #define dlist_size(list) ((list)->size)
-
 #define dlist_start(list) ((list)->start)
 #define dlist_end(list) ((list)->end)
 
@@ -37,7 +35,10 @@ typedef struct DoubleList {
 
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
-extern void dlist_set_compare (DoubleList *list, int (*compare)(const void *one, const void *two));
+extern void dlist_set_compare (
+	DoubleList *list,
+	int (*compare)(const void *one, const void *two)
+);
 
 // sets list destroy function
 extern void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data));
@@ -62,8 +63,10 @@ extern int dlist_delete_if_not_empty (void *dlist_ptr);
 // creates a new double list (double linked list)
 // destroy is the method used to free up the data, NULL to use the default free
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
-extern DoubleList *dlist_init (void (*destroy)(void *data),
-	int (*compare)(const void *one, const void *two));
+extern DoubleList *dlist_init (
+	void (*destroy)(void *data),
+	int (*compare)(const void *one, const void *two)
+);
 
 // destroys all of the dlist's elements and their data but keeps the dlist
 extern void dlist_reset (DoubleList *dlist);
@@ -102,7 +105,10 @@ extern int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned 
 // finds the data using the query and the list comparator and the removes it from the list
 // and returns the list element's data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-extern void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(const void *one, const void *two));
+extern void *dlist_remove (
+	DoubleList *dlist, 
+	const void *query, int (*compare)(const void *one, const void *two)
+);
 
 // removes the dlist element from the dlist and returns the data
 // NULL for the start of the list
@@ -117,18 +123,28 @@ extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
 // returns 0 on success, 1 on error
-extern int dlist_traverse (const DoubleList *dlist, 
-	void (*method)(void *list_element_data, void *method_args), void *method_args);
+extern int dlist_traverse (
+	const DoubleList *dlist, 
+	void (*method)(void *list_element_data, void *method_args),
+	void *method_args
+);
 
 // uses the list comparator to search using the data as the query
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // returns the double list's element data
-extern void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(const void *one, const void *two));
+extern void *dlist_search (
+	const DoubleList *dlist,
+	const void *data,
+	int (*compare)(const void *one, const void *two)
+);
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching
-extern ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
-	int (*compare)(const void *one, const void *two));
+extern ListElement *dlist_get_element (
+	const DoubleList *dlist,
+	const void *data, 
+	int (*compare)(const void *one, const void *two)
+);
 
 // traverses the dlist and returns the list element at the specified index
 extern ListElement *dlist_get_element_at (const DoubleList *dlist, const unsigned int idx);

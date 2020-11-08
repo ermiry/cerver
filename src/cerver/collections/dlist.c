@@ -440,7 +440,10 @@ int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos
 // finds the data using the query and the list comparator and the removes it from the list
 // and returns the list element's data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(const void *one, const void *two)) {
+void *dlist_remove (
+	DoubleList *dlist,
+	const void *query, int (*compare)(const void *one, const void *two)
+) {
 
 	void *retval = NULL;
 
@@ -543,7 +546,10 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
 // returns 0 on success, 1 on error
-int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_data, void *method_args), void *method_args) {
+int dlist_traverse (
+	const DoubleList *dlist,
+	void (*method)(void *list_element_data, void *method_args), void *method_args
+) {
 
 	int retval = 1;
 
@@ -566,7 +572,11 @@ int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_d
 // uses the list comparator to search using the data as the query
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // returns the double list's element data
-void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(const void *one, const void *two)) {
+void *dlist_search (
+	const DoubleList *dlist,
+	const void *data,
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
@@ -587,8 +597,10 @@ void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(co
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
-	int (*compare)(const void *one, const void *two)) {
+ListElement *dlist_get_element (
+	const DoubleList *dlist, const void *data, 
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
@@ -660,8 +672,10 @@ static ListElement *dllist_split (ListElement *head) {
 }  
 
 // Function to merge two linked lists 
-static ListElement *dllist_merge (int (*compare)(const void *one, const void *two), 
-	ListElement *first, ListElement *second)  { 
+static ListElement *dllist_merge (
+	int (*compare)(const void *one, const void *two), 
+	ListElement *first, ListElement *second
+) {
 
 	// If first linked dlist is empty 
 	if (!first) return second; 
@@ -687,8 +701,10 @@ static ListElement *dllist_merge (int (*compare)(const void *one, const void *tw
 } 
 
 // merge sort
-static ListElement *dlist_merge_sort (ListElement *head, 
-	int (*compare)(const void *one, const void *two)) {
+static ListElement *dlist_merge_sort (
+	ListElement *head, 
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (!head || !head->next) return head;
 
@@ -791,7 +807,9 @@ DoubleList *dlist_copy (const DoubleList *dlist) {
 	// and should return the same structure type as the original method that can be safely deleted
 	// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
-DoubleList *dlist_clone (const DoubleList *dlist, void *(*clone) (const void *original)) {
+DoubleList *dlist_clone (
+	const DoubleList *dlist, void *(*clone) (const void *original)
+) {
 
 	DoubleList *dlist_clone = NULL;
 
