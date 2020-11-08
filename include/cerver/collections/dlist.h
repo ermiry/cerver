@@ -146,6 +146,26 @@ extern void *dlist_remove (
 // NULL for the start of the list
 extern void *dlist_remove_element (DoubleList *dlist, ListElement *element);
 
+// works as dlist_remove_element ()
+// this method is NOT thread safe
+extern void *dlist_remove_element_unsafe (DoubleList *dlist, ListElement *element);
+
+// removes the element at the start of the dlist
+// returns the element's data
+extern void *dlist_remove_start (DoubleList *dlist);
+
+// works as dlist_remove_start ()
+// this method is NOT thread safe
+extern void *dlist_remove_start_unsafe (DoubleList *dlist);
+
+// removes the element at the end of the dlist
+// returns the element's data
+extern void *dlist_remove_end (DoubleList *dlist);
+
+// works as dlist_remove_end ()
+// this method is NOT thread safe
+extern void *dlist_remove_end_unsafe (DoubleList *dlist);
+
 // removes the dlist element from the dlist at the specified index 
 // returns the data or NULL if index was invalid
 extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);

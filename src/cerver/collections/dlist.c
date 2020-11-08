@@ -604,17 +604,77 @@ void *dlist_remove (
 // NULL for the start of the list
 void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
 
+	void *data = NULL;
+
 	if (dlist) {
 		pthread_mutex_lock (dlist->mutex);
 
-		void *data = dlist_internal_remove_element (dlist, element);
+		data = dlist_internal_remove_element (dlist, element);
 
 		pthread_mutex_unlock (dlist->mutex);
-
-		return data;
 	}
 
-	return NULL;
+	return data;
+
+}
+
+// works as dlist_remove_element ()
+// this method is NOT thread safe
+void *dlist_remove_element_unsafe (DoubleList *dlist, ListElement *element) {
+
+	return dlist ? dlist_internal_remove_element (dlist, element) : NULL;
+
+}
+
+// removes the element at the start of the dlist
+// returns the element's data
+void *dlist_remove_start (DoubleList *dlist) {
+
+	void *data = NULL;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		data = dlist_internal_remove_element (dlist, NULL);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return data;
+
+}
+
+// works as dlist_remove_start ()
+// this method is NOT thread safe
+void *dlist_remove_start_unsafe (DoubleList *dlist) {
+
+	return dlist ? dlist_internal_remove_element (dlist, NULL) : NULL;
+
+}
+
+// removes the element at the end of the dlist
+// returns the element's data
+void *dlist_remove_end (DoubleList *dlist) {
+
+	void *data = NULL;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		data = dlist_internal_remove_element (dlist, dlist->end);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return data;
+
+}
+
+// works as dlist_remove_end ()
+// this method is NOT thread safe
+void *dlist_remove_end_unsafe (DoubleList *dlist) {
+
+	return dlist ? dlist_internal_remove_element (dlist, dlist->end) : NULL;
 
 }
 
