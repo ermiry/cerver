@@ -90,10 +90,24 @@ extern void dlist_clear_or_delete (void *dlist_ptr);
 // returns 0 on success, 1 on error
 extern int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *data);
 
+// works as dlist_insert_before ()
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_before_unsafe (
+	DoubleList *dlist, ListElement *element, const void *data
+);
+
 // inserts the data in the double list AFTER the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
 extern int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *data);
+
+// works as dlist_insert_after ()
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_after_unsafe (
+	DoubleList *dlist, ListElement *element, const void *data
+);
 
 // inserts the data in the double list in the specified pos (0 indexed)
 // if the pos is greater than the current size, it will be added at the end
@@ -104,9 +118,19 @@ extern int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned 
 // returns 0 on success, 1 on error
 extern int dlist_insert_at_start (DoubleList *dlist, const void *data);
 
+// inserts at the start of the dlist, before the first element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_at_start_unsafe (DoubleList *dlist, const void *data);
+
 // inserts at the end of the dlist, after the last element
 // returns 0 on success, 1 on error
 extern int dlist_insert_at_end (DoubleList *dlist, const void *data);
+
+// inserts at the end of the dlist, after the last element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_at_end_unsafe (DoubleList *dlist, const void *data);
 
 /*** remove ***/
 
