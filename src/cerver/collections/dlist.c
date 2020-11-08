@@ -40,6 +40,42 @@ static DoubleList *dlist_new (void) {
 
 }
 
+static int dlist_internal_insert_after (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	int retval = 1;
+
+	ListElement *le = list_element_new ();
+	if (le) {
+		le->data = (void *) data;
+
+		if (element == NULL) {
+			if (dlist->size == 0) dlist->end = le;
+			else dlist->start->prev = le;
+		
+			le->next = dlist->start;
+			le->prev = NULL;
+			dlist->start = le;
+		}
+
+		else {
+			if (element->next == NULL) dlist->end = le;
+
+			le->next = element->next;
+			le->prev = element;
+			element->next = le;
+		}
+
+		dlist->size++;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *element) {
 
 	void *data = NULL;
@@ -369,31 +405,29 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 	if (dlist && data) {
 		pthread_mutex_lock (dlist->mutex);
 
-		ListElement *le = list_element_new ();
-		if (le) {
-			le->data = (void *) data;
+		retval = dlist_internal_insert_after (
+			dlist, element, data
+		);
 
-			if (element == NULL) {
-				if (dlist->size == 0) dlist->end = le;
-				else dlist->start->prev = le;
-			
-				le->next = dlist->start;
-				le->prev = NULL;
-				dlist->start = le;
-			}
+		pthread_mutex_unlock (dlist->mutex);
+	}
 
-			else {
-				if (element->next == NULL) dlist->end = le;
+	return retval;
 
-				le->next = element->next;
-				le->prev = element;
-				element->next = le;
-			}
+}
 
-			dlist->size++;
+// inserts at the end of the dlist, after the last element
+// returns 0 on success, 1 on error
+int dlist_insert_at_end (DoubleList *dlist, const void *data) {
 
-			retval = 0;
-		}
+	int retval = 1;
+
+	if (dlist && data) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_after (
+			dlist, dlist->end, data
+		);
 
 		pthread_mutex_unlock (dlist->mutex);
 	}

@@ -100,6 +100,10 @@ extern int dlist_insert_after (DoubleList *dlist, ListElement *element, const vo
 // returns 0 on success, 1 on error
 extern int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos);
 
+// inserts at the end of the dlist, after the last element
+// returns 0 on success, 1 on error
+extern int dlist_insert_at_end (DoubleList *dlist, const void *data);
+
 /*** remove ***/
 
 // finds the data using the query and the list comparator and the removes it from the list
@@ -147,7 +151,9 @@ extern ListElement *dlist_get_element (
 );
 
 // traverses the dlist and returns the list element at the specified index
-extern ListElement *dlist_get_element_at (const DoubleList *dlist, const unsigned int idx);
+extern ListElement *dlist_get_element_at (
+	const DoubleList *dlist, const unsigned int idx
+);
 
 // traverses the dlist and returns the data of the list element at the specified index
 extern void *dlist_get_at (const DoubleList *dlist, const unsigned int idx);
@@ -157,7 +163,9 @@ extern void *dlist_get_at (const DoubleList *dlist, const unsigned int idx);
 // uses merge sort to sort the list using the comparator
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // return 0 on succes 1 on error
-extern int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *two));
+extern int dlist_sort (
+	DoubleList *dlist, int (*compare)(const void *one, const void *two)
+);
 
 /*** Other ***/
 
@@ -177,7 +185,9 @@ extern DoubleList *dlist_copy (const DoubleList *dlist);
 	// and should return the same structure type as the original method that can be safely deleted
 	// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
-extern DoubleList *dlist_clone (const DoubleList *dlist, void *(*clone) (const void *original));
+extern DoubleList *dlist_clone (
+	const DoubleList *dlist, void *(*clone) (const void *original)
+);
 
 // splits the original dlist into two halfs
 // if dlist->size is odd, extra element will be left in the first half (dlist)
