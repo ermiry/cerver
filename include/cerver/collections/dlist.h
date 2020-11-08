@@ -33,6 +33,9 @@ typedef struct DoubleList {
 #define dlist_element_data(element) ((element)->data)
 #define dlist_element_next(element) ((element)->next)
 
+#define dlist_for_each(dlist, le)					\
+	for (le = dlist->start; le; le = le->next)
+
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern void dlist_set_compare (
