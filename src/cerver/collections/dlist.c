@@ -42,74 +42,65 @@ static DoubleList *dlist_new (void) {
 
 static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *element) {
 
-	if (dlist) {
-		void *data = NULL;
-		if (dlist->size > 0) {
-			ListElement *old;
+	void *data = NULL;
+	if (dlist->size > 0) {
+		ListElement *old = NULL;
 
-			if (element == NULL) {
-				data = dlist->start->data;
-				old = dlist->start;
-				dlist->start = dlist->start->next;
-				if (dlist->start != NULL) dlist->start->prev = NULL;
+		if (element == NULL) {
+			data = dlist->start->data;
+			old = dlist->start;
+			dlist->start = dlist->start->next;
+			if (dlist->start != NULL) dlist->start->prev = NULL;
+		}
+
+		else {
+			data = element->data;
+			old = element;
+
+			ListElement *prevElement = element->prev;
+			ListElement *nextElement = element->next;
+
+			if (prevElement != NULL && nextElement != NULL) {
+				prevElement->next = nextElement;
+				nextElement->prev = prevElement;
 			}
 
 			else {
-				data = element->data;
-				old = element;
-
-				ListElement *prevElement = element->prev;
-				ListElement *nextElement = element->next;
-
-				if (prevElement != NULL && nextElement != NULL) {
-					prevElement->next = nextElement;
-					nextElement->prev = prevElement;
+				// we are at the start of the dlist
+				if (prevElement == NULL) {
+					if (nextElement != NULL) nextElement->prev = NULL;
+					dlist->start = nextElement;
 				}
 
-				else {
-					// we are at the start of the dlist
-					if (prevElement == NULL) {
-						if (nextElement != NULL) nextElement->prev = NULL;
-						dlist->start = nextElement;
-					}
-
-					// we are at the end of the dlist
-					if (nextElement == NULL) {
-						if (prevElement != NULL) prevElement->next = NULL;
-						dlist->end = prevElement;
-					}
+				// we are at the end of the dlist
+				if (nextElement == NULL) {
+					if (prevElement != NULL) prevElement->next = NULL;
+					dlist->end = prevElement;
 				}
-			}
-
-			list_element_delete (old);
-			dlist->size--;
-
-			if (dlist->size == 0) {
-				dlist->start = NULL;
-				dlist->end = NULL;
 			}
 		}
 
-		return data;
+		list_element_delete (old);
+		dlist->size--;
+
+		if (dlist->size == 0) {
+			dlist->start = NULL;
+			dlist->end = NULL;
+		}
 	}
 
-	return NULL;
+	return data;
 
 }
 
 static void dlist_internal_delete (DoubleList *dlist) {
 
-	if (dlist) {
-		if (dlist->size > 0) {
-			void *data = NULL;
-
-			while (dlist->size > 0) {
-				data = dlist_internal_remove_element (dlist, NULL);
-				if (data) {
-					if (dlist->destroy) dlist->destroy (data);
-					else free (data);
-				}
-			}
+	void *data = NULL;
+	while (dlist->size > 0) {
+		data = dlist_internal_remove_element (dlist, NULL);
+		if (data) {
+			if (dlist->destroy) dlist->destroy (data);
+			else free (data);
 		}
 	}
 
