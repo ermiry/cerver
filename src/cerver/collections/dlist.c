@@ -100,7 +100,6 @@ static void dlist_internal_delete (DoubleList *dlist) {
 		data = dlist_internal_remove_element (dlist, NULL);
 		if (data) {
 			if (dlist->destroy) dlist->destroy (data);
-			else free (data);
 		}
 	}
 
