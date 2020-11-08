@@ -100,6 +100,10 @@ extern int dlist_insert_after (DoubleList *dlist, ListElement *element, const vo
 // returns 0 on success, 1 on error
 extern int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos);
 
+// inserts at the start of the dlist, before the first element
+// returns 0 on success, 1 on error
+extern int dlist_insert_at_start (DoubleList *dlist, const void *data);
+
 // inserts at the end of the dlist, after the last element
 // returns 0 on success, 1 on error
 extern int dlist_insert_at_end (DoubleList *dlist, const void *data);

@@ -40,6 +40,41 @@ static DoubleList *dlist_new (void) {
 
 }
 
+static int dlist_internal_insert_before (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	int retval = 1;
+
+	ListElement *le = list_element_new ();
+	if (le) {
+		le->data = (void *) data;
+
+		if (element == NULL) {
+			if (dlist->size == 0) dlist->end = le;
+			else dlist->start->prev = le;
+		
+			le->next = dlist->start;
+			le->prev = NULL;
+			dlist->start = le;
+		}
+
+		else {
+			element->prev->next = le;
+			le->next = element;
+			le->prev = element->prev;
+			element->prev = le;
+		}
+
+		dlist->size++;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static int dlist_internal_insert_after (
 	DoubleList *dlist, ListElement *element, const void *data
 ) {
@@ -363,30 +398,9 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *da
 	if (dlist && data) {
 		pthread_mutex_lock (dlist->mutex);
 
-		ListElement *le = list_element_new ();
-		if (le) {
-			le->data = (void *) data;
-
-			if (element == NULL) {
-				if (dlist->size == 0) dlist->end = le;
-				else dlist->start->prev = le;
-			
-				le->next = dlist->start;
-				le->prev = NULL;
-				dlist->start = le;
-			}
-
-			else {
-				element->prev->next = le;
-				le->next = element;
-				le->prev = element->prev;
-				element->prev = le;
-			}
-
-			dlist->size++;
-
-			retval = 0;
-		}
+		retval = dlist_internal_insert_before (
+			dlist, element, data
+		);
 
 		pthread_mutex_unlock (dlist->mutex);
 	}
@@ -407,6 +421,26 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 
 		retval = dlist_internal_insert_after (
 			dlist, element, data
+		);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+// inserts at the start of the dlist, before the first element
+// returns 0 on success, 1 on error
+int dlist_insert_at_start (DoubleList *dlist, const void *data) {
+
+	int retval = 1;
+
+	if (dlist && data) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_before (
+			dlist, dlist->start, data
 		);
 
 		pthread_mutex_unlock (dlist->mutex);
