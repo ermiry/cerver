@@ -740,4 +740,84 @@ u8 http_response_json_custom_send (
 
 }
 
+static HttpResponse *http_response_json_custom_reference_internal (
+	http_status status,
+	const char *json, const size_t json_len
+) {
+
+	HttpResponse *res = http_response_new ();
+	if (res) {
+		res->status = status;
+
+		// body
+		res->data_ref = true;
+		res->data = (char *) json;
+		res->data_len = json_len;
+
+		// header
+		res->header = c_string_create (
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+			res->status, http_status_str (res->status),
+			CERVER_VERSION,
+			res->data_len
+		);
+
+		res->header_len = strlen ((const char *) res->header);
+	}
+
+	return res;
+
+}
+
+// creates a http response with the defined status code
+// and the body with a reference to a custom json
+HttpResponse *http_response_json_custom_reference (
+	http_status status,
+	const char *json, const size_t json_len
+) {
+
+	HttpResponse *res = NULL;
+	if (json) {
+		res = http_response_json_custom_reference_internal (
+			(http_status) status,
+			json, json_len
+		);
+		
+		(void) http_response_compile (res);
+	}
+
+	return res;
+
+}
+
+// creates and sends a http custom json reference response with the defined status code
+// returns 0 on success, 1 on error
+u8 http_response_json_custom_reference_send (
+	CerverReceive *cr,
+	unsigned int status,
+	const char *json, const size_t json_len
+) {
+
+	u8 retval = 1;
+
+	if (cr && json) {
+		HttpResponse *res = http_response_json_custom_reference_internal (
+			(http_status) status,
+			json, json_len
+		);
+
+		if (res) {
+			#ifdef HTTP_RESPONSE_DEBUG
+			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
+			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
+			#endif
+			retval = http_response_send_split (res, cr->cerver, cr->connection);
+			http_respponse_delete (res);
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion

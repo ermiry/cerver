@@ -172,6 +172,21 @@ CERVER_EXPORT u8 http_response_json_custom_send (
 	unsigned int status, const char *json
 );
 
+// creates a http response with the defined status code
+// and the body with a reference to a custom json
+CERVER_EXPORT HttpResponse *http_response_json_custom_reference (
+	http_status status,
+	const char *json, const size_t json_len
+);
+
+// creates and sends a http custom json reference response with the defined status code
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_custom_reference_send (
+	CerverReceive *cr,
+	unsigned int status,
+	const char *json, const size_t json_len
+);
+
 #pragma endregion
 
 #endif
