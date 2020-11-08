@@ -131,6 +131,23 @@ void custom_handler (CerverReceive *cr, HttpRequest *request) {
 
 }
 
+// GET /reference
+void reference_handler (CerverReceive *cr, HttpRequest *request) {
+
+	char *json = (char *) calloc (256, sizeof (char));
+	if (json) {
+		strncpy (json, "{\"oki\": \"doki\"}", 256);
+
+		(void) http_response_json_custom_reference_send (
+			cr,
+			(http_status) 200, json, strlen (json)
+		);
+
+		free (json);
+	}
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -194,6 +211,10 @@ int main (int argc, char **argv) {
 		// GET /custom
 		HttpRoute *custom_route = http_route_create (REQUEST_METHOD_GET, "custom", custom_handler);
 		http_cerver_route_register (http_cerver, custom_route);
+
+		// GET /reference
+		HttpRoute *reference_route = http_route_create (REQUEST_METHOD_GET, "reference", reference_handler);
+		http_cerver_route_register (http_cerver, reference_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (

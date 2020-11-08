@@ -40,76 +40,137 @@ static DoubleList *dlist_new (void) {
 
 }
 
+static int dlist_internal_insert_before (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	int retval = 1;
+
+	ListElement *le = list_element_new ();
+	if (le) {
+		le->data = (void *) data;
+
+		if (element == NULL) {
+			if (dlist->size == 0) dlist->end = le;
+			else dlist->start->prev = le;
+		
+			le->next = dlist->start;
+			le->prev = NULL;
+			dlist->start = le;
+		}
+
+		else {
+			element->prev->next = le;
+			le->next = element;
+			le->prev = element->prev;
+			element->prev = le;
+		}
+
+		dlist->size++;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static int dlist_internal_insert_after (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	int retval = 1;
+
+	ListElement *le = list_element_new ();
+	if (le) {
+		le->data = (void *) data;
+
+		if (element == NULL) {
+			if (dlist->size == 0) dlist->end = le;
+			else dlist->start->prev = le;
+		
+			le->next = dlist->start;
+			le->prev = NULL;
+			dlist->start = le;
+		}
+
+		else {
+			if (element->next == NULL) dlist->end = le;
+
+			le->next = element->next;
+			le->prev = element;
+			element->next = le;
+		}
+
+		dlist->size++;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *element) {
 
-	if (dlist) {
-		void *data = NULL;
-		if (dlist->size > 0) {
-			ListElement *old;
+	void *data = NULL;
+	if (dlist->size > 0) {
+		ListElement *old = NULL;
 
-			if (element == NULL) {
-				data = dlist->start->data;
-				old = dlist->start;
-				dlist->start = dlist->start->next;
-				if (dlist->start != NULL) dlist->start->prev = NULL;
+		if (element == NULL) {
+			data = dlist->start->data;
+			old = dlist->start;
+			dlist->start = dlist->start->next;
+			if (dlist->start != NULL) dlist->start->prev = NULL;
+		}
+
+		else {
+			data = element->data;
+			old = element;
+
+			ListElement *prevElement = element->prev;
+			ListElement *nextElement = element->next;
+
+			if (prevElement != NULL && nextElement != NULL) {
+				prevElement->next = nextElement;
+				nextElement->prev = prevElement;
 			}
 
 			else {
-				data = element->data;
-				old = element;
-
-				ListElement *prevElement = element->prev;
-				ListElement *nextElement = element->next;
-
-				if (prevElement != NULL && nextElement != NULL) {
-					prevElement->next = nextElement;
-					nextElement->prev = prevElement;
+				// we are at the start of the dlist
+				if (prevElement == NULL) {
+					if (nextElement != NULL) nextElement->prev = NULL;
+					dlist->start = nextElement;
 				}
 
-				else {
-					// we are at the start of the dlist
-					if (prevElement == NULL) {
-						if (nextElement != NULL) nextElement->prev = NULL;
-						dlist->start = nextElement;
-					}
-
-					// we are at the end of the dlist
-					if (nextElement == NULL) {
-						if (prevElement != NULL) prevElement->next = NULL;
-						dlist->end = prevElement;
-					}
+				// we are at the end of the dlist
+				if (nextElement == NULL) {
+					if (prevElement != NULL) prevElement->next = NULL;
+					dlist->end = prevElement;
 				}
-			}
-
-			list_element_delete (old);
-			dlist->size--;
-
-			if (dlist->size == 0) {
-				dlist->start = NULL;
-				dlist->end = NULL;
 			}
 		}
 
-		return data;
+		list_element_delete (old);
+		dlist->size--;
+
+		if (dlist->size == 0) {
+			dlist->start = NULL;
+			dlist->end = NULL;
+		}
 	}
 
-	return NULL;
+	return data;
 
 }
 
 static void dlist_internal_delete (DoubleList *dlist) {
 
-	if (dlist) {
-		if (dlist->size > 0) {
-			void *data = NULL;
-
-			while (dlist->size > 0) {
-				data = dlist_internal_remove_element (dlist, NULL);
-				if (data) {
-					if (dlist->destroy) dlist->destroy (data);
-					else free (data);
-				}
-			}
+	void *data = NULL;
+	while (dlist->size > 0) {
+		data = dlist_internal_remove_element (dlist, NULL);
+		if (data) {
+			if (dlist->destroy) dlist->destroy (data);
 		}
 	}
 
@@ -337,35 +398,27 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *da
 	if (dlist && data) {
 		pthread_mutex_lock (dlist->mutex);
 
-		ListElement *le = list_element_new ();
-		if (le) {
-			le->data = (void *) data;
-
-			if (element == NULL) {
-				if (dlist->size == 0) dlist->end = le;
-				else dlist->start->prev = le;
-			
-				le->next = dlist->start;
-				le->prev = NULL;
-				dlist->start = le;
-			}
-
-			else {
-				element->prev->next = le;
-				le->next = element;
-				le->prev = element->prev;
-				element->prev = le;
-			}
-
-			dlist->size++;
-
-			retval = 0;
-		}
+		retval = dlist_internal_insert_before (
+			dlist, element, data
+		);
 
 		pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
+
+}
+
+// works as dlist_insert_before ()
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_before_unsafe (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	return (dlist && data) ? dlist_internal_insert_before (
+		dlist, element, data
+	) : 1;
 
 }
 
@@ -379,36 +432,89 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 	if (dlist && data) {
 		pthread_mutex_lock (dlist->mutex);
 
-		ListElement *le = list_element_new ();
-		if (le) {
-			le->data = (void *) data;
-
-			if (element == NULL) {
-				if (dlist->size == 0) dlist->end = le;
-				else dlist->start->prev = le;
-			
-				le->next = dlist->start;
-				le->prev = NULL;
-				dlist->start = le;
-			}
-
-			else {
-				if (element->next == NULL) dlist->end = le;
-
-				le->next = element->next;
-				le->prev = element;
-				element->next = le;
-			}
-
-			dlist->size++;
-
-			retval = 0;
-		}
+		retval = dlist_internal_insert_after (
+			dlist, element, data
+		);
 
 		pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
+
+}
+
+// works as dlist_insert_after ()
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_after_unsafe (
+	DoubleList *dlist, ListElement *element, const void *data
+) {
+
+	return (dlist && data) ? dlist_internal_insert_after (
+		dlist, element, data
+	) : 1;
+
+}
+
+// inserts at the start of the dlist, before the first element
+// returns 0 on success, 1 on error
+int dlist_insert_at_start (DoubleList *dlist, const void *data) {
+
+	int retval = 1;
+
+	if (dlist && data) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_before (
+			dlist, dlist->start, data
+		);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+// inserts at the start of the dlist, before the first element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_at_start_unsafe (DoubleList *dlist, const void *data) {
+
+	return (dlist && data) ? dlist_internal_insert_before (
+		dlist, dlist->start, data
+	) : 1;
+
+}
+
+// inserts at the end of the dlist, after the last element
+// returns 0 on success, 1 on error
+int dlist_insert_at_end (DoubleList *dlist, const void *data) {
+
+	int retval = 1;
+
+	if (dlist && data) {
+		pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_after (
+			dlist, dlist->end, data
+		);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+// inserts at the end of the dlist, after the last element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_at_end_unsafe (DoubleList *dlist, const void *data) {
+
+	return (dlist && data) ? dlist_internal_insert_after (
+		dlist, dlist->end, data
+	) : 1;
 
 }
 
@@ -450,7 +556,10 @@ int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos
 // finds the data using the query and the list comparator and the removes it from the list
 // and returns the list element's data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(const void *one, const void *two)) {
+void *dlist_remove (
+	DoubleList *dlist,
+	const void *query, int (*compare)(const void *one, const void *two)
+) {
 
 	void *retval = NULL;
 
@@ -495,17 +604,77 @@ void *dlist_remove (DoubleList *dlist, const void *query, int (*compare)(const v
 // NULL for the start of the list
 void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
 
+	void *data = NULL;
+
 	if (dlist) {
 		pthread_mutex_lock (dlist->mutex);
 
-		void *data = dlist_internal_remove_element (dlist, element);
+		data = dlist_internal_remove_element (dlist, element);
 
 		pthread_mutex_unlock (dlist->mutex);
-
-		return data;
 	}
 
-	return NULL;
+	return data;
+
+}
+
+// works as dlist_remove_element ()
+// this method is NOT thread safe
+void *dlist_remove_element_unsafe (DoubleList *dlist, ListElement *element) {
+
+	return dlist ? dlist_internal_remove_element (dlist, element) : NULL;
+
+}
+
+// removes the element at the start of the dlist
+// returns the element's data
+void *dlist_remove_start (DoubleList *dlist) {
+
+	void *data = NULL;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		data = dlist_internal_remove_element (dlist, NULL);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return data;
+
+}
+
+// works as dlist_remove_start ()
+// this method is NOT thread safe
+void *dlist_remove_start_unsafe (DoubleList *dlist) {
+
+	return dlist ? dlist_internal_remove_element (dlist, NULL) : NULL;
+
+}
+
+// removes the element at the end of the dlist
+// returns the element's data
+void *dlist_remove_end (DoubleList *dlist) {
+
+	void *data = NULL;
+
+	if (dlist) {
+		pthread_mutex_lock (dlist->mutex);
+
+		data = dlist_internal_remove_element (dlist, dlist->end);
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return data;
+
+}
+
+// works as dlist_remove_end ()
+// this method is NOT thread safe
+void *dlist_remove_end_unsafe (DoubleList *dlist) {
+
+	return dlist ? dlist_internal_remove_element (dlist, dlist->end) : NULL;
 
 }
 
@@ -553,7 +722,10 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
 // returns 0 on success, 1 on error
-int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_data, void *method_args), void *method_args) {
+int dlist_traverse (
+	const DoubleList *dlist,
+	void (*method)(void *list_element_data, void *method_args), void *method_args
+) {
 
 	int retval = 1;
 
@@ -576,7 +748,11 @@ int dlist_traverse (const DoubleList *dlist, void (*method)(void *list_element_d
 // uses the list comparator to search using the data as the query
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // returns the double list's element data
-void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(const void *one, const void *two)) {
+void *dlist_search (
+	const DoubleList *dlist,
+	const void *data,
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
@@ -597,8 +773,10 @@ void *dlist_search (const DoubleList *dlist, const void *data, int (*compare)(co
 
 // searches the dlist and returns the dlist element associated with the data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
-ListElement *dlist_get_element (const DoubleList *dlist, const void *data, 
-	int (*compare)(const void *one, const void *two)) {
+ListElement *dlist_get_element (
+	const DoubleList *dlist, const void *data, 
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
@@ -670,8 +848,10 @@ static ListElement *dllist_split (ListElement *head) {
 }  
 
 // Function to merge two linked lists 
-static ListElement *dllist_merge (int (*compare)(const void *one, const void *two), 
-	ListElement *first, ListElement *second)  { 
+static ListElement *dllist_merge (
+	int (*compare)(const void *one, const void *two), 
+	ListElement *first, ListElement *second
+) {
 
 	// If first linked dlist is empty 
 	if (!first) return second; 
@@ -697,8 +877,10 @@ static ListElement *dllist_merge (int (*compare)(const void *one, const void *tw
 } 
 
 // merge sort
-static ListElement *dlist_merge_sort (ListElement *head, 
-	int (*compare)(const void *one, const void *two)) {
+static ListElement *dlist_merge_sort (
+	ListElement *head, 
+	int (*compare)(const void *one, const void *two)
+) {
 
 	if (!head || !head->next) return head;
 
@@ -801,7 +983,9 @@ DoubleList *dlist_copy (const DoubleList *dlist) {
 	// and should return the same structure type as the original method that can be safely deleted
 	// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
-DoubleList *dlist_clone (const DoubleList *dlist, void *(*clone) (const void *original)) {
+DoubleList *dlist_clone (
+	const DoubleList *dlist, void *(*clone) (const void *original)
+) {
 
 	DoubleList *dlist_clone = NULL;
 
