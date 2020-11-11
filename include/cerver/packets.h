@@ -74,6 +74,9 @@ CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 
 #pragma region types
 
+#define PACKETS_MAX_TYPES					16
+#define PACKETS_CURRENT_TYPES				10
+
 #define PACKET_TYPE_MAP(XX)					\
 	XX(0, 	NONE)							\
 	XX(1, 	CERVER)							\
@@ -85,7 +88,8 @@ CERVER_PUBLIC void packet_version_print (PacketVersion *version);
 	XX(7, 	APP)							\
 	XX(8, 	APP_ERROR)						\
 	XX(9, 	CUSTOM)							\
-	XX(10, 	TEST)
+	XX(10, 	TEST)							\
+	XX(11, 	BAD)
 
 // these indicate what type of packet we are sending/recieving
 typedef enum PacketType {
@@ -121,6 +125,8 @@ CERVER_PUBLIC PacketsPerType *packets_per_type_new (void);
 CERVER_PUBLIC void packets_per_type_delete (void *ptr);
 
 CERVER_PUBLIC void packets_per_type_print (PacketsPerType *packets_per_type);
+
+CERVER_PUBLIC void packets_per_type_array_print (u64 packets[PACKETS_MAX_TYPES]);
 
 #pragma endregion
 
@@ -387,6 +393,16 @@ CERVER_EXPORT u8 packet_send_pieces (
 CERVER_EXPORT u8 packet_send_to_socket (
 	const Packet *packet,
 	struct _Socket *socket, int flags, size_t *total_sent, bool raw
+);
+
+// routes a packet from one connection's sock fd to another connection's sock fd
+// the header is sent first and then the packet's body (if any) is handled directly between fds
+// by calling the splice method using a pipe as the middleman
+// this method is thread safe, since it will block the socket until the entire packet has been routed
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_route_between_connections (
+	struct _Connection *from, struct _Connection *to,
+	PacketHeader *header, size_t *sent
 );
 
 // check if packet has a compatible protocol id and a version
