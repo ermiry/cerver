@@ -6,6 +6,8 @@
 #include <errno.h>
 #endif
 
+#include <fcntl.h>
+
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -105,6 +107,22 @@ void packets_per_type_print (PacketsPerType *packets_per_type) {
 		cerver_log_msg ("Unknown:           %ld", packets_per_type->n_unknown_packets);
 		cerver_log_msg ("Bad:               %ld", packets_per_type->n_bad_packets);
 	}
+
+}
+
+void packets_per_type_array_print (u64 packets[PACKETS_MAX_TYPES]) {
+
+	cerver_log_msg ("\tCerver:              %ld", packets[PACKET_TYPE_CERVER]);
+	cerver_log_msg ("\tClient:              %ld", packets[PACKET_TYPE_CLIENT]);
+	cerver_log_msg ("\tError:               %ld", packets[PACKET_TYPE_ERROR]);
+	cerver_log_msg ("\tRequest:             %ld", packets[PACKET_TYPE_REQUEST]);
+	cerver_log_msg ("\tAuth:                %ld", packets[PACKET_TYPE_AUTH]);
+	cerver_log_msg ("\tGame:                %ld", packets[PACKET_TYPE_GAME]);
+	cerver_log_msg ("\tApp:                 %ld", packets[PACKET_TYPE_APP]);
+	cerver_log_msg ("\tApp Error:           %ld", packets[PACKET_TYPE_APP_ERROR]);
+	cerver_log_msg ("\tCustom:              %ld", packets[PACKET_TYPE_CUSTOM]);
+	cerver_log_msg ("\tTest:                %ld", packets[PACKET_TYPE_TEST]);
+	cerver_log_msg ("\tBad:                 %ld", packets[PACKET_TYPE_BAD]);
 
 }
 
@@ -653,13 +671,17 @@ static void packet_send_update_stats (
 		cerver->stats->total_bytes_sent += sent;
 	}
 
+	#ifdef CLIENT_STATS
 	if (client) {
 		client->stats->n_packets_sent += 1;
 		client->stats->total_bytes_sent += sent;
 	}
+	#endif
 
+	#ifdef CONNECTION_STATS
 	connection->stats->n_packets_sent += 1;
 	connection->stats->total_bytes_sent += sent;
+	#endif
 
 	if (lobby) {
 		lobby->stats->n_packets_sent += 1;
@@ -671,78 +693,122 @@ static void packet_send_update_stats (
 
 		case PACKET_TYPE_CERVER:
 			if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_cerver_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_cerver_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
 			break;
 
 		case PACKET_TYPE_CLIENT:
 			if (cerver) cerver->stats->sent_packets->n_client_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_client_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_client_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
 			break;
 
 		case PACKET_TYPE_ERROR:
 			if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_error_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_error_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
 			break;
 
 		case PACKET_TYPE_REQUEST:
 			if (cerver) cerver->stats->sent_packets->n_request_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_request_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_request_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
 			break;
 
 		case PACKET_TYPE_AUTH:
 			if (cerver) cerver->stats->sent_packets->n_auth_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_auth_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_auth_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
 			break;
 
 		case PACKET_TYPE_GAME:
 			if (cerver) cerver->stats->sent_packets->n_game_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_game_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_game_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
 			break;
 
 		case PACKET_TYPE_APP:
 			if (cerver) cerver->stats->sent_packets->n_app_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
 			if (cerver) cerver->stats->sent_packets->n_app_error_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_error_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_error_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
 			break;
 
 		case PACKET_TYPE_CUSTOM:
 			if (cerver) cerver->stats->sent_packets->n_custom_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_custom_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_custom_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
 			break;
 
 		case PACKET_TYPE_TEST:
 			if (cerver) cerver->stats->sent_packets->n_test_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_test_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_test_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
 			break;
 
 		default:
 			if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
+			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_unknown_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_unknown_packets += 1;
+			#endif
 			if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
 			break;
 	}
@@ -764,7 +830,7 @@ static inline u8 packet_send_internal (
 				size_t sent = 0;
 
 				if (!(split ? packet_send_split_tcp (packet, connection, flags, &sent)
-					: unsafe ? packet_send_tcp_actual (packet, connection, flags, &sent, raw)
+					: unsafe ? packet_send_tcp_actual (packet, connection, flags, &sent, raw) 
 						: packet_send_tcp (packet, connection, flags, &sent, raw))
 				) {
 					if (total_sent) *total_sent = sent;
@@ -809,7 +875,8 @@ static inline u8 packet_send_internal (
 u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		raw, false, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -822,7 +889,8 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		raw, false, true,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -841,7 +909,8 @@ u8 packet_send_to (
 ) {
 
 	return packet_send_internal (
-		packet, 0, total_sent,
+		packet,
+		0, total_sent,
 		raw, false, false,
 		cerver, client, connection, lobby
 	);
@@ -857,7 +926,8 @@ u8 packet_send_to (
 u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
 
 	return packet_send_internal (
-		packet, flags, total_sent,
+		packet,
+		flags, total_sent,
 		false, true, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
@@ -874,7 +944,8 @@ u8 packet_send_to_split (
 ) {
 
 	return packet_send_internal (
-		packet, 0, total_sent,
+		packet,
+		0, total_sent,
 		false, true, false,
 		cerver, client, connection, lobby
 	);
@@ -991,6 +1062,153 @@ u8 packet_send_to_socket (
 		if (total_sent) *total_sent = (size_t) sent;
 
 		pthread_mutex_unlock (socket->write_mutex);
+	}
+
+	return retval;
+
+}
+
+static inline u8 packet_route_between_connections_receive (
+	int from_fd, int pipefd, int buff_size,
+	ssize_t *received
+) {
+
+	u8 retval = 1;
+
+	*received = splice (
+		from_fd, NULL,
+		pipefd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*received) {
+		case -1: {
+			#ifdef PACKETS_DEBUG
+			perror ("packet_route_between_connections_receive () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef PACKETS_DEBUG
+			perror ("packet_route_between_connections_receive () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef PACKETS_DEBUG
+			cerver_log_debug ("packet_route_between_connections_receive () - spliced %ld bytes", *received);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+
+static inline u8 packet_route_between_connections_move (
+	int pipefd, int to_fd, int buff_size,
+	ssize_t *moved
+) {
+
+	u8 retval = 1;
+
+	*moved = splice (
+		pipefd, NULL,
+		to_fd, NULL,
+		buff_size,
+		SPLICE_F_MOVE | SPLICE_F_MORE
+	);
+
+	switch (*moved) {
+		case -1: {
+			#ifdef PACKETS_DEBUG
+			perror ("packet_route_between_connections_move () - splice () = -1");
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef PACKETS_DEBUG
+			perror ("packet_route_between_connections_move () - splice () = 0");
+			#endif
+		} break;
+
+		default: {
+			#ifdef PACKETS_DEBUG
+			cerver_log_debug ("packet_route_between_connections_move () - spliced %ld bytes", *moved);
+			#endif
+
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+// routes a packet from one connection's sock fd to another connection's sock fd
+// the header is sent first and then the packet's body (if any) is handled directly between fds
+// by calling the splice method using a pipe as the middleman
+// this method is thread safe, since it will block the socket until the entire packet has been routed
+// returns 0 on success, 1 on error
+u8 packet_route_between_connections (
+	Connection *from, Connection *to,
+	PacketHeader *header, size_t *sent
+) {
+
+	u8 retval = 1;
+
+	if (from && to && header) {
+		pthread_mutex_lock (to->socket->write_mutex);
+
+		// first send the header
+		ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
+		if (s > 0) {
+			size_t left = header->packet_size - sizeof (PacketHeader);
+			if (left) {
+				int pipefds[2] = { 0 };
+				if (!pipe (pipefds)) {
+					ssize_t received = 0;
+					ssize_t moved = 0;
+					size_t buff_size = 4096;
+					while (left > 0) {
+						if (buff_size > left) buff_size = left;
+
+						if (packet_route_between_connections_receive (from->socket->sock_fd, pipefds[1], buff_size, &received)) break;
+
+						if (packet_route_between_connections_move (pipefds[0], to->socket->sock_fd, buff_size, &moved)) break;
+
+						if (sent) *sent += moved;
+
+						left -= buff_size;
+					}
+
+					// we are done!
+					if (left <= 0) retval = 0;
+
+					close (pipefds[0]);
+					close (pipefds[1]);
+				}
+
+				else {
+					#ifdef PACKETS_DEBUG
+					cerver_log_error ("packet_route_between_connections () - pipe () failed!");
+					perror ("Error");
+					#endif
+				}
+			}
+
+			else {
+				// we are done
+				if (sent) *sent = s;
+				retval = 0;
+			}
+		}
+
+		pthread_mutex_unlock (to->socket->write_mutex);
 	}
 
 	return retval;

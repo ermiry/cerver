@@ -92,7 +92,12 @@ struct _Connection {
 	Action received_data_delete;
 
 	bool receive_packets;                   		// set if the connection will receive packets or not (default true)
-	delegate custom_receive;                		// custom receive method to handle incomming packets in the connection
+	
+	// custom receive method to handle incomming packets in the connection
+	u8 (*custom_receive) (
+		void *custom_data_ptr,
+		char *buffer, const size_t buffer_size
+	);
 	void *custom_receive_args;              		// arguments to be passed to the custom receive method
 	void (*custom_receive_args_delete)(void *);		// method to delete the arguments when the connection gets deleted
 
@@ -168,12 +173,15 @@ typedef struct ConnectionCustomReceiveData {
 } ConnectionCustomReceiveData;
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as ClientConnection structure
+// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 CERVER_PUBLIC void connection_set_custom_receive (
-	Connection *connection,
-	delegate custom_receive,
+	Connection *connection, 
+	u8 (*custom_receive) (
+		void *custom_data_ptr,
+		char *buffer, const size_t buffer_size
+	),
 	void *args, void (*args_delete)(void *)
 );
 

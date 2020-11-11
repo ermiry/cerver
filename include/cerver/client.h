@@ -617,7 +617,16 @@ CERVER_EXPORT u8 client_file_send (Client *client, struct _Connection *connectio
 
 /*** update ***/
 
-// receives incoming data from the socket
+// receive data from connection's socket
+// this method does not perform any checks and expects a valid buffer
+// to handle incomming data
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int client_receive_internal (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+);
+
+// allocates a new packet buffer to receive incoming data from the connection's socket
 // returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
 CERVER_PUBLIC unsigned int client_receive (Client *client, struct _Connection *connection);
 

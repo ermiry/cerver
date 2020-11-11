@@ -9,13 +9,14 @@ OPENSSL		:= -l ssl -l crypto
 DEFINES		:= -D _GNU_SOURCE
 
 DEVELOPMENT	:= -g \
-				-D CERVER_DEBUG -D CERVER_STATS \
-				-D CLIENT_DEBUG					\
-				-D HANDLER_DEBUG 				\
-				-D PACKETS_DEBUG 				\
-				-D AUTH_DEBUG 					\
-				-D ADMIN_DEBUG					\
-				-D FILES_DEBUG					\
+				-D CERVER_DEBUG -D CERVER_STATS 			\
+				-D CLIENT_DEBUG -D CLIENT_STATS 			\
+				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
+				-D HANDLER_DEBUG 							\
+				-D PACKETS_DEBUG 							\
+				-D AUTH_DEBUG 								\
+				-D ADMIN_DEBUG								\
+				-D FILES_DEBUG								\
 				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG
 
 CC          := gcc
