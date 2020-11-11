@@ -566,6 +566,23 @@ void cerver_log_debug (const char *msg, ...) {
 
 }
 
+// prints a line break, equivalent to printf ("\n")
+void cerver_log_line_break (void) {
+
+	switch (log_output_type) {
+		case LOG_OUTPUT_TYPE_STD: (void) fprintf (stdout, "\n"); break;
+		case LOG_OUTPUT_TYPE_FILE: (void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n"); break;
+
+		case LOG_OUTPUT_TYPE_BOTH:
+			(void) fprintf (stdout, "\n");
+			(void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n");
+			break;
+
+		default: break;
+	}
+
+}
+
 #pragma endregion
 
 #pragma region main
