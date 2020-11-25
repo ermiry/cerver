@@ -38,14 +38,16 @@ typedef enum HandlerType {
 } HandlerType;
 
 // the strcuture that will be passed to the handler
-typedef struct HandlerData {
+struct _HandlerData {
 
 	int handler_id;
 
 	void *data;                     // handler's own data
 	struct _Packet *packet;         // the packet to handle
 
-} HandlerData;
+};
+
+typedef struct _HandlerData HandlerData;
 
 struct _Handler {
 
@@ -164,7 +166,7 @@ CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
 // the default timeout when handling a connection in dedicated thread
 #define DEFAULT_SOCKET_RECV_TIMEOUT         5
 
-typedef struct ReceiveHandle {
+struct _ReceiveHandle {
 
 	ReceiveType type;
 
@@ -180,14 +182,16 @@ typedef struct ReceiveHandle {
 	char *buffer;
 	size_t buffer_size;
 
-} ReceiveHandle;
+};
+
+typedef struct _ReceiveHandle ReceiveHandle;
 
 CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
 
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (void *receive_ptr);
 
-typedef struct CerverReceive {
+struct _CerverReceive {
 
 	ReceiveType type;
 
@@ -200,11 +204,15 @@ typedef struct CerverReceive {
 
 	struct _Lobby *lobby;
 
-} CerverReceive;
+};
+
+typedef struct _CerverReceive CerverReceive;
 
 CERVER_PRIVATE void cerver_receive_delete (void *ptr);
 
-CERVER_PRIVATE CerverReceive *cerver_receive_create (ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd);
+CERVER_PRIVATE CerverReceive *cerver_receive_create (
+	ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd
+);
 
 CERVER_PRIVATE CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
 	struct _Cerver *cerver,
@@ -228,20 +236,28 @@ CERVER_PRIVATE u8 cerver_realloc_main_poll_fds (struct _Cerver *cerver);
 CERVER_PRIVATE i32 cerver_poll_get_free_idx (struct _Cerver *cerver);
 
 // get the idx of the connection sock fd in the cerver poll fds
-CERVER_PRIVATE i32 cerver_poll_get_idx_by_sock_fd (struct _Cerver *cerver, i32 sock_fd);
+CERVER_PRIVATE i32 cerver_poll_get_idx_by_sock_fd (
+	struct _Cerver *cerver, i32 sock_fd
+);
 
 // regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 cerver_poll_register_connection (struct _Cerver *cerver, struct _Connection *connection);
+CERVER_PRIVATE u8 cerver_poll_register_connection (
+	struct _Cerver *cerver, struct _Connection *connection
+);
 
 // removes a sock fd from the cerver's main poll array
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 cerver_poll_unregister_sock_fd (struct _Cerver *cerver, const i32 sock_fd);
+CERVER_PRIVATE u8 cerver_poll_unregister_sock_fd (
+	struct _Cerver *cerver, const i32 sock_fd
+);
 
 // unregsiters a client connection from the cerver's main poll structure
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 cerver_poll_unregister_connection (struct _Cerver *cerver, struct _Connection *connection);
+CERVER_PRIVATE u8 cerver_poll_unregister_connection (
+	struct _Cerver *cerver, struct _Connection *connection
+);
 
 // server poll loop to handle events in the registered socket's fds
 CERVER_PRIVATE u8 cerver_poll (struct _Cerver *cerver);
