@@ -231,7 +231,7 @@ void c_string_remove_spaces (char *s) {
 		while (*d == ' ') {
 			++d;
 		}
-	} while (*s++ = *d++);
+	} while ((*s++ = *d++));
 
 }
 
