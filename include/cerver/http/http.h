@@ -61,9 +61,13 @@ CERVER_PUBLIC KeyValuePair *key_value_pair_new (void);
 
 CERVER_PUBLIC void key_value_pair_delete (void *kvp_ptr);
 
-CERVER_PUBLIC KeyValuePair *key_value_pair_create (const char *key, const char *value);
+CERVER_PUBLIC KeyValuePair *key_value_pair_create (
+	const char *key, const char *value
+);
 
-CERVER_PUBLIC const String *key_value_pairs_get_value (DoubleList *pairs, const char *key);
+CERVER_PUBLIC const String *key_value_pairs_get_value (
+	DoubleList *pairs, const char *key
+);
 
 CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
 
@@ -82,11 +86,16 @@ struct _HttpCerver {
 	DoubleList *routes;
 
 	// catch all route (/*)
-	void (*default_handler)(CerverReceive *cr, HttpRequest *request);
+	void (*default_handler)(CerverReceive *, HttpRequest *);
 
 	// uploads
 	String *uploads_path;              // default uploads path
-	String *(*uploads_dirname_generator)(CerverReceive *cr);
+	void (*uploads_filename_generator)(
+		const CerverReceive *,
+		const char *original_filename,
+		char *generated_filename
+	);
+	String *(*uploads_dirname_generator)(const CerverReceive *);
 
 	// auth
 	jwt_alg_t jwt_alg;
@@ -167,10 +176,24 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 	HttpCerver *http_cerver, const char *uploads_path
 );
 
+// sets a method that should generate a c string to be used
+// to save each incoming file of any multipart request
+// the new filename should be placed in generated_filename
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+extern void http_cerver_set_uploads_filename_generator (
+	HttpCerver *http_cerver,
+	void (*uploads_filename_generator)(
+		const CerverReceive *,
+		const char *original_filename,
+		char *generated_filename
+	)
+);
+
 // sets a method to be called on every new request & that will be used to generate a new directory
 // inside the uploads path to save all the files from each request
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
-	HttpCerver *http_cerver, String *(*dirname_generator)(CerverReceive *)
+	HttpCerver *http_cerver,
+	String *(*dirname_generator)(const CerverReceive *)
 );
 
 #pragma endregion
@@ -242,14 +265,14 @@ CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
 
 #pragma region handler
 
-typedef struct HttpReceive {
+struct _HttpReceive {
 
 	CerverReceive *cr;
 
 	// keep connection alive - don't close after request has ended
 	bool keep_alive;
 
-	void (*handler)(struct HttpReceive *, ssize_t, char *);
+	void (*handler)(struct _HttpReceive *, ssize_t, char *);
 
 	HttpCerver *http_cerver;
 
@@ -272,7 +295,9 @@ typedef struct HttpReceive {
 	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, const size_t msg_len);
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
-} HttpReceive;
+};
+
+typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 

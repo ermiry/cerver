@@ -506,10 +506,30 @@ void http_cerver_set_uploads_path (
 
 }
 
+// sets a method that should generate a c string to be used
+// to save each incoming file of any multipart request
+// the new filename should be placed in generated_filename
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+void http_cerver_set_uploads_filename_generator (
+	HttpCerver *http_cerver,
+	void (*uploads_filename_generator)(
+		const CerverReceive *,
+		const char *original_filename,
+		char *generated_filename
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_filename_generator = uploads_filename_generator;
+	}
+
+}
+
 // sets a method to be called on every new request & that will be used to generate a new directory
 // inside the uploads path to save all the files from each request
 void http_cerver_set_uploads_dirname_generator (
-	HttpCerver *http_cerver, String *(*dirname_generator)(CerverReceive *)
+	HttpCerver *http_cerver,
+	String *(*dirname_generator)(const CerverReceive *)
 ) {
 
 	if (http_cerver) {
@@ -1128,22 +1148,57 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				if (http_receive->http_cerver->uploads_path) {
 					if (http_receive->request->dirname) {
-						(void) snprintf (
-							multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
-							"%s/%s/%s",
-							http_receive->http_cerver->uploads_path->str,
-							http_receive->request->dirname->str,
-							multi_part->filename
-						);
+						if (http_receive->http_cerver->uploads_filename_generator) {
+							http_receive->http_cerver->uploads_filename_generator (
+								http_receive->cr,
+								multi_part->filename,
+								multi_part->generated_filename
+							);
+
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								http_receive->request->dirname->str,
+								multi_part->generated_filename
+							);
+						}
+
+						else {
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								http_receive->request->dirname->str,
+								multi_part->filename
+							);
+						}
 					}
 
 					else {
-						(void) snprintf (
-							multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
-							"%s/%s",
-							http_receive->http_cerver->uploads_path->str,
-							multi_part->filename
-						);
+						if (http_receive->http_cerver->uploads_filename_generator) {
+							http_receive->http_cerver->uploads_filename_generator (
+								http_receive->cr,
+								multi_part->filename,
+								multi_part->generated_filename
+							);
+
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								multi_part->generated_filename
+							);
+						}
+
+						else {
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								multi_part->filename
+							);
+						}
 					}
 
 					multi_part->fd = open (multi_part->saved_filename, O_CREAT | O_WRONLY, 0777);
