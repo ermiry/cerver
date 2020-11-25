@@ -666,8 +666,13 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 		cerver_log_msg ("\t%s:", route->route->str);
 		
 		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-			if (route->handlers[i]) 
-				cerver_log_msg ("\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), route->n_requests[i]);
+			if (route->handlers[i]) {
+				cerver_log_msg (
+					"\t\t%s\t%ld",
+					http_request_method_str ((RequestMethod) i),
+					route->stats[i].n_requests
+				);
+			}
 		}
 
 		if (route->children->size) {
@@ -680,8 +685,13 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 				cerver_log_msg ("\t\t%s:", child->actual->str);
 
 				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-					if (child->handlers[i]) 
-						cerver_log_msg ("\t\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), child->n_requests[i]);
+					if (child->handlers[i]) {
+						cerver_log_msg (
+							"\t\t\t%s\t%ld",
+							http_request_method_str ((RequestMethod) i),
+							child->stats[i].n_requests
+						);
+					}
 				}
 			}
 		}
@@ -1528,7 +1538,7 @@ static void http_receive_handle_match (
 					break;
 			}
 
-			found->n_requests[request->method] += 1;
+			found->stats[request->method].n_requests += 1;
 		}
 
 		else {

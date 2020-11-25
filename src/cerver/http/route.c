@@ -81,7 +81,6 @@ HttpRoute *http_route_new (void) {
 
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
-			route->n_requests[i] = 0;
 		}
 
 		route->ws_on_open = NULL;
@@ -90,6 +89,10 @@ HttpRoute *http_route_new (void) {
 		route->ws_on_pong = NULL;
 		route->ws_on_message = NULL;
 		route->ws_on_error = NULL;
+
+		(void) memset (
+			route->stats, 0, sizeof (HttpRouteStats) * HTTP_HANDLERS_COUNT
+		);
 	}
 
 	return route;

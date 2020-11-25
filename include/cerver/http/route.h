@@ -31,18 +31,42 @@ typedef enum HttpRouteAuthType {
 
 } HttpRouteAuthType;
 
-typedef struct HttpRoutesTokens {
+struct _HttpRoutesTokens {
 
 	unsigned int id;
 	unsigned int n_routes;
 	struct _HttpRoute **routes;
 	char ***tokens;
 
-} HttpRoutesTokens;
+};
+
+typedef struct _HttpRoutesTokens HttpRoutesTokens;
 
 #define HTTP_HANDLERS_COUNT					5
 
 typedef void (*HttpHandler)(CerverReceive *cr, HttpRequest *request);
+
+struct _HttpRouteStats {
+
+	size_t n_requests;
+
+	double min_process_time;
+	double max_process_time;
+	double mean_process_time;
+
+	size_t n_uploaded_files;
+
+	size_t min_n_files;
+	size_t max_n_files;
+	double mean_n_files;
+
+	size_t min_file_size;
+	size_t max_file_size;
+	double mean_file_size;
+
+};
+
+typedef struct _HttpRouteStats HttpRouteStats;
 
 struct _HttpRoute {
 
@@ -76,7 +100,7 @@ struct _HttpRoute {
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 	// stats
-	size_t n_requests[HTTP_HANDLERS_COUNT];
+	HttpRouteStats stats[HTTP_HANDLERS_COUNT];
 
 };
 
