@@ -1111,50 +1111,58 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			// key_value_pairs_print (multi_part->params);
 
 			multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
-			multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			// multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			const String *original_filename = key_value_pairs_get_value (
+				multi_part->params, "filename"
+			);
 
-			if (multi_part->filename) {
+			if (original_filename) {
+				// sanitize file
+				(void) strncpy (
+					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
+				);
+
+				files_sanitize_filename (multi_part->filename);
+
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path) {
-					char *filename = NULL;
-
 					if (http_receive->request->dirname) {
-						filename = c_string_create (
+						(void) snprintf (
+							multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 							"%s/%s/%s",
 							http_receive->http_cerver->uploads_path->str,
 							http_receive->request->dirname->str,
-							multi_part->filename->str
+							multi_part->filename
 						);
 					}
 
 					else {
-						filename = c_string_create (
-							"%s/%s", 
-							http_receive->http_cerver->uploads_path->str, multi_part->filename->str
+						(void) snprintf (
+							multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							"%s/%s",
+							http_receive->http_cerver->uploads_path->str,
+							multi_part->filename
 						);
 					}
 
-					multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
+					multi_part->fd = open (multi_part->saved_filename, O_CREAT | O_WRONLY, 0777);
 					switch (multi_part->fd) {
 						case -1: {
 							cerver_log_error (
 								"Failed to open %s filename to save multipart file!",
-								filename
+								multi_part->saved_filename
 							);
 							perror ("Error");
-
-							free (filename);
 						} break;
 
 						default: {
 							#ifdef HTTP_MPART_DEBUG
-							cerver_log_debug ("Opened %s to save multipart file!", filename);
+							cerver_log_debug (
+								"Opened %s to save multipart file!",
+								multi_part->saved_filename
+							);
 							#endif
-
-							multi_part->saved_filename = str_new (NULL);
-							multi_part->saved_filename->str = filename;
-							multi_part->saved_filename->len = strlen (filename);
 						} break;
 					}
 				}
@@ -1746,8 +1754,13 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 					if (http_receive->http_cerver->uploads_path) {
 						http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
 						char dirname[512] = { 0 };
-						snprintf (dirname, 512, "%s/%s", http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str);
-						files_create_dir (dirname, 0777);
+						(void) snprintf (
+							dirname, 512,
+							"%s/%s",
+							http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str
+						);
+
+						(void) files_create_dir (dirname, 0777);
 					}
 				}
 
