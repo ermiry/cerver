@@ -60,9 +60,46 @@ void upload_handler (CerverReceive *cr, HttpRequest *request) {
 
 	http_request_multi_parts_print (request);
 
-	const String *key = http_request_multi_parts_get_value (request, "key");
-	if (strcmp (key->str, "value")) {
+	const char *filename = http_request_multi_parts_get_filename (
+		request, "file"
+	);
 
+	if (filename) (void) printf ("filename: %s\n", filename);
+
+	const char *saved_filename = http_request_multi_parts_get_saved_filename (
+		request, "file"
+	);
+
+	if (saved_filename) (void) printf ("saved filename: %s\n", saved_filename);
+
+	DoubleList *all_filenames = http_request_multi_parts_get_all_filenames (request);
+	if (all_filenames) {
+		(void) printf ("\nAll filenames: \n");
+		int count = 0;
+		char *filename = NULL;
+		for (ListElement *le = dlist_start (all_filenames); le; le = le->next) {
+			filename = (char *) le->data;
+
+			(void) printf ("[%d]: %s\n", count, filename);
+			count += 1;
+		}
+
+		http_request_multi_parts_all_filenames_delete (all_filenames);
+	}
+
+	DoubleList *all_saved_filenames = http_request_multi_parts_get_all_saved_filenames (request);
+	if (all_saved_filenames) {
+		(void) printf ("\nAll saved filenames: \n");
+		int count = 0;
+		char *filename = NULL;
+		for (ListElement *le = dlist_start (all_saved_filenames); le; le = le->next) {
+			filename = (char *) le->data;
+
+			(void) printf ("[%d]: %s\n", count, filename);
+			count += 1;
+		}
+
+		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
 	}
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Upload route works!");
@@ -103,12 +140,30 @@ void discard_handler (CerverReceive *cr, HttpRequest *request) {
 
 #pragma region start
 
+void custom_uploads_filename_generator (
+	const CerverReceive *cr,
+	const char *original_filename,
+	char *generated_filename
+) {
+
+	(void) snprintf (
+		generated_filename, HTTP_MULTI_PART_GENERATED_FILENAME_LEN,
+		"%d-%ld-%s",
+		cr->connection->socket->sock_fd,
+		time (NULL),
+		original_filename
+	);
+
+}
+
 int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
 	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
@@ -131,6 +186,15 @@ int main (int argc, char **argv) {
 
 		(void) files_create_dir ("uploads", 0777);
 		http_cerver_set_uploads_path (http_cerver, "uploads");
+
+		http_cerver_set_uploads_filename_generator (
+			http_cerver, custom_uploads_filename_generator
+		);
+
+		// char filename[256] = { "\n p2'\nr-o@g_ram \t84iz./te{st_20191\n11814}233\n3030>.png\n" };
+		// (void) printf ("\nTesting filename sanitize method: \n");
+		// files_sanitize_filename (filename);
+		// (void) printf ("Filename: <%s>\n\n", filename);
 
 		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);

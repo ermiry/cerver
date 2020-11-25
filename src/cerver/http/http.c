@@ -142,12 +142,12 @@ static KeyValuePair *key_value_pair_create_pieces (
 			kvp->key = str_new (NULL);
 			kvp->key->len = key_after - key_first;
 			kvp->key->str = (char *) calloc (kvp->key->len + 1, sizeof (char));
-			memcpy (kvp->key->str, key_first, kvp->key->len);
+			(void) memcpy (kvp->key->str, key_first, kvp->key->len);
 
 			kvp->value = str_new (NULL);
 			kvp->value->len = value_after - value_first;
 			kvp->value->str = (char *) calloc (kvp->value->len + 1, sizeof (char));
-			memcpy (kvp->value->str, value_first, kvp->value->len);
+			(void) memcpy (kvp->value->str, value_first, kvp->value->len);
 		}
 	}
 
@@ -182,7 +182,7 @@ void key_value_pairs_print (DoubleList *pairs) {
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kv = (KeyValuePair *) le->data;
 
-			printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
+			(void) printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
 
 			idx++;
 		}
@@ -417,7 +417,9 @@ void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType a
 // add a new static path where static files can be served upon request
 // it is recomened to set absoulute paths
 // returns the http static path structure that was added to the cerver
-HttpStaticPath *http_cerver_static_path_add (HttpCerver *http_cerver, const char *static_path) {
+HttpStaticPath *http_cerver_static_path_add (
+	HttpCerver *http_cerver, const char *static_path
+) {
 
 	HttpStaticPath *http_static_path = NULL;
 
@@ -437,7 +439,9 @@ HttpStaticPath *http_cerver_static_path_add (HttpCerver *http_cerver, const char
 
 // removes a path from the served public paths
 // returns 0 on success, 1 on error
-u8 http_receive_public_path_remove (HttpCerver *http_cerver, const char *static_path) {
+u8 http_receive_public_path_remove (
+	HttpCerver *http_cerver, const char *static_path
+) {
 
 	u8 retval = 1;
 
@@ -474,8 +478,10 @@ void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
 
 }
 
-void http_cerver_set_catch_all_route (HttpCerver *http_cerver, 
-	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)) {
+void http_cerver_set_catch_all_route (
+	HttpCerver *http_cerver, 
+	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)
+) {
 
 	if (http_cerver && catch_all_route) {
 		http_cerver->default_handler = catch_all_route;
@@ -489,7 +495,9 @@ void http_cerver_set_catch_all_route (HttpCerver *http_cerver,
 
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
-void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_path) {
+void http_cerver_set_uploads_path (
+	HttpCerver *http_cerver, const char *uploads_path
+) {
 
 	if (http_cerver) {
 		if (http_cerver->uploads_path) str_delete (http_cerver->uploads_path);
@@ -498,9 +506,31 @@ void http_cerver_set_uploads_path (HttpCerver *http_cerver, const char *uploads_
 
 }
 
+// sets a method that should generate a c string to be used
+// to save each incoming file of any multipart request
+// the new filename should be placed in generated_filename
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+void http_cerver_set_uploads_filename_generator (
+	HttpCerver *http_cerver,
+	void (*uploads_filename_generator)(
+		const CerverReceive *,
+		const char *original_filename,
+		char *generated_filename
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_filename_generator = uploads_filename_generator;
+	}
+
+}
+
 // sets a method to be called on every new request & that will be used to generate a new directory
 // inside the uploads path to save all the files from each request
-void http_cerver_set_uploads_dirname_generator (HttpCerver *http_cerver, String *(*dirname_generator)(CerverReceive *)) {
+void http_cerver_set_uploads_dirname_generator (
+	HttpCerver *http_cerver,
+	String *(*dirname_generator)(const CerverReceive *)
+) {
 
 	if (http_cerver) {
 		http_cerver->uploads_dirname_generator = dirname_generator;
@@ -514,21 +544,27 @@ void http_cerver_set_uploads_dirname_generator (HttpCerver *http_cerver, String 
 
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
-void http_cerver_auth_set_jwt_algorithm (HttpCerver *http_cerver, jwt_alg_t jwt_alg) {
+void http_cerver_auth_set_jwt_algorithm (
+	HttpCerver *http_cerver, jwt_alg_t jwt_alg
+) {
 
 	if (http_cerver) http_cerver->jwt_alg = jwt_alg;
 
 }
 
 // sets the filename from where the jwt private key will be loaded
-void http_cerver_auth_set_jwt_priv_key_filename (HttpCerver *http_cerver, const char *filename) {
+void http_cerver_auth_set_jwt_priv_key_filename (
+	HttpCerver *http_cerver, const char *filename
+) {
 
 	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
 
 }
 
 // sets the filename from where the jwt public key will be loaded
-void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const char *filename) {
+void http_cerver_auth_set_jwt_pub_key_filename (
+	HttpCerver *http_cerver, const char *filename
+) {
 
 	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
 
@@ -536,7 +572,9 @@ void http_cerver_auth_set_jwt_pub_key_filename (HttpCerver *http_cerver, const c
 
 // generates and signs a jwt token that is ready to be sent
 // returns a newly allocated string that should be deleted after use
-char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values) {
+char *http_cerver_auth_generate_jwt (
+	HttpCerver *http_cerver, DoubleList *values
+) {
 
 	char *token = NULL;
 
@@ -547,10 +585,10 @@ char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values
 		KeyValuePair *kvp = NULL;
 		for (ListElement *le = dlist_start (values); le; le = le->next) {
 			kvp = (KeyValuePair *) le->data;
-			jwt_add_grant (jwt, kvp->key->str, kvp->value->str);
+			(void) jwt_add_grant (jwt, kvp->key->str, kvp->value->str);
 		}
 
-		jwt_add_grant_int (jwt, "iat", iat);
+		(void) jwt_add_grant_int (jwt, "iat", iat);
 
 		if (!jwt_set_alg (
 			jwt, 
@@ -572,7 +610,9 @@ char *http_cerver_auth_generate_jwt (HttpCerver *http_cerver, DoubleList *values
 
 #pragma region stats
 
-static size_t http_cerver_stats_get_children_routes (HttpCerver *http_cerver, size_t *handlers) {
+static size_t http_cerver_stats_get_children_routes (
+	HttpCerver *http_cerver, size_t *handlers
+) {
 
 	size_t count = 0;
 
@@ -727,7 +767,9 @@ char *http_url_decode (const char *str) {
 
 #pragma region parser
 
-static String *http_strip_path_from_query (const char *url, size_t url_len) {
+static String *http_strip_path_from_query (
+	const char *url, size_t url_len
+) {
 
 	String *query = NULL;
 
@@ -755,7 +797,9 @@ static String *http_strip_path_from_query (const char *url, size_t url_len) {
 
 }
 
-DoubleList *http_parse_query_into_pairs (const char *first, const char *last) {
+DoubleList *http_parse_query_into_pairs (
+	const char *first, const char *last
+) {
 
 	DoubleList *pairs = NULL;
 
@@ -834,7 +878,9 @@ void http_query_pairs_print (DoubleList *pairs) {
 
 }
 
-static int http_receive_handle_url (http_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_url (
+	http_parser *parser, const char *at, size_t length
+) {
 
 	// printf ("url: %.*s\n", (int) length, at);
 
@@ -894,10 +940,12 @@ static inline RequestHeader http_receive_handle_header_field_handle (const char 
 
 }
 
-static int http_receive_handle_header_field (http_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_header_field (
+	http_parser *parser, const char *at, size_t length
+) {
 
 	char header[32] = { 0 };
-	snprintf (header, 32, "%.*s", (int) length, at);
+	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->next_header = http_receive_handle_header_field_handle (header);
@@ -906,7 +954,9 @@ static int http_receive_handle_header_field (http_parser *parser, const char *at
 
 }
 
-static int http_receive_handle_header_value (http_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_header_value (
+	http_parser *parser, const char *at, size_t length
+) {
 
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
@@ -923,7 +973,9 @@ static int http_receive_handle_header_value (http_parser *parser, const char *at
 
 }
 
-static int http_receive_handle_body (http_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_body (
+	http_parser *parser, const char *at, size_t length
+) {
 
 	// printf ("Body: %.*s", (int) length, at);
 	// printf ("%.*s", (int) length, at);
@@ -951,7 +1003,7 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 
 	DoubleList *attributes = dlist_init (key_value_pair_delete, NULL);
 
-	char *pair, *name, *value;
+	char *pair = NULL, *name = NULL, *value = NULL;
 	char *header_str = strdup (str);
 	char *original = header_str;
 
@@ -1016,7 +1068,9 @@ static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) 
 
 // Content-Disposition: form-data; name="mirary"; filename="M.jpg"
 // Content-Type: image/jpeg
-static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (const char *header) {
+static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (
+	const char *header
+) {
 
 	if (!strcasecmp ("Content-Disposition", header)) return MULTI_PART_HEADER_CONTENT_DISPOSITION;
 	if (!strcasecmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
@@ -1026,10 +1080,12 @@ static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (con
 
 }
 
-static int http_receive_handle_mpart_header_field (multipart_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_mpart_header_field (
+	multipart_parser *parser, const char *at, size_t length
+) {
 
 	char header[32] = { 0 };
-	snprintf (header, 32, "%.*s", (int) length, at);
+	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->current_part->next_header = http_receive_handle_mpart_header_field_handle (header);
@@ -1038,7 +1094,9 @@ static int http_receive_handle_mpart_header_field (multipart_parser *parser, con
 
 }
 
-static int http_receive_handle_mpart_header_value (multipart_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_mpart_header_value (
+	multipart_parser *parser, const char *at, size_t length
+) {
 
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
@@ -1073,50 +1131,93 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			// key_value_pairs_print (multi_part->params);
 
 			multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
-			multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			// multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
+			const String *original_filename = key_value_pairs_get_value (
+				multi_part->params, "filename"
+			);
 
-			if (multi_part->filename) {
+			if (original_filename) {
+				// sanitize file
+				(void) strncpy (
+					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
+				);
+
+				files_sanitize_filename (multi_part->filename);
+
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path) {
-					char *filename = NULL;
-
 					if (http_receive->request->dirname) {
-						filename = c_string_create (
-							"%s/%s/%s",
-							http_receive->http_cerver->uploads_path->str,
-							http_receive->request->dirname->str,
-							multi_part->filename->str
-						);
+						if (http_receive->http_cerver->uploads_filename_generator) {
+							http_receive->http_cerver->uploads_filename_generator (
+								http_receive->cr,
+								multi_part->filename,
+								multi_part->generated_filename
+							);
+
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								http_receive->request->dirname->str,
+								multi_part->generated_filename
+							);
+						}
+
+						else {
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								http_receive->request->dirname->str,
+								multi_part->filename
+							);
+						}
 					}
 
 					else {
-						filename = c_string_create (
-							"%s/%s", 
-							http_receive->http_cerver->uploads_path->str, multi_part->filename->str
-						);
+						if (http_receive->http_cerver->uploads_filename_generator) {
+							http_receive->http_cerver->uploads_filename_generator (
+								http_receive->cr,
+								multi_part->filename,
+								multi_part->generated_filename
+							);
+
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								multi_part->generated_filename
+							);
+						}
+
+						else {
+							(void) snprintf (
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								"%s/%s",
+								http_receive->http_cerver->uploads_path->str,
+								multi_part->filename
+							);
+						}
 					}
 
-					multi_part->fd = open (filename, O_CREAT | O_WRONLY, 0777);
+					multi_part->fd = open (multi_part->saved_filename, O_CREAT | O_WRONLY, 0777);
 					switch (multi_part->fd) {
 						case -1: {
 							cerver_log_error (
 								"Failed to open %s filename to save multipart file!",
-								filename
+								multi_part->saved_filename
 							);
 							perror ("Error");
-
-							free (filename);
 						} break;
 
 						default: {
 							#ifdef HTTP_MPART_DEBUG
-							cerver_log_debug ("Opened %s to save multipart file!", filename);
+							cerver_log_debug (
+								"Opened %s to save multipart file!",
+								multi_part->saved_filename
+							);
 							#endif
-
-							multi_part->saved_filename = str_new (NULL);
-							multi_part->saved_filename->str = filename;
-							multi_part->saved_filename->len = strlen (filename);
 						} break;
 					}
 				}
@@ -1136,7 +1237,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 }
 
-static int http_receive_handle_mpart_data (multipart_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_mpart_data (
+	multipart_parser *parser, const char *at, size_t length
+) {
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
@@ -1172,14 +1275,16 @@ static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
 	if (multi_part->fd != -1) {
-		close (multi_part->fd);
+		(void) close (multi_part->fd);
 	}
 
 	return 0;
 
 }
 
-static int http_receive_handle_mpart_body (http_parser *parser, const char *at, size_t length) {
+static int http_receive_handle_mpart_body (
+	http_parser *parser, const char *at, size_t length
+) {
 
 	(void) multipart_parser_execute (((HttpReceive *) parser->data)->mpart_parser, at, length);
 
@@ -1262,7 +1367,9 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 }
 
-static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request) {
+static void http_receive_handle_default_route (
+	CerverReceive *cr, HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
 	if (res) {
@@ -1274,7 +1381,9 @@ static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *r
 }
 
 // catch all mismatches and handle with cath all route
-static void http_receive_handle_catch_all (HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request) {
+static void http_receive_handle_catch_all (
+	HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request
+) {
 
 	cerver_log_warning (
 		"No matching route for %s %s",
@@ -1306,13 +1415,17 @@ static void http_receive_handle_match_web_socket (
 
 		if (web_socket_key) {
 			char buffer[128] = { 0 };
-			snprintf (buffer, 128, "%s%s", web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+			(void) snprintf (
+				buffer, 128,
+				"%s%s",
+				web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+			);
 
 			unsigned char hash[SHA_DIGEST_LENGTH] = { 0 };
-			SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
+			(void) SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
 
-			memset (buffer, 0, 128);
-			base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
+			(void) memset (buffer, 0, 128);
+			(void) base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
 
 			HttpResponse *res = http_response_create ((http_status) 101, NULL, 0);
 			if (res) {
@@ -1593,7 +1706,9 @@ static void http_receive_handle_select_auth_bearer (
 }
 
 // select the route that will handle the request
-static void http_receive_handle_select (HttpReceive *http_receive, CerverReceive *cr, HttpRequest *request) {
+static void http_receive_handle_select (
+	HttpReceive *http_receive, CerverReceive *cr, HttpRequest *request
+) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
 
@@ -1694,8 +1809,13 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 					if (http_receive->http_cerver->uploads_path) {
 						http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
 						char dirname[512] = { 0 };
-						snprintf (dirname, 512, "%s/%s", http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str);
-						files_create_dir (dirname, 0777);
+						(void) snprintf (
+							dirname, 512,
+							"%s/%s",
+							http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str
+						);
+
+						(void) files_create_dir (dirname, 0777);
 					}
 				}
 
@@ -1729,7 +1849,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 		);
 
 		// check if file exists
-		memset (&filestatus, 0, sizeof (struct stat));
+		(void) memset (&filestatus, 0, sizeof (struct stat));
 		if (!stat (filename, &filestatus)) {
 			// serve the file
 			int file = open (filename, O_RDONLY);

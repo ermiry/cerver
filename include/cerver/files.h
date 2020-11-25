@@ -124,9 +124,16 @@ CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 
 #pragma region main
 
+// sanitizes a filename to correctly be used to save a file
+// removes every character & whitespaces except for
+// alphabet, numbers, '-', '_' and  '.'
+CERVER_EXPORT void files_sanitize_filename (char *filename);
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
-CERVER_EXPORT unsigned int files_create_dir (const char *dir_path, mode_t mode);
+CERVER_EXPORT unsigned int files_create_dir (
+	const char *dir_path, mode_t mode
+);
 
 // returns an allocated string with the file extension
 // NULL if no file extension

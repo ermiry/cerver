@@ -24,10 +24,13 @@ MultiPart *http_multi_part_new (void) {
 		multi_part->params = dlist_init (key_value_pair_delete, NULL);
 
 		multi_part->name = NULL;
-		multi_part->filename = NULL;
+		// multi_part->filename = NULL;
+
+		(void) memset (multi_part->filename, 0, HTTP_MULTI_PART_FILENAME_LEN);
+		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_LEN);
 
 		multi_part->fd = -1;
-		multi_part->saved_filename = NULL;
+		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_LEN);
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
 
@@ -47,8 +50,6 @@ void http_multi_part_delete (void *multi_part_ptr) {
 			str_delete (multi_part->headers[i]);
 
 		dlist_delete (multi_part->params);
-
-		str_delete (multi_part->saved_filename);
 
 		str_delete (multi_part->value);
 
@@ -81,11 +82,17 @@ void http_multi_part_print (MultiPart *mpart) {
 
 	if (mpart) {
 		if (mpart->filename) {
-			printf ("FILE: %s - %s -> %s\n", mpart->name->str, mpart->filename->str, mpart->saved_filename->str);
+			(void) printf (
+				"FILE: %s - %s -> %s\n",
+				mpart->name->str, mpart->filename, mpart->saved_filename
+			);
 		}
 
 		else {
-			printf ("VALUE: %s - %s\n", mpart->name->str, mpart->value->str);
+			(void) printf (
+				"VALUE: %s - %s\n",
+				mpart->name->str, mpart->value->str
+			);
 		}
 	}
 

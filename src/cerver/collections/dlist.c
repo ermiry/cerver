@@ -75,6 +75,29 @@ static int dlist_internal_insert_before (
 
 }
 
+static void dlist_internal_insert_after_actual (
+	DoubleList *dlist, ListElement *element, ListElement *le
+) {
+
+	if (element == NULL) {
+		if (dlist->size == 0) dlist->end = le;
+		else dlist->start->prev = le;
+	
+		le->next = dlist->start;
+		le->prev = NULL;
+		dlist->start = le;
+	}
+
+	else {
+		if (element->next == NULL) dlist->end = le;
+
+		le->next = element->next;
+		le->prev = element;
+		element->next = le;
+	}
+
+}
+
 static int dlist_internal_insert_after (
 	DoubleList *dlist, ListElement *element, const void *data
 ) {
@@ -85,22 +108,9 @@ static int dlist_internal_insert_after (
 	if (le) {
 		le->data = (void *) data;
 
-		if (element == NULL) {
-			if (dlist->size == 0) dlist->end = le;
-			else dlist->start->prev = le;
-		
-			le->next = dlist->start;
-			le->prev = NULL;
-			dlist->start = le;
-		}
-
-		else {
-			if (element->next == NULL) dlist->end = le;
-
-			le->next = element->next;
-			le->prev = element;
-			element->next = le;
-		}
+		dlist_internal_insert_after_actual (
+			dlist, element, le
+		);
 
 		dlist->size++;
 
@@ -111,47 +121,62 @@ static int dlist_internal_insert_after (
 
 }
 
-static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *element) {
+static ListElement *dlist_internal_remove_element_actual (
+	DoubleList *dlist, ListElement *element, void **data
+) {
 
-	void *data = NULL;
-	if (dlist->size > 0) {
-		ListElement *old = NULL;
+	ListElement *old = NULL;
 
-		if (element == NULL) {
-			data = dlist->start->data;
-			old = dlist->start;
-			dlist->start = dlist->start->next;
-			if (dlist->start != NULL) dlist->start->prev = NULL;
+	if (element == NULL) {
+		*data = dlist->start->data;
+		old = dlist->start;
+		dlist->start = dlist->start->next;
+		if (dlist->start != NULL) dlist->start->prev = NULL;
+	}
+
+	else {
+		*data = element->data;
+		old = element;
+
+		ListElement *prevElement = element->prev;
+		ListElement *nextElement = element->next;
+
+		if (prevElement != NULL && nextElement != NULL) {
+			prevElement->next = nextElement;
+			nextElement->prev = prevElement;
 		}
 
 		else {
-			data = element->data;
-			old = element;
-
-			ListElement *prevElement = element->prev;
-			ListElement *nextElement = element->next;
-
-			if (prevElement != NULL && nextElement != NULL) {
-				prevElement->next = nextElement;
-				nextElement->prev = prevElement;
+			// we are at the start of the dlist
+			if (prevElement == NULL) {
+				if (nextElement != NULL) nextElement->prev = NULL;
+				dlist->start = nextElement;
 			}
 
-			else {
-				// we are at the start of the dlist
-				if (prevElement == NULL) {
-					if (nextElement != NULL) nextElement->prev = NULL;
-					dlist->start = nextElement;
-				}
-
-				// we are at the end of the dlist
-				if (nextElement == NULL) {
-					if (prevElement != NULL) prevElement->next = NULL;
-					dlist->end = prevElement;
-				}
+			// we are at the end of the dlist
+			if (nextElement == NULL) {
+				if (prevElement != NULL) prevElement->next = NULL;
+				dlist->end = prevElement;
 			}
 		}
+	}
 
-		list_element_delete (old);
+	return old;
+
+}
+
+static void *dlist_internal_remove_element (
+	DoubleList *dlist, ListElement *element
+) {
+
+	void *data = NULL;
+	if (dlist->size > 0) {
+		list_element_delete (
+			dlist_internal_remove_element_actual (
+				dlist, element, &data
+			)
+		);
+
 		dlist->size--;
 
 		if (dlist->size == 0) {
@@ -161,6 +186,35 @@ static void *dlist_internal_remove_element (DoubleList *dlist, ListElement *elem
 	}
 
 	return data;
+
+}
+
+// moves the list element from one list to the other
+static void dlist_internal_move_element (
+	DoubleList *source, DoubleList *dest,
+	ListElement *element_to_remove,
+	ListElement *insert_after_this
+) {
+
+	// remove list element from source dlist
+	void *dummy_data = NULL;
+	ListElement *removed = dlist_internal_remove_element_actual (
+		source, element_to_remove, &dummy_data
+	);
+
+	source->size--;
+
+	if (source->size == 0) {
+		source->start = NULL;
+		source->end = NULL;
+	}
+
+	// insert list element into dest dlist
+	dlist_internal_insert_after_actual (
+		dest, insert_after_this, removed
+	);
+
+	dest->size++;
 
 }
 
@@ -1044,5 +1098,50 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 	}
 
 	return half;
+
+}
+
+// creates a new dlist with all the elements that matched the comparator method
+// elements are removed from the original list and inserted directly into the new one
+// if no matches, dlist will be returned with size of 0
+// comparator must return TRUE on match (item will be moved to new list)
+// returns a newly allocated dlist with the same detsroy comprator methods
+DoubleList *dlist_split_by_condition (
+	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+) {
+
+	DoubleList *matches = NULL;
+
+	if (dlist && compare) {
+		matches = dlist_init (dlist->destroy, dlist->compare);
+		if (matches) {
+			pthread_mutex_lock (dlist->mutex);
+
+			size_t original_size = dlist->size;
+			size_t count = 0;
+			ListElement *le = dlist->start;
+			ListElement *next = NULL;
+			while (count < original_size) {
+				next = le->next;
+
+				if (compare (le->data, match)) {
+					// move the list element from one list to the other
+					dlist_internal_move_element (
+						dlist, matches,
+						le, matches->end
+					);
+				}
+
+				le = next;
+				count += 1;
+			}
+
+			pthread_mutex_unlock (dlist->mutex);
+		}
+	}
+
+	return matches;
 
 }
