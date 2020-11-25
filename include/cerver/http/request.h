@@ -127,19 +127,25 @@ CERVER_EXPORT const String *http_request_multi_parts_get_value (
 	HttpRequest *http_request, const char *key
 );
 
-// searches the request's multi parts values for a file with matching key
-// returns a constant String that should not be deleted if found, NULL if not match
-CERVER_EXPORT const String *http_request_multi_parts_get_file (
+// searches the request's multi parts values for a filename with matching key
+// returns a constant c string that should not be deleted if found, NULL if not match
+CERVER_EXPORT const char *http_request_multi_parts_get_filename (
 	HttpRequest *http_request, const char *key
 );
 
-// returns a dlist with constant strings values (that should not be deleted) with all the filenames from the request
+// searches the request's multi parts values for a saved filename with matching key
+// returns a constant c string that should not be deleted if found, NULL if not match
+CERVER_EXPORT const char *http_request_multi_parts_get_saved_filename (
+	HttpRequest *http_request, const char *key
+);
+
+// returns a dlist with constant c strings values (that should not be deleted) with all the filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 CERVER_EXPORT DoubleList *http_request_multi_parts_get_all_filenames (
 	HttpRequest *http_request
 );
 
-// returns a dlist with constant strings values (that should not be deleted) with all the saved filenames from the request
+// returns a dlist with constant c strings values (that should not be deleted) with all the saved filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 CERVER_EXPORT DoubleList *http_request_multi_parts_get_all_saved_filenames (
 	HttpRequest *http_request

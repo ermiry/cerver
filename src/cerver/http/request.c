@@ -195,9 +195,9 @@ const String *http_request_multi_parts_get_value (
 
 }
 
-// searches the request's multi parts values for a file with matching key
-// returns a constant String that should not be deleted if found, NULL if not match
-const String *http_request_multi_parts_get_file (
+// searches the request's multi parts values for a filename with matching key
+// returns a constant c string that should not be deleted if found, NULL if not match
+const char *http_request_multi_parts_get_filename (
 	HttpRequest *http_request, const char *key
 ) {
 
@@ -210,7 +210,22 @@ const String *http_request_multi_parts_get_file (
 
 }
 
-// returns a dlist with constant strings values (that should not be deleted) with all the filenames from the request
+// searches the request's multi parts values for a saved filename with matching key
+// returns a constant c string that should not be deleted if found, NULL if not match
+const char *http_request_multi_parts_get_saved_filename (
+	HttpRequest *http_request, const char *key
+) {
+
+	if (http_request && key) {
+		MultiPart *mpart = http_request_multi_parts_get_internal (http_request, key);
+		if (mpart) return mpart->saved_filename;
+	}
+
+	return NULL;
+
+}
+
+// returns a dlist with constant c strings values (that should not be deleted) with all the filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 DoubleList *http_request_multi_parts_get_all_filenames (
 	HttpRequest *http_request
@@ -235,7 +250,7 @@ DoubleList *http_request_multi_parts_get_all_filenames (
 
 }
 
-// returns a dlist with constant strings values (that should not be deleted) with all the saved filenames from the request
+// returns a dlist with constant c strings values (that should not be deleted) with all the saved filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 DoubleList *http_request_multi_parts_get_all_saved_filenames (
 	HttpRequest *http_request
@@ -282,7 +297,7 @@ void http_request_multi_part_discard_files (HttpRequest *http_request) {
 			mpart = (MultiPart *) le->data;
 
 			if (mpart->saved_filename) {
-				(void) remove (mpart->saved_filename->str);
+				(void) remove (mpart->saved_filename);
 			}
 		}
 	}
@@ -292,15 +307,15 @@ void http_request_multi_part_discard_files (HttpRequest *http_request) {
 void http_request_multi_parts_print (HttpRequest *http_request) {
 
 	if (http_request) {
-		printf ("\nHTTP request multi part values: \n");
-		printf ("n files: %d\n", http_request->n_files);
-		printf ("n values: %d\n", http_request->n_values);
+		(void) printf ("\nHTTP request multi part values: \n");
+		(void) printf ("n files: %d\n", http_request->n_files);
+		(void) printf ("n values: %d\n", http_request->n_values);
 
 		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
 			http_multi_part_print ((MultiPart *) le->data);
 		}
 
-		printf ("\n");
+		(void) printf ("\n");
 	}
 
 }
