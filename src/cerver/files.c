@@ -315,6 +315,32 @@ void file_cerver_stats_print (FileCerver *file_cerver) {
 
 #pragma region main
 
+// sanitizes a filename to correctly be used to save a file
+// removes every character & whitespaces except for
+// alphabet, numbers, '-', '_' and  '.'
+void files_sanitize_filename (char *filename) {
+
+	if (filename) {
+		for (int i = 0, j; filename[i] != '\0'; ++i) {
+			while (
+				!(filename[i] >= 'a' && filename[i] <= 'z') && !(filename[i] >= 'A' && filename[i] <= 'Z')	// alphabet
+				&& !(filename[i] >= 48 && filename[i] <= 57)												// numbers
+				&& !(filename[i] == '-') && !(filename[i] == '_') && !(filename[i] == '.')					// clean characters
+				&& !(filename[i] == '\0')
+			) {
+				for (j = i; filename[j] != '\0'; ++j) {
+					filename[j] = filename[j + 1];
+				}
+
+				filename[j] = '\0';
+			}
+		}
+
+		c_string_remove_spaces (filename);
+	}
+
+}
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 unsigned int files_create_dir (const char *dir_path, mode_t mode) {
@@ -363,7 +389,7 @@ char *files_get_file_extension (const char *filename) {
 			if (ext_len) {
 				retval = (char *) calloc (ext_len + 1, sizeof (char));
 				if (retval) {
-					memcpy (retval, ptr + 1, ext_len);
+					(void) memcpy (retval, ptr + 1, ext_len);
 					retval[ext_len] = '\0';
 				}
 			}
@@ -442,7 +468,7 @@ DoubleList *file_get_lines (const char *filename) {
 				dlist_insert_after (lines, dlist_end (lines), line);
 			}
 
-			fclose (file);
+			(void) fclose (file);
 		}
 
 		else {
