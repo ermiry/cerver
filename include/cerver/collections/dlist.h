@@ -246,4 +246,15 @@ extern DoubleList *dlist_clone (
 // the new dlist's delete and comparator methods are set from the original
 extern DoubleList *dlist_split_half (DoubleList *dlist);
 
+// creates a new dlist with all the elements that matched the comparator method
+// elements are removed from the original list and inserted directly into the new one
+// if no matches, dlist will be returned with size of 0
+// comparator must return TRUE on match (item will be moved to new list)
+// returns a newly allocated dlist with the same detsroy comprator methods
+extern DoubleList *dlist_split_by_condition (
+	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+);
+
 #endif
