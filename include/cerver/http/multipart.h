@@ -9,6 +9,10 @@
 
 #include "cerver/config.h"
 
+#define HTTP_MULTI_PART_FILENAME_LEN					256
+#define HTTP_MULTI_PART_GENERATED_FILENAME_LEN			512
+#define HTTP_MULTI_PART_SAVED_FILENAME_LEN				1024
+
 #pragma region parts
 
 typedef enum MultiPartHeader {
@@ -23,7 +27,7 @@ typedef enum MultiPartHeader {
 
 #define MULTI_PART_HEADERS_SIZE				4
 
-typedef struct MultiPart {
+struct _MultiPart {
 
 	MultiPartHeader next_header;
 	String *headers[MULTI_PART_HEADERS_SIZE];
@@ -32,16 +36,23 @@ typedef struct MultiPart {
 
 	// taken from params - do not delete
 	const String *name;
-	const String *filename;
+	// const String *filename;
+
+	// sanitized original filename
+	char filename[HTTP_MULTI_PART_FILENAME_LEN];
+	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_LEN];
 
 	int fd;
-	String *saved_filename;		// how the file got saved (uploads path + filename)
+	// how the file got saved (uploads path + filename)
+	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_LEN];
 	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
 	u32 total_wrote;			// the total ammount of bytes wrote to the file
 
 	String *value;
 
-} MultiPart;
+};
+
+typedef struct _MultiPart MultiPart;
 
 CERVER_PUBLIC MultiPart *http_multi_part_new (void);
 
