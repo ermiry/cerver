@@ -173,7 +173,19 @@ extern void *dlist_remove_end_unsafe (DoubleList *dlist);
 // returns the data or NULL if index was invalid
 extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);
 
-/*** Traversing --- Searching ***/
+// removes all the elements that match the query using the comparator method
+// option to delete removed elements data when delete_data is set to TRUE
+// comparator must return TRUE on match (item will be removed from the dlist)
+// this methods is thread safe
+// returns the number of elements that we removed from the dlist
+extern unsigned int dlist_remove_by_condition (
+	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match,
+	bool delete_data
+);
+
+/*** traverse --- search ***/
 
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
@@ -207,9 +219,11 @@ extern ListElement *dlist_get_element_at (
 );
 
 // traverses the dlist and returns the data of the list element at the specified index
-extern void *dlist_get_at (const DoubleList *dlist, const unsigned int idx);
+extern void *dlist_get_at (
+	const DoubleList *dlist, const unsigned int idx
+);
 
-/*** Sorting ***/
+/*** sort ***/
 
 // uses merge sort to sort the list using the comparator
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
@@ -218,7 +232,7 @@ extern int dlist_sort (
 	DoubleList *dlist, int (*compare)(const void *one, const void *two)
 );
 
-/*** Other ***/
+/*** other ***/
 
 // returns a newly allocated array with the list elements inside it
 // data will not be copied, only the pointers, so the list will keep the original elements
@@ -232,9 +246,9 @@ extern DoubleList *dlist_copy (const DoubleList *dlist);
 
 // returns a exact clone of the dlist
 // the element's data are created using your clone method
-	// which takes as the original each element's data of the dlist
-	// and should return the same structure type as the original method that can be safely deleted
-	// with the dlist's delete method
+// which takes as the original each element's data of the dlist
+// and should return the same structure type as the original method that can be safely deleted
+// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
 extern DoubleList *dlist_clone (
 	const DoubleList *dlist, void *(*clone) (const void *original)
@@ -249,7 +263,8 @@ extern DoubleList *dlist_split_half (DoubleList *dlist);
 // creates a new dlist with all the elements that matched the comparator method
 // elements are removed from the original list and inserted directly into the new one
 // if no matches, dlist will be returned with size of 0
-// comparator must return TRUE on match (item will be moved to new list)
+// comparator must return TRUE on match (item will be moved to new dlist)
+// this methods is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
 extern DoubleList *dlist_split_by_condition (
 	DoubleList *dlist,
