@@ -44,19 +44,25 @@ void end (int dummy) {
 #pragma region routes
 
 // GET /test
-void test_handler (CerverReceive *cr, HttpRequest *request) {
+void test_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
 // POST /upload
-void upload_handler (CerverReceive *cr, HttpRequest *request) {
+void upload_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	http_request_multi_parts_print (request);
 
@@ -105,14 +111,17 @@ void upload_handler (CerverReceive *cr, HttpRequest *request) {
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Upload route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
 // POST /discard
-void discard_handler (CerverReceive *cr, HttpRequest *request) {
+void discard_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	http_request_multi_parts_print (request);
 
@@ -122,7 +131,7 @@ void discard_handler (CerverReceive *cr, HttpRequest *request) {
 		HttpResponse *res = http_response_json_msg ((http_status) 200, "Success request!");
 		if (res) {
 			http_response_print (res);
-			http_response_send (res, cr->cerver, cr->connection);
+			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
 	}
@@ -131,7 +140,7 @@ void discard_handler (CerverReceive *cr, HttpRequest *request) {
 		cerver_log_error ("key != value");
 		cerver_log_debug ("Discarding multi part files...");
 		http_request_multi_part_discard_files (request);
-		http_response_json_error_send (cr, 400, "Bad request!");
+		http_response_json_error_send (http_receive, 400, "Bad request!");
 	}
 
 }
