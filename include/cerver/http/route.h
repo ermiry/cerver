@@ -16,6 +16,7 @@
 #define DEFAULT_ROUTES_TOKENS_SIZE				16
 
 struct _HttpRoute;
+struct _HttpReceive;
 
 typedef enum HttpRouteModifier {
 
@@ -46,7 +47,10 @@ typedef struct _HttpRoutesTokens HttpRoutesTokens;
 
 #define HTTP_HANDLERS_COUNT					5
 
-typedef void (*HttpHandler)(CerverReceive *cr, HttpRequest *request);
+typedef void (*HttpHandler)(
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+);
 
 struct _HttpRouteStats {
 
