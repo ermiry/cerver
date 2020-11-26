@@ -22,7 +22,8 @@ typedef enum HttpRouteModifier {
 
 	HTTP_ROUTE_MODIFIER_NONE		= 0,
 
-	HTTP_ROUTE_MODIFIER_WEB_SOCKET	= 1,	// enables web socket connections on this route
+	HTTP_ROUTE_MODIFIER_MULTI_PART	= 1,	// enables multi part requests on this route
+	HTTP_ROUTE_MODIFIER_WEB_SOCKET	= 2,	// enables web socket connections on this route
 
 } HttpRouteModifier;
 
