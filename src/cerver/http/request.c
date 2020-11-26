@@ -99,7 +99,7 @@ HttpRequest *http_request_create (void) {
 
 }
 
-void http_request_headers_print (HttpRequest *http_request) {
+void http_request_headers_print (const HttpRequest *http_request) {
 
 	if (http_request) {
 		const char *null = "NULL";
@@ -151,7 +151,7 @@ void http_request_headers_print (HttpRequest *http_request) {
 }
 
 static MultiPart *http_request_multi_parts_get_internal (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	MultiPart *mpart = NULL;
@@ -172,7 +172,7 @@ static MultiPart *http_request_multi_parts_get_internal (
 // searches the request's multi parts values for one with matching key & type
 // returns a constant Stirng that should not be deleted if found, NULL if not match
 const MultiPart *http_request_multi_parts_get (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	return (http_request && key) ?
@@ -183,7 +183,7 @@ const MultiPart *http_request_multi_parts_get (
 // searches the request's multi parts values for a value with matching key
 // returns a constant String that should not be deleted if found, NULL if not match
 const String *http_request_multi_parts_get_value (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	if (http_request && key) {
@@ -198,7 +198,7 @@ const String *http_request_multi_parts_get_value (
 // searches the request's multi parts values for a filename with matching key
 // returns a constant c string that should not be deleted if found, NULL if not match
 const char *http_request_multi_parts_get_filename (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	if (http_request && key) {
@@ -213,7 +213,7 @@ const char *http_request_multi_parts_get_filename (
 // searches the request's multi parts values for a saved filename with matching key
 // returns a constant c string that should not be deleted if found, NULL if not match
 const char *http_request_multi_parts_get_saved_filename (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	if (http_request && key) {
@@ -228,7 +228,7 @@ const char *http_request_multi_parts_get_saved_filename (
 // returns a dlist with constant c strings values (that should not be deleted) with all the filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 DoubleList *http_request_multi_parts_get_all_filenames (
-	HttpRequest *http_request
+	const HttpRequest *http_request
 ) {
 
 	DoubleList *all = NULL;
@@ -253,7 +253,7 @@ DoubleList *http_request_multi_parts_get_all_filenames (
 // returns a dlist with constant c strings values (that should not be deleted) with all the saved filenames from the request
 // the dlist must be deleted using http_request_multi_parts_all_filenames_delete ()
 DoubleList *http_request_multi_parts_get_all_saved_filenames (
-	HttpRequest *http_request
+	const HttpRequest *http_request
 ) {
 
 	DoubleList *all = NULL;
@@ -289,7 +289,9 @@ void http_request_multi_parts_all_filenames_delete (
 }
 
 // discards all the saved files from the multipart request
-void http_request_multi_part_discard_files (HttpRequest *http_request) {
+void http_request_multi_part_discard_files (
+	const HttpRequest *http_request
+) {
 
 	if (http_request) {
 		MultiPart *mpart = NULL;
@@ -304,7 +306,9 @@ void http_request_multi_part_discard_files (HttpRequest *http_request) {
 
 }
 
-void http_request_multi_parts_print (HttpRequest *http_request) {
+void http_request_multi_parts_print (
+	const HttpRequest *http_request
+) {
 
 	if (http_request) {
 		(void) printf ("\nHTTP request multi part values: \n");
@@ -323,7 +327,7 @@ void http_request_multi_parts_print (HttpRequest *http_request) {
 // search request's body values for matching value by key
 // returns a constant String that should not be deleted if match, NULL if not found
 const String *http_request_body_get_value (
-	HttpRequest *http_request, const char *key
+	const HttpRequest *http_request, const char *key
 ) {
 
 	return key_value_pairs_get_value (http_request->body_values, key);
