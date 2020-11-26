@@ -211,6 +211,7 @@ int main (int argc, char **argv) {
 
 		// POST /upload
 		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
+		http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, upload_route);
 
 		// POST /discard
