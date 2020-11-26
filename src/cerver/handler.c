@@ -1989,6 +1989,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 static inline u8 cerver_receive_http_actual (
 	CerverReceive *cr, HttpReceive *http_receive,
+	size_t *total_received,
 	char *buffer, const size_t buffer_size
 ) {
 
@@ -2046,6 +2047,8 @@ static inline u8 cerver_receive_http_actual (
 			cr->cerver->stats->total_n_receives_done += 1;
 			cr->cerver->stats->total_bytes_received += rc;
 
+			*total_received += rc;
+
 			http_receive->handler (http_receive, rc, buffer);
 
 			retval = 0;
@@ -2060,11 +2063,13 @@ static inline u8 cerver_receive_http_actual (
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
-	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
+	// #if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
 	double start_time = timer_get_current_time ();
-	#endif
+	// #endif
 
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
+
+	size_t total_received = 0;
 
 	HttpReceive *http_receive = http_receive_new ();
 	http_receive->cr = cr;
@@ -2081,7 +2086,11 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 		while (
 			(cr->socket->sock_fd > -1)
 			&& cr->cerver->isRunning
-			&& !cerver_receive_http_actual (cr, http_receive, buffer, buffer_size) 
+			&& !cerver_receive_http_actual (
+				cr, http_receive,
+				&total_received,
+				buffer, buffer_size
+			) 
 		);
 
 		free (buffer);
@@ -2094,8 +2103,6 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 			cr->connection->socket->sock_fd
 		);
 	}
-
-	http_receive_delete (http_receive);
 
 	#ifdef HANDLER_DEBUG
 	cerver_log (
@@ -2110,8 +2117,19 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	cerver_receive_delete (cr);
 
+	// update http route stats
+	double process_time = timer_get_current_time () - start_time;
+	if (http_receive->route) {
+		http_route_stats_update (
+			http_receive->route->stats[http_receive->request_method],
+			process_time, total_received
+		);
+	}
+
+	http_receive_delete (http_receive);
+
 	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
-	cerver_log_debug ("cerver_receive_http () ended in %f seconds", timer_get_current_time () - start_time);
+	cerver_log_debug ("cerver_receive_http () ended in %f seconds", process_time);
 	#endif
 
 	return NULL;
