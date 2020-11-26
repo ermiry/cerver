@@ -50,14 +50,18 @@ typedef void (*HttpHandler)(CerverReceive *cr, HttpRequest *request);
 
 struct _HttpRouteStats {
 
+	bool first;
+
 	size_t n_requests;
 
 	double min_process_time;
 	double max_process_time;
+	double sum_process_times;
 	double mean_process_time;
 
 	size_t min_request_size;
 	size_t max_request_size;
+	size_t sum_request_sizes;
 	size_t mean_request_size;
 
 	size_t n_uploaded_files;
@@ -79,6 +83,13 @@ typedef struct _HttpRouteStats HttpRouteStats;
 CERVER_PRIVATE HttpRouteStats *http_route_stats_new (void);
 
 CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
+
+// adds one request to counter
+// updates process times & request sizes
+CERVER_PRIVATE void http_route_stats_update (
+	HttpRouteStats *route_stats,
+	double process_time, size_t request_size
+);
 
 struct _HttpRoute {
 

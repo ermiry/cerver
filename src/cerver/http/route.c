@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <limits.h>
+
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
@@ -67,6 +69,16 @@ HttpRouteStats *http_route_stats_new (void) {
 	if (route_stats) {
 		(void) memset (route_stats, 0, sizeof (HttpRouteStats));
 
+		route_stats->first = true;
+
+		route_stats->min_process_time = __DBL_MAX__;
+
+		route_stats->min_request_size = LONG_MAX;
+
+		route_stats->min_n_files = LONG_MAX;
+
+		route_stats->min_file_size = LONG_MAX;
+
 		route_stats->mutex = pthread_mutex_new ();
 	}
 
@@ -82,6 +94,45 @@ void http_route_stats_delete (void *route_stats_ptr) {
 		pthread_mutex_delete (route_stats->mutex);
 		
 		free (route_stats_ptr);
+	}
+
+}
+
+// adds one request to counter
+// updates process times & request sizes
+void http_route_stats_update (
+	HttpRouteStats *route_stats,
+	double process_time, size_t request_size
+) {
+
+	if (route_stats) {
+		pthread_mutex_lock (route_stats->mutex);
+
+		if (route_stats->first) route_stats->first = false;
+
+		route_stats->n_requests += 1;
+
+		// process
+		if (process_time < route_stats->min_process_time)
+			route_stats->min_process_time = process_time;
+
+		if (process_time > route_stats->max_process_time)
+			route_stats->max_process_time = process_time;
+
+		route_stats->sum_process_times += process_time;
+		route_stats->mean_process_time = (route_stats->sum_process_times / route_stats->n_requests);
+
+		// request size
+		if (request_size < route_stats->min_request_size)
+			route_stats->min_request_size = request_size;
+
+		if (request_size > route_stats->max_request_size)
+			route_stats->max_request_size = request_size;
+
+		route_stats->sum_request_sizes += request_size;
+		route_stats->mean_request_size = (route_stats->sum_request_sizes / route_stats->n_requests);
+
+		pthread_mutex_unlock (route_stats->mutex);
 	}
 
 }
@@ -189,6 +240,10 @@ HttpRoute *http_route_create (
 			route->children = dlist_init (http_route_delete, NULL);
 
 			route->handlers[method] = handler;
+
+			for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+				route->stats[i] = http_route_stats_new ();
+			}
 		}
 	}
 
