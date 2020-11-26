@@ -672,6 +672,15 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 					http_request_method_str ((RequestMethod) i),
 					route->stats[i]->n_requests
 				);
+
+				// route stats
+				cerver_log_msg ("\t\tMin process time: %.4f secs", route->stats[i]->first ? 0 : route->stats[i]->min_process_time);
+				cerver_log_msg ("\t\tMax process time: %.4f secs", route->stats[i]->max_process_time);
+				cerver_log_msg ("\t\tMean process time: %.4f secs", route->stats[i]->mean_process_time);
+
+				cerver_log_msg ("\t\tMin request size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_request_size);
+				cerver_log_msg ("\t\tMax request size: %ld", route->stats[i]->max_request_size);
+				cerver_log_msg ("\t\tMean request size: %ld", route->stats[i]->mean_request_size);
 			}
 		}
 
@@ -691,6 +700,15 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 							http_request_method_str ((RequestMethod) i),
 							child->stats[i]->n_requests
 						);
+
+						// route stats
+						cerver_log_msg ("\t\t\tMin process time: %.4f secs", child->stats[i]->first ? 0 : child->stats[i]->min_process_time);
+						cerver_log_msg ("\t\t\tMax process time: %.4f secs", child->stats[i]->max_process_time);
+						cerver_log_msg ("\t\t\tMean process time: %.4f secs", child->stats[i]->mean_process_time);
+
+						cerver_log_msg ("\t\t\tMin request size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_request_size);
+						cerver_log_msg ("\t\t\tMax request size: %ld", child->stats[i]->max_request_size);
+						cerver_log_msg ("\t\t\tMean request size: %ld", child->stats[i]->mean_request_size);
 					}
 				}
 			}
@@ -1552,7 +1570,9 @@ static void http_receive_handle_match (
 
 }
 
-static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRequest *request, HttpRoute **found) {
+static inline bool http_receive_handle_select_children (
+	HttpRoute *route, HttpRequest *request, HttpRoute **found
+) {
 
 	bool retval = false;
 
@@ -1751,6 +1771,9 @@ static void http_receive_handle_select (
 
 	// we have found a route!
 	if (match) {
+		http_receive->route = found;
+		http_receive->request_method = request->method;
+
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {

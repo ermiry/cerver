@@ -284,6 +284,9 @@ struct _HttpReceive {
 	
 	HttpRequest *request;
 
+	HttpRoute *route;
+	RequestMethod request_method;
+
 	// websockets
 	unsigned char fin_rsv_opcode;
 	size_t fragmented_message_len;
