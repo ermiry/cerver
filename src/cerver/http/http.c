@@ -32,7 +32,9 @@ static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
 
-static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
+static void http_receive_handle_default_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+);
 
 static void http_receive_handle (
 	HttpReceive *http_receive, 
@@ -480,7 +482,10 @@ void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
 
 void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
-	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)
+	void (*catch_all_route)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 ) {
 
 	if (http_cerver && catch_all_route) {
@@ -1396,13 +1401,13 @@ void http_receive_delete (HttpReceive *http_receive) {
 }
 
 static void http_receive_handle_default_route (
-	CerverReceive *cr, HttpRequest *request
+	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -1410,7 +1415,7 @@ static void http_receive_handle_default_route (
 
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (
-	HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request
+	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
 ) {
 
 	cerver_log_warning (
@@ -1420,7 +1425,7 @@ static void http_receive_handle_catch_all (
 	);
 
 	// handle with default route
-	http_cerver->default_handler (cr, request);
+	http_cerver->default_handler (http_receive, request);
 
 	http_cerver->n_cath_all_requests += 1;
 
@@ -1428,7 +1433,7 @@ static void http_receive_handle_catch_all (
 
 // route is expecting a web socket connection, check headers and perform handshake
 static void http_receive_handle_match_web_socket (
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRequest *request, 
 	HttpRoute *route
 ) {
@@ -1463,7 +1468,7 @@ static void http_receive_handle_match_web_socket (
 
 				http_response_compile (res);
 				http_response_print (res);
-				http_response_send (res, cr->cerver, cr->connection);
+				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 
@@ -1480,10 +1485,10 @@ static void http_receive_handle_match_web_socket (
 			http_receive->ws_on_error = route->ws_on_error;
 
 			// set the sockets timeout to prevent threads from getting stuck if no more data to read
-			if (sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
+			if (sock_set_timeout (http_receive->cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
 				cerver_log_error (
 					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
-					cr->connection->socket->sock_fd
+					http_receive->cr->connection->socket->sock_fd
 				);
 
 				// end connection to avoid wasting a thread
@@ -1491,17 +1496,17 @@ static void http_receive_handle_match_web_socket (
 			}
 		}
 
-		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+		else http_response_create_and_send (400, NULL, 0, http_receive);
 	}
 
-	else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+	else http_response_create_and_send (400, NULL, 0, http_receive);
 
 }
 
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRequest *request, 
 	HttpRoute *found
 ) {
@@ -1549,23 +1554,24 @@ static void http_receive_handle_match (
 			}
 
 			switch (found->modifier) {
-				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (cr, request); break;
+				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (http_receive, request); break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-					http_receive_handle_match_web_socket (http_receive, cr, request, found);
+					http_receive_handle_match_web_socket (http_receive, request, found);
 					break;
 			}
 
-			found->stats[request->method]->n_requests += 1;
+			// 25/11/2020 - handled by http_route_stats_update ()
+			// found->stats[request->method]->n_requests += 1;
 		}
 
 		else {
-			http_receive_handle_catch_all (http_cerver, cr, request);
+			http_receive_handle_catch_all (http_cerver, http_receive, request);
 		}
 	}
 
 	else {
-		http_receive_handle_catch_all (http_cerver, cr, request);
+		http_receive_handle_catch_all (http_cerver, http_receive, request);
 	}
 
 }
@@ -1652,12 +1658,12 @@ static inline bool http_receive_handle_select_children (
 
 }
 
-static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
+static void http_receive_handle_select_failed_auth (HttpReceive *http_receive) {
 
 	HttpResponse *res = http_response_json_error (HTTP_STATUS_UNAUTHORIZED, "Failed to authenticate!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -1665,7 +1671,7 @@ static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
 
 static void http_receive_handle_select_auth_bearer (
 	HttpCerver *http_cerver, 
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
 
@@ -1699,7 +1705,7 @@ static void http_receive_handle_select_auth_bearer (
 
 				http_receive_handle_match (
 					http_cerver,
-					http_receive, cr,
+					http_receive,
 					request,
 					found
 				);
@@ -1713,7 +1719,7 @@ static void http_receive_handle_select_auth_bearer (
 				);
 				#endif
 
-				http_receive_handle_select_failed_auth (cr);
+				http_receive_handle_select_failed_auth (http_receive);
 
 				http_cerver->n_failed_auth_requests += 1;
 			}
@@ -1726,7 +1732,7 @@ static void http_receive_handle_select_auth_bearer (
 			cerver_log_error ("Invalid JWT!");
 			#endif
 
-			http_receive_handle_select_failed_auth (cr);
+			http_receive_handle_select_failed_auth (http_receive);
 			http_cerver->n_failed_auth_requests += 1;
 		}
 	}
@@ -1737,10 +1743,10 @@ static void http_receive_handle_select_auth_bearer (
 
 // select the route that will handle the request
 static void http_receive_handle_select (
-	HttpReceive *http_receive, CerverReceive *cr, HttpRequest *request
+	HttpReceive *http_receive, HttpRequest *request
 ) {
 
-	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+	HttpCerver *http_cerver = (HttpCerver *) http_receive->cr->cerver->cerver_data;
 
 	bool match = false;
 	HttpRoute *found = NULL;
@@ -1779,7 +1785,7 @@ static void http_receive_handle_select (
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {
 				http_receive_handle_match (
 					http_cerver,
-					http_receive, cr,
+					http_receive,
 					request,
 					found
 				);
@@ -1788,12 +1794,12 @@ static void http_receive_handle_select (
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (http_cerver, http_receive, cr, found, request);
+					http_receive_handle_select_auth_bearer (http_cerver, http_receive, found, request);
 				}
 
 				// no authentication header was provided
 				else {
-					http_receive_handle_select_failed_auth (cr);
+					http_receive_handle_select_failed_auth (http_receive);
 					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
@@ -1801,7 +1807,7 @@ static void http_receive_handle_select (
 	}
 
 	else {
-		http_receive_handle_catch_all (http_cerver, cr, request);
+		http_receive_handle_catch_all (http_cerver, http_receive, request);
 	}
 
 }
@@ -1887,7 +1893,9 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			// serve the file
 			int file = open (filename, O_RDONLY);
 			if (file) {
-				http_response_send_file (http_receive->cr, file, filename, &filestatus);
+				http_response_send_file (
+					http_receive, file, filename, &filestatus
+				);
 
 				close (file);
 			}
@@ -1904,7 +1912,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			http_receive->request->url->str
 		);
 
-		http_receive_handle_default_route (http_receive->cr, http_receive->request);
+		http_receive_handle_default_route (http_receive, http_receive->request);
 	}
 
 }
@@ -1938,17 +1946,17 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 				// unable to serve a file, try for matching route
 				else {
-					http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+					http_receive_handle_select (http_receive, http_receive->request);
 				}
 			}
 
 			else {
-				http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+				http_receive_handle_select (http_receive, http_receive->request);
 			}
 		} break;
 
 		default:
-			http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+			http_receive_handle_select (http_receive, http_receive->request);
 			break;
 	}
 
@@ -1976,7 +1984,7 @@ static void http_receive_handle (
 		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
 		if (res) {
 			// http_response_print (res);
-			http_response_send (res, http_receive->cr->cerver, http_receive->cr->connection);
+			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
 
