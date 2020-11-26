@@ -77,10 +77,6 @@ HttpRouteStats *http_route_stats_new (void) {
 
 		route_stats->min_response_size = LONG_MAX;
 
-		route_stats->min_n_files = LONG_MAX;
-
-		route_stats->min_file_size = LONG_MAX;
-
 		route_stats->mutex = pthread_mutex_new ();
 	}
 
@@ -101,7 +97,7 @@ void http_route_stats_delete (void *route_stats_ptr) {
 }
 
 // adds one request to counter
-// updates process times & request sizes
+// updates process times & request & response sizes
 void http_route_stats_update (
 	HttpRouteStats *route_stats,
 	double process_time,
@@ -109,7 +105,7 @@ void http_route_stats_update (
 ) {
 
 	if (route_stats) {
-		pthread_mutex_lock (route_stats->mutex);
+		(void) pthread_mutex_lock (route_stats->mutex);
 
 		if (route_stats->first) route_stats->first = false;
 
@@ -145,7 +141,87 @@ void http_route_stats_update (
 		route_stats->sum_response_sizes += response_size;
 		route_stats->mean_response_size = (route_stats->sum_response_sizes / route_stats->n_requests);
 
-		pthread_mutex_unlock (route_stats->mutex);
+		(void) pthread_mutex_unlock (route_stats->mutex);
+	}
+
+}
+
+HttpRouteFileStats *http_route_file_stats_new (void) {
+
+	HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) malloc (sizeof (HttpRouteFileStats));
+	if (route_file_stats) {
+		(void) memset (route_file_stats, 0, sizeof (HttpRouteStats));
+
+		route_file_stats->min_n_files = LONG_MAX;
+
+		route_file_stats->min_file_size = LONG_MAX;
+
+		route_file_stats->mutex = NULL;
+	}
+
+	return route_file_stats;
+
+}
+
+void http_route_file_stats_delete (void *route_file_stats_ptr) {
+
+	if (route_file_stats_ptr) {
+		HttpRouteStats *route_file_stats = (HttpRouteStats *) route_file_stats_ptr;
+
+		pthread_mutex_delete (route_file_stats->mutex);
+		
+		free (route_file_stats_ptr);
+	}
+
+}
+
+HttpRouteFileStats *http_route_file_stats_create (void) {
+
+	HttpRouteFileStats *route_file_stats = http_route_file_stats_new ();
+	if (route_file_stats) {
+		route_file_stats->mutex = pthread_mutex_new ();
+	}
+
+	return route_file_stats;
+
+}
+
+// updates route's file stats with http receive file stats
+void http_route_file_stats_update (
+	HttpRouteFileStats *file_stats,
+	HttpRouteFileStats *new_file_stats
+) {
+
+	if (file_stats && new_file_stats) {
+		(void) pthread_mutex_lock (file_stats->mutex);
+
+		if (file_stats->first) file_stats->first = false;
+
+		file_stats->n_requests += 1;
+
+		file_stats->n_uploaded_files += new_file_stats->n_uploaded_files;
+
+		// n files
+		if (new_file_stats->min_n_files < file_stats->min_n_files)
+			file_stats->min_n_files = new_file_stats->min_n_files;
+
+		if (new_file_stats->max_n_files > file_stats->max_n_files)
+			file_stats->max_n_files = new_file_stats->max_n_files;
+
+		file_stats->sum_n_files += new_file_stats->n_uploaded_files;
+		file_stats->mean_n_files = (file_stats->sum_n_files / file_stats->n_requests);
+
+		// size
+		if (new_file_stats->min_file_size < file_stats->min_file_size)
+			file_stats->min_file_size = new_file_stats->min_file_size;
+
+		if (new_file_stats->max_file_size > file_stats->max_file_size)
+			file_stats->max_file_size = new_file_stats->max_file_size;
+
+		file_stats->sum_file_size += new_file_stats->sum_file_size;
+		file_stats->mean_file_size = (file_stats->sum_n_files / file_stats->n_uploaded_files);
+
+		(void) pthread_mutex_unlock (file_stats->mutex);
 	}
 
 }
@@ -187,6 +263,8 @@ HttpRoute *http_route_new (void) {
 		route->ws_on_pong = NULL;
 		route->ws_on_message = NULL;
 		route->ws_on_error = NULL;
+
+		route->file_stats = NULL;
 	}
 
 	return route;
@@ -218,6 +296,8 @@ void http_route_delete (void *route_ptr) {
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			http_route_stats_delete (route->stats[i]);
 		}
+
+		http_route_file_stats_delete (route->file_stats);
 
 		free (route_ptr);
 	}
@@ -257,6 +337,8 @@ HttpRoute *http_route_create (
 			for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 				route->stats[i] = http_route_stats_new ();
 			}
+
+			route->file_stats = http_route_file_stats_create ();
 		}
 	}
 

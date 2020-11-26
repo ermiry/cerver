@@ -73,16 +73,6 @@ struct _HttpRouteStats {
 	size_t sum_response_sizes;
 	size_t mean_response_size;
 
-	size_t n_uploaded_files;
-
-	size_t min_n_files;
-	size_t max_n_files;
-	double mean_n_files;
-
-	size_t min_file_size;
-	size_t max_file_size;
-	double mean_file_size;
-
 	pthread_mutex_t *mutex;
 
 };
@@ -94,11 +84,47 @@ CERVER_PRIVATE HttpRouteStats *http_route_stats_new (void);
 CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
 
 // adds one request to counter
-// updates process times & request sizes
+// updates process times & request & response sizes
 CERVER_PRIVATE void http_route_stats_update (
 	HttpRouteStats *route_stats,
 	double process_time,
 	size_t request_size, size_t response_size
+);
+
+struct _HttpRouteFileStats {
+
+	bool first;
+
+	size_t n_requests;
+
+	size_t n_uploaded_files;
+
+	size_t min_n_files;
+	size_t max_n_files;
+	size_t sum_n_files;
+	double mean_n_files;
+
+	size_t min_file_size;
+	size_t max_file_size;
+	size_t sum_file_size;
+	double mean_file_size;
+
+	pthread_mutex_t *mutex;
+
+};
+
+typedef struct _HttpRouteFileStats HttpRouteFileStats;
+
+CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_new (void);
+
+CERVER_PRIVATE void http_route_file_stats_delete (void *route_file_stats_ptr);
+
+CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_create (void);
+
+// updates route's file stats with http receive file stats
+CERVER_PRIVATE void http_route_file_stats_update (
+	HttpRouteFileStats *file_stats,
+	HttpRouteFileStats *new_file_stats
 );
 
 struct _HttpRoute {
@@ -134,6 +160,7 @@ struct _HttpRoute {
 
 	// stats
 	HttpRouteStats *stats[HTTP_HANDLERS_COUNT];
+	HttpRouteFileStats *file_stats;
 
 };
 
