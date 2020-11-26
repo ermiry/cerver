@@ -1,10 +1,13 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/handler.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
@@ -38,7 +41,8 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 			for (unsigned int i = 0; i < http_routes_tokens->n_routes; i++) {
 				if (http_routes_tokens->tokens[i]) {
 					for (unsigned int j = 0; j < http_routes_tokens->id; j++) {
-						if (http_routes_tokens->tokens[i][j]) free (http_routes_tokens->tokens[i][j]);
+						if (http_routes_tokens->tokens[i][j])
+							free (http_routes_tokens->tokens[i][j]);
 					}
 
 					free (http_routes_tokens->tokens[i]);
@@ -49,6 +53,35 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 		}
 
 		free (http_routes_tokens_ptr);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region stats
+
+HttpRouteStats *http_route_stats_new (void) {
+
+	HttpRouteStats *route_stats = (HttpRouteStats *) malloc (sizeof (HttpRouteStats));
+	if (route_stats) {
+		(void) memset (route_stats, 0, sizeof (HttpRouteStats));
+
+		route_stats->mutex = pthread_mutex_new ();
+	}
+
+	return route_stats;
+
+}
+
+void http_route_stats_delete (void *route_stats_ptr) {
+
+	if (route_stats_ptr) {
+		HttpRouteStats *route_stats = (HttpRouteStats *) route_stats_ptr;
+
+		pthread_mutex_delete (route_stats->mutex);
+		
+		free (route_stats_ptr);
 	}
 
 }
@@ -81,6 +114,7 @@ HttpRoute *http_route_new (void) {
 
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
+			route->stats[i] = NULL;
 		}
 
 		route->ws_on_open = NULL;
@@ -89,10 +123,6 @@ HttpRoute *http_route_new (void) {
 		route->ws_on_pong = NULL;
 		route->ws_on_message = NULL;
 		route->ws_on_error = NULL;
-
-		(void) memset (
-			route->stats, 0, sizeof (HttpRouteStats) * HTTP_HANDLERS_COUNT
-		);
 	}
 
 	return route;
@@ -119,6 +149,10 @@ void http_route_delete (void *route_ptr) {
 			}
 
 			free (route->routes_tokens);
+		}
+
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			http_route_stats_delete (route->stats[i]);
 		}
 
 		free (route_ptr);
@@ -163,7 +197,9 @@ HttpRoute *http_route_create (
 }
 
 // sets the route's handler for the selected http method
-void http_route_set_handler (HttpRoute *route, RequestMethod method, HttpHandler handler) {
+void http_route_set_handler (
+	HttpRoute *route, RequestMethod method, HttpHandler handler
+) {
 
 	if (route) {
 		route->handlers[method] = handler;
@@ -331,7 +367,8 @@ void http_route_set_ws_on_pong (
 void http_route_set_ws_on_message (
 	HttpRoute *route, 
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len
+		struct _Cerver *, struct _Connection *,
+		const char *msg, size_t msg_len
 	)
 ) {
 	

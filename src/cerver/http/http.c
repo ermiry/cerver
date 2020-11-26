@@ -670,7 +670,7 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 				cerver_log_msg (
 					"\t\t%s\t%ld",
 					http_request_method_str ((RequestMethod) i),
-					route->stats[i].n_requests
+					route->stats[i]->n_requests
 				);
 			}
 		}
@@ -689,7 +689,7 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 						cerver_log_msg (
 							"\t\t\t%s\t%ld",
 							http_request_method_str ((RequestMethod) i),
-							child->stats[i].n_requests
+							child->stats[i]->n_requests
 						);
 					}
 				}
@@ -1538,7 +1538,7 @@ static void http_receive_handle_match (
 					break;
 			}
 
-			found->stats[request->method].n_requests += 1;
+			found->stats[request->method]->n_requests += 1;
 		}
 
 		else {

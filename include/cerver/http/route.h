@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_ROUTE_H_
 #define _CERVER_HTTP_ROUTE_H_
 
+#include <pthread.h>
+
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
@@ -54,6 +56,10 @@ struct _HttpRouteStats {
 	double max_process_time;
 	double mean_process_time;
 
+	size_t min_request_size;
+	size_t max_request_size;
+	size_t mean_request_size;
+
 	size_t n_uploaded_files;
 
 	size_t min_n_files;
@@ -64,9 +70,15 @@ struct _HttpRouteStats {
 	size_t max_file_size;
 	double mean_file_size;
 
+	pthread_mutex_t *mutex;
+
 };
 
 typedef struct _HttpRouteStats HttpRouteStats;
+
+CERVER_PRIVATE HttpRouteStats *http_route_stats_new (void);
+
+CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
 
 struct _HttpRoute {
 
@@ -100,7 +112,7 @@ struct _HttpRoute {
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 	// stats
-	HttpRouteStats stats[HTTP_HANDLERS_COUNT];
+	HttpRouteStats *stats[HTTP_HANDLERS_COUNT];
 
 };
 
@@ -110,7 +122,9 @@ CERVER_PUBLIC HttpRoute *http_route_new (void);
 
 CERVER_PUBLIC void http_route_delete (void *route_ptr);
 
-CERVER_PUBLIC int http_route_comparator_by_n_tokens (const void *a, const void *b);
+CERVER_PUBLIC int http_route_comparator_by_n_tokens (
+	const void *a, const void *b
+);
 
 // creates a new route that can be registered to be sued by an http cerver
 CERVER_EXPORT HttpRoute *http_route_create ( 
@@ -120,24 +134,33 @@ CERVER_EXPORT HttpRoute *http_route_create (
 );
 
 // sets the route's handler for the selected http method
-CERVER_EXPORT void http_route_set_handler (HttpRoute *route, RequestMethod method, HttpHandler handler);
+CERVER_EXPORT void http_route_set_handler (
+	HttpRoute *route, RequestMethod method, HttpHandler handler
+);
 
 CERVER_PRIVATE void http_route_init (HttpRoute *route);
 
 // registers a route as a child of a parent route
-CERVER_EXPORT void http_route_child_add (HttpRoute *parent, HttpRoute *child);
+CERVER_EXPORT void http_route_child_add (
+	HttpRoute *parent, HttpRoute *child
+);
 
 // sets a modifier for the selected route
-CERVER_EXPORT void http_route_set_modifier (HttpRoute *route, HttpRouteModifier modifier);
+CERVER_EXPORT void http_route_set_modifier (
+	HttpRoute *route, HttpRouteModifier modifier
+);
 
 // enables authentication for the selected route
-CERVER_EXPORT void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type);
+CERVER_EXPORT void http_route_set_auth (
+	HttpRoute *route, HttpRouteAuthType auth_type
+);
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
 // if no delete method is set, data won't be freed
 CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route, 
-	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+	void *(*decode_data)(void *),
+	void (*delete_decoded_data)(void *)
 );
 
 // sets a callback to be executed whenever a websocket connection is correctly
@@ -173,7 +196,8 @@ CERVER_EXPORT void http_route_set_ws_on_pong (
 CERVER_EXPORT void http_route_set_ws_on_message (
 	HttpRoute *route, 
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len
+		struct _Cerver *, struct _Connection *,
+		const char *msg, size_t msg_len
 	)
 );
 
