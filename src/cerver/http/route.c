@@ -75,6 +75,8 @@ HttpRouteStats *http_route_stats_new (void) {
 
 		route_stats->min_request_size = LONG_MAX;
 
+		route_stats->min_response_size = LONG_MAX;
+
 		route_stats->min_n_files = LONG_MAX;
 
 		route_stats->min_file_size = LONG_MAX;
@@ -102,7 +104,8 @@ void http_route_stats_delete (void *route_stats_ptr) {
 // updates process times & request sizes
 void http_route_stats_update (
 	HttpRouteStats *route_stats,
-	double process_time, size_t request_size
+	double process_time,
+	size_t request_size, size_t response_size
 ) {
 
 	if (route_stats) {
@@ -131,6 +134,16 @@ void http_route_stats_update (
 
 		route_stats->sum_request_sizes += request_size;
 		route_stats->mean_request_size = (route_stats->sum_request_sizes / route_stats->n_requests);
+
+		// response size
+		if (response_size < route_stats->min_response_size)
+			route_stats->min_response_size = response_size;
+
+		if (response_size > route_stats->max_response_size)
+			route_stats->max_response_size = response_size;
+
+		route_stats->sum_response_sizes += response_size;
+		route_stats->mean_response_size = (route_stats->sum_response_sizes / route_stats->n_requests);
 
 		pthread_mutex_unlock (route_stats->mutex);
 	}

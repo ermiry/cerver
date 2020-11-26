@@ -686,6 +686,10 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 				cerver_log_msg ("\t\tMin request size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_request_size);
 				cerver_log_msg ("\t\tMax request size: %ld", route->stats[i]->max_request_size);
 				cerver_log_msg ("\t\tMean request size: %ld", route->stats[i]->mean_request_size);
+
+				cerver_log_msg ("\t\tMin response size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_response_size);
+				cerver_log_msg ("\t\tMax response size: %ld", route->stats[i]->max_response_size);
+				cerver_log_msg ("\t\tMean response size: %ld", route->stats[i]->mean_response_size);
 			}
 		}
 
@@ -714,6 +718,10 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 						cerver_log_msg ("\t\t\tMin request size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_request_size);
 						cerver_log_msg ("\t\t\tMax request size: %ld", child->stats[i]->max_request_size);
 						cerver_log_msg ("\t\t\tMean request size: %ld", child->stats[i]->mean_request_size);
+
+						cerver_log_msg ("\t\t\tMin response size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_response_size);
+						cerver_log_msg ("\t\t\tMax response size: %ld", child->stats[i]->max_response_size);
+						cerver_log_msg ("\t\t\tMean response size: %ld", child->stats[i]->mean_response_size);
 					}
 				}
 			}

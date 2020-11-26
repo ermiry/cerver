@@ -2122,7 +2122,8 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	if (http_receive->route) {
 		http_route_stats_update (
 			http_receive->route->stats[http_receive->request_method],
-			process_time, total_received
+			process_time,
+			total_received, http_receive->sent
 		);
 	}
 

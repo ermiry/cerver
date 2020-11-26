@@ -68,6 +68,11 @@ struct _HttpRouteStats {
 	size_t sum_request_sizes;
 	size_t mean_request_size;
 
+	size_t min_response_size;
+	size_t max_response_size;
+	size_t sum_response_sizes;
+	size_t mean_response_size;
+
 	size_t n_uploaded_files;
 
 	size_t min_n_files;
@@ -92,7 +97,8 @@ CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
 // updates process times & request sizes
 CERVER_PRIVATE void http_route_stats_update (
 	HttpRouteStats *route_stats,
-	double process_time, size_t request_size
+	double process_time,
+	size_t request_size, size_t response_size
 );
 
 struct _HttpRoute {
