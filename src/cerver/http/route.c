@@ -150,7 +150,7 @@ HttpRouteFileStats *http_route_file_stats_new (void) {
 
 	HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) malloc (sizeof (HttpRouteFileStats));
 	if (route_file_stats) {
-		(void) memset (route_file_stats, 0, sizeof (HttpRouteStats));
+		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
 
 		route_file_stats->min_n_files = LONG_MAX;
 
@@ -166,7 +166,7 @@ HttpRouteFileStats *http_route_file_stats_new (void) {
 void http_route_file_stats_delete (void *route_file_stats_ptr) {
 
 	if (route_file_stats_ptr) {
-		HttpRouteStats *route_file_stats = (HttpRouteStats *) route_file_stats_ptr;
+		HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) route_file_stats_ptr;
 
 		pthread_mutex_delete (route_file_stats->mutex);
 		
@@ -202,14 +202,14 @@ void http_route_file_stats_update (
 		file_stats->n_uploaded_files += new_file_stats->n_uploaded_files;
 
 		// n files
-		if (new_file_stats->min_n_files < file_stats->min_n_files)
-			file_stats->min_n_files = new_file_stats->min_n_files;
+		if (new_file_stats->n_uploaded_files < file_stats->min_n_files)
+			file_stats->min_n_files = new_file_stats->n_uploaded_files;
 
-		if (new_file_stats->max_n_files > file_stats->max_n_files)
-			file_stats->max_n_files = new_file_stats->max_n_files;
+		if (new_file_stats->n_uploaded_files > file_stats->max_n_files)
+			file_stats->max_n_files = new_file_stats->n_uploaded_files;
 
 		file_stats->sum_n_files += new_file_stats->n_uploaded_files;
-		file_stats->mean_n_files = (file_stats->sum_n_files / file_stats->n_requests);
+		file_stats->mean_n_files = ((double) file_stats->sum_n_files / (double) file_stats->n_requests);
 
 		// size
 		if (new_file_stats->min_file_size < file_stats->min_file_size)
@@ -219,7 +219,7 @@ void http_route_file_stats_update (
 			file_stats->max_file_size = new_file_stats->max_file_size;
 
 		file_stats->sum_file_size += new_file_stats->sum_file_size;
-		file_stats->mean_file_size = (file_stats->sum_n_files / file_stats->n_uploaded_files);
+		file_stats->mean_file_size = ((double) file_stats->sum_n_files / (double) file_stats->n_uploaded_files);
 
 		(void) pthread_mutex_unlock (file_stats->mutex);
 	}
