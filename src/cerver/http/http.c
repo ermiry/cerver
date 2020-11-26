@@ -690,6 +690,19 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 				cerver_log_msg ("\t\tMin response size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_response_size);
 				cerver_log_msg ("\t\tMax response size: %ld", route->stats[i]->max_response_size);
 				cerver_log_msg ("\t\tMean response size: %ld", route->stats[i]->mean_response_size);
+
+				if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+					cerver_log_line_break ();
+					cerver_log_msg ("\t\tUploaded files: %ld", route->file_stats->n_uploaded_files);
+
+					cerver_log_msg ("\t\tMin n files: %ld", route->file_stats->first ? 0 : route->file_stats->min_n_files);
+					cerver_log_msg ("\t\tMax n files: %ld", route->file_stats->max_n_files);
+					cerver_log_msg ("\t\tMean n files: %.2f", route->file_stats->mean_n_files);
+
+					cerver_log_msg ("\t\tMin file size: %ld", route->file_stats->first ? 0 : route->file_stats->min_file_size);
+					cerver_log_msg ("\t\tMax file size: %ld", route->file_stats->max_file_size);
+					cerver_log_msg ("\t\tMean file size: %ld", route->file_stats->mean_file_size);
+				}
 			}
 		}
 
@@ -722,6 +735,18 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 						cerver_log_msg ("\t\t\tMin response size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_response_size);
 						cerver_log_msg ("\t\t\tMax response size: %ld", child->stats[i]->max_response_size);
 						cerver_log_msg ("\t\t\tMean response size: %ld", child->stats[i]->mean_response_size);
+
+						if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+							cerver_log_msg ("\t\t\tUploaded files: %ld", child->file_stats->n_uploaded_files);
+
+							cerver_log_msg ("\t\t\tMin n files: %ld", child->file_stats->first ? 0 : child->file_stats->min_n_files);
+							cerver_log_msg ("\t\t\tMax n files: %ld", child->file_stats->max_n_files);
+							cerver_log_msg ("\t\t\tMean n files: %.2f", child->file_stats->mean_n_files);
+
+							cerver_log_msg ("\t\t\tMin file size: %ld", child->file_stats->first ? 0 : child->file_stats->min_file_size);
+							cerver_log_msg ("\t\t\tMax file size: %ld", child->file_stats->max_file_size);
+							cerver_log_msg ("\t\t\tMean file size: %ld", child->file_stats->mean_file_size);
+						}
 					}
 				}
 			}
@@ -1178,6 +1203,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			);
 
 			if (original_filename) {
+				// stats
+				http_receive->file_stats->n_uploaded_files += 1;
+
 				// sanitize file
 				(void) strncpy (
 					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
@@ -1296,7 +1324,7 @@ static int http_receive_handle_mpart_data (
 				perror ("Error");
 			} break;
 
-			default: 
+			default:
 				multi_part->total_wrote += wrote;
 				break;
 		}
@@ -1313,11 +1341,20 @@ static int http_receive_handle_mpart_data (
 
 static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
 	if (multi_part->fd != -1) {
 		(void) close (multi_part->fd);
 	}
+
+	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
+		http_receive->file_stats->min_file_size = multi_part->total_wrote;
+
+	if (multi_part->total_wrote > http_receive->file_stats->max_file_size)
+		http_receive->file_stats->max_file_size = multi_part->total_wrote;
+
+	http_receive->file_stats->sum_file_size += multi_part->total_wrote;
 
 	return 0;
 
@@ -1371,6 +1408,11 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->request = http_request_new ();
 
+		http_receive->route = NULL;
+		http_receive->request_method = REQUEST_METHOD_GET;
+		http_receive->sent = 0;
+		http_receive->file_stats = http_route_file_stats_new ();
+
 		// websockets
 		http_receive->fin_rsv_opcode = 0;
 		http_receive->fragmented_message_len = 0;
@@ -1400,6 +1442,9 @@ void http_receive_delete (HttpReceive *http_receive) {
 		free (http_receive->parser);
 
 		http_request_delete (http_receive->request);
+
+		http_receive->route = NULL;
+		http_route_file_stats_delete (http_receive->file_stats);
 
 		if (http_receive->mpart_parser) multipart_parser_free (http_receive->mpart_parser);
 
@@ -1562,7 +1607,10 @@ static void http_receive_handle_match (
 			}
 
 			switch (found->modifier) {
-				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (http_receive, request); break;
+				case HTTP_ROUTE_MODIFIER_NONE:
+				case HTTP_ROUTE_MODIFIER_MULTI_PART:
+					found->handlers[request->method] (http_receive, request);
+					break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
 					http_receive_handle_match_web_socket (http_receive, request, found);

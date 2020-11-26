@@ -19,6 +19,8 @@
 
 struct _Cerver;
 
+struct _HttpRouteFileStats;
+
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
@@ -293,6 +295,7 @@ struct _HttpReceive {
 	HttpRoute *route;
 	RequestMethod request_method;
 	size_t sent;
+	struct _HttpRouteFileStats *file_stats;
 
 	// websockets
 	unsigned char fin_rsv_opcode;
