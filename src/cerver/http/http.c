@@ -32,7 +32,9 @@ static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
 
-static void http_receive_handle_default_route (CerverReceive *cr, HttpRequest *request);
+static void http_receive_handle_default_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+);
 
 static void http_receive_handle (
 	HttpReceive *http_receive, 
@@ -480,7 +482,10 @@ void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
 
 void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
-	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)
+	void (*catch_all_route)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 ) {
 
 	if (http_cerver && catch_all_route) {
@@ -666,8 +671,39 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 		cerver_log_msg ("\t%s:", route->route->str);
 		
 		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-			if (route->handlers[i]) 
-				cerver_log_msg ("\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), route->n_requests[i]);
+			if (route->handlers[i]) {
+				cerver_log_msg (
+					"\t\t%s\t%ld",
+					http_request_method_str ((RequestMethod) i),
+					route->stats[i]->n_requests
+				);
+
+				// route stats
+				cerver_log_msg ("\t\tMin process time: %.4f secs", route->stats[i]->first ? 0 : route->stats[i]->min_process_time);
+				cerver_log_msg ("\t\tMax process time: %.4f secs", route->stats[i]->max_process_time);
+				cerver_log_msg ("\t\tMean process time: %.4f secs", route->stats[i]->mean_process_time);
+
+				cerver_log_msg ("\t\tMin request size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_request_size);
+				cerver_log_msg ("\t\tMax request size: %ld", route->stats[i]->max_request_size);
+				cerver_log_msg ("\t\tMean request size: %ld", route->stats[i]->mean_request_size);
+
+				cerver_log_msg ("\t\tMin response size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_response_size);
+				cerver_log_msg ("\t\tMax response size: %ld", route->stats[i]->max_response_size);
+				cerver_log_msg ("\t\tMean response size: %ld", route->stats[i]->mean_response_size);
+
+				if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+					cerver_log_line_break ();
+					cerver_log_msg ("\t\tUploaded files: %ld", route->file_stats->n_uploaded_files);
+
+					cerver_log_msg ("\t\tMin n files: %ld", route->file_stats->first ? 0 : route->file_stats->min_n_files);
+					cerver_log_msg ("\t\tMax n files: %ld", route->file_stats->max_n_files);
+					cerver_log_msg ("\t\tMean n files: %.2f", route->file_stats->mean_n_files);
+
+					cerver_log_msg ("\t\tMin file size: %ld", route->file_stats->first ? 0 : route->file_stats->min_file_size);
+					cerver_log_msg ("\t\tMax file size: %ld", route->file_stats->max_file_size);
+					cerver_log_msg ("\t\tMean file size: %ld", route->file_stats->mean_file_size);
+				}
+			}
 		}
 
 		if (route->children->size) {
@@ -680,8 +716,38 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 				cerver_log_msg ("\t\t%s:", child->actual->str);
 
 				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-					if (child->handlers[i]) 
-						cerver_log_msg ("\t\t\t%s\t%ld", http_request_method_str ((RequestMethod) i), child->n_requests[i]);
+					if (child->handlers[i]) {
+						cerver_log_msg (
+							"\t\t\t%s\t%ld",
+							http_request_method_str ((RequestMethod) i),
+							child->stats[i]->n_requests
+						);
+
+						// route stats
+						cerver_log_msg ("\t\t\tMin process time: %.4f secs", child->stats[i]->first ? 0 : child->stats[i]->min_process_time);
+						cerver_log_msg ("\t\t\tMax process time: %.4f secs", child->stats[i]->max_process_time);
+						cerver_log_msg ("\t\t\tMean process time: %.4f secs", child->stats[i]->mean_process_time);
+
+						cerver_log_msg ("\t\t\tMin request size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_request_size);
+						cerver_log_msg ("\t\t\tMax request size: %ld", child->stats[i]->max_request_size);
+						cerver_log_msg ("\t\t\tMean request size: %ld", child->stats[i]->mean_request_size);
+
+						cerver_log_msg ("\t\t\tMin response size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_response_size);
+						cerver_log_msg ("\t\t\tMax response size: %ld", child->stats[i]->max_response_size);
+						cerver_log_msg ("\t\t\tMean response size: %ld", child->stats[i]->mean_response_size);
+
+						if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+							cerver_log_msg ("\t\t\tUploaded files: %ld", child->file_stats->n_uploaded_files);
+
+							cerver_log_msg ("\t\t\tMin n files: %ld", child->file_stats->first ? 0 : child->file_stats->min_n_files);
+							cerver_log_msg ("\t\t\tMax n files: %ld", child->file_stats->max_n_files);
+							cerver_log_msg ("\t\t\tMean n files: %.2f", child->file_stats->mean_n_files);
+
+							cerver_log_msg ("\t\t\tMin file size: %ld", child->file_stats->first ? 0 : child->file_stats->min_file_size);
+							cerver_log_msg ("\t\t\tMax file size: %ld", child->file_stats->max_file_size);
+							cerver_log_msg ("\t\t\tMean file size: %ld", child->file_stats->mean_file_size);
+						}
+					}
 				}
 			}
 		}
@@ -1137,6 +1203,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			);
 
 			if (original_filename) {
+				// stats
+				http_receive->file_stats->n_uploaded_files += 1;
+
 				// sanitize file
 				(void) strncpy (
 					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
@@ -1255,7 +1324,7 @@ static int http_receive_handle_mpart_data (
 				perror ("Error");
 			} break;
 
-			default: 
+			default:
 				multi_part->total_wrote += wrote;
 				break;
 		}
@@ -1272,11 +1341,20 @@ static int http_receive_handle_mpart_data (
 
 static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 
 	if (multi_part->fd != -1) {
 		(void) close (multi_part->fd);
 	}
+
+	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
+		http_receive->file_stats->min_file_size = multi_part->total_wrote;
+
+	if (multi_part->total_wrote > http_receive->file_stats->max_file_size)
+		http_receive->file_stats->max_file_size = multi_part->total_wrote;
+
+	http_receive->file_stats->sum_file_size += multi_part->total_wrote;
 
 	return 0;
 
@@ -1330,6 +1408,11 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->request = http_request_new ();
 
+		http_receive->route = NULL;
+		http_receive->request_method = REQUEST_METHOD_GET;
+		http_receive->sent = 0;
+		http_receive->file_stats = http_route_file_stats_new ();
+
 		// websockets
 		http_receive->fin_rsv_opcode = 0;
 		http_receive->fragmented_message_len = 0;
@@ -1360,6 +1443,9 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		http_request_delete (http_receive->request);
 
+		http_receive->route = NULL;
+		http_route_file_stats_delete (http_receive->file_stats);
+
 		if (http_receive->mpart_parser) multipart_parser_free (http_receive->mpart_parser);
 
 		free (http_receive);
@@ -1368,13 +1454,13 @@ void http_receive_delete (HttpReceive *http_receive) {
 }
 
 static void http_receive_handle_default_route (
-	CerverReceive *cr, HttpRequest *request
+	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -1382,7 +1468,7 @@ static void http_receive_handle_default_route (
 
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (
-	HttpCerver *http_cerver, CerverReceive *cr, HttpRequest *request
+	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
 ) {
 
 	cerver_log_warning (
@@ -1392,7 +1478,7 @@ static void http_receive_handle_catch_all (
 	);
 
 	// handle with default route
-	http_cerver->default_handler (cr, request);
+	http_cerver->default_handler (http_receive, request);
 
 	http_cerver->n_cath_all_requests += 1;
 
@@ -1400,7 +1486,7 @@ static void http_receive_handle_catch_all (
 
 // route is expecting a web socket connection, check headers and perform handshake
 static void http_receive_handle_match_web_socket (
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRequest *request, 
 	HttpRoute *route
 ) {
@@ -1435,7 +1521,7 @@ static void http_receive_handle_match_web_socket (
 
 				http_response_compile (res);
 				http_response_print (res);
-				http_response_send (res, cr->cerver, cr->connection);
+				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 
@@ -1452,10 +1538,10 @@ static void http_receive_handle_match_web_socket (
 			http_receive->ws_on_error = route->ws_on_error;
 
 			// set the sockets timeout to prevent threads from getting stuck if no more data to read
-			if (sock_set_timeout (cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
+			if (sock_set_timeout (http_receive->cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
 				cerver_log_error (
 					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
-					cr->connection->socket->sock_fd
+					http_receive->cr->connection->socket->sock_fd
 				);
 
 				// end connection to avoid wasting a thread
@@ -1463,17 +1549,17 @@ static void http_receive_handle_match_web_socket (
 			}
 		}
 
-		else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+		else http_response_create_and_send (400, NULL, 0, http_receive);
 	}
 
-	else http_response_create_and_send (400, NULL, 0, cr->cerver, cr->connection);
+	else http_response_create_and_send (400, NULL, 0, http_receive);
 
 }
 
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRequest *request, 
 	HttpRoute *found
 ) {
@@ -1521,28 +1607,34 @@ static void http_receive_handle_match (
 			}
 
 			switch (found->modifier) {
-				case HTTP_ROUTE_MODIFIER_NONE: found->handlers[request->method] (cr, request); break;
+				case HTTP_ROUTE_MODIFIER_NONE:
+				case HTTP_ROUTE_MODIFIER_MULTI_PART:
+					found->handlers[request->method] (http_receive, request);
+					break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-					http_receive_handle_match_web_socket (http_receive, cr, request, found);
+					http_receive_handle_match_web_socket (http_receive, request, found);
 					break;
 			}
 
-			found->n_requests[request->method] += 1;
+			// 25/11/2020 - handled by http_route_stats_update ()
+			// found->stats[request->method]->n_requests += 1;
 		}
 
 		else {
-			http_receive_handle_catch_all (http_cerver, cr, request);
+			http_receive_handle_catch_all (http_cerver, http_receive, request);
 		}
 	}
 
 	else {
-		http_receive_handle_catch_all (http_cerver, cr, request);
+		http_receive_handle_catch_all (http_cerver, http_receive, request);
 	}
 
 }
 
-static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRequest *request, HttpRoute **found) {
+static inline bool http_receive_handle_select_children (
+	HttpRoute *route, HttpRequest *request, HttpRoute **found
+) {
 
 	bool retval = false;
 
@@ -1622,12 +1714,12 @@ static inline bool http_receive_handle_select_children (HttpRoute *route, HttpRe
 
 }
 
-static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
+static void http_receive_handle_select_failed_auth (HttpReceive *http_receive) {
 
 	HttpResponse *res = http_response_json_error (HTTP_STATUS_UNAUTHORIZED, "Failed to authenticate!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -1635,7 +1727,7 @@ static void http_receive_handle_select_failed_auth (CerverReceive *cr) {
 
 static void http_receive_handle_select_auth_bearer (
 	HttpCerver *http_cerver, 
-	HttpReceive *http_receive, CerverReceive *cr, 
+	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
 
@@ -1669,7 +1761,7 @@ static void http_receive_handle_select_auth_bearer (
 
 				http_receive_handle_match (
 					http_cerver,
-					http_receive, cr,
+					http_receive,
 					request,
 					found
 				);
@@ -1683,7 +1775,7 @@ static void http_receive_handle_select_auth_bearer (
 				);
 				#endif
 
-				http_receive_handle_select_failed_auth (cr);
+				http_receive_handle_select_failed_auth (http_receive);
 
 				http_cerver->n_failed_auth_requests += 1;
 			}
@@ -1696,7 +1788,7 @@ static void http_receive_handle_select_auth_bearer (
 			cerver_log_error ("Invalid JWT!");
 			#endif
 
-			http_receive_handle_select_failed_auth (cr);
+			http_receive_handle_select_failed_auth (http_receive);
 			http_cerver->n_failed_auth_requests += 1;
 		}
 	}
@@ -1707,10 +1799,10 @@ static void http_receive_handle_select_auth_bearer (
 
 // select the route that will handle the request
 static void http_receive_handle_select (
-	HttpReceive *http_receive, CerverReceive *cr, HttpRequest *request
+	HttpReceive *http_receive, HttpRequest *request
 ) {
 
-	HttpCerver *http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+	HttpCerver *http_cerver = (HttpCerver *) http_receive->cr->cerver->cerver_data;
 
 	bool match = false;
 	HttpRoute *found = NULL;
@@ -1741,12 +1833,15 @@ static void http_receive_handle_select (
 
 	// we have found a route!
 	if (match) {
+		http_receive->route = found;
+		http_receive->request_method = request->method;
+
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {
 				http_receive_handle_match (
 					http_cerver,
-					http_receive, cr,
+					http_receive,
 					request,
 					found
 				);
@@ -1755,12 +1850,12 @@ static void http_receive_handle_select (
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (http_cerver, http_receive, cr, found, request);
+					http_receive_handle_select_auth_bearer (http_cerver, http_receive, found, request);
 				}
 
 				// no authentication header was provided
 				else {
-					http_receive_handle_select_failed_auth (cr);
+					http_receive_handle_select_failed_auth (http_receive);
 					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
@@ -1768,7 +1863,7 @@ static void http_receive_handle_select (
 	}
 
 	else {
-		http_receive_handle_catch_all (http_cerver, cr, request);
+		http_receive_handle_catch_all (http_cerver, http_receive, request);
 	}
 
 }
@@ -1854,7 +1949,9 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			// serve the file
 			int file = open (filename, O_RDONLY);
 			if (file) {
-				http_response_send_file (http_receive->cr, file, filename, &filestatus);
+				http_response_send_file (
+					http_receive, file, filename, &filestatus
+				);
 
 				close (file);
 			}
@@ -1871,7 +1968,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			http_receive->request->url->str
 		);
 
-		http_receive_handle_default_route (http_receive->cr, http_receive->request);
+		http_receive_handle_default_route (http_receive, http_receive->request);
 	}
 
 }
@@ -1905,17 +2002,17 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 				// unable to serve a file, try for matching route
 				else {
-					http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+					http_receive_handle_select (http_receive, http_receive->request);
 				}
 			}
 
 			else {
-				http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+				http_receive_handle_select (http_receive, http_receive->request);
 			}
 		} break;
 
 		default:
-			http_receive_handle_select (http_receive, http_receive->cr, http_receive->request);
+			http_receive_handle_select (http_receive, http_receive->request);
 			break;
 	}
 
@@ -1943,7 +2040,7 @@ static void http_receive_handle (
 		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
 		if (res) {
 			// http_response_print (res);
-			http_response_send (res, http_receive->cr->cerver, http_receive->cr->connection);
+			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
 

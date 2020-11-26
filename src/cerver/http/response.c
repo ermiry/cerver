@@ -182,7 +182,7 @@ HttpResponse *http_response_create (
 		if (data) {
 			res->data = malloc (data_len);
 			if (res->data) {
-				memcpy (res->data, data, data_len);
+				(void) memcpy (res->data, data, data_len);
 				res->data_len = data_len;
 			}
 		}
@@ -216,11 +216,11 @@ void http_response_compile_header (HttpResponse *res) {
 		res->header = calloc (res->header_len, sizeof (char));
 
 		char *end = (char *) res->header;
-		memcpy (end, main_header, main_header_len);
+		(void) memcpy (end, main_header, main_header_len);
 		end += main_header_len;
 		for (i = 0; i < RESPONSE_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
-				memcpy (end, res->headers[i]->str, res->headers[i]->len);
+				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
 				end += res->headers[i]->len;
 			}
 		}
@@ -276,11 +276,11 @@ u8 http_response_compile (HttpResponse *res) {
 		res->res = malloc (res->res_len);
 		if (res->res) {
 			char *end = (char *) res->res;
-			memcpy (end, res->header, res->header_len);
+			(void) memcpy (end, res->header, res->header_len);
 
 			if (res->data) {
 				end += res->header_len;
-				memcpy (end, res->data, res->data_len);
+				(void) memcpy (end, res->data, res->data_len);
 			}
 
 			retval = 0;
@@ -319,19 +319,24 @@ static u8 http_response_send_actual (
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_send (
-	HttpResponse *res, Cerver *cerver, Connection *connection
+	HttpResponse *res,
+	const HttpReceive *http_receive
 ) {
 
 	u8 retval = 1;
 
-	if (res && connection) {
+	if (res && http_receive->cr->connection) {
 		if (res->res) {
 			if (!http_response_send_actual (
-				connection->socket,
+				http_receive->cr->connection->socket,
 				(char *) res->res, res->res_len
 			)) {
-				if (cerver) cerver->stats->total_bytes_sent += res->res_len;
-				connection->stats->total_bytes_sent += res->res_len; 
+				if (http_receive->cr->cerver)
+					http_receive->cr->cerver->stats->total_bytes_sent += res->res_len;
+
+				http_receive->cr->connection->stats->total_bytes_sent += res->res_len;
+
+				((HttpReceive *) http_receive)->sent = res->res_len;
 
 				retval = 0;
 			}
@@ -347,24 +352,30 @@ u8 http_response_send (
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 u8 http_response_send_split (
-	HttpResponse *res, Cerver *cerver, Connection *connection
+	HttpResponse *res,
+	const HttpReceive *http_receive
 ) {
 
 	u8 retval = 1;
 
-	if (res && connection) {
+	if (res && http_receive->cr->connection) {
 		if (res->header && res->data) {
 			if (!http_response_send_actual (
-				connection->socket,
+				http_receive->cr->connection->socket,
 				(char *) res->header, res->header_len
 			)) {
 				if (!http_response_send_actual (
-					connection->socket,
+					http_receive->cr->connection->socket,
 					(char *) res->data, res->data_len
 				)) {
 					size_t total_size = res->header_len + res->data_len;
-					if (cerver) cerver->stats->total_bytes_sent += total_size;
-					connection->stats->total_bytes_sent += total_size;
+
+					if (http_receive->cr->cerver)
+						http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+
+					http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
+					((HttpReceive *) http_receive)->sent = total_size;
 
 					retval = 0;
 				}
@@ -380,7 +391,7 @@ u8 http_response_send_split (
 // returns 0 on success, 1 on error
 u8 http_response_create_and_send (
 	unsigned int status, const void *data, size_t data_len,
-	Cerver *cerver, Connection *connection
+	const HttpReceive *http_receive
 ) {
 
 	u8 retval = 1;
@@ -388,7 +399,7 @@ u8 http_response_create_and_send (
 	HttpResponse *res = http_response_create (status, data, data_len);
 	if (res) {
 		if (!http_response_compile (res)) {
-			retval = http_response_send (res, cerver, connection);
+			retval = http_response_send (res, http_receive);
 		}
 		
 		http_respponse_delete (res);
@@ -398,11 +409,12 @@ u8 http_response_create_and_send (
 
 }
 
+// TODO: stats
 // sends a file directly to the connection
 // this method is used when serving files from static paths & by  http_response_render_file ()
 // returns 0 on success, 1 on error
 u8 http_response_send_file (
-	CerverReceive *cr,
+	const HttpReceive *http_receive,
 	int file, const char *filename,
 	struct stat *filestatus
 ) {
@@ -428,12 +440,12 @@ u8 http_response_send_file (
 			#endif
 
 			if (!http_response_send_actual (
-				cr->connection->socket,
+				http_receive->cr->connection->socket,
 				header, strlen (header)
 			)) {
 				// send the actual file
 				sendfile (
-					cr->connection->socket->sock_fd, 
+					http_receive->cr->connection->socket->sock_fd, 
 					file, 
 					0, filestatus->st_size
 				);
@@ -466,7 +478,7 @@ void http_response_print (HttpResponse *res) {
 #pragma region render
 
 static u8 http_response_render_send (
-	CerverReceive *cr,
+	const HttpReceive *http_receive,
 	const char *header, const size_t header_len,
 	const char *data, const size_t data_len
 ) {
@@ -474,16 +486,20 @@ static u8 http_response_render_send (
 	u8 retval = 1;
 
 	if (!http_response_send_actual (
-		cr->connection->socket,
+		http_receive->cr->connection->socket,
 		header, header_len
 	)) {
 		if (!http_response_send_actual (
-			cr->connection->socket,
+			http_receive->cr->connection->socket,
 			data, data_len
 		)) {
 			size_t total_size = header_len + data_len;
-			if (cr->cerver) cr->cerver->stats->total_bytes_sent += total_size;
-			cr->connection->stats->total_bytes_sent += total_size;
+			if (http_receive->cr->cerver)
+				http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+
+			http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
+			((HttpReceive *) http_receive)->sent = total_size;
 
 			retval = 0;
 		}
@@ -497,12 +513,13 @@ static u8 http_response_render_send (
 // this methods takes care of generating a repsonse with text/html content type
 // returns 0 on success, 1 on error
 u8 http_response_render_text (
-	CerverReceive *cr, const char *text, const size_t text_len
+	const HttpReceive *http_receive,
+	const char *text, const size_t text_len
 ) {
 
 	u8 retval = 1;
 
-	if (cr && text) {
+	if (http_receive && text) {
 		char *header = c_string_create (
 			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
 			http_status_str ((enum http_status) 200),
@@ -516,7 +533,7 @@ u8 http_response_render_text (
 			#endif
 
 			retval = http_response_render_send (
-				cr,
+				http_receive,
 				header, strlen (header),
 				text, text_len
 			);
@@ -533,12 +550,13 @@ u8 http_response_render_text (
 // this methods takes care of generating a repsonse with application/json content type
 // returns 0 on success, 1 on error
 u8 http_response_render_json (
-	CerverReceive *cr, const char *json, const size_t json_len
+	const HttpReceive *http_receive,
+	const char *json, const size_t json_len
 ) {
 
 	u8 retval = 1;
 
-	if (cr && json) {
+	if (http_receive && json) {
 		char *header = c_string_create (
 			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
 			http_status_str ((enum http_status) 200),
@@ -552,7 +570,7 @@ u8 http_response_render_json (
 			#endif
 
 			retval = http_response_render_send (
-				cr,
+				http_receive,
 				header, strlen (header),
 				json, json_len
 			);
@@ -569,17 +587,20 @@ u8 http_response_render_json (
 // this method takes care of generating the header based on the file values
 // returns 0 on success, 1 on error
 u8 http_response_render_file (
-	CerverReceive *cr, const char *filename
+	const HttpReceive *http_receive,
+	const char *filename
 ) {
 
 	u8 retval = 1;
 
-	if (cr && filename) {
+	if (http_receive && filename) {
 		// check if file exists
 		struct stat filestatus = { 0 };
 		int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
 		if (file > 0) {
-			retval = http_response_send_file (cr, file, filename, &filestatus);
+			retval = http_response_send_file (
+				http_receive, file, filename, &filestatus
+			);
 
 			close (file);
 		}
@@ -644,7 +665,8 @@ HttpResponse *http_response_json_msg (
 // creates and sends a http json message response with the defined status code & message
 // returns 0 on success, 1 on error
 u8 http_response_json_msg_send (
-	CerverReceive *cr, unsigned int status, const char *msg
+	const HttpReceive *http_receive,
+	unsigned int status, const char *msg
 ) {
 
 	u8 retval = 1;
@@ -654,7 +676,7 @@ u8 http_response_json_msg_send (
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
 		#endif
-		retval = http_response_send (res, cr->cerver, cr->connection);
+		retval = http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -675,7 +697,8 @@ HttpResponse *http_response_json_error (
 // creates and sends a http json error response with the defined status code & message
 // returns 0 on success, 1 on error
 u8 http_response_json_error_send (
-	CerverReceive *cr, unsigned int status, const char *error_msg
+	const HttpReceive *http_receive,
+	unsigned int status, const char *error_msg
 ) {
 
 	u8 retval = 1;
@@ -685,7 +708,7 @@ u8 http_response_json_error_send (
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
 		#endif
-		retval = http_response_send (res, cr->cerver, cr->connection);
+		retval = http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -706,7 +729,7 @@ HttpResponse *http_response_json_key_value (
 // creates and sends a http custom json response with the defined status code & key-value
 // returns 0 on success, 1 on error
 u8 http_response_json_key_value_send (
-	CerverReceive *cr,
+	const HttpReceive *http_receive,
 	unsigned int status, const char *key, const char *value
 ) {
 
@@ -717,7 +740,7 @@ u8 http_response_json_key_value_send (
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
 		#endif
-		retval = http_response_send (res, cr->cerver, cr->connection);
+		retval = http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -771,20 +794,20 @@ HttpResponse *http_response_json_custom (
 // creates and sends a http custom json response with the defined status code
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_send (
-	CerverReceive *cr,
+	const HttpReceive *http_receive,
 	unsigned int status, const char *json
 ) {
 
 	u8 retval = 1;
 
-	if (cr && json) {
+	if (http_receive && json) {
 		HttpResponse *res = http_response_json_custom_internal ((http_status) status, json);
 		if (res) {
 			#ifdef HTTP_RESPONSE_DEBUG
 			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
-			retval = http_response_send_split (res, cr->cerver, cr->connection);
+			retval = http_response_send_split (res, http_receive);
 			http_respponse_delete (res);
 		}
 	}
@@ -846,14 +869,14 @@ HttpResponse *http_response_json_custom_reference (
 // creates and sends a http custom json reference response with the defined status code
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_reference_send (
-	CerverReceive *cr,
+	const HttpReceive *http_receive,
 	unsigned int status,
 	const char *json, const size_t json_len
 ) {
 
 	u8 retval = 1;
 
-	if (cr && json) {
+	if (http_receive && json) {
 		HttpResponse *res = http_response_json_custom_reference_internal (
 			(http_status) status,
 			json, json_len
@@ -864,7 +887,7 @@ u8 http_response_json_custom_reference_send (
 			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
-			retval = http_response_send_split (res, cr->cerver, cr->connection);
+			retval = http_response_send_split (res, http_receive);
 			http_respponse_delete (res);
 		}
 	}

@@ -19,6 +19,8 @@
 
 struct _Cerver;
 
+struct _HttpRouteFileStats;
+
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
@@ -86,7 +88,10 @@ struct _HttpCerver {
 	DoubleList *routes;
 
 	// catch all route (/*)
-	void (*default_handler)(CerverReceive *, HttpRequest *);
+	void (*default_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
 
 	// uploads
 	String *uploads_path;              // default uploads path
@@ -163,7 +168,10 @@ CERVER_EXPORT void http_cerver_route_register (
 // set a route to catch any requet that didn't match any registered route
 CERVER_EXPORT void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
-	void (*catch_all_route)(CerverReceive *cr, HttpRequest *request)
+	void (*catch_all_route)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 #pragma endregion
@@ -283,6 +291,11 @@ struct _HttpReceive {
 	multipart_parser_settings mpart_settings;
 	
 	HttpRequest *request;
+
+	HttpRoute *route;
+	RequestMethod request_method;
+	size_t sent;
+	struct _HttpRouteFileStats *file_stats;
 
 	// websockets
 	unsigned char fin_rsv_opcode;

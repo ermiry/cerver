@@ -162,12 +162,15 @@ static void *user_parse_from_json (void *user_json_ptr) {
 }
 
 // GET api/users
-static void main_users_handler (CerverReceive *cr, HttpRequest *request) {
+static void main_users_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Users route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -189,7 +192,10 @@ static User *user_get_by_username (const char *username) {
 }
 
 // POST api/users/login
-static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
+static void users_login_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	// get the user values from the request
 	const String *username = http_query_pairs_get_value (request->body_values, "username");
@@ -209,7 +215,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 				dlist_insert_after (payload, dlist_end (payload), key_value_pair_create ("role", user->role->str));
 
 				// generate & send back auth token
-				char *token = http_cerver_auth_generate_jwt ((HttpCerver *) cr->cerver->cerver_data, payload);
+				char *token = http_cerver_auth_generate_jwt ((HttpCerver *) http_receive->cr->cerver->cerver_data, payload);
 				if (token) {
 					char *bearer = c_string_create ("Bearer %s", token);
 					json_t *json = json_pack ("{s:s}", "token", bearer);
@@ -219,7 +225,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 					if (res) {
 						http_response_compile (res);
 						http_response_print (res);
-						http_response_send (res, cr->cerver, cr->connection);
+						http_response_send (res, http_receive);
 						http_respponse_delete (res);
 					}
 
@@ -232,7 +238,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 					HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
 					if (res) {
 						http_response_print (res);
-						http_response_send (res, cr->cerver, cr->connection);
+						http_response_send (res, http_receive);
 						http_respponse_delete (res);
 					}
 				}
@@ -244,7 +250,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 				HttpResponse *res = http_response_json_error ((http_status) 400, "Password is incorrect!");
 				if (res) {
 					http_response_print (res);
-					http_response_send (res, cr->cerver, cr->connection);
+					http_response_send (res, http_receive);
 					http_respponse_delete (res);
 				}
 			}
@@ -254,7 +260,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 			HttpResponse *res = http_response_json_error ((http_status) 404, "User not found!");
 			if (res) {
 				http_response_print (res);
-				http_response_send (res, cr->cerver, cr->connection);
+				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 		}
@@ -264,7 +270,7 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 		HttpResponse *res = http_response_json_error ((http_status) 400, "Missing user values!");
 		if (res) {
 			http_response_print (res);
-			http_response_send (res, cr->cerver, cr->connection);
+			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
 	}
@@ -272,7 +278,10 @@ static void users_login_handler (CerverReceive *cr, HttpRequest *request) {
 }
 
 // POST api/users/register
-static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
+static void users_register_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	// get the user values from the request
 	const String *name = http_query_pairs_get_value (request->body_values, "name");
@@ -299,7 +308,7 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 			HttpResponse *res = http_response_json_msg ((http_status) 200, "Created a new user!");
 			if (res) {
 				http_response_print (res);
-				http_response_send (res, cr->cerver, cr->connection);
+				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 		}
@@ -308,7 +317,7 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 			HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
 			if (res) {
 				http_response_print (res);
-				http_response_send (res, cr->cerver, cr->connection);
+				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 		}
@@ -318,7 +327,7 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 		HttpResponse *res = http_response_json_error ((http_status) 400, "Missing user values!");
 		if (res) {
 			http_response_print (res);
-			http_response_send (res, cr->cerver, cr->connection);
+			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
 	}
@@ -326,7 +335,10 @@ static void users_register_handler (CerverReceive *cr, HttpRequest *request) {
 }
 
 // GET api/users/profile
-static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
+static void users_profile_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	User *user = (User *) request->decoded_data;
 
@@ -335,7 +347,7 @@ static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
 	HttpResponse *res = http_response_json_msg ((http_status) 200, message);
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -344,12 +356,15 @@ static void users_profile_handler (CerverReceive *cr, HttpRequest *request) {
 }
 
 // *
-static void catch_all_handler (CerverReceive *cr, HttpRequest *request) {
+static void catch_all_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Cerver API implementation!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 

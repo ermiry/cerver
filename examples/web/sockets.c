@@ -43,31 +43,40 @@ void end (int dummy) {
 #pragma region routes
 
 // GET /
-void main_handler (CerverReceive *cr, HttpRequest *request) {
+void main_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
-	if (http_response_render_file (cr, "./examples/web/public/echo.html")) {
+	if (http_response_render_file (http_receive, "./examples/web/public/echo.html")) {
 		cerver_log_error ("Failed to send ./examples/web/public/echo.html");
 	}
 
 }
 
-void test_handler (CerverReceive *cr, HttpRequest *request) {
+void test_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
-void echo_handler (CerverReceive *cr, HttpRequest *request) {
+void echo_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Echo route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
@@ -101,12 +110,15 @@ void echo_handler_on_message (
 
 }
 
-void chat_handler (CerverReceive *cr, HttpRequest *request) {
+void chat_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Chat route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 

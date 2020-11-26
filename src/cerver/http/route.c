@@ -1,10 +1,15 @@
 #include <stdlib.h>
+#include <string.h>
+
+#include <limits.h>
 
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/handler.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
@@ -38,7 +43,8 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 			for (unsigned int i = 0; i < http_routes_tokens->n_routes; i++) {
 				if (http_routes_tokens->tokens[i]) {
 					for (unsigned int j = 0; j < http_routes_tokens->id; j++) {
-						if (http_routes_tokens->tokens[i][j]) free (http_routes_tokens->tokens[i][j]);
+						if (http_routes_tokens->tokens[i][j])
+							free (http_routes_tokens->tokens[i][j]);
 					}
 
 					free (http_routes_tokens->tokens[i]);
@@ -49,6 +55,173 @@ static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
 		}
 
 		free (http_routes_tokens_ptr);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region stats
+
+HttpRouteStats *http_route_stats_new (void) {
+
+	HttpRouteStats *route_stats = (HttpRouteStats *) malloc (sizeof (HttpRouteStats));
+	if (route_stats) {
+		(void) memset (route_stats, 0, sizeof (HttpRouteStats));
+
+		route_stats->first = true;
+
+		route_stats->min_process_time = __DBL_MAX__;
+
+		route_stats->min_request_size = LONG_MAX;
+
+		route_stats->min_response_size = LONG_MAX;
+
+		route_stats->mutex = pthread_mutex_new ();
+	}
+
+	return route_stats;
+
+}
+
+void http_route_stats_delete (void *route_stats_ptr) {
+
+	if (route_stats_ptr) {
+		HttpRouteStats *route_stats = (HttpRouteStats *) route_stats_ptr;
+
+		pthread_mutex_delete (route_stats->mutex);
+		
+		free (route_stats_ptr);
+	}
+
+}
+
+// adds one request to counter
+// updates process times & request & response sizes
+void http_route_stats_update (
+	HttpRouteStats *route_stats,
+	double process_time,
+	size_t request_size, size_t response_size
+) {
+
+	if (route_stats) {
+		(void) pthread_mutex_lock (route_stats->mutex);
+
+		if (route_stats->first) route_stats->first = false;
+
+		route_stats->n_requests += 1;
+
+		// process
+		if (process_time < route_stats->min_process_time)
+			route_stats->min_process_time = process_time;
+
+		if (process_time > route_stats->max_process_time)
+			route_stats->max_process_time = process_time;
+
+		route_stats->sum_process_times += process_time;
+		route_stats->mean_process_time = (route_stats->sum_process_times / route_stats->n_requests);
+
+		// request size
+		if (request_size < route_stats->min_request_size)
+			route_stats->min_request_size = request_size;
+
+		if (request_size > route_stats->max_request_size)
+			route_stats->max_request_size = request_size;
+
+		route_stats->sum_request_sizes += request_size;
+		route_stats->mean_request_size = (route_stats->sum_request_sizes / route_stats->n_requests);
+
+		// response size
+		if (response_size < route_stats->min_response_size)
+			route_stats->min_response_size = response_size;
+
+		if (response_size > route_stats->max_response_size)
+			route_stats->max_response_size = response_size;
+
+		route_stats->sum_response_sizes += response_size;
+		route_stats->mean_response_size = (route_stats->sum_response_sizes / route_stats->n_requests);
+
+		(void) pthread_mutex_unlock (route_stats->mutex);
+	}
+
+}
+
+HttpRouteFileStats *http_route_file_stats_new (void) {
+
+	HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) malloc (sizeof (HttpRouteFileStats));
+	if (route_file_stats) {
+		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
+
+		route_file_stats->min_n_files = LONG_MAX;
+
+		route_file_stats->min_file_size = LONG_MAX;
+
+		route_file_stats->mutex = NULL;
+	}
+
+	return route_file_stats;
+
+}
+
+void http_route_file_stats_delete (void *route_file_stats_ptr) {
+
+	if (route_file_stats_ptr) {
+		HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) route_file_stats_ptr;
+
+		pthread_mutex_delete (route_file_stats->mutex);
+		
+		free (route_file_stats_ptr);
+	}
+
+}
+
+HttpRouteFileStats *http_route_file_stats_create (void) {
+
+	HttpRouteFileStats *route_file_stats = http_route_file_stats_new ();
+	if (route_file_stats) {
+		route_file_stats->mutex = pthread_mutex_new ();
+	}
+
+	return route_file_stats;
+
+}
+
+// updates route's file stats with http receive file stats
+void http_route_file_stats_update (
+	HttpRouteFileStats *file_stats,
+	HttpRouteFileStats *new_file_stats
+) {
+
+	if (file_stats && new_file_stats) {
+		(void) pthread_mutex_lock (file_stats->mutex);
+
+		if (file_stats->first) file_stats->first = false;
+
+		file_stats->n_requests += 1;
+
+		file_stats->n_uploaded_files += new_file_stats->n_uploaded_files;
+
+		// n files
+		if (new_file_stats->n_uploaded_files < file_stats->min_n_files)
+			file_stats->min_n_files = new_file_stats->n_uploaded_files;
+
+		if (new_file_stats->n_uploaded_files > file_stats->max_n_files)
+			file_stats->max_n_files = new_file_stats->n_uploaded_files;
+
+		file_stats->sum_n_files += new_file_stats->n_uploaded_files;
+		file_stats->mean_n_files = ((double) file_stats->sum_n_files / (double) file_stats->n_requests);
+
+		// size
+		if (new_file_stats->min_file_size < file_stats->min_file_size)
+			file_stats->min_file_size = new_file_stats->min_file_size;
+
+		if (new_file_stats->max_file_size > file_stats->max_file_size)
+			file_stats->max_file_size = new_file_stats->max_file_size;
+
+		file_stats->sum_file_size += new_file_stats->sum_file_size;
+		file_stats->mean_file_size = ((double) file_stats->sum_n_files / (double) file_stats->n_uploaded_files);
+
+		(void) pthread_mutex_unlock (file_stats->mutex);
 	}
 
 }
@@ -81,7 +254,7 @@ HttpRoute *http_route_new (void) {
 
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
-			route->n_requests[i] = 0;
+			route->stats[i] = NULL;
 		}
 
 		route->ws_on_open = NULL;
@@ -90,6 +263,8 @@ HttpRoute *http_route_new (void) {
 		route->ws_on_pong = NULL;
 		route->ws_on_message = NULL;
 		route->ws_on_error = NULL;
+
+		route->file_stats = NULL;
 	}
 
 	return route;
@@ -117,6 +292,12 @@ void http_route_delete (void *route_ptr) {
 
 			free (route->routes_tokens);
 		}
+
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			http_route_stats_delete (route->stats[i]);
+		}
+
+		http_route_file_stats_delete (route->file_stats);
 
 		free (route_ptr);
 	}
@@ -152,6 +333,12 @@ HttpRoute *http_route_create (
 			route->children = dlist_init (http_route_delete, NULL);
 
 			route->handlers[method] = handler;
+
+			for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+				route->stats[i] = http_route_stats_new ();
+			}
+
+			route->file_stats = http_route_file_stats_create ();
 		}
 	}
 
@@ -160,7 +347,9 @@ HttpRoute *http_route_create (
 }
 
 // sets the route's handler for the selected http method
-void http_route_set_handler (HttpRoute *route, RequestMethod method, HttpHandler handler) {
+void http_route_set_handler (
+	HttpRoute *route, RequestMethod method, HttpHandler handler
+) {
 
 	if (route) {
 		route->handlers[method] = handler;
@@ -328,7 +517,8 @@ void http_route_set_ws_on_pong (
 void http_route_set_ws_on_message (
 	HttpRoute *route, 
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *, const char *msg, size_t msg_len
+		struct _Cerver *, struct _Connection *,
+		const char *msg, size_t msg_len
 	)
 ) {
 	

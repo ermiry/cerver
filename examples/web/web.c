@@ -43,103 +43,130 @@ void end (int dummy) {
 #pragma region routes
 
 // GET /
-void main_handler (CerverReceive *cr, HttpRequest *request) {
+void main_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
-	if (http_response_render_file (cr, "./examples/web/public/index.html")) {
+	if (http_response_render_file (http_receive, "./examples/web/public/index.html")) {
 		cerver_log_error ("Failed to send ./examples/web/public/index.html");
 	}
 
 }
 
 // GET /test
-void test_handler (CerverReceive *cr, HttpRequest *request) {
+void test_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
 // GET /text
-void text_handler (CerverReceive *cr, HttpRequest *request) {
+void text_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
-	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>hola_handler () works!</h2></body></html>";
+	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
-	if (http_response_render_text (cr, text, text_len)) {
+	if (http_response_render_text (http_receive, text, text_len)) {
 		cerver_log_error ("text_handler () has failed!");
 	}
 
 }
 
 // GET /json
-void json_handler (CerverReceive *cr, HttpRequest *request) {
+void json_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	char const *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
-	if (http_response_render_json (cr, json, json_len)) {
+	if (http_response_render_json (http_receive, json, json_len)) {
 		cerver_log_error ("json_handler () has failed!");
 	}
 
 }
 
 // GET /hola
-void hola_handler (CerverReceive *cr, HttpRequest *request) {
+void hola_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Hola route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
 // GET /adios
-void adios_handler (CerverReceive *cr, HttpRequest *request) {
+void adios_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Adios route works!");
 	if (res) {
 		http_response_print (res);
-		http_response_send (res, cr->cerver, cr->connection);
+		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
 
 }
 
 // GET /key
-void key_handler (CerverReceive *cr, HttpRequest *request) {
+void key_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	(void) http_response_json_key_value_send (
-		cr,
+		http_receive,
 		(http_status) 200, "key", "value"
 	);
 
 }
 
 // GET /custom
-void custom_handler (CerverReceive *cr, HttpRequest *request) {
+void custom_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	(void) http_response_json_custom_send (
-		cr,
+		http_receive,
 		(http_status) 200, "{\"oki\": \"doki\"}"
 	);
 
 }
 
 // GET /reference
-void reference_handler (CerverReceive *cr, HttpRequest *request) {
+void reference_handler (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
 		strncpy (json, "{\"oki\": \"doki\"}", 256);
 
 		(void) http_response_json_custom_reference_send (
-			cr,
+			http_receive,
 			(http_status) 200, json, strlen (json)
 		);
 

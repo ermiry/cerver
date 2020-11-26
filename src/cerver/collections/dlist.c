@@ -520,7 +520,7 @@ int dlist_insert_at_start (DoubleList *dlist, const void *data) {
 		pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist_internal_insert_before (
-			dlist, dlist->start, data
+			dlist, NULL, data
 		);
 
 		pthread_mutex_unlock (dlist->mutex);
@@ -536,7 +536,7 @@ int dlist_insert_at_start (DoubleList *dlist, const void *data) {
 int dlist_insert_at_start_unsafe (DoubleList *dlist, const void *data) {
 
 	return (dlist && data) ? dlist_internal_insert_before (
-		dlist, dlist->start, data
+		dlist, NULL, data
 	) : 1;
 
 }
@@ -771,7 +771,54 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 
 }
 
-/*** Traversing --- Searching ***/
+// removes all the elements that match the query using the comparator method
+// option to delete removed elements data when delete_data is set to TRUE
+// comparator must return TRUE on match (item will be removed from the dlist)
+// this methods is thread safe
+// returns the number of elements that we removed from the dlist
+unsigned int dlist_remove_by_condition (
+	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match,
+	bool delete_data
+) {
+
+	unsigned int matches = 0;
+
+	if (dlist && compare) {
+		pthread_mutex_lock (dlist->mutex);
+
+		size_t original_size = dlist->size;
+		size_t count = 0;
+		ListElement *le = dlist->start;
+		ListElement *next = NULL;
+		while (count < original_size) {
+			next = le->next;
+
+			if (compare (le->data, match)) {
+				// remove element from the dlist
+				void *removed_data = dlist_internal_remove_element (dlist, le);
+				if (delete_data) {
+					if (dlist->destroy) {
+						dlist->destroy (removed_data);
+					}
+				}
+
+				matches += 1;
+			}
+
+			le = next;
+			count += 1;
+		}
+
+		pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return matches;
+
+}
+
+/*** traverse --- search ***/
 
 // traverses the dlist and for each element, calls the method by passing the list element data and the method args as both arguments
 // this method is thread safe
@@ -882,7 +929,7 @@ void *dlist_get_at (const DoubleList *dlist, const unsigned int idx) {
 
 }
 
-/*** Sorting ***/
+/*** sort ***/
 
 // Split a doubly linked dlist (DLL) into 2 DLLs of half sizes 
 static ListElement *dllist_split (ListElement *head) { 
@@ -952,7 +999,9 @@ static ListElement *dlist_merge_sort (
 // uses merge sort to sort the list using the comparator
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 // return 0 on succes 1 on error
-int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *two)) {
+int dlist_sort (
+	DoubleList *dlist, int (*compare)(const void *one, const void *two)
+) {
 
 	int retval = 1;
 
@@ -979,7 +1028,7 @@ int dlist_sort (DoubleList *dlist, int (*compare)(const void *one, const void *t
 
 }
 
-/*** Other ***/
+/*** other ***/
 
 // returns a newly allocated array with the list elements inside it
 // data will not be copied, only the pointers, so the list will keep the original elements
@@ -1033,9 +1082,9 @@ DoubleList *dlist_copy (const DoubleList *dlist) {
 
 // returns a exact clone of the dlist
 // the element's data are created using your clone method
-	// which takes as the original each element's data of the dlist
-	// and should return the same structure type as the original method that can be safely deleted
-	// with the dlist's delete method
+// which takes as the original each element's data of the dlist
+// and should return the same structure type as the original method that can be safely deleted
+// with the dlist's delete method
 // the new dlist's delete and comparator methods are set from the original
 DoubleList *dlist_clone (
 	const DoubleList *dlist, void *(*clone) (const void *original)
@@ -1104,7 +1153,8 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 // creates a new dlist with all the elements that matched the comparator method
 // elements are removed from the original list and inserted directly into the new one
 // if no matches, dlist will be returned with size of 0
-// comparator must return TRUE on match (item will be moved to new list)
+// comparator must return TRUE on match (item will be moved to new dlist)
+// this methods is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
 DoubleList *dlist_split_by_condition (
 	DoubleList *dlist,
