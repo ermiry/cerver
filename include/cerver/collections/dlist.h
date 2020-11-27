@@ -138,6 +138,11 @@ extern int dlist_insert_at_end (DoubleList *dlist, const void *data);
 // returns 0 on success, 1 on error
 extern int dlist_insert_at_end_unsafe (DoubleList *dlist, const void *data);
 
+// uses de dlist's comparator method to insert new data in the correct position
+// this method is thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_in_order (DoubleList *dlist, const void *data);
+
 /*** remove ***/
 
 // finds the data using the query and the list comparator and the removes it from the list

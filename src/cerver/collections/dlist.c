@@ -644,6 +644,76 @@ int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos
 
 }
 
+static inline int dlist_insert_in_order_actual (
+	DoubleList *dlist,
+	bool first, ListElement *le,
+	const void *data
+) {
+
+	int retval = 1;
+
+	switch (dlist->compare (le->data, data)) {
+		case -1:
+		case 0: {
+			if (le == dlist->end) {
+				retval = dlist_internal_insert_after (
+					dlist, le, data
+				);
+			}
+		} break;
+
+		case 1: {
+			retval = dlist_internal_insert_before (
+				dlist, first ? NULL : le, data
+			);
+		} break;
+	}
+
+	return retval;
+
+}
+
+// uses de dlist's comparator method to insert new data in the correct position
+// this method is thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_in_order (DoubleList *dlist, const void *data) {
+	
+	int retval = 1;
+
+	if (dlist && data) {
+		if (dlist->compare) {
+			(void) pthread_mutex_lock (dlist->mutex);
+
+			if (dlist->size) {
+				bool first = true;
+				ListElement *le = dlist->start;
+				while (le) {
+					if (!dlist_insert_in_order_actual (
+						dlist, first, le, data
+					)) {
+						retval = 0;
+						break;
+					}
+
+					le = le->next;
+					first = false;
+				}
+			}
+
+			else {
+				retval = dlist_internal_insert_after (
+					dlist, NULL, data
+				);
+			}
+
+			(void) pthread_mutex_unlock (dlist->mutex);
+		}
+	}
+
+	return retval;
+
+}
+
 /*** remove ***/
 
 // finds the data using the query and the list comparator and the removes it from the list
