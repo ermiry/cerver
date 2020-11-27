@@ -18,22 +18,38 @@
 struct _HttpRoute;
 struct _HttpReceive;
 
+#define HTTP_ROUTE_MODIFIER_MAP(XX)															\
+	XX(0,	NONE, 			None,			Undefined)										\
+	XX(1,	MULTI_PART, 	Multi-Part,		Enables multi-part requests on the route)		\
+	XX(2,	WEB_SOCKET, 	WebSocket,		Enables websocket connections on the route)
+
 typedef enum HttpRouteModifier {
 
-	HTTP_ROUTE_MODIFIER_NONE		= 0,
-
-	HTTP_ROUTE_MODIFIER_MULTI_PART	= 1,	// enables multi part requests on this route
-	HTTP_ROUTE_MODIFIER_WEB_SOCKET	= 2,	// enables web socket connections on this route
+	#define XX(num, name, string, description) HTTP_ROUTE_MODIFIER_##name = num,
+	HTTP_ROUTE_MODIFIER_MAP (XX)
+	#undef XX
 
 } HttpRouteModifier;
 
+CERVER_PUBLIC const char *http_route_modifier_to_string (HttpRouteModifier modifier);
+
+CERVER_PUBLIC const char *http_route_modifier_description (HttpRouteModifier modifier);
+
+#define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
+	XX(0,	NONE, 			None,		Undefined)													\
+	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)
+
 typedef enum HttpRouteAuthType {
 
-	HTTP_ROUTE_AUTH_TYPE_NONE		= 0,
-
-	HTTP_ROUTE_AUTH_TYPE_BEARER		= 1,	// we expect a bearer token in the authorization header
+	#define XX(num, name, string, description) HTTP_ROUTE_AUTH_TYPE_##name = num,
+	HTTP_ROUTE_AUTH_TYPE_MAP (XX)
+	#undef XX
 
 } HttpRouteAuthType;
+
+CERVER_PUBLIC const char *http_route_auth_type_to_string (HttpRouteAuthType type);
+
+CERVER_PUBLIC const char *http_route_auth_type_description (HttpRouteAuthType type);
 
 struct _HttpRoutesTokens {
 

@@ -16,6 +16,54 @@
 
 #include "cerver/utils/utils.h"
 
+const char *http_route_modifier_to_string (HttpRouteModifier modifier) {
+
+	switch (modifier) {
+		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #string;
+		HTTP_ROUTE_MODIFIER_MAP(XX)
+		#undef XX
+	}
+
+	return http_route_modifier_to_string (HTTP_ROUTE_MODIFIER_NONE);
+
+}
+
+const char *http_route_modifier_description (HttpRouteModifier modifier) {
+
+	switch (modifier) {
+		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #description;
+		HTTP_ROUTE_MODIFIER_MAP(XX)
+		#undef XX
+	}
+
+	return http_route_modifier_description (HTTP_ROUTE_MODIFIER_NONE);
+
+}
+
+const char *http_route_auth_type_to_string (HttpRouteAuthType type) {
+
+	switch (type) {
+		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #string;
+		HTTP_ROUTE_AUTH_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return http_route_auth_type_to_string (HTTP_ROUTE_AUTH_TYPE_NONE);
+
+}
+
+const char *http_route_auth_type_description (HttpRouteAuthType type) {
+
+	switch (type) {
+		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #description;
+		HTTP_ROUTE_AUTH_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return http_route_auth_type_description (HTTP_ROUTE_AUTH_TYPE_NONE);
+
+}
+
 #pragma region tokens
 
 static HttpRoutesTokens *http_routes_tokens_new (void) {
