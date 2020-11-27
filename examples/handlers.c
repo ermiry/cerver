@@ -241,12 +241,23 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 static void start (HandlersType type) {
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"my-cerver",
+		7000,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - App & Custom Handlers Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
+
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, 2000);
 
 		Handler *app_handler = NULL;
 		Handler *app_error_handler = NULL;

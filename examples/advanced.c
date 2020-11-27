@@ -198,13 +198,24 @@ int main (void) {
 	cerver_log_debug ("Cerver example with multiple featues enabled");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"my-cerver",
+		7000,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Advanced Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, 2000);
 
 		Handler *app_handler = handler_create (my_app_handler_direct);
 		handler_set_direct_handle (app_handler, true);

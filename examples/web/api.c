@@ -392,7 +392,15 @@ int main (int argc, char **argv) {
 
 	users = dlist_init (user_delete, user_comparator);
 
-	api_cerver = cerver_create (CERVER_TYPE_WEB, "api-cerver", 8080, PROTOCOL_TCP, false, 2, 1000);
+	api_cerver = cerver_create (
+		CERVER_TYPE_WEB,
+		"api-cerver",
+		8080,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+	
 	if (api_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (api_cerver, 4096);

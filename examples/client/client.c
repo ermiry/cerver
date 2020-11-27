@@ -336,13 +336,24 @@ int main (void) {
 	cerver_log_debug ("Cerver creates a new client that will use to make requests to another cerver");
 	printf ("\n");
 
-	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
+	client_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"client-cerver",
+		7001,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+	
 	if (client_cerver) {
 		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
+
+		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (client_cerver, 2000);
 
 		Handler *app_handler = handler_create (cerver_app_handler_direct);
 		handler_set_direct_handle (app_handler, true);
