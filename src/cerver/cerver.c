@@ -145,7 +145,10 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
-u8 cerver_info_send_info_packet (Cerver *cerver, Client *client, Connection *connection) {
+u8 cerver_info_send_info_packet (
+	Cerver *cerver,
+	Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -508,7 +511,10 @@ void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets) {
 // will be automatically dropped from the cerver
 // max_inactive_time - max secs allowed for a client to be inactive, 0 for default
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
-void cerver_set_inactive_clients (Cerver *cerver, u32 max_inactive_time, u32 check_inactive_interval) {
+void cerver_set_inactive_clients (
+	Cerver *cerver,
+	u32 max_inactive_time, u32 check_inactive_interval
+) {
 
 	if (cerver) {
 		cerver->inactive_clients = true;
@@ -605,7 +611,9 @@ void cerver_set_on_hold_check_packets (Cerver *cerver, bool check) {
 
 // configures the cerver to use client sessions
 // retuns 0 on success, 1 on error
-u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const void *)) {
+u8 cerver_set_sessions (
+	Cerver *cerver, void *(*session_id_generator) (const void *)
+) {
 
 	u8 retval = 1;
 
@@ -623,7 +631,9 @@ u8 cerver_set_sessions (Cerver *cerver, void *(*session_id_generator) (const voi
 }
 
 // sets a custom method to handle the raw received buffer from the socker
-void cerver_set_handle_recieved_buffer (Cerver *cerver, Action handle_received_buffer) {
+void cerver_set_handle_recieved_buffer (
+	Cerver *cerver, Action handle_received_buffer
+) {
 
 	if (cerver) cerver->handle_received_buffer = handle_received_buffer;
 
@@ -1875,7 +1885,9 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 }
 
-static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
+static void cerver_inactive_check (
+	AVLNode *node, Cerver *cerver, time_t current_time
+) {
 
 	cerver_inactive_check (node->right, cerver, current_time);
 
