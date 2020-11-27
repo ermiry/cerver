@@ -584,4 +584,65 @@ void http_route_set_ws_on_error (
 	
 }
 
+static void http_route_get_methods_string (
+	HttpRoute *route, const char *route_methods_str
+) {
+
+	char *end = (char *) route_methods_str;
+	char *method_name = NULL;
+	size_t method_name_len = 0;
+	for (u8 i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+		if (route->handlers[i]) {
+			method_name = (char *) http_request_method_str ((RequestMethod) i);
+			method_name_len = strlen (method_name);
+			(void) memcpy (end, method_name, method_name_len);
+			end += method_name_len += 1;
+		}
+	}
+
+	*end = '\0';
+
+}
+
+static void http_route_print_child (HttpRoute *child) {
+
+	cerver_log_msg ("\t\tRoute: %s", child->route->str);
+
+	char route_methods_str[128] = { 0 };
+	http_route_get_methods_string (child, route_methods_str);
+
+	cerver_log_msg ("\t\tMethods: %s", route_methods_str);
+
+	cerver_log_msg ("\t\tModifier: %s", http_route_modifier_to_string (child->modifier));
+	cerver_log_msg ("\t\tAuth: %s", http_route_auth_type_to_string (child->auth_type));
+
+}
+
+void http_route_print (HttpRoute *route) {
+
+	if (route) {
+		cerver_log_msg ("Route: %s", route->route->str);
+
+		char route_methods_str[128] = { 0 };
+		http_route_get_methods_string (route, route_methods_str);
+
+		cerver_log_msg ("\tMethods: %s", route_methods_str);
+
+		cerver_log_msg ("\tModifier: %s", http_route_modifier_to_string (route->modifier));
+		cerver_log_msg ("\tAuth: %s", http_route_auth_type_to_string (route->auth_type));
+
+		if (route->children->size) {
+			cerver_log_msg ("\tChildren (%ld):", route->children->size);
+			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+				http_route_print_child ((HttpRoute *) le->data);
+			}
+		}
+
+		else {
+			cerver_log_msg ("\tNo children");
+		}
+	}
+
+}
+
 #pragma endregion

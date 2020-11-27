@@ -272,4 +272,6 @@ CERVER_EXPORT void http_route_set_ws_on_error (
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
 );
 
+CERVER_EXPORT void http_route_print (HttpRoute *route);
+
 #endif
