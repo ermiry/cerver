@@ -15,11 +15,20 @@
 
 #include "cerver/threads/thread.h"
 
-// used for connection with exponential backoff (secs)
-#define DEFAULT_CONNECTION_MAX_SLEEP                60
-#define DEFAULT_CONNECTION_PROTOCOL                 PROTOCOL_TCP
+#define CONNECTION_DEFAULT_PROTOCOL					PROTOCOL_TCP
+#define CONNECTION_DEFAULT_USE_IPV6					false
 
-#define DEFAULT_CONNECTION_TIMEOUT					2
+// used for connection with exponential backoff (secs)
+#define CONNECTION_DEFAULT_MAX_SLEEP				60
+
+#define CONNECTION_DEFAULT_MAX_AUTH_TRIES			2
+#define CONNECTION_DEFAULT_BAD_PACKETS				4
+
+#define CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE		4096
+
+#define CONNECTION_DEFAULT_UPDATE_TIMEOUT			2
+
+#define CONNECTION_DEFAULT_RECEIVE_PACKETS			true
 
 struct _Socket;
 struct _Cerver;
@@ -77,8 +86,8 @@ struct _Connection {
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
-	u32 receive_packet_buffer_size;         // 01/01/2020 - read packets into a buffer of this size in client_receive ()
-	struct _SockReceive *sock_receive;      // 01/01/2020 - used for inter-cerver communications
+	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
+	struct _SockReceive *sock_receive;      // used for inter-cerver communications
 
 	pthread_t update_thread_id;
 	u32 update_timeout;
@@ -91,7 +100,7 @@ struct _Connection {
 	size_t received_data_size;
 	Action received_data_delete;
 
-	bool receive_packets;                   		// set if the connection will receive packets or not (default true)
+	bool receive_packets;                   // set if the connection will receive packets or not (default true)
 	
 	// custom receive method to handle incomming packets in the connection
 	u8 (*custom_receive) (
