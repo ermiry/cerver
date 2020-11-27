@@ -1098,7 +1098,7 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 Cerver *cerver_create (
 	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue, u32 poll_timeout
+	u16 connection_queue
 ) {
 
 	Cerver *cerver = NULL;
@@ -1131,10 +1131,6 @@ Cerver *cerver_create (
 
 				default: break;
 			}
-
-			cerver->handler_type = CERVER_HANDLER_TYPE_POLL;
-
-			cerver_set_poll_time_out (cerver, poll_timeout);
 
 			cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
 
@@ -1976,7 +1972,13 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 	u8 retval = 1;
 
 	switch (cerver->handler_type) {
-		case CERVER_HANDLER_TYPE_NONE: break;
+		case CERVER_HANDLER_TYPE_NONE: {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+				"Cerver's %s handler type has NOT been configured!",
+				cerver->info->name->str
+			);
+		} break;
 
 		case CERVER_HANDLER_TYPE_POLL: {
 			if (!cerver->blocking) {
@@ -2053,7 +2055,13 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 			}
 		} break;
 
-		default: break;
+		default: {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+				"Cerver's %s handler type is invalid!",
+				cerver->info->name->str
+			);
+		} break;
 	}
 
 	return retval;
