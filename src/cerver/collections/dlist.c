@@ -259,20 +259,32 @@ static void dlist_internal_delete (DoubleList *dlist) {
 
 #pragma endregion
 
-void dlist_set_compare (DoubleList *dlist, int (*compare)(const void *one, const void *two)) { if (dlist) dlist->compare = compare; }
+void dlist_set_compare (
+	DoubleList *dlist, int (*compare)(const void *one, const void *two)
+) { 
+	
+	if (dlist) dlist->compare = compare;
+	
+}
 
-void dlist_set_destroy (DoubleList *dlist, void (*destroy)(void *data)) { if (dlist) dlist->destroy = destroy; }
+void dlist_set_destroy (
+	DoubleList *dlist, void (*destroy)(void *data)
+) { 
+	
+	if (dlist) dlist->destroy = destroy;
+	
+}
 
 size_t dlist_size (const DoubleList *dlist) {
 
 	size_t retval = 0;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist->size;
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -284,11 +296,11 @@ bool dlist_is_empty (const DoubleList *dlist) {
 	bool retval = true;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = (dlist->size == 0);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -300,11 +312,11 @@ bool dlist_is_not_empty (const DoubleList *dlist) {
 	bool retval = false;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = (dlist->size > 0);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -316,11 +328,11 @@ void dlist_delete (void *dlist_ptr) {
 	if (dlist_ptr) {
 		DoubleList *dlist = (DoubleList *) dlist_ptr;
 
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		dlist_internal_delete (dlist);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 		pthread_mutex_destroy (dlist->mutex);
 		free (dlist->mutex);
 
@@ -340,7 +352,7 @@ int dlist_delete_if_empty (void *dlist_ptr) {
 
 		DoubleList *dlist = (DoubleList *) dlist_ptr;
 
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		if (dlist->size == 0) {
 			dlist_internal_delete (dlist);
@@ -348,7 +360,7 @@ int dlist_delete_if_empty (void *dlist_ptr) {
 			retval = 0;
 		}
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 		pthread_mutex_destroy (dlist->mutex);
 		free (dlist->mutex);
 
@@ -370,7 +382,7 @@ int dlist_delete_if_not_empty (void *dlist_ptr) {
 
 		DoubleList *dlist = (DoubleList *) dlist_ptr;
 
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		if (dlist->size > 0) {
 			dlist_internal_delete (dlist);
@@ -378,7 +390,7 @@ int dlist_delete_if_not_empty (void *dlist_ptr) {
 			retval = 0;
 		}
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 		pthread_mutex_destroy (dlist->mutex);
 		free (dlist->mutex);
 
@@ -409,7 +421,7 @@ DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *
 void dlist_reset (DoubleList *dlist) {
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		if (dlist->size > 0) {
 			void *data = NULL;
@@ -423,7 +435,7 @@ void dlist_reset (DoubleList *dlist) {
 		dlist->end = NULL;
 		dlist->size = 0;
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 }
@@ -435,12 +447,12 @@ void dlist_clear (void *dlist_ptr) {
 	if (dlist_ptr) {
 		DoubleList *dlist = (DoubleList *) dlist_ptr;
 
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		while (dlist->size > 0) 
 			(void) dlist_internal_remove_element (dlist, NULL);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 }
@@ -477,13 +489,13 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *da
 	int retval = 1;
 
 	if (dlist && data) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist_internal_insert_before (
 			dlist, element, data
 		);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -511,13 +523,13 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 	int retval = 1;
 
 	if (dlist && data) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist_internal_insert_after (
 			dlist, element, data
 		);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -544,13 +556,13 @@ int dlist_insert_at_start (DoubleList *dlist, const void *data) {
 	int retval = 1;
 
 	if (dlist && data) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist_internal_insert_before (
 			dlist, NULL, data
 		);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -575,13 +587,13 @@ int dlist_insert_at_end (DoubleList *dlist, const void *data) {
 	int retval = 1;
 
 	if (dlist && data) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		retval = dlist_internal_insert_after (
 			dlist, dlist->end, data
 		);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -648,7 +660,7 @@ void *dlist_remove (
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
 		if (comp) {
-			pthread_mutex_lock (dlist->mutex);
+			(void) pthread_mutex_lock (dlist->mutex);
 
 			ListElement *ptr = dlist_start (dlist);
 
@@ -673,7 +685,7 @@ void *dlist_remove (
 				first = false;
 			}
 
-			pthread_mutex_unlock (dlist->mutex);
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
@@ -688,11 +700,11 @@ void *dlist_remove_element (DoubleList *dlist, ListElement *element) {
 	void *data = NULL;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		data = dlist_internal_remove_element (dlist, element);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return data;
@@ -714,11 +726,11 @@ void *dlist_remove_start (DoubleList *dlist) {
 	void *data = NULL;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		data = dlist_internal_remove_element (dlist, NULL);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return data;
@@ -740,11 +752,11 @@ void *dlist_remove_end (DoubleList *dlist) {
 	void *data = NULL;
 
 	if (dlist) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		data = dlist_internal_remove_element (dlist, dlist->end);
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return data;
@@ -767,7 +779,7 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 
 	if (dlist) {
 		if (idx < dlist->size) {
-			pthread_mutex_lock (dlist->mutex);
+			(void) pthread_mutex_lock (dlist->mutex);
 
 			bool first = true;
 			unsigned int i = 0;
@@ -790,7 +802,7 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 				i++;
 			}
 
-			pthread_mutex_unlock (dlist->mutex);
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
@@ -813,7 +825,7 @@ unsigned int dlist_remove_by_condition (
 	unsigned int matches = 0;
 
 	if (dlist && compare) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		size_t original_size = dlist->size;
 		size_t count = 0;
@@ -838,7 +850,7 @@ unsigned int dlist_remove_by_condition (
 			count += 1;
 		}
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return matches;
@@ -858,13 +870,13 @@ int dlist_traverse (
 	int retval = 1;
 
 	if (dlist && method) {
-		pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
 		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
 			method (le->data, method_args);
 		}
 
-		pthread_mutex_unlock (dlist->mutex);
+		(void) pthread_mutex_unlock (dlist->mutex);
 
 		retval = 0;
 	}
@@ -1037,12 +1049,12 @@ int dlist_sort (
 			int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
 			if (comp) {
-				pthread_mutex_lock (dlist->mutex);
+				(void) pthread_mutex_lock (dlist->mutex);
 
 				dlist->start = dlist_merge_sort (dlist->start, comp);
 				retval = 0;
 
-				pthread_mutex_unlock (dlist->mutex);
+				(void) pthread_mutex_unlock (dlist->mutex);
 			}
 		}
 
@@ -1147,7 +1159,7 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 		if (dlist->size > 1) {
 			half = dlist_init (dlist->destroy, dlist->compare);
 
-			pthread_mutex_lock (dlist->mutex);
+			(void) pthread_mutex_lock (dlist->mutex);
 
 			size_t carry = dlist->size % 2;
 			size_t half_count = dlist->size / 2;
@@ -1169,7 +1181,7 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 				count++;
 			}
 
-			pthread_mutex_unlock (dlist->mutex);
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
@@ -1194,7 +1206,7 @@ DoubleList *dlist_split_by_condition (
 	if (dlist && compare) {
 		matches = dlist_init (dlist->destroy, dlist->compare);
 		if (matches) {
-			pthread_mutex_lock (dlist->mutex);
+			(void) pthread_mutex_lock (dlist->mutex);
 
 			dlist_internal_move_matches (
 				dlist, matches,
@@ -1202,7 +1214,7 @@ DoubleList *dlist_split_by_condition (
 				match
 			);
 
-			pthread_mutex_unlock (dlist->mutex);
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
