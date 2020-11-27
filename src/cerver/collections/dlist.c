@@ -401,7 +401,10 @@ int dlist_delete_if_not_empty (void *dlist_ptr) {
 
 }
 
-DoubleList *dlist_init (void (*destroy)(void *data), int (*compare)(const void *one, const void *two)) {
+DoubleList *dlist_init (
+	void (*destroy)(void *data),
+	int (*compare)(const void *one, const void *two)
+) {
 
 	DoubleList *dlist = dlist_new ();
 
@@ -484,7 +487,10 @@ void dlist_clear_or_delete (void *dlist_ptr) {
 // inserts the data in the double list BEFORE the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *data) {
+int dlist_insert_before (
+	DoubleList *dlist,
+	ListElement *element, const void *data
+) {
 
 	int retval = 1;
 
@@ -506,7 +512,8 @@ int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *da
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
 int dlist_insert_before_unsafe (
-	DoubleList *dlist, ListElement *element, const void *data
+	DoubleList *dlist,
+	ListElement *element, const void *data
 ) {
 
 	return (dlist && data) ? dlist_internal_insert_before (
@@ -518,7 +525,10 @@ int dlist_insert_before_unsafe (
 // inserts the data in the double list AFTER the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *data) {
+int dlist_insert_after (
+	DoubleList *dlist,
+	ListElement *element, const void *data
+) {
 
 	int retval = 1;
 
@@ -540,7 +550,8 @@ int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *dat
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
 int dlist_insert_after_unsafe (
-	DoubleList *dlist, ListElement *element, const void *data
+	DoubleList *dlist,
+	ListElement *element, const void *data
 ) {
 
 	return (dlist && data) ? dlist_internal_insert_after (
@@ -549,72 +560,13 @@ int dlist_insert_after_unsafe (
 
 }
 
-// inserts at the start of the dlist, before the first element
-// returns 0 on success, 1 on error
-int dlist_insert_at_start (DoubleList *dlist, const void *data) {
-
-	int retval = 1;
-
-	if (dlist && data) {
-		(void) pthread_mutex_lock (dlist->mutex);
-
-		retval = dlist_internal_insert_before (
-			dlist, NULL, data
-		);
-
-		(void) pthread_mutex_unlock (dlist->mutex);
-	}
-
-	return retval;
-
-}
-
-// inserts at the start of the dlist, before the first element
-// this method is NOT thread safe
-// returns 0 on success, 1 on error
-int dlist_insert_at_start_unsafe (DoubleList *dlist, const void *data) {
-
-	return (dlist && data) ? dlist_internal_insert_before (
-		dlist, NULL, data
-	) : 1;
-
-}
-
-// inserts at the end of the dlist, after the last element
-// returns 0 on success, 1 on error
-int dlist_insert_at_end (DoubleList *dlist, const void *data) {
-
-	int retval = 1;
-
-	if (dlist && data) {
-		(void) pthread_mutex_lock (dlist->mutex);
-
-		retval = dlist_internal_insert_after (
-			dlist, dlist->end, data
-		);
-
-		(void) pthread_mutex_unlock (dlist->mutex);
-	}
-
-	return retval;
-
-}
-
-// inserts at the end of the dlist, after the last element
-// this method is NOT thread safe
-// returns 0 on success, 1 on error
-int dlist_insert_at_end_unsafe (DoubleList *dlist, const void *data) {
-
-	return (dlist && data) ? dlist_internal_insert_after (
-		dlist, dlist->end, data
-	) : 1;
-
-}
-
 // inserts the data in the double list in the specified pos (0 indexed)
 // if the pos is greater than the current size, it will be added at the end
 // returns 0 on success, 1 on error
-int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos) {
+int dlist_insert_at (
+	DoubleList *dlist,
+	const void *data, const unsigned int pos
+) {
 
 	int retval = 1;
 
@@ -641,6 +593,76 @@ int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos
 	}
 
 	return retval;
+
+}
+
+// inserts at the start of the dlist, before the first element
+// returns 0 on success, 1 on error
+int dlist_insert_at_start (
+	DoubleList *dlist, const void *data
+) {
+
+	int retval = 1;
+
+	if (dlist && data) {
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_before (
+			dlist, NULL, data
+		);
+
+		(void) pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+// inserts at the start of the dlist, before the first element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_at_start_unsafe (
+	DoubleList *dlist, const void *data
+) {
+
+	return (dlist && data) ? dlist_internal_insert_before (
+		dlist, NULL, data
+	) : 1;
+
+}
+
+// inserts at the end of the dlist, after the last element
+// returns 0 on success, 1 on error
+int dlist_insert_at_end (
+	DoubleList *dlist, const void *data
+) {
+
+	int retval = 1;
+
+	if (dlist && data) {
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_insert_after (
+			dlist, dlist->end, data
+		);
+
+		(void) pthread_mutex_unlock (dlist->mutex);
+	}
+
+	return retval;
+
+}
+
+// inserts at the end of the dlist, after the last element
+// this method is NOT thread safe
+// returns 0 on success, 1 on error
+int dlist_insert_at_end_unsafe (
+	DoubleList *dlist, const void *data
+) {
+
+	return (dlist && data) ? dlist_internal_insert_after (
+		dlist, dlist->end, data
+	) : 1;
 
 }
 
@@ -676,7 +698,9 @@ static inline int dlist_insert_in_order_actual (
 // uses de dlist's comparator method to insert new data in the correct position
 // this method is thread safe
 // returns 0 on success, 1 on error
-int dlist_insert_in_order (DoubleList *dlist, const void *data) {
+int dlist_insert_in_order (
+	DoubleList *dlist, const void *data
+) {
 	
 	int retval = 1;
 
