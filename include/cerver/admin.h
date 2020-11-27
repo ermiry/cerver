@@ -23,6 +23,18 @@ struct _Packet;
 
 struct _AdminCerver;
 
+#define ADMIN_CERVER_DEFAULT_MAX_ADMINS					1
+#define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
+#define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
+
+#define ADMIN_CERVER_DEFAULT_POLL_FDS					4
+#define ADMIN_CERVER_DEFAULT_POLL_TIMEOUT				2000
+
+#define ADMIN_CERVER_DEFAULT_CHECK_PACKETS				false
+
+#define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
+#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
+
 #pragma region stats
 
 struct _AdminCerverStats {
@@ -113,14 +125,6 @@ CERVER_PUBLIC u8 admin_send_packet_pieces (Admin *admin, struct _Packet *packet,
 #pragma endregion
 
 #pragma region main
-
-#define DEFAULT_MAX_ADMINS							1
-#define DEFAULT_MAX_ADMIN_CONNECTIONS				1
-
-#define DEFAULT_N_BAD_PACKETS_LIMIT					5
-
-#define DEFAULT_ADMIN_MAX_N_FDS						10
-#define DEFAULT_ADMIN_POLL_TIMEOUT					2000
 
 struct _AdminCerver {
 
