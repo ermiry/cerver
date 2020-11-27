@@ -218,6 +218,33 @@ static void dlist_internal_move_element (
 
 }
 
+static void dlist_internal_move_matches (
+	DoubleList *dlist, DoubleList *matches,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+) {
+
+	size_t count = 0;
+	size_t original_size = dlist->size;
+	ListElement *le = dlist->start;
+	ListElement *next = NULL;
+	while (count < original_size) {
+		next = le->next;
+
+		if (compare (le->data, match)) {
+			// move the list element from one list to the other
+			dlist_internal_move_element (
+				dlist, matches,
+				le, matches->end
+			);
+		}
+
+		le = next;
+		count += 1;
+	}
+
+}
+
 static void dlist_internal_delete (DoubleList *dlist) {
 
 	void *data = NULL;
@@ -932,7 +959,7 @@ void *dlist_get_at (const DoubleList *dlist, const unsigned int idx) {
 /*** sort ***/
 
 // Split a doubly linked dlist (DLL) into 2 DLLs of half sizes 
-static ListElement *dllist_split (ListElement *head) { 
+static ListElement *dllist_merge_sort_split (ListElement *head) { 
 
 	ListElement *fast = head, *slow = head; 
 
@@ -949,7 +976,7 @@ static ListElement *dllist_split (ListElement *head) {
 }  
 
 // Function to merge two linked lists 
-static ListElement *dllist_merge (
+static ListElement *dllist_merge_sort_merge (
 	int (*compare)(const void *one, const void *two), 
 	ListElement *first, ListElement *second
 ) {
@@ -962,14 +989,14 @@ static ListElement *dllist_merge (
 
 	// Pick the smallest value 
 	if (compare (first->data, second->data) <= 0) {
-		first->next = dllist_merge (compare, first->next, second); 
+		first->next = dllist_merge_sort_merge (compare, first->next, second); 
 		first->next->prev = first; 
 		first->prev = NULL; 
 		return first; 
 	}
 
 	else {
-		second->next = dllist_merge (compare, first, second->next); 
+		second->next = dllist_merge_sort_merge (compare, first, second->next); 
 		second->next->prev = second; 
 		second->prev = NULL; 
 		return second; 
@@ -985,14 +1012,14 @@ static ListElement *dlist_merge_sort (
 
 	if (!head || !head->next) return head;
 
-	ListElement *second = dllist_split (head);
+	ListElement *second = dllist_merge_sort_split (head);
 
 	// recursivly sort each half
 	head = dlist_merge_sort (head, compare);
 	second = dlist_merge_sort (second, compare);
 
 	// merge the two sorted halves 
-	return dllist_merge (compare, head, second);
+	return dllist_merge_sort_merge (compare, head, second);
 
 }
 
@@ -1169,29 +1196,93 @@ DoubleList *dlist_split_by_condition (
 		if (matches) {
 			pthread_mutex_lock (dlist->mutex);
 
-			size_t original_size = dlist->size;
-			size_t count = 0;
-			ListElement *le = dlist->start;
-			ListElement *next = NULL;
-			while (count < original_size) {
-				next = le->next;
-
-				if (compare (le->data, match)) {
-					// move the list element from one list to the other
-					dlist_internal_move_element (
-						dlist, matches,
-						le, matches->end
-					);
-				}
-
-				le = next;
-				count += 1;
-			}
+			dlist_internal_move_matches (
+				dlist, matches,
+				compare,
+				match
+			);
 
 			pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
 	return matches;
+
+}
+
+// merges two dlists into a newly created one
+// moves list elements from both dlist into a new dlist
+// first the elements of one and then all the elements of two
+// both dlists can be safely deleted after this operation
+// returns a newly allocated dlist with size = one->size + two->size
+DoubleList *dlist_merge_two (DoubleList *one, DoubleList *two) {
+
+	DoubleList *merge = NULL;
+
+	if (one && two) {
+		if (one->size || two->size) {
+			merge = dlist_init (one->destroy, one->compare);
+			if (merge) {
+				if (one->size) {
+					merge->start = one->start;
+					if (two->size) {
+						one->end->next = two->start;
+						merge->end = two->end;
+					}
+
+					else {
+						one->end->next = NULL;
+						merge->end = one->end;
+					}
+				}
+
+				else {
+					merge->start = two->start;
+					merge->end = two->end;
+				}
+
+				merge->size += one->size;
+				merge->size += two->size;
+
+				// reset original dlists
+				one->start = one->end = NULL;
+				two->start = two->end = NULL;
+				one->size = two->size = 0;
+			}
+		}
+	}
+
+	return merge;
+
+}
+
+// creates a new dlist with all the elements from both dlists
+// that match the specified confition
+// elements from original dlists are moved directly to the new list
+// returns a newly allocated dlist with all the matches
+DoubleList *dlist_merge_two_by_condition (
+	DoubleList *one, DoubleList *two,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+) {
+
+	DoubleList *merge = NULL;
+
+	if (one && two) {
+		merge = dlist_init (one->destroy, one->compare);
+		if (merge) {
+			dlist_internal_move_matches (
+				one, merge,
+				compare, match
+			);
+
+			dlist_internal_move_matches (
+				two, merge,
+				compare, match
+			);
+		}
+	}
+
+	return merge;
 
 }

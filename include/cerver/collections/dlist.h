@@ -36,6 +36,9 @@ typedef struct DoubleList {
 #define dlist_for_each(dlist, le)					\
 	for (le = dlist->start; le; le = le->next)
 
+#define dlist_for_each_backwards(dlist, le)			\
+	for (le = dlist->end; le; le = le->prev)
+
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern void dlist_set_compare (
@@ -264,10 +267,29 @@ extern DoubleList *dlist_split_half (DoubleList *dlist);
 // elements are removed from the original list and inserted directly into the new one
 // if no matches, dlist will be returned with size of 0
 // comparator must return TRUE on match (item will be moved to new dlist)
-// this methods is thread safe
+// this method is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
 extern DoubleList *dlist_split_by_condition (
 	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+);
+
+// merges two dlists into a newly created one
+// moves list elements from both dlist into a new dlist
+// first the elements of one and then all the elements of two
+// both dlists can be safely deleted after this operation
+// returns a newly allocated dlist with size = one->size + two->size
+extern DoubleList *dlist_merge_two (
+	DoubleList *one, DoubleList *two
+);
+
+// creates a new dlist with all the elements from both dlists
+// that match the specified confition
+// elements from original dlists are moved directly to the new list
+// returns a newly allocated dlist with all the matches
+extern DoubleList *dlist_merge_two_by_condition (
+	DoubleList *one, DoubleList *two,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
 );
