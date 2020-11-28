@@ -339,10 +339,12 @@ static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
 	unsigned int errors = 0 ;
 
 	if (http_cerver->jwt_opt_key_name) {
+		cerver_log_msg ("Loading jwt PRIVATE key...");
 		errors |= http_cerver_init_load_jwt_private_key (http_cerver);
 	}
 
 	if (http_cerver->jwt_opt_pub_key_name) {
+		cerver_log_msg ("Loading jwt PUBLIC key...");
 		errors |= http_cerver_init_load_jwt_public_key (http_cerver);
 	}
 
@@ -353,13 +355,21 @@ static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
+		cerver_log_msg ("Loading HTTP routes...");
+
 		// init top level routes
+		HttpRoute *route = NULL;
 		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
-			http_route_init ((HttpRoute *) le->data);
+			route = (HttpRoute *) le->data;
+			
+			http_route_init (route);
+			http_route_print (route);
 		}
 
 		// load jwt keys
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
+
+		cerver_log_success ("Done loading HTTP routes!");
 	}
 
 }

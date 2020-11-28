@@ -476,15 +476,16 @@ AdminCerver *admin_cerver_new (void) {
 
 		admin_cerver->authenticate = NULL;
 
-		admin_cerver->max_admins = DEFAULT_MAX_ADMINS;
-		admin_cerver->max_admin_connections = DEFAULT_MAX_ADMIN_CONNECTIONS;
+		admin_cerver->max_admins = ADMIN_CERVER_DEFAULT_MAX_ADMINS;
+		admin_cerver->max_admin_connections = ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS;
 
-		admin_cerver->n_bad_packets_limit = DEFAULT_N_BAD_PACKETS_LIMIT;
+		admin_cerver->n_bad_packets_limit = ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS;
 
 		admin_cerver->fds = NULL;
-		admin_cerver->max_n_fds = DEFAULT_ADMIN_MAX_N_FDS;
+		admin_cerver->max_n_fds = ADMIN_CERVER_DEFAULT_POLL_FDS;
 		admin_cerver->current_n_fds = 0;
-		admin_cerver->poll_timeout = DEFAULT_ADMIN_POLL_TIMEOUT;
+		admin_cerver->poll_timeout = ADMIN_CERVER_DEFAULT_POLL_TIMEOUT;
+		admin_cerver->poll_lock = NULL;
 
 		admin_cerver->app_packet_handler = NULL;
 		admin_cerver->app_error_packet_handler = NULL;
@@ -498,17 +499,19 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->app_error_packet_handler_delete_packet = true;
 		admin_cerver->custom_packet_handler_delete_packet = true;
 
+		admin_cerver->check_packets = ADMIN_CERVER_DEFAULT_CHECK_PACKETS;
+
 		admin_cerver->update_thread_id = 0;
 		admin_cerver->update = NULL;
 		admin_cerver->update_args = NULL;
 		admin_cerver->delete_update_args = NULL;
-		admin_cerver->update_ticks = DEFAULT_UPDATE_TICKS;
+		admin_cerver->update_ticks = ADMIN_CERVER_DEFAULT_UPDATE_TICKS;
 
 		admin_cerver->update_interval_thread_id = 0;
 		admin_cerver->update_interval = NULL;
 		admin_cerver->update_interval_args = NULL;
 		admin_cerver->delete_update_interval_args = NULL;
-		admin_cerver->update_interval_secs = DEFAULT_UPDATE_INTERVAL_SECS;
+		admin_cerver->update_interval_secs = ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS;
 
 		admin_cerver->stats = NULL;
 	}
@@ -587,7 +590,8 @@ void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u8 max_a
 void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, i32 n_bad_packets_limit) {
 
 	if (admin_cerver) {
-		admin_cerver->n_bad_packets_limit = n_bad_packets_limit > 0 ? n_bad_packets_limit : DEFAULT_N_BAD_PACKETS_LIMIT;
+		admin_cerver->n_bad_packets_limit = n_bad_packets_limit > 0 ?
+			n_bad_packets_limit : ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS;
 	}
 
 }

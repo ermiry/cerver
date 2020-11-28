@@ -104,28 +104,28 @@ Connection *connection_new (void) {
 
 		connection->socket = NULL;
 		connection->port = 0;
-		connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
-		connection->use_ipv6 = false;
+		connection->protocol = CONNECTION_DEFAULT_PROTOCOL;
+		connection->use_ipv6 = CONNECTION_DEFAULT_USE_IPV6;
 
 		connection->ip = NULL;
-		memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
 		connection->connected_timestamp = 0;
 
 		connection->cerver_report = NULL;
 
-		connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
+		connection->max_sleep = CONNECTION_DEFAULT_MAX_SLEEP;
 		connection->active = false;
 		connection->updating = false;
 
-		connection->auth_tries = DEFAULT_AUTH_TRIES;
+		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
 
-		connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
+		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
 		connection->sock_receive = NULL;
 
 		connection->update_thread_id = 0;
-		connection->update_timeout = DEFAULT_CONNECTION_TIMEOUT;
+		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
 
 		connection->full_packet = false;
 
@@ -133,7 +133,8 @@ Connection *connection_new (void) {
 		connection->received_data_size = 0;
 		connection->received_data_delete = NULL;
 
-		connection->receive_packets = true;
+		connection->receive_packets = CONNECTION_DEFAULT_RECEIVE_PACKETS;
+
 		connection->custom_receive = NULL;
 		connection->custom_receive_args = NULL;
 		connection->custom_receive_args_delete = NULL;

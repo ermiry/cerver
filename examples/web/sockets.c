@@ -144,7 +144,15 @@ int main (int argc, char **argv) {
 	cerver_log_debug ("Simple Web Cerver Example");
 	printf ("\n");
 
-	web_cerver = cerver_create (CERVER_TYPE_WEB, "web-cerver", 8080, PROTOCOL_TCP, false, 2, 1000);
+	web_cerver = cerver_create (
+		CERVER_TYPE_WEB,
+		"web-cerver",
+		8080,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (web_cerver) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (web_cerver, 4096);

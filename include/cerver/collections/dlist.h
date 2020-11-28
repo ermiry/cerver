@@ -36,6 +36,9 @@ typedef struct DoubleList {
 #define dlist_for_each(dlist, le)					\
 	for (le = dlist->start; le; le = le->next)
 
+#define dlist_for_each_backwards(dlist, le)			\
+	for (le = dlist->end; le; le = le->prev)
+
 // sets a list compare function
 // compare must return -1 if one < two, must return 0 if they are equal, and must return 1 if one > two
 extern void dlist_set_compare (
@@ -44,7 +47,10 @@ extern void dlist_set_compare (
 );
 
 // sets list destroy function
-extern void dlist_set_destroy (DoubleList *list, void (*destroy)(void *data));
+extern void dlist_set_destroy (
+	DoubleList *list,
+	void (*destroy)(void *data)
+);
 
 // thread safe method to get the dlist's size
 extern size_t dlist_size (const DoubleList *dlist);
@@ -91,49 +97,75 @@ extern void dlist_clear_or_delete (void *dlist_ptr);
 // inserts the data in the double list BEFORE the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-extern int dlist_insert_before (DoubleList *dlist, ListElement *element, const void *data);
+extern int dlist_insert_before (
+	DoubleList *dlist,
+	ListElement *element, const void *data
+);
 
 // works as dlist_insert_before ()
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
 extern int dlist_insert_before_unsafe (
-	DoubleList *dlist, ListElement *element, const void *data
+	DoubleList *dlist,
+	ListElement *element, const void *data
 );
 
 // inserts the data in the double list AFTER the specified element
 // if element == NULL, data will be inserted at the start of the list
 // returns 0 on success, 1 on error
-extern int dlist_insert_after (DoubleList *dlist, ListElement *element, const void *data);
+extern int dlist_insert_after (
+	DoubleList *dlist,
+	ListElement *element, const void *data
+);
 
 // works as dlist_insert_after ()
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
 extern int dlist_insert_after_unsafe (
-	DoubleList *dlist, ListElement *element, const void *data
+	DoubleList *dlist,
+	ListElement *element, const void *data
 );
 
 // inserts the data in the double list in the specified pos (0 indexed)
 // if the pos is greater than the current size, it will be added at the end
 // returns 0 on success, 1 on error
-extern int dlist_insert_at (DoubleList *dlist, const void *data, const unsigned int pos);
+extern int dlist_insert_at (
+	DoubleList *dlist,
+	const void *data, const unsigned int pos
+);
 
 // inserts at the start of the dlist, before the first element
 // returns 0 on success, 1 on error
-extern int dlist_insert_at_start (DoubleList *dlist, const void *data);
+extern int dlist_insert_at_start (
+	DoubleList *dlist, const void *data
+);
 
 // inserts at the start of the dlist, before the first element
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
-extern int dlist_insert_at_start_unsafe (DoubleList *dlist, const void *data);
+extern int dlist_insert_at_start_unsafe (
+	DoubleList *dlist, const void *data
+);
 
 // inserts at the end of the dlist, after the last element
 // returns 0 on success, 1 on error
-extern int dlist_insert_at_end (DoubleList *dlist, const void *data);
+extern int dlist_insert_at_end (
+	DoubleList *dlist, const void *data
+);
 
 // inserts at the end of the dlist, after the last element
 // this method is NOT thread safe
 // returns 0 on success, 1 on error
-extern int dlist_insert_at_end_unsafe (DoubleList *dlist, const void *data);
+extern int dlist_insert_at_end_unsafe (
+	DoubleList *dlist, const void *data
+);
+
+// uses de dlist's comparator method to insert new data in the correct position
+// this method is thread safe
+// returns 0 on success, 1 on error
+extern int dlist_insert_in_order (
+	DoubleList *dlist, const void *data
+);
 
 /*** remove ***/
 
@@ -147,11 +179,15 @@ extern void *dlist_remove (
 
 // removes the dlist element from the dlist and returns the data
 // NULL for the start of the list
-extern void *dlist_remove_element (DoubleList *dlist, ListElement *element);
+extern void *dlist_remove_element (
+	DoubleList *dlist, ListElement *element
+);
 
 // works as dlist_remove_element ()
 // this method is NOT thread safe
-extern void *dlist_remove_element_unsafe (DoubleList *dlist, ListElement *element);
+extern void *dlist_remove_element_unsafe (
+	DoubleList *dlist, ListElement *element
+);
 
 // removes the element at the start of the dlist
 // returns the element's data
@@ -171,7 +207,9 @@ extern void *dlist_remove_end_unsafe (DoubleList *dlist);
 
 // removes the dlist element from the dlist at the specified index 
 // returns the data or NULL if index was invalid
-extern void *dlist_remove_at (DoubleList *dlist, const unsigned int idx);
+extern void *dlist_remove_at (
+	DoubleList *dlist, const unsigned int idx
+);
 
 // removes all the elements that match the query using the comparator method
 // option to delete removed elements data when delete_data is set to TRUE
@@ -236,7 +274,9 @@ extern int dlist_sort (
 
 // returns a newly allocated array with the list elements inside it
 // data will not be copied, only the pointers, so the list will keep the original elements
-extern void **dlist_to_array (const DoubleList *dlist, size_t *count);
+extern void **dlist_to_array (
+	const DoubleList *dlist, size_t *count
+);
 
 // returns a exact copy of the dlist
 // creates the dlist's elements using the same data pointers as in the original dlist
@@ -264,10 +304,29 @@ extern DoubleList *dlist_split_half (DoubleList *dlist);
 // elements are removed from the original list and inserted directly into the new one
 // if no matches, dlist will be returned with size of 0
 // comparator must return TRUE on match (item will be moved to new dlist)
-// this methods is thread safe
+// this method is thread safe
 // returns a newly allocated dlist with the same detsroy comprator methods
 extern DoubleList *dlist_split_by_condition (
 	DoubleList *dlist,
+	bool (*compare)(const void *one, const void *two),
+	const void *match
+);
+
+// merges two dlists into a newly created one
+// moves list elements from both dlist into a new dlist
+// first the elements of one and then all the elements of two
+// both dlists can be safely deleted after this operation
+// returns a newly allocated dlist with size = one->size + two->size
+extern DoubleList *dlist_merge_two (
+	DoubleList *one, DoubleList *two
+);
+
+// creates a new dlist with all the elements from both dlists
+// that match the specified confition
+// elements from original dlists are moved directly to the new list
+// returns a newly allocated dlist with all the matches
+extern DoubleList *dlist_merge_two_by_condition (
+	DoubleList *one, DoubleList *two,
 	bool (*compare)(const void *one, const void *two),
 	const void *match
 );
