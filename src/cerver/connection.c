@@ -323,11 +323,15 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 }
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as ClientConnection structure
+// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
+// alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 void connection_set_custom_receive (
 	Connection *connection, 
-	delegate custom_receive, 
+	u8 (*custom_receive) (
+		void *custom_data_ptr,
+		char *buffer, const size_t buffer_size
+	),
 	void *args, void (*args_delete)(void *)
 ) {
 
@@ -818,7 +822,7 @@ void connection_update (void *client_connection_ptr) {
 
 				if (cc->connection->custom_receive) {
 					// if a custom receive method is set, use that one directly
-					if (cc->connection->custom_receive (custom_data)) {
+					if (cc->connection->custom_receive (custom_data, buffer, buffer_size)) {
 						// break;      // an error has ocurred
 					}
 				}
