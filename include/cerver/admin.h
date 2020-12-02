@@ -12,6 +12,7 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
@@ -22,6 +23,18 @@ struct _Packet;
 
 struct _AdminCerver;
 
+#define ADMIN_CERVER_DEFAULT_MAX_ADMINS					1
+#define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
+#define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
+
+#define ADMIN_CERVER_DEFAULT_POLL_FDS					4
+#define ADMIN_CERVER_DEFAULT_POLL_TIMEOUT				2000
+
+#define ADMIN_CERVER_DEFAULT_CHECK_PACKETS				false
+
+#define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
+#define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
+
 #pragma region stats
 
 struct _AdminCerverStats {
@@ -31,7 +44,7 @@ struct _AdminCerverStats {
 	u64 total_n_packets_received;                   // total number of packets received (packet header + data)
 	u64 total_n_receives_done;                      // total amount of actual calls to recv ()
 	u64 total_bytes_received;                       // total amount of bytes received in the cerver
-	
+
 	u64 total_n_packets_sent;                       // total number of packets that were sent
 	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
 
@@ -107,19 +120,11 @@ CERVER_PUBLIC u8 admin_send_packet_split (Admin *admin, struct _Packet *packet);
 // sends a packet in pieces to the first connection of the specified admin
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 admin_send_packet_pieces (Admin *admin, struct _Packet *packet,
-    void **pieces, size_t *sizes, u32 n_pieces);
+	void **pieces, size_t *sizes, u32 n_pieces);
 
 #pragma endregion
 
 #pragma region main
-
-#define DEFAULT_MAX_ADMINS							1
-#define DEFAULT_MAX_ADMIN_CONNECTIONS				1
-
-#define DEFAULT_N_BAD_PACKETS_LIMIT					5
-
-#define DEFAULT_ADMIN_MAX_N_FDS						10
-#define DEFAULT_ADMIN_POLL_TIMEOUT					2000
 
 struct _AdminCerver {
 
@@ -148,7 +153,7 @@ struct _AdminCerver {
 	struct _Handler *custom_packet_handler;
 
 	unsigned int num_handlers_alive;       // handlers currently alive
-    unsigned int num_handlers_working;     // handlers currently working
+	unsigned int num_handlers_working;     // handlers currently working
 	pthread_mutex_t *handlers_lock;
 
 	bool app_packet_handler_delete_packet;
@@ -158,17 +163,17 @@ struct _AdminCerver {
 	bool check_packets;                     // enable / disbale packet checking
 
 	pthread_t update_thread_id;
-    Action update;                          // method to be executed every tick
-    void *update_args;                      // args to pass to custom update method
+	Action update;                          // method to be executed every tick
+	void *update_args;                      // args to pass to custom update method
 	void (*delete_update_args)(void *);     // method to delete update args at cerver teardown
-    u8 update_ticks;                        // like fps
+	u8 update_ticks;                        // like fps
 
-    pthread_t update_interval_thread_id;
-    Action update_interval;                 // the actual method to execute every x seconds
-    void *update_interval_args;             // args to pass to the update method
+	pthread_t update_interval_thread_id;
+	Action update_interval;                 // the actual method to execute every x seconds
+	void *update_interval_args;             // args to pass to the update method
 	// method to delete update interval args at cerver teardown
-    void (*delete_update_interval_args)(void *);
-    u32 update_interval_secs;               // the interval in seconds
+	void (*delete_update_interval_args)(void *);
+	u32 update_interval_secs;               // the interval in seconds
 
 	struct _AdminCerverStats *stats;
 
@@ -205,16 +210,16 @@ CERVER_EXPORT void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_
 CERVER_EXPORT void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-CERVER_EXPORT void admin_cerver_set_app_handlers (AdminCerver *admin_cerver, 
+CERVER_EXPORT void admin_cerver_set_app_handlers (AdminCerver *admin_cerver,
 	struct _Handler *app_handler, struct _Handler *app_error_handler);
 
 // sets option to automatically delete PACKET_TYPE_APP packets after use
-// if set to false, user must delete the packets manualy 
+// if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
 // sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
-// if set to false, user must delete the packets manualy 
+// if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
@@ -222,7 +227,7 @@ CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (AdminCerver *admin
 CERVER_EXPORT void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _Handler *custom_handler);
 
 // sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
-// if set to false, user must delete the packets manualy 
+// if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
 
@@ -244,9 +249,9 @@ CERVER_EXPORT void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bo
 // the update args will be passed to your method as a CerverUpdate &
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void admin_cerver_set_update (
-    AdminCerver *admin_cerver, 
-    Action update, void *update_args, void (*delete_update_args)(void *),
-    const u8 fps
+	AdminCerver *admin_cerver,
+	Action update, void *update_args, void (*delete_update_args)(void *),
+	const u8 fps
 );
 
 // sets a custom update method to be executed every x seconds (in intervals)
@@ -254,9 +259,9 @@ CERVER_EXPORT void admin_cerver_set_update (
 // the update args will be passed to your method as a CerverUpdate &
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void admin_cerver_set_update_interval (
-    AdminCerver *admin_cerver, 
-    Action update, void *update_args, void (*delete_update_args)(void *),
-    const u32 interval
+	AdminCerver *admin_cerver,
+	Action update, void *update_args, void (*delete_update_args)(void *),
+	const u32 interval
 );
 
 // returns the current number of connected admins
@@ -272,8 +277,8 @@ CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_split (AdminCerver *admin_cerv
 
 // broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, struct _Packet *packet, 
-    void **pieces, size_t *sizes, u32 n_pieces);
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, struct _Packet *packet,
+	void **pieces, size_t *sizes, u32 n_pieces);
 
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
