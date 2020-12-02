@@ -34,7 +34,7 @@ ConnectionStats *connection_stats_new (void) {
 
 	ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
 	if (stats) {
-		memset (stats, 0, sizeof (ConnectionStats));
+		(void) memset (stats, 0, sizeof (ConnectionStats));
 		stats->received_packets = packets_per_type_new ();
 		stats->sent_packets = packets_per_type_new ();
 	}
@@ -104,28 +104,28 @@ Connection *connection_new (void) {
 
 		connection->socket = NULL;
 		connection->port = 0;
-		connection->protocol = DEFAULT_CONNECTION_PROTOCOL;
-		connection->use_ipv6 = false;
+		connection->protocol = CONNECTION_DEFAULT_PROTOCOL;
+		connection->use_ipv6 = CONNECTION_DEFAULT_USE_IPV6;
 
 		connection->ip = NULL;
-		memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
 		connection->connected_timestamp = 0;
 
 		connection->cerver_report = NULL;
 
-		connection->max_sleep = DEFAULT_CONNECTION_MAX_SLEEP;
+		connection->max_sleep = CONNECTION_DEFAULT_MAX_SLEEP;
 		connection->active = false;
 		connection->updating = false;
 
-		connection->auth_tries = DEFAULT_AUTH_TRIES;
+		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
 
-		connection->receive_packet_buffer_size = RECEIVE_PACKET_BUFFER_SIZE;
+		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
 		connection->sock_receive = NULL;
 
 		connection->update_thread_id = 0;
-		connection->update_timeout = DEFAULT_CONNECTION_TIMEOUT;
+		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
 
 		connection->full_packet = false;
 
@@ -133,7 +133,8 @@ Connection *connection_new (void) {
 		connection->received_data_size = 0;
 		connection->received_data_delete = NULL;
 
-		connection->receive_packets = true;
+		connection->receive_packets = CONNECTION_DEFAULT_RECEIVE_PACKETS;
+
 		connection->custom_receive = NULL;
 		connection->custom_receive_args = NULL;
 		connection->custom_receive_args_delete = NULL;
@@ -208,8 +209,10 @@ Connection *connection_create_empty (void) {
 
 }
 
-Connection *connection_create (const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol) {
+Connection *connection_create (
+	const i32 sock_fd, const struct sockaddr_storage address,
+	Protocol protocol
+) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
@@ -263,8 +266,10 @@ void connection_get_values (Connection *connection) {
 }
 
 // sets the connection's newtwork values
-void connection_set_values (Connection *connection,
-	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6) {
+void connection_set_values (
+	Connection *connection,
+	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
+) {
 
 	if (connection) {
 		if (connection->ip) str_delete (connection->ip);
@@ -312,7 +317,10 @@ void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
 // sets the connection received data
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
-void connection_set_received_data (Connection *connection, void *data, size_t data_size, Action data_delete) {
+void connection_set_received_data (
+	Connection *connection,
+	void *data, size_t data_size, Action data_delete
+) {
 
 	if (connection) {
 		connection->received_data = data;
@@ -323,11 +331,15 @@ void connection_set_received_data (Connection *connection, void *data, size_t da
 }
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as ClientConnection structure
+// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
+// alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 void connection_set_custom_receive (
 	Connection *connection, 
-	delegate custom_receive, 
+	u8 (*custom_receive) (
+		void *custom_data_ptr,
+		char *buffer, const size_t buffer_size
+	),
 	void *args, void (*args_delete)(void *)
 ) {
 
@@ -480,9 +492,11 @@ u8 connection_init (Connection *connection) {
 }
 
 // try to connect a client to an address (server) with exponential backoff
-static u8 connection_try (Connection *connection, const struct sockaddr_storage address) {
+static u8 connection_try (
+	Connection *connection, const struct sockaddr_storage address
+) {
 
-	u32 numsec;
+	u32 numsec = 0;
 	for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
 		if (!connect (connection->socket->sock_fd,
 			(const struct sockaddr *) &address,
@@ -536,7 +550,9 @@ void connection_drop (Cerver *cerver, Connection *connection) {
 }
 
 // gets the connection from the on hold connections map in cerver
-Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 sock_fd) {
+Connection *connection_get_by_sock_fd_from_on_hold (
+	Cerver *cerver, const i32 sock_fd
+) {
 
 	Connection *connection = NULL;
 
@@ -555,7 +571,9 @@ Connection *connection_get_by_sock_fd_from_on_hold (Cerver *cerver, const i32 so
 }
 
 // gets the connection from the client by its sock fd
-Connection *connection_get_by_sock_fd_from_client (Client *client, const i32 sock_fd) {
+Connection *connection_get_by_sock_fd_from_client (
+	Client *client, const i32 sock_fd
+) {
 
 	Connection *retval = NULL;
 
@@ -575,7 +593,9 @@ Connection *connection_get_by_sock_fd_from_client (Client *client, const i32 soc
 }
 
 // gets the connection from the admin cerver by its sock fd
-Connection *connection_get_by_sock_fd_from_admin (AdminCerver *admin_cerver, const i32 sock_fd) {
+Connection *connection_get_by_sock_fd_from_admin (
+	AdminCerver *admin_cerver, const i32 sock_fd
+) {
 
 	Connection *retval = NULL;
 
@@ -645,7 +665,9 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 // registers the client connection to the cerver's strcutures (like maps)
 // returns 0 on success, 1 on error
-u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *connection) {
+u8 connection_register_to_cerver (
+	Cerver *cerver, Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -662,7 +684,9 @@ u8 connection_register_to_cerver (Cerver *cerver, Client *client, Connection *co
 
 // unregister the client connection from the cerver's structures (like maps)
 // returns 0 on success, 1 on error
-u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
+u8 connection_unregister_from_cerver (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -696,7 +720,9 @@ u8 connection_unregister_from_cerver (Cerver *cerver, Connection *connection) {
 // wrapper function for easy access
 // registers a client connection to the cerver poll array
 // returns 0 on success, 1 on error
-u8 connection_register_to_cerver_poll (Cerver *cerver, Connection *connection) {
+u8 connection_register_to_cerver_poll (
+	Cerver *cerver, Connection *connection
+) {
 
 	return (cerver && connection) ?
 		cerver_poll_register_connection (cerver, connection) : 1;
@@ -706,7 +732,9 @@ u8 connection_register_to_cerver_poll (Cerver *cerver, Connection *connection) {
 // wrapper function for easy access
 // unregisters a client connection from the cerver poll array
 // returns 0 on success, 1 on error
-u8 connection_unregister_from_cerver_poll (Cerver *cerver, Connection *connection) {
+u8 connection_unregister_from_cerver_poll (
+	Cerver *cerver, Connection *connection
+) {
 
 	return (cerver && connection) ?
 		cerver_poll_unregister_connection (cerver, connection) : 1;
@@ -717,7 +745,9 @@ u8 connection_unregister_from_cerver_poll (Cerver *cerver, Connection *connectio
 // adds the connection to the cerver's structures
 // this method is equivalent to call connection_register_to_cerver_poll () & connection_register_to_cerver
 // returns 0 on success, 1 on error
-u8 connection_add_to_cerver (Cerver *cerver, Client *client, Connection *connection) {
+u8 connection_add_to_cerver (
+	Cerver *cerver, Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -735,7 +765,9 @@ u8 connection_add_to_cerver (Cerver *cerver, Client *client, Connection *connect
 // from the cerver's structures
 // this method is equivalent to call connection_unregister_from_cerver_poll () & connection_unregister_from_cerver ()
 // returns 0 on success, 1 on error
-u8 connection_remove_from_cerver (Cerver *cerver, Connection *connection) {
+u8 connection_remove_from_cerver (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 errors = 0;
 
@@ -818,7 +850,7 @@ void connection_update (void *client_connection_ptr) {
 
 				if (cc->connection->custom_receive) {
 					// if a custom receive method is set, use that one directly
-					if (cc->connection->custom_receive (custom_data)) {
+					if (cc->connection->custom_receive (custom_data, buffer, buffer_size)) {
 						// break;      // an error has ocurred
 					}
 				}
@@ -846,10 +878,10 @@ void connection_update (void *client_connection_ptr) {
 		}
 
 		// signal waiting thread
-		pthread_mutex_lock (cc->connection->mutex);
+		(void) pthread_mutex_lock (cc->connection->mutex);
 		cc->connection->updating = false;
-		pthread_cond_signal (cc->connection->cond);
-		pthread_mutex_unlock (cc->connection->mutex);
+		(void) pthread_cond_signal (cc->connection->cond);
+		(void) pthread_mutex_unlock (cc->connection->mutex);
 
 		connection_custom_receive_data_delete (custom_data);
 		client_connection_aux_delete (cc);
