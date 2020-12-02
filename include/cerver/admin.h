@@ -61,7 +61,9 @@ struct _AdminCerverStats {
 
 typedef struct _AdminCerverStats AdminCerverStats;
 
-CERVER_PUBLIC void admin_cerver_stats_print (AdminCerverStats *stats);
+CERVER_PUBLIC void admin_cerver_stats_print (
+	AdminCerverStats *stats
+);
 
 #pragma endregion
 
@@ -91,36 +93,54 @@ CERVER_PRIVATE void admin_delete (void *admin_ptr);
 
 CERVER_PRIVATE Admin *admin_create (void);
 
-CERVER_PRIVATE Admin *admin_create_with_client (struct _Client *client);
+CERVER_PRIVATE Admin *admin_create_with_client (
+	struct _Client *client
+);
 
-CERVER_PUBLIC int admin_comparator_by_id (const void *a, const void *b);
+CERVER_PUBLIC int admin_comparator_by_id (
+	const void *a, const void *b
+);
 
 // sets dedicated admin data and a way to delete it, if NULL, it won't be deleted
-CERVER_PUBLIC void admin_set_data (Admin *admin, void *data, Action delete_data);
+CERVER_PUBLIC void admin_set_data (
+	Admin *admin, void *data, Action delete_data
+);
 
 // gets an admin by a matching connection in its client with the specified sock fd
-CERVER_PUBLIC Admin *admin_get_by_sock_fd (struct _AdminCerver *admin_cerver, const i32 sock_fd);
+CERVER_PUBLIC Admin *admin_get_by_sock_fd (
+	struct _AdminCerver *admin_cerver, const i32 sock_fd
+);
 
 // gets an admin by a matching client's session id
-CERVER_PUBLIC Admin *admin_get_by_session_id (struct _AdminCerver *admin_cerver, const char *session_id);
+CERVER_PUBLIC Admin *admin_get_by_session_id (
+	struct _AdminCerver *admin_cerver, const char *session_id
+);
 
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd);
+CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (
+	struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd
+);
 
 // sends a packet to the first connection of the specified admin
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_send_packet (Admin *admin, struct _Packet *packet);
+CERVER_PUBLIC u8 admin_send_packet (
+	Admin *admin, struct _Packet *packet
+);
 
 // sends a packet to the first connection of the specified admin using packet_send_to_split ()
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_send_packet_split (Admin *admin, struct _Packet *packet);
+CERVER_PUBLIC u8 admin_send_packet_split (
+	Admin *admin, struct _Packet *packet
+);
 
 // sends a packet in pieces to the first connection of the specified admin
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_send_packet_pieces (Admin *admin, struct _Packet *packet,
-	void **pieces, size_t *sizes, u32 n_pieces);
+CERVER_PUBLIC u8 admin_send_packet_pieces (
+	Admin *admin, struct _Packet *packet,
+	void **pieces, size_t *sizes, u32 n_pieces
+);
 
 #pragma endregion
 
@@ -189,60 +209,88 @@ CERVER_PRIVATE AdminCerver *admin_cerver_create (void);
 
 // sets the authentication methods to be used to successfully authenticate admin credentials
 // must return 0 on success, 1 on error
-CERVER_EXPORT void admin_cerver_set_authenticate (AdminCerver *admin_cerver, delegate authenticate);
+CERVER_EXPORT void admin_cerver_set_authenticate (
+	AdminCerver *admin_cerver, delegate authenticate
+);
 
 // sets the max numbers of admins allowed at any given time
-CERVER_EXPORT void admin_cerver_set_max_admins (AdminCerver *admin_cerver, u8 max_admins);
+CERVER_EXPORT void admin_cerver_set_max_admins (
+	AdminCerver *admin_cerver, u8 max_admins
+);
 
 // sets the max number of connections allowed per admin
-CERVER_EXPORT void admin_cerver_set_max_admin_connections (AdminCerver *admin_cerver, u8 max_admin_connections);
+CERVER_EXPORT void admin_cerver_set_max_admin_connections (
+	AdminCerver *admin_cerver, u8 max_admin_connections
+);
 
 // sets the mac number of packets to tolerate before dropping an admin connection
 // n_bad_packets_limit for NON auth admins
 // n_bad_packets_limit_auth for authenticated clients
 // -1 to use defaults (5 and 20)
-CERVER_EXPORT void admin_cerver_set_bad_packets_limit (AdminCerver *admin_cerver, i32 n_bad_packets_limit);
+CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
+	AdminCerver *admin_cerver, i32 n_bad_packets_limit
+);
 
 // sets the max number of poll fds for the admin cerver
-CERVER_EXPORT void admin_cerver_set_max_fds (AdminCerver *admin_cerver, u32 max_n_fds);
+CERVER_EXPORT void admin_cerver_set_max_fds (
+	AdminCerver *admin_cerver, u32 max_n_fds
+);
 
 // sets a custom poll time out to use for admins
-CERVER_EXPORT void admin_cerver_set_poll_timeout (AdminCerver *admin_cerver, u32 poll_timeout);
+CERVER_EXPORT void admin_cerver_set_poll_timeout (
+	AdminCerver *admin_cerver, u32 poll_timeout
+);
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-CERVER_EXPORT void admin_cerver_set_app_handlers (AdminCerver *admin_cerver,
-	struct _Handler *app_handler, struct _Handler *app_error_handler);
+CERVER_EXPORT void admin_cerver_set_app_handlers (
+	AdminCerver *admin_cerver,
+	struct _Handler *app_handler, struct _Handler *app_error_handler
+);
 
 // sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-CERVER_EXPORT void admin_cerver_set_app_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
+CERVER_EXPORT void admin_cerver_set_app_handler_delete (
+	AdminCerver *admin_cerver, bool delete_packet
+);
 
 // sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
+CERVER_EXPORT void admin_cerver_set_app_error_handler_delete (
+	AdminCerver *admin_cerver, bool delete_packet
+);
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
-CERVER_EXPORT void admin_cerver_set_custom_handler (AdminCerver *admin_cerver, struct _Handler *custom_handler);
+CERVER_EXPORT void admin_cerver_set_custom_handler (
+	AdminCerver *admin_cerver, struct _Handler *custom_handler
+);
 
 // sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-CERVER_EXPORT void admin_cerver_set_custom_handler_delete (AdminCerver *admin_cerver, bool delete_packet);
+CERVER_EXPORT void admin_cerver_set_custom_handler_delete (
+	AdminCerver *admin_cerver, bool delete_packet
+);
 
 // returns the total number of handlers currently alive (ready to handle packets)
-CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_alive (AdminCerver *admin_cerver);
+CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_alive (
+	AdminCerver *admin_cerver
+);
 
 // returns the total number of handlers currently working (handling a packet)
-CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_working (AdminCerver *admin_cerver);
+CERVER_EXPORT unsigned int admin_cerver_get_n_handlers_working (
+	AdminCerver *admin_cerver
+);
 
 // set whether to check or not incoming packets
 // check packet's header protocol id & version compatibility
 // if packets do not pass the checks, won't be handled and will be inmediately destroyed
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
-CERVER_EXPORT void admin_cerver_set_check_packets (AdminCerver *admin_cerver, bool check_packets);
+CERVER_EXPORT void admin_cerver_set_check_packets (
+	AdminCerver *admin_cerver, bool check_packets
+);
 
 // sets a custom update function to be executed every n ticks
 // a new thread will be created that will call your method each tick
@@ -265,33 +313,47 @@ CERVER_EXPORT void admin_cerver_set_update_interval (
 );
 
 // returns the current number of connected admins
-CERVER_EXPORT u8 admin_cerver_get_current_admins (AdminCerver *admin_cerver);
+CERVER_EXPORT u8 admin_cerver_get_current_admins (
+	AdminCerver *admin_cerver
+);
 
 // broadcasts a packet to all connected admins in an admin cerver
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 admin_cerver_broadcast_to_admins (AdminCerver *admin_cerver, struct _Packet *packet);
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins (
+	AdminCerver *admin_cerver, struct _Packet *packet
+);
 
 // broadcasts a packet to all connected admins in an admin cerver using packet_send_to_split ()
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_split (AdminCerver *admin_cerver, struct _Packet *packet);
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_split (
+	AdminCerver *admin_cerver, struct _Packet *packet
+);
 
 // broadcasts a packet to all connected admins in an admin cerver using packet_send_pieces ()
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (AdminCerver *admin_cerver, struct _Packet *packet,
-	void **pieces, size_t *sizes, u32 n_pieces);
+CERVER_EXPORT u8 admin_cerver_broadcast_to_admins_pieces (
+	AdminCerver *admin_cerver, struct _Packet *packet,
+	void **pieces, size_t *sizes, u32 n_pieces
+);
 
 // registers a newly created admin to the admin cerver structures (internal & poll)
 // this will allow the admin cerver to start handling admin's packets
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 admin_cerver_register_admin (AdminCerver *admin_cerver, Admin *admin);
+CERVER_PRIVATE u8 admin_cerver_register_admin (
+	AdminCerver *admin_cerver, Admin *admin
+);
 
 // unregisters an existing admin from the admin cerver structures (internal & poll)
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 admin_cerver_unregister_admin (AdminCerver *admin_cerver, Admin *admin);
+CERVER_PRIVATE u8 admin_cerver_unregister_admin (
+	AdminCerver *admin_cerver, Admin *admin
+);
 
 // unregisters an admin from the cerver & then deletes it
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 admin_cerver_drop_admin (AdminCerver *admin_cerver, Admin *admin);
+CERVER_PRIVATE u8 admin_cerver_drop_admin (
+	AdminCerver *admin_cerver, Admin *admin
+);
 
 #pragma endregion
 
@@ -318,11 +380,15 @@ CERVER_PRIVATE void admin_packet_handler (struct _Packet *packet);
 
 // regsiters a client connection to the cerver's admin poll array
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 admin_cerver_poll_register_connection (AdminCerver *admin_cerver, struct _Connection *connection);
+CERVER_PRIVATE u8 admin_cerver_poll_register_connection (
+	AdminCerver *admin_cerver, struct _Connection *connection
+);
 
 // unregsiters a sock fd connection from the cerver's admin poll array
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 admin_cerver_poll_unregister_sock_fd (AdminCerver *admin_cerver, const i32 sock_fd);
+CERVER_PRIVATE u8 admin_cerver_poll_unregister_sock_fd (
+	AdminCerver *admin_cerver, const i32 sock_fd
+);
 
 #pragma endregion
 
