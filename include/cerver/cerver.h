@@ -24,23 +24,40 @@
 
 #include "cerver/game/game.h"
 
-#define DEFAULT_CONNECTION_QUEUE            7
+#define MAX_PORT_NUM								65535
+#define MAX_UDP_PACKET_SIZE							65515
 
-#define DEFAULT_TH_POOL_INIT                4
+#define CERVER_DEFAULT_PORT							7000
+#define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
+#define CERVER_DEFAULT_USE_IPV6						false
+#define CERVER_DEFAULT_CONNECTION_QUEUE				10
+#define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
+#define CERVER_DEFAULT_POOL_THREADS					4
 
-#define MAX_PORT_NUM                        65535
-#define MAX_UDP_PACKET_SIZE                 65515
+#define CERVER_DEFAULT_SOCKETS_INIT					10
 
-#define DEFAULT_POLL_TIMEOUT                2000
-#define poll_n_fds                          100         // n of fds for the pollfd array
+#define CERVER_DEFAULT_POLL_FDS						128
+#define CERVER_DEFAULT_POLL_TIMEOUT					2000
 
-#define DEFAULT_SOCKETS_INIT                10
+#define CERVER_DEFAULT_MAX_INACTIVE_TIME			60
+#define CERVER_DEFAULT_CHECK_INACTIVE_INTERVAL		30
 
-#define DEFAULT_MAX_INACTIVE_TIME           60
-#define DEFAULT_CHECK_INACTIVE_INTERVAL     30
+#define CERVER_DEFAULT_AUTH_REQUIRED				false
+#define CERVER_DEFAULT_MAX_AUTH_TRIES				2
 
-#define DEFAULT_UPDATE_TICKS                15
-#define DEFAULT_UPDATE_INTERVAL_SECS        1
+#define CERVER_DEFAULT_ON_HOLD_POLL_FDS				64
+#define CERVER_DEFAULT_ON_HOLD_TIMEOUT				2000
+#define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
+#define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
+
+#define CERVER_DEFAULT_USE_SESSIONS					false
+
+#define CERVER_DEFAULT_MULTIPLE_HANDLERS			false
+
+#define CERVER_DEFAULT_CHECK_PACKETS				false
+
+#define CERVER_DEFAULT_UPDATE_TICKS					30
+#define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
 
 struct _Cerver;
 struct _AdminCerver;
@@ -246,7 +263,7 @@ struct _Cerver {
 	u32 on_hold_poll_timeout;
 	u32 max_on_hold_connections;
 	u16 current_on_hold_nfds;
-	pthread_t on_hold_poll_id;
+	pthread_t on_hold_poll_thread_id;
 	pthread_mutex_t *on_hold_poll_lock;
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
