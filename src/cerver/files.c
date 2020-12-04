@@ -37,7 +37,11 @@ static ssize_t file_send_actual (
 	int file_fd, const char *actual_filename, size_t filelen
 );
 
-static int file_send_open (const char *filename, struct stat *filestatus, const char **actual_filename);
+static int file_send_open (
+	const char *filename,
+	struct stat *filestatus,
+	const char **actual_filename
+);
 
 static u8 file_cerver_receive (
 	Cerver *cerver, Client *client, Connection *connection,
@@ -139,7 +143,9 @@ FileCerver *file_cerver_create (Cerver *cerver) {
 
 // adds a new file path to take into account when a client request for a file
 // returns 0 on success, 1 on error
-u8 file_cerver_add_path (FileCerver *file_cerver, const char *path) {
+u8 file_cerver_add_path (
+	FileCerver *file_cerver, const char *path
+) {
 
 	u8 retval = 1;
 
@@ -155,7 +161,9 @@ u8 file_cerver_add_path (FileCerver *file_cerver, const char *path) {
 }
 
 // sets the default uploads path to be used when a client sends a file
-void file_cerver_set_uploads_path (FileCerver *file_cerver, const char *uploads_path) {
+void file_cerver_set_uploads_path (
+	FileCerver *file_cerver, const char *uploads_path
+) {
 
 	if (file_cerver && uploads_path) {
 		str_delete (file_cerver->uploads_path);
@@ -200,7 +208,9 @@ void file_cerver_set_file_upload_cb (
 
 // search for the requested file in the configured paths
 // returns the actual filename (path + directory) where it was found, NULL on error
-String *file_cerver_search_file (FileCerver *file_cerver, const char *filename) {
+String *file_cerver_search_file (
+	FileCerver *file_cerver, const char *filename
+) {
 
 	String *retval = NULL;
 
@@ -343,7 +353,9 @@ void files_sanitize_filename (char *filename) {
 
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
-unsigned int files_create_dir (const char *dir_path, mode_t mode) {
+unsigned int files_create_dir (
+	const char *dir_path, mode_t mode
+) {
 
 	unsigned int retval = 1;
 
@@ -389,7 +401,7 @@ char *files_get_file_extension (const char *filename) {
 			if (ext_len) {
 				retval = (char *) calloc (ext_len + 1, sizeof (char));
 				if (retval) {
-					(void) memcpy (retval, ptr + 1, ext_len);
+					memcpy (retval, ptr + 1, ext_len);
 					retval[ext_len] = '\0';
 				}
 			}
@@ -433,19 +445,17 @@ DoubleList *files_get_from_dir (const char *dir) {
 
 }
 
-static String *file_get_line (FILE *file) {
+static String *file_get_line (
+	FILE *file,
+	char *buffer, const size_t buffer_size
+) {
 
 	String *str = NULL;
 
-	if (file) {
-		if (!feof (file)) {
-			char line[1024] = { 0 };
-			if (fgets (line, 1024, file)) {
-				size_t curr = strlen(line);
-				if(line[curr - 1] == '\n') line[curr - 1] = '\0';
-
-				str = str_new (line);
-			}
+	if (!feof (file)) {
+		if (fgets (buffer, buffer_size, file)) {
+			c_string_remove_line_breaks (buffer);
+			str = str_new (buffer);
 		}
 	}
 
@@ -453,8 +463,11 @@ static String *file_get_line (FILE *file) {
 
 }
 
-// reads eachone of the file's lines into a newly created string and returns them inside a dlist
-DoubleList *file_get_lines (const char *filename) {
+// reads each one of the file's lines into newly created strings
+// and returns them inside a dlist
+DoubleList *file_get_lines (
+	const char *filename, const size_t buffer_size
+) {
 
 	DoubleList *lines = NULL;
 
@@ -463,9 +476,15 @@ DoubleList *file_get_lines (const char *filename) {
 		if (file) {
 			lines = dlist_init (str_delete, str_comparator);
 
-			String *line = NULL;
-			while ((line = file_get_line (file))) {
-				dlist_insert_after (lines, dlist_end (lines), line);
+			char *buffer = (char *) calloc (buffer_size, sizeof (char));
+			if (buffer) {
+				String *line = NULL;
+
+				while ((line = file_get_line (file, buffer, buffer_size))) {
+					dlist_insert_at_end_unsafe (lines, line);
+				}
+
+				free (buffer);
 			}
 
 			(void) fclose (file);

@@ -38,7 +38,9 @@ CERVER_PUBLIC char *itoa (int i, char *b);
 /*** c strings ***/
 
 // copies a c string into another one previuosly allocated
-CERVER_PUBLIC void c_string_copy (char *to, const char *from);
+CERVER_PUBLIC void c_string_copy (
+	char *to, const char *from
+);
 
 // copies n bytes from a c string into another one previuosly allocated
 CERVER_PUBLIC void c_string_n_copy (
@@ -55,7 +57,8 @@ CERVER_PUBLIC char *c_string_concat (
 // wont perform operation if result would overflow buffer
 // returns the len of the final string
 CERVER_PUBLIC size_t c_string_concat_safe (
-	const char *s1, const char *s2, const char *des, size_t des_size
+	const char *s1, const char *s2,
+	const char *des, size_t des_size
 );
 
 // creates a new c string with the desired format, as in printf
@@ -63,6 +66,12 @@ CERVER_PUBLIC char *c_string_create (const char *format, ...);
 
 // removes all the spaces in the c string
 CERVER_PUBLIC void c_string_remove_spaces (char *s);
+
+// removes any CRLF characters in a string
+CERVER_PUBLIC void c_string_remove_line_breaks (char *s);
+
+// removes all spaces and CRLF in the c string
+CERVER_PUBLIC void c_string_remove_spaces_and_line_breaks (char *s);
 
 // get how many tokens will be extracted by counting the number of apperances of the delim
 // the original string won't be affected
@@ -82,11 +91,15 @@ CERVER_PUBLIC char **c_string_split (
 CERVER_PUBLIC char *c_string_reverse (const char *str);
 
 // removes all ocurrances of a char from a string
-CERVER_PUBLIC void c_string_remove_char (char *string, char garbage);
+CERVER_PUBLIC void c_string_remove_char (
+	char *string, char garbage
+);
 
 // removes the exact sub string from the main one
 // returns a newly allocated copy of the original str but withput the sub
-CERVER_PUBLIC char *c_string_remove_sub (char *str, const char *sub);
+CERVER_PUBLIC char *c_string_remove_sub (
+	char *str, const char *sub
+);
 
 // removes any white space from the string
 CERVER_PUBLIC char *c_string_trim (char *str);
@@ -95,11 +108,15 @@ CERVER_PUBLIC char *c_string_trim (char *str);
 CERVER_PUBLIC char *c_string_strip_quotes (char *str);
 
 // returns true if the string starts with the selected sub string
-CERVER_PUBLIC bool c_string_starts_with (const char *str, const char *substr);
+CERVER_PUBLIC bool c_string_starts_with (
+	const char *str, const char *substr
+);
 
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
-CERVER_PUBLIC char *c_string_create_with_ptrs (char *first, char *last);
+CERVER_PUBLIC char *c_string_create_with_ptrs (
+	char *first, char *last
+);
 
 // removes a substring from a c string that is defined after a token
 // returns a newly allocated string without the sub,

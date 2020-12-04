@@ -171,7 +171,8 @@ char *c_string_concat (
 // wont perform operation if result would overflow buffer
 // returns the len of the final string
 size_t c_string_concat_safe (
-	const char *s1, const char *s2, const char *des, size_t des_size
+	const char *s1, const char *s2,
+	const char *des, size_t des_size
 ) {
 
 	size_t retval = 0;
@@ -198,7 +199,7 @@ size_t c_string_concat_safe (
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
-	char *fmt;
+	char *fmt = NULL;
 
 	if (format != NULL) fmt = strdup (format);
 	else fmt = strdup ("");
@@ -235,9 +236,35 @@ void c_string_remove_spaces (char *s) {
 
 }
 
+// removes any CRLF characters in a string
+void c_string_remove_line_breaks (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == '\r' || *d == '\n') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
+// removes all spaces and CRLF in the c string
+void c_string_remove_spaces_and_line_breaks (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == ' ' || *d == '\r' || *d == '\n') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
 // get how many tokens will be extracted by counting the number of apperances of the delim
 // the original string won't be affected
-size_t c_string_count_tokens (const char *original, const char delim) {
+size_t c_string_count_tokens (
+	const char *original, const char delim
+) {
 
 	size_t count = 0;
 
@@ -430,7 +457,8 @@ char *c_string_strip_quotes (char *str) {
 // returns true if the string starts with the selected sub string
 bool c_string_starts_with (const char *str, const char *substr) {
 
-	return (str && substr) ? strncmp (str, substr, strlen (substr)) == 0 : false;
+	return (str && substr) ?
+		strncmp (str, substr, strlen (substr)) == 0 : false;
 
 }
 
