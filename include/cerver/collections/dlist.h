@@ -312,14 +312,11 @@ extern DoubleList *dlist_split_by_condition (
 	const void *match
 );
 
-// merges two dlists into a newly created one
-// moves list elements from both dlist into a new dlist
-// first the elements of one and then all the elements of two
-// both dlists can be safely deleted after this operation
-// returns a newly allocated dlist with size = one->size + two->size
-extern DoubleList *dlist_merge_two (
-	DoubleList *one, DoubleList *two
-);
+// merges elements from two into one
+// moves list elements from two into the end of one
+// two can be safely deleted after this operation
+// one should be of size = one->size + two->size
+extern void dlist_merge_two (DoubleList *one, DoubleList *two);
 
 // creates a new dlist with all the elements from both dlists
 // that match the specified confition
@@ -330,5 +327,11 @@ extern DoubleList *dlist_merge_two_by_condition (
 	bool (*compare)(const void *one, const void *two),
 	const void *match
 );
+
+// expects a dlist of dlists and creates a new dlist with all the elements
+// elements from original dlists are moved directly to the new list
+// the original dlists can be deleted after this operation
+// returns a newly allocated dlist with all the elements
+extern DoubleList *dlist_merge_many (DoubleList *many_dlists);
 
 #endif
