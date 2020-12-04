@@ -15,8 +15,6 @@
 
 #include "cerver/game/lobby.h"
 
-#define RECEIVE_PACKET_BUFFER_SIZE      8192
-
 struct _Socket;
 struct _Cerver;
 struct _Client;
