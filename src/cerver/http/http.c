@@ -21,6 +21,7 @@
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
+
 #include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/alg.h"
 
@@ -37,11 +38,6 @@ static void http_receive_handle_default_route (
 );
 
 static void http_receive_handle (
-	HttpReceive *http_receive, 
-	ssize_t rc, char *packet_buffer
-);
-
-static void http_web_sockets_receive_handle (
 	HttpReceive *http_receive, 
 	ssize_t rc, char *packet_buffer
 );
@@ -1423,17 +1419,6 @@ HttpReceive *http_receive_new (void) {
 		http_receive->sent = 0;
 		http_receive->file_stats = http_route_file_stats_new ();
 
-		// websockets
-		http_receive->fin_rsv_opcode = 0;
-		http_receive->fragmented_message_len = 0;
-		http_receive->fragmented_message = NULL;
-		http_receive->ws_on_open = NULL;
-		http_receive->ws_on_close = NULL;
-		http_receive->ws_on_ping = NULL;
-		http_receive->ws_on_pong = NULL;
-		http_receive->ws_on_message = NULL;
-		http_receive->ws_on_error = NULL;
-
 		// http_receive->parser->data = http_receive->request;
 		http_receive->parser->data = http_receive;
 	}
@@ -1494,78 +1479,6 @@ static void http_receive_handle_catch_all (
 
 }
 
-// route is expecting a web socket connection, check headers and perform handshake
-static void http_receive_handle_match_web_socket (
-	HttpReceive *http_receive,
-	HttpRequest *request, 
-	HttpRoute *route
-) {
-
-	// check if client sent the correct headers
-	const String *connection = request->headers[REQUEST_HEADER_CONNECTION];
-	const String *upgrade = request->headers[REQUEST_HEADER_UPGRADE];
-
-	if (!strcasecmp ("Upgrade", connection->str) && !strcasecmp ("websocket", upgrade->str)) {
-		const String *web_socket_key = request->headers[REQUEST_HEADER_WEB_SOCKET_KEY];
-		// const String *web_socket_version = request->headers[REQUEST_HEADER_WEB_SOCKET_VERSION];
-
-		if (web_socket_key) {
-			char buffer[128] = { 0 };
-			(void) snprintf (
-				buffer, 128,
-				"%s%s",
-				web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-			);
-
-			unsigned char hash[SHA_DIGEST_LENGTH] = { 0 };
-			(void) SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
-
-			(void) memset (buffer, 0, 128);
-			(void) base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
-
-			HttpResponse *res = http_response_create ((http_status) 101, NULL, 0);
-			if (res) {
-				http_response_add_header (res, RESPONSE_HEADER_CONNECTION, "Upgrade");
-				http_response_add_header (res, RESPONSE_HEADER_UPGRADE, "websocket");
-				http_response_add_header (res, RESPONSE_HEADER_WEB_SOCKET_ACCEPT, buffer);
-
-				http_response_compile (res);
-				http_response_print (res);
-				http_response_send (res, http_receive);
-				http_respponse_delete (res);
-			}
-
-			// keep connection alive
-			http_receive->keep_alive = true;
-
-			http_receive->handler = http_web_sockets_receive_handle;
-
-			http_receive->ws_on_open = route->ws_on_open;
-			http_receive->ws_on_close = route->ws_on_close;
-			http_receive->ws_on_ping = route->ws_on_ping;
-			http_receive->ws_on_pong = route->ws_on_pong;
-			http_receive->ws_on_message = route->ws_on_message;
-			http_receive->ws_on_error = route->ws_on_error;
-
-			// set the sockets timeout to prevent threads from getting stuck if no more data to read
-			if (sock_set_timeout (http_receive->cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
-				cerver_log_error (
-					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
-					http_receive->cr->connection->socket->sock_fd
-				);
-
-				// end connection to avoid wasting a thread
-				connection_end (http_receive->cr->connection);
-			}
-		}
-
-		else http_response_create_and_send (400, NULL, 0, http_receive);
-	}
-
-	else http_response_create_and_send (400, NULL, 0, http_receive);
-
-}
-
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
@@ -1623,7 +1536,7 @@ static void http_receive_handle_match (
 					break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-					http_receive_handle_match_web_socket (http_receive, request, found);
+					
 					break;
 			}
 
@@ -2058,261 +1971,6 @@ static void http_receive_handle (
 	}
 
 	// printf ("http_receive_handle () - end!\n");
-
-}
-
-#pragma endregion
-
-#pragma region websockets
-
-// sends a ws message to the selected connection
-// returns 0 on success, 1 on error
-u8 http_web_sockets_send (
-	Cerver *cerver, Connection *connection,
-	const char *msg, const size_t msg_len
-) {
-
-	u8 retval = 1;
-
-	unsigned char fin_rsv_opcode = 129;
-
-	size_t header_len = 0;
-	unsigned char res[128] = { 0 };
-
-	unsigned char *end = res;
-	res[0] = fin_rsv_opcode;
-
-	ssize_t sent = 0;
-
-	// Unmasked (first length byte < 128)
-	if (msg_len >= 126) {
-		ssize_t num_bytes = 0;
-		if (msg_len > 0xffff) {
-			num_bytes = 8;
-			res[1] = 127;
-		}
-
-		else {
-			num_bytes = 2;
-			res[1] = 126;
-		}
-
-		header_len = 2;
-		end += 2;
-		for (ssize_t c = num_bytes -1; c != -1; c--) {
-			*end++ = ((unsigned long long) msg_len >> (8 * c)) % 256;
-			header_len += 1;
-		}
-
-		// first send the header
-		ssize_t s = send (connection->socket->sock_fd, res, header_len, 0);
-		if (s > 0) {
-			sent = s;
-
-			// send the message contents
-			s = send (connection->socket->sock_fd, msg, msg_len, 0);
-			if (s > 0) {
-				sent += s;
-				retval = 0;
-			}
-		}
-	}
-
-	else {
-		res[1] = (unsigned char) msg_len;
-		end += 2;
-
-		// for (unsigned int i = 0; i < msg_len; i++) {
-		// 	res[i + 2] = msg[i];
-		// }
-
-		memcpy (end, msg, msg_len);
-
-		// send the message contents
-		sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
-		if (sent > 0) retval = 0;
-	}
-
-	printf ("fin_rsv_opcode: %d\n", res[0]);
-	printf ("res len: %d\n", res[1]);
-
-	printf ("sent: %ld\n", sent);
-	printf ("\n");
-
-	return retval;
-
-}
-
-// handle message based on control code
-static void http_web_sockets_handler (
-	HttpReceive *http_receive,
-	unsigned char fin_rsv_opcode,
-	char *message, size_t message_size
-) {
-
-	// if connection close
-	if ((fin_rsv_opcode & 0x0f) == 8) {
-		// TODO:
-		printf ("connection close\n");
-	}
-
-	// if ping
-	else if ((fin_rsv_opcode & 0x0f) == 9) {
-		printf ("\nPING!\n\n");
-		// TODO:
-	}
-
-	// if pong
-	else if ((fin_rsv_opcode & 0x0f) == 10) {
-		printf ("\nPONG\n\n");
-		// TODO:
-	}
-
-	// if fragmented message and not final fragment
-	else if ((fin_rsv_opcode & 0x80) == 0) {
-		// TODO: read the next message
-	}
-
-	else {
-		// printf ("message: %s\n", message);
-
-		if (http_receive->ws_on_message) {
-			http_receive->ws_on_message (
-				http_receive->cr->cerver, http_receive->cr->connection,
-				message, message_size
-			);
-		}
-
-		// safe to delete message
-		free (message);
-	}
-
-}
-
-static void http_web_sockets_read_message_content (
-	HttpReceive *http_receive,
-	ssize_t buffer_size, char *buffer,
-	unsigned char fin_rsv_opcode, size_t message_size
-) {
-
-	// read mask
-	unsigned char mask[4] = { (unsigned char) buffer[0], (unsigned char) buffer[1], (unsigned char) buffer[2], (unsigned char) buffer[3] };
-
-	char *message = NULL;
-
-	// if fragmented message
-	if ((fin_rsv_opcode & 0x80) == 0 || (fin_rsv_opcode & 0x0f) == 0) {
-		printf ("fragmented message\n");
-		if (!http_receive->fragmented_message) {
-			http_receive->fin_rsv_opcode = fin_rsv_opcode |= 0x80;
-			http_receive->fragmented_message = (char *) calloc (message_size, sizeof (char));
-			// http_receive->fragmented_message_len = message_size;
-		}
-
-		else {
-			http_receive->fragmented_message_len += message_size;
-		}
-
-		message = http_receive->fragmented_message;
-	}
-
-	// complete message
-	else {
-		message = (char *) calloc (message_size, sizeof (char));
-	}
-
-	char *end = (buffer + 4);
-	for (size_t c = 0; c < message_size; c++) {
-		message[c] = *end ^ mask[c % 4];
-		end += 1;
-	}
-
-	http_web_sockets_handler (
-		http_receive,
-		fin_rsv_opcode,
-		message, message_size
-	);
-
-}
-
-static void http_web_sockets_receive_handle (
-	HttpReceive *http_receive, 
-	ssize_t rc, char *packet_buffer
-) {
-
-	printf ("http_web_sockets_receive_handle ()\n");
-
-	unsigned char first_bytes[2] = { (unsigned char) packet_buffer[0], (unsigned char) packet_buffer[1] };
-
-	unsigned char fin_rsv_opcode = first_bytes[0];
-	printf ("%d\n", first_bytes[0]);
-
-	// close connection if unmasked message from client (protocol error)
-	if (first_bytes[1] < 128) {
-		cerver_log_error ("http_web_sockets_receive_handle () - message from client not masked!");
-		// TODO: end connection
-
-		return;
-	}
-
-	size_t length = (first_bytes[1] & 127);
-
-	if (length == 126) {
-		printf ("length == 126\n");
-
-		// 2 next bytes is the size of content
-		unsigned char length_bytes[2] = { (unsigned char) packet_buffer[2], (unsigned char) packet_buffer[3] };
-
-		size_t length = 0;
-		size_t num_bytes = 2;
-		for (size_t c = 0; c < num_bytes; c++) {
-			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
-		}
-
-		printf ("message length: %ld\n", length);
-
-		http_web_sockets_read_message_content (
-			http_receive, 
-			rc - 4, packet_buffer + 4,
-			fin_rsv_opcode, length
-		);
-	}
-
-	else if (length == 127) {
-		printf ("length == 127\n");
-
-		// 8 next bytes is the size of content
-		unsigned char length_bytes[8] = { 
-			(unsigned char) packet_buffer[2], (unsigned char) packet_buffer[3],
-			(unsigned char) packet_buffer[4], (unsigned char) packet_buffer[5],
-			(unsigned char) packet_buffer[6], (unsigned char) packet_buffer[7],
-			(unsigned char) packet_buffer[8], (unsigned char) packet_buffer[9],
-		};
-
-		size_t length = 0;
-		size_t num_bytes = 8;
-		for (size_t c = 0; c < num_bytes; c++) {
-			length += length_bytes[c] << (8 * (num_bytes - 1 - c));
-		}
-
-		printf ("message length: %ld\n", length);
-
-		http_web_sockets_read_message_content (
-			http_receive, 
-			rc - 10, packet_buffer + 10,
-			fin_rsv_opcode, length
-		);
-	}
-
-	else {
-		printf ("message length: %ld\n", length);
-
-		http_web_sockets_read_message_content (
-			http_receive,
-			rc - 2, packet_buffer + 2,
-			fin_rsv_opcode, length
-		);
-	}
 
 }
 
