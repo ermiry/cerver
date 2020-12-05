@@ -305,13 +305,6 @@ HttpRoute *http_route_new (void) {
 			route->stats[i] = NULL;
 		}
 
-		route->ws_on_open = NULL;
-		route->ws_on_close = NULL;
-		route->ws_on_ping = NULL;
-		route->ws_on_pong = NULL;
-		route->ws_on_message = NULL;
-		route->ws_on_error = NULL;
-
 		route->file_stats = NULL;
 	}
 
@@ -514,74 +507,6 @@ void http_route_set_decode_data (
 		route->delete_decoded_data = delete_decoded_data;
 	}
 
-}
-
-// sets a callback to be executed whenever a websocket connection is correctly
-// opened in the selected route
-void http_route_set_ws_on_open (
-	HttpRoute *route, 
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *)
-) {
-
-	if (route) route->ws_on_open = ws_on_open;
-
-}
-
-// sets a callback to be executed whenever a websocket connection
-// gets closed from the selected route
-void http_route_set_ws_on_close (
-	HttpRoute *route, 
-	void (*ws_on_close)(struct _Cerver *, const char *reason)
-) {
-
-	if (route) route->ws_on_close = ws_on_close;
-	
-}
-
-// sets a callback to be executed whenever a websocket ping message
-// is received in the selected route
-void http_route_set_ws_on_ping (
-	HttpRoute *route, 
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)
-) {
-
-	if (route) route->ws_on_ping = ws_on_ping;
-	
-}
-
-// sets a callback to be executed whenever a websocket pong message
-// is received in the selected route
-void http_route_set_ws_on_pong (
-	HttpRoute *route, 
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)
-) {
-
-	if (route) route->ws_on_pong = ws_on_pong;
-	
-}
-
-// sets a callback to be executed whenever a complete websocket message
-// is received in the selected route
-void http_route_set_ws_on_message (
-	HttpRoute *route, 
-	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *,
-		const char *msg, size_t msg_len
-	)
-) {
-	
-	if (route) route->ws_on_message = ws_on_message;
-
-}
-
-// sets a callback to be executed whenever an error ocurred in the selected route
-void http_route_set_ws_on_error (
-	HttpRoute *route, 
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
-) {
-
-	if (route) route->ws_on_error = ws_on_error;
-	
 }
 
 static void http_route_get_methods_string (

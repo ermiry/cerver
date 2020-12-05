@@ -14,7 +14,7 @@
 #include "cerver/http/multipart.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
-#include "cerver/http/socket.h"
+
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
@@ -296,17 +296,6 @@ struct _HttpReceive {
 	RequestMethod request_method;
 	size_t sent;
 	struct _HttpRouteFileStats *file_stats;
-
-	// websockets
-	unsigned char fin_rsv_opcode;
-	size_t fragmented_message_len;
-	char *fragmented_message;
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_close)(struct _Cerver *, const char *reason);
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, const size_t msg_len);
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 };
 
