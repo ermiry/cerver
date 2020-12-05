@@ -132,9 +132,11 @@ static void end (int dummy) {
 static void handle_test_request (Packet *packet, unsigned int handler_id) {
 
 	if (packet) {
-		cerver_log_debug (
-			"Got a test message in handler <%d>! Sending another one back...", handler_id
-		);
+		char *status = c_string_create ("Got a test message in handler <%d>! Sending another one back...", handler_id);
+		if (status) {
+			cerver_log_debug (status);
+			free (status);
+		}
 		
 		Packet *test_packet = packet_generate_request (PACKET_TYPE_APP, TEST_MSG, NULL, 0);
 		if (test_packet) {
@@ -330,14 +332,24 @@ int main (void) {
 	cerver_log_debug ("Multiple app handlers example");
 	printf ("\n");
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"my-cerver",
+		7000,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Multiple app handlers example");
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
-		// cerver_set_app_handlers (my_cerver, handler, NULL);
+		
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, 2000);
 
 		cerver_set_multiple_handlers (my_cerver, 4);
 

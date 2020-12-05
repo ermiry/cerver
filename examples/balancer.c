@@ -118,7 +118,14 @@ int main (void) {
 	cerver_log_debug ("Simple Round Robin Load Balancer");
 	printf ("\n");
 
-	load_balancer = balancer_create ("test-balancer", BALANCER_TYPE_ROUND_ROBIN, 7000, 10, 2);
+	load_balancer = balancer_create (
+		"test-balancer",
+		BALANCER_TYPE_ROUND_ROBIN,
+		7000,
+		10,
+		2
+	);
+
 	if (load_balancer) {
 		/*** cerver configuration ***/
 		cerver_set_handler_type (load_balancer->cerver, CERVER_HANDLER_TYPE_THREADS);
