@@ -14,7 +14,8 @@
 #include "cerver/http/multipart.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
-#include "cerver/http/socket.h"
+#include "cerver/http/websockets.h"
+
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
@@ -305,7 +306,10 @@ struct _HttpReceive {
 	void (*ws_on_close)(struct _Cerver *, const char *reason);
 	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
 	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_message)(struct _Cerver *, struct _Connection *, const char *msg, const size_t msg_len);
+	void (*ws_on_message)(
+		struct _Cerver *, struct _Connection *,
+		const char *msg, const size_t msg_len
+	);
 	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
 
 };
@@ -315,20 +319,6 @@ typedef struct _HttpReceive HttpReceive;
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
-
-#pragma endregion
-
-#pragma region websockets
-
-// the default tmeout for a websocket sonnection
-#define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
-
-// sends a ws message to the selected connection
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_web_sockets_send (
-	Cerver *cerver, Connection *connection,
-	const char *msg, const size_t msg_len
-);
 
 #pragma endregion
 
