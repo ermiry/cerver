@@ -117,7 +117,7 @@ void c_string_copy (char *to, const char *from) {
 
 	if (to && from) {
 		while (*from) *to++ = *from++;
-		
+
 		*to = '\0';
 	}
 
@@ -131,7 +131,7 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 			*to++ = *from++;
 			n--;
 		}
-		
+
 		*to = '\0';
 	}
 
@@ -139,7 +139,9 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 
 // concats two c strings into a newly allocated buffer of len s1 + s2
 // returns a newly allocated buffer on success, NULL on any error
-char *c_string_concat (const char *s1, const char *s2, size_t *des_size) {
+char *c_string_concat (
+	const char *s1, const char *s2, size_t *des_size
+) {
 
 	char *retval = NULL;
 
@@ -168,7 +170,10 @@ char *c_string_concat (const char *s1, const char *s2, size_t *des_size) {
 // concats two strings into the same buffer
 // wont perform operation if result would overflow buffer
 // returns the len of the final string
-size_t c_string_concat_safe (const char *s1, const char *s2, const char *des, size_t des_size) {
+size_t c_string_concat_safe (
+	const char *s1, const char *s2,
+	const char *des, size_t des_size
+) {
 
 	size_t retval = 0;
 
@@ -194,7 +199,7 @@ size_t c_string_concat_safe (const char *s1, const char *s2, const char *des, si
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
-	char *fmt;
+	char *fmt = NULL;
 
 	if (format != NULL) fmt = strdup (format);
 	else fmt = strdup ("");
@@ -219,9 +224,47 @@ char *c_string_create (const char *format, ...) {
 
 }
 
+// removes all the spaces in the c string
+void c_string_remove_spaces (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == ' ') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
+// removes any CRLF characters in a string
+void c_string_remove_line_breaks (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == '\r' || *d == '\n') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
+// removes all spaces and CRLF in the c string
+void c_string_remove_spaces_and_line_breaks (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == ' ' || *d == '\r' || *d == '\n') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
 // get how many tokens will be extracted by counting the number of apperances of the delim
 // the original string won't be affected
-size_t c_string_count_tokens (const char *original, const char delim) {
+size_t c_string_count_tokens (
+	const char *original, const char delim
+) {
 
 	size_t count = 0;
 
@@ -256,7 +299,9 @@ size_t c_string_count_tokens (const char *original, const char delim) {
 // splits a c string into tokens based on a delimiter
 // the original string won't be affected
 // this method is thread safe as it uses __strtok_r () instead of the regular strtok ()
-char **c_string_split (const char *original, const char delim, size_t *n_tokens) {
+char **c_string_split (
+	const char *original, const char delim, size_t *n_tokens
+) {
 
 	char **result = NULL;
 
@@ -327,7 +372,7 @@ void c_string_remove_char (char *string, char garbage) {
 		*dst = *src;
 		if (*dst != garbage) dst++;
 	}
-	
+
 	*dst = '\0';
 
 }
@@ -348,7 +393,7 @@ char *c_string_remove_sub (char *str, const char *sub) {
 			size_t new_len = len_str - len_sub;
 			retval = (char *) calloc (new_len + 1, sizeof (char));
 			if (retval) {
-				char *ptr = retval; 
+				char *ptr = retval;
 				ptrdiff_t idx = 0;
 
 				// copy the first part of the string
@@ -370,7 +415,7 @@ char *c_string_remove_sub (char *str, const char *sub) {
 			}
 		}
 	}
-	
+
 	return retval;
 
 }
@@ -412,8 +457,9 @@ char *c_string_strip_quotes (char *str) {
 // returns true if the string starts with the selected sub string
 bool c_string_starts_with (const char *str, const char *substr) {
 
-	return (str && substr) ? strncmp (str, substr, strlen (substr)) == 0 : false;
-	
+	return (str && substr) ?
+		strncmp (str, substr, strlen (substr)) == 0 : false;
+
 }
 
 // creates a newly allocated string using the data between the two pointers of the SAME string
@@ -447,7 +493,9 @@ char *c_string_create_with_ptrs (char *first, char *last) {
 // removes a substring from a c string that is defined after a token
 // returns a newly allocated string without the sub,
 // and option to retrieve the actual substring
-char *c_string_remove_sub_after_token (char *str, const char token, char **sub) {
+char *c_string_remove_sub_after_token (
+	char *str, const char token, char **sub
+) {
 
 	char *retval = NULL;
 
@@ -467,12 +515,12 @@ char *c_string_remove_sub_after_token (char *str, const char token, char **sub) 
 
 		if (sub) {
 			*sub = (char *) calloc (sub_len + 1, sizeof (char));
-			memcpy (*sub, ptr, sub_len);
+			(void) memcpy (*sub, ptr, sub_len);
 			// *sub[sub_len] = '\0';
-		} 
+		}
 
 		retval = (char *) calloc (diff_len + 1, sizeof (char));
-		memcpy (retval, str, diff_len);
+		(void) memcpy (retval, str, diff_len);
 		// retval[diff_len] = '\0';
 	}
 
@@ -485,7 +533,9 @@ char *c_string_remove_sub_after_token (char *str, const char token, char **sub) 
 // and option to retrieve the actual substring
 // idx set to -1 for the last token match
 // example: /home/ermiry/Documents, token: '/', idx: -1, returns: Documents
-char *c_string_remove_sub_after_token_with_idx (char *str, const char token, char **sub, int idx) {
+char *c_string_remove_sub_after_token_with_idx (
+	char *str, const char token, char **sub, int idx
+) {
 
 	char *retval = NULL;
 
@@ -513,12 +563,12 @@ char *c_string_remove_sub_after_token_with_idx (char *str, const char token, cha
 
 		if (sub) {
 			*sub = (char *) calloc (sub_len + 1, sizeof (char));
-			memcpy (*sub, last_ptr, sub_len);
+			(void) memcpy (*sub, last_ptr, sub_len);
 			// *sub[sub_len] = '\0';
-		} 
+		}
 
 		retval = (char *) calloc (diff_len + 1, sizeof (char));
-		memcpy (retval, str, diff_len);
+		(void) memcpy (retval, str, diff_len);
 		// retval[diff_len] = '\0';
 	}
 
@@ -531,7 +581,9 @@ char *c_string_remove_sub_after_token_with_idx (char *str, const char token, cha
 // example: test_20191118142101759__TEST__.png - token: '_'
 // result: test.png
 // returns a newly allocated string, and a option to get the substring
-char *c_string_remove_sub_simetric_token (char *str, const char token, char **sub) {
+char *c_string_remove_sub_simetric_token (
+	char *str, const char token, char **sub
+) {
 
 	char *retval = NULL;
 
@@ -553,12 +605,12 @@ char *c_string_remove_sub_simetric_token (char *str, const char token, char **su
 		if (sub) {
 			*sub = c_string_create_with_ptrs (first, last);
 			sub_ptr = *sub;
-		} 
+		}
 
 		else {
 			sub_ptr = c_string_create_with_ptrs (first, last);
 			out = false;
-		} 
+		}
 
 		// get the substring between the two tokens
 		retval = c_string_remove_sub (str, sub_ptr);
@@ -575,8 +627,11 @@ char *c_string_remove_sub_simetric_token (char *str, const char token, char **su
 // example: test_20191118142101759__TEST__.png - token: '_' - idx (first: 1,  last: 3)
 // result: testTEST__.png
 // returns a newly allocated string, and a option to get the substring
-char *c_string_remove_sub_range_token (char *str, const char token, unsigned int first, unsigned int last,
-	char **sub) {
+char *c_string_remove_sub_range_token (
+	char *str,
+	const char token, unsigned int first, unsigned int last,
+	char **sub
+) {
 
 	char *retval = NULL;
 
@@ -606,12 +661,12 @@ char *c_string_remove_sub_range_token (char *str, const char token, unsigned int
 			if (sub) {
 				*sub = c_string_create_with_ptrs (first_ptr, last_ptr);
 				sub_ptr = *sub;
-			} 
+			}
 
 			else {
 				sub_ptr = c_string_create_with_ptrs (first_ptr, last_ptr);
 				out = false;
-			} 
+			}
 
 			// get the substring between the two tokens
 			retval = c_string_remove_sub (str, sub_ptr);
@@ -628,7 +683,9 @@ char *c_string_remove_sub_range_token (char *str, const char token, unsigned int
 // takes the first appearance of the first token, and the last appearance of the second one
 // example: test_20191118142101759__TEST__.png - first token: '_' - last token: 'T'
 // result: test__.png
-char *c_string_remove_sub_different_token (char *str, const char token_one, const char token_two) {
+char *c_string_remove_sub_different_token (
+	char *str, const char token_one, const char token_two
+) {
 
 	// TODO:
 
