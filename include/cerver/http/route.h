@@ -11,7 +11,7 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/request.h"
-#include "cerver/http/socket.h"
+#include "cerver/http/websockets.h"
 
 #define DEFAULT_ROUTES_TOKENS_SIZE				16
 
