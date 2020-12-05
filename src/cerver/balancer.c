@@ -182,7 +182,7 @@ Balancer *balancer_create (
 		balancer->cerver = cerver_create (
 			CERVER_TYPE_BALANCER,
 			"load-balancer-cerver",
-			port, PROTOCOL_TCP, false, connection_queue, DEFAULT_POLL_TIMEOUT
+			port, PROTOCOL_TCP, false, connection_queue
 		);
 
 		balancer->cerver->balancer = balancer;
