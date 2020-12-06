@@ -44,7 +44,7 @@ void end (int dummy) {
 
 // GET /
 void main_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -55,11 +55,14 @@ void main_handler (
 }
 
 void test_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Test route works!"
+	);
+
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, http_receive);
@@ -69,11 +72,14 @@ void test_handler (
 }
 
 void echo_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Echo route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Echo route works!"
+	);
+
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, http_receive);
@@ -82,20 +88,22 @@ void echo_handler (
 
 }
 
-void echo_handler_on_open (Cerver *cerver, Connection *connection) {
+void echo_handler_on_open (const HttpReceive *http_receive) {
 
 	printf ("echo_handler_on_open ()\n");
 
 }
 
-void echo_handler_on_close (Cerver *cerver, const char *reason) {
+void echo_handler_on_close (
+	const HttpReceive *http_receive, const char *reason
+) {
 
 	printf ("echo_handler_on_close ()\n");
 
 }
 
 void echo_handler_on_message (
-	Cerver *cerver, Connection *connection,
+	const HttpReceive *http_receive,
 	const char *msg, const size_t msg_len
 ) {
 
@@ -104,18 +112,38 @@ void echo_handler_on_message (
 	printf ("message[%ld]: %.*s\n", msg_len, (int) msg_len, msg);
 
 	http_web_sockets_send (
-		cerver, connection,
+		http_receive,
 		msg, msg_len
+	);
+
+	sleep (5);
+
+	char *message = { "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Porttitor eget dolor morbi non arcu risus quis. Mauris rhoncus aenean vel elit scelerisque mauris pellentesque pulvinar. Aliquet risus feugiat in ante metus dictum at. Massa enim nec dui nunc mattis. Massa eget egestas purus viverra. Euismod quis viverra nibh cras pulvinar mattis. Curabitur gravida arcu ac tortor dignissim convallis. Sit amet aliquam id diam maecenas ultricies mi eget. Mi quis hendrerit dolor magna eget. Nibh mauris cursus mattis molestie a. Purus in massa tempor nec feugiat nisl pretium fusce. Turpis massa sed elementum tempus egestas sed sed risus pretium. Etiam sit amet nisl purus in. Ac ut consequat semper viverra nam libero. Quam quisque id diam vel. Mattis vulputate enim nulla aliquet porttitor lacus luctus. Volutpat diam ut venenatis tellus in metus vulputate eu scelerisque. Vitae nunc sed velit dignissim sodales ut eu" };
+
+	http_web_sockets_send (
+		http_receive,
+		message, strlen (message)
+	);
+
+	sleep (5);
+
+	char *test = { "Diam vel quam elementum pulvinar etiam non. Auctor elit sed vulputate mi sit amet mauris commodo. Neque ornare aenean euismod elementum. In pellentesque massa placerat duis ultricies lacus sed. Velit aliquet sagittis id consectetur purus ut faucibus. Vitae ultricies leo integer malesuada nunc vel. Metus dictum at tempor commodo ullamcorper a. Amet luctus venenatis lectus magna. Eget nulla facilisi etiam dignissim diam quis enim. Ultricies mi quis hendrerit dolor magna eget est lorem. Sem et tortor consequat id porta nibh venenatis cras. Aliquam faucibus purus in massa tempor nec feugiat. Id interdum velit laoreet id. Volutpat sed cras ornare arcu dui vivamus arcu. Consectetur a erat nam at lectus. In nulla posuere sollicitudin aliquam. Malesuada fames ac turpis egestas. Malesuada fames ac turpis egestas maecenas pharetra convallis. Sapien faucibus et molestie ac." };
+
+	http_web_sockets_send (
+		http_receive,
+		test, strlen (test)
 	);
 
 }
 
 void chat_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Chat route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Chat route works!"
+	);
 	if (res) {
 		http_response_print (res);
 		http_response_send (res, http_receive);
