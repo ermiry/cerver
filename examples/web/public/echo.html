@@ -39,7 +39,7 @@
     
       function onMessage (evt) {
         writeToScreen('<span style="color: blue;">RESPONSE: ' + evt.data+'</span>');
-        websocket.close();
+        console.log (evt.data);
       }
     
       function onError (evt) {
