@@ -302,15 +302,19 @@ struct _HttpReceive {
 	unsigned char fin_rsv_opcode;
 	size_t fragmented_message_len;
 	char *fragmented_message;
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_close)(struct _Cerver *, const char *reason);
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *);
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *);
+	void (*ws_on_open)(const struct _HttpReceive *http_receive);
+	void (*ws_on_close)(
+		const struct _HttpReceive *, const char *reason
+	);
+	void (*ws_on_ping)(const struct _HttpReceive *http_receive);
+	void (*ws_on_pong)(const struct _HttpReceive *http_receive);
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *,
+		const struct _HttpReceive *http_receive,
 		const char *msg, const size_t msg_len
 	);
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError);
+	void (*ws_on_error)(
+		const struct _HttpReceive *, enum _HttpWebSocketError
+	);
 
 };
 

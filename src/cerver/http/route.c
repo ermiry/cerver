@@ -11,6 +11,7 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
@@ -520,7 +521,7 @@ void http_route_set_decode_data (
 // opened in the selected route
 void http_route_set_ws_on_open (
 	HttpRoute *route, 
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_open)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_open = ws_on_open;
@@ -531,7 +532,10 @@ void http_route_set_ws_on_open (
 // gets closed from the selected route
 void http_route_set_ws_on_close (
 	HttpRoute *route, 
-	void (*ws_on_close)(struct _Cerver *, const char *reason)
+	void (*ws_on_close)(
+		const HttpReceive *http_receive,
+		const char *reason
+	)
 ) {
 
 	if (route) route->ws_on_close = ws_on_close;
@@ -542,7 +546,7 @@ void http_route_set_ws_on_close (
 // is received in the selected route
 void http_route_set_ws_on_ping (
 	HttpRoute *route, 
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_ping)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_ping = ws_on_ping;
@@ -553,7 +557,7 @@ void http_route_set_ws_on_ping (
 // is received in the selected route
 void http_route_set_ws_on_pong (
 	HttpRoute *route, 
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_pong)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_pong = ws_on_pong;
@@ -565,7 +569,7 @@ void http_route_set_ws_on_pong (
 void http_route_set_ws_on_message (
 	HttpRoute *route, 
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *,
+		const HttpReceive *http_receive,
 		const char *msg, size_t msg_len
 	)
 ) {
@@ -577,7 +581,10 @@ void http_route_set_ws_on_message (
 // sets a callback to be executed whenever an error ocurred in the selected route
 void http_route_set_ws_on_error (
 	HttpRoute *route, 
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
+	void (*ws_on_error)(
+		const HttpReceive *http_receive,
+		enum _HttpWebSocketError
+	)
 ) {
 
 	if (route) route->ws_on_error = ws_on_error;
