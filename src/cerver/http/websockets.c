@@ -19,13 +19,14 @@ typedef struct WebSocketFrame {
 	bool rsv1;
 	bool rsv2;
 	bool rsv3;
+
 	uint8_t opcode;
+
 	bool mask;
-	uint64_t payload_length;
 	char masking_key[4];
+
+	uint64_t payload_length;
 	char *payload;
-	uint64_t extension_data_length;
-	uint64_t application_data_length;
 
 } WebSocketFrame;
 
@@ -79,11 +80,11 @@ size_t http_web_sockets_send_compile_frame (
 		offset += sizeof (uint16_t);
 	}
 
-	if (frame->application_data_length > 0) {
+	if (frame->payload_length > 0) {
 		(void) memcpy (
-			end_frame_buffer + offset, frame->payload, frame->application_data_length
+			end_frame_buffer + offset, frame->payload, frame->payload_length
 		);
-		offset += frame->application_data_length;
+		offset += frame->payload_length;
 	}
 
 	return offset;
@@ -128,17 +129,15 @@ u8 http_web_sockets_send (
 		frame->fin = 0;
 		frame->mask = 0;
 
-		frame->application_data_length = MIN (
+		frame->payload_length = MIN (
 			msg_len - (WEB_SOCKET_FRAME_SIZE * i), WEB_SOCKET_FRAME_SIZE
 		);
 
 		frame->payload = (char *) calloc (
-			frame->application_data_length + 1, sizeof (char)
+			frame->payload_length + 1, sizeof (char)
 		);
 
-		(void) memcpy (frame->payload, msg_ptr + offset, frame->application_data_length);
-		frame->payload_length += frame->extension_data_length;
-		frame->payload_length += frame->application_data_length;
+		(void) memcpy (frame->payload, msg_ptr + offset, frame->payload_length);
 
 		offset += frame->payload_length;
 	}
