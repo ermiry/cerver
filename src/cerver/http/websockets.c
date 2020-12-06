@@ -1,12 +1,94 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
+
+#include <math.h>
 
 #include "cerver/types/types.h"
 
 #include "cerver/cerver.h"
+#include "cerver/config.h"
 
 #include "cerver/http/http.h"
+#include "cerver/http/websockets.h"
+
+typedef struct WebSocketFrame {
+
+	bool fin;
+	bool rsv1;
+	bool rsv2;
+	bool rsv3;
+	uint8_t opcode;
+	bool mask;
+	uint64_t payload_length;
+	char masking_key[4];
+	char *payload;
+	uint64_t extension_data_length;
+	uint64_t application_data_length;
+
+} WebSocketFrame;
+
+static inline uint16_t htons16 (uint16_t value) {
+
+	static const int num = 42;
+
+	if (*(char *) &num == 42) return ntohs(value);
+	else return value;
+
+}
+
+size_t http_web_sockets_send_compile_frame (
+	WebSocketFrame *frame,
+	char *frame_buffer, size_t frame_buffer_size
+) {
+
+	size_t offset = 0;
+	size_t len = 2;
+	char *end_frame_buffer = frame_buffer;
+
+	offset = 0;
+	if (frame->payload_length > 125) {
+		if (frame->payload_length <= 65535)
+			len += sizeof (uint16_t);
+
+		else len += sizeof (uint64_t);
+	}
+
+	len += frame->payload_length;
+
+	(void) memset (frame_buffer, 0, frame_buffer_size);
+	end_frame_buffer = frame_buffer;
+
+	if (frame->fin) frame_buffer[offset] |= 0x80;
+	if (frame->rsv1) frame_buffer[offset] |= 0x40;
+	if (frame->rsv2) frame_buffer[offset] |= 0x20;
+	if (frame->rsv3) frame_buffer[offset] |= 0x10;
+
+	frame_buffer[offset++] |= 0xF & frame->opcode;
+
+	if (frame->payload_length <= 125) {
+		frame_buffer[offset++] = frame->payload_length;
+	}
+
+	else if (frame->payload_length <= 65535) {
+		uint16_t plen = 0;
+		frame_buffer[offset++] = 126;
+		plen = htons16 (frame->payload_length);
+		(void) memcpy (end_frame_buffer + offset, &plen, sizeof (uint16_t));
+		offset += sizeof (uint16_t);
+	}
+
+	if (frame->application_data_length > 0) {
+		(void) memcpy (
+			end_frame_buffer + offset, frame->payload, frame->application_data_length
+		);
+		offset += frame->application_data_length;
+	}
+
+	return offset;
+
+}
 
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
@@ -17,74 +99,155 @@ u8 http_web_sockets_send (
 
 	u8 retval = 1;
 
-	unsigned char fin_rsv_opcode = 129;
+	// WSS_create_frames ()
+	// split message into multiple frames
+	size_t frames_count = MAX (
+		1, (size_t) ceil ((double) msg_len / (double) WEB_SOCKET_FRAME_SIZE)
+	);
 
-	size_t header_len = 0;
-	unsigned char res[128] = { 0 };
+	WebSocketFrame *frames = (WebSocketFrame *) calloc (
+		frames_count, sizeof (WebSocketFrame)
+	);
 
-	unsigned char *end = res;
-	res[0] = fin_rsv_opcode;
+	bool first = true;
+	size_t offset = 0;
+	char *msg_ptr = (char *) msg;
+	WebSocketFrame *frame = NULL;
+	for (size_t i = 0; i < frames_count; i++) {
+		frame = &frames[i];
 
-	ssize_t sent = 0;
-
-	// Unmasked (first length byte < 128)
-	if (msg_len >= 126) {
-		ssize_t num_bytes = 0;
-		if (msg_len > 0xffff) {
-			num_bytes = 8;
-			res[1] = 127;
+		if (first) {
+			frame->opcode = HTTP_WEB_SOCKET_OPCODE_TEXT;
+			first = false;
 		}
 
 		else {
-			num_bytes = 2;
-			res[1] = 126;
+			frame->opcode = HTTP_WEB_SOCKET_OPCODE_CONTINUATION;
 		}
 
-		header_len = 2;
-		end += 2;
-		for (ssize_t c = num_bytes -1; c != -1; c--) {
-			*end++ = ((unsigned long long) msg_len >> (8 * c)) % 256;
-			header_len += 1;
-		}
+		frame->fin = 0;
+		frame->mask = 0;
 
-		// first send the header
-		ssize_t s = send (connection->socket->sock_fd, res, header_len, 0);
-		if (s > 0) {
-			sent = s;
+		frame->application_data_length = MIN (
+			msg_len - (WEB_SOCKET_FRAME_SIZE * i), WEB_SOCKET_FRAME_SIZE
+		);
 
-			// send the message contents
-			s = send (connection->socket->sock_fd, msg, msg_len, 0);
-			if (s > 0) {
-				sent += s;
-				retval = 0;
-			}
-		}
+		frame->payload = (char *) calloc (
+			frame->application_data_length + 1, sizeof (char)
+		);
+
+		(void) memcpy (frame->payload, msg_ptr + offset, frame->application_data_length);
+		frame->payload_length += frame->extension_data_length;
+		frame->payload_length += frame->application_data_length;
+
+		offset += frame->payload_length;
 	}
 
-	else {
-		res[1] = (unsigned char) msg_len;
-		end += 2;
+	frames[frames_count - 1].fin = true;
 
-		// for (unsigned int i = 0; i < msg_len; i++) {
-		// 	res[i + 2] = msg[i];
-		// }
+	// WSS_stringify_frames ()
+	size_t message_to_send_size = 0;
+	char message_to_send[4096] = { 0 };
+	char *end_of_message = message_to_send;
+	char frame_buffer[256] = { 0 };
+	size_t frame_size = 0;
+	for (size_t i = 0; i < frames_count; i++) {
+		// WSS_stringify_frame ()
+		frame_size = http_web_sockets_send_compile_frame (
+			&frames[i],
+			frame_buffer, 256
+		);
 
-		memcpy (end, msg, msg_len);
-
-		// send the message contents
-		sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
-		if (sent > 0) retval = 0;
+		(void) memcpy (end_of_message, frame_buffer, frame_size);
+		end_of_message += frame_size;
+		message_to_send_size += frame_size;
 	}
 
-	printf ("fin_rsv_opcode: %d\n", res[0]);
-	printf ("res len: %d\n", res[1]);
-
-	printf ("sent: %ld\n", sent);
-	printf ("\n");
+	// we should have a ready to send message
+	// TODO: check if message contains closing byte
+	send (connection->socket->sock_fd, message_to_send, message_to_send_size, 0);
 
 	return retval;
 
 }
+
+// sends a ws message to the selected connection
+// returns 0 on success, 1 on error
+// u8 http_web_sockets_send (
+// 	Cerver *cerver, Connection *connection,
+// 	const char *msg, const size_t msg_len
+// ) {
+
+// 	u8 retval = 1;
+
+// 	unsigned char fin_rsv_opcode = 129;
+
+// 	size_t header_len = 0;
+// 	unsigned char res[128] = { 0 };
+
+// 	unsigned char *end = res;
+// 	res[0] = fin_rsv_opcode;
+
+// 	ssize_t sent = 0;
+
+// 	// Unmasked (first length byte < 128)
+// 	if (msg_len >= 126) {
+// 		ssize_t num_bytes = 0;
+// 		if (msg_len > 0xffff) {
+// 			num_bytes = 8;
+// 			res[1] = 127;
+// 		}
+
+// 		else {
+// 			num_bytes = 2;
+// 			res[1] = 126;
+// 		}
+
+// 		header_len = 2;
+// 		end += 2;
+// 		for (ssize_t c = num_bytes -1; c != -1; c--) {
+// 			*end++ = ((unsigned long long) msg_len >> (8 * c)) % 256;
+// 			header_len += 1;
+// 		}
+
+// 		// first send the header
+// 		ssize_t s = send (connection->socket->sock_fd, res, header_len, 0);
+// 		if (s > 0) {
+// 			sent = s;
+
+// 			// send the message contents
+// 			s = send (connection->socket->sock_fd, msg, msg_len, 0);
+// 			if (s > 0) {
+// 				sent += s;
+// 				retval = 0;
+// 			}
+// 		}
+// 	}
+
+// 	else {
+// 		res[1] = (unsigned char) msg_len;
+// 		end += 2;
+
+// 		// for (unsigned int i = 0; i < msg_len; i++) {
+// 		// 	res[i + 2] = msg[i];
+// 		// }
+
+// 		memcpy (end, msg, msg_len);
+
+// 		// send the message contents
+// 		sent = send (connection->socket->sock_fd, res, msg_len + 2, 0);
+// 		if (sent > 0) retval = 0;
+// 	}
+
+// 	printf ("fin_rsv_opcode: %d\n", res[0]);
+// 	printf ("res len: %d\n", res[1]);
+
+// 	printf ("sent: %ld\n", sent);
+// 	printf ("\n");
+
+// 	return retval;
+
+// }
 
 // handle message based on control code
 static void http_web_sockets_handler (
