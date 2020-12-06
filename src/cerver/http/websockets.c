@@ -39,6 +39,24 @@ static inline uint16_t htons16 (uint16_t value) {
 
 }
 
+static inline uint64_t htonl64(uint64_t value) {
+	static const int num = 42;
+
+	/**
+	 * If this check is true, the system is using the little endian
+	 * convention. Else the system is using the big endian convention, which
+	 * means that we do not have to represent our integers in another way.
+	 */
+	if (*(char *)&num == 42) {
+		const uint32_t high = (uint32_t)(value >> 32);
+		const uint32_t low = (uint32_t)(value & 0xFFFFFFFF);
+
+		return (((uint64_t)(htonl(low))) << 32) | htonl(high);
+	} else {
+		return value;
+	}
+}
+
 static size_t http_web_sockets_send_compile_frame (
 	WebSocketFrame *frame,
 	char *frame_buffer, size_t frame_buffer_size
@@ -192,7 +210,88 @@ void http_web_sockets_receive_handle (
 	HttpReceive *http_receive, 
 	ssize_t rc, char *packet_buffer
 ) {
-	
+
+	size_t length = (size_t) rc;
+
+	// TODO: make this dynamic
+	char frame_buffer[4096] = { 0 };
+
+	size_t offset = 0;
+	char *end = packet_buffer;
+
+	WebSocketFrame frame = {
+		.fin = 0x80 & *end,
+		.rsv1 = 0x40 & *end,
+		.rsv2 = 0x20 & *end,
+		.rsv3 = 0x10 & *end,
+
+		.opcode = 0x0F & *end,
+
+		.mask = false,
+		.masking_key = { 0 },
+
+		.payload_length = 0,
+		.payload = NULL
+	};
+
+	end += 1;
+	offset += 1;
+
+	if (offset < length) {
+		frame.mask = 0x80 & *end;
+		frame.payload_length = 0x7F & *end;
+	}
+
+	end += 1;
+	offset += 1;
+
+	switch (frame.payload_length) {
+		case 126: {
+			if ((offset + sizeof (uint16_t)) <= length) {
+				(void) memcpy (&frame.payload_length, end, sizeof (uint16_t));
+				frame.payload_length = htons16 (frame.payload_length);
+			}
+
+			end += sizeof (uint16_t);
+			offset += sizeof (uint16_t);
+		} break;
+
+		case 127: {
+			if ((offset + sizeof (uint64_t)) <= length) {
+				(void) memcpy (&frame.payload_length, end, sizeof (uint64_t));
+				frame.payload_length = htonl64 (frame.payload_length);
+			}
+
+			end += sizeof (uint64_t);
+			offset += sizeof (uint64_t);
+		} break;
+	}
+
+	if (frame.mask) {
+		if ((offset + sizeof (uint32_t)) <= length) {
+			(void) memcpy (frame.masking_key, end, sizeof (uint32_t));
+			end += sizeof (uint32_t);
+			offset += sizeof (uint32_t);
+		}
+	}
+
+	if (!frame.payload) {
+		frame.payload = (char *) calloc (frame.payload_length, sizeof (char));
+		(void) memcpy (frame.payload, end, frame.payload_length);
+
+		end += frame.payload_length;
+		offset += frame.payload_length;
+	}
+
+	// unmask
+	if (frame.mask && (offset <= length)) {
+		for (uint64_t i = 0, j = 0; i < frame.payload_length; i++, j++){
+			frame.payload[j] = frame.payload[i] ^ frame.masking_key[j % 4];
+		}
+	}
+
+	printf ("\n\n%s\n\n", frame.payload);
+
 }
 
 // handle message based on control code
