@@ -39,7 +39,7 @@ static inline uint16_t htons16 (uint16_t value) {
 
 }
 
-size_t http_web_sockets_send_compile_frame (
+static size_t http_web_sockets_send_compile_frame (
 	WebSocketFrame *frame,
 	char *frame_buffer, size_t frame_buffer_size
 ) {
@@ -94,7 +94,7 @@ size_t http_web_sockets_send_compile_frame (
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
 u8 http_web_sockets_send (
-	Cerver *cerver, Connection *connection,
+	const HttpReceive *http_receive,
 	const char *msg, const size_t msg_len
 ) {
 
@@ -163,8 +163,14 @@ u8 http_web_sockets_send (
 	}
 
 	// we should have a ready to send message
+	// TODO: stats & mutex
 	// TODO: check if message contains closing byte
-	send (connection->socket->sock_fd, message_to_send, message_to_send_size, 0);
+	(void) send (
+		http_receive->cr->connection->socket->sock_fd,
+		message_to_send,
+		message_to_send_size,
+		0
+	);
 
 	return retval;
 
@@ -205,7 +211,7 @@ static void http_web_sockets_handler (
 
 		if (http_receive->ws_on_message) {
 			http_receive->ws_on_message (
-				http_receive->cr->cerver, http_receive->cr->connection,
+				http_receive,
 				message, message_size
 			);
 		}

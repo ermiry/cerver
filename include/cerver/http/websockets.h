@@ -13,9 +13,6 @@
 // the default tmeout for a websocket sonnection
 #define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
 
-struct _Cerver;
-struct _Connection;
-
 struct _HttpReceive;
 
 typedef enum HttpWebSocketOpcode {
@@ -48,7 +45,7 @@ CERVER_PRIVATE void http_web_sockets_receive_handle (
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_web_sockets_send (
-	struct _Cerver *cerver, struct _Connection *connection,
+	const struct _HttpReceive *http_receive,
 	const char *msg, const size_t msg_len
 );
 
