@@ -110,6 +110,10 @@ u8 http_web_sockets_send (
 		frames_count, sizeof (WebSocketFrame)
 	);
 
+	for (size_t i = 0; i < frames_count; i++) {
+		frames[i].payload = NULL;
+	}
+
 	bool first = true;
 	size_t offset = 0;
 	char *msg_ptr = (char *) msg;
@@ -146,6 +150,7 @@ u8 http_web_sockets_send (
 
 	// WSS_stringify_frames ()
 	size_t message_to_send_size = 0;
+	// TODO: make this dynamic
 	char message_to_send[4096] = { 0 };
 	char *end_of_message = message_to_send;
 	char frame_buffer[256] = { 0 };
@@ -171,6 +176,13 @@ u8 http_web_sockets_send (
 		message_to_send_size,
 		0
 	);
+
+	// clean up
+	for (size_t i = 0; i < frames_count; i++) {
+		if (frames[i].payload) free (frames[i].payload);
+	}
+
+	free (frames);
 
 	return retval;
 
