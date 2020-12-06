@@ -8,6 +8,8 @@
 
 #include "cerver/config.h"
 
+#define WEB_SOCKET_FRAME_SIZE					128
+
 // the default tmeout for a websocket sonnection
 #define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
 
@@ -15,6 +17,17 @@ struct _Cerver;
 struct _Connection;
 
 struct _HttpReceive;
+
+typedef enum HttpWebSocketOpcode {
+
+	HTTP_WEB_SOCKET_OPCODE_CONTINUATION		= 0x0,
+	HTTP_WEB_SOCKET_OPCODE_TEXT				= 0x1,
+	HTTP_WEB_SOCKET_OPCODE_BINRAY			= 0x2,
+	HTTP_WEB_SOCKET_OPCODE_CLOSE			= 0x8,
+	HTTP_WEB_SOCKET_OPCODE_PING				= 0x9,
+	HTTP_WEB_SOCKET_OPCODE_PONG				= 0xA,
+
+} HttpWebSocketOpcode;
 
 enum _HttpWebSocketError {
 
@@ -38,6 +51,5 @@ CERVER_EXPORT u8 http_web_sockets_send (
 	struct _Cerver *cerver, struct _Connection *connection,
 	const char *msg, const size_t msg_len
 );
-
 
 #endif
