@@ -117,6 +117,10 @@ CERVER_PUBLIC void http_request_headers_print (
 	const HttpRequest *http_request
 );
 
+CERVER_PUBLIC void http_request_query_params_print (
+	const HttpRequest *http_request
+);
+
 // returns the matching query param value for the specified key
 // returns NULL if no match or no query params
 CERVER_EXPORT const String *http_request_query_params_get_value (
