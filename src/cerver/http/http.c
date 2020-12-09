@@ -619,8 +619,11 @@ char *http_cerver_auth_generate_jwt (
 
 // returns TRUE if the jwt has been decoded and validate successfully
 // returns FALSE if token is NOT valid or if an error has occurred
+// option to pass the method to be used to create a decoded data
+// that will be placed in the decoded data argument
 bool http_cerver_auth_validate_jwt (
-	HttpCerver *http_cerver, const char *bearer_token
+	HttpCerver *http_cerver, const char *bearer_token,
+	void *(*decode_data)(void *), void **decoded_data
 ) {
 
 	bool retval = false;
@@ -648,6 +651,10 @@ bool http_cerver_auth_validate_jwt (
 					#ifdef HTTP_AUTH_DEBUG
 					cerver_log_success ("JWT is authentic!");
 					#endif
+
+					if (decode_data && *decoded_data) {
+						*decoded_data = decode_data (jwt->grants);
+					}
 
 					retval = true;
 				}
