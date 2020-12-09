@@ -301,6 +301,8 @@ HttpRoute *http_route_new (void) {
 		route->decode_data = NULL;
 		route->delete_decoded_data = NULL;
 
+		route->execute_handler = HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE;
+
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
 			route->stats[i] = NULL;
@@ -335,7 +337,7 @@ void http_route_delete (void *route_ptr) {
 		dlist_delete (route->children);
 
 		if (route->routes_tokens) {
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				if (route->routes_tokens[i]) http_routes_tokens_delete (route->routes_tokens[i]);
 			}
 
@@ -410,9 +412,11 @@ void http_route_init (HttpRoute *route) {
 
 	if (route) {
 		if (route->children) {
-			route->routes_tokens = (HttpRoutesTokens **) calloc (DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *));
+			route->routes_tokens = (HttpRoutesTokens **) calloc (
+				HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *)
+			);
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				route->routes_tokens[i] = http_routes_tokens_new ();
 				route->routes_tokens[i]->id = i + 1;
 			}
@@ -445,7 +449,7 @@ void http_route_init (HttpRoute *route) {
 				route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
 			}
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				route->routes_tokens[i]->routes = (HttpRoute **) calloc (route->routes_tokens[i]->n_routes, sizeof (HttpRoute));
 				route->routes_tokens[i]->tokens = (char ***) calloc (route->routes_tokens[i]->n_routes, sizeof (char **));
 
@@ -455,7 +459,7 @@ void http_route_init (HttpRoute *route) {
 				}
 			}
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				unsigned int n_tokens = i + 1;
 				unsigned int idx = 0;
 				for (ListElement *le = dlist_start (route->children); le; le = le->next) {
@@ -514,6 +518,17 @@ void http_route_set_decode_data (
 		route->decode_data = decode_data;
 		route->delete_decoded_data = delete_decoded_data;
 	}
+
+}
+
+// allows the route's configured handler to be executed
+// whenever a modifier has been set like the WEB_SOCKET modifier
+// the default value is HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE
+void http_route_set_execute_handler (
+	HttpRoute *route, bool execute
+) {
+
+	if (route) route->execute_handler = execute;
 
 }
 

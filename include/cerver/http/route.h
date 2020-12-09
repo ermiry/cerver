@@ -13,7 +13,8 @@
 #include "cerver/http/request.h"
 #include "cerver/http/websockets.h"
 
-#define DEFAULT_ROUTES_TOKENS_SIZE				16
+#define HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE			false
+#define HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE		16
 
 struct _HttpRoute;
 struct _HttpReceive;
@@ -173,6 +174,8 @@ struct _HttpRoute {
 	void *(*decode_data)(void *);
 	void (*delete_decoded_data)(void *);
 
+	bool execute_handler;
+
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
 
 	// web sockets
@@ -241,6 +244,13 @@ CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route, 
 	void *(*decode_data)(void *),
 	void (*delete_decoded_data)(void *)
+);
+
+// allows the route's configured handler to be executed
+// whenever a modifier has been set like the WEB_SOCKET modifier
+// the default value is HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE
+CERVER_EXPORT void http_route_set_execute_handler (
+	HttpRoute *route, bool execute
 );
 
 // sets a callback to be executed whenever a websocket connection is correctly
