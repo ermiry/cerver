@@ -1618,9 +1618,13 @@ static void http_receive_handle_match (
 					found->handlers[request->method] (http_receive, request);
 					break;
 
-				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
+				case HTTP_ROUTE_MODIFIER_WEB_SOCKET: {
+					if (found->execute_handler) {
+						found->handlers[request->method] (http_receive, request);	
+					}
+
 					http_receive_handle_match_web_socket (http_receive, request, found);
-					break;
+				} break;
 			}
 
 			// 25/11/2020 - handled by http_route_stats_update ()

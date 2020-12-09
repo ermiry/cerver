@@ -11,6 +11,7 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
@@ -300,6 +301,8 @@ HttpRoute *http_route_new (void) {
 		route->decode_data = NULL;
 		route->delete_decoded_data = NULL;
 
+		route->execute_handler = HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE;
+
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
 			route->stats[i] = NULL;
@@ -334,7 +337,7 @@ void http_route_delete (void *route_ptr) {
 		dlist_delete (route->children);
 
 		if (route->routes_tokens) {
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				if (route->routes_tokens[i]) http_routes_tokens_delete (route->routes_tokens[i]);
 			}
 
@@ -409,9 +412,11 @@ void http_route_init (HttpRoute *route) {
 
 	if (route) {
 		if (route->children) {
-			route->routes_tokens = (HttpRoutesTokens **) calloc (DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *));
+			route->routes_tokens = (HttpRoutesTokens **) calloc (
+				HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *)
+			);
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				route->routes_tokens[i] = http_routes_tokens_new ();
 				route->routes_tokens[i]->id = i + 1;
 			}
@@ -444,7 +449,7 @@ void http_route_init (HttpRoute *route) {
 				route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
 			}
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				route->routes_tokens[i]->routes = (HttpRoute **) calloc (route->routes_tokens[i]->n_routes, sizeof (HttpRoute));
 				route->routes_tokens[i]->tokens = (char ***) calloc (route->routes_tokens[i]->n_routes, sizeof (char **));
 
@@ -454,7 +459,7 @@ void http_route_init (HttpRoute *route) {
 				}
 			}
 
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
+			for (unsigned int i = 0; i < HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE; i++) {
 				unsigned int n_tokens = i + 1;
 				unsigned int idx = 0;
 				for (ListElement *le = dlist_start (route->children); le; le = le->next) {
@@ -516,11 +521,22 @@ void http_route_set_decode_data (
 
 }
 
+// allows the route's configured handler to be executed
+// whenever a modifier has been set like the WEB_SOCKET modifier
+// the default value is HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE
+void http_route_set_execute_handler (
+	HttpRoute *route, bool execute
+) {
+
+	if (route) route->execute_handler = execute;
+
+}
+
 // sets a callback to be executed whenever a websocket connection is correctly
 // opened in the selected route
 void http_route_set_ws_on_open (
 	HttpRoute *route, 
-	void (*ws_on_open)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_open)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_open = ws_on_open;
@@ -531,7 +547,10 @@ void http_route_set_ws_on_open (
 // gets closed from the selected route
 void http_route_set_ws_on_close (
 	HttpRoute *route, 
-	void (*ws_on_close)(struct _Cerver *, const char *reason)
+	void (*ws_on_close)(
+		const HttpReceive *http_receive,
+		const char *reason
+	)
 ) {
 
 	if (route) route->ws_on_close = ws_on_close;
@@ -542,7 +561,7 @@ void http_route_set_ws_on_close (
 // is received in the selected route
 void http_route_set_ws_on_ping (
 	HttpRoute *route, 
-	void (*ws_on_ping)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_ping)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_ping = ws_on_ping;
@@ -553,7 +572,7 @@ void http_route_set_ws_on_ping (
 // is received in the selected route
 void http_route_set_ws_on_pong (
 	HttpRoute *route, 
-	void (*ws_on_pong)(struct _Cerver *, struct _Connection *)
+	void (*ws_on_pong)(const HttpReceive *http_receive)
 ) {
 
 	if (route) route->ws_on_pong = ws_on_pong;
@@ -565,7 +584,7 @@ void http_route_set_ws_on_pong (
 void http_route_set_ws_on_message (
 	HttpRoute *route, 
 	void (*ws_on_message)(
-		struct _Cerver *, struct _Connection *,
+		const HttpReceive *http_receive,
 		const char *msg, size_t msg_len
 	)
 ) {
@@ -577,7 +596,10 @@ void http_route_set_ws_on_message (
 // sets a callback to be executed whenever an error ocurred in the selected route
 void http_route_set_ws_on_error (
 	HttpRoute *route, 
-	void (*ws_on_error)(struct _Cerver *, enum _HttpWebSocketError)
+	void (*ws_on_error)(
+		const HttpReceive *http_receive,
+		enum _HttpWebSocketError
+	)
 ) {
 
 	if (route) route->ws_on_error = ws_on_error;

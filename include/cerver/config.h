@@ -8,7 +8,11 @@
 #define DEPRECATED(func) func __attribute__ ((deprecated))
 
 #ifndef MIN
-	#define MIN(a,b) ((a) < (b) ? (a) : (b))
+	#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
+#ifndef MAX
+	#define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
 
 #ifndef ARRAY_SIZE
