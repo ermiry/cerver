@@ -231,6 +231,12 @@ CERVER_EXPORT char *http_cerver_auth_generate_jwt (
 	HttpCerver *http_cerver, DoubleList *values
 );
 
+// returns TRUE if the jwt has been decoded and validate successfully
+// returns FALSE if token is NOT valid or if an error has occurred
+CERVER_EXPORT bool http_cerver_auth_validate_jwt (
+	HttpCerver *http_cerver, const char *bearer_token
+);
+
 #pragma endregion
 
 #pragma region stats
