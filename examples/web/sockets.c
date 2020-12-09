@@ -17,6 +17,9 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <users.h>
+#include <web/users.h>
+
 Cerver *web_cerver = NULL;
 
 #pragma region end
@@ -26,13 +29,15 @@ void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
-		printf ("\nHTTP Cerver stats:\n");
+		cerver_log_msg ("\nHTTP Cerver stats:\n");
 		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		printf ("\n");
+		cerver_log_line_break ();
 		cerver_teardown (web_cerver);
 	}
 
 	cerver_end ();
+
+	users_end ();
 
 	exit (0);
 
@@ -190,6 +195,10 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
+		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
+		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+
 		http_cerver_static_path_add (http_cerver, "./examples/web/public");
 
 		// GET /
@@ -212,6 +221,26 @@ int main (int argc, char **argv) {
 		HttpRoute *chat_route = http_route_create (REQUEST_METHOD_GET, "chat", chat_handler);
 		http_route_set_modifier (chat_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 		http_cerver_route_register (http_cerver, chat_route);
+
+		/*** users ***/
+		// GET /api/users
+		HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
+		http_cerver_route_register (http_cerver, users_route);
+
+		// register users child routes
+		// POST /api/users/login
+		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
+		http_route_child_add (users_route, users_login_route);
+
+		// POST /api/users/register
+		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_POST, "register", users_register_handler);
+		http_route_child_add (users_route, users_register_route);
+
+		// GET /api/users/profile
+		HttpRoute *users_profile_route = http_route_create (REQUEST_METHOD_GET, "profile", users_profile_handler);
+		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
+		http_route_child_add (users_route, users_profile_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
