@@ -25,7 +25,7 @@ Cerver *web_cerver = NULL;
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
-void end (int dummy) {
+static void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
@@ -48,7 +48,7 @@ void end (int dummy) {
 #pragma region routes
 
 // GET /
-void main_handler (
+static void main_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -59,7 +59,7 @@ void main_handler (
 
 }
 
-void test_handler (
+static void test_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -76,72 +76,82 @@ void test_handler (
 
 }
 
-void echo_handler (
+static void echo_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Echo route works!"
-	);
-
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, http_receive);
-		http_respponse_delete (res);
-	}
+	(void) printf ("\n\n");
+	cerver_log_success ("echo_handler ()");
+	(void) printf ("\n");
 
 }
 
-void echo_handler_on_open (const HttpReceive *http_receive) {
+static void echo_handler_on_open (const HttpReceive *http_receive) {
 
-	printf ("echo_handler_on_open ()\n");
+	(void) printf ("echo_handler_on_open ()\n");
 
 }
 
-void echo_handler_on_close (
+static void echo_handler_on_close (
 	const HttpReceive *http_receive, const char *reason
 ) {
 
-	printf ("echo_handler_on_close ()\n");
+	(void) printf ("echo_handler_on_close ()\n");
 
 }
 
-void echo_handler_on_message (
+static void echo_handler_on_message (
 	const HttpReceive *http_receive,
 	const char *msg, const size_t msg_len
 ) {
 
-	printf ("echo_handler_on_message ()\n");
+	(void) printf ("echo_handler_on_message ()\n");
 
-	printf ("message[%ld]: %.*s\n", msg_len, (int) msg_len, msg);
+	(void) printf ("message[%ld]: %.*s\n", msg_len, (int) msg_len, msg);
 
 	http_web_sockets_send (
 		http_receive,
 		msg, msg_len
 	);
 
-	sleep (5);
+}
 
-	char *message = { "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Porttitor eget dolor morbi non arcu risus quis. Mauris rhoncus aenean vel elit scelerisque mauris pellentesque pulvinar. Aliquet risus feugiat in ante metus dictum at. Massa enim nec dui nunc mattis. Massa eget egestas purus viverra. Euismod quis viverra nibh cras pulvinar mattis. Curabitur gravida arcu ac tortor dignissim convallis. Sit amet aliquam id diam maecenas ultricies mi eget. Mi quis hendrerit dolor magna eget. Nibh mauris cursus mattis molestie a. Purus in massa tempor nec feugiat nisl pretium fusce. Turpis massa sed elementum tempus egestas sed sed risus pretium. Etiam sit amet nisl purus in. Ac ut consequat semper viverra nam libero. Quam quisque id diam vel. Mattis vulputate enim nulla aliquet porttitor lacus luctus. Volutpat diam ut venenatis tellus in metus vulputate eu scelerisque. Vitae nunc sed velit dignissim sodales ut eu" };
+static void auth_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
 
-	http_web_sockets_send (
-		http_receive,
-		message, strlen (message)
-	);
-
-	sleep (5);
-
-	char *test = { "Diam vel quam elementum pulvinar etiam non. Auctor elit sed vulputate mi sit amet mauris commodo. Neque ornare aenean euismod elementum. In pellentesque massa placerat duis ultricies lacus sed. Velit aliquet sagittis id consectetur purus ut faucibus. Vitae ultricies leo integer malesuada nunc vel. Metus dictum at tempor commodo ullamcorper a. Amet luctus venenatis lectus magna. Eget nulla facilisi etiam dignissim diam quis enim. Ultricies mi quis hendrerit dolor magna eget est lorem. Sem et tortor consequat id porta nibh venenatis cras. Aliquam faucibus purus in massa tempor nec feugiat. Id interdum velit laoreet id. Volutpat sed cras ornare arcu dui vivamus arcu. Consectetur a erat nam at lectus. In nulla posuere sollicitudin aliquam. Malesuada fames ac turpis egestas. Malesuada fames ac turpis egestas maecenas pharetra convallis. Sapien faucibus et molestie ac." };
-
-	http_web_sockets_send (
-		http_receive,
-		test, strlen (test)
-	);
+	(void) printf ("\n\n");
+	cerver_log_success ("Auth route works!");
+	(void) printf ("\n");
 
 }
 
-void chat_handler (
+static void auth_handler_on_open (const HttpReceive *http_receive) {
+
+	(void) printf ("auth_handler_on_open ()\n");
+
+}
+
+static void auth_handler_on_close (
+	const HttpReceive *http_receive, const char *reason
+) {
+
+	(void) printf ("auth_handler_on_close ()\n");
+
+}
+
+static void auth_handler_on_message (
+	const HttpReceive *http_receive,
+	const char *msg, const size_t msg_len
+) {
+
+	(void) printf ("auth_handler_on_message ()\n");
+
+}
+
+static void chat_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -165,17 +175,18 @@ int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
-	printf ("\n");
 
 	cerver_log_debug ("Simple Web Cerver Example");
 	printf ("\n");
+
+	users_init ();
 
 	web_cerver = cerver_create (
 		CERVER_TYPE_WEB,
@@ -205,19 +216,31 @@ int main (int argc, char **argv) {
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
 		http_cerver_route_register (http_cerver, main_route);
 
-		// /test
+		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
 
-		// /echo
+		// GET /echo
 		HttpRoute *echo_route = http_route_create (REQUEST_METHOD_GET, "echo", echo_handler);
 		http_route_set_modifier (echo_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		http_route_set_execute_handler (echo_route, true);
 		http_route_set_ws_on_open (echo_route, echo_handler_on_open);
 		http_route_set_ws_on_message (echo_route, echo_handler_on_message);
 		http_route_set_ws_on_close (echo_route, echo_handler_on_close);
 		http_cerver_route_register (http_cerver, echo_route);
 
-		// /chat
+		// GET /auth
+		HttpRoute *auth_route = http_route_create (REQUEST_METHOD_GET, "auth", auth_handler);
+		http_route_set_auth (auth_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		http_route_set_decode_data (auth_route, user_parse_from_json, user_delete);
+		http_route_set_modifier (auth_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+		http_route_set_execute_handler (auth_route, true);
+		http_route_set_ws_on_open (auth_route, auth_handler_on_open);
+		http_route_set_ws_on_message (auth_route, auth_handler_on_message);
+		http_route_set_ws_on_close (auth_route, auth_handler_on_close);
+		http_cerver_route_register (http_cerver, auth_route);
+
+		// GET /chat
 		HttpRoute *chat_route = http_route_create (REQUEST_METHOD_GET, "chat", chat_handler);
 		http_route_set_modifier (chat_route, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 		http_cerver_route_register (http_cerver, chat_route);
