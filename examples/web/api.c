@@ -23,7 +23,7 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-static DoubleList *users = NULL;
+#include <users.h>
 
 static Cerver *api_cerver = NULL;
 
@@ -34,15 +34,15 @@ void end (int dummy) {
 
 	if (api_cerver) {
 		cerver_stats_print (api_cerver, false, false);
-		printf ("\nHTTP Cerver stats:\n");
+		cerver_log_msg ("\nHTTP Cerver stats:\n");
 		http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
-		printf ("\n");
+		cerver_log_line_break ();
 		cerver_teardown (api_cerver);
 	}
 
 	cerver_end ();
 
-	dlist_delete (users);
+	users_end ();
 
 	exit (0);
 
@@ -51,115 +51,6 @@ void end (int dummy) {
 #pragma endregion
 
 #pragma region users
-
-typedef struct User {
-
-	String *id;
-	String *name;
-	String *username;
-	String *password;
-	String *role;
-	time_t iat;
-
-} User;
-
-static User *user_new (void) {
-
-	User *user = (User *) malloc (sizeof (User));
-	if (user) {
-		user->id = NULL;
-		user->name = NULL;
-		user->username = NULL;
-		user->password = NULL;
-		user->role = NULL;
-		user->iat = 0;
-	}
-
-	return user;
-
-}
-
-static void user_delete (void *user_ptr) {
-
-	if (user_ptr) {
-		User *user = (User *) user_ptr;
-
-		str_delete (user->id);
-		str_delete (user->name);
-		str_delete (user->username);
-		str_delete (user->password);
-		str_delete (user->role);
-
-		free (user_ptr);
-
-		printf ("user_delete () - User has been deleted!\n");
-	}
-
-}
-
-static int user_comparator (const void *a, const void *b) {
-
-	return strcmp (((User *) a)->username->str, ((User *) b)->username->str);
-
-}
-
-static void user_print (User *user) {
-
-	if (user) {
-		printf ("id: %s\n", user->id->str);
-		printf ("name: %s\n", user->name->str);
-		printf ("username: %s\n", user->username->str);
-		printf ("role: %s\n", user->role->str);
-	}
-
-}
-
-// {
-//   "id": "5eb2b13f0051f70011e9d3af",
-//   "name": "Erick Salas",
-//   "username": "erick",
-//   "role": "god",
-//   "iat": 1596532954
-// }
-static void *user_parse_from_json (void *user_json_ptr) {
-
-	json_t *user_json = (json_t *) user_json_ptr;
-
-	User *user = user_new ();
-	if (user) {
-		const char *id = NULL;
-		const char *name = NULL;
-		const char *username = NULL;
-		const char *role = NULL;
-
-		if (!json_unpack (
-			user_json,
-			"{s:s, s:s, s:s, s:s, s:i}",
-			"id", &id,
-			"name", &name,
-			"username", &username,
-			"role", &role,
-			"iat", &user->iat
-		)) {
-			user->id = str_new (id);
-			user->name = str_new (name);
-			user->username = str_new (username);
-			user->role = str_new (role);
-
-			user_print (user);
-		}
-
-		else {
-			cerver_log_error ("user_parse_from_json () - json_unpack () has failed!");
-
-			user_delete (user);
-			user = NULL;
-		}
-	}
-
-	return user;
-
-}
 
 // GET api/users
 static void main_users_handler (
@@ -173,21 +64,6 @@ static void main_users_handler (
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
-
-}
-
-static User *user_get_by_username (const char *username) {
-
-	User *retval = NULL;
-
-	for (ListElement *le = dlist_start (users); le; le = le->next) {
-		if (!strcmp (((User *) le->data)->username->str, username)) {
-			retval = (User *) le->data;
-			break;
-		}
-	}
-
-	return retval;
 
 }
 
@@ -298,7 +174,7 @@ static void users_register_handler (
 			user->password = str_new (password->str);
 			user->role = str_new ("common");
 
-			dlist_insert_after (users, dlist_end (users), user);
+			user_add (user);
 
 			printf ("\n");
 			user_print (user);
@@ -378,19 +254,18 @@ int main (int argc, char **argv) {
 
 	srand (time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
-	printf ("\n");
 
 	cerver_log_debug ("Cerver Web API Example");
 	printf ("\n");
 
-	users = dlist_init (user_delete, user_comparator);
+	users_init ();
 
 	api_cerver = cerver_create (
 		CERVER_TYPE_WEB,
