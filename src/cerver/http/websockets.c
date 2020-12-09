@@ -39,22 +39,19 @@ static inline uint16_t htons16 (uint16_t value) {
 
 }
 
-static inline uint64_t htonl64(uint64_t value) {
+static inline uint64_t htonl64 (uint64_t value) {
+
 	static const int num = 42;
 
-	/**
-	 * If this check is true, the system is using the little endian
-	 * convention. Else the system is using the big endian convention, which
-	 * means that we do not have to represent our integers in another way.
-	 */
-	if (*(char *)&num == 42) {
-		const uint32_t high = (uint32_t)(value >> 32);
-		const uint32_t low = (uint32_t)(value & 0xFFFFFFFF);
+	if (*(char *) &num == 42) {
+		const uint32_t high = (uint32_t) (value >> 32);
+		const uint32_t low = (uint32_t) (value & 0xFFFFFFFF);
 
-		return (((uint64_t)(htonl(low))) << 32) | htonl(high);
-	} else {
-		return value;
+		return (((uint64_t) (htonl (low))) << 32) | htonl (high);
 	}
+
+	return value;	
+
 }
 
 static size_t http_web_sockets_send_compile_frame (
@@ -207,7 +204,7 @@ u8 http_web_sockets_send (
 }
 
 void http_web_sockets_receive_handle (
-	HttpReceive *http_receive, 
+	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 ) {
 
@@ -274,6 +271,8 @@ void http_web_sockets_receive_handle (
 			offset += sizeof (uint32_t);
 		}
 	}
+
+	// printf ("\n\nframe.payload_length: %ld\n\n", frame.payload_length);
 
 	if (!frame.payload) {
 		frame.payload = (char *) calloc (frame.payload_length, sizeof (char));
@@ -390,7 +389,7 @@ void http_web_sockets_receive_handle (
 // }
 
 // void http_web_sockets_receive_handle (
-// 	HttpReceive *http_receive, 
+// 	HttpReceive *http_receive,
 // 	ssize_t rc, char *packet_buffer
 // ) {
 
@@ -426,7 +425,7 @@ void http_web_sockets_receive_handle (
 // 		printf ("message length: %ld\n", length);
 
 // 		http_web_sockets_read_message_content (
-// 			http_receive, 
+// 			http_receive,
 // 			rc - 4, packet_buffer + 4,
 // 			fin_rsv_opcode, length
 // 		);
@@ -436,7 +435,7 @@ void http_web_sockets_receive_handle (
 // 		printf ("length == 127\n");
 
 // 		// 8 next bytes is the size of content
-// 		unsigned char length_bytes[8] = { 
+// 		unsigned char length_bytes[8] = {
 // 			(unsigned char) packet_buffer[2], (unsigned char) packet_buffer[3],
 // 			(unsigned char) packet_buffer[4], (unsigned char) packet_buffer[5],
 // 			(unsigned char) packet_buffer[6], (unsigned char) packet_buffer[7],
@@ -452,7 +451,7 @@ void http_web_sockets_receive_handle (
 // 		printf ("message length: %ld\n", length);
 
 // 		http_web_sockets_read_message_content (
-// 			http_receive, 
+// 			http_receive,
 // 			rc - 10, packet_buffer + 10,
 // 			fin_rsv_opcode, length
 // 		);
