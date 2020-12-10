@@ -108,12 +108,31 @@ static void echo_handler_on_message (
 
 	(void) printf ("echo_handler_on_message ()\n");
 
-	(void) printf ("message[%ld]: %.*s\n", msg_len, (int) msg_len, msg);
-
-	http_web_sockets_send (
-		http_receive,
-		msg, msg_len
+	HttpClient *http_client = http_cerver_clients_get_by_sock_fd (
+		(HttpCerver *) web_cerver->cerver_data,
+		http_receive->cr->connection->socket->sock_fd
 	);
+
+	if (http_client) {
+		cerver_log_success ("Found HTTP client!");
+		(void) printf (
+			"[client %d]: (%ld) %.*s\n",
+			http_receive->cr->connection->socket->sock_fd,
+			msg_len, (int) msg_len, msg
+		);
+
+		http_web_sockets_send (
+			http_receive,
+			msg, msg_len
+		);
+	}
+
+	else {
+		cerver_log_error (
+			"No HTTP client found with sock fd %d!",
+			http_receive->cr->connection->socket->sock_fd
+		);
+	}
 
 }
 
