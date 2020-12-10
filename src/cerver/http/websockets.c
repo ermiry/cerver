@@ -233,6 +233,7 @@ void http_web_sockets_receive_handle (
 	size_t offset = 0;
 	char *end = packet_buffer;
 
+	// TODO: check
 	WebSocketFrame frame = {
 		.fin = 0x80 & *end,
 		.rsv1 = 0x40 & *end,

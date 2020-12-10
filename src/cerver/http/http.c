@@ -831,7 +831,7 @@ HttpClient *http_cerver_clients_get_by_sock_fd (
 ) {
 
 	return http_cerver ?
-		dlist_search (
+		(HttpClient *) dlist_search (
 			http_cerver->clients,
 			&sock_fd,
 			http_client_comparator_by_sock_fd
