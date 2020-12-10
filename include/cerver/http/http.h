@@ -19,6 +19,10 @@
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
+struct _Client;
+struct _Connection;
+
+struct _HttpReceive;
 
 struct _HttpRouteFileStats;
 
@@ -84,6 +88,16 @@ CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
 
 #pragma region main
 
+struct _HttpClient {
+
+	const struct _Client *client;
+	const struct _Connection *connection;
+	const struct _HttpReceive *http_receive;
+
+};
+
+typedef struct _HttpClient HttpClient;
+
 struct _HttpCerver {
 
 	struct _Cerver *cerver;
@@ -117,6 +131,9 @@ struct _HttpCerver {
 
 	String *jwt_opt_pub_key_name;      // jwt public key filename
 	String *jwt_public_key;            // jwt actual public key
+
+	// web sockets clients
+	DoubleList *clients;
 
 	// stats
 	size_t n_cath_all_requests;        // failed to match a route
@@ -248,6 +265,21 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 
 #pragma endregion
 
+#pragma region clients
+
+CERVER_PRIVATE int http_cerver_clients_unregister (
+	struct _HttpReceive *http_receive
+);
+
+// searches for a http client with a connection with matching sock fd
+// returns a reference to a client that should NOT be deleted
+// returns NULL if on no match
+CERVER_PUBLIC HttpClient *http_cerver_clients_get_by_sock_fd (
+	HttpCerver *http_cerver, const i32 sock_fd
+);
+
+#pragma endregion
+
 #pragma region stats
 
 // print number of routes & handlers
@@ -314,9 +346,12 @@ struct _HttpReceive {
 	struct _HttpRouteFileStats *file_stats;
 
 	// websockets
+	struct _HttpClient *http_client; 
+
 	unsigned char fin_rsv_opcode;
 	size_t fragmented_message_len;
 	char *fragmented_message;
+
 	void (*ws_on_open)(const struct _HttpReceive *http_receive);
 	void (*ws_on_close)(
 		const struct _HttpReceive *, const char *reason
