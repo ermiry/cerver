@@ -164,33 +164,50 @@ u8 http_web_sockets_send (
 	frames[frames_count - 1].fin = true;
 
 	// WSS_stringify_frames ()
+	// TODO: just to be safe we add an extra buffer
+	size_t base_message_to_send_size = (frames_count * WEB_SOCKET_FRAME_SIZE) + 4096;
 	size_t message_to_send_size = 0;
-	// TODO: make this dynamic
-	char message_to_send[4096] = { 0 };
-	char *end_of_message = message_to_send;
-	char frame_buffer[256] = { 0 };
-	size_t frame_size = 0;
-	for (size_t i = 0; i < frames_count; i++) {
-		// WSS_stringify_frame ()
-		frame_size = http_web_sockets_send_compile_frame (
-			&frames[i],
-			frame_buffer, 256
+	char *message_to_send = (char *) calloc (
+		base_message_to_send_size, sizeof (char)
+	);
+
+	if (message_to_send) {
+		char *end_of_message = message_to_send;
+		char frame_buffer[256] = { 0 };
+		size_t frame_size = 0;
+		for (size_t i = 0; i < frames_count; i++) {
+			// WSS_stringify_frame ()
+			frame_size = http_web_sockets_send_compile_frame (
+				&frames[i],
+				frame_buffer, 256
+			);
+
+			(void) memcpy (end_of_message, frame_buffer, frame_size);
+			end_of_message += frame_size;
+			message_to_send_size += frame_size;
+		}
+
+		(void) printf (
+			"base_message_to_send_size %ld == message_to_send_size %ld\n",
+			base_message_to_send_size, message_to_send_size
 		);
 
-		(void) memcpy (end_of_message, frame_buffer, frame_size);
-		end_of_message += frame_size;
-		message_to_send_size += frame_size;
-	}
+		// we should have a ready to send message
+		// TODO: stats & mutex
+		// TODO: check if message contains closing byte
+		size_t sent = send (
+			http_receive->cr->connection->socket->sock_fd,
+			message_to_send,
+			message_to_send_size,
+			0
+		);
 
-	// we should have a ready to send message
-	// TODO: stats & mutex
-	// TODO: check if message contains closing byte
-	(void) send (
-		http_receive->cr->connection->socket->sock_fd,
-		message_to_send,
-		message_to_send_size,
-		0
-	);
+		if (sent == message_to_send_size) {
+			retval = 0;
+		}
+
+		free (message_to_send);
+	}
 
 	// clean up
 	for (size_t i = 0; i < frames_count; i++) {
@@ -211,7 +228,7 @@ void http_web_sockets_receive_handle (
 	size_t length = (size_t) rc;
 
 	// TODO: make this dynamic
-	char frame_buffer[4096] = { 0 };
+	// char frame_buffer[4096] = { 0 };
 
 	size_t offset = 0;
 	char *end = packet_buffer;
@@ -290,6 +307,13 @@ void http_web_sockets_receive_handle (
 	}
 
 	printf ("\n\n%s\n\n", frame.payload);
+
+	if (http_receive->ws_on_message) {
+		http_receive->ws_on_message (
+			http_receive,
+			frame.payload, frame.payload_length
+		);
+	}
 
 }
 
