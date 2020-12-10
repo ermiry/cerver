@@ -17,7 +17,7 @@ DEVELOPMENT	:= -g \
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG								\
-				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG
+				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG -D HTTP_WEB_SOCKETS_DEBUG
 
 CC          := gcc
 
@@ -29,6 +29,10 @@ TARGETDIR   := bin
 EXAMDIR		:= examples
 EXABUILD	:= $(EXAMDIR)/objs
 EXATARGET	:= $(EXAMDIR)/bin
+
+TESTDIR		:= test
+TESTBUILD	:= $(TESTDIR)/objs
+TESTTARGET	:= $(TESTDIR)/bin
 
 SRCEXT      := c
 DEPEXT      := d
@@ -43,11 +47,18 @@ EXAFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
+TESTLIBS	:= -L ./bin -l cerver
+TESTINC		:= -I ./$(TESTDIR)
+
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
+
+TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
+TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 # all: directories $(TARGET)
 all: directories $(SLIB)
@@ -72,6 +83,8 @@ clean:
 	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf $(EXABUILD)
 	@$(RM) -rf $(EXATARGET)
+	@$(RM) -rf $(TESTBUILD)
+	@$(RM) -rf $(TESTTARGET)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -129,4 +142,19 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
 	@rm -f $(EXABUILD)/$*.$(DEPEXT).tmp
 
-.PHONY: all clean examples
+test: $(TESTOBJS)
+	@mkdir -p ./$(TESTTARGET)
+	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode -l cerver
+	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode -l cerver
+
+# compile tests
+$(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
+	@mkdir -p $(dir $@)
+	$(CC) $(TESTFLAGS) $(INC) $(TESTLIBS) -c -o $@ $<
+	@$(CC) $(TESTFLAGS) $(INCDEP) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
+	@cp -f $(TESTBUILD)/$*.$(DEPEXT) $(TESTBUILD)/$*.$(DEPEXT).tmp
+	@sed -e 's|.*:|$(TESTBUILD)/$*.$(OBJEXT):|' < $(TESTBUILD)/$*.$(DEPEXT).tmp > $(TESTBUILD)/$*.$(DEPEXT)
+	@sed -e 's/.*://' -e 's/\\$$//' < $(TESTBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(TESTBUILD)/$*.$(DEPEXT)
+	@rm -f $(TESTBUILD)/$*.$(DEPEXT).tmp
+
+.PHONY: all clean examples test

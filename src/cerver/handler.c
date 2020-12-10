@@ -2117,6 +2117,11 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	cerver_receive_delete (cr);
 
+	// remove client if the connection was a web socket
+	if (http_receive->http_client) {
+		http_cerver_clients_unregister (http_receive);
+	}
+
 	// update http route stats
 	double process_time = timer_get_current_time () - start_time;
 	if (http_receive->route) {

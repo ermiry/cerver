@@ -115,7 +115,9 @@ void key_value_pair_delete (void *kvp_ptr) {
 
 }
 
-KeyValuePair *key_value_pair_create (const char *key, const char *value) {
+KeyValuePair *key_value_pair_create (
+	const char *key, const char *value
+) {
 
 	KeyValuePair *kvp = key_value_pair_new ();
 	if (kvp) {
@@ -153,7 +155,9 @@ static KeyValuePair *key_value_pair_create_pieces (
 
 }
 
-const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *key_value_pairs_get_value (
+	DoubleList *pairs, const char *key
+) {
 
 	const String *value = NULL;
 
@@ -192,6 +196,75 @@ void key_value_pairs_print (DoubleList *pairs) {
 
 #pragma region http
 
+static HttpClient *http_client_new (
+	const struct _Client *client,
+	const struct _Connection *connection,
+	const struct _HttpReceive *http_receive
+) {
+
+	HttpClient *http_client = (HttpClient *) malloc (sizeof (HttpClient));
+	if (http_client) {
+		http_client->client = client;
+		http_client->connection = connection;
+		http_client->http_receive =http_receive;
+	}
+
+	return http_client;
+
+}
+
+static void http_client_delete (void *http_client_ptr) {
+
+	if (http_client_ptr) {
+		HttpClient *http_client = (HttpClient *) http_client_ptr;
+
+		http_client->client = NULL;
+		http_client->connection = NULL;
+		http_client->http_receive = NULL;
+
+		free (http_client);
+	}
+
+}
+
+static int http_client_comparator (
+	const void *a, const void *b
+) {
+
+	if (a && b) {
+		HttpClient *client_a = (HttpClient *) a;
+		HttpClient *client_b = (HttpClient *) b;
+
+		if (client_a->connection->socket && client_b->connection->socket) {
+			if (client_a->connection->socket->sock_fd < client_b->connection->socket->sock_fd) return -1;
+			else if (client_a->connection->socket->sock_fd == client_b->connection->socket->sock_fd) return 0;
+			else return 1;
+		}
+	}
+
+	return -1;
+
+}
+
+static int http_client_comparator_by_sock_fd (
+	const void *a, const void *b
+) {
+
+	if (a && b) {
+		HttpClient *client_a = (HttpClient *) a;
+		i32 *sock_fd = (i32 *) b;
+
+		if (client_a->connection->socket) {
+			if (client_a->connection->socket->sock_fd < *sock_fd) return -1;
+			else if (client_a->connection->socket->sock_fd == *sock_fd) return 0;
+			else return 1;
+		}
+	}
+
+	return -1;
+
+}
+
 HttpCerver *http_cerver_new (void) {
 
 	HttpCerver *http_cerver = (HttpCerver *) malloc (sizeof (HttpCerver));
@@ -214,6 +287,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
+
+		http_cerver->clients = NULL;
 
 		http_cerver->n_cath_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
@@ -240,6 +315,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
 
+		dlist_delete (http_cerver->clients);
+
 		free (http_cerver_ptr);
 	}
 
@@ -258,6 +335,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->default_handler = http_receive_handle_default_route;
 
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+
+		http_cerver->clients = dlist_init (http_client_delete, http_client_comparator);
 	}
 
 	return http_cerver;
@@ -351,21 +430,27 @@ static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Loading HTTP routes...");
+		if (http_cerver->routes->size) {
+			cerver_log_msg ("Loading HTTP routes...");
 
-		// init top level routes
-		HttpRoute *route = NULL;
-		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
-			route = (HttpRoute *) le->data;
-			
-			http_route_init (route);
-			http_route_print (route);
+			// init top level routes
+			HttpRoute *route = NULL;
+			for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+				route = (HttpRoute *) le->data;
+				
+				http_route_init (route);
+				http_route_print (route);
+			}
+
+			cerver_log_success ("Done loading HTTP routes!");
+		}
+
+		else {
+			cerver_log_warning ("HTTP cerver has no routes");
 		}
 
 		// load jwt keys
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
-
-		cerver_log_success ("Done loading HTTP routes!");
 	}
 
 }
@@ -416,7 +501,9 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 }
 
 // sets authentication requirenments for a whole static path
-void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type) {
+void http_static_path_set_auth (
+	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+) {
 
 	if (static_path) static_path->auth_type = auth_type;
 
@@ -619,8 +706,11 @@ char *http_cerver_auth_generate_jwt (
 
 // returns TRUE if the jwt has been decoded and validate successfully
 // returns FALSE if token is NOT valid or if an error has occurred
+// option to pass the method to be used to create a decoded data
+// that will be placed in the decoded data argument
 bool http_cerver_auth_validate_jwt (
-	HttpCerver *http_cerver, const char *bearer_token
+	HttpCerver *http_cerver, const char *bearer_token,
+	void *(*decode_data)(void *), void **decoded_data
 ) {
 
 	bool retval = false;
@@ -649,6 +739,10 @@ bool http_cerver_auth_validate_jwt (
 					cerver_log_success ("JWT is authentic!");
 					#endif
 
+					if (decode_data) {
+						*decoded_data = decode_data (jwt->grants);
+					}
+
 					retval = true;
 				}
 
@@ -675,6 +769,73 @@ bool http_cerver_auth_validate_jwt (
 	}
 
 	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region clients
+
+static int http_cerver_clients_register (
+	const HttpReceive *http_receive
+) {
+
+	int retval = 1;
+
+	if (http_receive) {
+		retval = dlist_insert_after (
+			http_receive->http_cerver->clients,
+			dlist_end (http_receive->http_cerver->clients),
+			http_client_new (
+				http_receive->cr->client,
+				http_receive->cr->connection,
+				http_receive
+			)
+		);
+	}
+
+	return retval;
+
+}
+
+int http_cerver_clients_unregister (
+	HttpReceive *http_receive
+) {
+
+	int retval = 1;
+
+	if (http_receive) {
+		void *data = dlist_remove (
+			http_receive->http_cerver->clients,
+			http_receive->http_client,
+			NULL
+		);
+
+		if (data) {
+			http_client_delete (data);
+			http_receive->http_client = NULL;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// searches for a http client with a connection with matching sock fd
+// returns a reference to a client that should NOT be deleted
+// returns NULL if on no match
+HttpClient *http_cerver_clients_get_by_sock_fd (
+	HttpCerver *http_cerver, const i32 sock_fd
+) {
+
+	return http_cerver ?
+		(HttpClient *) dlist_search (
+			http_cerver->clients,
+			&sock_fd,
+			http_client_comparator_by_sock_fd
+		) : NULL;
 
 }
 
@@ -1587,7 +1748,9 @@ static void http_receive_handle_match_web_socket (
 				http_response_add_header (res, RESPONSE_HEADER_WEB_SOCKET_ACCEPT, buffer);
 
 				http_response_compile (res);
+				#ifdef HTTP_WEB_SOCKETS_DEBUG
 				http_response_print (res);
+				#endif
 				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
@@ -1605,7 +1768,19 @@ static void http_receive_handle_match_web_socket (
 			http_receive->ws_on_error = route->ws_on_error;
 
 			// set the sockets timeout to prevent threads from getting stuck if no more data to read
-			if (sock_set_timeout (http_receive->cr->connection->socket->sock_fd, DEFAULT_WEB_SOCKET_RECV_TIMEOUT)) {
+			if (!sock_set_timeout (
+				http_receive->cr->connection->socket->sock_fd,
+				DEFAULT_WEB_SOCKET_RECV_TIMEOUT
+			)) {
+				// we are safe! add to http clients
+				if (!http_cerver_clients_register (http_receive)) {
+					#ifdef HTTP_WEB_SOCKETS_DEBUG
+					cerver_log_success ("Registered new HTTP client!");
+					#endif
+				}
+			}
+
+			else {
 				cerver_log_error (
 					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
 					http_receive->cr->connection->socket->sock_fd

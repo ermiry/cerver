@@ -37,16 +37,16 @@ enum _HttpWebSocketError {
 
 typedef enum _HttpWebSocketError HttpWebSocketError;
 
-CERVER_PRIVATE void http_web_sockets_receive_handle (
-	struct _HttpReceive *http_receive, 
-	ssize_t rc, char *packet_buffer
-);
-
 // sends a ws message to the selected connection
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_web_sockets_send (
 	const struct _HttpReceive *http_receive,
 	const char *msg, const size_t msg_len
+);
+
+CERVER_PRIVATE void http_web_sockets_receive_handle (
+	struct _HttpReceive *http_receive, 
+	ssize_t rc, char *packet_buffer
 );
 
 #endif
