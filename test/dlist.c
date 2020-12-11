@@ -37,7 +37,7 @@ static int integer_comparator (const void *one, const void *two) {
 
 static int dlist_test_insert_before_at_start (void) {
 
-	printf ("dlist_test_insert_before () at START\n");
+	printf ("dlist_insert_before () at START\n");
 
 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
@@ -61,7 +61,7 @@ static int dlist_test_insert_before_at_start (void) {
 
 static int dlist_test_insert_before_at_end (void) {
 
-	printf ("dlist_test_insert_before () at END\n");
+	printf ("dlist_insert_before () at END\n");
 
 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
@@ -69,6 +69,12 @@ static int dlist_test_insert_before_at_end (void) {
 	for (unsigned int i = 0; i < 10; i++) {
 		integer = integer_new (i);
 		dlist_insert_before (dlist, dlist_end (dlist), integer);
+
+		// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		// 	printf ("%4d", ((Integer *) le->data)->value);
+		// }
+
+		// printf ("\n");
 	}
 
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
@@ -85,7 +91,7 @@ static int dlist_test_insert_before_at_end (void) {
 
 static int dlist_test_insert_before_at_middle (void) {
 
-	printf ("dlist_test_insert_before () at MIDDLE\n");
+	printf ("dlist_insert_before () at MIDDLE\n");
 
 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
@@ -112,17 +118,261 @@ static int dlist_test_insert_before_at_middle (void) {
 
 }
 
-static int test_insert_at_start_unsafe (void) {
+static int dlist_test_insert_before_at_start_unsafe (void) {
 
-	printf ("test_insert_at_start_unsafe ()\n");
+	printf ("dlist_insert_before () at START UNSAFE\n");
 
-	DoubleList *dlist = dlist_init (free, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-	// test insert at
+	Integer *integer = NULL;
 	for (unsigned int i = 0; i < 10; i++) {
-		Integer *integer = integer_new (i);
-		// dlist_insert_at_start (dlist, integer);
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (dlist, dlist_start (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_before_at_end_unsafe (void) {
+
+	printf ("dlist_insert_before () at END UNSAFE\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_after_at_start (void) {
+
+	printf ("dlist_insert_after () at START\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_start (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_after_at_end (void) {
+
+	printf ("dlist_insert_after () at END\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_after_unsafe_at_start (void) {
+
+	printf ("dlist_insert_after_unsafe () at START\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_start (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_after_unsafe_at_end (void) {
+
+	printf ("dlist_insert_after_unsafe () at END\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_at (void) {
+
+	printf ("dlist_insert_at ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	for (unsigned int i = 0; i < 5; i++) {
+		integer = integer_new (i);
+		dlist_insert_at (dlist, integer, 2);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_at_start (void) {
+
+	printf ("dlist_insert_at_start ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_start (dlist, integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_at_start_unsafe (void) {
+
+	printf ("dlist_insert_at_start_unsafe ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
 		dlist_insert_at_start_unsafe (dlist, integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_at_end (void) {
+
+	printf ("dlist_insert_at_end ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end (dlist, integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_insert_at_end_unsafe (void) {
+
+	printf ("dlist_insert_at_end_unsafe ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
 	}
 
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
@@ -139,9 +389,9 @@ static int test_insert_at_start_unsafe (void) {
 
 static int test_insert_in_order (void) {
 
-	printf ("\ntest_insert_in_order ()\n");
+	printf ("test_insert_in_order ()\n");
 
-	DoubleList *dlist = dlist_init (free, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
 	// test insert at
 	printf ("\nInsert 100 random numbers\n");
@@ -1298,6 +1548,28 @@ int main (void) {
 	res |= dlist_test_insert_before_at_end ();
 
 	res |= dlist_test_insert_before_at_middle ();
+
+	res |= dlist_test_insert_before_at_start_unsafe ();
+
+	res |= dlist_test_insert_before_at_end_unsafe ();
+
+	res |= dlist_test_insert_after_at_start ();
+	
+	res |= dlist_test_insert_after_at_end ();
+
+	res |= dlist_test_insert_after_unsafe_at_start ();
+
+	res |= dlist_test_insert_after_unsafe_at_end ();
+
+	res |= dlist_test_insert_at ();
+
+	res |= dlist_test_insert_at_start ();
+
+	res |= dlist_test_insert_at_start_unsafe ();
+
+	res |= dlist_test_insert_at_end_unsafe ();
+
+	res |= test_insert_in_order ();
 
 	return res;
 
