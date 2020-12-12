@@ -769,48 +769,31 @@ static int dlist_test_remove_by_condition (void) {
 
 }
 
-static int test_remove_at (void) {
+static int dlist_test_remove_at (void) {
 
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	printf ("dlist_insert_after_unsafe () at END\n");
 
-	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
 	}
 
-	// print list
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	Integer *two = (Integer *) dlist_remove_at (dlist, 2);
+	integer_delete (two);
+	Integer *seven = (Integer *) dlist_remove_at (dlist, 7);
+	integer_delete (seven);
+
+	printf ("Removed at 2 & 7 -> dlist size: %ld\n", dlist->size);
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	// get 10 random values from the list
-	// for (unsigned int i = 0; i < 5; i++) {
-		// unsigned int idx = rand () % 9 + 1;
-		unsigned idx = 7;
+	dlist_delete (dlist);
 
-		// printf ("Removing element at idx: %d...\n", idx);
-		// ListElement *le = dlist_get_element_at (list, idx);
-		// if (le) {
-		// 	Integer *integer = (Integer *) le->data;
-		// 	printf ("%3d\n", integer->value);
-		// }
-
-		Integer *integer = (Integer *) dlist_remove_at (list, idx);
-		// if (integer) printf ("%3d\n", integer->value);
-	// }
-
-	printf ("\n\n");
-
-	// print list
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	dlist_delete (list);
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
@@ -820,163 +803,164 @@ static int test_remove_at (void) {
 
 #pragma region double
 
-static int test_insert_end_remove_start (void) {
+// TODO:
+// static int test_insert_end_remove_start (void) {
 
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+// 	DoubleList *list = dlist_init (NULL, integer_comparator);
 
-	for (int i = 0; i < 101; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+// 	for (int i = 0; i < 101; i++) {
+// 		Integer *integer = (Integer *) malloc (sizeof (Integer));
+// 		// integer->value = rand () % 99 + 1;
+// 		integer->value = i;
+// 		dlist_insert_after (list, dlist_end (list), integer);
 
-		if (i < 100) {
-			Integer *query = (Integer *) malloc (sizeof (int));
-			query->value = i;
+// 		if (i < 100) {
+// 			Integer *query = (Integer *) malloc (sizeof (int));
+// 			query->value = i;
 
-			free (dlist_remove (list, query, NULL));
-			// free (dlist_remove_element (list, NULL));
-		}
-	}
+// 			free (dlist_remove (list, query, NULL));
+// 			// free (dlist_remove_element (list, NULL));
+// 		}
+// 	}
 
-	printf ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
+// 	printf ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
 
-	dlist_delete (list);
+// 	dlist_delete (list);
 
-	return 0;
+// 	return 0;
 
-}
+// }
 
-static int test_insert_end_remove_end (void) {
+// static int test_insert_end_remove_end (void) {
 
-	DoubleList *list = dlist_init (free, integer_comparator);
+// 	DoubleList *list = dlist_init (free, integer_comparator);
 
-	for (int i = 0; i < 100; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
-	}
+// 	for (int i = 0; i < 100; i++) {
+// 		Integer *integer = (Integer *) malloc (sizeof (Integer));
+// 		// integer->value = rand () % 99 + 1;
+// 		integer->value = i;
+// 		dlist_insert_after (list, dlist_end (list), integer);
+// 	}
 
-	for (int i = 0; i < 50; i++) {
-		free (dlist_remove_element (list, list->end));
-	}
+// 	for (int i = 0; i < 50; i++) {
+// 		free (dlist_remove_element (list, list->end));
+// 	}
 
-	printf ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
+// 	printf ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
 
-	dlist_delete (list);
+// 	dlist_delete (list);
 
-	return 0;
+// 	return 0;
 
-}
+// }
 
-static int test_insert_and_remove (void) {
+// static int test_insert_and_remove (void) {
 
-	printf ("test_insert_and_remove ()\n");
+// 	printf ("test_insert_and_remove ()\n");
 
-	DoubleList *list = dlist_init (free, integer_comparator);
+// 	DoubleList *list = dlist_init (free, integer_comparator);
 
-	printf ("Insert 10 numbers:\n");
+// 	printf ("Insert 10 numbers:\n");
 
-	Integer *integer = NULL;
-	for (int i = 0; i < 10; i++) {
-		integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
-	}
+// 	Integer *integer = NULL;
+// 	for (int i = 0; i < 10; i++) {
+// 		integer = (Integer *) malloc (sizeof (Integer));
+// 		// integer->value = rand () % 99 + 1;
+// 		integer->value = i;
+// 		dlist_insert_after (list, dlist_end (list), integer);
+// 	}
 
-	ListElement *le = NULL;
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
+// 	ListElement *le = NULL;
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
 
-	printf ("\n\nRemove 5 from the end:\n");
-	for (int i = 0; i < 5; i++) {
-		free (dlist_remove_element (list, list->end));
-	}
+// 	printf ("\n\nRemove 5 from the end:\n");
+// 	for (int i = 0; i < 5; i++) {
+// 		free (dlist_remove_element (list, list->end));
+// 	}
 
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
 
-	printf ("\n\n");
-	printf ("Remove 2 from the start:\n");
-	for (int i = 0; i < 2; i++) {
-		free (dlist_remove_start (list));
-	}
+// 	printf ("\n\n");
+// 	printf ("Remove 2 from the start:\n");
+// 	for (int i = 0; i < 2; i++) {
+// 		free (dlist_remove_start (list));
+// 	}
 
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-	printf ("\n\n");
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
+// 	printf ("\n\n");
 
-	printf ("Remove 2 from the start again:\n");
-	for (int i = 0; i < 2; i++) {
-		free (dlist_remove_element (list, NULL));
-	}
+// 	printf ("Remove 2 from the start again:\n");
+// 	for (int i = 0; i < 2; i++) {
+// 		free (dlist_remove_element (list, NULL));
+// 	}
 
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-	printf ("\n\n");
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
+// 	printf ("\n\n");
 
-	dlist_delete (list);
+// 	dlist_delete (list);
 
-	printf ("----------------------------------------\n");
+// 	printf ("----------------------------------------\n");
 
-	return 0;
+// 	return 0;
 
-}
+// }
 
-static int test_insert_and_remove_unsafe (void) {
+// static int test_insert_and_remove_unsafe (void) {
 
-	printf ("test_insert_and_remove_unsafe ()\n\n");
+// 	printf ("test_insert_and_remove_unsafe ()\n\n");
 
-	DoubleList *list = dlist_init (free, integer_comparator);
+// 	DoubleList *list = dlist_init (free, integer_comparator);
 
-	printf ("Insert 10 numbers:\n");
+// 	printf ("Insert 10 numbers:\n");
 
-	Integer *integer = NULL;
-	for (int i = 0; i < 10; i++) {
-		integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_at_end_unsafe (list, integer);
-	}
+// 	Integer *integer = NULL;
+// 	for (int i = 0; i < 10; i++) {
+// 		integer = (Integer *) malloc (sizeof (Integer));
+// 		// integer->value = rand () % 99 + 1;
+// 		integer->value = i;
+// 		dlist_insert_at_end_unsafe (list, integer);
+// 	}
 
-	ListElement *le = NULL;
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
+// 	ListElement *le = NULL;
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
 
-	printf ("\n\nRemove 5 from the end:\n");
-	for (int i = 0; i < 5; i++) {
-		free (dlist_remove_end_unsafe (list));
-	}
+// 	printf ("\n\nRemove 5 from the end:\n");
+// 	for (int i = 0; i < 5; i++) {
+// 		free (dlist_remove_end_unsafe (list));
+// 	}
 
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
 
-	printf ("\n\n");
-	printf ("Remove 2 from the start:\n");
-	for (int i = 0; i < 2; i++) {
-		free (dlist_remove_start_unsafe (list));
-	}
+// 	printf ("\n\n");
+// 	printf ("Remove 2 from the start:\n");
+// 	for (int i = 0; i < 2; i++) {
+// 		free (dlist_remove_start_unsafe (list));
+// 	}
 
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-	printf ("\n\n");
+// 	dlist_for_each (list, le) {
+// 		printf ("%4d", ((Integer *) le->data)->value);
+// 	}
+// 	printf ("\n\n");
 
-	dlist_delete (list);
+// 	dlist_delete (list);
 
-	printf ("----------------------------------------\n");
+// 	printf ("----------------------------------------\n");
 
-	return 0;
+// 	return 0;
 
-}
+// }
 
 #pragma region
 
@@ -1033,6 +1017,8 @@ static void *test_traverse_method_thread (void *args) {
 		dlist_traverse (list, test_traverse_method, NULL);
 		printf ("\n\n");
 	}
+
+	return NULL;
 
 }
 
@@ -1103,7 +1089,7 @@ static int dlist_test_sort (void) {
 
 	Integer *integer = NULL;
 	for (int i = 0; i < 100; i++) {
-		integer->value = integer_new (rand () % 99 + 1);
+		integer = integer_new (rand () % 99 + 1);
 		dlist_insert_after (list, dlist_start (list), integer);
 	}
 
@@ -1127,144 +1113,97 @@ static int dlist_test_sort (void) {
 
 static void *test_thread_add (void *args) {
 
-	if (args) {
-		DoubleList *list = (DoubleList *) args;
+	DoubleList *dlist = (DoubleList *) args;
 
-		// add ten items at the list end
-		for (unsigned int i = 0; i < 100; i++) {
-			Integer *integer = (Integer *) malloc (sizeof (Integer));
-			// integer->value = rand () % 99 + 1;
-			integer->value = i;
-			dlist_insert_after (list, dlist_end (list), integer);
-		}
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
+
+	return NULL;
 
 }
 
 static void *test_thread_remove (void *args) {
 
-	if (args) {
-		DoubleList *list = (DoubleList *) args;
+	DoubleList *dlist = (DoubleList *) args;
 
-		// remove 5 items from the start of the list
-		for (unsigned int i = 0; i < 50; i++) {
-			void *integer = dlist_remove_element (list, dlist_start (list));
-			if (integer) free (integer);
-		}
+	for (unsigned int i = 0; i < 10; i++) {
+		integer_delete (dlist_remove_element (dlist, dlist->end));
 	}
+
+	return NULL;
 
 }
 
-static void *test_thread_search (void *args) {
+static int dlist_test_insert_threads (void) {
 
-	if (args) {
-		DoubleList *list = (DoubleList *) args;
+	printf ("dlist_test_insert_threads ()\n");
 
-		// get 10 random values from the list
-		for (unsigned int i = 0; i < 10; i++) {
-			Integer *integer = (Integer *) malloc (sizeof (Integer));
-			integer->value = rand () % 99 + 1;
-
-			printf ("Searching: %d...\n", integer->value);
-			Integer *search = (Integer *) dlist_search (list, integer, NULL);
-			if (search) printf ("%d - %d\n", i + 1, search->value);
-
-			free (integer);
-		}
-	}
-
-}
-
-static void *test_thread_get_element (void *args) {
-
-	if (args) {
-		DoubleList *list = (DoubleList *) args;
-
-		// get 10 random values from the list
-		for (unsigned int i = 0; i < 10; i++) {
-			Integer *integer = (Integer *) malloc (sizeof (Integer));
-			integer->value = rand () % 999 + 1;
-
-			printf ("Getting element for: %d...\n", integer->value);
-			ListElement *le = dlist_get_element (list, integer, NULL);
-			Integer *search = (Integer *) le->data;
-			if (search) printf ("%d - %d\n", i + 1, search->value);
-
-			free (integer);
-		}
-	}
-
-}
-
-static void *test_thread_sort (void *args) {
-
-	if (args) {
-		DoubleList *list = (DoubleList *) args;
-
-		dlist_sort (list, NULL);
-	}
-
-}
-
-static int test_thread_safe (void) {
-
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
 	// create 4 threads
 	const unsigned int N_THREADS = 4;
 	pthread_t threads[N_THREADS];
-	// for (unsigned int i = 0; i < N_THREADS; i++) {
-	// 	pthread_create (&threads[i], NULL, test_thread_add, list);
-	// }
 
-	// // join the threads
-	// for (unsigned int i = 0; i < N_THREADS; i++) {
-	// 	pthread_join (threads[i], NULL);
-	// }
+ 	(void) pthread_create (&threads[0], NULL, test_thread_add, dlist);
+ 	(void) pthread_create (&threads[1], NULL, test_thread_add, dlist);
+ 	(void) pthread_create (&threads[2], NULL, test_thread_add, dlist);
+ 	(void) pthread_create (&threads[3], NULL, test_thread_add, dlist);
+ 	(void) pthread_join (threads[0], NULL);
+ 	(void) pthread_join (threads[1], NULL);
+ 	(void) pthread_join (threads[2], NULL);
+ 	(void) pthread_join (threads[3], NULL);
 
-	// 21/01/2020 -- 15:15 -- some times getting seg fault, other we get wrong list size,
-	// and other times we are printing a wrong number of items
-	// the correct values should be size: 10 and ten integers getting printed to the console
-	pthread_create (&threads[0], NULL, test_thread_add, list);
-	pthread_create (&threads[1], NULL, test_thread_add, list);
-	// pthread_create (&threads[2], NULL, test_thread_remove, list);
-	// pthread_create (&threads[3], NULL, test_thread_remove, list);
+	printf ("Elements in dlist after 4 x 10 inserted: %ld\n\n", dlist->size);
 
-	for (unsigned int i = 0; i < 2; i++) {
-		pthread_join (threads[i], NULL);
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	// get how many items are on the list, we expect 40 if all add ten items
-	printf ("\nItems in list: %ld\n", dlist_size (list));
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_remove_threads (void) {
+
+	printf ("dlist_test_remove_threads ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
 	Integer *integer = NULL;
-	// for (ListElement *le = dlist_start (list); le; le = le->next) {
-	// 	integer = (Integer *) le->data;
-	// 	printf ("%6i", integer->value);
-	// }
-
-	// 22/01/2020 -- 3:14 -- this has no problem
-	pthread_create (&threads[0], NULL, test_thread_add, list);
-	pthread_create (&threads[1], NULL, test_thread_remove, list);
-	pthread_create (&threads[2], NULL, test_thread_search, list);
-	// pthread_create (&threads[2], NULL, test_thread_get_element, list);
-	// pthread_create (&threads[3], NULL, test_thread_sort, list);
-	pthread_join (threads[0], NULL);
-	pthread_join (threads[1], NULL);
-	pthread_join (threads[2], NULL);
-	// pthread_join (threads[3], NULL);
-
-	printf ("\nItems in list: %ld\n", dlist_size (list));
-	dlist_sort (list, NULL);
-	unsigned int i = 1;
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d - %3i\n", i, integer->value);
-		i++;
+	for (unsigned int i = 0; i < 50; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
 	}
 
-	// 21/01/2020 -- 15:09 -- we get a segfault every other time and NOT all items get inserted when that happens
-	dlist_delete (list);
+	// create threads
+	const unsigned int N_THREADS = 4;
+	pthread_t threads[N_THREADS];
+
+ 	(void) pthread_create (&threads[0], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[1], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[2], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[3], NULL, test_thread_remove, dlist);
+ 	(void) pthread_join (threads[0], NULL);
+ 	(void) pthread_join (threads[1], NULL);
+ 	(void) pthread_join (threads[2], NULL);
+ 	(void) pthread_join (threads[3], NULL);
+
+	printf ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
@@ -1764,6 +1703,8 @@ int main (void) {
 
 	res |= dlist_test_insert_at_start_unsafe ();
 
+	res |= dlist_test_insert_at_end ();
+
 	res |= dlist_test_insert_at_end_unsafe ();
 
 	res |= dlist_test_insert_in_order ();
@@ -1782,7 +1723,11 @@ int main (void) {
 
 	res |= dlist_test_remove_by_condition ();
 
+	res |= dlist_test_remove_at ();
+
 	/*** double ***/
+
+	// TODO:
 
 	/*** get ***/
 
@@ -1798,6 +1743,12 @@ int main (void) {
 
 	res |= dlist_test_sort ();
 
+	/*** threads ***/
+
+	res |= dlist_test_insert_threads ();
+
+	res |= dlist_test_remove_threads ();
+
 	/*** other ***/
 
 	res |= dlist_test_to_array ();
@@ -1809,6 +1760,8 @@ int main (void) {
 	res |= dlist_test_split_half ();
 
 	res |= dlist_test_split_by_condition ();
+
+	res |= dlist_test_merge_two ();
 
 	res |= dlist_test_merge_two_by_condition ();
 
