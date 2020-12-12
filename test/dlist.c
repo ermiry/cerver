@@ -37,6 +37,125 @@ static int integer_comparator (const void *one, const void *two) {
 
 }
 
+static void *integer_clone (const void *original) {
+
+	Integer *cloned_integer = NULL;
+
+	if (original) {
+		cloned_integer = integer_new (((Integer *) original)->value);
+	}
+
+	return cloned_integer;
+
+}
+
+#pragma endregion
+
+#pragma region main
+
+static int dlist_test_empty (void) {
+
+	printf ("dlist_is_empty () & dlist_is_not_empty ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	if (dlist_is_empty (dlist)) printf ("BEFORE - List is empty\n");
+	if (dlist_is_not_empty (dlist)) printf ("BEFORE - List is not empty\n");
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	if (dlist_is_empty (dlist)) printf ("AFTER - List is empty\n");
+	if (dlist_is_not_empty (dlist)) printf ("AFTER - List is not empty\n");
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_delete_if_empty (void) {
+
+	int errors = 0;
+
+	printf ("dlist_delete_if_empty ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	if (!dlist_delete_if_empty (dlist)) {
+		printf ("\n\nDeleted dlist BUT it is not empty!");
+		dlist = NULL;
+
+		errors = 1;
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return errors;
+
+}
+
+static int dlist_test_reset (void) {
+
+	int errors = 0;
+
+	printf ("dlist_reset ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	dlist_reset (dlist);
+
+	printf ("\ndlist size after reset: %ld\n", dlist->size);
+	if (dlist->size) errors = 1;
+
+	if (!dlist->start && !dlist->end) {
+		printf ("\ndlist has NULL start & NULL end!\n");
+	}
+
+	else {
+		printf ("\ndlist start or end are not NULL!\n");
+		errors = 1;
+	}
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return errors;
+
+}
+
 #pragma endregion
 
 #pragma region insert
@@ -423,7 +542,7 @@ static int dlist_test_insert_in_order (void) {
 
 #pragma endregion
 
-#pragma region end
+#pragma region remove
 
 static int dlist_test_remove (void) {
 
@@ -1107,39 +1226,36 @@ static int test_remove_at (void) {
 
 }
 
-static int test_array (void) {
+#pragma region other
+
+static int dlist_test_to_array (void) {
+
+	printf ("dlist_to_array ()\n");
 
 	int retval = 1;
 
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
+	Integer *integer = NULL;
 	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
-
-	printf ("Elements in list: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	printf ("\n");
 
 	size_t count = 0;
-	void **array = dlist_to_array (list, &count);
+	void **array = dlist_to_array (dlist, &count);
 	if (array) {
-		dlist_clear (list);
-
-		printf ("Elements in array: \n");
-		for (size_t idx = 0; idx < count; idx++) {
-			printf ("%3d ", ((Integer *) array[idx])->value);
+		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+			printf ("%4d", ((Integer *) le->data)->value);
 		}
 
-		printf ("\n\nList is %ld long\n", list->size);
-		printf ("Array is %ld long\n", count);
+		printf ("\n\nElements in array %ld\n", count);
+		for (size_t idx = 0; idx < count; idx++) {
+			printf ("%4d", ((Integer *) array[idx])->value);
+		}
+
+		// clear dlist to clear array
+		dlist_clear (dlist);
 
 		// clear array
 		for (size_t idx = 0; idx < count; idx++) {
@@ -1151,221 +1267,136 @@ static int test_array (void) {
 		retval = 0;
 	}
 
-	dlist_delete (list);
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
 
 	return retval;
 
 }
 
-static int test_empty (void) {
+static int dlist_test_copy (void) {
+
+	printf ("dlist_copy ()\n");
 
 	int retval = 1;
 
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-	if (dlist_is_empty (list)) printf ("List is empty\n");
-	if (dlist_is_not_empty (list)) printf ("List is not empty\n");
-
+	Integer *integer = NULL;
 	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
 
-	printf ("Elements in list: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	DoubleList *copy = dlist_copy (dlist);
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-
-	if (dlist_is_empty (list)) printf ("List is empty\n");
-	if (dlist_is_not_empty (list)) printf ("List is not empty\n");
-
-	dlist_delete (list);
-
-	retval = 0;
-
-	return retval;
-
-}
-
-static int test_copy (void) {
-
-	int retval = 1;
-
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
-
-	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+	for (ListElement *le = dlist_start (copy); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	DoubleList *copy = dlist_copy (list);
+	dlist_clear (dlist);
 
-	printf ("Elements in original list: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	printf ("\n");
-
-	printf ("Elements in copied list: \n");
-	for (ListElement *le = dlist_start (copy); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	printf ("\n");
-
-	dlist_delete (list);
-	dlist_clear (copy);
 	dlist_delete (copy);
+	dlist_delete (dlist);
 
-	retval = 0;
+	printf ("\n\n----------------------------------------\n");
 
 	return retval;
 
 }
 
+static int dlist_test_clone (void) {
 
-static void *integer_clone (const void *original) {
-
-	Integer *cloned_integer = NULL;
-
-	if (original) {
-		cloned_integer = integer_new (((Integer *) original)->value);
-	}
-
-	return cloned_integer;
-
-}
-
-static int test_clone (void) {
+	printf ("dlist_clone ()\n");
 
 	int retval = 1;
 
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
+	Integer *integer = NULL;
 	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
 
-	DoubleList *clone = dlist_clone (list, integer_clone);
+	DoubleList *clone = dlist_clone (dlist, integer_clone);
 
-	printf ("Elements in original list: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-
-	printf ("Elements in cloned list: \n");
-	for (ListElement *le = dlist_start (clone); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	for (ListElement *le = dlist_start (clone); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-
-	dlist_delete (list);
 	dlist_delete (clone);
+	dlist_delete (dlist);
 
-	retval = 0;
+	printf ("\n\n----------------------------------------\n");
 
 	return retval;
 
 }
 
-static int test_split_half (void) {
+static int dlist_test_split_half (void) {
+
+	printf ("dlist_split_half ()\n");
 
 	int retval = 1;
 
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-	for (int i = 0; i < 3; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+	Integer *integer = NULL;
+	for (int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
 
-	printf ("ORIGINAL half size: %ld\n", list->size);
-	printf ("Elements in ORIGINAL list: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	DoubleList *split = dlist_split_half (dlist);
+
+	printf ("\nFIRST half: %ld\n", dlist->size);
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-
-	DoubleList *split = dlist_split_half (list);
-
-	printf ("\nFIRST half size: %ld\n", list->size);
-	printf ("Elements in FIRST half: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	printf ("\n\nSECOND half: %ld\n", split->size);
+	for (ListElement *le = dlist_start (split); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-
-	printf ("\nSECOND half size: %ld\n", split->size);
-	printf ("Elements in SECOND half: \n");
-	for (ListElement *le = dlist_start (split); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	printf ("\n");
-	printf ("\n");
-
-	printf ("Insert at end FIRST half:\n");
+	printf ("\nInsert at end FIRST half:\n");
 	for (int i = 0; i < 5; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+		integer = integer_new (i);
+		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
 	}
 
-	printf ("FIRST half size: %ld\n", list->size);
-	printf ("Elements in FIRST half: \n");
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	printf ("FIRST half: %ld\n", dlist->size);
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-	printf ("\n");
-	printf ("Insert at start SECOND half:\n");
+	printf ("\n\nInsert at start SECOND half:\n");
 	for (int i = 0; i < 5; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_before (split, NULL, integer);
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (split, NULL, integer);
 	}
 
-	printf ("SECOND half size: %ld\n", split->size);
-	printf ("Elements in SECOND half: \n");
-	for (ListElement *le = dlist_start (split); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
+	printf ("SECOND half: %ld", split->size);
+	for (ListElement *le = dlist_start (split); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n");
-	printf ("\n");
-
-	dlist_delete (list);
+	dlist_delete (dlist);
 	dlist_delete (split);
 
 	retval = 0;
+
+	printf ("\n\n----------------------------------------\n");
 
 	return retval;
 
@@ -1384,34 +1415,30 @@ static bool test_split_by_condition_condition (
 
 }
 
-static int test_split_by_condition (void) {
+static int dlist_test_split_by_condition (void) {
 
-	printf ("\ntest_split_by_condition ()\n");
+	printf ("dlist_split_by_condition ()\n");
 
-	DoubleList *list = dlist_init (free, integer_comparator);
-
-	printf ("Insert 10 numbers:\n");
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
 	Integer *integer = NULL;
 	for (int i = 0; i < 10; i++) {
-		integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+		integer = integer_new (i);
+		dlist_insert_after (dlist, dlist_end (dlist), integer);
 	}
 
 	ListElement *le = NULL;
-	dlist_for_each (list, le) {
+	dlist_for_each (dlist, le) {
 		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
 	Integer match = { 5 };
 	DoubleList *matches = dlist_split_by_condition (
-		list, test_split_by_condition_condition, &match
+		dlist, test_split_by_condition_condition, &match
 	);
 
-	printf ("\n\nAFTER split (size %ld):\n", list->size);
-	dlist_for_each (list, le) {
+	printf ("\n\nAFTER split (size %ld):\n", dlist->size);
+	dlist_for_each (dlist, le) {
 		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
@@ -1420,20 +1447,18 @@ static int test_split_by_condition (void) {
 		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n\n");
-
 	dlist_delete (matches);
-	dlist_delete (list);
+	dlist_delete (dlist);
 
-	printf ("----------------------------------------\n");
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
 }
 
-static int test_merge_two (void) {
+static int dlist_test_merge_two (void) {
 
-	printf ("\ntest_merge_two ()\n");
+	printf ("dlist_split_by_condition ()\n");
 
 	DoubleList *one = dlist_init (free, integer_comparator);
 	DoubleList *two = dlist_init (free, integer_comparator);
@@ -1477,7 +1502,7 @@ static int test_merge_two (void) {
 	dlist_delete (two);
 	dlist_delete (one);
 
-	printf ("----------------------------------------\n");
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
@@ -1496,9 +1521,9 @@ static bool test_merge_by_condition_condition (
 
 }
 
-static int test_merge_two_by_condition (void) {
+static int dlist_test_merge_two_by_condition (void) {
 
-	printf ("\ntest_merge_two_by_condition ()\n");
+	printf ("dlist_merge_two_by_condition ()\n");
 
 	DoubleList *one = dlist_init (free, integer_comparator);
 	DoubleList *two = dlist_init (free, integer_comparator);
@@ -1550,21 +1575,19 @@ static int test_merge_two_by_condition (void) {
 		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	printf ("\n\n");
-
 	dlist_delete (merge);
 	dlist_delete (two);
 	dlist_delete (one);
 
-	printf ("----------------------------------------\n");
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
 }
 
-static int test_merge_many (void) {
+static int dlist_test_merge_many (void) {
 
-	printf ("\ntest_merge_many ()\n");
+	printf ("dlist_merge_many ()\n");
 
 	DoubleList *one = dlist_init (free, integer_comparator);
 	DoubleList *two = dlist_init (free, integer_comparator);
@@ -1644,22 +1667,30 @@ static int test_merge_many (void) {
 	printf ("Three (%ld)\n", three->size);
 	printf ("Four (%ld)\n", four->size);
 
-	printf ("\n\n");
-
 	dlist_delete (merge);
 	dlist_delete (many);
 
-	printf ("----------------------------------------\n");
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
 }
+
+#pragma endregion
 
 int main (void) {
 
 	srand ((unsigned) time (NULL));
 
 	int res = 0;
+
+	/*** main ***/
+
+	res |= dlist_test_empty ();
+
+	res |= dlist_test_delete_if_empty ();
+
+	res |= dlist_test_reset ();
 
 	/*** insert ***/
 
@@ -1704,6 +1735,22 @@ int main (void) {
 	res |= dlist_test_remove_end_unsafe ();
 
 	res |= dlist_test_remove_by_condition ();
+
+	/*** other ***/
+
+	res |= dlist_test_to_array ();
+
+	res |= dlist_test_copy ();
+
+	res |= dlist_test_clone ();
+
+	res |= dlist_test_split_half ();
+
+	res |= dlist_test_split_by_condition ();
+
+	res |= dlist_test_merge_two_by_condition ();
+
+	res |= dlist_test_merge_many ();
 
 	return res;
 
