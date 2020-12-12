@@ -8,6 +8,8 @@
 
 #include <cerver/collections/dlist.h>
 
+#pragma region integer
+
 typedef struct { int value; } Integer;
 
 static Integer *integer_new (int value) {
@@ -34,6 +36,10 @@ static int integer_comparator (const void *one, const void *two) {
 	return 1;
 
 }
+
+#pragma endregion
+
+#pragma region insert
 
 static int dlist_test_insert_before_at_start (void) {
 
@@ -387,9 +393,9 @@ static int dlist_test_insert_at_end_unsafe (void) {
 
 }
 
-static int test_insert_in_order (void) {
+static int dlist_test_insert_in_order (void) {
 
-	printf ("test_insert_in_order ()\n");
+	printf ("dlist_test_insert_in_order ()\n");
 
 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
@@ -415,43 +421,236 @@ static int test_insert_in_order (void) {
 
 }
 
-static int test_remove (void) {
+#pragma endregion
 
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+#pragma region end
 
-	for (int i = 0; i < 1000; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
+static int dlist_test_remove (void) {
+
+	printf ("dlist_remove ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	Integer query = { 0 };
+	for (unsigned int i = 0; i < 10; i++) {
+		query.value = i;
+		dlist_remove (dlist, &query, NULL) ;
+	}
+
+	printf ("dlist_remove () dlist size after removed all: %ld", dlist->size);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_remove_start (void) {
+
+	printf ("dlist_remove_start ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	for (unsigned int i = 0; i < 10; i++) {
+		dlist_remove_start (dlist);
+	}
+
+	printf ("dlist_remove_start () dlist size after removed all: %ld", dlist->size);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_remove_start_unsafe (void) {
+
+	printf ("dlist_remove_start_unsafe ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	for (unsigned int i = 0; i < 10; i++) {
+		dlist_remove_start_unsafe (dlist);
+	}
+
+	printf ("dlist_remove_start_unsafe () dlist size after removed all: %ld", dlist->size);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_remove_end (void) {
+
+	printf ("dlist_remove_end ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	for (unsigned int i = 0; i < 10; i++) {
+		dlist_remove_end (dlist);
+	}
+
+	printf ("dlist_remove_end () dlist size after removed all: %ld", dlist->size);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_remove_end_unsafe (void) {
+
+	printf ("dlist_remove_end_unsafe ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_at_end_unsafe (dlist, integer);
+	}
+
+	// for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+	// 	printf ("%4d", ((Integer *) le->data)->value);
+	// }
+
+	for (unsigned int i = 0; i < 10; i++) {
+		dlist_remove_end_unsafe (dlist);
+	}
+
+	printf ("dlist_remove_end_unsafe () dlist size after removed all: %ld", dlist->size);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static bool dlist_test_remove_by_condition_less_than_condition (
+	const void *a, const void *b
+) {
+
+	Integer *integer_a = (Integer *) a;
+	Integer *integer_b = (Integer *) b;
+
+	if (integer_a->value < integer_b->value) return true;
+
+	return false;
+
+}
+
+static bool dlist_test_remove_by_condition_greater_than_condition (
+	const void *a, const void *b
+) {
+
+	Integer *integer_a = (Integer *) a;
+	Integer *integer_b = (Integer *) b;
+
+	if (integer_a->value > integer_b->value) return true;
+
+	return false;
+
+}
+
+static int dlist_test_remove_by_condition (void) {
+
+	printf ("dlist_remove_by_condition ()\n");
+
+	DoubleList *list = dlist_init (integer_delete, integer_comparator);
+
+	printf ("Insert 10 numbers:\n");
+
+	Integer *integer = NULL;
+	for (int i = 0; i < 10; i++) {
+		integer = (Integer *) malloc (sizeof (Integer));
 		// integer->value = rand () % 99 + 1;
 		integer->value = i;
 		dlist_insert_after (list, dlist_end (list), integer);
 	}
 
-	printf ("\nItems in list: %ld\n", dlist_size (list));
-	// for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-	// 	Integer *integer = (Integer *) le->data;
-	// 	printf ("%3i", integer->value);
-	// }
-
-	Integer *query = (Integer *) malloc (sizeof (int));
-	if (query) {
-		query->value = 5;
-		Integer *found = dlist_remove (list, query, NULL);
-		if (found) free (found);
-		free (query);
+	ListElement *le = NULL;
+	dlist_for_each (list, le) {
+		printf ("%4d", ((Integer *) le->data)->value);
 	}
 
-	// printf ("\n\n");
-	printf ("\nItems in list: %ld\n", dlist_size (list));
-	// for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-	// 	Integer *integer = (Integer *) le->data;
-	// 	printf ("%3i", integer->value);
-	// }
+	Integer match = { 4 };
+	unsigned int matches = dlist_remove_by_condition (
+		list, dlist_test_remove_by_condition_less_than_condition, &match, true
+	);
+
+	printf ("\n\nRemoved %d elements smaller than 4:\n", matches);
+	dlist_for_each (list, le) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	matches = dlist_remove_by_condition (
+		list, dlist_test_remove_by_condition_greater_than_condition, &match, true
+	);
+	printf ("\n\nRemoved %d elements greater than 4:\n", matches);
+	dlist_for_each (list, le) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
 
 	dlist_delete (list);
+
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
 }
+
+#pragma endregion
 
 static int test_insert_end_remove_start (void) {
 
@@ -903,81 +1102,6 @@ static int test_remove_at (void) {
 	}
 
 	dlist_delete (list);
-
-	return 0;
-
-}
-
-static bool test_remove_by_condition_less_than_condition (
-	const void *a, const void *b
-) {
-
-	Integer *integer_a = (Integer *) a;
-	Integer *integer_b = (Integer *) b;
-
-	if (integer_a->value < integer_b->value) return true;
-
-	return false;
-
-}
-
-static bool test_remove_by_condition_greater_than_condition (
-	const void *a, const void *b
-) {
-
-	Integer *integer_a = (Integer *) a;
-	Integer *integer_b = (Integer *) b;
-
-	if (integer_a->value > integer_b->value) return true;
-
-	return false;
-
-}
-
-static int test_remove_by_condition (void) {
-
-	printf ("\ntest_remove_by_condition ()\n");
-
-	DoubleList *list = dlist_init (free, integer_comparator);
-
-	printf ("Insert 10 numbers:\n");
-
-	Integer *integer = NULL;
-	for (int i = 0; i < 10; i++) {
-		integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
-	}
-
-	ListElement *le = NULL;
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-
-	Integer match = { 4 };
-	unsigned int matches = dlist_remove_by_condition (
-		list, test_remove_by_condition_less_than_condition, &match, true
-	);
-
-	printf ("\n\nRemoved %d elements smaller than 4:\n", matches);
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-
-	matches = dlist_remove_by_condition (
-		list, test_remove_by_condition_greater_than_condition, &match, true
-	);
-	printf ("\n\nRemoved %d elements greater than 4:\n", matches);
-	dlist_for_each (list, le) {
-		printf ("%4d", ((Integer *) le->data)->value);
-	}
-
-	printf ("\n\n");
-
-	dlist_delete (list);
-
-	printf ("----------------------------------------\n");
 
 	return 0;
 
@@ -1531,17 +1655,13 @@ static int test_merge_many (void) {
 
 }
 
-// uncomment the function that represents the test you want to run and the follow these steps
-// from test directory...
-// mkdir bin
-// to compile run: gcc ./dllist_test.c ../src/collections/dllist.c -l pthread -o ./bin/dllist_test
-// or compile all tests using the Makefile
-// and run using: ./bin/dllist_test
 int main (void) {
 
 	srand ((unsigned) time (NULL));
 
 	int res = 0;
+
+	/*** insert ***/
 
 	res |= dlist_test_insert_before_at_start ();
 
@@ -1569,7 +1689,21 @@ int main (void) {
 
 	res |= dlist_test_insert_at_end_unsafe ();
 
-	res |= test_insert_in_order ();
+	res |= dlist_test_insert_in_order ();
+
+	/*** remove ***/
+
+	res |= dlist_test_remove ();
+
+	res |= dlist_test_remove_start ();
+
+	res |= dlist_test_remove_start_unsafe ();
+
+	res |= dlist_test_remove_end ();
+
+	res |= dlist_test_remove_end_unsafe ();
+
+	res |= dlist_test_remove_by_condition ();
 
 	return res;
 
