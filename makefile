@@ -48,7 +48,7 @@ EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
-TESTLIBS	:= -L ./bin -l cerver
+TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
@@ -128,7 +128,6 @@ examples: $(EXOBJS)
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files -l cerver
 	$(CC) -I ./$(INCDIR) -I $(EXAMDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api -l cerver
-	$(CC) -I ./$(INCDIR) -I $(EXAMDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/sockets.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/sockets -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web -l cerver
 
@@ -144,8 +143,9 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 
 test: $(TESTOBJS)
 	@mkdir -p ./$(TESTTARGET)
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode -l cerver
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/dlist.o -o ./$(TESTTARGET)/dlist $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode $(TESTLIBS)
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
