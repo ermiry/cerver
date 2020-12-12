@@ -769,7 +769,56 @@ static int dlist_test_remove_by_condition (void) {
 
 }
 
+static int test_remove_at (void) {
+
+	// create a global list
+	DoubleList *list = dlist_init (NULL, integer_comparator);
+
+	for (int i = 0; i < 10; i++) {
+		Integer *integer = (Integer *) malloc (sizeof (Integer));
+		integer->value = i;
+		dlist_insert_after (list, dlist_end (list), integer);
+	}
+
+	// print list
+	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
+		Integer *integer = (Integer *) le->data;
+		printf ("%3d ", integer->value);
+	}
+
+	// get 10 random values from the list
+	// for (unsigned int i = 0; i < 5; i++) {
+		// unsigned int idx = rand () % 9 + 1;
+		unsigned idx = 7;
+
+		// printf ("Removing element at idx: %d...\n", idx);
+		// ListElement *le = dlist_get_element_at (list, idx);
+		// if (le) {
+		// 	Integer *integer = (Integer *) le->data;
+		// 	printf ("%3d\n", integer->value);
+		// }
+
+		Integer *integer = (Integer *) dlist_remove_at (list, idx);
+		// if (integer) printf ("%3d\n", integer->value);
+	// }
+
+	printf ("\n\n");
+
+	// print list
+	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
+		Integer *integer = (Integer *) le->data;
+		printf ("%3d ", integer->value);
+	}
+
+	dlist_delete (list);
+
+	return 0;
+
+}
+
 #pragma endregion
+
+#pragma region double
 
 static int test_insert_end_remove_start (void) {
 
@@ -929,6 +978,47 @@ static int test_insert_and_remove_unsafe (void) {
 
 }
 
+#pragma region
+
+#pragma region get
+
+static int dlist_test_get_at (void) {
+
+	printf ("dlist_get_at ()\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	Integer *two = (Integer *) dlist_get_at (dlist, 2);
+	printf ("two %d\n", two->value);
+
+	Integer *four = (Integer *) dlist_get_at (dlist, 4);
+	printf ("four %d\n", four->value);
+
+	Integer *seven = (Integer *) dlist_get_at (dlist, 7);
+	printf ("seven %d\n", seven->value);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+#pragma endregion
+
+#pragma region traverse
+
 static void test_traverse_method (void *list_element_data, void *method_args) {
 
 	printf ("%4d", ((Integer *) list_element_data)->value);
@@ -946,61 +1036,94 @@ static void *test_traverse_method_thread (void *args) {
 
 }
 
-static int test_traverse (void) {
+static int dlist_test_traverse (void) {
 
-	int retval = 0;
+	printf ("dlist_traverse ()\n");
 
-	DoubleList *list = dlist_init (NULL, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-	for (int i = 0; i < 100; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		// integer->value = rand () % 99 + 1;
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (dlist, dlist_end (dlist), integer);
+	}
+
+	dlist_traverse (dlist, test_traverse_method, NULL);
+
+	dlist_delete (dlist);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+static int dlist_test_traverse_threads (void) {
+
+	printf ("dlist_traverse () THREADS\n");
+
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 10; i++) {
+		integer = integer_new (i);
+		dlist_insert_before_unsafe (dlist, dlist_end (dlist), integer);
 	}
 
 	// create 4 threads
 	const unsigned int N_THREADS = 4;
 	pthread_t threads[N_THREADS];
 
-	pthread_create (&threads[0], NULL, test_traverse_method_thread, list);
-	pthread_create (&threads[1], NULL, test_traverse_method_thread, list);
-	pthread_create (&threads[2], NULL, test_traverse_method_thread, list);
-	pthread_create (&threads[3], NULL, test_traverse_method_thread, list);
-	pthread_join (threads[0], NULL);
-	pthread_join (threads[1], NULL);
-	pthread_join (threads[2], NULL);
-	pthread_join (threads[3], NULL);
+ 	(void) pthread_create (&threads[0], NULL, test_traverse_method_thread, dlist);
+ 	(void) pthread_create (&threads[1], NULL, test_traverse_method_thread, dlist);
+ 	(void) pthread_create (&threads[2], NULL, test_traverse_method_thread, dlist);
+ 	(void) pthread_create (&threads[3], NULL, test_traverse_method_thread, dlist);
+ 	(void) pthread_join (threads[0], NULL);
+ 	(void) pthread_join (threads[1], NULL);
+ 	(void) pthread_join (threads[2], NULL);
+ 	(void) pthread_join (threads[3], NULL);
 
-	// retval |= dlist_traverse (list, test_traverse_method, NULL);
+	dlist_delete (dlist);
 
-	dlist_delete (list);
-
-	return retval;
-
-}
-
-static int test_sort (void) {
-
-	DoubleList *list = dlist_init (NULL, integer_comparator);
-
-	for (int i = 0; i < 100; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = rand () % 99 + 1;
-		dlist_insert_after (list, dlist_start (list), integer);
-	}
-
-	dlist_sort (list, NULL);
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3i", integer->value);
-	}
-
-	dlist_delete (list);
+	printf ("\n\n----------------------------------------\n");
 
 	return 0;
 
 }
+
+#pragma endregion
+
+#pragma region sort
+
+static int dlist_test_sort (void) {
+
+	printf ("dlist_sort ()\n");
+
+	DoubleList *list = dlist_init (integer_delete, integer_comparator);
+
+	Integer *integer = NULL;
+	for (int i = 0; i < 100; i++) {
+		integer->value = integer_new (rand () % 99 + 1);
+		dlist_insert_after (list, dlist_start (list), integer);
+	}
+
+	dlist_sort (list, NULL);
+	
+	for (ListElement *le = dlist_start (list); le; le = le->next) {
+		printf ("%4d", ((Integer *) le->data)->value);
+	}
+
+	dlist_delete (list);
+
+	printf ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
+
+#pragma endregion
+
+#pragma region threads
 
 static void *test_thread_add (void *args) {
 
@@ -1147,84 +1270,7 @@ static int test_thread_safe (void) {
 
 }
 
-static int test_get_at (void) {
-
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
-
-	for (int i = 0; i < 100; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
-	}
-
-	// get 10 random values from the list
-	for (unsigned int i = 0; i < 10; i++) {
-		unsigned int idx = rand () % 999 + 1;
-
-		printf ("Getting element at idx: %d... ", idx);
-		// ListElement *le = dlist_get_element_at (list, idx);
-		// if (le) {
-		// 	Integer *integer = (Integer *) le->data;
-		// 	printf ("%3d\n", integer->value);
-		// }
-
-		Integer *integer = (Integer *) dlist_get_at (list, idx);
-		if (integer) printf ("%3d\n", integer->value);
-	}
-
-	dlist_delete (list);
-
-	return 0;
-
-}
-
-static int test_remove_at (void) {
-
-	// create a global list
-	DoubleList *list = dlist_init (NULL, integer_comparator);
-
-	for (int i = 0; i < 10; i++) {
-		Integer *integer = (Integer *) malloc (sizeof (Integer));
-		integer->value = i;
-		dlist_insert_after (list, dlist_end (list), integer);
-	}
-
-	// print list
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	// get 10 random values from the list
-	// for (unsigned int i = 0; i < 5; i++) {
-		// unsigned int idx = rand () % 9 + 1;
-		unsigned idx = 7;
-
-		// printf ("Removing element at idx: %d...\n", idx);
-		// ListElement *le = dlist_get_element_at (list, idx);
-		// if (le) {
-		// 	Integer *integer = (Integer *) le->data;
-		// 	printf ("%3d\n", integer->value);
-		// }
-
-		Integer *integer = (Integer *) dlist_remove_at (list, idx);
-		// if (integer) printf ("%3d\n", integer->value);
-	// }
-
-	printf ("\n\n");
-
-	// print list
-	for (ListElement *le = dlist_start (list); le != NULL; le = le->next) {
-		Integer *integer = (Integer *) le->data;
-		printf ("%3d ", integer->value);
-	}
-
-	dlist_delete (list);
-
-	return 0;
-
-}
+#pragma endregion
 
 #pragma region other
 
@@ -1705,7 +1751,7 @@ int main (void) {
 	res |= dlist_test_insert_before_at_end_unsafe ();
 
 	res |= dlist_test_insert_after_at_start ();
-	
+
 	res |= dlist_test_insert_after_at_end ();
 
 	res |= dlist_test_insert_after_unsafe_at_start ();
@@ -1735,6 +1781,22 @@ int main (void) {
 	res |= dlist_test_remove_end_unsafe ();
 
 	res |= dlist_test_remove_by_condition ();
+
+	/*** double ***/
+
+	/*** get ***/
+
+	res |= dlist_test_get_at ();
+
+	/*** traverse ***/
+
+	res |= dlist_test_traverse ();
+
+	res |= dlist_test_traverse_threads ();
+
+	/*** sort ***/
+
+	res |= dlist_test_sort ();
 
 	/*** other ***/
 
