@@ -2,14 +2,10 @@ name: Cerver Continuous Integration
 
 on:
   push:
-    branches:
-      - '*'
     branches-ignore:
       - 'master'
       - '*beta'
   pull_request:
-    branches:
-      - '*'
     branches-ignore:
       - 'master'
       - '*beta'

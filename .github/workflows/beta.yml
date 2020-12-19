@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - '*beta'
-    branches-ignore:
-      - 'master'
+      - '!master'
   pull_request:
     branches:
       - '*beta'
-    branches-ignore:
-      - 'master'
+      - '!master'
 
 jobs:
   build:
