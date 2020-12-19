@@ -50,7 +50,7 @@ static int dlist_internal_insert_before (
 	if (le) {
 		le->data = (void *) data;
 
-		if (element == NULL) {
+		if (element == NULL || !element->prev) {
 			if (dlist->size == 0) dlist->end = le;
 			else dlist->start->prev = le;
 		
