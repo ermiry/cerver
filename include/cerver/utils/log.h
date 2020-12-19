@@ -155,6 +155,9 @@ CERVER_PUBLIC void cerver_log_success (const char *msg, ...);
 // prints a debug message to stdout
 CERVER_PUBLIC void cerver_log_debug (const char *msg, ...);
 
+// prints a message with no type or format
+CERVER_PUBLIC void cerver_log_raw (const char *msg, ...);
+
 // prints a line break, equivalent to printf ("\n")
 CERVER_PUBLIC void cerver_log_line_break (void);
 

@@ -452,7 +452,33 @@ static void cerver_log_internal (
 			cerver_log_internal_normal (__stream, log, first_type, second_type);
 		}
 
-		pool_push (log_pool, log);
+		(void) pool_push (log_pool, log);
+	}
+
+}
+
+static void cerver_log_internal_raw (
+	FILE *__restrict __stream,
+	const char *format, va_list args
+) {
+
+	CerverLog *log = (CerverLog *) pool_pop (log_pool);
+	if (log) {
+		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+
+		switch (log_output_type) {
+			case LOG_OUTPUT_TYPE_STD: (void) fprintf (stdout, "%s", log->message); break;
+			case LOG_OUTPUT_TYPE_FILE: (void) fprintf (__stream, "%s", log->message); break;
+
+			case LOG_OUTPUT_TYPE_BOTH: {
+				(void) fprintf (stdout, "%s", log->message);
+				(void) fprintf (__stream, "%s", log->message);
+			} break;
+
+			default: break;
+		}
+
+		(void) pool_push (log_pool, log);
 	}
 
 }
@@ -583,6 +609,23 @@ void cerver_log_debug (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_DEBUG),
 			LOG_TYPE_DEBUG, LOG_TYPE_NONE,
+			msg, args
+		);
+
+		va_end (args);
+	}
+
+}
+
+// prints a message with no type or format
+void cerver_log_raw (const char *msg, ...) {
+
+	if (msg && !quiet) {
+		va_list args;
+		va_start (args, msg);
+
+		cerver_log_internal_raw (
+			cerver_log_get_stream (LOG_TYPE_NONE),
 			msg, args
 		);
 
