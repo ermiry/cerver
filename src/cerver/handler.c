@@ -1391,7 +1391,11 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 		// i32 sock_fd = receive_handle->sock_fd;
 		char *buffer = receive_handle->buffer;
 		size_t buffer_size = receive_handle->buffer_size;
+
+		#ifdef CERVER_DEBUG
 		i32 sock_fd = receive_handle->socket->sock_fd;
+		#endif
+		
 		// char *buffer = receive_handle->socket->packet_buffer;
 		// size_t buffer_size = receive_handle->socket->packet_buffer_size;
 		Lobby *lobby = receive_handle->lobby;
