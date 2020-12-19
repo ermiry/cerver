@@ -73,15 +73,21 @@ typedef enum LogOutputType {
 CERVER_EXPORT LogOutputType cerver_log_get_output_type (void);
 
 // sets the log output type to use
-CERVER_EXPORT void cerver_log_set_output_type (LogOutputType type);
+CERVER_EXPORT void cerver_log_set_output_type (
+	LogOutputType type
+);
 
 // sets the path where logs files will be stored
 // returns 0 on success, 1 on error
-CERVER_EXPORT unsigned int cerver_log_set_path (const char *pathname);
+CERVER_EXPORT unsigned int cerver_log_set_path (
+	const char *pathname
+);
 
 // sets the interval in secs which will be used to sync the contents of the log file to disk
 // the default values is 1 second
-CERVER_EXPORT void cerver_log_set_update_interval (unsigned int interval);
+CERVER_EXPORT void cerver_log_set_update_interval (
+	unsigned int interval
+);
 
 #define LOG_TIME_TYPE_MAP(XX)										\
 	XX(0, 	NONE, 		None,		Logs without time)				\
@@ -97,9 +103,13 @@ typedef enum LogTimeType {
 
 } LogTimeType;
 
-CERVER_PUBLIC const char *cerver_log_time_type_to_string (LogTimeType type);
+CERVER_PUBLIC const char *cerver_log_time_type_to_string (
+	LogTimeType type
+);
 
-CERVER_PUBLIC const char *cerver_log_time_type_description (LogTimeType type);
+CERVER_PUBLIC const char *cerver_log_time_type_description (
+	LogTimeType type
+);
 
 // returns the current log time configuration
 CERVER_EXPORT LogTimeType cerver_log_get_time_config (void);
@@ -113,6 +123,11 @@ CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
 
 // set if logs datetimes will use local time or not
 CERVER_EXPORT void cerver_log_set_local_time (bool value);
+
+// if the log's quiet option is set to TRUE,
+// only success, warning & error messages will be handled
+// any other type will be ignored
+CERVER_EXPORT void cerver_log_set_quiet (bool value);
 
 #pragma endregion
 

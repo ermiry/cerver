@@ -49,6 +49,8 @@ static pthread_t update_log_thread_id = 0;
 static bool update_log_file = false;
 static unsigned int log_file_update_interval = LOG_DEFAULT_UPDATE_INTERVAL;
 
+static bool quiet = false;
+
 // returns the current log output type
 LogOutputType cerver_log_get_output_type (void) {
 
@@ -138,6 +140,11 @@ void cerver_log_set_time_config (LogTimeType type) {
 
 // set if logs datetimes will use local time or not
 void cerver_log_set_local_time (bool value) { use_local_time = value; }
+
+// if the log's quiet option is set to TRUE,
+// only success, warning & error messages will be handled
+// any other type will be ignored
+void cerver_log_set_quiet (bool value) { quiet = value; }
 
 #pragma endregion
 
@@ -465,11 +472,29 @@ void cerver_log (
 		va_list args;
 		va_start (args, format);
 
-		cerver_log_internal (
-			cerver_log_get_stream (first_type),
-			first_type, second_type,
-			format, args
-		);
+		if (quiet) {
+			switch (first_type) {
+				case LOG_TYPE_ERROR:
+				case LOG_TYPE_WARNING:
+				case LOG_TYPE_SUCCESS:
+					cerver_log_internal (
+						cerver_log_get_stream (first_type),
+						first_type, second_type,
+						format, args
+					);
+					break;
+
+				default: break;
+			}
+		}
+
+		else {
+			cerver_log_internal (
+				cerver_log_get_stream (first_type),
+				first_type, second_type,
+				format, args
+			);
+		}
 
 		va_end (args);
 	}
@@ -479,7 +504,7 @@ void cerver_log (
 // prints a message with no type, effectively making this a custom printf ()
 void cerver_log_msg (const char *msg, ...) {
 
-	if (msg) {
+	if (msg && !quiet) {
 		va_list args;
 		va_start (args, msg);
 
@@ -551,7 +576,7 @@ void cerver_log_success (const char *msg, ...) {
 // prints a debug message to stdout
 void cerver_log_debug (const char *msg, ...) {
 
-	if (msg) {
+	if (msg && !quiet) {
 		va_list args;
 		va_start (args, msg);
 
@@ -570,9 +595,12 @@ void cerver_log_debug (const char *msg, ...) {
 void cerver_log_line_break (void) {
 
 	switch (log_output_type) {
-		case LOG_OUTPUT_TYPE_STD: (void) fprintf (stdout, "\n"); break;
-		case LOG_OUTPUT_TYPE_FILE: (void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n"); break;
-
+		case LOG_OUTPUT_TYPE_STD:
+			(void) fprintf (stdout, "\n");
+			break;
+		case LOG_OUTPUT_TYPE_FILE:
+			(void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n");
+			break;
 		case LOG_OUTPUT_TYPE_BOTH:
 			(void) fprintf (stdout, "\n");
 			(void) fprintf (cerver_log_get_stream (LOG_TYPE_NONE), "\n");
@@ -589,11 +617,11 @@ void cerver_log_line_break (void) {
 
 static void *cerver_log_update (void *data) {
 
-	sleep (log_file_update_interval);
+	(void) sleep (log_file_update_interval);
 
 	while (update_log_file) {
 		(void) fflush (logfile);
-		sleep (log_file_update_interval);
+		(void) sleep (log_file_update_interval);
 	}
 
 	return NULL;
