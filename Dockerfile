@@ -1,12 +1,16 @@
-FROM gcc as builder
+ARG CERVER_VERSION=2.0b-19
 
-WORKDIR /opt/cerver
+FROM gcc as builder
 
 RUN apt-get update && apt-get install -y cmake libssl-dev
 
 # cerver
-COPY . .
-RUN make -j4 && make examples
+ARG CERVER_VERSION
+RUN mkdir /opt/cerver && cd /opt/cerver \
+    && wget -q --no-check-certificate https://github.com/ermiry/cerver/archive/${CERVER_VERSION}.zip \
+    && unzip ${CERVER_VERSION}.zip \
+    && cd cerver-${CERVER_VERSION} \
+    && make DEVELOPMENT='' -j4
 
 ############
 FROM ubuntu:bionic
@@ -15,14 +19,11 @@ ARG RUNTIME_DEPS='libssl-dev'
 
 RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
 
-# install cerver
-COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/
-COPY --from=builder /opt/cerver/include/cerver /usr/local/include/cerver
+# cerver
+ARG CERVER_VERSION
+COPY --from=builder /opt/cerver/cerver-${CERVER_VERSION}/bin/libcerver.so /usr/local/lib/
+COPY --from=builder /opt/cerver/cerver-${CERVER_VERSION}/include/cerver /usr/local/include/cerver
 
 RUN ldconfig
 
-# cerver examples
-WORKDIR /home/cerver
-COPY --from=builder /opt/cerver/examples/bin ./examples
-
-CMD ["./examples/test"]
+CMD ["/bin/bash"]
