@@ -4,9 +4,15 @@ on:
   push:
     branches:
       - '*'
+    branches-ignore:
+      - 'master'
+      - '*beta'
   pull_request:
     branches:
       - '*'
+    branches-ignore:
+      - 'master'
+      - '*beta'
 
 jobs:
   build:
@@ -14,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
       - name: gcc make
         run: make
       - name: gcc examples
