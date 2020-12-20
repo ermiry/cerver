@@ -198,8 +198,8 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
                 dlist_get_element (game_cerver->current_lobbys, lobby, NULL));
 
         if (lobby_data) {
-            Lobby *l = (Lobby *) lobby_data;
             #ifdef CERVER_DEBUG
+            Lobby *l = (Lobby *) lobby_data;
             cerver_log (
                 LOG_TYPE_DEBUG, LOG_TYPE_GAME,
                 "Unregistered lobby %s from cerver %s", 
