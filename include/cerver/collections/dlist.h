@@ -173,7 +173,7 @@ extern int dlist_insert_in_order (
 // and returns the list element's data
 // option to pass a custom compare method for searching, if NULL, dlist's compare method will be used
 extern void *dlist_remove (
-	DoubleList *dlist, 
+	DoubleList *dlist,
 	const void *query, int (*compare)(const void *one, const void *two)
 );
 
@@ -205,7 +205,7 @@ extern void *dlist_remove_end (DoubleList *dlist);
 // this method is NOT thread safe
 extern void *dlist_remove_end_unsafe (DoubleList *dlist);
 
-// removes the dlist element from the dlist at the specified index 
+// removes the dlist element from the dlist at the specified index
 // returns the data or NULL if index was invalid
 extern void *dlist_remove_at (
 	DoubleList *dlist, const unsigned int idx
@@ -229,7 +229,7 @@ extern unsigned int dlist_remove_by_condition (
 // this method is thread safe
 // returns 0 on success, 1 on error
 extern int dlist_traverse (
-	const DoubleList *dlist, 
+	const DoubleList *dlist,
 	void (*method)(void *list_element_data, void *method_args),
 	void *method_args
 );
@@ -247,7 +247,7 @@ extern void *dlist_search (
 // option to pass a custom compare method for searching
 extern ListElement *dlist_get_element (
 	const DoubleList *dlist,
-	const void *data, 
+	const void *data,
 	int (*compare)(const void *one, const void *two)
 );
 
@@ -312,14 +312,11 @@ extern DoubleList *dlist_split_by_condition (
 	const void *match
 );
 
-// merges two dlists into a newly created one
-// moves list elements from both dlist into a new dlist
-// first the elements of one and then all the elements of two
-// both dlists can be safely deleted after this operation
-// returns a newly allocated dlist with size = one->size + two->size
-extern DoubleList *dlist_merge_two (
-	DoubleList *one, DoubleList *two
-);
+// merges elements from two into one
+// moves list elements from two into the end of one
+// two can be safely deleted after this operation
+// one should be of size = one->size + two->size
+extern void dlist_merge_two (DoubleList *one, DoubleList *two);
 
 // creates a new dlist with all the elements from both dlists
 // that match the specified confition
@@ -330,5 +327,11 @@ extern DoubleList *dlist_merge_two_by_condition (
 	bool (*compare)(const void *one, const void *two),
 	const void *match
 );
+
+// expects a dlist of dlists and creates a new dlist with all the elements
+// elements from original dlists are moved directly to the new list
+// the original dlists can be deleted after this operation
+// returns a newly allocated dlist with all the elements
+extern DoubleList *dlist_merge_many (DoubleList *many_dlists);
 
 #endif
