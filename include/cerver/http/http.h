@@ -42,11 +42,17 @@ typedef enum ContentType {
 
 } ContentType;
 
-CERVER_PUBLIC const char *http_content_type_string (ContentType content_type);
+CERVER_PUBLIC const char *http_content_type_string (
+	ContentType content_type
+);
 
-CERVER_PUBLIC const char *http_content_type_description (ContentType content_type);
+CERVER_PUBLIC const char *http_content_type_description (
+	ContentType content_type
+);
 
-CERVER_PUBLIC const char *http_content_type_by_extension (const char *ext);
+CERVER_PUBLIC const char *http_content_type_by_extension (
+	const char *ext
+);
 
 #pragma endregion
 
@@ -228,6 +234,15 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (
 // returns a newly allocated string that should be deleted after use
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (
 	HttpCerver *http_cerver, DoubleList *values
+);
+
+// returns TRUE if the jwt has been decoded and validate successfully
+// returns FALSE if token is NOT valid or if an error has occurred
+// option to pass the method to be used to create a decoded data
+// that will be placed in the decoded data argument
+CERVER_EXPORT bool http_cerver_auth_validate_jwt (
+	HttpCerver *http_cerver, const char *bearer_token,
+	void *(*decode_data)(void *), void **decoded_data
 );
 
 #pragma endregion

@@ -3,7 +3,7 @@
 # sudo apt-get update && sudo apt-get install -y make wget
 
 cd /opt
-sudo wget -O cerver.tar.gz https://github.com/ermiry/cerver/archive/1.6.tar.gz
+sudo wget -O cerver.tar.gz https://github.com/ermiry/cerver/archive/2.0b-19.tar.gz
 sudo tar xzf cerver.tar.gz
 
 cd /opt/cerver-1.6

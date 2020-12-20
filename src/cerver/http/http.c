@@ -617,6 +617,74 @@ char *http_cerver_auth_generate_jwt (
 
 }
 
+// returns TRUE if the jwt has been decoded and validate successfully
+// returns FALSE if token is NOT valid or if an error has occurred
+// option to pass the method to be used to create a decoded data
+// that will be placed in the decoded data argument
+bool http_cerver_auth_validate_jwt (
+	HttpCerver *http_cerver, const char *bearer_token,
+	void *(*decode_data)(void *), void **decoded_data
+) {
+
+	bool retval = false;
+
+	if (http_cerver && bearer_token) {
+		char *token = (char *) bearer_token;
+		token += sizeof ("Bearer");
+
+		jwt_t *jwt = NULL;
+		jwt_valid_t *jwt_valid = NULL;
+		if (!jwt_valid_new (&jwt_valid, http_cerver->jwt_alg)) {
+			jwt_valid->hdr = 1;
+			jwt_valid->now = time (NULL);
+
+			if (!jwt_decode (
+				&jwt, token,
+				(unsigned char *) http_cerver->jwt_public_key->str,
+				http_cerver->jwt_public_key->len
+			)) {
+				#ifdef HTTP_AUTH_DEBUG
+				cerver_log_debug ("JWT decoded successfully!");
+				#endif
+
+				if (!jwt_validate (jwt, jwt_valid)) {
+					#ifdef HTTP_AUTH_DEBUG
+					cerver_log_success ("JWT is authentic!");
+					#endif
+
+					if (decode_data) {
+						*decoded_data = decode_data (jwt->grants);
+					}
+
+					retval = true;
+				}
+
+				else {
+					#ifdef HTTP_AUTH_DEBUG
+					cerver_log_error (
+						"Failed to validate JWT: %08x", 
+						jwt_valid_get_status(jwt_valid)
+					);
+					#endif
+				}
+
+				jwt_free (jwt);
+			}
+
+			else {
+				#ifdef HTTP_AUTH_DEBUG
+				cerver_log_error ("Invalid JWT!");
+				#endif
+			}
+		}
+
+		jwt_valid_free (jwt_valid);
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region stats

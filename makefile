@@ -30,6 +30,10 @@ EXAMDIR		:= examples
 EXABUILD	:= $(EXAMDIR)/objs
 EXATARGET	:= $(EXAMDIR)/bin
 
+TESTDIR		:= test
+TESTBUILD	:= $(TESTDIR)/objs
+TESTTARGET	:= $(TESTDIR)/bin
+
 SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
@@ -41,12 +45,20 @@ INCDEP      := -I $(INCDIR)
 
 EXAFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
 EXALIBS		:= -L ./bin -l cerver
+EXAINC		:= -I ./$(EXAMDIR)
+
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
+TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
+TESTINC		:= -I ./$(TESTDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
+
+TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
+TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 # all: directories $(TARGET)
 all: directories $(SLIB)
@@ -71,6 +83,8 @@ clean:
 	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf $(EXABUILD)
 	@$(RM) -rf $(EXATARGET)
+	@$(RM) -rf $(TESTBUILD)
+	@$(RM) -rf $(TESTTARGET)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -93,9 +107,9 @@ $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
 examples: $(EXOBJS)
-	@mkdir -p ./examples/bin
-	@mkdir -p ./examples/bin/client
-	@mkdir -p ./examples/bin/web
+	@mkdir -p ./$(EXATARGET)
+	@mkdir -p ./$(EXATARGET)/client
+	@mkdir -p ./$(EXATARGET)/web
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers -l cerver
@@ -113,18 +127,34 @@ examples: $(EXOBJS)
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/api.o -o ./$(EXATARGET)/web/api -l cerver
+	$(CC) -I ./$(INCDIR) -I $(EXAMDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web -l cerver
 
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(EXAFLAGS) $(INC) $(EXALIBS) -c -o $@ $<
+	$(CC) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
 	@$(CC) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
 	@cp -f $(EXABUILD)/$*.$(DEPEXT) $(EXABUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
 	@rm -f $(EXABUILD)/$*.$(DEPEXT).tmp
 
-.PHONY: all clean examples
+test: $(TESTOBJS)
+	@mkdir -p ./$(TESTTARGET)
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/dlist.o -o ./$(TESTTARGET)/dlist $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode $(TESTLIBS)
+
+# compile tests
+$(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
+	@mkdir -p $(dir $@)
+	$(CC) $(TESTFLAGS) $(INC) $(TESTLIBS) -c -o $@ $<
+	@$(CC) $(TESTFLAGS) $(INCDEP) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
+	@cp -f $(TESTBUILD)/$*.$(DEPEXT) $(TESTBUILD)/$*.$(DEPEXT).tmp
+	@sed -e 's|.*:|$(TESTBUILD)/$*.$(OBJEXT):|' < $(TESTBUILD)/$*.$(DEPEXT).tmp > $(TESTBUILD)/$*.$(DEPEXT)
+	@sed -e 's/.*://' -e 's/\\$$//' < $(TESTBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(TESTBUILD)/$*.$(DEPEXT)
+	@rm -f $(TESTBUILD)/$*.$(DEPEXT).tmp
+
+.PHONY: all clean examples test
