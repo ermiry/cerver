@@ -50,7 +50,7 @@ static int dlist_internal_insert_before (
 	if (le) {
 		le->data = (void *) data;
 
-		if (element == NULL) {
+		if (element == NULL || !element->prev) {
 			if (dlist->size == 0) dlist->end = le;
 			else dlist->start->prev = le;
 		
@@ -245,7 +245,32 @@ static void dlist_internal_move_matches (
 
 }
 
-static void dlist_internal_delete (DoubleList *dlist) {
+static void dlist_internal_merge_two (
+	DoubleList *one, DoubleList *two
+) {
+
+	if (one->size) {
+		if (two->size) {
+			one->end->next = two->start;
+			one->end = two->end;
+		}
+		
+		else one->end->next = NULL;
+	}
+
+	else {
+		one->start = two->start;
+		one->end = two->end;
+	}
+
+	one->size += two->size;
+
+	two->start = two->end = NULL;
+	two->size = 0;
+
+}
+
+static void dlist_internal_remove_elements (DoubleList *dlist) {
 
 	void *data = NULL;
 	while (dlist->size > 0) {
@@ -254,6 +279,18 @@ static void dlist_internal_delete (DoubleList *dlist) {
 			if (dlist->destroy) dlist->destroy (data);
 		}
 	}
+
+}
+
+static void dlist_internal_delete (DoubleList *dlist) {
+
+	dlist_internal_remove_elements (dlist);
+
+	(void) pthread_mutex_unlock (dlist->mutex);
+	pthread_mutex_destroy (dlist->mutex);
+	free (dlist->mutex);
+
+	free (dlist);
 
 }
 
@@ -331,12 +368,6 @@ void dlist_delete (void *dlist_ptr) {
 		(void) pthread_mutex_lock (dlist->mutex);
 
 		dlist_internal_delete (dlist);
-
-		(void) pthread_mutex_unlock (dlist->mutex);
-		pthread_mutex_destroy (dlist->mutex);
-		free (dlist->mutex);
-
-		free (dlist);
 	}
 
 }
@@ -360,11 +391,9 @@ int dlist_delete_if_empty (void *dlist_ptr) {
 			retval = 0;
 		}
 
-		(void) pthread_mutex_unlock (dlist->mutex);
-		pthread_mutex_destroy (dlist->mutex);
-		free (dlist->mutex);
-
-		free (dlist);
+		else {
+			(void) pthread_mutex_unlock (dlist->mutex);
+		}
 	}
 
 	return retval;
@@ -390,11 +419,9 @@ int dlist_delete_if_not_empty (void *dlist_ptr) {
 			retval = 0;
 		}
 
-		(void) pthread_mutex_unlock (dlist->mutex);
-		pthread_mutex_destroy (dlist->mutex);
-		free (dlist->mutex);
-
-		free (dlist);
+		else {
+			(void) pthread_mutex_unlock (dlist->mutex);
+		}
 	}
 
 	return retval;
@@ -1316,49 +1343,17 @@ DoubleList *dlist_split_by_condition (
 
 }
 
-// merges two dlists into a newly created one
-// moves list elements from both dlist into a new dlist
-// first the elements of one and then all the elements of two
-// both dlists can be safely deleted after this operation
-// returns a newly allocated dlist with size = one->size + two->size
-DoubleList *dlist_merge_two (DoubleList *one, DoubleList *two) {
-
-	DoubleList *merge = NULL;
+// merges elements from two into one
+// moves list elements from two into the end of one
+// two can be safely deleted after this operation
+// one should be of size = one->size + two->size
+void dlist_merge_two (DoubleList *one, DoubleList *two) {
 
 	if (one && two) {
 		if (one->size || two->size) {
-			merge = dlist_init (one->destroy, one->compare);
-			if (merge) {
-				if (one->size) {
-					merge->start = one->start;
-					if (two->size) {
-						one->end->next = two->start;
-						merge->end = two->end;
-					}
-
-					else {
-						one->end->next = NULL;
-						merge->end = one->end;
-					}
-				}
-
-				else {
-					merge->start = two->start;
-					merge->end = two->end;
-				}
-
-				merge->size += one->size;
-				merge->size += two->size;
-
-				// reset original dlists
-				one->start = one->end = NULL;
-				two->start = two->end = NULL;
-				one->size = two->size = 0;
-			}
+			dlist_internal_merge_two (one, two);
 		}
 	}
-
-	return merge;
 
 }
 
@@ -1387,6 +1382,35 @@ DoubleList *dlist_merge_two_by_condition (
 				compare, match
 			);
 		}
+	}
+
+	return merge;
+
+}
+
+// expects a dlist of dlists and creates a new dlist with all the elements
+// elements from original dlists are moved directly to the new list
+// the original dlists can be deleted after this operation
+// returns a newly allocated dlist with all the elements
+DoubleList *dlist_merge_many (DoubleList *many_dlists) {
+
+	DoubleList *merge = NULL;
+
+	if (many_dlists) {
+		if (many_dlists->size) {
+			DoubleList *first = (DoubleList *) many_dlists->start->data;
+
+			merge = dlist_init (first->destroy, first->compare);
+			if (merge) {
+				ListElement *le = NULL;
+				dlist_for_each (many_dlists, le) {
+					dlist_internal_merge_two (
+						merge, (DoubleList *) le->data
+					);
+				}
+			}
+		}
+
 	}
 
 	return merge;
