@@ -140,6 +140,15 @@ CERVER_PUBLIC void cerver_log (
 	const char *format, ...
 );
 
+// creates and prints a message of custom types
+// to stdout or stderr based on type
+// and to log file if available
+// this messages ignore the quiet flag
+CERVER_PUBLIC void cerver_log_both (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+);
+
 // prints a message with no type, effectively making this a custom printf ()
 CERVER_PUBLIC void cerver_log_msg (const char *msg, ...);
 
