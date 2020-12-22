@@ -49,6 +49,7 @@
 #define CERVER_DEFAULT_ON_HOLD_TIMEOUT				2000
 #define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
 #define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
+#define CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE	4096
 
 #define CERVER_DEFAULT_USE_SESSIONS					false
 
@@ -267,6 +268,7 @@ struct _Cerver {
 	pthread_mutex_t *on_hold_poll_lock;
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
+	size_t on_hold_receive_buffer_size;
 
 	// allow the clients to use sessions (have multiple connections)
 	bool use_sessions;
@@ -437,6 +439,12 @@ CERVER_EXPORT void cerver_set_on_hold_max_bad_packets (
 // any packet that fails the check will be considered as a bad packet
 CERVER_EXPORT void cerver_set_on_hold_check_packets (
 	Cerver *cerver, bool check
+);
+
+// sets the size of the buffer to be allocated
+// to receive packets from on hold connections
+CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
+	Cerver *cerver, const size_t on_hold_receive_buffer_size
 );
 
 // configures the cerver to use client sessions
