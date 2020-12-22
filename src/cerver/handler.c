@@ -1744,6 +1744,54 @@ static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_
 
 }
 
+void cerver_receive_internal (
+	CerverReceive *cr,
+	char *packet_buffer, const size_t packet_buffer_size
+) {
+
+	ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, packet_buffer_size, 0);
+
+	switch (rc) {
+		case -1: {
+			// no more data to read
+			if (errno != EWOULDBLOCK) {
+				#ifdef CERVER_DEBUG
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"cerver_receive () - rc < 0 - sock fd: %d",
+					cr->socket->sock_fd
+				);
+
+				perror ("Error ");
+				#endif
+
+				cerver_switch_receive_handle_failed (cr);
+			}
+		} break;
+
+		case 0: {
+			// man recv -> steam socket perfomed an orderly shutdown
+			// but in dgram it might mean something?
+			#ifdef CERVER_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"cerver_recieve () - rc == 0 - sock fd: %d",
+				cr->socket->sock_fd
+			);
+
+			// perror ("Error ");
+			#endif
+
+			cerver_switch_receive_handle_failed (cr);
+		} break;
+
+		default: {
+			cerver_receive_success (cr, rc, packet_buffer);
+		} break;
+	}
+
+}
+
 // receive all incoming data from the socket
 void cerver_receive (void *cerver_receive_ptr) {
 
@@ -1755,51 +1803,9 @@ void cerver_receive (void *cerver_receive_ptr) {
 				char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
 				// cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
 				if (packet_buffer) {
+					// FIXME: memory leak when recv () fails!
 					// ssize_t rc = read (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size);
-					ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, cr->cerver->receive_buffer_size, 0);
-
-					switch (rc) {
-						case -1: {
-							// no more data to read
-							if (errno != EWOULDBLOCK) {
-								#ifdef CERVER_DEBUG
-								cerver_log (
-									LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-									"cerver_receive () - rc < 0 - sock fd: %d",
-									cr->socket->sock_fd
-								);
-
-								perror ("Error ");
-								#endif
-
-								cerver_switch_receive_handle_failed (cr);
-							}
-
-							free (packet_buffer);
-						} break;
-
-						case 0: {
-							// man recv -> steam socket perfomed an orderly shutdown
-							// but in dgram it might mean something?
-							#ifdef CERVER_DEBUG
-							cerver_log (
-								LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-								"cerver_recieve () - rc == 0 - sock fd: %d",
-								cr->socket->sock_fd
-							);
-
-							// perror ("Error ");
-							#endif
-
-							cerver_switch_receive_handle_failed (cr);
-
-							free (packet_buffer);
-						} break;
-
-						default: {
-							cerver_receive_success (cr, rc, packet_buffer);
-						} break;
-					}
+					cerver_receive_internal (cr, packet_buffer, cr->cerver->receive_buffer_size);
 
 					// 28/05/2020 -- 02:40
 					// packet_buffer is not free from inside cr->cerver->handle_received_buffer ()

@@ -220,6 +220,11 @@ CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
 
 CERVER_PRIVATE void cerver_switch_receive_handle_failed (CerverReceive *cr);
 
+CERVER_PRIVATE void cerver_receive_internal (
+	CerverReceive *cr,
+	char *packet_buffer, const size_t packet_buffer_size
+);
+
 // receive all incoming data from the socket
 CERVER_PRIVATE void cerver_receive (void *ptr);
 
