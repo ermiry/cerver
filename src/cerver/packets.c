@@ -69,8 +69,11 @@ PacketVersion *packet_version_create (void) {
 void packet_version_print (PacketVersion *version) {
 
 	if (version) {
-		printf ("Protocol id: %d\n", version->protocol_id);
-		printf ("Protocol version: { %d - %d }\n", version->protocol_version.major, version->protocol_version.minor);
+		(void) printf ("Protocol id: %d\n", version->protocol_id);
+		(void) printf (
+			"Protocol version: { %d - %d }\n",
+			version->protocol_version.major, version->protocol_version.minor
+		);
 	}
 
 }
@@ -82,12 +85,19 @@ void packet_version_print (PacketVersion *version) {
 PacketsPerType *packets_per_type_new (void) {
 
 	PacketsPerType *packets_per_type = (PacketsPerType *) malloc (sizeof (PacketsPerType));
-	if (packets_per_type) memset (packets_per_type, 0, sizeof (PacketsPerType));
+	if (packets_per_type) {
+		(void) memset (packets_per_type, 0, sizeof (PacketsPerType));
+	}
+
 	return packets_per_type;
 
 }
 
-void packets_per_type_delete (void *ptr) { if (ptr) free (ptr); }
+void packets_per_type_delete (void *packets_per_type_ptr) {
+		
+	if (packets_per_type_ptr) free (packets_per_type_ptr);
+
+}
 
 void packets_per_type_print (PacketsPerType *packets_per_type) {
 
@@ -116,16 +126,22 @@ PacketHeader *packet_header_new (void) {
 
 	PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
 	if (header) {
-		memset (header, 0, sizeof (PacketHeader));
+		(void) memset (header, 0, sizeof (PacketHeader));
 	}
 
 	return header;
 
 }
 
-void packet_header_delete (PacketHeader *header) { if (header) free (header); }
+void packet_header_delete (PacketHeader *header) {
+	
+	if (header) free (header);
+	
+}
 
-PacketHeader *packet_header_create (PacketType packet_type, size_t packet_size, u32 req_type) {
+PacketHeader *packet_header_create (
+	PacketType packet_type, size_t packet_size, u32 req_type
+) {
 
 	PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
 	if (header) {
@@ -164,7 +180,7 @@ u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {
 	if (source) {
 		*dest = (PacketHeader *) malloc (sizeof (PacketHeader));
 		if (*dest) {
-			memcpy (*dest, source, sizeof (PacketHeader));
+			(void) memcpy (*dest, source, sizeof (PacketHeader));
 			retval = 0;
 		}
 	}
@@ -210,7 +226,9 @@ Packet *packet_new (void) {
 
 // create a new packet with the option to pass values directly
 // data is copied into packet buffer and can be safely freed
-Packet *packet_create (PacketType type, void *data, size_t data_size) {
+Packet *packet_create (
+	PacketType type, void *data, size_t data_size
+) {
 
 	Packet *packet = packet_new ();
 	if (packet) {
@@ -222,10 +240,10 @@ Packet *packet_create (PacketType type, void *data, size_t data_size) {
 
 }
 
-void packet_delete (void *ptr) {
+void packet_delete (void *packet_ptr) {
 
-	if (ptr) {
-		Packet *packet = (Packet *) ptr;
+	if (packet_ptr) {
+		Packet *packet = (Packet *) packet_ptr;
 
 		packet->cerver = NULL;
 		packet->client = NULL;
@@ -249,8 +267,12 @@ void packet_delete (void *ptr) {
 }
 
 // sets the pakcet destinatary is directed to and the protocol to use
-void packet_set_network_values (Packet *packet, Cerver *cerver,
-	Client *client, Connection *connection, Lobby *lobby) {
+void packet_set_network_values (
+	Packet *packet,
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
+) {
 
 	if (packet) {
 		packet->cerver = cerver;
@@ -263,11 +285,16 @@ void packet_set_network_values (Packet *packet, Cerver *cerver,
 
 // sets the packet's header
 // copies the header's values into the packet
-void packet_set_header (Packet *packet, PacketHeader *header) {
+void packet_set_header (
+	Packet *packet, PacketHeader *header
+) {
 
 	if (packet && header) {
-		if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
-		if (packet->header) memcpy (&packet->header, header, sizeof (PacketHeader));
+		if (!packet->header)
+			packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
+
+		if (packet->header)
+			(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 	}
 
 }
@@ -297,7 +324,9 @@ void packet_set_header_values (
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
-u8 packet_set_data (Packet *packet, void *data, size_t data_size) {
+u8 packet_set_data (
+	Packet *packet, void *data, size_t data_size
+) {
 
 	u8 retval = 1;
 
@@ -310,7 +339,7 @@ u8 packet_set_data (Packet *packet, void *data, size_t data_size) {
 		packet->data_size = data_size;
 		packet->data = malloc (packet->data_size);
 		if (packet->data) {
-			memcpy (packet->data, data, data_size);
+			(void) memcpy (packet->data, data, data_size);
 			packet->data_end = (char *) packet->data;
 			packet->data_end += packet->data_size;
 
@@ -329,7 +358,9 @@ u8 packet_set_data (Packet *packet, void *data, size_t data_size) {
 // if the packet is empty, creates a new buffer
 // it creates a new copy of the data and the original can be safely freed
 // this does not work if the data has been set using a reference
-u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
+u8 packet_append_data (
+	Packet *packet, void *data, size_t data_size
+) {
 
 	u8 retval = 1;
 
@@ -343,7 +374,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
 				packet->data_end += packet->data_size;
 
 				// copy the new buffer
-				memcpy (packet->data_end, data, data_size);
+				(void) memcpy (packet->data_end, data, data_size);
 				packet->data_end += data_size;
 
 				packet->data = new_data;
@@ -370,7 +401,7 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
 			packet->data = malloc (packet->data_size);
 			if (packet->data) {
 				// copy the data to the packet data buffer
-				memcpy (packet->data, data, data_size);
+				(void) memcpy (packet->data, data, data_size);
 				packet->data_end = (char *) packet->data;
 				packet->data_end += packet->data_size;
 
@@ -398,7 +429,9 @@ u8 packet_append_data (Packet *packet, void *data, size_t data_size) {
 // data will not be copied into the packet and will not be freed after use
 // this method is usefull for example if you just want to send a raw json packet to a non-cerver
 // use this method with packet_send () with the raw flag on
-u8 packet_set_data_ref (Packet *packet, void *data, size_t data_size) {
+u8 packet_set_data_ref (
+	Packet *packet, void *data, size_t data_size
+) {
 
 	u8 retval = 1;
 
@@ -421,7 +454,9 @@ u8 packet_set_data_ref (Packet *packet, void *data, size_t data_size) {
 // sets a the packet's packet using by copying the passed data
 // deletes the previuos packet's packet
 // returns 0 on succes, 1 on error
-u8 packet_set_packet (Packet *packet, void *data, size_t data_size) {
+u8 packet_set_packet (
+	Packet *packet, void *data, size_t data_size
+) {
 
 	u8 retval = 1;
 
@@ -433,7 +468,7 @@ u8 packet_set_packet (Packet *packet, void *data, size_t data_size) {
 		packet->packet_size = data_size;
 		packet->packet = malloc (packet->packet_size);
 		if (packet->packet) {
-			memcpy (packet->packet, data, data_size);
+			(void) memcpy (packet->packet, data, data_size);
 
 			retval = 0;
 		}
@@ -446,7 +481,9 @@ u8 packet_set_packet (Packet *packet, void *data, size_t data_size) {
 // sets a reference to a data buffer to send as the packet
 // data will not be copied into the packet and will not be freed after use
 // usefull when you need to generate your own cerver type packet by hand
-u8 packet_set_packet_ref (Packet *packet, void *data, size_t packet_size) {
+u8 packet_set_packet_ref (
+	Packet *packet, void *data, size_t packet_size
+) {
 
 	u8 retval = 1;
 
@@ -487,11 +524,11 @@ u8 packet_generate (Packet *packet) {
 		packet->packet = malloc (packet->packet_size);
 		if (packet->packet) {
 			char *end = (char *) packet->packet;
-			memcpy (end, packet->header, sizeof (PacketHeader));
+			(void) memcpy (end, packet->header, sizeof (PacketHeader));
 
 			if (packet->data_size > 0) {
 				end += sizeof (PacketHeader);
-				memcpy (end, packet->data, packet->data_size);
+				(void) memcpy (end, packet->data, packet->data_size);
 			}
 
 			retval = 0;
@@ -535,7 +572,9 @@ Packet *packet_generate_request (
 }
 
 static inline u8 packet_send_tcp_actual (
-	const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw
+	const Packet *packet,
+	Connection *connection,
+	int flags, size_t *total_sent, bool raw
 ) {
 
 	ssize_t sent = 0;
@@ -561,16 +600,20 @@ static inline u8 packet_send_tcp_actual (
 // sends a packet directly using the tcp protocol and the packet sock fd
 // returns 0 on success, 1 on error
 static u8 packet_send_tcp (
-	const Packet *packet, Connection *connection, int flags, size_t *total_sent, bool raw
+	const Packet *packet,
+	Connection *connection,
+	int flags, size_t *total_sent, bool raw
 ) {
 
 	u8 retval = 1;
 
-	pthread_mutex_lock (connection->socket->write_mutex);
+	(void) pthread_mutex_lock (connection->socket->write_mutex);
 
-	retval = packet_send_tcp_actual (packet, connection, flags, total_sent, raw);
+	retval = packet_send_tcp_actual (
+		packet, connection, flags, total_sent, raw
+	);
 
-	pthread_mutex_unlock (connection->socket->write_mutex);
+	(void) pthread_mutex_unlock (connection->socket->write_mutex);
 
 	return retval;
 
@@ -578,12 +621,16 @@ static u8 packet_send_tcp (
 
 // sends a packet to the socket in two parts, first the header & then the data
 // returns 0 on success, 1 on error
-static u8 packet_send_split_tcp (const Packet *packet, Connection *connection, int flags, size_t *total_sent) {
+static u8 packet_send_split_tcp (
+	const Packet *packet,
+	Connection *connection,
+	int flags, size_t *total_sent
+) {
 
 	u8 retval = 1;
 
 	if (packet && connection) {
-		pthread_mutex_lock (connection->socket->write_mutex);
+		(void) pthread_mutex_lock (connection->socket->write_mutex);
 
 		size_t actual_sent = 0;
 
@@ -625,7 +672,7 @@ static u8 packet_send_split_tcp (const Packet *packet, Connection *connection, i
 			retval = 0;
 		}
 
-		pthread_mutex_unlock (connection->socket->write_mutex);
+		(void) pthread_mutex_unlock (connection->socket->write_mutex);
 	}
 
 	return retval;
@@ -645,7 +692,9 @@ static u8 packet_send_udp (const void *packet, size_t packet_size) {
 
 static void packet_send_update_stats (
 	PacketType packet_type, size_t sent,
-	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
 ) {
 
 	if (cerver) {
@@ -753,7 +802,9 @@ static inline u8 packet_send_internal (
 	const Packet *packet,
 	int flags, size_t *total_sent,
 	bool raw, bool split, bool unsafe,
-	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
 ) {
 
 	u8 retval = 1;
@@ -779,9 +830,9 @@ static inline u8 packet_send_internal (
 
 				else {
 					#ifdef PACKETS_DEBUG
-					printf ("\n");
+					(void) printf ("\n");
 					perror ("packet_send_internal () - Error");
-					printf ("\n");
+					(void) printf ("\n");
 					#endif
 
 					if (cerver) cerver->stats->sent_packets->n_bad_packets += 1;
@@ -806,7 +857,9 @@ static inline u8 packet_send_internal (
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
-u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+u8 packet_send (
+	const Packet *packet, int flags, size_t *total_sent, bool raw
+) {
 
 	return packet_send_internal (
 		packet, flags, total_sent,
@@ -819,7 +872,9 @@ u8 packet_send (const Packet *packet, int flags, size_t *total_sent, bool raw) {
 // works just as packet_send () but the socket's write mutex won't be locked
 // useful when you need to lock the mutex manually
 // returns 0 on success, 1 on error
-u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool raw) {
+u8 packet_send_unsafe (
+	const Packet *packet, int flags, size_t *total_sent, bool raw
+) {
 
 	return packet_send_internal (
 		packet, flags, total_sent,
@@ -837,7 +892,9 @@ u8 packet_send_unsafe (const Packet *packet, int flags, size_t *total_sent, bool
 u8 packet_send_to (
 	const Packet *packet,
 	size_t *total_sent, bool raw,
-	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
 ) {
 
 	return packet_send_internal (
@@ -854,7 +911,9 @@ u8 packet_send_to (
 // the socket's write mutex will be locked to ensure that the packet
 // is sent correctly and to avoid race conditions
 // returns 0 on success, 1 on error
-u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
+u8 packet_send_split (
+	const Packet *packet, int flags, size_t *total_sent
+) {
 
 	return packet_send_internal (
 		packet, flags, total_sent,
@@ -870,7 +929,9 @@ u8 packet_send_split (const Packet *packet, int flags, size_t *total_sent) {
 u8 packet_send_to_split (
 	const Packet *packet,
 	size_t *total_sent,
-	Cerver *cerver, Client *client, Connection *connection, Lobby *lobby
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
 ) {
 
 	return packet_send_internal (
@@ -922,7 +983,7 @@ u8 packet_send_pieces (
 	u8 retval = 1;
 
 	if (packet && pieces && sizes) {
-		pthread_mutex_lock (packet->connection->socket->write_mutex);
+		(void) pthread_mutex_lock (packet->connection->socket->write_mutex);
 
 		size_t actual_sent = 0;
 
@@ -953,7 +1014,7 @@ u8 packet_send_pieces (
 
 		if (total_sent) *total_sent = actual_sent;
 
-		pthread_mutex_unlock (packet->connection->socket->write_mutex);
+		(void) pthread_mutex_unlock (packet->connection->socket->write_mutex);
 	}
 
 	return retval;
@@ -975,7 +1036,7 @@ u8 packet_send_to_socket (
 		const char *p = raw ? (char *) packet->data : (char *) packet->packet;
 		size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
-		pthread_mutex_lock (socket->write_mutex);
+		(void) pthread_mutex_lock (socket->write_mutex);
 
 		while (packet_size > 0) {
 			sent = send (socket->sock_fd, p, packet_size, flags);
@@ -990,7 +1051,7 @@ u8 packet_send_to_socket (
 
 		if (total_sent) *total_sent = (size_t) sent;
 
-		pthread_mutex_unlock (socket->write_mutex);
+		(void) pthread_mutex_unlock (socket->write_mutex);
 	}
 
 	return retval;
