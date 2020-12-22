@@ -1117,7 +1117,10 @@ static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connec
 
 }
 
-static inline void on_hold_poll_handle (Cerver *cerver) {
+static inline void on_hold_poll_handle (
+	Cerver *cerver,
+	char *packet_buffer
+) {
 
 	// one or more fd(s) are readable, need to determine which ones they are
 	for (u32 idx = 0; idx < cerver->max_on_hold_connections; idx++) {
@@ -1129,7 +1132,11 @@ static inline void on_hold_poll_handle (Cerver *cerver) {
 			if (cr) {
 				switch (cerver->hold_fds[idx].revents) {
 					case POLLIN: {
-						cerver_receive (cr);
+						cerver_receive_internal (
+							cr,
+							packet_buffer,
+							cerver->on_hold_receive_buffer_size
+						);
 					} break;
 
 					default: {
@@ -1152,18 +1159,26 @@ void *on_hold_poll (void *cerver_ptr) {
 
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s ON HOLD poll has started!", cerver->info->name->str
+			"Cerver %s ON HOLD poll has started!",
+			cerver->info->name->str
 		);
 
-		char thread_name[64] = { 0 };
+		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
 		(void) snprintf (
-			thread_name, 64, "%s-on-hold", cerver->info->name->str
+			thread_name, THREAD_NAME_BUFFER_LEN,
+			"%s-on-hold", cerver->info->name->str
 		);
-		thread_set_name (thread_name);
 
-		#ifdef AUTH_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+		(void) thread_set_name (thread_name);
+
+		char *packet_buffer = (char *) calloc (
+			cerver->on_hold_receive_buffer_size, sizeof (char)
+		);
+
+		if (packet_buffer) {
+			#ifdef AUTH_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Waiting for connections to put on hold..."
 			);
 			#endif
@@ -1198,21 +1213,27 @@ void *on_hold_poll (void *cerver_ptr) {
 						// #endif
 					} break;
 
-				default: {
-					if (cerver->current_on_hold_nfds) {
-						on_hold_poll_handle (cerver);
-					}
-				} break;
-			}
+					default: {
+						if (cerver->current_on_hold_nfds) {
+							on_hold_poll_handle (
+								cerver,
+								packet_buffer
+							);
+						}
+					} break;
+				}
 			}
 
 			#ifdef AUTH_DEBUG
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
 				"Cerver %s ON HOLD poll has stopped!",
-			cerver->info->name->str
-		);
-		#endif
+				cerver->info->name->str
+			);
+			#endif
+
+			free (packet_buffer);
+		}
 	}
 
 	else {
