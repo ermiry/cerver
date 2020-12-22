@@ -4,11 +4,11 @@
 #include <stdbool.h>
 
 #include <unistd.h>
-
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <fcntl.h>
+
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include "cerver/config.h"
 
@@ -26,18 +26,28 @@ typedef enum Protocol {
 
 // enable/disable blocking on a socket
 // true on success, false if there was an error
-CERVER_PUBLIC bool sock_set_blocking (int32_t fd, bool blocking);
+CERVER_PUBLIC bool sock_set_blocking (
+	int32_t fd, bool blocking
+);
 
-CERVER_PUBLIC char *sock_ip_to_string ( const struct sockaddr *address);
+CERVER_PUBLIC char *sock_ip_to_string (
+	const struct sockaddr *address
+);
 
-CERVER_PUBLIC bool sock_ip_equal (const struct sockaddr *a, const struct sockaddr *b);
+CERVER_PUBLIC bool sock_ip_equal (
+	const struct sockaddr *a, const struct sockaddr *b
+);
 
-CERVER_PUBLIC in_port_t sock_ip_port (const struct sockaddr *address);
+CERVER_PUBLIC in_port_t sock_ip_port (
+	const struct sockaddr *address
+);
 
 // sets a timeout (in seconds) for a socket
 // the socket will still block until the timeout is completed
 // if no data was read, a EAGAIN error is returned
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int sock_set_timeout (int sock_fd, time_t timeout);
+CERVER_PUBLIC int sock_set_timeout (
+	int sock_fd, time_t timeout
+);
 
 #endif
