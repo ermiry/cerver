@@ -225,9 +225,6 @@ CERVER_PRIVATE void cerver_receive_internal (
 	char *packet_buffer, const size_t packet_buffer_size
 );
 
-// receive all incoming data from the socket
-CERVER_PRIVATE void cerver_receive (void *ptr);
-
 #pragma endregion
 
 #pragma region register

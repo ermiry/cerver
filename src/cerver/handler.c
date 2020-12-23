@@ -1799,48 +1799,6 @@ void cerver_receive_internal (
 
 }
 
-// receive all incoming data from the socket
-void cerver_receive (void *cerver_receive_ptr) {
-
-	if (cerver_receive_ptr) {
-		CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
-
-		if (cr->cerver && cr->socket) {
-			if (cr->socket->sock_fd > 0) {
-				char *packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-				// cr->socket->packet_buffer = (char *) calloc (cr->cerver->receive_buffer_size, sizeof (char));
-				if (packet_buffer) {
-					// FIXME: memory leak when recv () fails!
-					// ssize_t rc = read (cr->sock_fd, packet_buffer, cr->cerver->receive_buffer_size);
-					cerver_receive_internal (cr, packet_buffer, cr->cerver->receive_buffer_size);
-
-					// 28/05/2020 -- 02:40
-					// packet_buffer is not free from inside cr->cerver->handle_received_buffer ()
-					// free (packet_buffer);
-				}
-
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
-						"cerver_receive () - Failed to allocate packet buffer for connection with sock fd <%d>!",
-						cr->connection->socket->sock_fd
-					);
-				}
-			}
-
-			else {
-				cerver_log_warning ("cerver_receive () - cr->socket <= 0");
-				cerver_receive_delete (cr);
-			}
-		}
-
-		else {
-			cerver_receive_delete (cr);
-		}
-	}
-
-}
-
 // packet buffer only gets deleted if cerver_receive_handle_buffer () is used
 static inline u8 cerver_receive_threads_actual (
 	CerverReceive *cr,
@@ -2674,7 +2632,9 @@ static inline void cerver_poll_handle_actual_accept (Cerver *cerver) {
 }
 
 static inline void cerver_poll_handle_actual_receive (
-	Cerver *cerver, struct pollfd *active_fd
+	Cerver *cerver,
+	struct pollfd *active_fd,
+	char *packet_buffer
 ) {
 
 	CerverReceive *cr = cerver_receive_create (
@@ -2687,8 +2647,12 @@ static inline void cerver_poll_handle_actual_receive (
 			case POLLIN: {
 				// printf ("Receive fd: %d\n", cerver->fds[i].fd);
 
-				// handle all received packets in the same thread
-				cerver_receive (cr);
+				// receive all incoming data from the socket
+				// and handle the packets in the same thread
+				cerver_receive_internal (
+					cr,
+					packet_buffer, cerver->receive_buffer_size
+				);
 			} break;
 
 			// A disconnection request has been initiated by the other end
@@ -2732,7 +2696,9 @@ static inline void cerver_poll_handle (
 
 			else {
 				cerver_poll_handle_actual_receive (
-					cerver, &cerver->fds[idx]
+					cerver,
+					&cerver->fds[idx],
+					packet_buffer
 				);
 			}
 		}
