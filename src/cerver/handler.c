@@ -1343,204 +1343,175 @@ static void cerver_receive_handle_spare_packet (
 void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 
 	Cerver *cerver = receive_handle->cerver;
-	// i32 sock_fd = receive_handle->sock_fd;
 	char *buffer = receive_handle->buffer;
 	size_t buffer_size = receive_handle->buffer_size;
 	#ifdef HANDLER_DEBUG
 	i32 sock_fd = receive_handle->socket->sock_fd;
 	#endif
-	// char *buffer = receive_handle->socket->packet_buffer;
-	// size_t buffer_size = receive_handle->socket->packet_buffer_size;
 	Lobby *lobby = receive_handle->lobby;
 
-	pthread_mutex_lock (receive_handle->socket->read_mutex);
+	SockReceive *sock_receive = receive_handle->connection->sock_receive;
+	if (buffer && (buffer_size > 0)) {
+		char *end = buffer;
+		size_t buffer_pos = 0;
 
-	SockReceive *sock_receive = receive_handle->connection ? receive_handle->connection->sock_receive : NULL;
-	if (sock_receive) {
-		if (buffer && (buffer_size > 0)) {
-			char *end = buffer;
-			size_t buffer_pos = 0;
+		cerver_receive_handle_spare_packet (
+			receive_handle,
+			sock_receive,
+			buffer_size, &end, &buffer_pos
+		);
 
-			cerver_receive_handle_spare_packet (
-				receive_handle,
-				sock_receive,
-				buffer_size, &end, &buffer_pos
-			);
+		PacketHeader *header = NULL;
+		size_t packet_size = 0;
+		// char *packet_data = NULL;
 
-			PacketHeader *header = NULL;
-			size_t packet_size = 0;
-			// char *packet_data = NULL;
+		size_t remaining_buffer_size = 0;
+		size_t packet_real_size = 0;
+		size_t to_copy_size = 0;
 
-			size_t remaining_buffer_size = 0;
-			size_t packet_real_size = 0;
-			size_t to_copy_size = 0;
+		bool spare_header = false;
 
-			bool spare_header = false;
+		while (buffer_pos < buffer_size) {
+			remaining_buffer_size = buffer_size - buffer_pos;
 
-			while (buffer_pos < buffer_size) {
-				remaining_buffer_size = buffer_size - buffer_pos;
+			if (sock_receive->complete_header) {
+				packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+				// header = ((PacketHeader *) sock_receive->header);
+				// packet_header_print (header);
 
-				if (sock_receive->complete_header) {
-					packet_header_copy (&header, (PacketHeader *) sock_receive->header);
-					// header = ((PacketHeader *) sock_receive->header);
-					// packet_header_print (header);
+				end += sock_receive->remaining_header;
+				buffer_pos += sock_receive->remaining_header;
+				// printf ("buffer pos after copy to header: %ld\n", buffer_pos);
 
-					end += sock_receive->remaining_header;
-					buffer_pos += sock_receive->remaining_header;
-					// printf ("buffer pos after copy to header: %ld\n", buffer_pos);
+				// reset sock header values
+				free (sock_receive->header);
+				sock_receive->header = NULL;
+				sock_receive->header_end = NULL;
+				// sock_receive->curr_header_pos = 0;
+				// sock_receive->remaining_header = 0;
+				sock_receive->complete_header = false;
 
-					// reset sock header values
-					free (sock_receive->header);
-					sock_receive->header = NULL;
-					sock_receive->header_end = NULL;
-					// sock_receive->curr_header_pos = 0;
-					// sock_receive->remaining_header = 0;
-					sock_receive->complete_header = false;
+				spare_header = true;
+			}
 
-					spare_header = true;
-				}
+			else if (remaining_buffer_size >= sizeof (PacketHeader)) {
+				header = (PacketHeader *) end;
+				end += sizeof (PacketHeader);
+				buffer_pos += sizeof (PacketHeader);
 
-				else if (remaining_buffer_size >= sizeof (PacketHeader)) {
-					header = (PacketHeader *) end;
-					end += sizeof (PacketHeader);
-					buffer_pos += sizeof (PacketHeader);
+				// packet_header_print (header);
 
-					// packet_header_print (header);
+				spare_header = false;
+			}
 
-					spare_header = false;
-				}
+			if (header) {
+				// check the packet size
+				packet_size = header->packet_size;
+				if ((packet_size > 0) /* && (packet_size < 65536) */) {
+					// printf ("packet_size: %ld\n", packet_size);
+					// end += sizeof (PacketHeader);
+					// buffer_pos += sizeof (PacketHeader);
+					// printf ("first buffer pos: %ld\n", buffer_pos);
 
-				if (header) {
-					// check the packet size
-					packet_size = header->packet_size;
-					if ((packet_size > 0) /* && (packet_size < 65536) */) {
-						// printf ("packet_size: %ld\n", packet_size);
-						// end += sizeof (PacketHeader);
-						// buffer_pos += sizeof (PacketHeader);
-						// printf ("first buffer pos: %ld\n", buffer_pos);
+					Packet *packet = packet_new ();
+					if (packet) {
+						packet_header_copy (&packet->header, header);
+						packet->packet_size = header->packet_size;
+						packet->cerver = cerver;
+						packet->lobby = lobby;
 
-						Packet *packet = packet_new ();
-						if (packet) {
-							packet_header_copy (&packet->header, header);
-							packet->packet_size = header->packet_size;
-							packet->cerver = cerver;
-							packet->lobby = lobby;
+						if (spare_header) {
+							free (header);
+							header = NULL;
+						}
 
-							if (spare_header) {
-								free (header);
-								header = NULL;
-							}
+						// check for packet size and only copy what is in the current buffer
+						packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+						to_copy_size = 0;
+						if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
+							sock_receive->spare_packet = packet;
 
-							// check for packet size and only copy what is in the current buffer
-							packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
-							to_copy_size = 0;
-							if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
-								sock_receive->spare_packet = packet;
+							if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
+							else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
 
-								if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
-								else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-
-								sock_receive->missing_packet = packet_real_size - to_copy_size;
-							}
-
-							else {
-								if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
-									to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-								}
-
-								else {
-									to_copy_size = packet_real_size;
-								}
-
-								packet_delete (sock_receive->spare_packet);
-								sock_receive->spare_packet = NULL;
-							}
-
-							// printf ("to copy size: %ld\n", to_copy_size);
-							packet_set_data (packet, (void *) end, to_copy_size);
-
-							end += to_copy_size;
-							buffer_pos += to_copy_size;
-							// printf ("second buffer pos: %ld\n", buffer_pos);
-
-							if (!sock_receive->spare_packet) {
-								cerver_packet_select_handler (receive_handle, packet);
-							}
-
+							sock_receive->missing_packet = packet_real_size - to_copy_size;
 						}
 
 						else {
-							cerver_log (
-								LOG_TYPE_ERROR, LOG_TYPE_PACKET,
-								"Failed to create a new packet in cerver_handle_receive_buffer ()"
-							);
+							if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+								to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
+							}
+
+							else {
+								to_copy_size = packet_real_size;
+							}
+
+							packet_delete (sock_receive->spare_packet);
+							sock_receive->spare_packet = NULL;
 						}
+
+						// printf ("to copy size: %ld\n", to_copy_size);
+						packet_set_data (packet, (void *) end, to_copy_size);
+
+						end += to_copy_size;
+						buffer_pos += to_copy_size;
+						// printf ("second buffer pos: %ld\n", buffer_pos);
+
+						if (!sock_receive->spare_packet) {
+							cerver_packet_select_handler (receive_handle, packet);
+						}
+
 					}
 
 					else {
 						cerver_log (
-							LOG_TYPE_WARNING, LOG_TYPE_PACKET,
-							"Got a packet of invalid size: %ld", packet_size
+							LOG_TYPE_ERROR, LOG_TYPE_PACKET,
+							"Failed to create a new packet in cerver_handle_receive_buffer ()"
 						);
-
-						// FIXME: what to do next?
-
-						break;
 					}
 				}
 
 				else {
-					if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
+					cerver_log (
+						LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+						"Got a packet of invalid size: %ld", packet_size
+					);
 
-					else {
-						// handle part of a new header
-						// #ifdef CERVER_DEBUG
-						// cerver_log_debug ("Handle part of a new header...");
-						// #endif
+					// FIXME: what to do next?
 
-						// copy the piece of possible header that was cut of between recv ()
-						sock_receive->header = malloc (sizeof (PacketHeader));
-						memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
-
-						sock_receive->header_end = (char *) sock_receive->header;
-						sock_receive->header_end += remaining_buffer_size;
-
-						// sock_receive->curr_header_pos = remaining_buffer_size;
-						sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
-
-						// printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
-						// printf ("remaining header: %d\n", sock_receive->remaining_header);
-
-						buffer_pos += remaining_buffer_size;
-					}
+					break;
 				}
-
-				header = NULL;
 			}
+
+			else {
+				if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
+
+				else {
+					// handle part of a new header
+					// #ifdef CERVER_DEBUG
+					// cerver_log_debug ("Handle part of a new header...");
+					// #endif
+
+					// copy the piece of possible header that was cut of between recv ()
+					sock_receive->header = malloc (sizeof (PacketHeader));
+					memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
+
+					sock_receive->header_end = (char *) sock_receive->header;
+					sock_receive->header_end += remaining_buffer_size;
+
+					// sock_receive->curr_header_pos = remaining_buffer_size;
+					sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
+
+					// printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
+					// printf ("remaining header: %d\n", sock_receive->remaining_header);
+
+					buffer_pos += remaining_buffer_size;
+				}
+			}
+
+			header = NULL;
 		}
 	}
-
-	else {
-		#ifdef HANDLER_DEBUG
-		cerver_log (
-			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-			"Sock fd: %d does not have an associated sock_receive in cerver %s.",
-			sock_fd, cerver->info->name->str
-		);
-		#endif
-	}
-
-	// 28/05/2020 -- deleting the created buffer from cerver_receive ()
-	// to correct handle both cases: using thpool and single threaded
-	if (cerver->handler_type != CERVER_HANDLER_TYPE_THREADS) {
-		// TODO: avoid deleting buffer every time
-		if (buffer) free (receive_handle->buffer);
-	}
-
-	// free (receive->socket->packet_buffer);
-	// receive->socket->packet_buffer = NULL;
-
-	pthread_mutex_unlock (receive_handle->socket->read_mutex);
 
 	receive_handle_delete (receive_handle);
 
