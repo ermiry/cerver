@@ -1293,47 +1293,47 @@ static void cerver_receive_handle_spare_packet (
 	char **end, size_t *buffer_pos
 ) {
 
-	if (sock_receive) {
-		if (sock_receive->header) {
-			// copy the remaining header size
-			memcpy (sock_receive->header_end, (void *) *end, sock_receive->remaining_header);
-			// *end += sock_receive->remaining_header;
-			// *buffer_pos += sock_receive->remaining_header;
+	if (sock_receive->header) {
+		// copy the remaining header size
+		(void) memcpy (sock_receive->header_end, (void *) *end, sock_receive->remaining_header);
+		// *end += sock_receive->remaining_header;
+		// *buffer_pos += sock_receive->remaining_header;
 
-			// printf ("size in new header: %ld\n", ((PacketHeader *) sock_receive->header)->packet_size);
-			// packet_header_print (((PacketHeader *) sock_receive->header));
+		// printf ("size in new header: %ld\n", ((PacketHeader *) sock_receive->header)->packet_size);
+		// packet_header_print (((PacketHeader *) sock_receive->header));
 
-			sock_receive->complete_header = true;
-		}
+		sock_receive->complete_header = true;
+	}
 
-		else if (sock_receive->spare_packet) {
-			size_t copy_to_spare = 0;
-			if (sock_receive->missing_packet < buffer_size)
-				copy_to_spare = sock_receive->missing_packet;
+	else if (sock_receive->spare_packet) {
+		size_t copy_to_spare = 0;
+		if (sock_receive->missing_packet < buffer_size)
+			copy_to_spare = sock_receive->missing_packet;
 
-			else copy_to_spare = buffer_size;
+		else copy_to_spare = buffer_size;
 
-			// printf ("copy to spare: %ld\n", copy_to_spare);
+		// printf ("copy to spare: %ld\n", copy_to_spare);
 
-			// append new data from buffer to the spare packet
-			if (copy_to_spare > 0) {
-				packet_append_data (sock_receive->spare_packet, (void *) *end, copy_to_spare);
+		// append new data from buffer to the spare packet
+		if (copy_to_spare > 0) {
+			(void) packet_append_data (sock_receive->spare_packet, (void *) *end, copy_to_spare);
 
-				// check if we can handle the packet
-				size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-				if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-					cerver_packet_select_handler (receive_handle, sock_receive->spare_packet);
-					sock_receive->spare_packet = NULL;
-					sock_receive->missing_packet = 0;
-				}
-
-				else sock_receive->missing_packet -= copy_to_spare;
-
-				// offset for the buffer
-				if (copy_to_spare < buffer_size) *end += copy_to_spare;
-				*buffer_pos += copy_to_spare;
-				// printf ("buffer pos after copy to spare: %ld\n", *buffer_pos);
+			// check if we can handle the packet
+			size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
+			if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+				cerver_packet_select_handler (receive_handle, sock_receive->spare_packet);
+				sock_receive->spare_packet = NULL;
+				sock_receive->missing_packet = 0;
 			}
+
+			else {
+				sock_receive->missing_packet -= copy_to_spare;
+			}
+
+			// offset for the buffer
+			if (copy_to_spare < buffer_size) *end += copy_to_spare;
+			*buffer_pos += copy_to_spare;
+			// printf ("buffer pos after copy to spare: %ld\n", *buffer_pos);
 		}
 	}
 
