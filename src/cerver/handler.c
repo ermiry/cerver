@@ -1363,7 +1363,6 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 
 		PacketHeader *header = NULL;
 		size_t packet_size = 0;
-		// char *packet_data = NULL;
 
 		size_t remaining_buffer_size = 0;
 		size_t packet_real_size = 0;
@@ -1375,7 +1374,7 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 			remaining_buffer_size = buffer_size - buffer_pos;
 
 			if (sock_receive->complete_header) {
-				packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+				(void) packet_header_copy (&header, (PacketHeader *) sock_receive->header);
 				// header = ((PacketHeader *) sock_receive->header);
 				// packet_header_print (header);
 
@@ -1405,12 +1404,11 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 			}
 
 			if (header) {
+				// TODO: add check for max packet size
 				// check the packet size
 				packet_size = header->packet_size;
 				if ((packet_size > 0) /* && (packet_size < 65536) */) {
 					// printf ("packet_size: %ld\n", packet_size);
-					// end += sizeof (PacketHeader);
-					// buffer_pos += sizeof (PacketHeader);
 					// printf ("first buffer pos: %ld\n", buffer_pos);
 
 					Packet *packet = packet_new ();
@@ -1438,7 +1436,10 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 						}
 
 						else {
-							if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
+							if (
+								(header->packet_type == PACKET_TYPE_REQUEST)
+								&& (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)
+							) {
 								to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
 							}
 
@@ -1451,7 +1452,7 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 						}
 
 						// printf ("to copy size: %ld\n", to_copy_size);
-						packet_set_data (packet, (void *) end, to_copy_size);
+						(void) packet_set_data (packet, (void *) end, to_copy_size);
 
 						end += to_copy_size;
 						buffer_pos += to_copy_size;
@@ -1484,17 +1485,19 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 			}
 
 			else {
-				if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
+				if (sock_receive->spare_packet) {
+					(void) packet_append_data (
+						sock_receive->spare_packet, (void *) end, remaining_buffer_size
+					);
+				}
 
 				else {
 					// handle part of a new header
-					// #ifdef CERVER_DEBUG
 					// cerver_log_debug ("Handle part of a new header...");
-					// #endif
 
 					// copy the piece of possible header that was cut of between recv ()
 					sock_receive->header = malloc (sizeof (PacketHeader));
-					memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
+					(void) memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
 
 					sock_receive->header_end = (char *) sock_receive->header;
 					sock_receive->header_end += remaining_buffer_size;
