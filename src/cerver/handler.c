@@ -1286,9 +1286,12 @@ CerverReceive *cerver_receive_create_full (
 
 }
 
-static void cerver_receive_handle_spare_packet (ReceiveHandle *receive_handle,
+static void cerver_receive_handle_spare_packet (
+	ReceiveHandle *receive_handle,
 	SockReceive *sock_receive,
-	size_t buffer_size, char **end, size_t *buffer_pos) {
+	size_t buffer_size,
+	char **end, size_t *buffer_pos
+) {
 
 	if (sock_receive) {
 		if (sock_receive->header) {
@@ -1613,7 +1616,9 @@ void cerver_switch_receive_handle_failed (CerverReceive *cr) {
 
 }
 
-static inline void cerver_receive_success_receive_handle (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
+static inline void cerver_receive_success_receive_handle (
+	CerverReceive *cr, ssize_t rc, char *packet_buffer
+) {
 
 	ReceiveHandle *receive_handle = receive_handle_new ();
 	if (receive_handle) {
@@ -1680,7 +1685,9 @@ static inline void cerver_receive_success_receive_handle (CerverReceive *cr, ssi
 
 }
 
-static void cerver_receive_success (CerverReceive *cr, ssize_t rc, char *packet_buffer) {
+static void cerver_receive_success (
+	CerverReceive *cr, ssize_t rc, char *packet_buffer
+) {
 
 	// cerver_log (
 	// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
@@ -2666,92 +2673,69 @@ static inline void cerver_poll_handle_actual_accept (Cerver *cerver) {
 
 }
 
-static inline void cerver_poll_handle_actual_receive (Cerver *cerver, const u32 idx, CerverReceive *cr) {
+static inline void cerver_poll_handle_actual_receive (
+	Cerver *cerver, struct pollfd *active_fd
+) {
 
-	switch (cerver->fds[idx].revents) {
-		// A connection setup has been completed or new data arrived
-		case POLLIN: {
-			// printf ("Receive fd: %d\n", cerver->fds[i].fd);
+	CerverReceive *cr = cerver_receive_create (
+		RECEIVE_TYPE_NORMAL, cerver, active_fd->fd
+	);
 
-			if (cerver->thpool) {
-				// pthread_mutex_lock (socket->mutex);
+	if (cr) {
+		switch (active_fd->revents) {
+			// A connection setup has been completed or new data arrived
+			case POLLIN: {
+				// printf ("Receive fd: %d\n", cerver->fds[i].fd);
 
-				// handle received packets using multiple threads
-				// if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
-				// 	cerver_log (
-				// 		LOG_TYPE_ERROR, LOG_TYPE_NONE,
-				// 		"Failed to add cerver_receive () to cerver's %s thpool!",
-				//         cerver->info->name->str
-				// 	);
-				// }
-
-				// 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
-				// and the received buffer handler method is the one that is called
-				// inside the thread pool - using this method we were able to get a correct behaviour
-				// however, we still may have room form improvement as we original though ->
-				// by performing reading also inside the thpool
-				cerver_receive (cr);
-
-				// pthread_mutex_unlock (socket->mutex);
-			}
-
-			else {
 				// handle all received packets in the same thread
 				cerver_receive (cr);
-			}
-		} break;
+			} break;
 
-		// A disconnection request has been initiated by the other end
-		// or a connection is broken (SIGPIPE is also set when we try to write to it)
-		// or The other end has shut down one direction
-		case POLLHUP: {
-			// printf ("POLLHUP\n");
-			cerver_switch_receive_handle_failed (cr);
-		} break;
-
-		// An asynchronous error occurred
-		case POLLERR: {
-			// printf ("POLLERR\n");
-			cerver_switch_receive_handle_failed (cr);
-		} break;
-
-		// Urgent data arrived. SIGURG is sent then.
-		case POLLPRI: {
-		} break;
-
-		default: {
-			if (cerver->fds[idx].revents != 0) {
-				// 17/06/2020 -- 15:06 -- handle as failed any other signal
-				// to avoid hanging up at 100% or getting a segfault
+			// A disconnection request has been initiated by the other end
+			// or a connection is broken (SIGPIPE is also set when we try to write to it)
+			// or The other end has shut down one direction
+			case POLLHUP: {
+				// printf ("POLLHUP\n");
 				cerver_switch_receive_handle_failed (cr);
-			}
-		} break;
+			} break;
+
+			// An asynchronous error occurred
+			case POLLERR: {
+				// printf ("POLLERR\n");
+				cerver_switch_receive_handle_failed (cr);
+			} break;
+
+			// Urgent data arrived. SIGURG is sent then.
+			case POLLPRI: break;
+
+			default: {
+				if (active_fd->revents != 0) {
+					cerver_switch_receive_handle_failed (cr);
+				}
+			} break;
+		}
 	}
 
 }
 
-static inline void cerver_poll_handle (Cerver *cerver) {
+static inline void cerver_poll_handle (
+	Cerver *cerver, char *packet_buffer
+) {
 
-	if (cerver) {
-		if (cerver->thpool) pthread_mutex_lock (cerver->poll_lock);
+	// one or more fd(s) are readable, need to determine which ones they are
+	for (u32 idx = 0; idx < cerver->max_n_fds; idx++) {
+		if (cerver->fds[idx].fd > -1) {
+			if (idx == 0) {
+				// the cerver's sock fd has an event
+				cerver_poll_handle_actual_accept (cerver);
+			}
 
-		// one or more fd(s) are readable, need to determine which ones they are
-		for (u32 idx = 0; idx < cerver->max_n_fds; idx++) {
-			if (cerver->fds[idx].fd != -1) {
-				if (idx == 0) {
-					cerver_poll_handle_actual_accept (cerver);
-				}
-
-				else {
-					CerverReceive *cr = cerver_receive_create (RECEIVE_TYPE_NORMAL, cerver, cerver->fds[idx].fd);
-					if (cr) {
-						cerver_poll_handle_actual_receive (cerver, idx, cr);
-					}
-				}
+			else {
+				cerver_poll_handle_actual_receive (
+					cerver, &cerver->fds[idx]
+				);
 			}
 		}
-
-		if (cerver->thpool) pthread_mutex_unlock (cerver->poll_lock);
 	}
 
 }
@@ -2764,51 +2748,75 @@ u8 cerver_poll (Cerver *cerver) {
 	if (cerver) {
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s ready in port %d!",
+			"Cerver %s is ready in port %d!",
 			cerver->info->name->str, cerver->port
 		);
 
 		#ifdef CERVER_DEBUG
-		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Waiting for connections...");
-		#endif
-
-		int poll_retval = 0;
-		while (cerver->isRunning) {
-			poll_retval = poll (cerver->fds, cerver->max_n_fds, cerver->poll_timeout);
-
-			switch (poll_retval) {
-				case -1: {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-						"Cerver %s main poll has failed!", cerver->info->name->str
-					);
-
-					perror ("Error");
-					cerver->isRunning = false;
-				} break;
-
-				case 0: {
-					// #ifdef CERVER_DEBUG
-					// cerver_log_debug (
-					// 	"Cerver %s MAIN poll timeout", cerver->info->name->str
-					// );
-					// #endif
-				} break;
-
-				default: {
-					cerver_poll_handle (cerver);
-				} break;
-			}
-		}
-
-		#ifdef CERVER_DEBUG
 		cerver_log (
-			LOG_TYPE_CERVER, LOG_TYPE_NONE,
-			"Cerver %s main poll has stopped!", cerver->info->name->str
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Waiting for connections..."
 		);
 		#endif
 
-		retval = 0;
+		char *packet_buffer = (char *) calloc (
+			cerver->receive_buffer_size, sizeof (char)
+		);
+
+		if (packet_buffer) {
+			int poll_retval = 0;
+			while (cerver->isRunning) {
+				poll_retval = poll (
+					cerver->fds,
+					cerver->max_n_fds,
+					cerver->poll_timeout
+				);
+
+				switch (poll_retval) {
+					case -1: {
+						cerver_log (
+							LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+							"Cerver %s main poll has failed!",
+							cerver->info->name->str
+						);
+
+						perror ("Error");
+						cerver->isRunning = false;
+					} break;
+
+					case 0: {
+						// #ifdef CERVER_DEBUG
+						// cerver_log_debug (
+						// 	"Cerver %s MAIN poll timeout",
+						// 	cerver->info->name->str
+						// );
+						// #endif
+					} break;
+
+					default: {
+						cerver_poll_handle (cerver, packet_buffer);
+					} break;
+				}
+			}
+
+			#ifdef CERVER_DEBUG
+			cerver_log (
+				LOG_TYPE_CERVER, LOG_TYPE_NONE,
+				"Cerver %s main poll has stopped!",
+				cerver->info->name->str
+			);
+			#endif
+
+			free (packet_buffer);
+
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"Failed to allocate cerver poll's packet buffer!"
+			);
+		}
 	}
 
 	else {
