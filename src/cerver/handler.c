@@ -1289,7 +1289,7 @@ CerverReceive *cerver_receive_create_full (
 static void cerver_receive_handle_spare_packet (
 	ReceiveHandle *receive_handle,
 	SockReceive *sock_receive,
-	size_t buffer_size,
+	size_t received_size,
 	char **end, size_t *buffer_pos
 ) {
 
@@ -1307,10 +1307,10 @@ static void cerver_receive_handle_spare_packet (
 
 	else if (sock_receive->spare_packet) {
 		size_t copy_to_spare = 0;
-		if (sock_receive->missing_packet < buffer_size)
+		if (sock_receive->missing_packet < received_size)
 			copy_to_spare = sock_receive->missing_packet;
 
-		else copy_to_spare = buffer_size;
+		else copy_to_spare = received_size;
 
 		// printf ("copy to spare: %ld\n", copy_to_spare);
 
@@ -1331,7 +1331,7 @@ static void cerver_receive_handle_spare_packet (
 			}
 
 			// offset for the buffer
-			if (copy_to_spare < buffer_size) *end += copy_to_spare;
+			if (copy_to_spare < received_size) *end += copy_to_spare;
 			*buffer_pos += copy_to_spare;
 			// printf ("buffer pos after copy to spare: %ld\n", *buffer_pos);
 		}
@@ -1344,7 +1344,7 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 
 	Cerver *cerver = receive_handle->cerver;
 	char *buffer = receive_handle->buffer;
-	size_t buffer_size = receive_handle->buffer_size;
+	// size_t buffer_size = receive_handle->buffer_size;
 	size_t received_size = receive_handle->received_size;
 	Lobby *lobby = receive_handle->lobby;
 
@@ -1356,7 +1356,8 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 	cerver_receive_handle_spare_packet (
 		receive_handle,
 		sock_receive,
-		buffer_size, &end, &buffer_pos
+		received_size,
+		&end, &buffer_pos
 	);
 
 	PacketHeader *header = NULL;
@@ -1368,8 +1369,8 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 
 	bool spare_header = false;
 
-	while (buffer_pos < buffer_size) {
-		remaining_buffer_size = buffer_size - buffer_pos;
+	while (buffer_pos < received_size) {
+		remaining_buffer_size = received_size - buffer_pos;
 
 		if (sock_receive->complete_header) {
 			(void) packet_header_copy (&header, (PacketHeader *) sock_receive->header);
@@ -1427,7 +1428,7 @@ void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
 					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
 						sock_receive->spare_packet = packet;
 
-						if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
+						if (spare_header) to_copy_size = received_size - sock_receive->remaining_header;
 						else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
 
 						sock_receive->missing_packet = packet_real_size - to_copy_size;
