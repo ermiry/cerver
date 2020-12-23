@@ -185,6 +185,7 @@ typedef struct ReceiveHandle {
 
 	char *buffer;
 	size_t buffer_size;
+	size_t received_size;
 
 } ReceiveHandle;
 

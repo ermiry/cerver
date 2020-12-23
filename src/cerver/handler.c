@@ -1586,7 +1586,9 @@ void cerver_switch_receive_handle_failed (CerverReceive *cr) {
 }
 
 static inline void cerver_receive_success_receive_handle (
-	CerverReceive *cr, ssize_t rc, char *packet_buffer
+	CerverReceive *cr,
+	const size_t received,
+	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
 	ReceiveHandle *receive_handle = receive_handle_new ();
@@ -1603,7 +1605,8 @@ static inline void cerver_receive_success_receive_handle (
 		receive_handle->lobby = cr->lobby;
 
 		receive_handle->buffer = packet_buffer;
-		receive_handle->buffer_size = rc;
+		receive_handle->buffer_size = packet_buffer_size;
+		receive_handle->received_size = received;
 
 		switch (receive_handle->cerver->handler_type) {
 			case CERVER_HANDLER_TYPE_NONE: break;
@@ -1611,6 +1614,7 @@ static inline void cerver_receive_success_receive_handle (
 			case CERVER_HANDLER_TYPE_POLL: {
 				cr->cerver->handle_received_buffer (receive_handle);
 
+				// FIXME:
 				cerver_receive_delete (cr);
 			} break;
 
@@ -1620,71 +1624,79 @@ static inline void cerver_receive_success_receive_handle (
 
 			default: break;
 		}
+
+		receive_handle_delete (receive_handle);
 	}
 
 }
 
 static void cerver_receive_success (
-	CerverReceive *cr, ssize_t rc, char *packet_buffer
+	CerverReceive *cr,
+	const size_t received,
+	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
 	// cerver_log (
 	// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-	// 	"Cerver %s rc: %ld for sock fd: %d",
-	//     cr->cerver->info->name->str, rc, cr->socket->sock_fd
+	// 	"Cerver %s received: %ld for sock fd: %d",
+	//     cr->cerver->info->name->str, received, cr->socket->sock_fd
 	// );
 
-	cr->socket->packet_buffer_size = rc;
+	cr->socket->packet_buffer_size = received;
 
 	cr->cerver->stats->total_n_receives_done += 1;
-	cr->cerver->stats->total_bytes_received += rc;
+	cr->cerver->stats->total_bytes_received += received;
 
 	switch (cr->cerver->type) {
 		case CERVER_TYPE_WEB:
-			http_receive_handle (cr, rc, packet_buffer);
+			http_receive_handle (cr, received, packet_buffer);
 			break;
 
 		default: {
 			if (cr->lobby) {
 				cr->lobby->stats->n_receives_done += 1;
-				cr->lobby->stats->bytes_received += rc;
+				cr->lobby->stats->bytes_received += received;
 			}
 
 			switch (cr->type) {
 				case RECEIVE_TYPE_NORMAL: {
 					cr->cerver->stats->client_receives_done += 1;
-					cr->cerver->stats->client_bytes_received += rc;
+					cr->cerver->stats->client_bytes_received += received;
 
 					cr->client->stats->n_receives_done += 1;
-					cr->client->stats->total_bytes_received += rc;
+					cr->client->stats->total_bytes_received += received;
 
 					cr->connection->stats->n_receives_done += 1;
-					cr->connection->stats->total_bytes_received += rc;
+					cr->connection->stats->total_bytes_received += received;
 				} break;
 
 				case RECEIVE_TYPE_ON_HOLD: {
 					cr->cerver->stats->on_hold_receives_done += 1;
-					cr->cerver->stats->on_hold_bytes_received += rc;
+					cr->cerver->stats->on_hold_bytes_received += received;
 
 					cr->connection->stats->n_receives_done += 1;
-					cr->connection->stats->total_bytes_received += rc;
+					cr->connection->stats->total_bytes_received += received;
 				} break;
 
 				case RECEIVE_TYPE_ADMIN: {
 					cr->cerver->admin->stats->total_n_receives_done += 1;
-					cr->cerver->admin->stats->total_bytes_received += rc;
+					cr->cerver->admin->stats->total_bytes_received += received;
 
 					cr->client->stats->n_receives_done += 1;
-					cr->client->stats->total_bytes_received += rc;
+					cr->client->stats->total_bytes_received += received;
 
 					cr->connection->stats->n_receives_done += 1;
-					cr->connection->stats->total_bytes_received += rc;
+					cr->connection->stats->total_bytes_received += received;
 				} break;
 
 				default: break;
 			}
 
-			cerver_receive_success_receive_handle (cr, rc, packet_buffer);
+			cerver_receive_success_receive_handle (
+				cr,
+				received,
+				packet_buffer, packet_buffer_size
+			);
 		} break;
 	}
 
@@ -1732,7 +1744,10 @@ void cerver_receive_internal (
 		} break;
 
 		default: {
-			cerver_receive_success (cr, rc, packet_buffer);
+			cerver_receive_success (
+				cr, rc,
+				packet_buffer, packet_buffer_size
+			);
 		} break;
 	}
 
@@ -1786,7 +1801,10 @@ static inline u8 cerver_receive_threads_actual (
 		} break;
 
 		default: {
-			cerver_receive_success (cr, rc, buffer);
+			cerver_receive_success (
+				cr, (size_t) rc,
+				buffer, buffer_size
+			);
 
 			retval = 0;
 		} break;
