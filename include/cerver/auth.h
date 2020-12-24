@@ -16,6 +16,37 @@ struct _Connection;
 
 struct _Packet;
 
+#pragma region errors
+
+#define CERVER_AUTH_ERROR_MAP(XX)														    \
+	XX(0,	NONE, 		        None, 		        No authentication error)				\
+	XX(1,	SUCCESS, 		    Success Auth, 		Authentication has been successful)	    \
+	XX(2,	NO_HANDLER, 	    No Handler, 		The cerver has no auth handler)			\
+	XX(3,	MISSING_VALUES,     Missing Values, 	Bad auth request due to missing values) \
+	XX(4,	FAILED, 	        Failed Auth, 	    Invalid credentials)                    \
+	XX(5,	INVALID_SESSION, 	Bad Session ID, 	Session id is invalid)                  \
+	XX(6,	DROPPED, 	        Dropped Connection, The connection has been ended)
+
+typedef enum CerverAuthError {
+
+	#define XX(num, name, string, description) CERVER_AUTH_ERROR_##name = num,
+	CERVER_AUTH_ERROR_MAP (XX)
+	#undef XX
+
+} CerverAuthError;
+
+CERVER_PUBLIC const char *cerver_auth_error_to_string (
+    const CerverAuthError error
+);
+
+CERVER_PUBLIC const char *cerver_auth_error_description (
+    const CerverAuthError error
+);
+
+#pragma endregion
+
+#pragma region data
+
 // the auth data stripped from the packet
 struct _AuthData {
 
@@ -35,6 +66,10 @@ struct _AuthData {
 
 typedef struct _AuthData AuthData;
 
+#pragma endregion
+
+#pragma region method
+
 // auxiliary structure passed to the user defined auth method
 struct _AuthMethod {
 
@@ -49,10 +84,12 @@ struct _AuthMethod {
 
 typedef struct _AuthMethod AuthMethod;
 
+#pragma endregion
+
 #pragma region handler
 
 // handles an packet from an on hold connection
-CERVER_PRIVATE void on_hold_packet_handler (
+CERVER_PRIVATE u8 on_hold_packet_handler (
     struct _Packet *packet
 );
 

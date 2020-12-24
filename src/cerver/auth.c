@@ -30,6 +30,34 @@ static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connecti
 u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connection);
 
+#pragma region errors
+
+const char *cerver_auth_error_to_string (const CerverAuthError error) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_AUTH_ERROR_##name: return #string;
+		CERVER_AUTH_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_auth_error_to_string (CERVER_AUTH_ERROR_NONE);
+
+}
+
+const char *cerver_auth_error_description (const CerverAuthError error) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_AUTH_ERROR_##name: return #description;
+		CERVER_AUTH_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_auth_error_description (CERVER_AUTH_ERROR_NONE);
+
+}
+
+#pragma endregion
+
 #pragma region data
 
 static AuthData *auth_data_new (void) {
