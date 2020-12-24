@@ -767,13 +767,18 @@ void cerver_test_packet_handler (Packet *packet) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_PACKET,
-		"Got a test packet in cerver %s.", packet->cerver->info->name->str
+		"Got a test packet in cerver %s.",
+		packet->cerver->info->name->str
 	);
 	#endif
 
 	Packet *test_packet = packet_new ();
 	if (test_packet) {
-		packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, packet->lobby);
+		packet_set_network_values (
+			test_packet,
+			packet->cerver, packet->client, packet->connection, packet->lobby
+		);
+
 		test_packet->packet_type = PACKET_TYPE_TEST;
 		packet_generate (test_packet);
 		if (packet_send (test_packet, 0, NULL, false)) {
@@ -1048,9 +1053,11 @@ static void cerver_packet_handler (Packet *packet) {
 
 }
 
-static void cerver_packet_select_handler (
+static u8 cerver_packet_select_handler (
 	ReceiveHandle *receive_handle, Packet *packet
 ) {
+
+	u8 retval = 1;
 
 	switch (receive_handle->type) {
 		case RECEIVE_TYPE_NONE: break;
@@ -1074,7 +1081,7 @@ static void cerver_packet_select_handler (
 			packet->cerver->stats->on_hold_n_packets_received += 1;
 			packet->connection->stats->n_packets_received += 1;
 
-			on_hold_packet_handler (packet);
+			retval = on_hold_packet_handler (packet);
 		} break;
 
 		case RECEIVE_TYPE_ADMIN: {
@@ -1093,6 +1100,8 @@ static void cerver_packet_select_handler (
 
 		default: break;
 	}
+
+	return retval;
 
 }
 
@@ -1284,16 +1293,23 @@ CerverReceive *cerver_receive_create_full (
 
 }
 
-static void cerver_receive_handle_spare_packet (
+static u8 cerver_receive_handle_spare_packet (
 	ReceiveHandle *receive_handle,
 	SockReceive *sock_receive,
 	size_t received_size,
 	char **end, size_t *buffer_pos
 ) {
 
+	u8 errors = 0;
+
 	if (sock_receive->header) {
 		// copy the remaining header size
-		(void) memcpy (sock_receive->header_end, (void *) *end, sock_receive->remaining_header);
+		(void) memcpy (
+			sock_receive->header_end,
+			(void *) *end,
+			sock_receive->remaining_header
+		);
+		
 		// *end += sock_receive->remaining_header;
 		// *buffer_pos += sock_receive->remaining_header;
 
@@ -1314,12 +1330,17 @@ static void cerver_receive_handle_spare_packet (
 
 		// append new data from buffer to the spare packet
 		if (copy_to_spare > 0) {
-			(void) packet_append_data (sock_receive->spare_packet, (void *) *end, copy_to_spare);
+			(void) packet_append_data (
+				sock_receive->spare_packet, (void *) *end, copy_to_spare
+			);
 
 			// check if we can handle the packet
 			size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
 			if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
-				cerver_packet_select_handler (receive_handle, sock_receive->spare_packet);
+				errors = cerver_packet_select_handler (
+					receive_handle, sock_receive->spare_packet
+				);
+
 				sock_receive->spare_packet = NULL;
 				sock_receive->missing_packet = 0;
 			}
@@ -1335,32 +1356,22 @@ static void cerver_receive_handle_spare_packet (
 		}
 	}
 
+	return errors;
+
 }
 
-// default cerver receive handler
-void cerver_receive_handle_buffer (
-	void *receive_handle_ptr
+static void cerver_receive_handle_buffer_internal (
+	ReceiveHandle *receive_handle,
+	char *end, size_t buffer_pos
 ) {
 
-	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
-
 	Cerver *cerver = receive_handle->cerver;
-	char *buffer = receive_handle->buffer;
+	// char *buffer = receive_handle->buffer;
 	// size_t buffer_size = receive_handle->buffer_size;
 	size_t received_size = receive_handle->received_size;
 	Lobby *lobby = receive_handle->lobby;
 
 	SockReceive *sock_receive = receive_handle->connection->sock_receive;
-	
-	char *end = buffer;
-	size_t buffer_pos = 0;
-
-	cerver_receive_handle_spare_packet (
-		receive_handle,
-		sock_receive,
-		received_size,
-		&end, &buffer_pos
-	);
 
 	PacketHeader *header = NULL;
 	size_t packet_size = 0;
@@ -1371,7 +1382,8 @@ void cerver_receive_handle_buffer (
 
 	bool spare_header = false;
 
-	while (buffer_pos < received_size) {
+	u8 stop_handler = 0;
+	do {
 		remaining_buffer_size = received_size - buffer_pos;
 
 		if (sock_receive->complete_header) {
@@ -1460,7 +1472,9 @@ void cerver_receive_handle_buffer (
 					// printf ("second buffer pos: %ld\n", buffer_pos);
 
 					if (!sock_receive->spare_packet) {
-						cerver_packet_select_handler (receive_handle, packet);
+						stop_handler = cerver_packet_select_handler (
+							receive_handle, packet
+						);
 					}
 
 				}
@@ -1514,6 +1528,30 @@ void cerver_receive_handle_buffer (
 		}
 
 		header = NULL;
+	} while ((buffer_pos < received_size) && !stop_handler);
+
+}
+
+// default cerver receive handler
+void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+) {
+
+	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
+	
+	char *end = receive_handle->buffer;
+	size_t buffer_pos = 0;
+
+	if (!cerver_receive_handle_spare_packet (
+		receive_handle,
+		receive_handle->connection->sock_receive,
+		receive_handle->received_size,
+		&end, &buffer_pos
+	)) {
+		cerver_receive_handle_buffer_internal (
+			receive_handle,
+			end, buffer_pos
+		);
 	}
 
 }
@@ -1611,14 +1649,11 @@ static inline void cerver_receive_success_receive_handle (
 
 			case CERVER_HANDLER_TYPE_POLL: {
 				cr->cerver->handle_received_buffer (receive_handle);
-
-				// FIXME:
-				cerver_receive_delete (cr);
 			} break;
 
-			case CERVER_HANDLER_TYPE_THREADS:
+			case CERVER_HANDLER_TYPE_THREADS: {
 				cr->cerver->handle_received_buffer (receive_handle);
-				break;
+			} break;
 
 			default: break;
 		}
@@ -2592,6 +2627,9 @@ static inline void cerver_poll_handle_actual_receive (
 	char *packet_buffer
 ) {
 
+	// TODO: as we will not use threads anymore,
+	// there is no need of allocating a new structure each time
+	// we need to handle a connection
 	CerverReceive *cr = cerver_receive_create (
 		RECEIVE_TYPE_NORMAL, cerver, active_fd->fd
 	);
@@ -2633,6 +2671,8 @@ static inline void cerver_poll_handle_actual_receive (
 				}
 			} break;
 		}
+
+		cerver_receive_delete (cr);
 	}
 
 }
