@@ -630,7 +630,7 @@ void admin_cerver_set_bad_packets_limit (
 }
 
 // sets the admin cerver's receive buffer size used for recv ()
-void cerver_set_receive_buffer_size (
+void admin_cerver_set_receive_buffer_size (
 	AdminCerver *admin_cerver, const size_t buffer_size
 ) {
 
