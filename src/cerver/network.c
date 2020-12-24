@@ -1,9 +1,37 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <netdb.h>
+
+#include <arpa/inet.h>
+
+#include <sys/socket.h>
 #include <sys/time.h>
 
 #include "cerver/network.h"
+
+// gets the ip related to the hostname
+// returns a newly allocated c string if found
+// returns NULL on error or not found
+char *network_hostname_to_ip (
+	const char *hostname
+) {
+
+	char *retval = NULL;
+
+	struct hostent *he = gethostbyname (hostname);
+	if (he) {
+		struct in_addr **addr_list = (struct in_addr **) he->h_addr_list;
+		if (addr_list) {
+			if (inet_ntoa (*addr_list[0])) {
+				retval = strdup (*addr_list[0]);
+			}
+		}
+	}
+
+	return retval;
+
+}
 
 // enable/disable blocking on a socket
 // true on success, false if there was an error
