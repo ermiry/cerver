@@ -1120,8 +1120,7 @@ static u8 on_hold_poll_unregister_connection (Cerver *cerver, Connection *connec
 }
 
 static inline void on_hold_poll_handle (
-	Cerver *cerver,
-	char *packet_buffer
+	Cerver *cerver, char *packet_buffer
 ) {
 
 	// one or more fd(s) are readable, need to determine which ones they are
@@ -1235,6 +1234,12 @@ void *on_hold_poll (void *cerver_ptr) {
 			#endif
 
 			free (packet_buffer);
+		}
+
+		else {
+			cerver_log_error (
+				"Failed to allocate cerver ON HOLD poll's packet buffer!"
+			);
 		}
 	}
 
