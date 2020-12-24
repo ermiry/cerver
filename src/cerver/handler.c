@@ -1340,7 +1340,11 @@ static void cerver_receive_handle_spare_packet (
 }
 
 // default cerver receive handler
-void cerver_receive_handle_buffer (ReceiveHandle *receive_handle) {
+void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+) {
+
+	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
 
 	Cerver *cerver = receive_handle->cerver;
 	char *buffer = receive_handle->buffer;

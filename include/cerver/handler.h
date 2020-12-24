@@ -213,7 +213,9 @@ typedef struct ReceiveHandle {
 CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
 
 // default cerver receive handler
-CERVER_PRIVATE void cerver_receive_handle_buffer (void *receive_ptr);
+CERVER_PRIVATE void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+);
 
 typedef struct CerverReceive {
 
