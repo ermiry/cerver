@@ -57,4 +57,9 @@ CERVER_PUBLIC int sock_set_timeout (
 	int sock_fd, time_t timeout
 );
 
+// sets the socket's reusable options
+// this should avoid errors when binding sockets
+// returns 0 on success, 1 on any error
+CERVER_PUBLIC int sock_set_reusable (int sock_fd);
+
 #endif
