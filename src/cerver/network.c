@@ -24,7 +24,7 @@ char *network_hostname_to_ip (
 		struct in_addr **addr_list = (struct in_addr **) he->h_addr_list;
 		if (addr_list) {
 			if (inet_ntoa (*addr_list[0])) {
-				retval = strdup (*addr_list[0]);
+				retval = strdup (inet_ntoa (*addr_list[0]));
 			}
 		}
 	}
