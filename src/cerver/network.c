@@ -170,10 +170,12 @@ int sock_set_reusable (int sock_fd) {
 
 	int errors = 0;
 
-	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof (int));
+	int reusable = 1;
+
+	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEADDR, &reusable, sizeof (int));
 
 	#ifdef SO_REUSEPORT
-	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof (int));
+	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEPORT, &reusable, sizeof (int));
 	#endif
 
 	return errors;
