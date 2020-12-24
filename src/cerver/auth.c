@@ -772,19 +772,17 @@ static void cerver_on_hold_handle_max_bad_packets (
 	Cerver *cerver, Connection *connection
 ) {
 
-	if (cerver && connection) {
-		connection->bad_packets += 1;
+	connection->bad_packets += 1;
 
-		if (connection->bad_packets >= cerver->on_hold_max_bad_packets) {
-			#ifdef AUTH_DEBUG
-			cerver_log_debug (
-				"ON HOLD connection <%d> has reached max bad packets, dropping...",
-				connection->socket->sock_fd
-			);
-			#endif
+	if (connection->bad_packets >= cerver->on_hold_max_bad_packets) {
+		#ifdef AUTH_DEBUG
+		cerver_log_debug (
+			"ON HOLD connection <%d> has reached max bad packets, dropping...",
+			connection->socket->sock_fd
+		);
+		#endif
 
-			on_hold_connection_drop (cerver, connection);
-		}
+		on_hold_connection_drop (cerver, connection);
 	}
 
 }
@@ -807,14 +805,18 @@ static void cerver_auth_packet_handler (Packet *packet) {
 				);
 				#endif
 
-				cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
+				cerver_on_hold_handle_max_bad_packets (
+					packet->cerver, packet->connection
+				);
 			} break;
 		}
 	}
 
 	else {
 		// bad packet
-		cerver_on_hold_handle_max_bad_packets (packet->cerver, packet->connection);
+		cerver_on_hold_handle_max_bad_packets (
+			packet->cerver, packet->connection
+		);
 	}
 
 }
