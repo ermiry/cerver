@@ -504,6 +504,8 @@ AdminCerver *admin_cerver_new (void) {
 
 		admin_cerver->n_bad_packets_limit = ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS;
 
+		admin_cerver->receive_buffer_size = ADMIN_CERVER_DEFAULT_RECEIVE_BUFFER_SIZE;
+
 		admin_cerver->fds = NULL;
 		admin_cerver->max_n_fds = ADMIN_CERVER_DEFAULT_POLL_FDS;
 		admin_cerver->current_n_fds = 0;
@@ -623,6 +625,17 @@ void admin_cerver_set_bad_packets_limit (
 	if (admin_cerver) {
 		admin_cerver->n_bad_packets_limit = n_bad_packets_limit > 0 ?
 			n_bad_packets_limit : ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS;
+	}
+
+}
+
+// sets the admin cerver's receive buffer size used for recv ()
+void cerver_set_receive_buffer_size (
+	AdminCerver *admin_cerver, const size_t buffer_size
+) {
+
+	if (admin_cerver) {
+		admin_cerver->receive_buffer_size = buffer_size;
 	}
 
 }

@@ -27,6 +27,8 @@ struct _AdminCerver;
 #define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
 #define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
 
+#define ADMIN_CERVER_DEFAULT_RECEIVE_BUFFER_SIZE		4096
+
 #define ADMIN_CERVER_DEFAULT_POLL_FDS					4
 #define ADMIN_CERVER_DEFAULT_POLL_TIMEOUT				2000
 
@@ -160,6 +162,8 @@ struct _AdminCerver {
 	// number of bad packets before ending connection
 	u32 n_bad_packets_limit;
 
+	size_t receive_buffer_size;
+
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
 	u16 current_n_fds;                  // n of active fds in the pollfd array
@@ -229,6 +233,11 @@ CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 // -1 to use defaults (5 and 20)
 CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
 	AdminCerver *admin_cerver, i32 n_bad_packets_limit
+);
+
+// sets the admin cerver's receive buffer size used for recv ()
+CERVER_EXPORT void cerver_set_receive_buffer_size (
+	AdminCerver *admin_cerver, const size_t buffer_size
 );
 
 // sets the max number of poll fds for the admin cerver
