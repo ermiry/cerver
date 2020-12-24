@@ -1915,71 +1915,35 @@ static u8 admin_cerver_poll_unregister_connection (
 
 }
 
-static inline void admin_poll_handle_actual (
-	Cerver *cerver, const u32 idx, CerverReceive *cr
+static inline void admin_poll_handle (
+	AdminCerver *admin_cerver, char *packet_buffer
 ) {
 
-	switch (cerver->admin->fds[idx].revents) {
-		// A connection setup has been completed or new data arrived
-		case POLLIN: {
-			// printf ("admin_poll_handle () - Receive fd: %d\n", cerver->admin->fds[idx].fd);
+	// one or more fd(s) are readable, need to determine which ones they are
+	for (u32 idx = 0; idx < admin_cerver->max_n_fds; idx++) {
+		if (admin_cerver->fds[idx].fd > -1) {
+			CerverReceive *cr = cerver_receive_create (
+				RECEIVE_TYPE_ADMIN, admin_cerver->cerver, admin_cerver->fds[idx].fd
+			);
 
-			// if (cerver->thpool) {
-				// pthread_mutex_lock (socket->mutex);
+			if (cr) {
+				switch (admin_cerver->fds[idx].revents) {
+					case POLLIN: {
+						cerver_receive_internal (
+							cr,
+							packet_buffer,
+							admin_cerver->receive_buffer_size
+						);
+					} break;
 
-				// handle received packets using multiple threads
-				// if (thpool_add_work (cerver->thpool, cerver_receive, cr)) {
-				//     char *s = c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!",
-				//         cerver->info->name->str);
-				//     if (s) {
-				//         cerver_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, s);
-				//         free (s);
-				//     }
-				// }
-
-				// 28/05/2020 -- 02:43 -- handling all recv () calls from the main thread
-				// and the received buffer handler method is the one that is called
-				// inside the thread pool - using this method we were able to get a correct behaviour
-				// however, we still may have room form improvement as we original though ->
-				// by performing reading also inside the thpool
-				// cerver_receive (cr);
-
-				// pthread_mutex_unlock (socket->mutex);
-			// }
-
-			// else {
-				// handle all received packets in the same thread
-				cerver_receive (cr);
-			// }
-		} break;
-
-		default: {
-			if (cerver->admin->fds[idx].revents != 0) {
-				// handle as failed any other signal
-				// to avoid hanging up at 100% or getting a segfault
-				cerver_switch_receive_handle_failed (cr);
-			}
-		} break;
-	}
-
-}
-
-static inline void admin_poll_handle (Cerver *cerver) {
-
-	if (cerver) {
-		pthread_mutex_lock (cerver->admin->poll_lock);
-
-		// one or more fd(s) are readable, need to determine which ones they are
-		for (u32 idx = 0; idx < cerver->admin->max_n_fds; idx++) {
-			if (cerver->admin->fds[idx].fd != -1) {
-				CerverReceive *cr = cerver_receive_create (RECEIVE_TYPE_ADMIN, cerver, cerver->admin->fds[idx].fd);
-				if (cr) {
-					admin_poll_handle_actual (cerver, idx, cr);
+					default: {
+						if (admin_cerver->fds[idx].revents != 0) {
+							cerver_switch_receive_handle_failed (cr);
+						}
+					} break;
 				}
 			}
 		}
-
-		pthread_mutex_unlock (cerver->admin->poll_lock);
 	}
 
 }
@@ -1997,53 +1961,79 @@ static void *admin_poll (void *cerver_ptr) {
 			cerver->info->name->str
 		);
 
-		char *thread_name = c_string_create ("%s-admin", cerver->info->name->str);
-		if (thread_name) {
-			thread_set_name (thread_name);
-			free (thread_name);
-		}
-
-		int poll_retval = 0;
-		while (cerver->isRunning) {
-			poll_retval = poll (
-				admin_cerver->fds,
-				admin_cerver->max_n_fds,
-				admin_cerver->poll_timeout
-			);
-
-			switch (poll_retval) {
-				case -1: {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_ADMIN,
-						"Cerver %s ADMIN poll has failed!",
-						cerver->info->name->str
-					);
-
-					perror ("Error");
-					cerver->isRunning = false;
-				} break;
-
-				case 0: {
-					// #ifdef ADMIN_DEBUG
-					// cerver_log (
-					//     LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
-					//     "Cerver %s ADMIN poll timeout", cerver->info->name->str
-					// );
-					// #endif
-				} break;
-
-				default: {
-					admin_poll_handle (cerver);
-				} break;
-			}
-		}
-
-		#ifdef ADMIN_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
-			"Cerver %s ADMIN poll has stopped!", cerver->info->name->str
+		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		(void) snprintf (
+			thread_name, THREAD_NAME_BUFFER_LEN,
+			"%s-admin", cerver->info->name->str
 		);
-		#endif
+
+		(void) thread_set_name (thread_name);
+
+		char *packet_buffer = (char *) calloc (
+			admin_cerver->receive_buffer_size, sizeof (char)
+		);
+
+		if (packet_buffer) {
+			#ifdef ADMIN_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
+				"Waiting for admin connections..."
+			);
+			#endif
+
+			int poll_retval = 0;
+			while (cerver->isRunning) {
+				poll_retval = poll (
+					admin_cerver->fds,
+					admin_cerver->max_n_fds,
+					admin_cerver->poll_timeout
+				);
+
+				switch (poll_retval) {
+					case -1: {
+						cerver_log (
+							LOG_TYPE_ERROR, LOG_TYPE_ADMIN,
+							"Cerver %s ADMIN poll has failed!",
+							cerver->info->name->str
+						);
+
+						perror ("Error");
+						cerver->isRunning = false;
+					} break;
+
+					case 0: {
+						// #ifdef ADMIN_DEBUG
+						// cerver_log (
+						//     LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
+						//     "Cerver %s ADMIN poll timeout",
+						// 	cerver->info->name->str
+						// );
+						// #endif
+					} break;
+
+					default: {
+						admin_poll_handle (
+							admin_cerver, packet_buffer
+						);
+					} break;
+				}
+			}
+
+			#ifdef ADMIN_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
+				"Cerver %s ADMIN poll has stopped!", cerver->info->name->str
+			);
+			#endif
+			
+			free (packet_buffer);
+		}
+
+		else {
+			cerver_log_error (
+				"Failed to allocate ADMIN cerver poll's packet buffer!"
+			);
+		}
 	}
 
 	else {
