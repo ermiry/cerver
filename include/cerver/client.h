@@ -89,6 +89,28 @@ CERVER_PUBLIC void client_file_stats_print (
 #define CLIENT_MAX_EVENTS				32
 #define CLIENT_MAX_ERRORS				32
 
+#define CLIENT_CONNECTIONS_STATUS_MAP(XX)									\
+	XX(0,	NONE,		None, 		Undefined)								\
+	XX(1,	ERROR,		Error, 		Failed to remove connection)			\
+	XX(2,	ONE,		One,		At least one active connection)			\
+	XX(3,	DROPPED,	Dropped,	Removed due to no connections left)
+
+typedef enum ClientConnectionsStatus {
+
+	#define XX(num, name, string, description) CLIENT_CONNECTIONS_STATUS_##name = num,
+	CLIENT_CONNECTIONS_STATUS_MAP (XX)
+	#undef XX
+
+} ClientConnectionsStatus;
+
+CERVER_PUBLIC const char *client_connections_status_to_string (
+	const ClientConnectionsStatus status
+);
+
+CERVER_PUBLIC const char *client_connections_status_description (
+	const ClientConnectionsStatus status
+);
+
 // anyone that connects to the cerver
 struct _Client {
 

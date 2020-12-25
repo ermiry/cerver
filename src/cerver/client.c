@@ -171,6 +171,34 @@ void client_file_stats_print (Client *client) {
 
 #pragma region main
 
+const char *client_connections_status_to_string (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #string;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_to_string (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
+
+const char *client_connections_status_description (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #description;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_description (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
+
 Client *client_new (void) {
 
 	Client *client = (Client *) malloc (sizeof (Client));
