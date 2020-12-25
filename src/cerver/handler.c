@@ -463,6 +463,34 @@ void sock_receive_delete (void *sock_receive_ptr) {
 
 #pragma region handlers
 
+const char *cerver_handler_error_to_string (
+	const CerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_ERROR_##name: return #string;
+		CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_handler_error_to_string (CERVER_HANDLER_ERROR_NONE);
+
+}
+
+const char *cerver_handler_error_description (
+	const CerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_ERROR_##name: return #description;
+		CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_handler_error_description (CERVER_HANDLER_ERROR_NONE);
+
+}
+
 // handles a packet of type PACKET_TYPE_CLIENT
 static void cerver_client_packet_handler (Packet *packet) {
 

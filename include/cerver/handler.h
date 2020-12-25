@@ -82,7 +82,8 @@ struct _Handler {
 	// cons - calling thread will be busy until handler method is done
 	bool direct_handle;
 
-	// the jobs (packets) that are waiting to be handled - passed as args to the handler method
+	// the jobs (packets) that are waiting to be handled
+	// passed as args to the handler method
 	JobQueue *job_queue;
 
 	struct _Cerver *cerver;     // the cerver this handler belongs to
@@ -145,6 +146,27 @@ CERVER_PRIVATE int handler_start (Handler *handler);
 #pragma endregion
 
 #pragma region handlers
+
+#define CERVER_HANDLER_ERROR_MAP(XX)											\
+	XX(0,	NONE,			None,				No handler error)				\
+	XX(1,	PACKET,			Bad Packet,			Packet check failed)			\
+	XX(2,	DROPPED,		Dropped Connection, The connection has been ended)
+
+typedef enum CerverHandlerError {
+
+	#define XX(num, name, string, description) CERVER_HANDLER_ERROR_##name = num,
+	CERVER_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} CerverHandlerError;
+
+CERVER_PUBLIC const char *cerver_handler_error_to_string (
+	const CerverHandlerError error
+);
+
+CERVER_PUBLIC const char *cerver_handler_error_description (
+	const CerverHandlerError error
+);
 
 // handles a request from a client to get a file
 CERVER_PRIVATE void cerver_request_get_file (
