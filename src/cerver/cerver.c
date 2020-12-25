@@ -300,6 +300,7 @@ Cerver *cerver_new (void) {
 
 		cerver->isRunning = false;
 		cerver->blocking = true;
+		cerver->reusable = CERVER_DEFAULT_REUSABLE_FLAGS;
 
 		cerver->cerver_data = NULL;
 		cerver->delete_cerver_data = NULL;
@@ -496,6 +497,17 @@ void cerver_set_receive_buffer_size (
 ) {
 
 	if (cerver) cerver->receive_buffer_size = size;
+
+}
+
+// sets the cerver's ability to use reusable flags in sock fd
+// if TRUE, this can prevent failing when trying to bind address
+// the default value is CERVER_DEFAULT_REUSABLE_FLAGS
+void cerver_set_reusable_address_flags (
+	Cerver *cerver, bool value
+) {
+
+	if (cerver) cerver->reusable = value;
 
 }
 
@@ -1247,7 +1259,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
+	(void) memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
 
 	if (cerver->use_ipv6) {
 		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &cerver->address;
@@ -1263,14 +1275,28 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 		addr->sin_port = htons (cerver->port);
 	}
 
-	if (!bind (cerver->sock, (const struct sockaddr *) &cerver->address, sizeof (struct sockaddr_storage))) {
+	if (cerver->reusable) {
+		if (sock_set_reusable (cerver->sock)) {
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
+				"Failed to set cerver's sock fd reusable falgs"
+			);
+		}
+	}
+
+	if (!bind (
+		cerver->sock,
+		(const struct sockaddr *) &cerver->address,
+		sizeof (struct sockaddr_storage))
+	) {
 		retval = 0;       // success!!
 	}
 
 	else {
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-			"Failed to bind cerver %s socket!", cerver->info->name->str
+			"Failed to bind cerver %s socket!",
+			cerver->info->name->str
 		);
 
 		close (cerver->sock);
@@ -1331,15 +1357,26 @@ static u8 cerver_network_init (Cerver *cerver) {
 	if (cerver) {
 		// init the cerver with the selected protocol
 		switch (cerver->protocol) {
-			case IPPROTO_TCP:
-				cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-				break;
+			case IPPROTO_TCP: {
+				cerver->sock = socket (
+					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+					SOCK_STREAM, 0
+				);
+			} break;
 
-			case IPPROTO_UDP:
-				cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
-				break;
+			case IPPROTO_UDP: {
+				cerver->sock = socket (
+					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+					SOCK_DGRAM, 0
+				);
+			} break;
 
-			default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Unknown protocol type!"); break;
+			default: 
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"Unknown protocol type!"
+				);
+				break;
 		}
 
 		if (cerver->sock >= 0) {
@@ -1360,7 +1397,8 @@ static u8 cerver_network_init (Cerver *cerver) {
 		else {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-				"Failed to create cerver %s socket!", cerver->info->name->str
+				"Failed to create cerver %s socket!",
+				cerver->info->name->str
 			);
 		}
 	}
