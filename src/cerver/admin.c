@@ -1561,7 +1561,11 @@ const char *admin_cerver_handler_error_description (
 }
 
 // handles a packet of type PACKET_TYPE_CLIENT
-static void admin_cerver_client_packet_handler (Packet *packet) {
+static AdminCerverHandlerError admin_cerver_client_packet_handler (
+	Packet *packet
+) {
+
+	AdminCerverHandlerError error = ADMIN_CERVER_HANDLER_ERROR_NONE;
 
 	if (packet->header) {
 		switch (packet->header->request_type) {
@@ -1576,45 +1580,56 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 				);
 				#endif
 
-				admin_remove_connection_by_sock_fd (
+				switch (admin_remove_connection_by_sock_fd (
 					packet->cerver->admin,
 					admin_get_by_sock_fd (
 						packet->cerver->admin,
 						packet->connection->socket->sock_fd
 					),
 					packet->connection->socket->sock_fd
-				);
+				)) {
+					case ADMIN_CONNECTIONS_STATUS_DROPPED:
+						error = ADMIN_CERVER_HANDLER_ERROR_DROPPED;
+						break;
+
+					default: break;
+				}
 			} break;
 
 			// the client is going to disconnect and will close all of its active connections
 			// so drop it from the server
 			case CLIENT_PACKET_TYPE_DISCONNECT: {
-				admin_cerver_drop_admin (
+				if (!admin_cerver_drop_admin (
 					packet->cerver->admin,
 					admin_get_by_sock_fd (
 						packet->cerver->admin,
 						packet->connection->socket->sock_fd
 					)
-				);
+				)) {
+					cerver_event_trigger (
+						CERVER_EVENT_ADMIN_DISCONNECTED,
+						packet->cerver,
+						NULL, NULL
+					);
 
-				cerver_event_trigger (
-					CERVER_EVENT_ADMIN_DISCONNECTED,
-					packet->cerver,
-					NULL, NULL
-				);
+					error = ADMIN_CERVER_HANDLER_ERROR_DROPPED;
+				}
 			} break;
 
 			default: {
 				#ifdef ADMIN_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
-					"admin_cerver_client_packet_handler () - Got an unknown client packet in ADMIN cerver %s",
+					"admin_cerver_client_packet_handler () - "
+					"Got an unknown client packet in ADMIN cerver %s",
 					packet->cerver->info->name->str
 				);
 				#endif
 			} break;
 		}
 	}
+
+	return error;
 
 }
 
@@ -1654,7 +1669,8 @@ static void admin_app_packet_handler (Packet *packet) {
 		if (packet->cerver->admin->app_packet_handler->direct_handle) {
 			// printf ("app_packet_handler - direct handle!\n");
 			packet->cerver->admin->app_packet_handler->handler (packet);
-			if (packet->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet);
+			if (packet->cerver->admin->app_packet_handler_delete_packet)
+				packet_delete (packet);
 		}
 
 		else {
@@ -1690,7 +1706,8 @@ static void admin_app_error_packet_handler (Packet *packet) {
 		if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
 			// printf ("app_error_packet_handler - direct handle!\n");
 			packet->cerver->admin->app_error_packet_handler->handler (packet);
-			if (packet->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet);
+			if (packet->cerver->admin->app_error_packet_handler_delete_packet)
+				packet_delete (packet);
 		}
 
 		else {
@@ -1726,7 +1743,8 @@ static void admin_custom_packet_handler (Packet *packet) {
 		if (packet->cerver->admin->custom_packet_handler->direct_handle) {
 			// printf ("custom_packet_handler - direct handle!\n");
 			packet->cerver->admin->custom_packet_handler->handler (packet);
-			if (packet->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet);
+			if (packet->cerver->admin->custom_packet_handler_delete_packet)
+				packet_delete (packet);
 		}
 
 		else {
@@ -1755,81 +1773,122 @@ static void admin_custom_packet_handler (Packet *packet) {
 
 }
 
-// handles a packet from an admin
-// returns 0 if we can / need to handle more packets
-// returns 1 if the connection has been ended or removed from admin poll
-u8 admin_packet_handler (Packet *packet) {
+static AdminCerverHandlerError admin_packet_handler_actual (
+	Packet *packet
+) {
 
-	bool good = true;
+	AdminCerverHandlerError error = ADMIN_CERVER_HANDLER_ERROR_NONE;
+
+	switch (packet->header->packet_type) {
+		case PACKET_TYPE_CLIENT:
+			packet->cerver->admin->stats->received_packets->n_client_packets += 1;
+			packet->client->stats->received_packets->n_client_packets += 1;
+			packet->connection->stats->received_packets->n_client_packets += 1;
+			error = admin_cerver_client_packet_handler (packet);
+			packet_delete (packet);
+			break;
+
+		// handles a request made from the admin
+		case PACKET_TYPE_REQUEST:
+			packet->cerver->admin->stats->received_packets->n_request_packets += 1;
+			packet->client->stats->received_packets->n_request_packets += 1;
+			packet->connection->stats->received_packets->n_request_packets += 1;
+			admin_cerver_request_packet_handler (packet);
+			packet_delete (packet);
+			break;
+
+		case PACKET_TYPE_APP:
+			packet->cerver->admin->stats->received_packets->n_app_packets += 1;
+			packet->client->stats->received_packets->n_app_packets += 1;
+			packet->connection->stats->received_packets->n_app_packets += 1;
+			admin_app_packet_handler (packet);
+			break;
+
+		case PACKET_TYPE_APP_ERROR:
+			packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
+			packet->client->stats->received_packets->n_app_error_packets += 1;
+			packet->connection->stats->received_packets->n_app_error_packets += 1;
+			admin_app_error_packet_handler (packet);
+			break;
+
+		case PACKET_TYPE_CUSTOM:
+			packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
+			packet->client->stats->received_packets->n_custom_packets += 1;
+			packet->connection->stats->received_packets->n_custom_packets += 1;
+			admin_custom_packet_handler (packet);
+			break;
+
+		default: {
+			packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
+			packet->client->stats->received_packets->n_bad_packets += 1;
+			packet->connection->stats->received_packets->n_bad_packets += 1;
+			#ifdef ADMIN_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+				"Got a packet of unknown type in cerver %s admin handler",
+				packet->cerver->info->name->str
+			);
+			#endif
+			packet_delete (packet);
+		} break;
+	}
+
+	return error;
+
+}
+
+static AdminCerverHandlerError admin_packet_handler_check_version (
+	Packet *packet
+) {
+
+	AdminCerverHandlerError error = ADMIN_CERVER_HANDLER_ERROR_NONE;
+
 	if (packet->cerver->check_packets) {
 		// we expect the packet version in the packet's data
 		if (packet->data) {
 			packet->version = (PacketVersion *) packet->data_ptr;
 			packet->data_ptr += sizeof (PacketVersion);
-			good = packet_check (packet);
+
+			// TODO: return errors to client
+			// TODO: drop client on max bad packets
+			if (packet_check (packet)) {
+				error = ADMIN_CERVER_HANDLER_ERROR_PACKET;
+			}
 		}
 
 		else {
-			cerver_log_error ("admin_packet_handler () - No packet version to check!");
-			good = false;
+			cerver_log_error (
+				"admin_packet_handler () - No packet version to check!"
+			);
+			
+			// TODO: add to bad packets count
+
+			error = ADMIN_CERVER_HANDLER_ERROR_PACKET;
 		}
 	}
 
-	if (good) {
-		switch (packet->header->packet_type) {
-			case PACKET_TYPE_CLIENT:
-				packet->cerver->admin->stats->received_packets->n_client_packets += 1;
-				packet->client->stats->received_packets->n_client_packets += 1;
-				packet->connection->stats->received_packets->n_client_packets += 1;
-				admin_cerver_client_packet_handler (packet);
-				packet_delete (packet);
+	return error;
+
+}
+
+// handles a packet from an admin
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended or removed from admin poll
+u8 admin_packet_handler (Packet *packet) {
+
+	u8 retval = 1;
+
+	if (!admin_packet_handler_check_version (packet)) {
+		switch (admin_packet_handler_actual (packet)) {
+			case ADMIN_CERVER_HANDLER_ERROR_NONE:
+				retval = 0;
 				break;
 
-			// handles a request made from the admin
-			case PACKET_TYPE_REQUEST:
-				packet->cerver->admin->stats->received_packets->n_request_packets += 1;
-				packet->client->stats->received_packets->n_request_packets += 1;
-				packet->connection->stats->received_packets->n_request_packets += 1;
-				admin_cerver_request_packet_handler (packet);
-				packet_delete (packet);
-				break;
-
-			case PACKET_TYPE_APP:
-				packet->cerver->admin->stats->received_packets->n_app_packets += 1;
-				packet->client->stats->received_packets->n_app_packets += 1;
-				packet->connection->stats->received_packets->n_app_packets += 1;
-				admin_app_packet_handler (packet);
-				break;
-
-			case PACKET_TYPE_APP_ERROR:
-				packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
-				packet->client->stats->received_packets->n_app_error_packets += 1;
-				packet->connection->stats->received_packets->n_app_error_packets += 1;
-				admin_app_error_packet_handler (packet);
-				break;
-
-			case PACKET_TYPE_CUSTOM:
-				packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
-				packet->client->stats->received_packets->n_custom_packets += 1;
-				packet->connection->stats->received_packets->n_custom_packets += 1;
-				admin_custom_packet_handler (packet);
-				break;
-
-			default: {
-				packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
-				packet->client->stats->received_packets->n_bad_packets += 1;
-				packet->connection->stats->received_packets->n_bad_packets += 1;
-				#ifdef ADMIN_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
-					"Got a packet of unknown type in cerver %s admin handler",
-					packet->cerver->info->name->str
-				);
-				#endif
-				packet_delete (packet);
-			} break;
+			default: break;
 		}
 	}
+
+	return retval;
 
 }
 
@@ -1838,7 +1897,9 @@ u8 admin_packet_handler (Packet *packet) {
 #pragma region poll
 
 // get a free index in the admin cerver poll fds array
-static i32 admin_cerver_poll_get_free_idx (AdminCerver *admin_cerver) {
+static i32 admin_cerver_poll_get_free_idx (
+	AdminCerver *admin_cerver
+) {
 
 	if (admin_cerver) {
 		for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
@@ -1851,7 +1912,9 @@ static i32 admin_cerver_poll_get_free_idx (AdminCerver *admin_cerver) {
 }
 
 // get the idx of the connection sock fd in the admin cerver poll fds
-static i32 admin_cerver_poll_get_idx_by_sock_fd (AdminCerver *admin_cerver, i32 sock_fd) {
+static i32 admin_cerver_poll_get_idx_by_sock_fd (
+	AdminCerver *admin_cerver, i32 sock_fd
+) {
 
 	if (admin_cerver) {
 		for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
@@ -1980,7 +2043,9 @@ static u8 admin_cerver_poll_unregister_connection (
 ) {
 
 	return (admin_cerver && connection) ?
-		admin_cerver_poll_unregister_sock_fd (admin_cerver, connection->socket->sock_fd) : 1;
+		admin_cerver_poll_unregister_sock_fd (
+			admin_cerver, connection->socket->sock_fd
+		) : 1;
 
 }
 
