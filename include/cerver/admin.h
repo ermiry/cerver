@@ -27,6 +27,8 @@ struct _AdminCerver;
 #define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
 #define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
 
+#define ADMIN_CERVER_DEFAULT_RECEIVE_BUFFER_SIZE		4096
+
 #define ADMIN_CERVER_DEFAULT_POLL_FDS					4
 #define ADMIN_CERVER_DEFAULT_POLL_TIMEOUT				2000
 
@@ -68,6 +70,28 @@ CERVER_PUBLIC void admin_cerver_stats_print (
 #pragma endregion
 
 #pragma region admin
+
+#define ADMIN_CONNECTIONS_STATUS_MAP(XX)									\
+	XX(0,	NONE,		None, 		Undefined)								\
+	XX(1,	ERROR,		Error, 		Failed to remove connection)			\
+	XX(2,	ONE,		One,		At least one active connection)			\
+	XX(3,	DROPPED,	Dropped,	Removed due to no connections left)
+
+typedef enum AdminConnectionsStatus {
+
+	#define XX(num, name, string, description) ADMIN_CONNECTIONS_STATUS_##name = num,
+	ADMIN_CONNECTIONS_STATUS_MAP (XX)
+	#undef XX
+
+} AdminConnectionsStatus;
+
+CERVER_PUBLIC const char *admin_connections_status_to_string (
+	const AdminConnectionsStatus status
+);
+
+CERVER_PUBLIC const char *admin_connections_status_description (
+	const AdminConnectionsStatus status
+);
 
 struct _Admin {
 
@@ -119,8 +143,9 @@ CERVER_PUBLIC Admin *admin_get_by_session_id (
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (
-	struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd
+CERVER_PUBLIC AdminConnectionsStatus admin_remove_connection_by_sock_fd (
+	struct _AdminCerver *admin_cerver,
+	Admin *admin, const i32 sock_fd
 );
 
 // sends a packet to the first connection of the specified admin
@@ -159,6 +184,8 @@ struct _AdminCerver {
 
 	// number of bad packets before ending connection
 	u32 n_bad_packets_limit;
+
+	size_t receive_buffer_size;
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
@@ -229,6 +256,11 @@ CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 // -1 to use defaults (5 and 20)
 CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
 	AdminCerver *admin_cerver, i32 n_bad_packets_limit
+);
+
+// sets the admin cerver's receive buffer size used for recv ()
+CERVER_EXPORT void admin_cerver_set_receive_buffer_size (
+	AdminCerver *admin_cerver, const size_t buffer_size
 );
 
 // sets the max number of poll fds for the admin cerver
@@ -359,20 +391,50 @@ CERVER_PRIVATE u8 admin_cerver_drop_admin (
 
 #pragma region start
 
-CERVER_PRIVATE u8 admin_cerver_start (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_start (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region end
 
-CERVER_PRIVATE u8 admin_cerver_end (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_end (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region handler
 
+#define ADMIN_CERVER_HANDLER_ERROR_MAP(XX)										\
+	XX(0,	NONE,			None,				No handler error)				\
+	XX(1,	PACKET,			Bad Packet,			Packet check failed)			\
+	XX(2,	DROPPED,		Dropped Connection, The connection has been ended)
+
+typedef enum AdminCerverHandlerError {
+
+	#define XX(num, name, string, description) ADMIN_CERVER_HANDLER_ERROR_##name = num,
+	ADMIN_CERVER_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} AdminCerverHandlerError;
+
+CERVER_PUBLIC const char *admin_cerver_handler_error_to_string (
+	const AdminCerverHandlerError error
+);
+
+CERVER_PUBLIC const char *admin_cerver_handler_error_description (
+	const AdminCerverHandlerError error
+);
+
 // handles a packet from an admin
-CERVER_PRIVATE void admin_packet_handler (struct _Packet *packet);
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended
+// or removed from admin poll
+CERVER_PRIVATE u8 admin_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 

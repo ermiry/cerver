@@ -343,6 +343,7 @@ Cerver *cerver_new (void) {
 		cerver->on_hold_poll_lock = NULL;
 		cerver->on_hold_max_bad_packets = CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS;
 		cerver->on_hold_check_packets = CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS;
+		cerver->on_hold_receive_buffer_size = CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE;
 
 		cerver->use_sessions = CERVER_DEFAULT_USE_SESSIONS;
 		cerver->session_id_generator = NULL;
@@ -648,9 +649,23 @@ void cerver_set_on_hold_max_bad_packets (
 
 // sets whether to check for packets using the packet_check () method in ON HOLD handler or NOT
 // any packet that fails the check will be considered as a bad packet
-void cerver_set_on_hold_check_packets (Cerver *cerver, bool check) {
+void cerver_set_on_hold_check_packets (
+	Cerver *cerver, bool check
+) {
 
 	if (cerver) cerver->on_hold_check_packets = check;
+
+}
+
+// sets the size of the buffer to be allocated
+// to receive packets from on hold connections
+void cerver_set_on_hold_receive_buffer_size (
+	Cerver *cerver, const size_t on_hold_receive_buffer_size
+) {
+
+	if (cerver) {
+		cerver->on_hold_receive_buffer_size = on_hold_receive_buffer_size;
+	}
 
 }
 

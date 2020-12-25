@@ -45,7 +45,9 @@ static u64 next_client_id = 0;
 
 #pragma region aux
 
-static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
+static ClientConnection *client_connection_aux_new (
+	Client *client, Connection *connection
+) {
 
 	ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
 	if (cc) {
@@ -68,7 +70,7 @@ static ClientStats *client_stats_new (void) {
 
 	ClientStats *client_stats = (ClientStats *) malloc (sizeof (ClientStats));
 	if (client_stats) {
-		memset (client_stats, 0, sizeof (ClientStats));
+		(void) memset (client_stats, 0, sizeof (ClientStats));
 		client_stats->received_packets = packets_per_type_new ();
 		client_stats->sent_packets = packets_per_type_new ();
 	}
@@ -131,7 +133,7 @@ static ClientFileStats *client_file_stats_new (void) {
 
 	ClientFileStats *file_stats = (ClientFileStats *) malloc (sizeof (ClientFileStats));
 	if (file_stats) {
-		memset (file_stats, 0, sizeof (ClientFileStats));
+		(void) memset (file_stats, 0, sizeof (ClientFileStats));
 	}
 
 	return file_stats;
@@ -168,6 +170,34 @@ void client_file_stats_print (Client *client) {
 #pragma endregion
 
 #pragma region main
+
+const char *client_connections_status_to_string (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #string;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_to_string (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
+
+const char *client_connections_status_description (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #description;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_description (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
 
 Client *client_new (void) {
 
@@ -241,7 +271,6 @@ void client_delete (void *ptr) {
 			else free (client->data);
 		}
 
-		// 16/06/2020
 		if (client->handlers_lock) {
 			pthread_mutex_destroy (client->handlers_lock);
 			free (client->handlers_lock);
@@ -288,9 +317,11 @@ Client *client_create (void) {
 
 		client->name = str_new ("no-name");
 
-		time (&client->connected_timestamp);
+		(void) time (&client->connected_timestamp);
 
-		client->connections = dlist_init (connection_delete, connection_comparator);
+		client->connections = dlist_init (
+			connection_delete, connection_comparator
+		);
 
 		client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (client->lock, NULL);
@@ -305,8 +336,10 @@ Client *client_create (void) {
 }
 
 // creates a new client and registers a new connection
-Client *client_create_with_connection (Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address) {
+Client *client_create_with_connection (
+	Cerver *cerver,
+	const i32 sock_fd, const struct sockaddr_storage address
+) {
 
 	Client *client = client_create ();
 	if (client) {
@@ -334,9 +367,11 @@ void client_set_name (Client *client, const char *name) {
 }
 
 // this methods is primarily used for logging
-// returns the client's name directly (if any) & should NOT be deleted, if not
+// returns the client's name directly (if any) & should NOT be deleted
 // returns a newly allocated string with the clients id that should be deleted after use
-char *client_get_identifier (Client *client, bool *is_name) {
+char *client_get_identifier (
+	Client *client, bool *is_name
+) {
 
 	char *retval = NULL;
 
@@ -358,7 +393,9 @@ char *client_get_identifier (Client *client, bool *is_name) {
 
 // sets the client's session id
 // returns 0 on succes, 1 on error
-u8 client_set_session_id (Client *client, const char *session_id) {
+u8 client_set_session_id (
+	Client *client, const char *session_id
+) {
 
 	u8 retval = 1;
 
@@ -374,11 +411,17 @@ u8 client_set_session_id (Client *client, const char *session_id) {
 }
 
 // returns the client's app data
-void *client_get_data (Client *client) { return (client ? client->data : NULL); }
+void *client_get_data (Client *client) {
+
+	return (client ? client->data : NULL);
+
+}
 
 // sets client's data and a way to destroy it
 // deletes the previous data of the client
-void client_set_data (Client *client, void *data, Action delete_data) {
+void client_set_data (
+	Client *client, void *data, Action delete_data
+) {
 
 	if (client) {
 		if (client->data) {
@@ -393,8 +436,10 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 }
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-void client_set_app_handlers (Client *client,
-	Handler *app_handler, Handler *app_error_handler) {
+void client_set_app_handlers (
+	Client *client,
+	Handler *app_handler, Handler *app_error_handler
+) {
 
 	if (client) {
 		client->app_packet_handler = app_handler;
@@ -413,7 +458,9 @@ void client_set_app_handlers (Client *client,
 }
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
-void client_set_custom_handler (Client *client, Handler *custom_handler) {
+void client_set_custom_handler (
+	Client *client, Handler *custom_handler
+) {
 
 	if (client) {
 		client->custom_packet_handler = custom_handler;
@@ -430,7 +477,9 @@ void client_set_custom_handler (Client *client, Handler *custom_handler) {
 // if packets do not pass the checks, won't be handled and will be inmediately destroyed
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
-void client_set_check_packets (Client *client, bool check_packets) {
+void client_set_check_packets (
+	Client *client, bool check_packets
+) {
 
 	if (client) {
 		client->check_packets = check_packets;
@@ -439,7 +488,9 @@ void client_set_check_packets (Client *client, bool check_packets) {
 }
 
 // compare clients based on their client ids
-int client_comparator_client_id (const void *a, const void *b) {
+int client_comparator_client_id (
+	const void *a, const void *b
+) {
 
 	if (a && b) {
 		Client *client_a = (Client *) a;
@@ -455,9 +506,14 @@ int client_comparator_client_id (const void *a, const void *b) {
 }
 
 // compare clients based on their session ids
-int client_comparator_session_id (const void *a, const void *b) {
+int client_comparator_session_id (
+	const void *a, const void *b
+) {
 
-	if (a && b) return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+	if (a && b) return str_compare (
+		((Client *) a)->session_id, ((Client *) b)->session_id
+	);
+
 	if (a && !b) return -1;
 	if (!a && b) return 1;
 
@@ -519,26 +575,36 @@ void client_drop (Cerver *cerver, Client *client) {
 u8 client_connection_add (Client *client, Connection *connection) {
 
 	return (client && connection) ?
-		(u8) dlist_insert_after (client->connections, dlist_end (client->connections), connection) : 1;
+		(u8) dlist_insert_after (
+			client->connections, dlist_end (client->connections), connection
+		) : 1;
 
 }
 
 // removes the connection from the client
 // returns 0 on success, 1 on error
-u8 client_connection_remove (Client *client, Connection *connection) {
+u8 client_connection_remove (
+	Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
-	if (client && connection) retval = dlist_remove (client->connections, connection, NULL) ? 0 : 1;
+	if (client && connection)
+		retval = dlist_remove (
+			client->connections, connection, NULL
+		) ? 0 : 1;
 
 	return retval;
 
 }
 
-// closes the connection & then removes it from the client & finally deletes the connection
+// closes the connection & then removes it from the client
+// finally deletes the connection
 // moves the socket to the cerver's socket pool
 // returns 0 on success, 1 on error
-u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connection) {
+u8 client_connection_drop (
+	Cerver *cerver, Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -557,10 +623,12 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
 // removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
 // and also remove the client & connection from the cerver's structures when needed
 // also checks if there is another active connection in the client, if not it will be dropped
-// returns 0 on success, 1 on error
-u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock_fd) {
+// returns the resulting status after the operation
+ClientConnectionsStatus client_remove_connection_by_sock_fd (
+	Cerver *cerver, Client *client, const i32 sock_fd
+) {
 
-	u8 retval = 1;
+	ClientConnectionsStatus status = CLIENT_CONNECTIONS_STATUS_ERROR;
 
 	if (cerver && client) {
 		Connection *connection = NULL;
@@ -569,20 +637,24 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%ld> does not have ANY connection - removing him from cerver...",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%ld> does not have ANY connection - removing him from cerver...",
 					client->id
 				);
 				#endif
 
-				client_remove_from_cerver (cerver, client);
+				(void) client_remove_from_cerver (cerver, client);
 				client_delete (client);
+
+				status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 			} break;
 
 			case 1: {
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has only 1 connection left!",
 					client->id
 				);
 				#endif
@@ -590,7 +662,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				connection = (Connection *) client->connections->start->data;
 
 				// remove the connection from cerver structures & poll array
-				connection_remove_from_cerver (cerver, connection);
+				(void) connection_remove_from_cerver (cerver, connection);
 
 				// remove, close & delete the connection
 				if (!client_connection_drop (
@@ -614,7 +686,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 						NULL, NULL
 					);
 
-					retval = 0;
+					status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 				}
 			} break;
 
@@ -622,16 +694,20 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has %ld connections left!",
 					client->id, dlist_size (client->connections)
 				);
 				#endif
 
 				// search the connection in the client
-				connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+				connection = connection_get_by_sock_fd_from_client (
+					client, sock_fd
+				);
+
 				if (connection) {
 					// remove the connection from cerver structures & poll array
-					connection_remove_from_cerver (cerver, connection);
+					(void) connection_remove_from_cerver (cerver, connection);
 
 					if (!client_connection_drop (
 						cerver,
@@ -644,7 +720,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 							NULL, NULL
 						);
 
-						retval = 0;
+						status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 					}
 				}
 
@@ -663,13 +739,15 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 		}
 	}
 
-	return retval;
+	return status;
 
 }
 
 // registers all the active connections from a client to the cerver's structures (like maps)
 // returns 0 on success registering at least one, 1 if all connections failed
-u8 client_register_connections_to_cerver (Cerver *cerver, Client *client) {
+u8 client_register_connections_to_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -705,7 +783,9 @@ u8 client_register_connections_to_cerver (Cerver *cerver, Client *client) {
 
 // unregiters all the active connections from a client from the cerver's structures (like maps)
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
-u8 client_unregister_connections_from_cerver (Cerver *cerver, Client *client) {
+u8 client_unregister_connections_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -741,7 +821,9 @@ u8 client_unregister_connections_from_cerver (Cerver *cerver, Client *client) {
 
 // registers all the active connections from a client to the cerver's poll
 // returns 0 on success registering at least one, 1 if all connections failed
-u8 client_register_connections_to_cerver_poll (Cerver *cerver, Client *client) {
+u8 client_register_connections_to_cerver_poll (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -778,7 +860,9 @@ u8 client_register_connections_to_cerver_poll (Cerver *cerver, Client *client) {
 
 // unregisters all the active connections from a client from the cerver's poll
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
-u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *client) {
+u8 client_unregister_connections_from_cerver_poll (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -813,9 +897,10 @@ u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *clien
 
 }
 
-// 07/06/2020
 // removes the client from cerver data structures, not taking into account its connections
-Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
+Client *client_remove_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	Client *retval = NULL;
 
@@ -856,14 +941,17 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
 }
 
-static void client_register_to_cerver_internal (Cerver *cerver, Client *client) {
+static void client_register_to_cerver_internal (
+	Cerver *cerver, Client *client
+) {
 
 	(void) avl_insert_node (cerver->clients, client);
 
 	#ifdef CLIENT_DEBUG
 	cerver_log (
 		LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
-		"Registered a new client to cerver %s.", cerver->info->name->str
+		"Registered a new client to cerver %s.",
+		cerver->info->name->str
 	);
 	#endif
 
@@ -874,7 +962,8 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 		"Connected clients to cerver %s: %i.",
-		cerver->info->name->str, cerver->stats->current_n_connected_clients
+		cerver->info->name->str,
+		cerver->stats->current_n_connected_clients
 	);
 	#endif
 
@@ -883,7 +972,9 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
 // registers a client to the cerver --> add it to cerver's structures
 // registers all of the current active client connections to the cerver poll
 // returns 0 on success, 1 on error
-u8 client_register_to_cerver (Cerver *cerver, Client *client) {
+u8 client_register_to_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -916,7 +1007,9 @@ u8 client_register_to_cerver (Cerver *cerver, Client *client) {
 }
 
 // unregisters a client from a cerver -- removes it from cerver's structures
-Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
+Client *client_unregister_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	Client *retval = NULL;
 
@@ -963,7 +1056,9 @@ Client *client_get_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 // searches the avl tree to get the client associated with the session id
 // the cerver must support sessions
-Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
+Client *client_get_by_session_id (
+	Cerver *cerver, const char *session_id
+) {
 
 	Client *client = NULL;
 
@@ -1019,7 +1114,7 @@ void client_broadcast_to_all_avl (
 u8 client_event_unregister (Client *client, ClientEventType event_type);
 
 // get the description for the current event type
-const char *client_event_type_description (ClientEventType type) {
+const char *client_event_type_description (const ClientEventType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CLIENT_EVENT_##name: return #description;
@@ -1160,7 +1255,9 @@ u8 client_event_register (
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if event is NOT registered
-u8 client_event_unregister (Client *client, const ClientEventType event_type) {
+u8 client_event_unregister (
+	Client *client, const ClientEventType event_type
+) {
 
 	u8 retval = 1;
 
@@ -1239,7 +1336,7 @@ void client_event_trigger (
 u8 client_error_unregister (Client *client, const ClientErrorType error_type);
 
 // get the description for the current error type
-const char *client_error_type_description (ClientErrorType type) {
+const char *client_error_type_description (const ClientErrorType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CLIENT_ERROR_##name: return #description;
@@ -1553,7 +1650,9 @@ static void client_error_packet_handler (Packet *packet) {
 }
 
 // creates an error packet ready to be sent
-Packet *client_error_packet_generate (const ClientErrorType type, const char *msg) {
+Packet *client_error_packet_generate (
+	const ClientErrorType type, const char *msg
+) {
 
 	Packet *packet = packet_new ();
 	if (packet) {
@@ -1723,7 +1822,7 @@ static u8 client_custom_handler_start (Client *client) {
 
 }
 
-// 16/06/2020 -- starts all client's handlers
+// starts all client's handlers
 static u8 client_handlers_start (Client *client) {
 
 	u8 errors = 0;
@@ -1813,7 +1912,9 @@ Connection *client_connection_create (
 
 // registers an existing connection to a client
 // retuns 0 on success, 1 on error
-int client_connection_register (Client *client, Connection *connection) {
+int client_connection_register (
+	Client *client, Connection *connection
+) {
 
 	int retval = 1;
 
@@ -1831,7 +1932,9 @@ int client_connection_register (Client *client, Connection *connection) {
 
 // unregister an exitsing connection from the client
 // returns 0 on success, 1 on error or if the connection does not belong to the client
-int client_connection_unregister (Client *client, Connection *connection) {
+int client_connection_unregister (
+	Client *client, Connection *connection
+) {
 
 	int retval = 1;
 
@@ -1846,7 +1949,9 @@ int client_connection_unregister (Client *client, Connection *connection) {
 }
 
 // performs a receive in the connection's socket to get a complete packet & handle it
-void client_connection_get_next_packet (Client *client, Connection *connection) {
+void client_connection_get_next_packet (
+	Client *client, Connection *connection
+) {
 
 	if (client && connection) {
 		connection->full_packet = false;
@@ -1866,7 +1971,9 @@ void client_connection_get_next_packet (Client *client, Connection *connection) 
 // this is a blocking method, as it will wait until the connection has been successfull or a timeout
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 when the connection has been established, 1 on error or failed to connect
-unsigned int client_connect (Client *client, Connection *connection) {
+unsigned int client_connect (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
@@ -1893,7 +2000,9 @@ unsigned int client_connect (Client *client, Connection *connection) {
 // performs a first read to get the cerver info packet
 // this is a blocking method, and works exactly the same as if only calling client_connect ()
 // returns 0 when the connection has been established, 1 on error or failed to connect
-unsigned int client_connect_to_cerver (Client *client, Connection *connection) {
+unsigned int client_connect_to_cerver (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
@@ -1934,20 +2043,26 @@ static void *client_connect_thread (void *client_connection_ptr) {
 // open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 on success connection thread creation, 1 on error
-unsigned int client_connect_async (Client *client, Connection *connection) {
+unsigned int client_connect_async (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
 	if (client && connection) {
 		ClientConnection *cc = client_connection_aux_new (client, connection);
 		if (cc) {
-			if (!thread_create_detachable (&cc->connection_thread_id, client_connect_thread, cc)) {
+			if (!thread_create_detachable (
+				&cc->connection_thread_id, client_connect_thread, cc
+			)) {
 				retval = 0;         // success
 			}
 
 			else {
 				#ifdef CLIENT_DEBUG
-				cerver_log_error ("Failed to create client_connect_thread () detachable thread!");
+				cerver_log_error (
+					"Failed to create client_connect_thread () detachable thread!"
+				);
 				#endif
 			}
 		}
@@ -2064,7 +2179,9 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // retruns 0 when the response has been handled, 1 on error
-unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
+unsigned int client_request_to_cerver (
+	Client *client, Connection *connection, Packet *request
+) {
 
 	unsigned int retval = 1;
 
@@ -2116,7 +2233,9 @@ static void *client_request_to_cerver_thread (void *cc_ptr) {
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // returns 0 on success request, 1 on error
-unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
+unsigned int client_request_to_cerver_async (
+	Client *client, Connection *connection, Packet *request
+) {
 
 	unsigned int retval = 1;
 
@@ -2127,7 +2246,9 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 			ClientConnection *cc = client_connection_aux_new (client, connection);
 			if (cc) {
 				// create a new thread to receive & handle the response
-				if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
+				if (!thread_create_detachable (
+					&cc->connection_thread_id, client_request_to_cerver_thread, cc
+				)) {
 					retval = 0;         // success
 				}
 
@@ -2201,7 +2322,9 @@ u8 client_files_add_path (Client *client, const char *path) {
 }
 
 // sets the default uploads path to be used when receiving a file
-void client_files_set_uploads_path (Client *client, const char *uploads_path) {
+void client_files_set_uploads_path (
+	Client *client, const char *uploads_path
+) {
 
 	if (client && uploads_path) {
 		str_delete (client->uploads_path);
@@ -2246,7 +2369,9 @@ void client_files_set_file_upload_cb (
 
 // search for the requested file in the configured paths
 // returns the actual filename (path + directory) where it was found, NULL on error
-String *client_files_search_file (Client *client, const char *filename) {
+String *client_files_search_file (
+	Client *client, const char *filename
+) {
 
 	String *retval = NULL;
 
@@ -2273,7 +2398,10 @@ String *client_files_search_file (Client *client, const char *filename) {
 // requests a file from the cerver
 // the client's uploads_path should have been configured before calling this method
 // returns 0 on success sending request, 1 on failed to send request
-u8 client_file_get (Client *client, Connection *connection, const char *filename) {
+u8 client_file_get (
+	Client *client, Connection *connection,
+	const char *filename
+) {
 
 	u8 retval = 1;
 
@@ -2312,7 +2440,10 @@ u8 client_file_get (Client *client, Connection *connection, const char *filename
 
 // sends a file to the cerver
 // returns 0 on success sending request, 1 on failed to send request
-u8 client_file_send (Client *client, Connection *connection, const char *filename) {
+u8 client_file_send (
+	Client *client, Connection *connection,
+	const char *filename
+) {
 
 	u8 retval = 1;
 
@@ -2368,8 +2499,14 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 		#endif
 
 		CerverReport *cerver_report = cerver_deserialize ((SCerver *) end);
-		if (cerver_report_check_info (cerver_report, packet->client, packet->connection))
-			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to correctly check cerver info!");
+		if (cerver_report_check_info (
+			cerver_report, packet->client, packet->connection
+		)) {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				"Failed to correctly check cerver info!"
+			);
+		}
 	}
 
 }
@@ -2595,13 +2732,20 @@ static void client_request_packet_handler (Packet *packet) {
 	if (packet->header) {
 		switch (packet->header->request_type) {
 			// request from a cerver to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE: client_request_get_file (packet); break;
+			case REQUEST_PACKET_TYPE_GET_FILE:
+				client_request_get_file (packet);
+				break;
 
 			// request from a cerver to receive a file
-			case REQUEST_PACKET_TYPE_SEND_FILE: client_request_send_file (packet); break;
+			case REQUEST_PACKET_TYPE_SEND_FILE:
+				client_request_send_file (packet);
+				break;
 
 			default:
-				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Unknown request from cerver");
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+					"Unknown request from cerver"
+				);
 				break;
 		}
 	}
@@ -2639,21 +2783,25 @@ static void client_auth_success_handler (Packet *packet) {
 				#ifdef AUTH_DEBUG
 				cerver_log_debug (
 					"Got client's <%s> session id <%s>",
-					packet->client->name->str, packet->client->session_id->str
+					packet->client->name->str,
+					packet->client->session_id->str
 				);
 				#endif
 			}
 		}
 	}
 
-	client_event_trigger (CLIENT_EVENT_SUCCESS_AUTH, packet->client, packet->connection);
+	client_event_trigger (
+		CLIENT_EVENT_SUCCESS_AUTH,
+		packet->client, packet->connection
+	);
 
 }
 
 static void client_auth_packet_handler (Packet *packet) {
 
 	switch (packet->header->request_type) {
-		// 24/01/2020 -- cerver requested authentication, if not, we will be disconnected
+		// cerver requested authentication, if not, we will be disconnected
 		case AUTH_PACKET_TYPE_REQUEST_AUTH:
 			break;
 
@@ -2667,13 +2815,15 @@ static void client_auth_packet_handler (Packet *packet) {
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown auth packet type.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown auth packet type"
+			);
 			break;
 	}
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_APP packet type
 static void client_app_packet_handler (Packet *packet) {
 
@@ -2708,7 +2858,6 @@ static void client_app_packet_handler (Packet *packet) {
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_APP_ERROR packet type
 static void client_app_error_packet_handler (Packet *packet) {
 
@@ -2743,7 +2892,6 @@ static void client_app_error_packet_handler (Packet *packet) {
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_CUSTOM packet type
 static void client_custom_packet_handler (Packet *packet) {
 
@@ -3104,7 +3252,9 @@ static void client_receive_handle_buffer (
 
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
-static void client_receive_handle_failed (Client *client, Connection *connection) {
+static void client_receive_handle_failed (
+	Client *client, Connection *connection
+) {
 
 	if (connection->active) {
 		if (!client_connection_end (client, connection)) {
@@ -3202,13 +3352,19 @@ unsigned int client_receive_internal (
 }
 
 // allocates a new packet buffer to receive incoming data from the connection's socket
-// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
-unsigned int client_receive (Client *client, Connection *connection) {
+// returns 0 on success handle
+// returns 1 if any error ocurred and must likely the connection was ended
+unsigned int client_receive (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
+		char *packet_buffer = (char *) calloc (
+			connection->receive_packet_buffer_size, sizeof (char)
+		);
+
 		if (packet_buffer) {
 			retval = client_receive_internal (
 				client, connection,
@@ -3236,14 +3392,20 @@ unsigned int client_receive (Client *client, Connection *connection) {
 
 #pragma region end
 
-// ends a connection with a cerver by sending a disconnect packet and the closing the connection
-static void client_connection_terminate (Client *client, Connection *connection) {
+// ends a connection with a cerver
+// by sending a disconnect packet and the closing the connection
+static void client_connection_terminate (
+	Client *client, Connection *connection
+) {
 
 	if (connection) {
 		if (connection->active) {
 			if (connection->cerver_report) {
 				// send a close connection packet
-				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
+				Packet *packet = packet_generate_request (
+					PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0
+				);
+
 				if (packet) {
 					packet_set_network_values (packet, NULL, client, connection, NULL);
 					if (packet_send (packet, 0, NULL, false)) {
