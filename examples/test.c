@@ -213,6 +213,8 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
 
+		cerver_set_reusable_address_flags (my_cerver, true);
+
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);
 
