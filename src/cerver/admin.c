@@ -1497,6 +1497,34 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
 #pragma region handler
 
+const char *admin_cerver_handler_error_to_string (
+	const AdminCerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case ADMIN_CERVER_HANDLER_ERROR_##name: return #string;
+		ADMIN_CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return admin_cerver_handler_error_to_string (ADMIN_CERVER_HANDLER_ERROR_NONE);
+
+}
+
+const char *admin_cerver_handler_error_description (
+	const AdminCerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case ADMIN_CERVER_HANDLER_ERROR_##name: return #description;
+		ADMIN_CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return admin_cerver_handler_error_description (ADMIN_CERVER_HANDLER_ERROR_NONE);
+
+}
+
 // handles a packet of type PACKET_TYPE_CLIENT
 static void admin_cerver_client_packet_handler (Packet *packet) {
 
