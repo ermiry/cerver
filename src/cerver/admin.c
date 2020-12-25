@@ -1515,7 +1515,10 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 
 				admin_remove_connection_by_sock_fd (
 					packet->cerver->admin,
-					admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd),
+					admin_get_by_sock_fd (
+						packet->cerver->admin,
+						packet->connection->socket->sock_fd
+					),
 					packet->connection->socket->sock_fd
 				);
 			} break;
@@ -1525,7 +1528,10 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 			case CLIENT_PACKET_TYPE_DISCONNECT: {
 				admin_cerver_drop_admin (
 					packet->cerver->admin,
-					admin_get_by_sock_fd (packet->cerver->admin, packet->connection->socket->sock_fd)
+					admin_get_by_sock_fd (
+						packet->cerver->admin,
+						packet->connection->socket->sock_fd
+					)
 				);
 
 				cerver_event_trigger (
@@ -1687,78 +1693,78 @@ static void admin_custom_packet_handler (Packet *packet) {
 }
 
 // handles a packet from an admin
-void admin_packet_handler (Packet *packet) {
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended or removed from admin poll
+u8 admin_packet_handler (Packet *packet) {
 
-	if (packet) {
-		bool good = true;
-		if (packet->cerver->check_packets) {
-			// we expect the packet version in the packet's data
-			if (packet->data) {
-				packet->version = (PacketVersion *) packet->data_ptr;
-				packet->data_ptr += sizeof (PacketVersion);
-				good = packet_check (packet);
-			}
-
-			else {
-				cerver_log_error ("admin_packet_handler () - No packet version to check!");
-				good = false;
-			}
+	bool good = true;
+	if (packet->cerver->check_packets) {
+		// we expect the packet version in the packet's data
+		if (packet->data) {
+			packet->version = (PacketVersion *) packet->data_ptr;
+			packet->data_ptr += sizeof (PacketVersion);
+			good = packet_check (packet);
 		}
 
-		if (good) {
-			switch (packet->header->packet_type) {
-				case PACKET_TYPE_CLIENT:
-					packet->cerver->admin->stats->received_packets->n_client_packets += 1;
-					packet->client->stats->received_packets->n_client_packets += 1;
-					packet->connection->stats->received_packets->n_client_packets += 1;
-					admin_cerver_client_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		else {
+			cerver_log_error ("admin_packet_handler () - No packet version to check!");
+			good = false;
+		}
+	}
 
-				// handles a request made from the admin
-				case PACKET_TYPE_REQUEST:
-					packet->cerver->admin->stats->received_packets->n_request_packets += 1;
-					packet->client->stats->received_packets->n_request_packets += 1;
-					packet->connection->stats->received_packets->n_request_packets += 1;
-					admin_cerver_request_packet_handler (packet);
-					packet_delete (packet);
-					break;
+	if (good) {
+		switch (packet->header->packet_type) {
+			case PACKET_TYPE_CLIENT:
+				packet->cerver->admin->stats->received_packets->n_client_packets += 1;
+				packet->client->stats->received_packets->n_client_packets += 1;
+				packet->connection->stats->received_packets->n_client_packets += 1;
+				admin_cerver_client_packet_handler (packet);
+				packet_delete (packet);
+				break;
 
-				case PACKET_TYPE_APP:
-					packet->cerver->admin->stats->received_packets->n_app_packets += 1;
-					packet->client->stats->received_packets->n_app_packets += 1;
-					packet->connection->stats->received_packets->n_app_packets += 1;
-					admin_app_packet_handler (packet);
-					break;
+			// handles a request made from the admin
+			case PACKET_TYPE_REQUEST:
+				packet->cerver->admin->stats->received_packets->n_request_packets += 1;
+				packet->client->stats->received_packets->n_request_packets += 1;
+				packet->connection->stats->received_packets->n_request_packets += 1;
+				admin_cerver_request_packet_handler (packet);
+				packet_delete (packet);
+				break;
 
-				case PACKET_TYPE_APP_ERROR:
-					packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
-					packet->client->stats->received_packets->n_app_error_packets += 1;
-					packet->connection->stats->received_packets->n_app_error_packets += 1;
-					admin_app_error_packet_handler (packet);
-					break;
+			case PACKET_TYPE_APP:
+				packet->cerver->admin->stats->received_packets->n_app_packets += 1;
+				packet->client->stats->received_packets->n_app_packets += 1;
+				packet->connection->stats->received_packets->n_app_packets += 1;
+				admin_app_packet_handler (packet);
+				break;
 
-				case PACKET_TYPE_CUSTOM:
-					packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
-					packet->client->stats->received_packets->n_custom_packets += 1;
-					packet->connection->stats->received_packets->n_custom_packets += 1;
-					admin_custom_packet_handler (packet);
-					break;
+			case PACKET_TYPE_APP_ERROR:
+				packet->cerver->admin->stats->received_packets->n_app_error_packets += 1;
+				packet->client->stats->received_packets->n_app_error_packets += 1;
+				packet->connection->stats->received_packets->n_app_error_packets += 1;
+				admin_app_error_packet_handler (packet);
+				break;
 
-				default: {
-					packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
-					packet->client->stats->received_packets->n_bad_packets += 1;
-					packet->connection->stats->received_packets->n_bad_packets += 1;
-					#ifdef ADMIN_DEBUG
-					cerver_log (
-						LOG_TYPE_WARNING, LOG_TYPE_PACKET,
-						"Got a packet of unknown type in cerver %s admin handler",
-						packet->cerver->info->name->str
-					);
-					#endif
-					packet_delete (packet);
-				} break;
-			}
+			case PACKET_TYPE_CUSTOM:
+				packet->cerver->admin->stats->received_packets->n_custom_packets += 1;
+				packet->client->stats->received_packets->n_custom_packets += 1;
+				packet->connection->stats->received_packets->n_custom_packets += 1;
+				admin_custom_packet_handler (packet);
+				break;
+
+			default: {
+				packet->cerver->admin->stats->received_packets->n_bad_packets += 1;
+				packet->client->stats->received_packets->n_bad_packets += 1;
+				packet->connection->stats->received_packets->n_bad_packets += 1;
+				#ifdef ADMIN_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+					"Got a packet of unknown type in cerver %s admin handler",
+					packet->cerver->info->name->str
+				);
+				#endif
+				packet_delete (packet);
+			} break;
 		}
 	}
 
@@ -1942,6 +1948,8 @@ static inline void admin_poll_handle (
 						}
 					} break;
 				}
+
+				cerver_receive_delete (cr);
 			}
 		}
 	}

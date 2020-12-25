@@ -368,20 +368,29 @@ CERVER_PRIVATE u8 admin_cerver_drop_admin (
 
 #pragma region start
 
-CERVER_PRIVATE u8 admin_cerver_start (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_start (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region end
 
-CERVER_PRIVATE u8 admin_cerver_end (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_end (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region handler
 
 // handles a packet from an admin
-CERVER_PRIVATE void admin_packet_handler (struct _Packet *packet);
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended
+// or removed from admin poll
+CERVER_PRIVATE u8 admin_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 
