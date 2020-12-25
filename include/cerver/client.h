@@ -291,9 +291,10 @@ CERVER_EXPORT u8 client_connection_drop (
 // removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
 // and also remove the client & connection from the cerver's structures when needed
 // also checks if there is another active connection in the client, if not it will be dropped
-// returns 0 on success, 1 on error
-CERVER_PUBLIC u8 client_remove_connection_by_sock_fd (
-	struct _Cerver *cerver, Client *client, i32 sock_fd
+// returns the resulting status after the operation
+CERVER_PUBLIC ClientConnectionsStatus client_remove_connection_by_sock_fd (
+	struct _Cerver *cerver,
+	Client *client, const i32 sock_fd
 );
 
 // registers all the active connections from a client to the cerver's structures (like maps)

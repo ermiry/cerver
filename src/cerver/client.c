@@ -623,12 +623,12 @@ u8 client_connection_drop (
 // removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
 // and also remove the client & connection from the cerver's structures when needed
 // also checks if there is another active connection in the client, if not it will be dropped
-// returns 0 on success, 1 on error
-u8 client_remove_connection_by_sock_fd (
-	Cerver *cerver, Client *client, i32 sock_fd
+// returns the resulting status after the operation
+ClientConnectionsStatus client_remove_connection_by_sock_fd (
+	Cerver *cerver, Client *client, const i32 sock_fd
 ) {
 
-	u8 retval = 1;
+	ClientConnectionsStatus status = CLIENT_CONNECTIONS_STATUS_ERROR;
 
 	if (cerver && client) {
 		Connection *connection = NULL;
@@ -637,20 +637,24 @@ u8 client_remove_connection_by_sock_fd (
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%ld> does not have ANY connection - removing him from cerver...",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%ld> does not have ANY connection - removing him from cerver...",
 					client->id
 				);
 				#endif
 
-				client_remove_from_cerver (cerver, client);
+				(void) client_remove_from_cerver (cerver, client);
 				client_delete (client);
+
+				status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 			} break;
 
 			case 1: {
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has only 1 connection left!",
 					client->id
 				);
 				#endif
@@ -658,7 +662,7 @@ u8 client_remove_connection_by_sock_fd (
 				connection = (Connection *) client->connections->start->data;
 
 				// remove the connection from cerver structures & poll array
-				connection_remove_from_cerver (cerver, connection);
+				(void) connection_remove_from_cerver (cerver, connection);
 
 				// remove, close & delete the connection
 				if (!client_connection_drop (
@@ -682,7 +686,7 @@ u8 client_remove_connection_by_sock_fd (
 						NULL, NULL
 					);
 
-					retval = 0;
+					status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 				}
 			} break;
 
@@ -690,16 +694,20 @@ u8 client_remove_connection_by_sock_fd (
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has %ld connections left!",
 					client->id, dlist_size (client->connections)
 				);
 				#endif
 
 				// search the connection in the client
-				connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+				connection = connection_get_by_sock_fd_from_client (
+					client, sock_fd
+				);
+
 				if (connection) {
 					// remove the connection from cerver structures & poll array
-					connection_remove_from_cerver (cerver, connection);
+					(void) connection_remove_from_cerver (cerver, connection);
 
 					if (!client_connection_drop (
 						cerver,
@@ -712,7 +720,7 @@ u8 client_remove_connection_by_sock_fd (
 							NULL, NULL
 						);
 
-						retval = 0;
+						status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 					}
 				}
 
@@ -731,7 +739,7 @@ u8 client_remove_connection_by_sock_fd (
 		}
 	}
 
-	return retval;
+	return status;
 
 }
 
