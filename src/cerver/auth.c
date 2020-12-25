@@ -947,6 +947,7 @@ static CerverAuthError on_hold_packet_handler_check_version (
 			packet->version = (PacketVersion *) packet->data_ptr;
 			packet->data_ptr += sizeof (PacketVersion);
 
+			// TODO: return errors to client
 			if (packet_check (packet)) {
 				error = cerver_on_hold_handle_max_bad_packets (
 					packet->cerver, packet->connection
@@ -970,7 +971,7 @@ static CerverAuthError on_hold_packet_handler_check_version (
 
 }
 
-// handles an packet from an on hold connection
+// handles a packet from an on hold connection
 // returns 0 if we can / need to handle more packets
 // returns 1 if the connection has been ended or removed from on hold
 u8 on_hold_packet_handler (Packet *packet) {
