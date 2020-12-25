@@ -1002,7 +1002,7 @@ u8 admin_cerver_drop_admin (
 	u8 retval = 1;
 
 	if (admin_cerver && admin) {
-		admin_cerver_unregister_admin (admin_cerver, admin);
+		retval = admin_cerver_unregister_admin (admin_cerver, admin);
 		admin_delete (admin);
 	}
 
