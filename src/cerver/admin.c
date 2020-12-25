@@ -126,6 +126,34 @@ static void admin_cerver_packet_send_update_stats (
 
 #pragma region admin
 
+const char *admin_connections_status_to_string (
+	const AdminConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case ADMIN_CONNECTIONS_STATUS_##name: return #string;
+		ADMIN_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return admin_connections_status_to_string (ADMIN_CONNECTIONS_STATUS_NONE);
+
+}
+
+const char *admin_connections_status_description (
+	const AdminConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case ADMIN_CONNECTIONS_STATUS_##name: return #description;
+		ADMIN_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return admin_connections_status_description (ADMIN_CONNECTIONS_STATUS_NONE);
+
+}
+
 Admin *admin_new (void) {
 
 	Admin *admin = (Admin *) malloc (sizeof (Admin));

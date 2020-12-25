@@ -71,6 +71,28 @@ CERVER_PUBLIC void admin_cerver_stats_print (
 
 #pragma region admin
 
+#define ADMIN_CONNECTIONS_STATUS_MAP(XX)									\
+	XX(0,	NONE,		None, 		Undefined)								\
+	XX(1,	ERROR,		Error, 		Failed to remove connection)			\
+	XX(2,	ONE,		One,		At least one active connection)			\
+	XX(3,	DROPPED,	Dropped,	Removed due to no connections left)
+
+typedef enum AdminConnectionsStatus {
+
+	#define XX(num, name, string, description) ADMIN_CONNECTIONS_STATUS_##name = num,
+	ADMIN_CONNECTIONS_STATUS_MAP (XX)
+	#undef XX
+
+} AdminConnectionsStatus;
+
+CERVER_PUBLIC const char *admin_connections_status_to_string (
+	const AdminConnectionsStatus status
+);
+
+CERVER_PUBLIC const char *admin_connections_status_description (
+	const AdminConnectionsStatus status
+);
+
 struct _Admin {
 
 	struct _AdminCerver *admin_cerver;
@@ -121,8 +143,9 @@ CERVER_PUBLIC Admin *admin_get_by_session_id (
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (
-	struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd
+CERVER_PUBLIC AdminConnectionsStatus admin_remove_connection_by_sock_fd (
+	struct _AdminCerver *admin_cerver,
+	Admin *admin, const i32 sock_fd
 );
 
 // sends a packet to the first connection of the specified admin
