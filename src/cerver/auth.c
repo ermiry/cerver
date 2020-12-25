@@ -334,7 +334,7 @@ static CerverAuthError auth_with_token_admin (
 
 }
 
-static u8 auth_with_token_normal (
+static CerverAuthError auth_with_token_normal (
 	const Packet *packet, const AuthData *auth_data
 ) {
 
