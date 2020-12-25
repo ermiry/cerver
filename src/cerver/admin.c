@@ -306,13 +306,14 @@ Admin *admin_get_by_session_id (
 }
 
 // removes the connection from the admin referred to by the sock fd
-// and also checks if there is another active connection in the admin, if not it will be dropped
-// returns 0 on success, 1 on error
-u8 admin_remove_connection_by_sock_fd (
-	AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd
+// checks if there is another active connection in the admin, if not it will be dropped
+// returns the resulting status after the operation
+AdminConnectionsStatus admin_remove_connection_by_sock_fd (
+	AdminCerver *admin_cerver,
+	Admin *admin, const i32 sock_fd
 ) {
 
-	u8 retval = 1;
+	AdminConnectionsStatus status = ADMIN_CONNECTIONS_STATUS_ERROR;
 
 	if (admin_cerver && admin) {
 		Connection *connection = NULL;
@@ -327,13 +328,17 @@ u8 admin_remove_connection_by_sock_fd (
 				);
 				#endif
 
-				admin_cerver_unregister_admin (admin_cerver, admin);
+				(void) admin_cerver_unregister_admin (admin_cerver, admin);
 				admin_delete (admin);
+
+				status = ADMIN_CONNECTIONS_STATUS_DROPPED;
 			} break;
 
 			case 1: {
 				connection = (Connection *) admin->client->connections->start->data;
-				if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+				if (!admin_cerver_poll_unregister_connection (
+					admin_cerver, connection
+				)) {
 					// remove, close & delete the connection
 					if (!client_connection_drop (
 						admin_cerver->cerver,
@@ -347,7 +352,7 @@ u8 admin_remove_connection_by_sock_fd (
 						);
 
 						// no connections left in admin, just remove and delete
-						admin_cerver_unregister_admin (admin_cerver, admin);
+						(void) admin_cerver_unregister_admin (admin_cerver, admin);
 						admin_delete (admin);
 
 						cerver_event_trigger (
@@ -356,7 +361,7 @@ u8 admin_remove_connection_by_sock_fd (
 							NULL, NULL
 						);
 
-						retval = 0;
+						status = ADMIN_CONNECTIONS_STATUS_DROPPED;
 					}
 				}
 			} break;
@@ -364,7 +369,9 @@ u8 admin_remove_connection_by_sock_fd (
 			default: {
 				connection = admin_connection_get_by_sock_fd (admin, sock_fd);
 				if (connection) {
-					if (!admin_cerver_poll_unregister_connection (admin_cerver, connection)) {
+					if (!admin_cerver_poll_unregister_connection (
+						admin_cerver, connection
+					)) {
 						if (!client_connection_drop (
 							admin_cerver->cerver,
 							admin->client,
@@ -376,7 +383,7 @@ u8 admin_remove_connection_by_sock_fd (
 								NULL, NULL
 							);
 
-							retval = 0;
+							status = ADMIN_CONNECTIONS_STATUS_NONE;
 						}
 					}
 				}
@@ -395,7 +402,7 @@ u8 admin_remove_connection_by_sock_fd (
 		}
 	}
 
-	return retval;
+	return status;
 
 }
 
