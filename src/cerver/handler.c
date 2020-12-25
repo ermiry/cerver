@@ -2395,7 +2395,7 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 }
 
 // select how client connection will be handled based on cerver's handler type
-static u8 cerver_register_new_connection_normal_default_select_handler (
+u8 cerver_register_new_connection_normal_default_select_handler (
 	Cerver *cerver, Client *client, Connection *connection
 ) {
 
