@@ -1667,67 +1667,48 @@ void cerver_receive_handle_buffer (
 
 }
 
-// handles a failed recive from a connection associatd with a client
-// end sthe connection to prevent seg faults or signals for bad sock fd
-static void cerver_receive_handle_failed (void *cr_ptr) {
+// handles a failed receive from a connection associatd with a client
+// ends the connection to prevent seg faults or signals for bad sock fd
+void cerver_receive_handle_failed (CerverReceive *cr) {
 
-	if (cr_ptr) {
-		CerverReceive *cr = (CerverReceive *) cr_ptr;
+	if (cr->socket) {
+		(void) pthread_mutex_lock (cr->socket->read_mutex);
 
-		if (cr->socket) {
-			pthread_mutex_lock (cr->socket->read_mutex);
-
-			if (cr->socket->sock_fd > 0) {
-				switch (cr->type) {
-					case RECEIVE_TYPE_NORMAL: {
-						// check if the socket belongs to a player inside a lobby
-						if (cr->lobby) {
-							if (cr->lobby->players->size > 0) {
-								Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
-								if (player) player_unregister_from_lobby (cr->lobby, player);
-							}
+		if (cr->socket->sock_fd > 0) {
+			switch (cr->type) {
+				case RECEIVE_TYPE_NORMAL: {
+					// check if the socket belongs to a player inside a lobby
+					if (cr->lobby) {
+						if (cr->lobby->players->size > 0) {
+							(void) player_unregister_from_lobby (
+								cr->lobby,
+								player_get_by_sock_fd_list (
+									cr->lobby, cr->socket->sock_fd
+								)
+							);
 						}
+					}
 
-						client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
-					} break;
+					(void) client_remove_connection_by_sock_fd (
+						cr->cerver, cr->client, cr->socket->sock_fd
+					);
+				} break;
 
-					case RECEIVE_TYPE_ON_HOLD: {
-						on_hold_connection_drop (cr->cerver, cr->connection);
-					} break;
+				case RECEIVE_TYPE_ON_HOLD: {
+					on_hold_connection_drop (cr->cerver, cr->connection);
+				} break;
 
-					case RECEIVE_TYPE_ADMIN: {
-						admin_remove_connection_by_sock_fd (cr->cerver->admin, cr->admin, cr->socket->sock_fd);
-					} break;
+				case RECEIVE_TYPE_ADMIN: {
+					(void) admin_remove_connection_by_sock_fd (
+						cr->cerver->admin, cr->admin, cr->socket->sock_fd
+					);
+				} break;
 
-					default: break;
-				}
-			}
-
-			pthread_mutex_unlock (cr->socket->read_mutex);
-		}
-
-		cerver_receive_delete (cr);
-	}
-
-}
-
-// 28/05/2020 -- correctly call cerver_receive_handle_failed ()
-void cerver_switch_receive_handle_failed (CerverReceive *cr) {
-
-	if (cr) {
-		if (cr->cerver->thpool) {
-			if (thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr)) {
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					"Failed to add cerver_receive_handle_failed () to cerver's %s thpool!",
-					cr->cerver->info->name->str
-				);
+				default: break;
 			}
 		}
 
-		else {
-			cerver_receive_handle_failed (cr);
-		}
+		(void) pthread_mutex_unlock (cr->socket->read_mutex);
 	}
 
 }
@@ -1851,7 +1832,11 @@ void cerver_receive_internal (
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
-	ssize_t rc = recv (cr->socket->sock_fd, packet_buffer, packet_buffer_size, 0);
+	ssize_t rc = recv (
+		cr->socket->sock_fd,
+		packet_buffer, packet_buffer_size,
+		0
+	);
 
 	switch (rc) {
 		case -1: {
@@ -1867,7 +1852,7 @@ void cerver_receive_internal (
 				perror ("Error ");
 				#endif
 
-				cerver_switch_receive_handle_failed (cr);
+				cerver_receive_handle_failed (cr);
 			}
 		} break;
 
@@ -1884,7 +1869,7 @@ void cerver_receive_internal (
 			// perror ("Error ");
 			#endif
 
-			cerver_switch_receive_handle_failed (cr);
+			cerver_receive_handle_failed (cr);
 		} break;
 
 		default: {
@@ -2764,13 +2749,13 @@ static inline void cerver_poll_handle_actual_receive (
 			// or The other end has shut down one direction
 			case POLLHUP: {
 				// printf ("POLLHUP\n");
-				cerver_switch_receive_handle_failed (cr);
+				cerver_receive_handle_failed (cr);
 			} break;
 
 			// An asynchronous error occurred
 			case POLLERR: {
 				// printf ("POLLERR\n");
-				cerver_switch_receive_handle_failed (cr);
+				cerver_receive_handle_failed (cr);
 			} break;
 
 			// Urgent data arrived. SIGURG is sent then.
@@ -2778,7 +2763,7 @@ static inline void cerver_poll_handle_actual_receive (
 
 			default: {
 				if (active_fd->revents != 0) {
-					cerver_switch_receive_handle_failed (cr);
+					cerver_receive_handle_failed (cr);
 				}
 			} break;
 		}

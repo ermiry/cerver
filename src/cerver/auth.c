@@ -1265,7 +1265,7 @@ static inline void on_hold_poll_handle (
 
 					default: {
 						if (cerver->hold_fds[idx].revents != 0) {
-							cerver_switch_receive_handle_failed (cr);
+							cerver_receive_handle_failed (cr);
 						}
 					} break;
 				}

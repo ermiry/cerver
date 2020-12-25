@@ -2080,7 +2080,7 @@ static inline void admin_poll_handle (
 
 					default: {
 						if (admin_cerver->fds[idx].revents != 0) {
-							cerver_switch_receive_handle_failed (cr);
+							cerver_receive_handle_failed (cr);
 						}
 					} break;
 				}

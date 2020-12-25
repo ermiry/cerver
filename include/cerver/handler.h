@@ -268,7 +268,9 @@ CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
 	struct _Client *client, struct _Connection *connection
 );
 
-CERVER_PRIVATE void cerver_switch_receive_handle_failed (
+// handles a failed receive from a connection associatd with a client
+// ends the connection to prevent seg faults or signals for bad sock fd
+CERVER_PRIVATE void cerver_receive_handle_failed (
 	CerverReceive *cr
 );
 
