@@ -41,20 +41,20 @@ struct _AdminCerver;
 
 struct _AdminCerverStats {
 
-	time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
+	time_t threshold_time;				// every time we want to reset cerver stats (like packets), defaults 24hrs
 
-	u64 total_n_packets_received;                   // total number of packets received (packet header + data)
-	u64 total_n_receives_done;                      // total amount of actual calls to recv ()
-	u64 total_bytes_received;                       // total amount of bytes received in the cerver
+	u64 total_n_packets_received;		// total number of packets received (packet header + data)
+	u64 total_n_receives_done;			// total amount of actual calls to recv ()
+	u64 total_bytes_received;			// total amount of bytes received in the cerver
 
-	u64 total_n_packets_sent;                       // total number of packets that were sent
-	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
+	u64 total_n_packets_sent;			// total number of packets that were sent
+	u64 total_bytes_sent;				// total amount of bytes sent by the cerver
 
-	u64 current_connections;      					// all of the current active connections from all the admins (registered in the poll array)
-	u64 current_connected_admins;            		// the current number of auth admins connected (unique clients)
+	u64 current_connections;			// all of the current active connections from all the admins (registered in the poll array)
+	u64 current_connected_admins;		// the current number of auth admins connected (unique clients)
 
-	u64 total_admin_connections;                   	// the total amount of admin connections that have been done to the cerver
-	u64 total_n_admins;                            	// the total amount of admins that were registered to the cerver
+	u64 total_admin_connections;		// the total amount of admin connections that have been done to the cerver
+	u64 total_n_admins;					// the total amount of admins that were registered to the cerver
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -97,15 +97,15 @@ struct _Admin {
 
 	struct _AdminCerver *admin_cerver;
 
-	String *id;						// unique admin identifier
+	String *id;					// unique admin identifier
 
-	struct _Client *client;				// network values for the admin
+	struct _Client *client;		// network values for the admin
 
 	// a place to store dedicated admin data
 	void *data;
 	Action delete_data;
 
-	u32 bad_packets;					// disconnect after a number of bad packets
+	u32 bad_packets;			// disconnect after a number of bad packets
 
 };
 
@@ -177,7 +177,7 @@ struct _AdminCerver {
 
 	DoubleList *admins;					// connected admins to the cerver
 
-	delegate authenticate;              // authentication method
+	delegate authenticate;				// authentication method
 
 	u8 max_admins;						// the max numbers of admins allowed at any time
 	u8 max_admin_connections;			// the max number of connections allowed per admin
