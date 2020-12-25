@@ -297,7 +297,9 @@ static CerverAuthError auth_with_token_admin (
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
 
 	// if we get a token, we search for an admin with the same token
-	Admin *admin = admin_get_by_session_id (packet->cerver->admin, auth_data->token->str);
+	Admin *admin = admin_get_by_session_id (
+		packet->cerver->admin, auth_data->token->str
+	);
 
 	// if we found a client, register the new connection to him
 	if (admin) {
@@ -309,7 +311,9 @@ static CerverAuthError auth_with_token_admin (
 		);
 		#endif
 
-		(void) connection_register_to_client (admin->client, packet->connection);
+		(void) connection_register_to_client (
+			admin->client, packet->connection
+		);
 	}
 
 	else {
@@ -320,7 +324,8 @@ static CerverAuthError auth_with_token_admin (
 
 		// if not, the token is invalid!
 		error = auth_failed (
-			packet->cerver, packet->connection, "Session id is invalid!"
+			packet->cerver, packet->connection,
+			"Session id is invalid!"
 		);
 
 		cerver_event_trigger (
@@ -341,8 +346,10 @@ static CerverAuthError auth_with_token_normal (
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
 
 	if (packet && auth_data) {
-		// if we get a token, we search for a client with the same token
-		Client *client = client_get_by_session_id (packet->cerver, auth_data->token->str);
+		// if we get a token, search for a client with the same token
+		Client *client = client_get_by_session_id (
+			packet->cerver, auth_data->token->str
+		);
 
 		// if we found a client, register the new connection to him
 		if (client) {
@@ -369,7 +376,8 @@ static CerverAuthError auth_with_token_normal (
 
 			// if not, the token is invalid!
 			error = auth_failed (
-				packet->cerver, packet->connection, "Session id is invalid!"
+				packet->cerver, packet->connection,
+				"Session id is invalid!"
 			);
 
 			cerver_event_trigger (
@@ -567,9 +575,13 @@ static CerverAuthError auth_try (Packet *packet) {
 
 	if (packet->cerver->authenticate) {
 		Client *client = NULL;
-		if (!auth_try_common (packet, packet->cerver->authenticate, &client, false)) {
+		if (!auth_try_common (
+			packet, packet->cerver->authenticate, &client, false
+		)) {
 			// remove from on hold structures & poll array
-			on_hold_connection_remove (packet->cerver, packet->connection);
+			(void) on_hold_connection_remove (
+				packet->cerver, packet->connection
+			);
 
 			// reset connection's bad packets counter
 			packet->connection->bad_packets = 0;
@@ -580,7 +592,7 @@ static CerverAuthError auth_try (Packet *packet) {
 					// if we are successfull, send success packet
 					if (packet->cerver->use_sessions) {
 						SToken token = { 0 };
-						memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+						(void) memcpy (token.token, client->session_id->str, TOKEN_SIZE);
 						token.token[strlen (token.token)] = '\0';
 
 						auth_send_success_packet (
@@ -597,11 +609,6 @@ static CerverAuthError auth_try (Packet *packet) {
 							NULL, 0
 						);
 					}
-
-					// select how client connection will be handled based on cerver's handler type
-					(void) cerver_register_new_connection_normal_default_select_handler (
-						packet->cerver, client, packet->connection
-					);
 
 					cerver_event_trigger (
 						CERVER_EVENT_CLIENT_SUCCESS_AUTH,
@@ -642,13 +649,16 @@ static CerverAuthError auth_try (Packet *packet) {
 
 			// added connection to client with matching id (token)
 			else {
-				Client *match = client_get_by_sock_fd (packet->cerver, packet->connection->socket->sock_fd);
-				if (match) {
-					// FIXME:
-					// register the new client's connection to the cerver main structures
-					// based on the cerver's handler type
+				Client *match = client_get_by_sock_fd (
+					packet->cerver, packet->connection->socket->sock_fd
+				);
 
-					// FIXME: handle connection either on poll or thread
+				if (match) {
+					// select how client connection will be handled
+					// based on cerver's handler type
+					(void) cerver_handler_register_connection (
+						packet->cerver, match, packet->connection
+					);
 
 					// send success auth packet to client
 					auth_send_success_packet (
@@ -726,11 +736,6 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 							);
 						}
 
-						// select how client connection will be handled based on cerver's handler type
-						(void) cerver_register_new_connection_normal_default_select_handler (
-							packet->cerver, client, packet->connection
-						);
-
 						cerver_event_trigger (
 							CERVER_EVENT_ADMIN_CONNECTED,
 							packet->cerver,
@@ -746,7 +751,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 						);
 
 						// send an error packet to the client
-						error_packet_generate_and_send (
+						(void) error_packet_generate_and_send (
 							CERVER_ERROR_CERVER_ERROR, "Internal cerver error!",
 							packet->cerver, client, packet->connection
 						);
@@ -769,15 +774,9 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 					);
 
 					if (admin) {
-						// FIXME: shoud be removed?
-						// register the new connection to the cerver admin's poll array
-						// admin_cerver_poll_register_connection (packet->cerver->admin, packet->connection);
-
-						// FIXME:
-						// register the new client's connection to the cerver main structures
-						// based on the cerver's handler type
-
-						// FIXME: handle connection either on poll or thread
+						admin_cerver_poll_register_connection (
+							packet->cerver->admin, packet->connection
+						);
 
 						// send success auth packet to client
 						auth_send_success_packet (
