@@ -10,26 +10,6 @@ If the pthreads library is not installed on your system, install it (in Ubuntu) 
 
 `sudo apt-get install libpthread-stubs0-dev`
 
-### libmongoc
-
-You can install libmongoc, from the official site, with the base configuration, by running the following commands in Ubuntu:
-
-`sudo apt-get update && sudo apt-get install -y cmake wget`
-
-`wget https://github.com/mongodb/mongo-c-driver/releases/download/1.15.1/mongo-c-driver-1.15.1.tar.gz`
-
-`tar xzf mongo-c-driver-1.15.1.tar.gz`
-
-`cd mongo-c-driver-1.15.1`
-
-`mkdir cmake-build`
-
-`cd cmake-build`
-
-`cmake -D ENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -D CMAKE_BUILD_TYPE=Release ..`
-
-`sudo make -j4 && sudo make install && sudo ldconfig`
-
 ## 2. Download Cerver Source Code
 
 You can donwload **cerver's** latest source from this repo. If you want the latest rolling release in master, you can git clone in the master branch. However if you want the latest stable version, please refer to the releases tab in this repo and select the version you want.
