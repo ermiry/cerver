@@ -283,11 +283,12 @@ CERVER_PRIVATE void cerver_receive_internal (
 
 #pragma region register
 
-// select how client connection will be handled based on cerver's handler type
-CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
+// select how a connection will be handled
+// based on cerver's handler type
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_handler_register_connection (
 	struct _Cerver *cerver,
-	struct _Client *client,
-	struct _Connection *connection
+	struct _Client *client, struct _Connection *connection
 );
 
 #pragma endregion

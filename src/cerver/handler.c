@@ -2171,7 +2171,9 @@ static Connection *cerver_connection_create (Cerver *cerver,
 }
 
 // if the cerver requires auth, we put the connection on hold
-static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connection *connection) {
+static u8 cerver_register_new_connection_auth_required (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -2210,7 +2212,9 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
 
 }
 
-static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection *connection) {
+static u8 cerver_register_new_connection_normal_web (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -2225,7 +2229,8 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-				"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
+				"Cerver %s thpool is full! "
+				"Creating a detachable thread for sock fd <%d> connection...",
 				cerver->info->name->str, connection->socket->sock_fd
 			);
 			#endif
@@ -2240,7 +2245,11 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 			}
 
 			else {
-				cerver_log_error ("cerver_register_new_connection_normal_web () - failed to create detachable thread!");
+				cerver_log_error (
+					"cerver_register_new_connection_normal_web () - "
+					"failed to create detachable thread!"
+				);
+
 				cerver_receive_delete (cr);
 			}
 		}
@@ -2280,7 +2289,9 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
 }
 
-static u8 cerver_register_new_connection_normal_default_create_detachable (CerverReceive *cr) {
+static u8 cerver_register_new_connection_normal_default_create_detachable (
+	CerverReceive *cr
+) {
 
 	u8 retval = 1;
 
@@ -2303,7 +2314,8 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
 
 	else {
 		cerver_log_error (
-			"cerver_register_new_connection_normal_default () - Failed to create detachable thread for sock fd <%d> connection!",
+			"cerver_register_new_connection_normal_default () - "
+			"Failed to create detachable thread for sock fd <%d> connection!",
 			cr->connection->socket->sock_fd
 		);
 
@@ -2337,7 +2349,8 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-					"Cerver %s thpool is full! Creating a detachable thread for sock fd <%d> connection...",
+					"Cerver %s thpool is full! "
+					"Creating a detachable thread for sock fd <%d> connection...",
 					cerver->info->name->str, connection->socket->sock_fd
 				);
 				#endif
@@ -2382,7 +2395,7 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 }
 
 // select how client connection will be handled based on cerver's handler type
-u8 cerver_register_new_connection_normal_default_select_handler (
+static u8 cerver_register_new_connection_normal_default_select_handler (
 	Cerver *cerver, Client *client, Connection *connection
 ) {
 
@@ -2411,7 +2424,9 @@ u8 cerver_register_new_connection_normal_default_select_handler (
 
 }
 
-static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connection *connection) {
+static u8 cerver_register_new_connection_normal_default (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -2441,7 +2456,8 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
 	else {
 		cerver_log_error (
-			"cerver_register_new_connection_normal_default () - Failed to create new client for new connection with sock fd <%d>!",
+			"cerver_register_new_connection_normal_default () - "
+			"Failed to create new client for new connection with sock fd <%d>!",
 			connection->socket->sock_fd
 		);
 	}
@@ -2450,17 +2466,23 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
 }
 
-static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *connection) {
+static u8 cerver_register_new_connection_normal (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
 	switch (cerver->type) {
 		case CERVER_TYPE_WEB: {
-			retval = cerver_register_new_connection_normal_web (cerver, connection);
+			retval = cerver_register_new_connection_normal_web (
+				cerver, connection
+			);
 		} break;
 
 		default: {
-			retval = cerver_register_new_connection_normal_default (cerver, connection);
+			retval = cerver_register_new_connection_normal_default (
+				cerver, connection
+			);
 		} break;
 	}
 
@@ -2468,7 +2490,9 @@ static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *con
 
 }
 
-static inline u8 cerver_register_new_connection_select (Cerver *cerver, Connection *connection) {
+static inline u8 cerver_register_new_connection_select (
+	Cerver *cerver, Connection *connection
+) {
 
 	return cerver->auth_required ?
 		cerver_register_new_connection_auth_required (cerver, connection) :
@@ -2505,7 +2529,8 @@ static void cerver_register_new_connection (
 		// internal server error - failed to handle the new connection
 		else {
 			cerver_log_error (
-				"cerver_register_new_connection () - internal error - dropping sock fd <%d> connection...",
+				"cerver_register_new_connection () "
+				"- internal error - dropping sock fd <%d> connection...",
 				connection->socket->sock_fd
 			);
 
@@ -2514,6 +2539,7 @@ static void cerver_register_new_connection (
 	}
 
 	else {
+		// FIXME: close the socket and cleanup
 		// #ifdef CERVER_DEBUG
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
@@ -2556,6 +2582,45 @@ static void cerver_accept (void *cerver_ptr) {
 
 #pragma endregion
 
+#pragma region register
+
+// select how a connection will be handled
+// based on cerver's handler type
+// returns 0 on success, 1 on error
+u8 cerver_handler_register_connection (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	if (cerver && connection) {
+		switch (cerver->handler_type) {
+			case CERVER_HANDLER_TYPE_NONE: break;
+
+			// handle connection using the cerver's poll
+			case CERVER_HANDLER_TYPE_POLL: {
+				retval = cerver_poll_register_connection (
+					cerver, connection
+				);
+			} break;
+
+			// handle connection in dedicated thread
+			case CERVER_HANDLER_TYPE_THREADS: {
+				retval = cerver_register_new_connection_normal_default_select_handler_threads (
+					cerver, client, connection
+				);
+			} break;
+
+			default: break;
+		}
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
 #pragma region poll
 
 // reallocs main cerver poll fds
@@ -2567,7 +2632,10 @@ u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
 	if (cerver) {
 		u32 current_max = cerver->max_n_fds;
 		cerver->max_n_fds *= 2;
-		cerver->fds = (struct pollfd *) realloc (cerver->fds, cerver->max_n_fds * sizeof (struct pollfd));
+		cerver->fds = (struct pollfd *) realloc (
+			cerver->fds, cerver->max_n_fds * sizeof (struct pollfd)
+		);
+
 		if (cerver->fds) {
 			#pragma GCC diagnostic push
 			#pragma GCC diagnostic ignored "-Wunused-value"
@@ -2609,7 +2677,9 @@ i32 cerver_poll_get_idx_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 }
 
-static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *connection) {
+static u8 cerver_poll_register_connection_internal (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -2633,7 +2703,8 @@ static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *
 		cerver_log (
 			LOG_TYPE_CERVER, LOG_TYPE_NONE,
 			"Cerver %s current active connections: %ld",
-			cerver->info->name->str, cerver->stats->current_active_client_connections
+			cerver->info->name->str,
+			cerver->stats->current_active_client_connections
 		);
 		#endif
 
@@ -2647,14 +2718,18 @@ static u8 cerver_poll_register_connection_internal (Cerver *cerver, Connection *
 // regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
 // returns 0 on success, 1 on error
-u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
+u8 cerver_poll_register_connection (
+	Cerver *cerver, Connection *connection
+) {
 
 	u8 retval = 1;
 
 	if (cerver && connection) {
 		pthread_mutex_lock (cerver->poll_lock);
 
-		if (!cerver_poll_register_connection_internal (cerver, connection)) {
+		if (!cerver_poll_register_connection_internal (
+			cerver, connection
+		)) {
 			retval = 0;
 		}
 
@@ -2677,7 +2752,9 @@ u8 cerver_poll_register_connection (Cerver *cerver, Connection *connection) {
 
 			// try again to register the connection
 			else {
-				retval = cerver_poll_register_connection_internal (cerver, connection);
+				retval = cerver_poll_register_connection_internal (
+					cerver, connection
+				);
 			}
 		}
 
@@ -2718,7 +2795,8 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
 				"Cerver %s current active connections: %ld",
-				cerver->info->name->str, cerver->stats->current_active_client_connections
+				cerver->info->name->str,
+				cerver->stats->current_active_client_connections
 			);
 			#endif
 
