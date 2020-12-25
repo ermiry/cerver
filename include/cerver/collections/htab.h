@@ -60,7 +60,7 @@ extern void htab_set_key_delete (Htab *htab, void (*key_delete)(void *));
 // sets a method to correctly compare keys
 // usefull if you want to compare your keys (data) by specific fields
 // if not set, a generic method will be used instead
-extern void htab_set_key_comparator (Htab *htab, 
+extern void htab_set_key_comparator (Htab *htab,
 	int (*key_compare)(const void *one, const void *two));
 
 // creates a new htab
@@ -88,8 +88,8 @@ extern bool htab_contains_key (Htab *ht, const void *key, size_t key_size);
 // inserts a new value to the htab associated with its key
 // returns 0 on success, 1 on error
 extern int htab_insert (
-	Htab *ht, 
-	const void *key, size_t key_size, 
+	Htab *ht,
+	const void *key, size_t key_size,
 	void *val, size_t val_size
 );
 

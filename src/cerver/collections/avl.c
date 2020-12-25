@@ -318,8 +318,8 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 				avl_right_rotation (parent);
 				(*parent)->balance = 0;
 				(*parent)->right->balance = 0;
-			} 
-			
+			}
+
 			else {
 				if ((*parent)->left->right) {
 					avl_left_rotation (&(*parent)->left);
@@ -349,8 +349,8 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 				avl_left_rotation (parent);
 				(*parent)->balance = 0;
 				(*parent)->left->balance = 0;
-			} 
-			
+			}
+
 			else {
 				if ((*parent)->right->left) {
 					avl_right_rotation (&(*parent)->right);
@@ -459,8 +459,8 @@ static unsigned int avl_insert_node_r (AVLNode **parent, Comparator comparator, 
 		*flag = 1;
 
 		retval = 0;
-	} 
-	
+	}
+
 	else {
 		if (comparator ((*parent)->id, id) > 0) {
 			// go left
@@ -520,7 +520,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 
 				return avl_remove_node_r (tree, &(*parent)->right, comparator, id, flag);
 			}
-			
+
 			else {
 				void *data = (*parent)->id;
 
@@ -529,14 +529,14 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 					*(*parent) = *(*parent)->left;
 					free (p);
 
-				} 
-				
+				}
+
 				else if ((*parent)->right != NULL) {
 					AVLNode* p = (*parent)->right;
 					*(*parent) = *(*parent)->right;
 					free (p);
-				} 
-				
+				}
+
 				else {
 					// if (tree->destroy) tree->destroy ((*parent)->id);
 					// else free ((*parent)->id);
@@ -570,7 +570,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 		// 		if (*flag == 1) avl_treat_right_reduction (&(*parent), flag);
 		// 		return data;
 		// 	}
-			
+
 		// 	case 0:
 		// 		if ((*parent)->right != NULL && (*parent)->left != NULL) {
 		// 			AVLNode *ptr = (*parent)->right, copy = *(*parent);
@@ -582,7 +582,7 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 
 		// 			return avl_remove_node_r (tree, &(*parent)->right, comparator, id, flag);
 		// 		}
-				
+
 		// 		else {
 		// 			void *data = (*parent)->id;
 
@@ -591,14 +591,14 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 		// 				*(*parent) = *(*parent)->left;
 		// 				free (p);
 
-		// 			} 
-					
+		// 			}
+
 		// 			else if ((*parent)->right != NULL) {
 		// 				AVLNode* p = (*parent)->right;
 		// 				*(*parent) = *(*parent)->right;
 		// 				free (p);
-		// 			} 
-					
+		// 			}
+
 		// 			else {
 		// 				// if (tree->destroy) tree->destroy ((*parent)->id);
 		// 				// else free ((*parent)->id);
