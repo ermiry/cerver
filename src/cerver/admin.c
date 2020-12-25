@@ -1878,14 +1878,22 @@ u8 admin_packet_handler (Packet *packet) {
 
 	u8 retval = 1;
 
-	if (!admin_packet_handler_check_version (packet)) {
-		switch (admin_packet_handler_actual (packet)) {
-			case ADMIN_CERVER_HANDLER_ERROR_NONE:
-				retval = 0;
-				break;
+	switch (admin_packet_handler_check_version (packet)) {
+		case ADMIN_CERVER_HANDLER_ERROR_NONE: {
+			switch (admin_packet_handler_actual (packet)) {
+				case ADMIN_CERVER_HANDLER_ERROR_NONE:
+					retval = 0;
+					break;
 
-			default: break;
-		}
+				default: break;
+			}
+		} break;
+
+		case ADMIN_CERVER_HANDLER_ERROR_PACKET:
+			retval = 0;
+			break;
+
+		default: break;
 	}
 
 	return retval;
