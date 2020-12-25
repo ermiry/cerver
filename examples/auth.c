@@ -334,8 +334,13 @@ int main (void) {
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
 
+		cerver_set_reusable_address_flags (my_cerver, true);
+
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
 		cerver_set_handle_detachable_threads (my_cerver, true);
+
+		// cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		// cerver_set_poll_time_out (my_cerver, 2000);
 
 		Handler *app_handler = handler_create (handler);
 		handler_set_direct_handle (app_handler, true);

@@ -935,7 +935,9 @@ u8 admin_cerver_register_admin (
 			admin_cerver,
 			(Connection *) dlist_start (admin->client->connections)->data
 		)) {
-			dlist_insert_after (admin_cerver->admins, dlist_end (admin_cerver->admins), admin);
+			(void) dlist_insert_after (
+				admin_cerver->admins, dlist_end (admin_cerver->admins), admin
+			);
 
 			admin->admin_cerver = admin_cerver;
 
@@ -946,7 +948,8 @@ u8 admin_cerver_register_admin (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
-				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins
+				admin_cerver->cerver->info->name->str,
+				admin_cerver->stats->current_connected_admins
 			);
 			#endif
 
@@ -981,7 +984,8 @@ u8 admin_cerver_unregister_admin (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
-				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connected_admins
+				admin_cerver->cerver->info->name->str,
+				admin_cerver->stats->current_connected_admins
 			);
 			#endif
 
@@ -1942,7 +1946,7 @@ u8 admin_cerver_poll_register_connection (
 	u8 retval = 1;
 
 	if (admin_cerver && connection) {
-		pthread_mutex_lock (admin_cerver->poll_lock);
+		(void) pthread_mutex_lock (admin_cerver->poll_lock);
 
 		i32 idx = admin_cerver_poll_get_free_idx (admin_cerver);
 		if (idx >= 0) {
@@ -1957,7 +1961,8 @@ u8 admin_cerver_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
 				"Added sock fd <%d> to cerver %s ADMIN poll, idx: %i",
-				connection->socket->sock_fd, admin_cerver->cerver->info->name->str, idx
+				connection->socket->sock_fd,
+				admin_cerver->cerver->info->name->str, idx
 			);
 			#endif
 
@@ -1965,7 +1970,8 @@ u8 admin_cerver_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %ld",
-				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections
+				admin_cerver->cerver->info->name->str,
+				admin_cerver->stats->current_connections
 			);
 			#endif
 
@@ -1982,7 +1988,7 @@ u8 admin_cerver_poll_register_connection (
 			#endif
 		}
 
-		pthread_mutex_unlock (admin_cerver->poll_lock);
+		(void) pthread_mutex_unlock (admin_cerver->poll_lock);
 	}
 
 	return retval;
@@ -1998,7 +2004,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 	u8 retval = 1;
 
 	if (admin_cerver) {
-		pthread_mutex_lock (admin_cerver->poll_lock);
+		(void) pthread_mutex_lock (admin_cerver->poll_lock);
 
 		i32 idx = admin_cerver_poll_get_idx_by_sock_fd (admin_cerver, sock_fd);
 		if (idx >= 0) {
@@ -2020,7 +2026,8 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %ld",
-				admin_cerver->cerver->info->name->str, admin_cerver->stats->current_connections
+				admin_cerver->cerver->info->name->str,
+				admin_cerver->stats->current_connections
 			);
 			#endif
 
@@ -2037,7 +2044,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			// #endif
 		}
 
-		pthread_mutex_unlock (admin_cerver->poll_lock);
+		(void) pthread_mutex_unlock (admin_cerver->poll_lock);
 	}
 
 	return retval;
@@ -2080,7 +2087,7 @@ static inline void admin_poll_handle (
 
 					default: {
 						if (admin_cerver->fds[idx].revents != 0) {
-							cerver_switch_receive_handle_failed (cr);
+							cerver_receive_handle_failed (cr);
 						}
 					} break;
 				}
