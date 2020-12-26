@@ -1,3 +1,10 @@
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See LICENSE for details.
+ */
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,9 +21,44 @@
 #include "cerver/http/json/hashtable.h"
 #include "cerver/http/json/utf.h"
 
+#pragma region memory
+
+void *jsonp_malloc (size_t size) {
+
+    return size ? malloc (size): NULL;
+
+}
+
+void jsonp_free (void *ptr) {
+
+    if (ptr) free (ptr);
+
+}
+
+char *jsonp_strdup (const char *str) {
+    
+    return jsonp_strndup(str, strlen(str));
+    
+}
+
+char *jsonp_strndup (const char *str, size_t len) {
+
+    char *new_str = (char *) jsonp_malloc (len + 1);
+    if (!new_str)
+        return NULL;
+
+    (void) memcpy (new_str, str, len);
+    new_str[len] = '\0';
+    return new_str;
+
+}
+
+#pragma endregion
+
 #pragma region error
 
-void jsonp_error_init(json_error_t *error, const char *source) {
+void jsonp_error_init (json_error_t *error, const char *source) {
+
     if (error) {
         error->text[0] = '\0';
         error->line = -1;
@@ -27,35 +69,35 @@ void jsonp_error_init(json_error_t *error, const char *source) {
         else
             error->source[0] = '\0';
     }
+
 }
 
-void jsonp_error_set_source(json_error_t *error, const char *source) {
-    size_t length;
+void jsonp_error_set_source (
+    json_error_t *error, const char *source
+) {
+
+    size_t length = 0;
 
     if (!error || !source)
         return;
 
     length = strlen(source);
     if (length < JSON_ERROR_SOURCE_LENGTH)
-        strncpy(error->source, source, length + 1);
+        (void) strncpy (error->source, source, length + 1);
     else {
         size_t extra = length - JSON_ERROR_SOURCE_LENGTH + 4;
-        memcpy(error->source, "...", 3);
-        strncpy(error->source + 3, source + extra, length - extra + 1);
+        (void) memcpy (error->source, "...", 3);
+        (void) strncpy (error->source + 3, source + extra, length - extra + 1);
     }
+
 }
 
-void jsonp_error_set(json_error_t *error, int line, int column, size_t position,
-                     enum json_error_code code, const char *msg, ...) {
-    va_list ap;
+void jsonp_error_vset (
+    json_error_t *error, int line, int column, size_t position,
+    enum json_error_code code,
+    const char *msg, va_list ap
+) {
 
-    va_start(ap, msg);
-    jsonp_error_vset(error, line, column, position, code, msg, ap);
-    va_end(ap);
-}
-
-void jsonp_error_vset(json_error_t *error, int line, int column, size_t position,
-                      enum json_error_code code, const char *msg, va_list ap) {
     if (!error)
         return;
 
@@ -68,37 +110,24 @@ void jsonp_error_vset(json_error_t *error, int line, int column, size_t position
     error->column = column;
     error->position = (int)position;
 
-    vsnprintf(error->text, JSON_ERROR_TEXT_LENGTH - 1, msg, ap);
+    (void) vsnprintf (error->text, JSON_ERROR_TEXT_LENGTH - 1, msg, ap);
     error->text[JSON_ERROR_TEXT_LENGTH - 2] = '\0';
     error->text[JSON_ERROR_TEXT_LENGTH - 1] = code;
-}
-
-#pragma endregion
-
-#pragma region memory
-
-void *jsonp_malloc(size_t size) {
-
-    return size ? malloc (size): NULL;
 
 }
 
-void jsonp_free (void *ptr) {
+void jsonp_error_set (
+    json_error_t *error, int line, int column, size_t position,
+    enum json_error_code code,
+    const char *msg, ...
+) {
 
-    if (ptr) free (ptr);
+    va_list ap;
 
-}
+    va_start(ap, msg);
+    jsonp_error_vset (error, line, column, position, code, msg, ap);
+    va_end(ap);
 
-char *jsonp_strdup(const char *str) { return jsonp_strndup(str, strlen(str)); }
-
-char *jsonp_strndup(const char *str, size_t len) {
-    char *new_str = (char *) jsonp_malloc(len + 1);
-    if (!new_str)
-        return NULL;
-
-    memcpy(new_str, str, len);
-    new_str[len] = '\0';
-    return new_str;
 }
 
 #pragma endregion
