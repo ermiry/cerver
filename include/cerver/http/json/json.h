@@ -405,14 +405,6 @@ extern int json_dumpfd(const json_t *json, int output, size_t flags);
 extern int json_dump_file(const json_t *json, const char *path, size_t flags);
 extern int json_dump_callback(const json_t *json, json_dump_callback_t callback, void *data, size_t flags);
 
-/* custom memory allocation */
-typedef void *(*json_malloc_t)(size_t);
-typedef void (*json_free_t)(void *);
-
-extern void json_set_alloc_funcs(json_malloc_t malloc_fn, json_free_t free_fn);
-
-extern void json_get_alloc_funcs(json_malloc_t *malloc_fn, json_free_t *free_fn);
-
 extern const char *jansson_version_str(void);
 
 extern int jansson_version_cmp(int major, int minor, int micro);
