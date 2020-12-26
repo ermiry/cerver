@@ -12,6 +12,7 @@
 #include <errno.h>
 
 #include "cerver/http/json/json.h"
+#include "cerver/http/json/value.h"
 
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
@@ -1144,31 +1145,6 @@ void jwt_free_str(char *str)
 {
 	if (str)
 		jwt_freemem(str);
-}
-
-int jwt_set_alloc(jwt_malloc_t pmalloc, jwt_realloc_t prealloc, jwt_free_t pfree)
-{
-	/* Set allocator functions for LibJWT. */
-	pfn_malloc = pmalloc;
-	pfn_realloc = prealloc;
-	pfn_free = pfree;
-
-	/* Set same allocator functions for Jansson. */
-	json_set_alloc_funcs(jwt_malloc, jwt_freemem);
-
-	return 0;
-}
-
-void jwt_get_alloc(jwt_malloc_t *pmalloc, jwt_realloc_t* prealloc, jwt_free_t *pfree)
-{
-	if (pmalloc)
-		*pmalloc = pfn_malloc;
-
-	if (prealloc)
-		*prealloc = pfn_realloc;
-
-	if (pfree)
-		*pfree = pfn_free;
 }
 
 int jwt_valid_new(jwt_valid_t **jwt_valid, jwt_alg_t alg)

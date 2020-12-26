@@ -626,51 +626,6 @@ JWT_EXPORT const char *jwt_alg_str(jwt_alg_t alg);
  */
 JWT_EXPORT jwt_alg_t jwt_str_alg(const char *alg);
 
-/** @} */
-
-/**
- * @defgroup jwt_memory JWT memory functions
- * These functions allow you to get or set memory allocation functions.
- * @{
- */
-
- /**
-  * Set functions to be used for allocating and freeing memory.
-  *
-  * By default, LibJWT uses malloc, realloc, and free for memory
-  * management. This function allows the user of the library to
-  * specify its own memory management functions. This is especially
-  * useful on Windows where mismatches in runtimes across DLLs can
-  * cause problems.
-  *
-  * The caller can specify either a valid function pointer for
-  * any of the parameters or NULL to use the corresponding default
-  * allocator function.
-  *
-  * Note that this function will also set the memory allocator
-  * for the Jansson library.
-  *
-  * @param pmalloc The function to use for allocating memory or
-  *     NULL to use malloc
-  * @param prealloc The function to use for reallocating memory or
-  *     NULL to use realloc
-  * @param pfree The function to use for freeing memory or
-  *     NULL to use free
-  * @returns 0 on success or errno otherwise.
-  */
-JWT_EXPORT int jwt_set_alloc(jwt_malloc_t pmalloc, jwt_realloc_t prealloc, jwt_free_t pfree);
-
-/**
- * Get functions used for allocating and freeing memory.
- *
- * @param pmalloc Pointer to malloc function output variable, or NULL
- * @param prealloc Pointer to realloc function output variable, or NULL
- * @param pfree Pointer to free function output variable, or NULL
- */
-JWT_EXPORT void jwt_get_alloc(jwt_malloc_t *pmalloc, jwt_realloc_t *prealloc, jwt_free_t *pfree);
-
- /** @} */
-
 /**
  * @defgroup jwt_vaildate JWT validation functions
  * These functions allow you to define requirements for JWT validation.
