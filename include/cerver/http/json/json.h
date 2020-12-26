@@ -1,10 +1,3 @@
-/*
- * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
- *
- * Jansson is free software; you can redistribute it and/or modify
- * it under the terms of the MIT license. See LICENSE for details.
- */
-
 #ifndef _CERVER_HTTP_JSON_H_
 #define _CERVER_HTTP_JSON_H_
 
@@ -18,19 +11,6 @@
 #include "cerver/http/json/config.h"
 
 struct hashtable_t;
-
-#define JANSSON_MAJOR_VERSION 	2
-#define JANSSON_MINOR_VERSION 	13
-#define JANSSON_MICRO_VERSION 	1
-
-/* Micro version is omitted if it's 0 */
-#define JANSSON_VERSION "2.13.1"
-
-/* Version as a 3-byte hex number, e.g. 0x010201 == 1.2.1. Use this
-   for numeric comparisons, e.g. #if JANSSON_VERSION_HEX >= ... */
-#define JANSSON_VERSION_HEX                                                              \
-	((JANSSON_MAJOR_VERSION << 16) | (JANSSON_MINOR_VERSION << 8) |                      \
-	 (JANSSON_MICRO_VERSION << 0))
 
 /* If __atomic or __sync builtins are available the library is thread
  * safe for all read-only functions plus reference counting. */
