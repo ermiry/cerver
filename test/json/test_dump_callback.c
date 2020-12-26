@@ -20,7 +20,7 @@ struct my_sink {
 };
 
 static int my_writer(const char *buffer, size_t len, void *data) {
-    struct my_sink *s = data;
+    struct my_sink *s = (struct my_sink *) data;
     if (len > s->cap - s->off) {
         return -1;
     }
@@ -48,7 +48,7 @@ static void start (void) {
 
     s.off = 0;
     s.cap = strlen(dumped_to_string);
-    s.buf = malloc(s.cap);
+    s.buf = (char *) malloc(s.cap);
     if (!s.buf) {
         json_decref(json);
         free(dumped_to_string);

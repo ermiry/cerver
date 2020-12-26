@@ -1671,7 +1671,7 @@ int main (int argc, char **argv) {
 	cerver_log_init ();
 
 	if (argc > 1) {
-		for (unsigned int i = 1; i < argc; i++) {
+		for (int i = 1; i < argc; i++) {
 			if (!strcmp (argv[i], "--quiet")) {
 				cerver_log_set_quiet (true);
 			}

@@ -284,7 +284,7 @@ static void embed() {
         size_t esize = 0;
 
         psize = strlen(plain) - 2;
-        embed = calloc(1, psize);
+        embed = (char *) calloc(1, psize);
         parse = json_loads(plain, 0, NULL);
         esize =
             json_dumpb(parse, embed, psize, JSON_COMPACT | JSON_SORT_KEYS | JSON_EMBED);
