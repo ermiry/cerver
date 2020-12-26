@@ -6,12 +6,15 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-static void run_tests() {
+#include <cerver/http/json/json.h>
+
+#include "json.h"
+
+static void start() {
     json_t *j, *j2;
     int i1, i2, i3;
     json_int_t I1;
@@ -428,4 +431,14 @@ static void run_tests() {
     check_error(json_error_end_of_input_expected, "1 object item(s) left unpacked: baz",
                 "<validation>", 1, 8, 8);
     json_decref(j);
+}
+
+void json_tests_unpack (void) {
+
+    (void) printf ("Testing JSON unpack...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

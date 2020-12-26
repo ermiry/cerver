@@ -5,8 +5,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 static void test_equal_simple() {
     json_t *value1, *value2;
@@ -194,9 +199,15 @@ static void test_equal_complex() {
     json_decref(value3);
 }
 
-static void run_tests() {
-    test_equal_simple();
-    test_equal_array();
-    test_equal_object();
-    test_equal_complex();
+void json_tests_equal (void) {
+
+    (void) printf ("Testing JSON equal...\n");
+
+    test_equal_simple ();
+    test_equal_array ();
+    test_equal_object ();
+    test_equal_complex ();
+
+    (void) printf ("Done!\n");
+
 }

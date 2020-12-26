@@ -5,14 +5,14 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "jansson_private_config.h"
-
-#include <jansson.h>
 #include <string.h>
-#ifdef HAVE_UNISTD_H
+
 #include <unistd.h>
-#endif
-#include "util.h"
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
+
 #ifdef __MINGW32__
 #include <fcntl.h>
 #define pipe(fds) _pipe(fds, 1024, _O_BINARY)
@@ -297,15 +297,21 @@ static void embed() {
     }
 }
 
-static void run_tests() {
-    encode_null();
-    encode_twice();
-    circular_references();
-    encode_other_than_array_or_object();
-    escape_slashes();
-    encode_nul_byte();
-    dump_file();
-    dumpb();
-    dumpfd();
-    embed();
+void json_tests_dump (void) {
+
+    (void) printf ("Testing JSON dump...\n");
+
+    encode_null ();
+    encode_twice ();
+    circular_references ();
+    encode_other_than_array_or_object ();
+    escape_slashes ();
+    encode_nul_byte ();
+    dump_file ();
+    dumpb ();
+    dumpfd ();
+    embed ();
+
+    (void) printf ("Done!\n");
+
 }

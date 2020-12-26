@@ -5,12 +5,17 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
-static void test_copy_simple(void) {
-    json_t *value, *copy;
+#include <cerver/http/json/json.h>
+
+#include "json.h"
+
+static void test_copy_simple (void) {
+
+    json_t *value = NULL, *copy = NULL;
 
     if (json_copy(NULL))
         fail("copying NULL doesn't return NULL");
@@ -364,12 +369,18 @@ static void test_deep_copy_circular_references(void) {
     json_decref(json);
 }
 
-static void run_tests() {
-    test_copy_simple();
-    test_deep_copy_simple();
-    test_copy_array();
-    test_deep_copy_array();
-    test_copy_object();
-    test_deep_copy_object();
-    test_deep_copy_circular_references();
+void json_tests_copy (void) {
+
+    (void) printf ("Testing JSON copy...\n");
+
+    test_copy_simple ();
+    test_deep_copy_simple ();
+    test_copy_array ();
+    test_deep_copy_array ();
+    test_copy_object ();
+    test_deep_copy_object ();
+    test_deep_copy_circular_references ();
+
+    (void) printf ("Done!\n");
+
 }

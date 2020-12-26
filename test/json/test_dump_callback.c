@@ -5,10 +5,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 struct my_sink {
     char *buf;
@@ -26,7 +29,7 @@ static int my_writer(const char *buffer, size_t len, void *data) {
     return 0;
 }
 
-static void run_tests() {
+static void start (void) {
     struct my_sink s;
     json_t *json;
     const char str[] = "[\"A\", {\"B\": \"C\", \"e\": false}, 1, null, \"foo\"]";
@@ -79,4 +82,14 @@ static void run_tests() {
     json_decref(json);
     free(dumped_to_string);
     free(s.buf);
+}
+
+void json_tests_dump_cb (void) {
+
+    (void) printf ("Testing JSON dump callback...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

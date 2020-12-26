@@ -5,9 +5,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 static void test_bad_args(void) {
     json_t *num = json_integer(1);
@@ -59,7 +63,7 @@ static void test_bad_args(void) {
 }
 
 /* Call the simple functions not covered by other tests of the public API */
-static void run_tests() {
+static void start() {
     json_t *value;
 
     value = json_boolean(1);
@@ -284,4 +288,14 @@ static void run_tests() {
 #endif
 
     test_bad_args();
+}
+
+void json_tests_simple (void) {
+
+    (void) printf ("Testing JSON simple...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

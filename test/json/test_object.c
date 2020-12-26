@@ -5,9 +5,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 static void test_clear() {
     json_t *object, *ten;
@@ -780,18 +784,24 @@ static void test_bad_args(void) {
     json_decref(num);
 }
 
-static void run_tests() {
-    test_misc();
-    test_clear();
-    test_update();
-    test_set_many_keys();
-    test_conditional_updates();
-    test_recursive_updates();
-    test_circular();
-    test_set_nocheck();
-    test_iterators();
-    test_preserve_order();
-    test_object_foreach();
-    test_object_foreach_safe();
-    test_bad_args();
+void json_tests_objects (void) {
+
+    (void) printf ("Testing JSON objects...\n");
+
+    test_misc ();
+    test_clear ();
+    test_update ();
+    test_set_many_keys ();
+    test_conditional_updates ();
+    test_recursive_updates ();
+    test_circular ();
+    test_set_nocheck ();
+    test_iterators ();
+    test_preserve_order ();
+    test_object_foreach ();
+    test_object_foreach_safe ();
+    test_bad_args ();
+
+    (void) printf ("Done!\n");
+
 }

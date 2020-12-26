@@ -6,17 +6,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#ifdef HAVE_CONFIG_H
-#include <jansson_private_config.h>
-#endif
-
-#include <jansson_config.h>
-
-#include "util.h"
-#include <jansson.h>
-#include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 #ifdef INFINITY
 // This test triggers "warning C4756: overflow in constant arithmetic"
@@ -50,7 +46,7 @@ static void test_inifity() {
 }
 #endif // INFINITY
 
-static void run_tests() {
+static void start() {
     json_t *value;
     int i;
     char buffer[4] = {'t', 'e', 's', 't'};
@@ -544,4 +540,14 @@ static void run_tests() {
     if (json_pack_ex(&error, 0, "[so]", NULL, json_object()))
         fail("json_pack failed to catch NULL value");
     check_error(json_error_null_value, "NULL string", "<args>", 1, 2, 2);
+}
+
+void json_tests_pack (void) {
+
+    (void) printf ("Testing JSON pack...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

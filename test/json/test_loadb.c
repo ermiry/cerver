@@ -5,11 +5,15 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
-static void run_tests() {
+#include <cerver/http/json/json.h>
+
+#include "json.h"
+
+static void start (void) {
     json_t *json;
     json_error_t error;
     const char str[] = "[\"A\", {\"B\": \"C\"}, 1, 2, 3]garbage";
@@ -34,4 +38,14 @@ static void run_tests() {
         fail("json_loadb returned an invalid error message for an unclosed "
              "top-level array");
     }
+}
+
+void json_tests_loadb (void) {
+
+    (void) printf ("Testing JSON loadb...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

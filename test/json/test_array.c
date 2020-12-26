@@ -4,15 +4,23 @@
  * Jansson is free software; you can redistribute it and/or modify
  * it under the terms of the MIT license. See LICENSE for details.
  */
-#include <jansson.h>
 
-static void test_misc(void) {
-    json_t *array, *five, *seven, *value;
-    size_t i;
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
-    array = json_array();
-    five = json_integer(5);
-    seven = json_integer(7);
+#include <cerver/http/json/json.h>
+
+#include "json.h"
+
+static void test_misc (void) {
+
+    json_t *array = NULL, *five = NULL, *seven = NULL, *value = NULL;
+    size_t i = 0;
+
+    array = json_array ();
+    five = json_integer (5);
+    seven = json_integer (7);
 
     if (!array)
         fail("unable to create array");
@@ -470,13 +478,19 @@ static void test_bad_args(void) {
     json_decref(arr);
 }
 
-static void run_tests() {
-    test_misc();
-    test_insert();
-    test_remove();
-    test_clear();
-    test_extend();
-    test_circular();
-    test_array_foreach();
-    test_bad_args();
+void json_tests_array (void) {
+
+    (void) printf ("Testing JSON arrays...\n");
+
+    test_misc ();
+    test_insert ();
+    test_remove ();
+    test_clear ();
+    test_extend ();
+    test_circular ();
+    test_array_foreach ();
+    test_bad_args ();
+
+    (void) printf ("Done!\n");
+
 }

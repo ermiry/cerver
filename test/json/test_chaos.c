@@ -1,26 +1,32 @@
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE
-#endif
+/*
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
+ *
+ * Jansson is free software; you can redistribute it and/or modify
+ * it under the terms of the MIT license. See LICENSE for details.
+ */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 static int chaos_pos = 0;
 static int chaos_fail = 0;
 #define CHAOS_MAX_FAILURE 100
 
-void *chaos_malloc(size_t size) {
-    if (chaos_pos == chaos_fail)
-        return NULL;
+// void *chaos_malloc(size_t size) {
+//     if (chaos_pos == chaos_fail)
+//         return NULL;
 
-    chaos_pos++;
+//     chaos_pos++;
 
-    return malloc(size);
-}
+//     return malloc(size);
+// }
 
-void chaos_free(void *obj) { free(obj); }
+// void chaos_free(void *obj) { free(obj); }
 
 /* Test all potential allocation failures. */
 #define chaos_loop(condition, code, cleanup)                                             \
@@ -84,8 +90,8 @@ int dump_chaos_callback(const char *buffer, size_t size, void *data) {
 }
 
 static void test_chaos() {
-    json_malloc_t orig_malloc;
-    json_free_t orig_free;
+    // json_malloc_t orig_malloc;
+    // json_free_t orig_free;
     json_t *json = NULL;
     json_t *obj = json_object();
     json_t *arr1 = json_array();
@@ -100,8 +106,8 @@ static void test_chaos() {
     if (!obj || !arr1 || !arr2 || !txt || !intnum || !dblnum || !dumpobj)
         fail("failed to allocate basic objects");
 
-    json_get_alloc_funcs(&orig_malloc, &orig_free);
-    json_set_alloc_funcs(chaos_malloc, chaos_free);
+    // json_get_alloc_funcs(&orig_malloc, &orig_free);
+    // json_set_alloc_funcs(chaos_malloc, chaos_free);
 
     chaos_loop_new_value(json, json_pack("{s:s}", "key", "value"));
     chaos_loop_new_value(json, json_pack("{s:[]}", "key"));
@@ -155,7 +161,7 @@ static void test_chaos() {
     chaos_loop(json_array_extend(arr1, arr2), , );
     chaos_loop(json_string_set_nocheck(txt, "test"), , );
 
-    json_set_alloc_funcs(orig_malloc, orig_free);
+    // json_set_alloc_funcs(orig_malloc, orig_free);
     json_decref(obj);
     json_decref(arr1);
     json_decref(arr2);
@@ -165,4 +171,12 @@ static void test_chaos() {
     json_decref(dumpobj);
 }
 
-static void run_tests() { test_chaos(); }
+void json_tests_chaos (void) {
+
+    (void) printf ("Testing JSON chaos...\n");
+
+    test_chaos ();
+
+    (void) printf ("Done!\n");
+
+}

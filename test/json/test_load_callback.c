@@ -5,10 +5,13 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 struct my_source {
     const char *buf;
@@ -31,7 +34,7 @@ static size_t greedy_reader(void *buf, size_t buflen, void *arg) {
     }
 }
 
-static void run_tests() {
+static void start () {
     struct my_source s;
     json_t *json;
     json_error_t error;
@@ -74,4 +77,14 @@ static void run_tests() {
         fail("json_load_callback returned an invalid error message for a NULL "
              "load callback");
     }
+}
+
+void json_tests_load_cb (void) {
+
+    (void) printf ("Testing JSON load callback...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

@@ -5,9 +5,15 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+
 #include <math.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 #ifdef INFINITY
 // This test triggers "warning C4756: overflow in constant arithmetic"
@@ -70,7 +76,7 @@ static void test_bad_args(void) {
     json_decref(txt);
 }
 
-static void run_tests() {
+static void start() {
     json_t *integer, *real;
     json_int_t i;
     double d;
@@ -120,4 +126,14 @@ static void run_tests() {
     test_inifity();
 #endif
     test_bad_args();
+}
+
+void json_tests_numbers (void) {
+
+    (void) printf ("Testing JSON numbers...\n");
+
+    start ();
+
+    (void) printf ("Done!\n");
+
 }

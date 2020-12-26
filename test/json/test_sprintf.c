@@ -1,6 +1,10 @@
-#include "util.h"
-#include <jansson.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <cerver/http/json/json.h>
+
+#include "json.h"
 
 static void test_sprintf() {
     json_t *s = json_sprintf("foo bar %d", 42);
@@ -26,4 +30,12 @@ static void test_sprintf() {
         fail("json_sprintf unexpected success with invalid UTF");
 }
 
-static void run_tests() { test_sprintf(); }
+void json_tests_sprintf (void) {
+
+    (void) printf ("Testing JSON sprintf...\n");
+
+    test_sprintf ();
+
+    (void) printf ("Done!\n");
+
+}
