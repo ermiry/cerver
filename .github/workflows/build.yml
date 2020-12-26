@@ -2,11 +2,13 @@ name: Cerver Continuous Integration
 
 on:
   push:
-    branches:
-      - '*'
+    branches-ignore:
+      - 'master'
+      - '*beta'
   pull_request:
-    branches:
-      - '*'
+    branches-ignore:
+      - 'master'
+      - '*beta'
 
 jobs:
   build:
@@ -14,13 +16,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
       - name: gcc make
         run: make
       - name: gcc examples
         run: make examples
+      - name: gcc tests
+        run: make test
+      - name: gcc run tests
+        run: bash test.sh
+
       - name: clean
         run: make clean
+
       - name: g++ make
         run: make CC=g++
       - name: g++ examples
         run: make CC=g++ examples
+      - name: g++ tests
+        run: make CC=g++ test
+      - name: g++ run tests
+        run: bash test.sh
