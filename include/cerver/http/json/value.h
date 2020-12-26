@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_JSON_VALUE_H_
 #define _CERVER_HTTP_JSON_VALUE_H_
 
+#include "cerver/config.h"
+
 #include "cerver/http/json/internal.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/types.h"
@@ -18,7 +20,7 @@ extern size_t json_object_size (const json_t *object);
 
 extern json_t *json_object_get (
 	const json_t *object, const char *key
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern int json_object_set_new (
 	json_t *object, const char *key, json_t *value
@@ -98,7 +100,7 @@ extern int json_object_iter_set_new (
 		 index < json_array_size(array) && (value = json_array_get(array, index));       \
 		 index++)
 
-static JSON_INLINE int json_object_set (
+static CERVER_INLINE int json_object_set (
 	json_t *object, const char *key, json_t *value
 ) {
 
@@ -108,7 +110,7 @@ static JSON_INLINE int json_object_set (
 
 }
 
-static JSON_INLINE int json_object_set_nocheck (
+static CERVER_INLINE int json_object_set_nocheck (
 	json_t *object, const char *key,
 	json_t *value
 ) {
@@ -119,7 +121,7 @@ static JSON_INLINE int json_object_set_nocheck (
 
 }
 
-static JSON_INLINE int json_object_iter_set (
+static CERVER_INLINE int json_object_iter_set (
 	json_t *object, void *iter, json_t *value
 ) {
 
@@ -129,7 +131,7 @@ static JSON_INLINE int json_object_iter_set (
 
 }
 
-static JSON_INLINE int json_object_update_new (
+static CERVER_INLINE int json_object_update_new (
 	json_t *object, json_t *other
 ) {
 
@@ -140,7 +142,7 @@ static JSON_INLINE int json_object_update_new (
 
 }
 
-static JSON_INLINE int json_object_update_existing_new (
+static CERVER_INLINE int json_object_update_existing_new (
 	json_t *object, json_t *other
 ) {
 
@@ -151,7 +153,7 @@ static JSON_INLINE int json_object_update_existing_new (
 
 }
 
-static JSON_INLINE int json_object_update_missing_new (
+static CERVER_INLINE int json_object_update_missing_new (
 	json_t *object, json_t *other
 ) {
 
@@ -168,7 +170,7 @@ extern size_t json_array_size (
 
 extern json_t *json_array_get (
 	const json_t *array, size_t index
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern int json_array_set_new (
 	json_t *array, size_t index, json_t *value
@@ -194,7 +196,7 @@ extern int json_array_extend (
 	json_t *array, json_t *other
 );
 
-static JSON_INLINE int json_array_set (
+static CERVER_INLINE int json_array_set (
 	json_t *array, size_t ind, json_t *value
 ) {
 
@@ -202,7 +204,7 @@ static JSON_INLINE int json_array_set (
 
 }
 
-static JSON_INLINE int json_array_append (
+static CERVER_INLINE int json_array_append (
 	json_t *array, json_t *value
 ) {
 
@@ -210,7 +212,7 @@ static JSON_INLINE int json_array_append (
 
 }
 
-static JSON_INLINE int json_array_insert (
+static CERVER_INLINE int json_array_insert (
 	json_t *array, size_t ind, json_t *value
 ) {
 

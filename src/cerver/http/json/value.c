@@ -21,7 +21,7 @@
 
 json_t *do_deep_copy(const json_t *json, hashtable_t *parents);
 
-static JSON_INLINE void json_init(json_t *json, json_type type) {
+static CERVER_INLINE void json_init(json_t *json, json_type type) {
     json->type = type;
     json->refcount = 1;
 }

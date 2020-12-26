@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#include "cerver/config.h"
+
 #include "cerver/http/json/config.h"
 
 #ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
@@ -59,21 +61,21 @@ extern int jsonp_dtostr (
 /* Wrappers for custom memory functions */
 extern void *jsonp_malloc (
 	size_t size
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern void jsonp_free (void *ptr);
 
 extern char *jsonp_strndup (
 	const char *str, size_t length
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern char *jsonp_strdup (
 	const char *str
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern char *jsonp_strndup (
 	const char *str, size_t len
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 /* Circular reference check*/
 /* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
@@ -86,11 +88,11 @@ extern int jsonp_loop_check (
 
 extern struct json_t *json_sprintf (
 	const char *fmt, ...
-) JANSSON_ATTRS((warn_unused_result, format(printf, 1, 2)));
+) CERVER_ATTRS((warn_unused_result, format(printf, 1, 2)));
 
 extern struct json_t *json_vsprintf (
 	const char *fmt, va_list ap
-) JANSSON_ATTRS((warn_unused_result, format(printf, 1, 0)));
+) CERVER_ATTRS((warn_unused_result, format(printf, 1, 0)));
 
 extern int json_equal (
 	const struct json_t *value1, const struct json_t *value2
@@ -98,10 +100,10 @@ extern int json_equal (
 
 extern struct json_t *json_copy (
 	struct json_t *value
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern struct json_t *json_deep_copy (
 	const struct json_t *value
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 #endif

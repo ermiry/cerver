@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cerver/config.h"
+
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/types.h"
 #include "cerver/http/json/value.h"
@@ -64,7 +66,7 @@ enum json_error_code {
 
 };
 
-static JSON_INLINE enum json_error_code json_error_code (
+static CERVER_INLINE enum json_error_code json_error_code (
 	const json_error_t *e
 ) {
 
@@ -96,17 +98,17 @@ extern void jsonp_error_vset (
 
 extern json_t *json_pack (
 	const char *fmt, ...
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_pack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, ...
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_vpack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, va_list ap
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 #pragma endregion
 
@@ -145,27 +147,27 @@ typedef size_t (*json_load_callback_t) (
 
 extern json_t *json_loads (
 	const char *input, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_loadb (
 	const char *buffer, size_t buflen, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_loadf (
 	FILE *input, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_loadfd (
 	int input, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_load_file (
 	const char *path, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern json_t *json_load_callback (
 	json_load_callback_t callback, void *data, size_t flags, json_error_t *error
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 #pragma endregion
 
@@ -188,7 +190,7 @@ typedef int (*json_dump_callback_t) (
 
 extern char *json_dumps (
 	const json_t *json, size_t flags
-) JANSSON_ATTRS((warn_unused_result));
+) CERVER_ATTRS((warn_unused_result));
 
 extern size_t json_dumpb (
 	const json_t *json, char *buffer, size_t size, size_t flags
