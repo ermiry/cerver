@@ -1,11 +1,50 @@
 #ifndef JANSSON_PRIVATE_H
 #define JANSSON_PRIVATE_H
 
+#include <stdarg.h>
 #include <stddef.h>
 
-#include "cerver/http/json/json.h"
 #include "cerver/http/json/config.h"
-#include "cerver/http/json/hashtable.h"
+
+#ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
+#if JSON_INTEGER_IS_LONG_LONG
+#ifdef _WIN32
+#define JSON_INTEGER_FORMAT "I64d"
+#else
+#define JSON_INTEGER_FORMAT "lld"
+#endif
+typedef long long json_int_t;
+#else
+#define JSON_INTEGER_FORMAT "ld"
+typedef long json_int_t;
+#endif /* JSON_INTEGER_IS_LONG_LONG */
+#endif
+
+/* do not call JSON_INTERNAL_INCREF or JSON_INTERNAL_DECREF directly */
+#if JSON_HAVE_ATOMIC_BUILTINS
+#define JSON_INTERNAL_INCREF(json)                                                       \
+	__atomic_add_fetch(&json->refcount, 1, __ATOMIC_ACQUIRE)
+#define JSON_INTERNAL_DECREF(json)                                                       \
+	__atomic_sub_fetch(&json->refcount, 1, __ATOMIC_RELEASE)
+#elif JSON_HAVE_SYNC_BUILTINS
+#define JSON_INTERNAL_INCREF(json) __sync_add_and_fetch(&json->refcount, 1)
+#define JSON_INTERNAL_DECREF(json) __sync_sub_and_fetch(&json->refcount, 1)
+#else
+#define JSON_INTERNAL_INCREF(json) (++json->refcount)
+#define JSON_INTERNAL_DECREF(json) (--json->refcount)
+#endif
+
+/* If __atomic or __sync builtins are available the library is thread
+ * safe for all read-only functions plus reference counting. */
+#if JSON_HAVE_ATOMIC_BUILTINS || JSON_HAVE_SYNC_BUILTINS
+#define JANSSON_THREAD_SAFE_REFCOUNT 1
+#endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define JANSSON_ATTRS(x) __attribute__(x)
+#else
+#define JANSSON_ATTRS(x)
+#endif
 
 #define container_of(ptr_, type_, member_)                                               \
 	((type_ *)((char *)ptr_ - offsetof(type_, member_)))
@@ -25,84 +64,65 @@
 #endif
 #endif
 
-typedef struct {
+struct json_t;
 
-	json_t json;
-	struct hashtable_t hashtable;
-
-} json_object_t;
-
-typedef struct {
-
-	json_t json;
-	size_t size;
-	size_t entries;
-	json_t **table;
-
-} json_array_t;
-
-typedef struct {
-
-	json_t json;
-	char *value;
-	size_t length;
-
-} json_string_t;
-
-typedef struct {
-
-	json_t json;
-	double value;
-
-} json_real_t;
-
-typedef struct {
-
-	json_t json;
-	json_int_t value;
-
-} json_integer_t;
-
-#define json_to_object(json_)  container_of(json_, json_object_t, json)
-#define json_to_array(json_)   container_of(json_, json_array_t, json)
-#define json_to_string(json_)  container_of(json_, json_string_t, json)
-#define json_to_real(json_)    container_of(json_, json_real_t, json)
-#define json_to_integer(json_) container_of(json_, json_integer_t, json)
+struct hashtable_t;
 
 /* Create a string by taking ownership of an existing buffer */
-extern json_t *jsonp_stringn_nocheck_own (const char *value, size_t len);
+extern struct json_t *jsonp_stringn_nocheck_own (
+	const char *value, size_t len
+);
 
-/* Error message formatting */
-extern void jsonp_error_init (json_error_t *error, const char *source);
-
-extern void jsonp_error_set_source (json_error_t *error, const char *source);
-
-extern void jsonp_error_set (json_error_t *error, int line, int column, size_t position,
-	enum json_error_code code, const char *msg, ...);
-
-extern void jsonp_error_vset (json_error_t *error, int line, int column, size_t position,
-	enum json_error_code code, const char *msg, va_list ap);
-
-/* Locale independent string<->double conversions */
-extern int jsonp_strtod (strbuffer_t *strbuffer, double *out);
-
-extern int jsonp_dtostr (char *buffer, size_t size, double value, int prec);
+extern int jsonp_dtostr (
+	char *buffer, size_t size, double value, int prec
+);
 
 /* Wrappers for custom memory functions */
-extern void *jsonp_malloc (size_t size) JANSSON_ATTRS((warn_unused_result));
+extern void *jsonp_malloc (
+	size_t size
+) JANSSON_ATTRS((warn_unused_result));
 
 extern void jsonp_free (void *ptr);
 
-extern char *jsonp_strndup (const char *str, size_t length) JANSSON_ATTRS((warn_unused_result));
+extern char *jsonp_strndup (
+	const char *str, size_t length
+) JANSSON_ATTRS((warn_unused_result));
 
-extern char *jsonp_strdup (const char *str) JANSSON_ATTRS((warn_unused_result));
+extern char *jsonp_strdup (
+	const char *str
+) JANSSON_ATTRS((warn_unused_result));
 
-extern char *jsonp_strndup (const char *str, size_t len) JANSSON_ATTRS((warn_unused_result));
+extern char *jsonp_strndup (
+	const char *str, size_t len
+) JANSSON_ATTRS((warn_unused_result));
 
 /* Circular reference check*/
 /* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
-#define LOOP_KEY_LEN (2 + (sizeof(json_t *) * 2) + 1)
+#define LOOP_KEY_LEN (2 + (sizeof(struct json_t *) * 2) + 1)
 
-extern int jsonp_loop_check (struct hashtable_t *parents, const json_t *json, char *key, size_t key_size);
+extern int jsonp_loop_check (
+	struct hashtable_t *parents,
+	const struct json_t *json, char *key, size_t key_size
+);
+
+extern struct json_t *json_sprintf (
+	const char *fmt, ...
+) JANSSON_ATTRS((warn_unused_result, format(printf, 1, 2)));
+
+extern struct json_t *json_vsprintf (
+	const char *fmt, va_list ap
+) JANSSON_ATTRS((warn_unused_result, format(printf, 1, 0)));
+
+extern int json_equal (
+	const struct json_t *value1, const struct json_t *value2
+);
+
+extern struct json_t *json_copy (
+	struct json_t *value
+) JANSSON_ATTRS((warn_unused_result));
+
+extern struct json_t *json_deep_copy (
+	const struct json_t *value
+) JANSSON_ATTRS((warn_unused_result));
 
 #endif
