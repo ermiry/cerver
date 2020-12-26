@@ -40,29 +40,8 @@ typedef long json_int_t;
 #define JANSSON_THREAD_SAFE_REFCOUNT 1
 #endif
 
-#if defined(__GNUC__) || defined(__clang__)
-#define JANSSON_ATTRS(x) __attribute__(x)
-#else
-#define JANSSON_ATTRS(x)
-#endif
-
 #define container_of(ptr_, type_, member_)                                               \
 	((type_ *)((char *)ptr_ - offsetof(type_, member_)))
-
-/* On some platforms, max() may already be defined */
-#ifndef max
-#define max(a, b) ((a) > (b) ? (a) : (b))
-#endif
-
-/* va_copy is a C99 feature. In C89 implementations, it's sometimes
-   available as __va_copy. If not, memcpy() should do the trick. */
-#ifndef va_copy
-#ifdef __va_copy
-#define va_copy __va_copy
-#else
-#define va_copy(a, b) memcpy(&(a), &(b), sizeof(va_list))
-#endif
-#endif
 
 struct json_t;
 
