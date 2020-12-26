@@ -1,5 +1,5 @@
-#ifndef _USERS_H_
-#define _USERS_H_
+#ifndef _CERVER_TESTS_USERS_H_
+#define _CERVER_TESTS_USERS_H_
 
 #include <time.h>
 
