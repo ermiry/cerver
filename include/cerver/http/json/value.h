@@ -12,41 +12,73 @@
 #define json_to_real(json_)    container_of(json_, json_real_t, json)
 #define json_to_integer(json_) container_of(json_, json_integer_t, json)
 
-extern void json_object_seed(size_t seed);
+extern void json_object_seed (size_t seed);
 
-extern size_t json_object_size(const json_t *object);
+extern size_t json_object_size (const json_t *object);
 
-extern json_t *json_object_get(const json_t *object, const char *key) JANSSON_ATTRS((warn_unused_result));
+extern json_t *json_object_get (
+	const json_t *object, const char *key
+) JANSSON_ATTRS((warn_unused_result));
 
-extern int json_object_set_new(json_t *object, const char *key, json_t *value);
+extern int json_object_set_new (
+	json_t *object, const char *key, json_t *value
+);
 
-extern int json_object_set_new_nocheck(json_t *object, const char *key, json_t *value);
+extern int json_object_set_new_nocheck (
+	json_t *object, const char *key, json_t *value
+);
 
-extern int json_object_del(json_t *object, const char *key);
+extern int json_object_del (
+	json_t *object, const char *key
+);
 
-extern int json_object_clear(json_t *object);
+extern int json_object_clear (
+	json_t *object
+);
 
-extern int json_object_update(json_t *object, json_t *other);
+extern int json_object_update (
+	json_t *object, json_t *other
+);
 
-extern int json_object_update_existing(json_t *object, json_t *other);
+extern int json_object_update_existing (
+	json_t *object, json_t *other
+);
 
-extern int json_object_update_missing(json_t *object, json_t *other);
+extern int json_object_update_missing (
+	json_t *object, json_t *other
+);
 
-extern int json_object_update_recursive(json_t *object, json_t *other);
+extern int json_object_update_recursive (
+	json_t *object, json_t *other
+);
 
-extern void *json_object_iter(json_t *object);
+extern void *json_object_iter (
+	json_t *object
+);
 
-extern void *json_object_iter_at(json_t *object, const char *key);
+extern void *json_object_iter_at (
+	json_t *object, const char *key
+);
 
-extern void *json_object_key_to_iter(const char *key);
+extern void *json_object_key_to_iter (
+	const char *key
+);
 
-extern void *json_object_iter_next(json_t *object, void *iter);
+extern void *json_object_iter_next (
+	json_t *object, void *iter
+);
 
-extern const char *json_object_iter_key(void *iter);
+extern const char *json_object_iter_key (
+	void *iter
+);
 
-extern json_t *json_object_iter_value(void *iter);
+extern json_t *json_object_iter_value (
+	void *iter
+);
 
-extern int json_object_iter_set_new(json_t *object, void *iter, json_t *value);
+extern int json_object_iter_set_new (
+	json_t *object, void *iter, json_t *value
+);
 
 #define json_object_foreach(object, key, value)                                          \
 	for (key = json_object_iter_key(json_object_iter(object));                           \
@@ -66,71 +98,104 @@ extern int json_object_iter_set_new(json_t *object, void *iter, json_t *value);
 		 index < json_array_size(array) && (value = json_array_get(array, index));       \
 		 index++)
 
-static JSON_INLINE int json_object_set(json_t *object, const char *key, json_t *value) {
-	return json_object_set_new(object, key, json_incref(value));
+static JSON_INLINE int json_object_set (
+	json_t *object, const char *key, json_t *value
+) {
+
+	return json_object_set_new (
+		object, key, json_incref (value)
+	);
+
 }
 
-static JSON_INLINE int json_object_set_nocheck(json_t *object, const char *key,
-											   json_t *value) {
-	return json_object_set_new_nocheck(object, key, json_incref(value));
+static JSON_INLINE int json_object_set_nocheck (
+	json_t *object, const char *key,
+	json_t *value
+) {
+
+	return json_object_set_new_nocheck (
+		object, key, json_incref(value)
+	);
+
 }
 
-static JSON_INLINE int json_object_iter_set(json_t *object, void *iter, json_t *value) {
-	return json_object_iter_set_new(object, iter, json_incref(value));
+static JSON_INLINE int json_object_iter_set (
+	json_t *object, void *iter, json_t *value
+) {
+
+	return json_object_iter_set_new (
+		object, iter, json_incref(value)
+	);
+
 }
 
-static JSON_INLINE int json_object_update_new(json_t *object, json_t *other) {
-	int ret = json_object_update(object, other);
-	json_decref(other);
+static JSON_INLINE int json_object_update_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update (object, other);
+	json_decref (other);
+
 	return ret;
+
 }
 
-static JSON_INLINE int json_object_update_existing_new(json_t *object, json_t *other) {
-	int ret = json_object_update_existing(object, other);
-	json_decref(other);
+static JSON_INLINE int json_object_update_existing_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update_existing (object, other);
+	json_decref (other);
+
 	return ret;
+
 }
 
-static JSON_INLINE int json_object_update_missing_new(json_t *object, json_t *other) {
-	int ret = json_object_update_missing(object, other);
-	json_decref(other);
+static JSON_INLINE int json_object_update_missing_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update_missing (object, other);
+	json_decref (other);
+
 	return ret;
+
 }
 
 extern size_t json_array_size (
-    const json_t *array
+	const json_t *array
 );
 
 extern json_t *json_array_get (
-    const json_t *array, size_t index
+	const json_t *array, size_t index
 ) JANSSON_ATTRS((warn_unused_result));
 
 extern int json_array_set_new (
-    json_t *array, size_t index, json_t *value
+	json_t *array, size_t index, json_t *value
 );
 
 extern int json_array_append_new (
-    json_t *array, json_t *value
+	json_t *array, json_t *value
 );
 
 extern int json_array_insert_new (
-    json_t *array, size_t index, json_t *value
+	json_t *array, size_t index, json_t *value
 );
 
 extern int json_array_remove (
-    json_t *array, size_t index
+	json_t *array, size_t index
 );
 
 extern int json_array_clear (
-    json_t *array
+	json_t *array
 );
 
 extern int json_array_extend (
-    json_t *array, json_t *other
+	json_t *array, json_t *other
 );
 
 static JSON_INLINE int json_array_set (
-    json_t *array, size_t ind, json_t *value
+	json_t *array, size_t ind, json_t *value
 ) {
 
 	return json_array_set_new(array, ind, json_incref(value));
@@ -138,7 +203,7 @@ static JSON_INLINE int json_array_set (
 }
 
 static JSON_INLINE int json_array_append (
-    json_t *array, json_t *value
+	json_t *array, json_t *value
 ) {
 
 	return json_array_append_new(array, json_incref(value));
@@ -146,7 +211,7 @@ static JSON_INLINE int json_array_append (
 }
 
 static JSON_INLINE int json_array_insert (
-    json_t *array, size_t ind, json_t *value
+	json_t *array, size_t ind, json_t *value
 ) {
 
 	return json_array_insert_new (array, ind, json_incref(value));
@@ -164,27 +229,27 @@ extern double json_real_value (const json_t *real);
 extern double json_number_value (const json_t *json);
 
 extern int json_string_set (
-    json_t *string, const char *value
+	json_t *string, const char *value
 );
 
 extern int json_string_setn (
-    json_t *string, const char *value, size_t len
+	json_t *string, const char *value, size_t len
 );
 
 extern int json_string_set_nocheck (
-    json_t *string, const char *value
+	json_t *string, const char *value
 );
 
 extern int json_string_setn_nocheck (
-    json_t *string, const char *value, size_t len
+	json_t *string, const char *value, size_t len
 );
 
 extern int json_integer_set (
-    json_t *integer, json_int_t value
+	json_t *integer, json_int_t value
 );
 
 extern int json_real_set (
-    json_t *real, double value
+	json_t *real, double value
 );
 
 extern json_t *json_object (void);
