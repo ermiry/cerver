@@ -1678,6 +1678,8 @@ int main (int argc, char **argv) {
 		}
 	}
 
+	(void) printf ("Testing DLIST...\n");
+
 	int res = 0;
 
 	/*** main ***/
@@ -1780,6 +1782,8 @@ int main (int argc, char **argv) {
 	res |= dlist_test_merge_many ();
 
 	cerver_log_end ();
+
+	(void) printf ("Done with DLIST tests!\n\n");
 
 	return res;
 
