@@ -373,24 +373,24 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
 #define ordered_list_to_pair(list_) container_of(list_, pair_t, ordered_list)
 #define hash_str(key)               ((size_t)hashlittle((key), strlen(key), hashtable_seed))
 
-static JSON_INLINE void list_init(list_t *list) {
+static CERVER_INLINE void list_init(list_t *list) {
     list->next = list;
     list->prev = list;
 }
 
-static JSON_INLINE void list_insert(list_t *list, list_t *node) {
+static CERVER_INLINE void list_insert(list_t *list, list_t *node) {
     node->next = list;
     node->prev = list->prev;
     list->prev->next = node;
     list->prev = node;
 }
 
-static JSON_INLINE void list_remove(list_t *list) {
+static CERVER_INLINE void list_remove(list_t *list) {
     list->prev->next = list->next;
     list->next->prev = list->prev;
 }
 
-static JSON_INLINE int bucket_is_empty(hashtable_t *hashtable, bucket_t *bucket) {
+static CERVER_INLINE int bucket_is_empty(hashtable_t *hashtable, bucket_t *bucket) {
     return bucket->first == &hashtable->list && bucket->first == bucket->last;
 }
 

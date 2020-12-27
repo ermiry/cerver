@@ -1671,12 +1671,14 @@ int main (int argc, char **argv) {
 	cerver_log_init ();
 
 	if (argc > 1) {
-		for (unsigned int i = 1; i < argc; i++) {
+		for (int i = 1; i < argc; i++) {
 			if (!strcmp (argv[i], "--quiet")) {
 				cerver_log_set_quiet (true);
 			}
 		}
 	}
+
+	(void) printf ("Testing DLIST...\n");
 
 	int res = 0;
 
@@ -1780,6 +1782,8 @@ int main (int argc, char **argv) {
 	res |= dlist_test_merge_many ();
 
 	cerver_log_end ();
+
+	(void) printf ("Done with DLIST tests!\n\n");
 
 	return res;
 

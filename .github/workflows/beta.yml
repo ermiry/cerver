@@ -17,8 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: gcc DEVELOPMENT='' make
-        run: make
+      - name: gcc make
+        run: make DEVELOPMENT=''
       - name: gcc examples
         run: make examples
       - name: gcc tests
@@ -29,8 +29,8 @@ jobs:
       - name: clean
         run: make clean
 
-      - name: g++ DEVELOPMENT='' make
-        run: make CC=g++
+      - name: g++ make
+        run: make CC=g++ DEVELOPMENT=''
       - name: g++ examples
         run: make CC=g++ examples
       - name: g++ tests

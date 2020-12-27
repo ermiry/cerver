@@ -10,7 +10,9 @@
 
 #include <stdlib.h>
 
-#include "cerver/http/json/json.h"
+#include "cerver/http/json/private.h"
+
+struct json_t;
 
 struct hashtable_list {
 
@@ -27,7 +29,7 @@ struct hashtable_pair {
 	struct hashtable_list list;
 	struct hashtable_list ordered_list;
 	size_t hash;
-	json_t *value;
+	struct json_t *value;
 	char key[1];
 
 };
@@ -64,7 +66,7 @@ typedef struct hashtable_t hashtable_t;
  *
  * Returns 0 on success, -1 on error (out of memory).
  */
-extern int hashtable_init (hashtable_t *hashtable) JANSSON_ATTRS((warn_unused_result));
+extern int hashtable_init (hashtable_t *hashtable) CERVER_ATTRS((warn_unused_result));
 
 /**
  * hashtable_close - Release all resources used by a hashtable object
@@ -90,7 +92,7 @@ extern void hashtable_close (hashtable_t *hashtable);
  *
  * Returns 0 on success, -1 on failure (out of memory).
  */
-extern int hashtable_set (hashtable_t *hashtable, const char *key, json_t *value);
+extern int hashtable_set (hashtable_t *hashtable, const char *key, struct json_t *value);
 
 /**
  * hashtable_get - Get a value associated with a key
@@ -180,6 +182,6 @@ extern void *hashtable_iter_value (void *iter);
  * @iter: The iterator
  * @value: The value to set
  */
-extern void hashtable_iter_set (void *iter, json_t *value);
+extern void hashtable_iter_set (void *iter, struct json_t *value);
 
 #endif

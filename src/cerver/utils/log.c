@@ -37,7 +37,7 @@ static const char *log_get_msg_type (LogType type) {
 
 #pragma region configuration
 
-static LogOutputType log_output_type = LOG_OUTPUT_TYPE_STD;
+static LogOutputType log_global_output_type = LOG_OUTPUT_TYPE_STD;
 
 static LogTimeType log_time_type = LOG_TIME_TYPE_NONE;
 static bool use_local_time = false;
@@ -54,14 +54,14 @@ static bool quiet = false;
 // returns the current log output type
 LogOutputType cerver_log_get_output_type (void) {
 
-	return log_output_type;
+	return log_global_output_type;
 
 }
 
 // sets the log output type to use
 void cerver_log_set_output_type (LogOutputType type) {
 
-	log_output_type = type;
+	log_global_output_type = type;
 
 }
 
@@ -195,23 +195,23 @@ static void cerver_log_header_create (
 			case LOG_TYPE_TEST: {
 				// first type
 				(void) snprintf (
-					log->header, LOG_HEADER_HALF_SIZE, 
-					"%s", 
+					log->header, LOG_HEADER_HALF_SIZE,
+					"%s",
 					first
 				);
 
 				// second type
 				(void) snprintf (
-					log->second, LOG_HEADER_HALF_SIZE, 
-					"%s", 
+					log->second, LOG_HEADER_HALF_SIZE,
+					"%s",
 					log_get_msg_type (second_type)
 				);
 			} break;
 
 			default: {
 				(void) snprintf (
-					log->header, LOG_HEADER_SIZE, 
-					"%s%s", 
+					log->header, LOG_HEADER_SIZE,
+					"%s%s",
 					first, log_get_msg_type (second_type)
 				);
 			} break;
@@ -266,7 +266,7 @@ static void cerver_log_internal_normal_std (
 
 			else (void) fprintf (stdout, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (stdout, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
@@ -299,7 +299,7 @@ static void cerver_log_internal_normal_file (
 			if (second_type != LOG_TYPE_NONE) (void) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
 			else (void) fprintf (__stream,  "%s: %s\n", log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE) (void) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
 			else (void) fprintf (__stream, "%s: %s\n", log->header, log->message);
@@ -316,7 +316,8 @@ static void cerver_log_internal_normal_file (
 static void cerver_log_internal_normal (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	LogType first_type, LogType second_type,
+	LogOutputType log_output_type
 ) {
 
 	switch (log_output_type) {
@@ -351,7 +352,7 @@ static void cerver_log_internal_with_time_std (
 
 			else (void) fprintf (stdout, "[%s]" LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (stdout, "[%s]" LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
@@ -386,7 +387,7 @@ static void cerver_log_internal_with_time_file (
 
 			else (void) fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (__stream, "[%s]%s%s: %s\n", log->datetime, log->header, log->second, log->message);
@@ -405,7 +406,8 @@ static void cerver_log_internal_with_time_file (
 static void cerver_log_internal_with_time (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	LogType first_type, LogType second_type,
+	LogOutputType log_output_type
 ) {
 
 	switch (log_output_type) {
@@ -425,7 +427,8 @@ static void cerver_log_internal_with_time (
 static void cerver_log_internal (
 	FILE *__restrict __stream,
 	LogType first_type, LogType second_type,
-	const char *format, va_list args
+	const char *format, va_list args,
+	LogOutputType log_output_type
 ) {
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
@@ -445,11 +448,11 @@ static void cerver_log_internal (
 				default: break;
 			}
 
-			cerver_log_internal_with_time (__stream, log, first_type, second_type);
+			cerver_log_internal_with_time (__stream, log, first_type, second_type, log_output_type);
 		}
 
 		else {
-			cerver_log_internal_normal (__stream, log, first_type, second_type);
+			cerver_log_internal_normal (__stream, log, first_type, second_type, log_output_type);
 		}
 
 		(void) pool_push (log_pool, log);
@@ -459,7 +462,8 @@ static void cerver_log_internal (
 
 static void cerver_log_internal_raw (
 	FILE *__restrict __stream,
-	const char *format, va_list args
+	const char *format, va_list args,
+	LogOutputType log_output_type
 ) {
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
@@ -506,7 +510,8 @@ void cerver_log (
 					cerver_log_internal (
 						cerver_log_get_stream (first_type),
 						first_type, second_type,
-						format, args
+						format, args,
+						log_global_output_type
 					);
 					break;
 
@@ -518,9 +523,35 @@ void cerver_log (
 			cerver_log_internal (
 				cerver_log_get_stream (first_type),
 				first_type, second_type,
-				format, args
+				format, args,
+				log_global_output_type
 			);
 		}
+
+		va_end (args);
+	}
+
+}
+
+// creates and prints a message of custom types
+// to stdout or stderr based on type
+// and to log file if available
+// this messages ignore the quiet flag
+void cerver_log_both (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+) {
+
+	if (format) {
+		va_list args;
+		va_start (args, format);
+
+		cerver_log_internal (
+			cerver_log_get_stream (first_type),
+			first_type, second_type,
+			format, args,
+			logfile ? LOG_OUTPUT_TYPE_BOTH : LOG_OUTPUT_TYPE_STD
+		);
 
 		va_end (args);
 	}
@@ -537,7 +568,8 @@ void cerver_log_msg (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_NONE),
 			LOG_TYPE_NONE, LOG_TYPE_NONE,
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -555,7 +587,8 @@ void cerver_log_error (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_ERROR),
 			LOG_TYPE_ERROR, LOG_TYPE_NONE,
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -573,7 +606,8 @@ void cerver_log_warning (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_WARNING),
 			LOG_TYPE_WARNING, LOG_TYPE_NONE,
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -591,7 +625,8 @@ void cerver_log_success (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_SUCCESS),
 			LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -609,7 +644,8 @@ void cerver_log_debug (const char *msg, ...) {
 		cerver_log_internal (
 			cerver_log_get_stream (LOG_TYPE_DEBUG),
 			LOG_TYPE_DEBUG, LOG_TYPE_NONE,
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -626,7 +662,8 @@ void cerver_log_raw (const char *msg, ...) {
 
 		cerver_log_internal_raw (
 			cerver_log_get_stream (LOG_TYPE_NONE),
-			msg, args
+			msg, args,
+			log_global_output_type
 		);
 
 		va_end (args);
@@ -637,7 +674,7 @@ void cerver_log_raw (const char *msg, ...) {
 // prints a line break, equivalent to printf ("\n")
 void cerver_log_line_break (void) {
 
-	switch (log_output_type) {
+	switch (log_global_output_type) {
 		case LOG_OUTPUT_TYPE_STD:
 			(void) fprintf (stdout, "\n");
 			break;
@@ -684,7 +721,7 @@ void cerver_log_init (void) {
 		logs_pathname = str_new (LOG_DEFAULT_PATH);
 	}
 
-	switch (log_output_type) {
+	switch (log_global_output_type) {
 		case LOG_OUTPUT_TYPE_FILE:
 		case LOG_OUTPUT_TYPE_BOTH: {
 			char filename[1024] = { 0 };
@@ -692,8 +729,6 @@ void cerver_log_init (void) {
 
 			logfile = fopen (filename, "w+");
 			if (logfile) {
-				cerver_version_print_full ();
-
 				update_log_file = true;
 				(void) thread_create_detachable (&update_log_thread_id, cerver_log_update, NULL);
 			}
@@ -715,7 +750,7 @@ void cerver_log_end (void) {
 	update_log_file = false;
 
 	if (logfile) {
-		fclose (logfile);
+		(void) fclose (logfile);
 		logfile = NULL;
 	}
 

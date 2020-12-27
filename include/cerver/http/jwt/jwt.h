@@ -3,19 +3,19 @@
 
    This Source Code Form is subject to the terms of the Mozilla Public
    License, v. 2.0. If a copy of the MPL was not distributed with this
-   file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+   file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
 
 #ifndef _CERVER_HTTP_JWT_H_
 #define _CERVER_HTTP_JWT_H_
 
 #include <stdio.h>
+
 #include <time.h>
 
 #include "cerver/config.h"
 
 #include "cerver/http/jwt/alg.h"
-
-#define JWT_EXPORT                     extern
 
 /** JWT Validation exception types. These are bit values. */
 #define JWT_VALIDATION_SUCCESS		   		0x0000
@@ -55,7 +55,7 @@ struct jwt_valid {
 	int hdr;
 	struct json_t *req_grants;
 	unsigned int status;
-   
+
 };
 
 typedef struct jwt_valid jwt_valid_t;
@@ -86,7 +86,7 @@ typedef struct jwt_valid jwt_valid_t;
  *     success.
  * @return 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_new(jwt_t **jwt);
+CERVER_PUBLIC int jwt_new (jwt_t **jwt);
 
 /**
  * Verify an existing JWT and allocate a new JWT object from it.
@@ -112,8 +112,10 @@ JWT_EXPORT int jwt_new(jwt_t **jwt);
  *     signature, however, standard validation of the token is still
  *     performed.
  */
-JWT_EXPORT int jwt_decode(jwt_t **jwt, const char *token,
-					 const unsigned char *key, int key_len);
+CERVER_PUBLIC int jwt_decode (
+	jwt_t **jwt, const char *token,
+	const unsigned char *key, int key_len
+);
 
 /**
  * Free a JWT object and any other resources it is using.
@@ -124,7 +126,7 @@ JWT_EXPORT int jwt_decode(jwt_t **jwt, const char *token,
  * @param jwt Pointer to a JWT object previously created with jwt_new()
  *            or jwt_decode().
  */
-JWT_EXPORT void jwt_free(jwt_t *jwt);
+CERVER_PUBLIC void jwt_free (jwt_t *jwt);
 
 /**
  * Duplicate an existing JWT object.
@@ -135,7 +137,7 @@ JWT_EXPORT void jwt_free(jwt_t *jwt);
  * @return A new object on success, NULL on error with errno set
  *     appropriately.
  */
-JWT_EXPORT jwt_t *jwt_dup(jwt_t *jwt);
+CERVER_PUBLIC jwt_t *jwt_dup (jwt_t *jwt);
 
 /** @} */
 
@@ -162,7 +164,9 @@ JWT_EXPORT jwt_t *jwt_dup(jwt_t *jwt);
  * values (e.g. arrays) or use jwt_get_grant_int() to get simple integer
  * values.
  */
-JWT_EXPORT const char *jwt_get_grant(jwt_t *jwt, const char *grant);
+CERVER_PUBLIC const char *jwt_get_grant (
+	jwt_t *jwt, const char *grant
+);
 
 /**
  * Return the value of an integer grant.
@@ -180,7 +184,9 @@ JWT_EXPORT const char *jwt_get_grant(jwt_t *jwt, const char *grant);
  * jwt_get_grant_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_get_grant() to get string values.
  */
-JWT_EXPORT long jwt_get_grant_int(jwt_t *jwt, const char *grant);
+CERVER_PUBLIC long jwt_get_grant_int (
+	jwt_t *jwt, const char *grant
+);
 
 /**
  * Return the value of an boolean grant.
@@ -198,7 +204,9 @@ JWT_EXPORT long jwt_get_grant_int(jwt_t *jwt, const char *grant);
  * jwt_get_grant_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_get_grant() to get string values.
  */
-JWT_EXPORT int jwt_get_grant_bool(jwt_t *jwt, const char *grant);
+CERVER_PUBLIC int jwt_get_grant_bool (
+	jwt_t *jwt, const char *grant
+);
 
 /**
  * Return the value of a grant as JSON encoded object string.
@@ -213,7 +221,9 @@ JWT_EXPORT int jwt_get_grant_bool(jwt_t *jwt, const char *grant);
  * @return Returns a string for the value, or NULL when not found. The
  *     returned string must be freed by the caller.
  */
-JWT_EXPORT char *jwt_get_grants_json(jwt_t *jwt, const char *grant);
+CERVER_PUBLIC char *jwt_get_grants_json (
+	jwt_t *jwt, const char *grant
+);
 
 /**
  * Add a new string grant to this JWT object.
@@ -233,7 +243,9 @@ JWT_EXPORT char *jwt_get_grants_json(jwt_t *jwt, const char *grant);
  * integer grants, then use jwt_add_grant_int(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
-JWT_EXPORT int jwt_add_grant(jwt_t *jwt, const char *grant, const char *val);
+CERVER_PUBLIC int jwt_add_grant (
+	jwt_t *jwt, const char *grant, const char *val
+);
 
 /**
  * Add a new integer grant to this JWT object.
@@ -252,7 +264,9 @@ JWT_EXPORT int jwt_add_grant(jwt_t *jwt, const char *grant, const char *val);
  * string grants, then use jwt_add_grant(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
-JWT_EXPORT int jwt_add_grant_int(jwt_t *jwt, const char *grant, long val);
+CERVER_PUBLIC int jwt_add_grant_int (
+	jwt_t *jwt, const char *grant, long val
+);
 
 /**
  * Add a new boolean grant to this JWT object.
@@ -271,7 +285,9 @@ JWT_EXPORT int jwt_add_grant_int(jwt_t *jwt, const char *grant, long val);
  * string grants, then use jwt_add_grant(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_add_grants_json().
  */
-JWT_EXPORT int jwt_add_grant_bool(jwt_t *jwt, const char *grant, int val);
+CERVER_PUBLIC int jwt_add_grant_bool (
+	jwt_t *jwt, const char *grant, int val
+);
 
 /**
  * Add grants from a JSON encoded object string.
@@ -285,7 +301,9 @@ JWT_EXPORT int jwt_add_grant_bool(jwt_t *jwt, const char *grant, int val);
  * @param json String containing a JSON encoded object of grants.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_add_grants_json(jwt_t *jwt, const char *json);
+CERVER_PUBLIC int jwt_add_grants_json (
+	jwt_t *jwt, const char *json
+);
 
 /**
  * Delete a grant from this JWT object.
@@ -299,7 +317,9 @@ JWT_EXPORT int jwt_add_grants_json(jwt_t *jwt, const char *json);
  *    is NULL, then all grants are deleted.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_del_grants(jwt_t *jwt, const char *grant);
+CERVER_PUBLIC int jwt_del_grants (
+	jwt_t *jwt, const char *grant
+);
 
 /**
  * @deprecated
@@ -312,7 +332,11 @@ JWT_EXPORT int jwt_del_grants(jwt_t *jwt, const char *grant);
  * @param grant String containing the name of the grant to delete.
  * @return Returns 0 on success, valid errno otherwise.
  */
-DEPRECATED(JWT_EXPORT int jwt_del_grant(jwt_t *jwt, const char *grant));
+DEPRECATED (
+	CERVER_PUBLIC int jwt_del_grant (
+		jwt_t *jwt, const char *grant
+	)
+);
 
 /** @} */
 
@@ -339,7 +363,9 @@ DEPRECATED(JWT_EXPORT int jwt_del_grant(jwt_t *jwt, const char *grant));
  * values (e.g. arrays) or use jwt_get_header_int() to get simple integer
  * values.
  */
-JWT_EXPORT const char *jwt_get_header(jwt_t *jwt, const char *header);
+CERVER_PUBLIC const char *jwt_get_header (
+	jwt_t *jwt, const char *header
+);
 
 /**
  * Return the value of an integer header.
@@ -357,7 +383,9 @@ JWT_EXPORT const char *jwt_get_header(jwt_t *jwt, const char *header);
  * jwt_get_header_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_get_header() to get string values.
  */
-JWT_EXPORT long jwt_get_header_int(jwt_t *jwt, const char *header);
+CERVER_PUBLIC long jwt_get_header_int (
+	jwt_t *jwt, const char *header
+);
 
 /**
  * Return the value of an boolean header.
@@ -375,7 +403,9 @@ JWT_EXPORT long jwt_get_header_int(jwt_t *jwt, const char *header);
  * jwt_get_header_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_get_header() to get string values.
  */
-JWT_EXPORT int jwt_get_header_bool(jwt_t *jwt, const char *header);
+CERVER_PUBLIC int jwt_get_header_bool (
+	jwt_t *jwt, const char *header
+);
 
 /**
  * Return the value of a header as JSON encoded object string.
@@ -390,7 +420,9 @@ JWT_EXPORT int jwt_get_header_bool(jwt_t *jwt, const char *header);
  * @return Returns a string for the value, or NULL when not found. The
  *     returned string must be freed by the caller.
  */
-JWT_EXPORT char *jwt_get_headers_json(jwt_t *jwt, const char *header);
+CERVER_PUBLIC char *jwt_get_headers_json (
+	jwt_t *jwt, const char *header
+);
 
 /**
  * Add a new string header to this JWT object.
@@ -410,7 +442,9 @@ JWT_EXPORT char *jwt_get_headers_json(jwt_t *jwt, const char *header);
  * integer headers, then use jwt_add_header_int(). If you wish to add more
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
-JWT_EXPORT int jwt_add_header(jwt_t *jwt, const char *header, const char *val);
+CERVER_PUBLIC int jwt_add_header (
+	jwt_t *jwt, const char *header, const char *val
+);
 
 /**
  * Add a new integer header to this JWT object.
@@ -429,7 +463,9 @@ JWT_EXPORT int jwt_add_header(jwt_t *jwt, const char *header, const char *val);
  * string headers, then use jwt_add_header(). If you wish to add more
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
-JWT_EXPORT int jwt_add_header_int(jwt_t *jwt, const char *header, long val);
+CERVER_PUBLIC int jwt_add_header_int (
+	jwt_t *jwt, const char *header, long val
+);
 
 /**
  * Add a new boolean header to this JWT object.
@@ -448,7 +484,9 @@ JWT_EXPORT int jwt_add_header_int(jwt_t *jwt, const char *header, long val);
  * string headers, then use jwt_add_header(). If you wish to add more
  * complex headers (e.g. an array), then use jwt_add_headers_json().
  */
-JWT_EXPORT int jwt_add_header_bool(jwt_t *jwt, const char *header, int val);
+CERVER_PUBLIC int jwt_add_header_bool (
+	jwt_t *jwt, const char *header, int val
+);
 
 /**
  * Add headers from a JSON encoded object string.
@@ -462,7 +500,9 @@ JWT_EXPORT int jwt_add_header_bool(jwt_t *jwt, const char *header, int val);
  * @param json String containing a JSON encoded object of headers.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_add_headers_json(jwt_t *jwt, const char *json);
+CERVER_PUBLIC int jwt_add_headers_json (
+	jwt_t *jwt, const char *json
+);
 
 /**
  * Delete a header from this JWT object.
@@ -476,7 +516,9 @@ JWT_EXPORT int jwt_add_headers_json(jwt_t *jwt, const char *json);
  *    is NULL, then all headers are deleted.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_del_headers(jwt_t *jwt, const char *header);
+CERVER_PUBLIC int jwt_del_headers (
+	jwt_t *jwt, const char *header
+);
 
 /** @} */
 
@@ -507,7 +549,9 @@ JWT_EXPORT int jwt_del_headers(jwt_t *jwt, const char *header);
  *     used for debugging.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_dump_fp(jwt_t *jwt, FILE *fp, int pretty);
+CERVER_PUBLIC int jwt_dump_fp (
+	jwt_t *jwt, FILE *fp, int pretty
+);
 
 /**
  * Return plain text representation as a string.
@@ -527,7 +571,9 @@ JWT_EXPORT int jwt_dump_fp(jwt_t *jwt, FILE *fp, int pretty);
  * @return A nul terminated string on success, NULL on error with errno
  *     set appropriately.
  */
-JWT_EXPORT char *jwt_dump_str(jwt_t *jwt, int pretty);
+CERVER_PUBLIC char *jwt_dump_str (
+	jwt_t *jwt, int pretty
+);
 
 /**
  * Fully encode a JWT object and write it to FILE.
@@ -540,7 +586,9 @@ JWT_EXPORT char *jwt_dump_str(jwt_t *jwt, int pretty);
  * @param fp Valid FILE pointer to write data to.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_encode_fp(jwt_t *jwt, FILE *fp);
+CERVER_PUBLIC int jwt_encode_fp (
+	jwt_t *jwt, FILE *fp
+);
 
 /**
  * Fully encode a JWT object and return as a string.
@@ -553,7 +601,7 @@ JWT_EXPORT int jwt_encode_fp(jwt_t *jwt, FILE *fp);
  * @return A null terminated string on success, NULL on error with errno
  *     set appropriately.
  */
-JWT_EXPORT char *jwt_encode_str(jwt_t *jwt);
+CERVER_PUBLIC char *jwt_encode_str (jwt_t *jwt);
 
 /**
  * Free a string returned from the library.
@@ -561,7 +609,7 @@ JWT_EXPORT char *jwt_encode_str(jwt_t *jwt);
  * @param str Pointer to a string previously created with
  *     jwt_encode_str().
  */
-JWT_EXPORT void jwt_free_str(char *str);
+CERVER_PUBLIC void jwt_free_str (char *str);
 
 /** @} */
 
@@ -590,7 +638,9 @@ JWT_EXPORT void jwt_free_str(char *str);
  * @param len The length of the key data.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_set_alg(jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len);
+CERVER_PUBLIC int jwt_set_alg (
+	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len
+);
 
 /**
  * Get the jwt_alg_t set for this JWT object.
@@ -600,76 +650,7 @@ JWT_EXPORT int jwt_set_alg(jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, 
  * @param jwt Pointer to a JWT object.
  * @returns Returns a jwt_alg_t type for this object.
  */
-JWT_EXPORT jwt_alg_t jwt_get_alg(jwt_t *jwt);
-
-/**
- * Convert alg type to it's string representation.
- *
- * Returns a string that matches the alg type provided.
- *
- * @param alg A valid jwt_alg_t specifier.
- * @returns Returns a string (e.g. "RS256") matching the alg or NULL for
- *     invalid alg.
- */
-JWT_EXPORT const char *jwt_alg_str(jwt_alg_t alg);
-
-/**
- * Convert alg string to type.
- *
- * Returns an alg type based on the string representation.
- *
- * @param alg A valid string algorithm type (e.g. "RS256").
- * @returns Returns an alg type matching the string or JWT_ALG_INVAL if no
- *     matches were found.
- *
- * Note, this only works for algorithms that LibJWT supports or knows about.
- */
-JWT_EXPORT jwt_alg_t jwt_str_alg(const char *alg);
-
-/** @} */
-
-/**
- * @defgroup jwt_memory JWT memory functions
- * These functions allow you to get or set memory allocation functions.
- * @{
- */
-
- /**
-  * Set functions to be used for allocating and freeing memory.
-  *
-  * By default, LibJWT uses malloc, realloc, and free for memory
-  * management. This function allows the user of the library to
-  * specify its own memory management functions. This is especially
-  * useful on Windows where mismatches in runtimes across DLLs can
-  * cause problems.
-  *
-  * The caller can specify either a valid function pointer for
-  * any of the parameters or NULL to use the corresponding default
-  * allocator function.
-  *
-  * Note that this function will also set the memory allocator
-  * for the Jansson library.
-  *
-  * @param pmalloc The function to use for allocating memory or
-  *     NULL to use malloc
-  * @param prealloc The function to use for reallocating memory or
-  *     NULL to use realloc
-  * @param pfree The function to use for freeing memory or
-  *     NULL to use free
-  * @returns 0 on success or errno otherwise.
-  */
-JWT_EXPORT int jwt_set_alloc(jwt_malloc_t pmalloc, jwt_realloc_t prealloc, jwt_free_t pfree);
-
-/**
- * Get functions used for allocating and freeing memory.
- *
- * @param pmalloc Pointer to malloc function output variable, or NULL
- * @param prealloc Pointer to realloc function output variable, or NULL
- * @param pfree Pointer to free function output variable, or NULL
- */
-JWT_EXPORT void jwt_get_alloc(jwt_malloc_t *pmalloc, jwt_realloc_t *prealloc, jwt_free_t *pfree);
-
- /** @} */
+CERVER_PUBLIC jwt_alg_t jwt_get_alg (jwt_t *jwt);
 
 /**
  * @defgroup jwt_vaildate JWT validation functions
@@ -695,7 +676,9 @@ JWT_EXPORT void jwt_get_alloc(jwt_malloc_t *pmalloc, jwt_realloc_t *prealloc, jw
  *
  * @return bitwide OR if possible validation errors or 0 on success
  */
-JWT_EXPORT unsigned int jwt_validate(jwt_t *jwt, jwt_valid_t *jwt_valid);
+CERVER_PUBLIC unsigned int jwt_validate (
+	jwt_t *jwt, jwt_valid_t *jwt_valid
+);
 
 /**
  * Allocate a new, JWT validation object.
@@ -709,7 +692,9 @@ JWT_EXPORT unsigned int jwt_validate(jwt_t *jwt, jwt_valid_t *jwt_valid);
  * @return 0 on success, valid errno otherwise.
  *
  */
-JWT_EXPORT int jwt_valid_new(jwt_valid_t **jwt_valid, jwt_alg_t alg);
+CERVER_PUBLIC int jwt_valid_new (
+	jwt_valid_t **jwt_valid, jwt_alg_t alg
+);
 
 /**
  * Free a JWT validation object and any other resources it is using.
@@ -720,7 +705,7 @@ JWT_EXPORT int jwt_valid_new(jwt_valid_t **jwt_valid, jwt_alg_t alg);
  * @param jwt_valid Pointer to a JWT validation object previously created with
  *     jwt_valid_new().
  */
-JWT_EXPORT void jwt_valid_free(jwt_valid_t *jwt_valid);
+CERVER_PUBLIC void jwt_valid_free (jwt_valid_t *jwt_valid);
 
 /**
  * Return the status string for the validation object.
@@ -732,7 +717,9 @@ JWT_EXPORT void jwt_valid_free(jwt_valid_t *jwt_valid);
  * @return Returns current validation status as a bitwise OR of possible
  *   errors, or 0 if validation is currently successful.
  */
-JWT_EXPORT unsigned int jwt_valid_get_status(jwt_valid_t *jwt_valid);
+CERVER_PUBLIC unsigned int jwt_valid_get_status (
+	jwt_valid_t *jwt_valid
+);
 
 /**
  * Add a new string grant requirement to this JWT validation object.
@@ -747,7 +734,9 @@ JWT_EXPORT unsigned int jwt_valid_get_status(jwt_valid_t *jwt_valid);
  * integer grants, then use jwt_valid_add_grant_int(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
-JWT_EXPORT int jwt_valid_add_grant(jwt_valid_t *jwt_valid, const char *grant, const char *val);
+CERVER_PUBLIC int jwt_valid_add_grant (
+	jwt_valid_t *jwt_valid, const char *grant, const char *val
+);
 
 /**
  * Return the value of a string required grant.
@@ -765,7 +754,9 @@ JWT_EXPORT int jwt_valid_add_grant(jwt_valid_t *jwt_valid, const char *grant, co
  * values (e.g. arrays) or use jwt_valid_get_grant_int() to get simple integer
  * values.
  */
-JWT_EXPORT const char *jwt_valid_get_grant(jwt_valid_t *jwt_valid, const char *grant);
+CERVER_PUBLIC const char *jwt_valid_get_grant (
+	jwt_valid_t *jwt_valid, const char *grant
+);
 
 /**
  * Add a new integer grant requirement to this JWT validation object.
@@ -779,7 +770,9 @@ JWT_EXPORT const char *jwt_valid_get_grant(jwt_valid_t *jwt_valid, const char *g
  * string grants, then use jwt_valid_add_grant(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
-JWT_EXPORT int jwt_valid_add_grant_int(jwt_valid_t *jwt_valid, const char *grant, long val);
+CERVER_PUBLIC int jwt_valid_add_grant_int (
+	jwt_valid_t *jwt_valid, const char *grant, long val
+);
 
 /**
  * Return the value of an integer required grant.
@@ -797,7 +790,9 @@ JWT_EXPORT int jwt_valid_add_grant_int(jwt_valid_t *jwt_valid, const char *grant
  * jwt_valid_get_grants_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_valid_get_grant() to get string values.
  */
-JWT_EXPORT long jwt_valid_get_grant_int(jwt_valid_t *jwt_valid, const char *grant);
+CERVER_PUBLIC long jwt_valid_get_grant_int (
+	jwt_valid_t *jwt_valid, const char *grant
+);
 
 /**
  * Add a new boolean required grant to this JWT validation object.
@@ -816,7 +811,9 @@ JWT_EXPORT long jwt_valid_get_grant_int(jwt_valid_t *jwt_valid, const char *gran
  * string grants, then use jwt_valid_add_grant(). If you wish to add more
  * complex grants (e.g. an array), then use jwt_valid_add_grants_json().
  */
-JWT_EXPORT int jwt_valid_add_grant_bool(jwt_valid_t *jwt_valid, const char *grant, int val);
+CERVER_PUBLIC int jwt_valid_add_grant_bool (
+	jwt_valid_t *jwt_valid, const char *grant, int val
+);
 
 /**
  * Return the value of an boolean required grant.
@@ -834,7 +831,9 @@ JWT_EXPORT int jwt_valid_add_grant_bool(jwt_valid_t *jwt_valid, const char *gran
  * jwt_valid_get_grants_json() to get the JSON representation of more complex
  * values (e.g. arrays) or use jwt_valid_get_grant() to get string values.
  */
-JWT_EXPORT int jwt_valid_get_grant_bool(jwt_valid_t *jwt_valid, const char *grant);
+CERVER_PUBLIC int jwt_valid_get_grant_bool (
+	jwt_valid_t *jwt_valid, const char *grant
+);
 
 /**
  * Add required grants from a JSON encoded object string.
@@ -846,7 +845,9 @@ JWT_EXPORT int jwt_valid_get_grant_bool(jwt_valid_t *jwt_valid, const char *gran
  * @param json String containing a JSON encoded object of grants.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_valid_add_grants_json(jwt_valid_t *jwt_valid, const char *json);
+CERVER_PUBLIC int jwt_valid_add_grants_json (
+	jwt_valid_t *jwt_valid, const char *json
+);
 
 /**
  * Return the value of a grant as JSON encoded object string.
@@ -860,7 +861,9 @@ JWT_EXPORT int jwt_valid_add_grants_json(jwt_valid_t *jwt_valid, const char *jso
  * @return Returns a string for the value, or NULL when not found. The
  *     returned string must be freed by the caller.
  */
-JWT_EXPORT char* jwt_valid_get_grants_json(jwt_valid_t *jwt_valid, const char *grant);
+CERVER_PUBLIC char *jwt_valid_get_grants_json (
+	jwt_valid_t *jwt_valid, const char *grant
+);
 
 /**
  * Delete a grant from this JWT object.
@@ -874,7 +877,9 @@ JWT_EXPORT char* jwt_valid_get_grants_json(jwt_valid_t *jwt_valid, const char *g
  *    is NULL, then all grants are deleted.
  * @return Returns 0 on success, valid errno otherwise.
  */
-JWT_EXPORT int jwt_valid_del_grants(jwt_valid_t *jwt, const char *grant);
+CERVER_PUBLIC int jwt_valid_del_grants (
+	jwt_valid_t *jwt, const char *grant
+);
 
 /**
  * Set the time for which expires and not-before claims should be evaluated.
@@ -886,7 +891,9 @@ JWT_EXPORT int jwt_valid_del_grants(jwt_valid_t *jwt, const char *grant);
  * @remark jwt_validate() will not fail based on time if no expires or
  *     not-before claims exist in a JWT object.
  */
-JWT_EXPORT int jwt_valid_set_now(jwt_valid_t *jwt_valid, const time_t now);
+CERVER_PUBLIC int jwt_valid_set_now (
+	jwt_valid_t *jwt_valid, const time_t now
+);
 
 /**
  * Set validation for replicated claims in headers.
@@ -901,7 +908,9 @@ JWT_EXPORT int jwt_valid_set_now(jwt_valid_t *jwt_valid, const time_t now);
  * @remark jwt_validate() will not fail if iss, sub, aud are not present in JWT
  *     header or body.
  */
-JWT_EXPORT int jwt_valid_set_headers(jwt_valid_t *jwt_valid, int hdr);
+CERVER_PUBLIC int jwt_valid_set_headers (
+	jwt_valid_t *jwt_valid, int hdr
+);
 
 /** @} */
 
