@@ -1391,11 +1391,9 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 		// i32 sock_fd = receive_handle->sock_fd;
 		char *buffer = receive_handle->buffer;
 		size_t buffer_size = receive_handle->buffer_size;
-
-		#ifdef CERVER_DEBUG
+		#ifdef HANDLER_DEBUG
 		i32 sock_fd = receive_handle->socket->sock_fd;
 		#endif
-		
 		// char *buffer = receive_handle->socket->packet_buffer;
 		// size_t buffer_size = receive_handle->socket->packet_buffer_size;
 		Lobby *lobby = receive_handle->lobby;
@@ -1568,7 +1566,7 @@ void cerver_receive_handle_buffer (void *receive_handle_ptr) {
 		}
 
 		else {
-			#ifdef CERVER_DEBUG
+			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Sock fd: %d does not have an associated sock_receive in cerver %s.",
@@ -2120,6 +2118,11 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	connection_drop (cr->cerver, cr->connection);
 
 	cerver_receive_delete (cr);
+
+	// remove client if the connection was a web socket
+	if (http_receive->http_client) {
+		http_cerver_clients_unregister (http_receive);
+	}
 
 	// update http route stats
 	double process_time = timer_get_current_time () - start_time;
