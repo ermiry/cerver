@@ -10,7 +10,7 @@
 
 #include "../test.h"
 
-void test_jwt_dump_fp (void) {
+static void test_jwt_dump_fp (void) {
 
 	FILE *out = NULL;
 	jwt_t *jwt = NULL;
@@ -47,7 +47,7 @@ void test_jwt_dump_fp (void) {
 
 }
 
-void test_jwt_dump_str (void) {
+static void test_jwt_dump_str (void) {
 
 	jwt_t *jwt = NULL;
 	int ret = 0;
@@ -99,7 +99,7 @@ void test_jwt_dump_str (void) {
 
 }
 
-void test_jwt_dump_str_alg_default_typ_header (void) {
+static void test_jwt_dump_str_alg_default_typ_header (void) {
 
 	jwt_t *jwt = NULL;
 	const char key[] = "My Passphrase";
@@ -161,7 +161,7 @@ void test_jwt_dump_str_alg_default_typ_header (void) {
 
 }
 
-void test_jwt_dump_str_alg_custom_typ_header (void) {
+static void test_jwt_dump_str_alg_custom_typ_header (void) {
 
 	jwt_t *jwt = NULL;
 	const char key[] = "My Passphrase";
