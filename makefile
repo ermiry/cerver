@@ -17,7 +17,7 @@ DEVELOPMENT	:= -g \
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG								\
-				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG
+				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG -D HTTP_WEB_SOCKETS_DEBUG
 
 CC          := gcc
 
@@ -141,6 +141,7 @@ examples: $(EXOBJS)
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files -l cerver
 	$(CC) -I ./$(INCDIR) -I $(EXAMDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api -l cerver
+	$(CC) -I ./$(INCDIR) -I $(EXAMDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/sockets.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/sockets -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload -l cerver
 	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web -l cerver
 
