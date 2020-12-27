@@ -11,10 +11,8 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/request.h"
-#include "cerver/http/websockets.h"
 
-#define HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE			false
-#define HTTP_ROUTE_DEFAULT_ROUTES_TOKENS_SIZE		16
+#define DEFAULT_ROUTES_TOKENS_SIZE				16
 
 struct _HttpRoute;
 struct _HttpReceive;
@@ -32,13 +30,9 @@ typedef enum HttpRouteModifier {
 
 } HttpRouteModifier;
 
-CERVER_PUBLIC const char *http_route_modifier_to_string (
-	HttpRouteModifier modifier
-);
+CERVER_PUBLIC const char *http_route_modifier_to_string (HttpRouteModifier modifier);
 
-CERVER_PUBLIC const char *http_route_modifier_description (
-	HttpRouteModifier modifier
-);
+CERVER_PUBLIC const char *http_route_modifier_description (HttpRouteModifier modifier);
 
 #define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
 	XX(0,	NONE, 			None,		Undefined)													\
@@ -52,13 +46,9 @@ typedef enum HttpRouteAuthType {
 
 } HttpRouteAuthType;
 
-CERVER_PUBLIC const char *http_route_auth_type_to_string (
-	HttpRouteAuthType type
-);
+CERVER_PUBLIC const char *http_route_auth_type_to_string (HttpRouteAuthType type);
 
-CERVER_PUBLIC const char *http_route_auth_type_description (
-	HttpRouteAuthType type
-);
+CERVER_PUBLIC const char *http_route_auth_type_description (HttpRouteAuthType type);
 
 struct _HttpRoutesTokens {
 
@@ -174,24 +164,7 @@ struct _HttpRoute {
 	void *(*decode_data)(void *);
 	void (*delete_decoded_data)(void *);
 
-	bool execute_handler;
-
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
-
-	// web sockets
-	void (*ws_on_open)(const struct _HttpReceive *http_receive);
-	void (*ws_on_close)(
-		const struct _HttpReceive *, const char *reason
-	);
-	void (*ws_on_ping)(const struct _HttpReceive *http_receive);
-	void (*ws_on_pong)(const struct _HttpReceive *http_receive);
-	void (*ws_on_message)(
-		const struct _HttpReceive *http_receive,
-		const char *msg, const size_t msg_len
-	);
-	void (*ws_on_error)(
-		const struct _HttpReceive *, enum _HttpWebSocketError
-	);
 
 	// stats
 	HttpRouteStats *stats[HTTP_HANDLERS_COUNT];
@@ -244,63 +217,6 @@ CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route, 
 	void *(*decode_data)(void *),
 	void (*delete_decoded_data)(void *)
-);
-
-// allows the route's configured handler to be executed
-// whenever a modifier has been set like the WEB_SOCKET modifier
-// the default value is HTTP_ROUTE_DEFAULT_EXECUTE_ROUTE
-CERVER_EXPORT void http_route_set_execute_handler (
-	HttpRoute *route, bool execute
-);
-
-// sets a callback to be executed whenever a websocket connection is correctly
-// opened in the selected route
-CERVER_EXPORT void http_route_set_ws_on_open (
-	HttpRoute *route, 
-	void (*ws_on_open)(const struct _HttpReceive *)
-);
-
-// sets a callback to be executed whenever a websocket connection
-// gets closed from the selected route
-CERVER_EXPORT void http_route_set_ws_on_close (
-	HttpRoute *route, 
-	void (*ws_on_close)(
-		const struct _HttpReceive *,
-		const char *reason
-	)
-);
-
-// sets a callback to be executed whenever a websocket ping message
-// is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_ping (
-	HttpRoute *route, 
-	void (*ws_on_ping)(const struct _HttpReceive *)
-);
-
-// sets a callback to be executed whenever a websocket pong message
-// is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_pong (
-	HttpRoute *route, 
-	void (*ws_on_pong)(const struct _HttpReceive *)
-);
-
-// sets a callback to be executed whenever a complete websocket message
-// is received in the selected route
-CERVER_EXPORT void http_route_set_ws_on_message (
-	HttpRoute *route, 
-	void (*ws_on_message)(
-		const struct _HttpReceive *,
-		const char *msg, size_t msg_len
-	)
-);
-
-// sets a callback to be executed whenever an error ocurred in the selected route
-CERVER_EXPORT void http_route_set_ws_on_error (
-	HttpRoute *route, 
-	void (*ws_on_error)(
-		const struct _HttpReceive *,
-		enum _HttpWebSocketError
-	)
 );
 
 CERVER_EXPORT void http_route_print (HttpRoute *route);

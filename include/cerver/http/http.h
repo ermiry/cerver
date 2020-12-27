@@ -14,15 +14,10 @@
 #include "cerver/http/multipart.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
-#include "cerver/http/websockets.h"
 
 #include "cerver/http/jwt/alg.h"
 
 struct _Cerver;
-struct _Client;
-struct _Connection;
-
-struct _HttpReceive;
 
 struct _HttpRouteFileStats;
 
@@ -88,16 +83,6 @@ CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
 
 #pragma region main
 
-struct _HttpClient {
-
-	const struct _Client *client;
-	const struct _Connection *connection;
-	const struct _HttpReceive *http_receive;
-
-};
-
-typedef struct _HttpClient HttpClient;
-
 struct _HttpCerver {
 
 	struct _Cerver *cerver;
@@ -131,9 +116,6 @@ struct _HttpCerver {
 
 	String *jwt_opt_pub_key_name;      // jwt public key filename
 	String *jwt_public_key;            // jwt actual public key
-
-	// web sockets clients
-	DoubleList *clients;
 
 	// stats
 	size_t n_cath_all_requests;        // failed to match a route
@@ -265,21 +247,6 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 
 #pragma endregion
 
-#pragma region clients
-
-CERVER_PRIVATE int http_cerver_clients_unregister (
-	struct _HttpReceive *http_receive
-);
-
-// searches for a http client with a connection with matching sock fd
-// returns a reference to a client that should NOT be deleted
-// returns NULL if on no match
-CERVER_PUBLIC HttpClient *http_cerver_clients_get_by_sock_fd (
-	HttpCerver *http_cerver, const i32 sock_fd
-);
-
-#pragma endregion
-
 #pragma region stats
 
 // print number of routes & handlers
@@ -345,27 +312,6 @@ struct _HttpReceive {
 	size_t sent;
 	struct _HttpRouteFileStats *file_stats;
 
-	// websockets
-	struct _HttpClient *http_client; 
-
-	unsigned char fin_rsv_opcode;
-	size_t fragmented_message_len;
-	char *fragmented_message;
-
-	void (*ws_on_open)(const struct _HttpReceive *http_receive);
-	void (*ws_on_close)(
-		const struct _HttpReceive *, const char *reason
-	);
-	void (*ws_on_ping)(const struct _HttpReceive *http_receive);
-	void (*ws_on_pong)(const struct _HttpReceive *http_receive);
-	void (*ws_on_message)(
-		const struct _HttpReceive *http_receive,
-		const char *msg, const size_t msg_len
-	);
-	void (*ws_on_error)(
-		const struct _HttpReceive *, enum _HttpWebSocketError
-	);
-
 };
 
 typedef struct _HttpReceive HttpReceive;
@@ -373,6 +319,20 @@ typedef struct _HttpReceive HttpReceive;
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
+
+#pragma endregion
+
+#pragma region websockets
+
+// the default tmeout for a websocket sonnection
+#define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
+
+// sends a ws message to the selected connection
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_web_sockets_send (
+	Cerver *cerver, Connection *connection,
+	const char *msg, const size_t msg_len
+);
 
 #pragma endregion
 

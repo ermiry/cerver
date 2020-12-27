@@ -115,9 +115,7 @@ void key_value_pair_delete (void *kvp_ptr) {
 
 }
 
-KeyValuePair *key_value_pair_create (
-	const char *key, const char *value
-) {
+KeyValuePair *key_value_pair_create (const char *key, const char *value) {
 
 	KeyValuePair *kvp = key_value_pair_new ();
 	if (kvp) {
@@ -155,9 +153,7 @@ static KeyValuePair *key_value_pair_create_pieces (
 
 }
 
-const String *key_value_pairs_get_value (
-	DoubleList *pairs, const char *key
-) {
+const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
 
 	const String *value = NULL;
 
@@ -196,75 +192,6 @@ void key_value_pairs_print (DoubleList *pairs) {
 
 #pragma region http
 
-static HttpClient *http_client_new (
-	const struct _Client *client,
-	const struct _Connection *connection,
-	const struct _HttpReceive *http_receive
-) {
-
-	HttpClient *http_client = (HttpClient *) malloc (sizeof (HttpClient));
-	if (http_client) {
-		http_client->client = client;
-		http_client->connection = connection;
-		http_client->http_receive =http_receive;
-	}
-
-	return http_client;
-
-}
-
-static void http_client_delete (void *http_client_ptr) {
-
-	if (http_client_ptr) {
-		HttpClient *http_client = (HttpClient *) http_client_ptr;
-
-		http_client->client = NULL;
-		http_client->connection = NULL;
-		http_client->http_receive = NULL;
-
-		free (http_client);
-	}
-
-}
-
-static int http_client_comparator (
-	const void *a, const void *b
-) {
-
-	if (a && b) {
-		HttpClient *client_a = (HttpClient *) a;
-		HttpClient *client_b = (HttpClient *) b;
-
-		if (client_a->connection->socket && client_b->connection->socket) {
-			if (client_a->connection->socket->sock_fd < client_b->connection->socket->sock_fd) return -1;
-			else if (client_a->connection->socket->sock_fd == client_b->connection->socket->sock_fd) return 0;
-			else return 1;
-		}
-	}
-
-	return -1;
-
-}
-
-static int http_client_comparator_by_sock_fd (
-	const void *a, const void *b
-) {
-
-	if (a && b) {
-		HttpClient *client_a = (HttpClient *) a;
-		i32 *sock_fd = (i32 *) b;
-
-		if (client_a->connection->socket) {
-			if (client_a->connection->socket->sock_fd < *sock_fd) return -1;
-			else if (client_a->connection->socket->sock_fd == *sock_fd) return 0;
-			else return 1;
-		}
-	}
-
-	return -1;
-
-}
-
 HttpCerver *http_cerver_new (void) {
 
 	HttpCerver *http_cerver = (HttpCerver *) malloc (sizeof (HttpCerver));
@@ -287,8 +214,6 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
-
-		http_cerver->clients = NULL;
 
 		http_cerver->n_cath_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
@@ -315,8 +240,6 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
 
-		dlist_delete (http_cerver->clients);
-
 		free (http_cerver_ptr);
 	}
 
@@ -335,8 +258,6 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->default_handler = http_receive_handle_default_route;
 
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
-
-		http_cerver->clients = dlist_init (http_client_delete, http_client_comparator);
 	}
 
 	return http_cerver;
@@ -430,27 +351,21 @@ static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		if (http_cerver->routes->size) {
-			cerver_log_msg ("Loading HTTP routes...");
+		cerver_log_msg ("Loading HTTP routes...");
 
-			// init top level routes
-			HttpRoute *route = NULL;
-			for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
-				route = (HttpRoute *) le->data;
-				
-				http_route_init (route);
-				http_route_print (route);
-			}
-
-			cerver_log_success ("Done loading HTTP routes!");
-		}
-
-		else {
-			cerver_log_warning ("HTTP cerver has no routes");
+		// init top level routes
+		HttpRoute *route = NULL;
+		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+			route = (HttpRoute *) le->data;
+			
+			http_route_init (route);
+			http_route_print (route);
 		}
 
 		// load jwt keys
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
+
+		cerver_log_success ("Done loading HTTP routes!");
 	}
 
 }
@@ -501,9 +416,7 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 }
 
 // sets authentication requirenments for a whole static path
-void http_static_path_set_auth (
-	HttpStaticPath *static_path, HttpRouteAuthType auth_type
-) {
+void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type) {
 
 	if (static_path) static_path->auth_type = auth_type;
 
@@ -769,73 +682,6 @@ bool http_cerver_auth_validate_jwt (
 	}
 
 	return retval;
-
-}
-
-#pragma endregion
-
-#pragma region clients
-
-static int http_cerver_clients_register (
-	const HttpReceive *http_receive
-) {
-
-	int retval = 1;
-
-	if (http_receive) {
-		retval = dlist_insert_after (
-			http_receive->http_cerver->clients,
-			dlist_end (http_receive->http_cerver->clients),
-			http_client_new (
-				http_receive->cr->client,
-				http_receive->cr->connection,
-				http_receive
-			)
-		);
-	}
-
-	return retval;
-
-}
-
-int http_cerver_clients_unregister (
-	HttpReceive *http_receive
-) {
-
-	int retval = 1;
-
-	if (http_receive) {
-		void *data = dlist_remove (
-			http_receive->http_cerver->clients,
-			http_receive->http_client,
-			NULL
-		);
-
-		if (data) {
-			http_client_delete (data);
-			http_receive->http_client = NULL;
-
-			retval = 0;
-		}
-	}
-
-	return retval;
-
-}
-
-// searches for a http client with a connection with matching sock fd
-// returns a reference to a client that should NOT be deleted
-// returns NULL if on no match
-HttpClient *http_cerver_clients_get_by_sock_fd (
-	HttpCerver *http_cerver, const i32 sock_fd
-) {
-
-	return http_cerver ?
-		(HttpClient *) dlist_search (
-			http_cerver->clients,
-			&sock_fd,
-			http_client_comparator_by_sock_fd
-		) : NULL;
 
 }
 
@@ -1641,17 +1487,6 @@ HttpReceive *http_receive_new (void) {
 		http_receive->sent = 0;
 		http_receive->file_stats = http_route_file_stats_new ();
 
-		// websockets
-		http_receive->fin_rsv_opcode = 0;
-		http_receive->fragmented_message_len = 0;
-		http_receive->fragmented_message = NULL;
-		http_receive->ws_on_open = NULL;
-		http_receive->ws_on_close = NULL;
-		http_receive->ws_on_ping = NULL;
-		http_receive->ws_on_pong = NULL;
-		http_receive->ws_on_message = NULL;
-		http_receive->ws_on_error = NULL;
-
 		// http_receive->parser->data = http_receive->request;
 		http_receive->parser->data = http_receive;
 	}
@@ -1712,92 +1547,6 @@ static void http_receive_handle_catch_all (
 
 }
 
-// route is expecting a web socket connection, check headers and perform handshake
-static void http_receive_handle_match_web_socket (
-	HttpReceive *http_receive,
-	HttpRequest *request, 
-	HttpRoute *route
-) {
-
-	// check if client sent the correct headers
-	const String *connection = request->headers[REQUEST_HEADER_CONNECTION];
-	const String *upgrade = request->headers[REQUEST_HEADER_UPGRADE];
-
-	if (!strcasecmp ("Upgrade", connection->str) && !strcasecmp ("websocket", upgrade->str)) {
-		const String *web_socket_key = request->headers[REQUEST_HEADER_WEB_SOCKET_KEY];
-		// const String *web_socket_version = request->headers[REQUEST_HEADER_WEB_SOCKET_VERSION];
-
-		if (web_socket_key) {
-			char buffer[128] = { 0 };
-			(void) snprintf (
-				buffer, 128,
-				"%s%s",
-				web_socket_key->str, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-			);
-
-			unsigned char hash[SHA_DIGEST_LENGTH] = { 0 };
-			(void) SHA1 ((const unsigned char *) buffer, strlen (buffer), hash);
-
-			(void) memset (buffer, 0, 128);
-			(void) base64_encode (buffer, (const char *) hash, SHA_DIGEST_LENGTH);
-
-			HttpResponse *res = http_response_create ((http_status) 101, NULL, 0);
-			if (res) {
-				http_response_add_header (res, RESPONSE_HEADER_CONNECTION, "Upgrade");
-				http_response_add_header (res, RESPONSE_HEADER_UPGRADE, "websocket");
-				http_response_add_header (res, RESPONSE_HEADER_WEB_SOCKET_ACCEPT, buffer);
-
-				http_response_compile (res);
-				#ifdef HTTP_WEB_SOCKETS_DEBUG
-				http_response_print (res);
-				#endif
-				http_response_send (res, http_receive);
-				http_respponse_delete (res);
-			}
-
-			// keep connection alive
-			http_receive->keep_alive = true;
-
-			http_receive->handler = http_web_sockets_receive_handle;
-
-			http_receive->ws_on_open = route->ws_on_open;
-			http_receive->ws_on_close = route->ws_on_close;
-			http_receive->ws_on_ping = route->ws_on_ping;
-			http_receive->ws_on_pong = route->ws_on_pong;
-			http_receive->ws_on_message = route->ws_on_message;
-			http_receive->ws_on_error = route->ws_on_error;
-
-			// set the sockets timeout to prevent threads from getting stuck if no more data to read
-			if (!sock_set_timeout (
-				http_receive->cr->connection->socket->sock_fd,
-				DEFAULT_WEB_SOCKET_RECV_TIMEOUT
-			)) {
-				// we are safe! add to http clients
-				if (!http_cerver_clients_register (http_receive)) {
-					#ifdef HTTP_WEB_SOCKETS_DEBUG
-					cerver_log_success ("Registered new HTTP client!");
-					#endif
-				}
-			}
-
-			else {
-				cerver_log_error (
-					"http_receive_handle_match_web_socket () - Failed to set socket's %d timeout", 
-					http_receive->cr->connection->socket->sock_fd
-				);
-
-				// end connection to avoid wasting a thread
-				connection_end (http_receive->cr->connection);
-			}
-		}
-
-		else http_response_create_and_send (400, NULL, 0, http_receive);
-	}
-
-	else http_response_create_and_send (400, NULL, 0, http_receive);
-
-}
-
 // handles an actual route match & selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
@@ -1854,13 +1603,9 @@ static void http_receive_handle_match (
 					found->handlers[request->method] (http_receive, request);
 					break;
 
-				case HTTP_ROUTE_MODIFIER_WEB_SOCKET: {
-					if (found->execute_handler) {
-						found->handlers[request->method] (http_receive, request);	
-					}
-
-					http_receive_handle_match_web_socket (http_receive, request, found);
-				} break;
+				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
+					
+					break;
 			}
 
 			// 25/11/2020 - handled by http_route_stats_update ()
@@ -1990,11 +1735,7 @@ static void http_receive_handle_select_auth_bearer (
 		jwt_valid->hdr = 1;
 		jwt_valid->now = time (NULL);
 
-		if (!jwt_decode (
-			&jwt, token,
-			(unsigned char *) http_cerver->jwt_public_key->str,
-			http_cerver->jwt_public_key->len
-		)) {
+		if (!jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len)) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_debug ("JWT decoded successfully!");
 			#endif
