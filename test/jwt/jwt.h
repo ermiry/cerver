@@ -17,4 +17,6 @@ extern void jwt_tests_grant (void);
 
 extern void jwt_tests_rsa (void);
 
+extern void jwt_tests_validate (void);
+
 #endif
