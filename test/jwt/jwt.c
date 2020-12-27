@@ -11,6 +11,8 @@ int main (int argc, char **argv) {
 
 	jwt_tests_encode ();
 
+	jwt_tests_header ();
+
 	(void) printf ("\nDone with JWT tests!\n\n");
 
 	return 0;
