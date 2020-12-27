@@ -5,6 +5,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void test_sprintf() {
 	json_t *s = json_sprintf("foo bar %d", 42);

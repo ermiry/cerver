@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void test_copy_simple (void) {
 

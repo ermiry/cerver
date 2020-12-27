@@ -13,6 +13,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void start() {
 	json_t *j, *j2;

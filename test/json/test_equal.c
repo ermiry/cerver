@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void test_equal_simple() {
 	json_t *value1, *value2;

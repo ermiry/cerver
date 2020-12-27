@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void start (void) {
 	json_t *json;

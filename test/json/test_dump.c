@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 #ifdef __MINGW32__
 #include <fcntl.h>

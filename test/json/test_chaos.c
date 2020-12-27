@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static int chaos_pos = 0;
 static int chaos_fail = 0;

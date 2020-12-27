@@ -13,6 +13,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 #ifdef INFINITY
 // This test triggers "warning C4756: overflow in constant arithmetic"

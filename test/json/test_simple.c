@@ -12,6 +12,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void test_bad_args(void) {
 	json_t *num = json_integer(1);

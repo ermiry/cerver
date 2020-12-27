@@ -5,6 +5,7 @@
 #include <cerver/http/json/json.h>
 
 #include "json.h"
+#include "errors.h"
 
 static void create_and_free_complex_object (void) {
 
