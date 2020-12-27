@@ -259,6 +259,9 @@ void jwt_tests_decode (void) {
 	test_jwt_decode_hs384 ();
 	test_jwt_decode_hs512 ();
 
+	test_jwt_decode_hs256_issue_1 ();
+	test_jwt_decode_hs256_issue_2 ();
+
 	(void) printf ("Done!\n");
 
 }
