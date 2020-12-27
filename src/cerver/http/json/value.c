@@ -5,38 +5,23 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-// #ifndef _GNU_SOURCE
-// #define _GNU_SOURCE
-// #endif
-
-// #ifdef HAVE_CONFIG_H
-// #include <jansson_private_config.h>
-// #endif
-
-#include <math.h>
-#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 
-#include "cerver/http/json/json.h"
-#include "cerver/http/json/private.h"
+#include <math.h>
+#include <stddef.h>
+
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
-
-/* Work around nonstandard isnan() and isinf() implementations */
-// #ifndef isnan
-// #ifndef __sun
-// static JSON_INLINE int isnan(double x) { return x != x; }
-// #endif
-// #endif
-// #ifndef isinf
-// static JSON_INLINE int isinf(double x) { return !isnan(x) && isnan(x - x); }
-// #endif
+#include "cerver/http/json/json.h"
+#include "cerver/http/json/private.h"
+#include "cerver/http/json/utf.h"
+#include "cerver/http/json/value.h"
 
 json_t *do_deep_copy(const json_t *json, hashtable_t *parents);
 
-static JSON_INLINE void json_init(json_t *json, json_type type) {
+static CERVER_INLINE void json_init(json_t *json, json_type type) {
     json->type = type;
     json->refcount = 1;
 }
