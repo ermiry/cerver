@@ -9,6 +9,8 @@ int main (int argc, char **argv) {
 
 	jwt_tests_dump ();
 
+	jwt_tests_encode ();
+
 	(void) printf ("\nDone with JWT tests!\n\n");
 
 	return 0;

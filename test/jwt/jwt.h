@@ -3,4 +3,6 @@
 
 extern void jwt_tests_dump (void);
 
+extern void jwt_tests_encode (void);
+
 #endif
