@@ -15,6 +15,8 @@ int main (int argc, char **argv) {
 
 	jwt_tests_grant ();
 
+	jwt_tests_rsa ();
+
 	(void) printf ("\nDone with JWT tests!\n\n");
 
 	return 0;
