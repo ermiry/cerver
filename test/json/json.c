@@ -5,6 +5,8 @@
 
 int main (int argc, char **argv) {
 
+	(void) printf ("Testing JSON...\n");
+
 	json_tests_array ();
 
 	json_tests_chaos ();
@@ -37,7 +39,7 @@ int main (int argc, char **argv) {
 
 	json_tests_unpack ();
 
-	printf ("\nDone with JSON tests!\n\n");
+	(void) printf ("\nDone with JSON tests!\n\n");
 
 	return 0;
 
