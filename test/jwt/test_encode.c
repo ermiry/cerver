@@ -17,7 +17,7 @@
 #define ALLOC_JWT(__jwt) do {				\
 	int __ret = jwt_new (__jwt);			\
 	test_check_int_eq (__ret, 0, NULL);		\
-	test_check_ptr_ne (__jwt, NULL);		\
+	test_check (*__jwt != NULL, NULL);		\
 } while(0)
 
 static void test_jwt_encode_fp (void) {
@@ -128,7 +128,7 @@ static void test_jwt_encode_hs256 (void) {
 		"hYLVlZWVktWlpaWi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.B0a9gqWg"
 		"PuuIx-EFXXSHQByCMHCzs0gjvY3-60oV4TY";
 	
-	unsigned char key256[32] = "012345678901234567890123456789XY";
+	unsigned char key256[128] = "012345678901234567890123456789XY";
 	jwt_t *jwt = NULL;
 	int ret = 0;
 	char *out = NULL;
@@ -147,7 +147,7 @@ static void test_jwt_encode_hs256 (void) {
 	ret = jwt_add_grant_int (jwt, "iat", TS_CONST);
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS256, key256, sizeof(key256));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS256, key256, 32);
 	test_check_int_eq (ret, 0, NULL);
 
 	out = jwt_encode_str (jwt);
@@ -168,7 +168,7 @@ static void test_jwt_encode_hs384 (void) {
 		"hYLVlZWVktWlpaWi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.k5mpjWlu"
 		"aj4EQxuvoyXHR9HVw_V4GMnguwcQvZplTDT_H2PS0DDoZ5NF-VLC8kgO";
 
-	unsigned char key384[48] = "aaaabbbbccccddddeeeeffffgggghhhh"
+	unsigned char key384[128] = "aaaabbbbccccddddeeeeffffgggghhhh"
 		"iiiijjjjkkkkllll";
 
 	jwt_t *jwt = NULL;
@@ -189,7 +189,7 @@ static void test_jwt_encode_hs384 (void) {
 	ret = jwt_add_grant_int (jwt, "iat", TS_CONST);
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS384, key384, sizeof(key384));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS384, key384, 48);
 	test_check_int_eq (ret, 0, NULL);
 
 	out = jwt_encode_str (jwt);
@@ -211,7 +211,7 @@ static void test_jwt_encode_hs512 (void) {
 		"5DANiG5oZWPO90MFlkoMb7VGlEBDbBTpX_JThJ8md6UEsxFvwm2weeyHU4-"
 		"MasEU4nzbVk4LZ0vrcg";
 
-	unsigned char key512[64] = "012345678901234567890123456789XY"
+	unsigned char key512[128] = "012345678901234567890123456789XY"
 		"012345678901234567890123456789XY";
 
 	jwt_t *jwt = NULL;
@@ -232,7 +232,7 @@ static void test_jwt_encode_hs512 (void) {
 	ret = jwt_add_grant_int (jwt, "iat", TS_CONST);
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS512, key512, sizeof(key512));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS512, key512, 64);
 	test_check_int_eq (ret, 0, NULL);
 
 	out = jwt_encode_str (jwt);
@@ -252,7 +252,7 @@ static void test_jwt_encode_change_alg (void) {
 		"lzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJYWFhYLVlZWVktWlpa"
 		"Wi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.";
 
-	unsigned char key512[64] = "012345678901234567890123456789XY"
+	unsigned char key512[128] = "012345678901234567890123456789XY"
 		"012345678901234567890123456789XY";
 
 	jwt_t *jwt = NULL;
@@ -273,7 +273,7 @@ static void test_jwt_encode_change_alg (void) {
 	ret = jwt_add_grant_int (jwt, "iat", TS_CONST);
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS512, key512, sizeof(key512));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS512, key512, 64);
 	test_check_int_eq (ret, 0, NULL);
 
 	ret = jwt_set_alg (jwt, JWT_ALG_NONE, NULL, 0);
@@ -292,7 +292,7 @@ static void test_jwt_encode_change_alg (void) {
 
 static void test_jwt_encode_invalid (void) {
 
-	unsigned char key512[64] = "012345678901234567890123456789XY"
+	unsigned char key512[128] = "012345678901234567890123456789XY"
 		"012345678901234567890123456789XY";
 
 	jwt_t *jwt = NULL;
@@ -315,23 +315,23 @@ static void test_jwt_encode_invalid (void) {
 	ret = jwt_set_alg (jwt, JWT_ALG_HS512, NULL, 0);
 	test_check_int_eq (ret, EINVAL, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS512, NULL, sizeof (key512));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS512, NULL, 64);
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	ret = jwt_set_alg (jwt, JWT_ALG_HS512, key512, 0);
 	test_check_int_eq (ret, EINVAL, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_NONE, key512, sizeof (key512));
+	ret = jwt_set_alg (jwt, JWT_ALG_NONE, key512, 64);
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	ret = jwt_set_alg (jwt, JWT_ALG_NONE, key512, 0);
 	test_check_int_eq (ret, EINVAL, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_NONE, NULL, sizeof (key512));
+	ret = jwt_set_alg (jwt, JWT_ALG_NONE, NULL, 64);
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	/* Set a value that will never happen. */
-	ret = jwt_set_alg (jwt, 999, NULL, 0);
+	ret = jwt_set_alg (jwt, (jwt_alg_t) 999, NULL, 0);
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	jwt_free (jwt);
