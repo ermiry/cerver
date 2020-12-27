@@ -10,6 +10,7 @@
 
 #include "../test.h"
 
+#include "common.h"
 #include "jwt.h"
 
 static void test_jwt_add_header (void) {

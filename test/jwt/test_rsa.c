@@ -10,13 +10,8 @@
 
 #include "../test.h"
 
+#include "common.h"
 #include "jwt.h"
-
-/* Constant time to make tests consistent. */
-#define TS_CONST	1475980545L
-
-static unsigned char key[16384] = { 0 };
-static size_t key_len = 0;
 
 static const char jwt_rs256_2048[] = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey"
 	"JpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJYWF"
@@ -69,104 +64,15 @@ static const char jwt_rs256_invalid[] = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.ey
 	"JpYXQiOjE0NzU5ODA1NDUsImlzcyI6ImZpbGVzLmN5cGhyZS5jb20iLCJyZWYiOiJYWF"
 	"hYLVlZWVktWlpaWi1BQUFBLUNDQ0MiLCJzdWIiOiJ1c2VyMCJ9.IAmCornholio";
 
-static void read_key (const char *key_file) {
-
-	FILE *fp = fopen(key_file, "r");
-	char *key_path;
-	int ret = 0;
-
-	ret = asprintf (&key_path, "./test/jwt/keys/%s", key_file);
-	test_check_int_gt (ret, 0);
-
-	fp = fopen (key_path, "r");
-	test_check_ptr_ne (fp, NULL);
-
-	jwt_free_str (key_path);
-
-	key_len = fread (key, 1, sizeof (key), fp);
-	test_check_int_ne (key_len, 0);
-
-	test_check_int_eq (ferror (fp), 0, NULL);
-
-	(void) fclose (fp);
-
-	key[key_len] = '\0';
-
-}
-
-static void __test_alg_key (
-	const char *key_file, const char *jwt_str,
-	const jwt_alg_t alg
-) {
-
-	jwt_t *jwt = NULL;
-	int ret = 0;
-	char *out;
-
-	ALLOC_JWT (&jwt);
-
-	read_key (key_file);
-
-	ret = jwt_add_grant (jwt, "iss", "files.cyphre.com");
-	test_check_int_eq (ret, 0, NULL);
-
-	ret = jwt_add_grant (jwt, "sub", "user0");
-	test_check_int_eq (ret, 0, NULL);
-
-	ret = jwt_add_grant (jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
-	test_check_int_eq (ret, 0, NULL);
-
-	ret = jwt_add_grant_int (jwt, "iat", TS_CONST);
-	test_check_int_eq (ret, 0, NULL);
-
-	ret = jwt_set_alg (jwt, alg, key, key_len);
-	test_check_int_eq (ret, 0, NULL);
-
-	out = jwt_encode_str (jwt);
-	test_check_ptr_ne (out, NULL);
-
-	test_check_str_eq (out, jwt_str, NULL);
-
-	jwt_free_str (out);
-	jwt_free (jwt);
-
-}
-
-static void __verify_alg_key (
-	const char *key_file, const char *jwt_str,
-	const jwt_alg_t alg
-) {
-
-	jwt_t *jwt = NULL;
-	int ret = 0;
-
-	read_key(key_file);
-
-	ret = jwt_decode( &jwt, jwt_str, key, key_len);
-	test_check_int_eq (ret, 0, NULL);
-	test_check (jwt != NULL, NULL);
-
-	jwt_valid_t *jwt_valid = NULL;
-	jwt_valid_new (&jwt_valid, alg);
-
-	test_check_int_eq (
-		JWT_VALIDATION_SUCCESS, jwt_validate (jwt, jwt_valid), NULL
-	);
-
-	jwt_valid_free (jwt_valid);
-	jwt_free (jwt);
-
-}
-
 static void test_jwt_encode_rs256 (void) {
 
-	__test_alg_key ("rsa_key_2048.pem", jwt_rs256_2048, JWT_ALG_RS256);
+	test_alg_key ("rsa_key_2048.pem", jwt_rs256_2048, JWT_ALG_RS256);
 
 }
 
 static void test_jwt_verify_rs256 (void) {
 
-	__verify_alg_key ("rsa_key_2048-pub.pem", jwt_rs256_2048, JWT_ALG_RS256);
+	verify_alg_key ("rsa_key_2048-pub.pem", jwt_rs256_2048, JWT_ALG_RS256);
 
 }
 
@@ -202,25 +108,25 @@ static void test_jwt_validate_rs256 (void) {
 
 static void test_jwt_encode_rs384 (void) {
 
-	__test_alg_key ("rsa_key_4096.pem", jwt_rs384_4096, JWT_ALG_RS384);
+	test_alg_key ("rsa_key_4096.pem", jwt_rs384_4096, JWT_ALG_RS384);
 
 }
 
 static void test_jwt_verify_rs384 (void) {
 
-	__verify_alg_key ("rsa_key_4096-pub.pem", jwt_rs384_4096, JWT_ALG_RS384);
+	verify_alg_key ("rsa_key_4096-pub.pem", jwt_rs384_4096, JWT_ALG_RS384);
 
 }
 
 static void test_jwt_encode_rs512 (void) {
 
-	__test_alg_key ("rsa_key_8192.pem", jwt_rs512_8192, JWT_ALG_RS512);
+	test_alg_key ("rsa_key_8192.pem", jwt_rs512_8192, JWT_ALG_RS512);
 
 }
 
 static void test_jwt_verify_rs512 (void) {
 
-	__verify_alg_key ("rsa_key_8192-pub.pem", jwt_rs512_8192, JWT_ALG_RS512);
+	verify_alg_key ("rsa_key_8192-pub.pem", jwt_rs512_8192, JWT_ALG_RS512);
 
 }
 
@@ -241,7 +147,7 @@ static const char jwt_rsa_i37[] = "eyJraWQiOiJkWUoxTDVnbWd0eDlWVU9xbVpyd2F6cW"
 
 static void test_jwt_verify_rsa_i37 (void) {
 
-	__verify_alg_key ("rsa_key_i37-pub.pem", jwt_rsa_i37, JWT_ALG_RS256);
+	verify_alg_key ("rsa_key_i37-pub.pem", jwt_rsa_i37, JWT_ALG_RS256);
 
 }
 

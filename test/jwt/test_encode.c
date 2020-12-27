@@ -10,10 +10,8 @@
 
 #include "../test.h"
 
+#include "common.h"
 #include "jwt.h"
-
-/* Constant time to make tests consistent. */
-#define TS_CONST	1475980545L
 
 static void test_jwt_encode_fp (void) {
 
