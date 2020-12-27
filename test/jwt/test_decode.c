@@ -12,7 +12,7 @@
 
 #include "jwt.h"
 
-void test_jwt_decode (void) {
+static void test_jwt_decode (void) {
 
 	const char token[] = "eyJhbGciOiJub25lIn0.eyJpc3MiOiJmaWxlcy5jeXBo"
 		"cmUuY29tIiwic3ViIjoidXNlcjAifQ.";
@@ -32,7 +32,7 @@ void test_jwt_decode (void) {
 
 }
 
-void test_jwt_decode_invalid_final_dot (void) {
+static void test_jwt_decode_invalid_final_dot (void) {
 
 	const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -49,7 +49,7 @@ void test_jwt_decode_invalid_final_dot (void) {
 
 }
 
-void test_jwt_decode_invalid_alg (void) {
+static void test_jwt_decode_invalid_alg (void) {
 
 	const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIQUhBSCJ9."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -65,7 +65,7 @@ void test_jwt_decode_invalid_alg (void) {
 	jwt_free (jwt);
 }
 
-void test_jwt_decode_ignore_typ (void) {
+static void test_jwt_decode_ignore_typ (void) {
 
 	const char token[] = "eyJ0eXAiOiJBTEwiLCJhbGciOiJIUzI1NiJ9."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -82,7 +82,7 @@ void test_jwt_decode_ignore_typ (void) {
 
 }
 
-void test_jwt_decode_invalid_head (void) {
+static void test_jwt_decode_invalid_head (void) {
 
 	const char token[] = "yJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -99,7 +99,7 @@ void test_jwt_decode_invalid_head (void) {
 
 }
 
-void test_jwt_decode_alg_none_with_key (void) {
+static void test_jwt_decode_alg_none_with_key (void) {
 
 	const char token[] = "eyJhbGciOiJub25lIn0."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -116,7 +116,7 @@ void test_jwt_decode_alg_none_with_key (void) {
 
 }
 
-void test_jwt_decode_invalid_body (void) {
+static void test_jwt_decode_invalid_body (void) {
 
 	const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9."
 		"eyJpc3MiOiJmaWxlcy5jeBocmUuY29tIiwic"
@@ -133,7 +133,7 @@ void test_jwt_decode_invalid_body (void) {
 
 }
 
-void test_jwt_decode_hs256 (void) {
+static void test_jwt_decode_hs256 (void) {
 
 	const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3Mi"
 		"OiJmaWxlcy5jeXBocmUuY29tIiwic3ViIjoidXNlcjAif"
@@ -152,7 +152,7 @@ void test_jwt_decode_hs256 (void) {
 
 }
 
-void test_jwt_decode_hs256_issue_1 (void) {
+static void test_jwt_decode_hs256_issue_1 (void) {
 
 	const char token[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIi"
 		"OiJzb21lLWxvbmctdXVpZCIsImZpcnN0TmFtZSI6ImhlbGxvIiwibGFzdE"
@@ -177,7 +177,7 @@ void test_jwt_decode_hs256_issue_1 (void) {
 
 }
 
-void test_jwt_decode_hs256_issue_2 (void) {
+static void test_jwt_decode_hs256_issue_2 (void) {
 
 	const char token[] = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIi"
 		"OiJzb21lLWxvbmctdXVpZCIsImZpcnN0TmFtZSI6ImhlbGxvIiwibGFzdE"
@@ -201,7 +201,7 @@ void test_jwt_decode_hs256_issue_2 (void) {
 
 }
 
-void test_jwt_decode_hs384 (void) {
+static void test_jwt_decode_hs384 (void) {
 
 	const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzM4NCJ9."
 		"eyJpc3MiOiJmaWxlcy5jeXBocmUuY29tIiwic"
@@ -223,7 +223,7 @@ void test_jwt_decode_hs384 (void) {
 
 }
 
-void test_jwt_decode_hs512 (void) {
+static void test_jwt_decode_hs512 (void) {
 
     const char token[] = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9.eyJpc3Mi"
 		"OiJmaWxlcy5jeXBocmUuY29tIiwic3ViIjoidXNlcjAif"
