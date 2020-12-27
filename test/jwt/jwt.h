@@ -13,4 +13,6 @@ extern void jwt_tests_encode (void);
 
 extern void jwt_tests_header (void);
 
+extern void jwt_tests_grant (void);
+
 #endif
