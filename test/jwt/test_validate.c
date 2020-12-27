@@ -45,7 +45,7 @@ static void __teardown_jwt (void) {
 	test_check_int_eq (__e, jwt_valid_get_status(__v), NULL);	\
 } while(0);
 
-void test_jwt_validate_errno (void) {
+static void test_jwt_validate_errno (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -74,7 +74,7 @@ void test_jwt_validate_errno (void) {
 
 }
 
-void test_jwt_valid_algorithm (void) {
+static void test_jwt_valid_algorithm (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -105,7 +105,7 @@ void test_jwt_valid_algorithm (void) {
 
 }
 
-void test_jwt_valid_require_grant (void) {
+static void test_jwt_valid_require_grant (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -163,7 +163,7 @@ void test_jwt_valid_require_grant (void) {
 
 }
 
-void test_jwt_valid_nonmatch_grant (void) {
+static void test_jwt_valid_nonmatch_grant (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -209,7 +209,7 @@ void test_jwt_valid_nonmatch_grant (void) {
 
 }
 
-void test_jwt_valid_grant_bool (void) {
+static void test_jwt_valid_grant_bool (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	int val;
@@ -238,7 +238,7 @@ void test_jwt_valid_grant_bool (void) {
 
 }
 
-void test_jwt_valid_del_grants (void) {
+static void test_jwt_valid_del_grants (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	const char *val;
@@ -276,7 +276,7 @@ void test_jwt_valid_del_grants (void) {
 
 }
 
-void test_jwt_valid_invalid_grant (void) {
+static void test_jwt_valid_invalid_grant (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	const char *val;
@@ -310,7 +310,7 @@ void test_jwt_valid_invalid_grant (void) {
 
 }
 
-void test_jwt_valid_missing_grant (void) {
+static void test_jwt_valid_missing_grant (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -352,7 +352,7 @@ void test_jwt_valid_missing_grant (void) {
 
 }
 
-void test_jwt_valid_not_before (void) {
+static void test_jwt_valid_not_before (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -381,7 +381,7 @@ void test_jwt_valid_not_before (void) {
 
 }
 
-void test_jwt_valid_expires (void) {
+static void test_jwt_valid_expires (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -410,7 +410,7 @@ void test_jwt_valid_expires (void) {
 
 }
 
-void test_jwt_valid_headers (void) {
+static void test_jwt_valid_headers (void) {
 
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
@@ -468,7 +468,7 @@ void test_jwt_valid_headers (void) {
 
 }
 
-void test_jwt_valid_grants_json (void) {
+static void test_jwt_valid_grants_json (void) {
 
 	const char *json = "{\"id\":\"FVvGYTr3FhiURCFebsBOpBqTbzHdX/DvImiA2yheXr8=\","
 		"\"iss\":\"localhost\",\"other\":[\"foo\",\"bar\"],"
