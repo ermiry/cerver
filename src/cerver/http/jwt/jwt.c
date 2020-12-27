@@ -87,63 +87,6 @@ static void *jwt_calloc(size_t nmemb, size_t size)
 	return ptr;
 }
 
-const char *jwt_alg_str(jwt_alg_t alg)
-{
-	switch (alg) {
-	case JWT_ALG_NONE:
-		return "none";
-	case JWT_ALG_HS256:
-		return "HS256";
-	case JWT_ALG_HS384:
-		return "HS384";
-	case JWT_ALG_HS512:
-		return "HS512";
-	case JWT_ALG_RS256:
-		return "RS256";
-	case JWT_ALG_RS384:
-		return "RS384";
-	case JWT_ALG_RS512:
-		return "RS512";
-	case JWT_ALG_ES256:
-		return "ES256";
-	case JWT_ALG_ES384:
-		return "ES384";
-	case JWT_ALG_ES512:
-		return "ES512";
-	default:
-		return NULL;
-	}
-}
-
-jwt_alg_t jwt_str_alg(const char *alg)
-{
-	if (alg == NULL)
-		return JWT_ALG_INVAL;
-
-	if (!strcmp(alg, "none"))
-		return JWT_ALG_NONE;
-	else if (!strcmp(alg, "HS256"))
-		return JWT_ALG_HS256;
-	else if (!strcmp(alg, "HS384"))
-		return JWT_ALG_HS384;
-	else if (!strcmp(alg, "HS512"))
-		return JWT_ALG_HS512;
-	else if (!strcmp(alg, "RS256"))
-		return JWT_ALG_RS256;
-	else if (!strcmp(alg, "RS384"))
-		return JWT_ALG_RS384;
-	else if (!strcmp(alg, "RS512"))
-		return JWT_ALG_RS512;
-	else if (!strcmp(alg, "ES256"))
-		return JWT_ALG_ES256;
-	else if (!strcmp(alg, "ES384"))
-		return JWT_ALG_ES384;
-	else if (!strcmp(alg, "ES512"))
-		return JWT_ALG_ES512;
-
-	return JWT_ALG_INVAL;
-}
-
 static void jwt_scrub_key(jwt_t *jwt)
 {
 	if (jwt->key) {

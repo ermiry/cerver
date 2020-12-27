@@ -653,30 +653,6 @@ CERVER_PUBLIC int jwt_set_alg (
 CERVER_PUBLIC jwt_alg_t jwt_get_alg (jwt_t *jwt);
 
 /**
- * Convert alg type to it's string representation.
- *
- * Returns a string that matches the alg type provided.
- *
- * @param alg A valid jwt_alg_t specifier.
- * @returns Returns a string (e.g. "RS256") matching the alg or NULL for
- *     invalid alg.
- */
-CERVER_PUBLIC const char *jwt_alg_str (jwt_alg_t alg);
-
-/**
- * Convert alg string to type.
- *
- * Returns an alg type based on the string representation.
- *
- * @param alg A valid string algorithm type (e.g. "RS256").
- * @returns Returns an alg type matching the string or JWT_ALG_INVAL if no
- *     matches were found.
- *
- * Note, this only works for algorithms that LibJWT supports or knows about.
- */
-CERVER_PUBLIC jwt_alg_t jwt_str_alg (const char *alg);
-
-/**
  * @defgroup jwt_vaildate JWT validation functions
  * These functions allow you to define requirements for JWT validation.
  *
