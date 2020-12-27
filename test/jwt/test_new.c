@@ -30,14 +30,14 @@ static void test_jwt_new (void) {
 
 static void test_jwt_dup (void) {
 
-	jwt_t *jwt = NULL, *new = NULL;
+	jwt_t *jwt = NULL, *new_jwt = NULL;
 	int ret = 0;
 	const char *val = NULL;
 	time_t now;
 	long valint;
 
-	new = jwt_dup (NULL);
-	test_check (new == NULL, NULL);
+	new_jwt = jwt_dup (NULL);
+	test_check (new_jwt == NULL, NULL);
 
 	ret = jwt_new (&jwt);
 	test_check_int_eq (ret, 0, NULL);
@@ -46,14 +46,14 @@ static void test_jwt_dup (void) {
 	ret = jwt_add_grant (jwt, "iss", "test");
 	test_check_int_eq (ret, 0, NULL);
 
-	new = jwt_dup (jwt);
-	test_check (new != NULL, NULL);
+	new_jwt = jwt_dup (jwt);
+	test_check (new_jwt != NULL, NULL);
 
-	val = jwt_get_grant (new, "iss");
+	val = jwt_get_grant (new_jwt, "iss");
 	test_check (val != NULL, NULL);
 	test_check_str_eq (val, "test", NULL);
 
-	test_check_int_eq (jwt_get_alg(new), JWT_ALG_NONE, NULL);
+	test_check_int_eq (jwt_get_alg(new_jwt), JWT_ALG_NONE, NULL);
 
 	now = time (NULL);
 	ret = jwt_add_grant_int (jwt, "iat", (long)now);
@@ -62,15 +62,15 @@ static void test_jwt_dup (void) {
 	valint = jwt_get_grant_int (jwt, "iat");
 	test_check (((long) now) == valint, NULL);
 
-	jwt_free (new);
+	jwt_free (new_jwt);
 	jwt_free (jwt);
 
 }
 
 static void test_jwt_dup_signed (void) {
 
-	unsigned char key256[32] = "012345678901234567890123456789XY";
-	jwt_t *jwt = NULL, *new = NULL;
+	unsigned char key256[128] = "012345678901234567890123456789XY";
+	jwt_t *jwt = NULL, *new_jwt = NULL;
 	int ret = 0;
 	const char *val = NULL;
 
@@ -81,26 +81,26 @@ static void test_jwt_dup_signed (void) {
 	ret = jwt_add_grant (jwt, "iss", "test");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_set_alg (jwt, JWT_ALG_HS256, key256, sizeof(key256));
+	ret = jwt_set_alg (jwt, JWT_ALG_HS256, key256, 32);
 	test_check_int_eq (ret, 0, NULL);
 
-	new = jwt_dup (jwt);
-	test_check (new != NULL, NULL);
+	new_jwt = jwt_dup (jwt);
+	test_check (new_jwt != NULL, NULL);
 
-	val = jwt_get_grant (new, "iss");
+	val = jwt_get_grant (new_jwt, "iss");
 	test_check (val != NULL, NULL);
 	test_check_str_eq (val, "test", NULL);
 
-	test_check_int_eq (jwt_get_alg (new), JWT_ALG_HS256, NULL);
+	test_check_int_eq (jwt_get_alg (new_jwt), JWT_ALG_HS256, NULL);
 
-	jwt_free (new);
+	jwt_free (new_jwt);
 	jwt_free (jwt);
 
 }
 
 void jwt_tests_new (void) {
 
-	(void) printf ("Testing JWT new...\n");
+	(void) printf ("Testing JWT new_jwt...\n");
 
 	test_jwt_new ();
 	test_jwt_dup ();

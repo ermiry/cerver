@@ -17,7 +17,7 @@ void test_jwt_decode (void) {
 	const char token[] = "eyJhbGciOiJub25lIn0.eyJpc3MiOiJmaWxlcy5jeXBo"
 		"cmUuY29tIiwic3ViIjoidXNlcjAifQ.";
 
-	jwt_alg_t alg = 0;
+	jwt_alg_t alg = JWT_ALG_NONE;
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
@@ -76,7 +76,7 @@ void test_jwt_decode_ignore_typ (void) {
 
 	ret = jwt_decode (&jwt, token, NULL, 0);
 	test_check_int_eq (ret, 0, NULL);
-	test_check (jwt, NULL);
+	test_check (jwt != NULL, NULL);
 
 	jwt_free (jwt);
 
@@ -139,12 +139,12 @@ void test_jwt_decode_hs256 (void) {
 		"OiJmaWxlcy5jeXBocmUuY29tIiwic3ViIjoidXNlcjAif"
 		"Q.dLFbrHVViu1e3VD1yeCd9aaLNed-bfXhSsF0Gh56fBg";
 
-	unsigned char key256[32] = "012345678901234567890123456789XY";
+	unsigned char key256[128] = "012345678901234567890123456789XY";
 
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
-	ret = jwt_decode (&jwt, token, key256, sizeof(key256));
+	ret = jwt_decode (&jwt, token, key256, 32);
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 
@@ -209,13 +209,13 @@ void test_jwt_decode_hs384 (void) {
 		"R3gGv4H2yqMyXMm7xhOlQWpA-NpT6n2a1d7TD"
 		"GgU6LOe4";
 
-	const unsigned char key384[48] = "aaaabbbbccccddddeeeeffffg"
+	const unsigned char key384[128] = "aaaabbbbccccddddeeeeffffg"
 		"ggghhhhiiiijjjjkkkkllll";
 
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
-	ret = jwt_decode (&jwt, token, key384, sizeof(key384));
+	ret = jwt_decode (&jwt, token, key384, 48);
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 
@@ -230,13 +230,13 @@ void test_jwt_decode_hs512 (void) {
 		"Q.u-4XQB1xlYV8SgAnKBof8fOWOtfyNtc1ytTlc_vHo0U"
 		"lh5uGT238te6kSacnVzBbC6qwzVMT1806oa1Y8_8EOg";
 
-	unsigned char key512[64] = "012345678901234567890123456789XY"
+	unsigned char key512[128] = "012345678901234567890123456789XY"
 		"012345678901234567890123456789XY";
 
 	jwt_t *jwt;
 	int ret;
 
-	ret = jwt_decode (&jwt, token, key512, sizeof(key512));
+	ret = jwt_decode (&jwt, token, key512, 64);
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 
