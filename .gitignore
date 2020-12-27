@@ -5,6 +5,8 @@ objs
 
 keys
 
+!test/jwt/keys
+
 data
 uploads
 
