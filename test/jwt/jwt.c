@@ -7,6 +7,8 @@ int main (int argc, char **argv) {
 
 	(void) printf ("Testing JWT...\n");
 
+	jwt_tests_certs ();
+
 	jwt_tests_decode ();
 
 	jwt_tests_dump ();
