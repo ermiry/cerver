@@ -10,15 +10,10 @@
 
 #include "../test.h"
 
+#include "jwt.h"
+
 /* Constant time to make tests consistent. */
 #define TS_CONST	1475980545L
-
-/* Macro to allocate a new JWT with checks. */
-#define ALLOC_JWT(__jwt) do {				\
-	int __ret = jwt_new (__jwt);			\
-	test_check_int_eq (__ret, 0, NULL);		\
-	test_check (*__jwt != NULL, NULL);		\
-} while(0)
 
 static void test_jwt_encode_fp (void) {
 
