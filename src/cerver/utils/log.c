@@ -195,23 +195,23 @@ static void cerver_log_header_create (
 			case LOG_TYPE_TEST: {
 				// first type
 				(void) snprintf (
-					log->header, LOG_HEADER_HALF_SIZE, 
-					"%s", 
+					log->header, LOG_HEADER_HALF_SIZE,
+					"%s",
 					first
 				);
 
 				// second type
 				(void) snprintf (
-					log->second, LOG_HEADER_HALF_SIZE, 
-					"%s", 
+					log->second, LOG_HEADER_HALF_SIZE,
+					"%s",
 					log_get_msg_type (second_type)
 				);
 			} break;
 
 			default: {
 				(void) snprintf (
-					log->header, LOG_HEADER_SIZE, 
-					"%s%s", 
+					log->header, LOG_HEADER_SIZE,
+					"%s%s",
 					first, log_get_msg_type (second_type)
 				);
 			} break;
@@ -266,7 +266,7 @@ static void cerver_log_internal_normal_std (
 
 			else (void) fprintf (stdout, LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (stdout, LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->header, log->second, log->message);
@@ -299,7 +299,7 @@ static void cerver_log_internal_normal_file (
 			if (second_type != LOG_TYPE_NONE) (void) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
 			else (void) fprintf (__stream,  "%s: %s\n", log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE) (void) fprintf (__stream, "%s%s: %s\n", log->header, log->second, log->message);
 			else (void) fprintf (__stream, "%s: %s\n", log->header, log->message);
@@ -352,7 +352,7 @@ static void cerver_log_internal_with_time_std (
 
 			else (void) fprintf (stdout, "[%s]" LOG_COLOR_MAGENTA "%s: " LOG_COLOR_RESET "%s\n", log->datetime, log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (stdout, "[%s]" LOG_COLOR_CYAN "%s" LOG_COLOR_RESET "%s: %s\n", log->datetime, log->header, log->second, log->message);
@@ -387,7 +387,7 @@ static void cerver_log_internal_with_time_file (
 
 			else (void) fprintf (__stream, "[%s]%s: %s\n", log->datetime, log->header, log->message);
 		} break;
-		
+
 		case LOG_TYPE_TEST: {
 			if (second_type != LOG_TYPE_NONE)
 				(void) fprintf (__stream, "[%s]%s%s: %s\n", log->datetime, log->header, log->second, log->message);

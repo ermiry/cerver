@@ -63,7 +63,7 @@ CERVER_PUBLIC const char *http_content_type_by_extension (
 
 #pragma region kvp
 
-typedef struct KeyValuePair { 
+typedef struct KeyValuePair {
 
 	String *key;
 	String *value;
@@ -137,7 +137,7 @@ struct _HttpCerver {
 
 	// stats
 	size_t n_cath_all_requests;        // failed to match a route
-	size_t n_failed_auth_requests;     // failed to auth with private route 
+	size_t n_failed_auth_requests;     // failed to auth with private route
 
 };
 
@@ -191,7 +191,7 @@ CERVER_EXPORT void http_cerver_route_register (
 
 // set a route to catch any requet that didn't match any registered route
 CERVER_EXPORT void http_cerver_set_catch_all_route (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	void (*catch_all_route)(
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
@@ -337,7 +337,7 @@ struct _HttpReceive {
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
-	
+
 	HttpRequest *request;
 
 	HttpRoute *route;
@@ -346,7 +346,7 @@ struct _HttpReceive {
 	struct _HttpRouteFileStats *file_stats;
 
 	// websockets
-	struct _HttpClient *http_client; 
+	struct _HttpClient *http_client;
 
 	unsigned char fin_rsv_opcode;
 	size_t fragmented_message_len;
