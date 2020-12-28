@@ -6,6 +6,8 @@ MATH		:= -lm
 
 OPENSSL		:= -l ssl -l crypto
 
+CURL		:= -l curl
+
 DEFINES		:= -D _GNU_SOURCE
 
 DEVELOPMENT	:= -g \
@@ -56,7 +58,7 @@ TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
 
 BENCHFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
-BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
+BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
 BENCHINC	:= -I ./$(BENCHDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
@@ -175,6 +177,7 @@ $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
+	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # compile BENCHs
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
