@@ -9,6 +9,8 @@
 
 #include "cerver/http/multipart.h"
 
+#define REQUEST_METHOD_UNDEFINED		5
+
 #define REQUEST_METHOD_MAP(XX)			\
 	XX(0,  DELETE,      DELETE)       	\
 	XX(1,  GET,         GET)          	\
@@ -25,48 +27,46 @@ typedef enum RequestMethod {
 } RequestMethod;
 
 // returns a string version of the HTTP request method
-CERVER_PUBLIC const char *http_request_method_str (RequestMethod m);
+CERVER_PUBLIC const char *http_request_method_str (
+	const RequestMethod request_method
+);
+
+#define REQUEST_HEADER_MAP(XX)													\
+	XX(0,  ACCEPT,      					Accept)								\
+	XX(1,  ACCEPT_CHARSET,					Accept-Charset)						\
+	XX(2,  ACCEPT_ENCODING,      			Accept-Encoding)					\
+	XX(3,  ACCEPT_LANGUAGE,      			Accept-Language)					\
+	XX(4,  ACCESS_CONTROL_REQUEST_HEADERS,	Access-Control-Request-Headers)		\
+	XX(5,  AUTHORIZATION,					Authorization)						\
+	XX(6,  CACHE_CONTROL,					Cache-Control)						\
+	XX(7,  CONNECTION,						Connection)							\
+	XX(8,  CONTENT_LENGTH,					Content-Length)						\
+	XX(9,  CONTENT_TYPE,					Content-Type)						\
+	XX(10,  COOKIE,							Cookie)								\
+	XX(11,  DATE,							Date)								\
+	XX(12,  EXPECT,							Expect)								\
+	XX(13,  HOST,							Host)								\
+	XX(14,  ORIGIN,							Origin)								\
+	XX(15,  PROXY_AUTHORIZATION,			Proxy-Authorization)				\
+	XX(16,  UPGRADE,						Upgrade)							\
+	XX(17,  USER_AGENT,						User-Agent)							\
+	XX(18,  WEB_SOCKET_KEY,					Sec-WebSocket-Key)					\
+	XX(19,  WEB_SOCKET_VERSION,				Sec-WebSocket-Version)				\
+	XX(32,  INVALID,      					Undefined)
 
 typedef enum RequestHeader {
 
-	REQUEST_HEADER_ACCEPT								= 0,
-	REQUEST_HEADER_ACCEPT_CHARSET						= 1,
-	REQUEST_HEADER_ACCEPT_ENCODING						= 2,
-	REQUEST_HEADER_ACCEPT_LANGUAGE						= 3,
-
-	REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS		= 4,
-
-	REQUEST_HEADER_AUTHORIZATION						= 5,
-
-	REQUEST_HEADER_CACHE_CONTROL						= 6,
-
-	REQUEST_HEADER_CONNECTION							= 7,
-
-	REQUEST_HEADER_CONTENT_LENGTH						= 8,
-	REQUEST_HEADER_CONTENT_TYPE							= 9,
-
-	REQUEST_HEADER_COOKIE								= 10,
-
-	REQUEST_HEADER_DATE									= 11,
-
-	REQUEST_HEADER_EXPECT								= 12,
-
-	REQUEST_HEADER_HOST									= 13,
-
-	REQUEST_HEADER_ORIGIN								= 14,
-
-	REQUEST_HEADER_PROXY_AUTHORIZATION					= 15,
-
-	REQUEST_HEADER_UPGRADE								= 16,
-
-	REQUEST_HEADER_USER_AGENT							= 17,
-
-	REQUEST_HEADER_WEB_SOCKET_KEY						= 18,
-	REQUEST_HEADER_WEB_SOCKET_VERSION					= 19,
-
-	REQUEST_HEADER_INVALID								= 32
+	#define XX(num, name, string) REQUEST_HEADER_##name = num,
+	REQUEST_HEADER_MAP(XX)
+	#undef XX
 
 } RequestHeader;
+
+CERVER_PUBLIC const char *http_request_header_str (
+	const RequestHeader header
+);
+
+#define REQUEST_HEADERS_MAX				19
 
 #define REQUEST_HEADERS_SIZE			32
 
@@ -109,7 +109,9 @@ typedef struct _HttpRequest HttpRequest;
 
 CERVER_PUBLIC HttpRequest *http_request_new (void);
 
-CERVER_PUBLIC void http_request_delete (HttpRequest *http_request);
+CERVER_PUBLIC void http_request_delete (
+	HttpRequest *http_request
+);
 
 CERVER_PUBLIC HttpRequest *http_request_create (void);
 
