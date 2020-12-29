@@ -690,7 +690,7 @@ bool http_cerver_auth_validate_jwt (
 #pragma region stats
 
 static size_t http_cerver_stats_get_children_routes (
-	HttpCerver *http_cerver, size_t *handlers
+	const HttpCerver *http_cerver, size_t *handlers
 ) {
 
 	size_t count = 0;
@@ -722,13 +722,15 @@ static size_t http_cerver_stats_get_children_routes (
 }
 
 // print number of routes & handlers
-void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
+void http_cerver_routes_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		cerver_log_msg ("Main routes: %ld", http_cerver->routes->size);
 
 		size_t total_handlers = 0;
-		size_t children_routes = http_cerver_stats_get_children_routes (http_cerver, &total_handlers);
+		size_t children_routes = http_cerver_stats_get_children_routes (
+			http_cerver, &total_handlers
+		);
 
 		cerver_log_msg ("Children routes: %ld", children_routes);
 		cerver_log_msg ("Total handlers: %ld", total_handlers);
@@ -736,94 +738,152 @@ void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
 
 }
 
-// print route's stats
-void http_cerver_route_stats_print (HttpRoute *route) {
+static void http_cerver_route_handler_stats_print (
+	const RequestMethod method, const HttpRouteStats *stats
+) {
 
-	if (route) {
-		unsigned int i = 0;
+	cerver_log_msg (
+		"\t\t%s\t%ld",
+		http_request_method_str (method),
+		stats->n_requests
+	);
 
-		cerver_log_msg ("\t%s:", route->route->str);
-		
-		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-			if (route->handlers[i]) {
-				cerver_log_msg (
-					"\t\t%s\t%ld",
-					http_request_method_str ((RequestMethod) i),
-					route->stats[i]->n_requests
+	// route stats
+	cerver_log_msg ("\t\tMin process time: %.4f secs", stats->first ? 0 : stats->min_process_time);
+	cerver_log_msg ("\t\tMax process time: %.4f secs", stats->max_process_time);
+	cerver_log_msg ("\t\tMean process time: %.4f secs", stats->mean_process_time);
+
+	cerver_log_msg ("\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\tMax request size: %ld", stats->max_request_size);
+	cerver_log_msg ("\t\tMean request size: %ld", stats->mean_request_size);
+
+	cerver_log_msg ("\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\tMax response size: %ld", stats->max_response_size);
+	cerver_log_msg ("\t\tMean response size: %ld", stats->mean_response_size);
+
+	
+
+}
+
+static void http_cerver_route_file_stats_print (
+	const HttpRouteFileStats *file_stats
+) {
+
+	cerver_log_line_break ();
+	cerver_log_msg ("\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+
+	cerver_log_msg ("\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\tMean n files: %.2f", file_stats->mean_n_files);
+
+	cerver_log_msg ("\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\tMean file size: %ld", file_stats->mean_file_size);
+
+}
+
+static void http_cerver_child_route_handler_stats_print (
+	const RequestMethod method, const HttpRouteStats *stats
+) {
+
+	cerver_log_msg (
+		"\t\t\t%s\t%ld",
+		http_request_method_str (method),
+		stats->n_requests
+	);
+
+	cerver_log_msg ("\t\t\tMin process time: %.4f secs", stats->first ? 0 : stats->min_process_time);
+	cerver_log_msg ("\t\t\tMax process time: %.4f secs", stats->max_process_time);
+	cerver_log_msg ("\t\t\tMean process time: %.4f secs", stats->mean_process_time);
+
+	cerver_log_msg ("\t\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\t\tMax request size: %ld", stats->max_request_size);
+	cerver_log_msg ("\t\t\tMean request size: %ld", stats->mean_request_size);
+
+	cerver_log_msg ("\t\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\t\tMax response size: %ld", stats->max_response_size);
+	cerver_log_msg ("\t\t\tMean response size: %ld", stats->mean_response_size);
+
+}
+
+static void http_cerver_child_route_file_stats_print (
+	const HttpRouteFileStats *file_stats
+) {
+
+	cerver_log_msg ("\t\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+
+	cerver_log_msg ("\t\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\t\tMean n files: %.2f", file_stats->mean_n_files);
+
+	cerver_log_msg ("\t\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\t\tMean file size: %ld", file_stats->mean_file_size);
+
+}
+
+static void http_cerver_route_children_stats_print (
+	const HttpRoute *route
+) {
+
+	cerver_log_msg ("\t\t%ld children:", route->children->size);
+
+	RequestMethod method = REQUEST_METHOD_UNDEFINED;
+
+	HttpRoute *child = NULL;
+	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+		child = (HttpRoute *) le->data;
+
+		cerver_log_msg ("\t\t%s:", child->actual->str);
+
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (child->handlers[i]) {
+				method = (RequestMethod) i;
+				http_cerver_child_route_handler_stats_print (
+					method, child->stats[i]
 				);
 
-				// route stats
-				cerver_log_msg ("\t\tMin process time: %.4f secs", route->stats[i]->first ? 0 : route->stats[i]->min_process_time);
-				cerver_log_msg ("\t\tMax process time: %.4f secs", route->stats[i]->max_process_time);
-				cerver_log_msg ("\t\tMean process time: %.4f secs", route->stats[i]->mean_process_time);
+				if (
+					(child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+					&& (method == REQUEST_METHOD_POST)
+				) {
+					http_cerver_child_route_file_stats_print (
+						child->file_stats
+					);
+				}
+			}
+		}
+	}
 
-				cerver_log_msg ("\t\tMin request size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_request_size);
-				cerver_log_msg ("\t\tMax request size: %ld", route->stats[i]->max_request_size);
-				cerver_log_msg ("\t\tMean request size: %ld", route->stats[i]->mean_request_size);
+}
 
-				cerver_log_msg ("\t\tMin response size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_response_size);
-				cerver_log_msg ("\t\tMax response size: %ld", route->stats[i]->max_response_size);
-				cerver_log_msg ("\t\tMean response size: %ld", route->stats[i]->mean_response_size);
+// print route's stats
+void http_cerver_route_stats_print (const HttpRoute *route) {
 
-				if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-					cerver_log_line_break ();
-					cerver_log_msg ("\t\tUploaded files: %ld", route->file_stats->n_uploaded_files);
+	if (route) {
+		cerver_log_msg ("\t%s:", route->route->str);
+		
+		RequestMethod method = REQUEST_METHOD_UNDEFINED;
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (route->handlers[i]) {
+				method = (RequestMethod) i;
+				http_cerver_route_handler_stats_print (
+					method, route->stats[i]
+				);
 
-					cerver_log_msg ("\t\tMin n files: %ld", route->file_stats->first ? 0 : route->file_stats->min_n_files);
-					cerver_log_msg ("\t\tMax n files: %ld", route->file_stats->max_n_files);
-					cerver_log_msg ("\t\tMean n files: %.2f", route->file_stats->mean_n_files);
-
-					cerver_log_msg ("\t\tMin file size: %ld", route->file_stats->first ? 0 : route->file_stats->min_file_size);
-					cerver_log_msg ("\t\tMax file size: %ld", route->file_stats->max_file_size);
-					cerver_log_msg ("\t\tMean file size: %ld", route->file_stats->mean_file_size);
+				if (
+					(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+					&& (method == REQUEST_METHOD_POST)
+				) {
+					http_cerver_route_file_stats_print (
+						route->file_stats
+					);
 				}
 			}
 		}
 
 		if (route->children->size) {
-			cerver_log_msg ("\t\t%ld children:", route->children->size);
-
-			HttpRoute *child = NULL;
-			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-				child = (HttpRoute *) le->data;
-
-				cerver_log_msg ("\t\t%s:", child->actual->str);
-
-				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-					if (child->handlers[i]) {
-						cerver_log_msg (
-							"\t\t\t%s\t%ld",
-							http_request_method_str ((RequestMethod) i),
-							child->stats[i]->n_requests
-						);
-
-						// route stats
-						cerver_log_msg ("\t\t\tMin process time: %.4f secs", child->stats[i]->first ? 0 : child->stats[i]->min_process_time);
-						cerver_log_msg ("\t\t\tMax process time: %.4f secs", child->stats[i]->max_process_time);
-						cerver_log_msg ("\t\t\tMean process time: %.4f secs", child->stats[i]->mean_process_time);
-
-						cerver_log_msg ("\t\t\tMin request size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_request_size);
-						cerver_log_msg ("\t\t\tMax request size: %ld", child->stats[i]->max_request_size);
-						cerver_log_msg ("\t\t\tMean request size: %ld", child->stats[i]->mean_request_size);
-
-						cerver_log_msg ("\t\t\tMin response size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_response_size);
-						cerver_log_msg ("\t\t\tMax response size: %ld", child->stats[i]->max_response_size);
-						cerver_log_msg ("\t\t\tMean response size: %ld", child->stats[i]->mean_response_size);
-
-						if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-							cerver_log_msg ("\t\t\tUploaded files: %ld", child->file_stats->n_uploaded_files);
-
-							cerver_log_msg ("\t\t\tMin n files: %ld", child->file_stats->first ? 0 : child->file_stats->min_n_files);
-							cerver_log_msg ("\t\t\tMax n files: %ld", child->file_stats->max_n_files);
-							cerver_log_msg ("\t\t\tMean n files: %.2f", child->file_stats->mean_n_files);
-
-							cerver_log_msg ("\t\t\tMin file size: %ld", child->file_stats->first ? 0 : child->file_stats->min_file_size);
-							cerver_log_msg ("\t\t\tMax file size: %ld", child->file_stats->max_file_size);
-							cerver_log_msg ("\t\t\tMean file size: %ld", child->file_stats->mean_file_size);
-						}
-					}
-				}
-			}
+			http_cerver_route_children_stats_print (route);
 		}
 
 		else {
@@ -834,7 +894,7 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 }
 
 // print all http cerver stats, general & by route
-void http_cerver_all_stats_print (HttpCerver *http_cerver) {
+void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		http_cerver_routes_stats_print (http_cerver);

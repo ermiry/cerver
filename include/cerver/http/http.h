@@ -250,13 +250,19 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 #pragma region stats
 
 // print number of routes & handlers
-CERVER_PUBLIC void http_cerver_routes_stats_print (HttpCerver *http_cerver);
+CERVER_PUBLIC void http_cerver_routes_stats_print (
+	const HttpCerver *http_cerver
+);
 
 // print route's stats
-CERVER_PUBLIC void http_cerver_route_stats_print (HttpRoute *route);
+CERVER_PUBLIC void http_cerver_route_stats_print (
+	const HttpRoute *route
+);
 
 // print all http cerver stats, general & by route
-CERVER_PUBLIC void http_cerver_all_stats_print (HttpCerver *http_cerver);
+CERVER_PUBLIC void http_cerver_all_stats_print (
+	const HttpCerver *http_cerver
+);
 
 #pragma endregion
 
@@ -321,7 +327,9 @@ typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
-CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
+CERVER_PRIVATE void http_receive_delete (
+	HttpReceive *http_receive
+);
 
 #pragma endregion
 
