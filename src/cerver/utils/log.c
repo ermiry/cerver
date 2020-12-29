@@ -403,12 +403,24 @@ static void cerver_log_internal_with_time_file (
 
 }
 
-static void cerver_log_internal_with_time (
+static void cerver_log_internal_with_time_actual (
 	FILE *__restrict __stream,
 	CerverLog *log,
 	LogType first_type, LogType second_type,
+	LogTimeType log_time_type,
 	LogOutputType log_output_type
 ) {
+
+	time_t datetime = time (NULL);
+	struct tm *timeinfo = use_local_time ? localtime (&datetime) : gmtime (&datetime);
+
+	switch (log_time_type) {
+		case LOG_TIME_TYPE_TIME: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%T", timeinfo); break;
+		case LOG_TIME_TYPE_DATE: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y", timeinfo); break;
+		case LOG_TIME_TYPE_BOTH: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y - %T", timeinfo); break;
+
+		default: break;
+	}
 
 	switch (log_output_type) {
 		case LOG_OUTPUT_TYPE_STD: cerver_log_internal_with_time_std (log, first_type, second_type); break;
@@ -437,23 +449,43 @@ static void cerver_log_internal (
 		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
 
 		if (log_time_type != LOG_TIME_TYPE_NONE) {
-			time_t datetime = time (NULL);
-			struct tm *timeinfo = use_local_time ? localtime (&datetime) : gmtime (&datetime);
-
-			switch (log_time_type) {
-				case LOG_TIME_TYPE_TIME: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%T", timeinfo); break;
-				case LOG_TIME_TYPE_DATE: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y", timeinfo); break;
-				case LOG_TIME_TYPE_BOTH: (void) strftime (log->datetime, LOG_DATETIME_SIZE, "%d/%m/%y - %T", timeinfo); break;
-
-				default: break;
-			}
-
-			cerver_log_internal_with_time (__stream, log, first_type, second_type, log_output_type);
+			cerver_log_internal_with_time_actual (
+				__stream, log,
+				first_type, second_type,
+				log_time_type, log_output_type
+			);
 		}
 
 		else {
-			cerver_log_internal_normal (__stream, log, first_type, second_type, log_output_type);
+			cerver_log_internal_normal (
+				__stream, log,
+				first_type, second_type,
+				log_output_type
+			);
 		}
+
+		(void) pool_push (log_pool, log);
+	}
+
+}
+
+static void cerver_log_internal_with_time (
+	FILE *__restrict __stream,
+	LogType first_type, LogType second_type,
+	const char *format, va_list args,
+	LogOutputType log_output_type
+) {
+
+	CerverLog *log = (CerverLog *) pool_pop (log_pool);
+	if (log) {
+		if (first_type != LOG_TYPE_NONE) cerver_log_header_create (log, first_type, second_type);
+		(void) vsnprintf (log->message, LOG_MESSAGE_SIZE, format, args);
+
+		cerver_log_internal_with_time_actual (
+			__stream, log,
+			first_type, second_type,
+			LOG_TIME_TYPE_BOTH, log_output_type
+		);
 
 		(void) pool_push (log_pool, log);
 	}
@@ -530,6 +562,47 @@ void cerver_log (
 
 		va_end (args);
 	}
+
+}
+
+// creates and prints a message of custom types
+// and adds the date & time
+// if the log_time_type has been configured, it will be kept
+void cerver_log_with_date (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+) {
+
+	va_list args;
+		va_start (args, format);
+
+		if (quiet) {
+			switch (first_type) {
+				case LOG_TYPE_ERROR:
+				case LOG_TYPE_WARNING:
+				case LOG_TYPE_SUCCESS:
+					cerver_log_internal_with_time (
+						cerver_log_get_stream (first_type),
+						first_type, second_type,
+						format, args,
+						log_global_output_type
+					);
+					break;
+
+				default: break;
+			}
+		}
+
+		else {
+			cerver_log_internal_with_time (
+				cerver_log_get_stream (first_type),
+				first_type, second_type,
+				format, args,
+				log_global_output_type
+			);
+		}
+
+		va_end (args);
 
 }
 
