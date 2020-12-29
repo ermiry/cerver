@@ -53,7 +53,7 @@ EXAFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
 
