@@ -3,7 +3,8 @@
 
 #include "cerver/config.h"
 
-#define HTTP_STATUS_MAP(XX)                                                 \
+#define HTTP_STATUS_MAP(XX)													\
+	XX(0,   NONE,                            Undefined)                       \
 	XX(100, CONTINUE,                        Continue)                        \
 	XX(101, SWITCHING_PROTOCOLS,             Switching Protocols)             \
 	XX(102, PROCESSING,                      Processing)                      \
