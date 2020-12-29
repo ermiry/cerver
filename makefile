@@ -49,7 +49,8 @@ LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
-EXAFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
+EXADEBUG	:= -g -D EXAMPLES_DEBUG
+EXAFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
@@ -149,8 +150,8 @@ examples: $(EXOBJS)
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
-	@$(CC) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
+	$(CC) $(EXADEBUG) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
+	@$(CC) $(EXADEBUG) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
 	@cp -f $(EXABUILD)/$*.$(DEPEXT) $(EXABUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)

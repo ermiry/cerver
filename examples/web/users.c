@@ -28,7 +28,9 @@ void main_users_handler (
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, "Users route works!");
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -53,10 +55,10 @@ void users_login_handler (
 				// printf ("\nPasswords match!\n");
 
 				DoubleList *payload = dlist_init (key_value_pair_delete, NULL);
-				dlist_insert_at_end_unsafe (payload, key_value_pair_create ("id", user->id->str));
-				dlist_insert_at_end_unsafe (payload, key_value_pair_create ("name", user->name->str));
-				dlist_insert_at_end_unsafe (payload, key_value_pair_create ("username", user->username->str));
-				dlist_insert_at_end_unsafe (payload, key_value_pair_create ("role", user->role->str));
+				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("id", user->id->str));
+				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("name", user->name->str));
+				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("username", user->username->str));
+				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("role", user->role->str));
 
 				// generate & send back auth token
 				char *token = http_cerver_auth_generate_jwt (
@@ -71,7 +73,9 @@ void users_login_handler (
 					HttpResponse *res = http_response_create (200, json_str, strlen (json_str));
 					if (res) {
 						http_response_compile (res);
+						#ifdef EXAMPLES_DEBUG
 						http_response_print (res);
+						#endif
 						http_response_send (res, http_receive);
 						http_respponse_delete (res);
 					}
@@ -82,10 +86,14 @@ void users_login_handler (
 				}
 
 				else {
-					HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
+					HttpResponse *res = http_response_json_error (
+						(http_status) 500, "Internal error!"
+					);
 					if (res) {
 						http_response_print (res);
+						#ifdef EXAMPLES_DEBUG
 						http_response_send (res, http_receive);
+						#endif
 						http_respponse_delete (res);
 					}
 				}
@@ -94,19 +102,27 @@ void users_login_handler (
 			}
 
 			else {
-				HttpResponse *res = http_response_json_error ((http_status) 400, "Password is incorrect!");
+				HttpResponse *res = http_response_json_error (
+					(http_status) 400, "Password is incorrect!"
+				);
 				if (res) {
 					http_response_print (res);
+					#ifdef EXAMPLES_DEBUG
 					http_response_send (res, http_receive);
+					#endif
 					http_respponse_delete (res);
 				}
 			}
 		}
 
 		else {
-			HttpResponse *res = http_response_json_error ((http_status) 404, "User not found!");
+			HttpResponse *res = http_response_json_error (
+				(http_status) 404, "User not found!"
+			);
 			if (res) {
+				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
+				#endif
 				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
@@ -114,9 +130,13 @@ void users_login_handler (
 	}
 
 	else {
-		HttpResponse *res = http_response_json_error ((http_status) 400, "Missing user values!");
+		HttpResponse *res = http_response_json_error (
+			(http_status) 400, "Missing user values!"
+		);
 		if (res) {
+			#ifdef EXAMPLES_DEBUG
 			http_response_print (res);
+			#endif
 			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
@@ -152,18 +172,26 @@ void users_register_handler (
 			cerver_log_success ("Created a new user!");
 			printf ("\n");
 
-			HttpResponse *res = http_response_json_msg ((http_status) 200, "Created a new user!");
+			HttpResponse *res = http_response_json_msg (
+				(http_status) 200, "Created a new user!"
+			);
 			if (res) {
+				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
+				#endif
 				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
 		}
 
 		else {
-			HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
+			HttpResponse *res = http_response_json_error (
+				(http_status) 500, "Internal error!"
+			);
 			if (res) {
+				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
+				#endif
 				http_response_send (res, http_receive);
 				http_respponse_delete (res);
 			}
@@ -171,9 +199,13 @@ void users_register_handler (
 	}
 
 	else {
-		HttpResponse *res = http_response_json_error ((http_status) 400, "Missing user values!");
+		HttpResponse *res = http_response_json_error (
+			(http_status) 400, "Missing user values!"
+		);
 		if (res) {
+			#ifdef EXAMPLES_DEBUG
 			http_response_print (res);
+			#endif
 			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
@@ -193,7 +225,9 @@ void users_profile_handler (
 
 	HttpResponse *res = http_response_json_msg ((http_status) 200, message);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}

@@ -27,9 +27,9 @@ void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
-		printf ("\nHTTP Cerver stats:\n");
+		cerver_log_msg ("\nHTTP Cerver stats:\n");
 		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		printf ("\n");
+		cerver_log_line_break ();
 		cerver_teardown (web_cerver);
 	}
 
@@ -49,9 +49,13 @@ void test_handler (
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Test route works!"
+	);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -108,9 +112,13 @@ void upload_handler (
 		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
 	}
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Upload route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Upload route works!"
+	);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -128,9 +136,14 @@ void discard_handler (
 	const String *key = http_request_multi_parts_get_value (request, "key");
 	if (!strcmp (key->str, "value")) {
 		cerver_log_success ("Success request, keeping multi part files...");
-		HttpResponse *res = http_response_json_msg ((http_status) 200, "Success request!");
+
+		HttpResponse *res = http_response_json_msg (
+			(http_status) 200, "Success request!"
+		);
 		if (res) {
+			#ifdef EXAMPLES_DEBUG
 			http_response_print (res);
+			#endif
 			http_response_send (res, http_receive);
 			http_respponse_delete (res);
 		}
