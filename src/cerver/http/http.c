@@ -1483,8 +1483,11 @@ HttpReceive *http_receive_new (void) {
 		http_receive->request = http_request_new ();
 
 		http_receive->route = NULL;
-		http_receive->request_method = REQUEST_METHOD_GET;
+		http_receive->request_method = REQUEST_METHOD_DELETE;
+
+		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
+
 		http_receive->file_stats = http_route_file_stats_new ();
 
 		// http_receive->parser->data = http_receive->request;

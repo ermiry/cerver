@@ -336,6 +336,7 @@ u8 http_response_send (
 
 				http_receive->cr->connection->stats->total_bytes_sent += res->res_len;
 
+				((HttpReceive *) http_receive)->status = res->status;
 				((HttpReceive *) http_receive)->sent = res->res_len;
 
 				retval = 0;
@@ -375,6 +376,7 @@ u8 http_response_send_split (
 
 					http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
+					((HttpReceive *) http_receive)->status = res->status;
 					((HttpReceive *) http_receive)->sent = total_size;
 
 					retval = 0;

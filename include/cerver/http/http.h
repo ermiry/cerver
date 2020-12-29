@@ -309,7 +309,10 @@ struct _HttpReceive {
 
 	HttpRoute *route;
 	RequestMethod request_method;
+
+	http_status status;
 	size_t sent;
+
 	struct _HttpRouteFileStats *file_stats;
 
 };
