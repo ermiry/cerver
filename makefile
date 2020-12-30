@@ -1,3 +1,5 @@
+TYPE		:= development
+
 # TARGET      := cerver
 SLIB		:= libcerver.so
 
@@ -10,8 +12,7 @@ CURL		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -g \
-				-D CERVER_DEBUG -D CERVER_STATS 			\
+DEVELOPMENT	:=  -D CERVER_DEBUG -D CERVER_STATS 			\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
 				-D HANDLER_DEBUG 							\
@@ -44,32 +45,55 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := $(DEVELOPMENT) $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
+# main
+CFLAGS      := $(DEFINES)
+
+ifeq ($(TYPE), development)
+CFLAGS += -g -fasynchronous-unwind-tables $(DEVELOPMENT)
+else ifeq ($(TYPE), test)
+CFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-clash-protection -O2
+else
+CFLAGS += -D_FORTIFY_SOURCE=2 -O2
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+CFLAGS += -std=c++11 -fpermissive
+else
+CFLAGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+# common flags
+CFLAGS += -Wall -Wno-unknown-pragmas -fPIC
+
 LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
+SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
+OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
+
+# examples
 EXADEBUG	:= -g -D EXAMPLES_DEBUG
 EXAFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
+EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
+EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
+
+# tests
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 TESTLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
 
+TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
+TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+# benchmarks 
 BENCHFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
 BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
 BENCHINC	:= -I ./$(BENCHDIR)
-
-SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
-OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
-
-EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
-EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
-
-TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
-TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
