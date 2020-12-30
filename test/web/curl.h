@@ -1,5 +1,5 @@
-#ifndef _CERVER_TESTS_CURL_H_
-#define _CERVER_TESTS_CURL_H_
+#ifndef _CERVER_TESTS_WEB_CURL_H_
+#define _CERVER_TESTS_WEB_CURL_H_
 
 #include <stddef.h>
 
@@ -29,6 +29,23 @@ extern unsigned int curl_simple (
 extern unsigned int curl_simple_handle_data (
 	CURL *curl, const char *address,
 	curl_write_data_cb write_cb, char *buffer
+);
+
+// uploads a file to the requested route performing a multi-part request
+// returns 0 on success, 1 on error
+extern unsigned int curl_upload_file (
+	CURL *curl, const char *address,
+	curl_write_data_cb write_cb, char *buffer,
+	const char *filename
+);
+
+// uploads a file to the requested route performing a multi-part request
+// and also adds another value to the request
+// returns 0 on success, 1 on error
+extern unsigned int curl_upload_file_with_extra_value (
+	CURL *curl, const char *address,
+	const char *filename,
+	const char *key, const char *value
 );
 
 #endif
