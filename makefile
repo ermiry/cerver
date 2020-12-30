@@ -55,7 +55,7 @@ EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
-TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
+TESTLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
 
 BENCHFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
@@ -162,6 +162,9 @@ test: $(TESTOBJS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/dlist.o -o ./$(TESTTARGET)/dlist $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/web.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/web $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/api.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/api $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/upload.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/upload $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode $(TESTLIBS)
 
