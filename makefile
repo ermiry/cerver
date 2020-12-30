@@ -51,7 +51,7 @@ CFLAGS      := $(DEFINES)
 ifeq ($(TYPE), development)
 CFLAGS += -g -fasynchronous-unwind-tables $(DEVELOPMENT)
 else ifeq ($(TYPE), test)
-CFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-clash-protection -O2
+CFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-protector -O2
 else
 CFLAGS += -D_FORTIFY_SOURCE=2 -O2
 endif
@@ -79,7 +79,7 @@ EXAFLAGS	:= $(DEFINES)
 ifeq ($(TYPE), development)
 EXAFLAGS += -g -D EXAMPLES_DEBUG -fasynchronous-unwind-tables
 else ifeq ($(TYPE), test)
-EXAFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-clash-protection -O2
+EXAFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-protector -O2
 else
 EXAFLAGS += -D_FORTIFY_SOURCE=2 -O2
 endif
