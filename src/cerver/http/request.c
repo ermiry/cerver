@@ -127,7 +127,7 @@ void http_request_headers_print (const HttpRequest *http_request) {
 
 			cerver_log_msg (
 				"%s: %s",
-				http_request_header_str (i),
+				http_request_header_str ((const RequestHeader) i),
 				header ? header->str : null
 			);
 		}
