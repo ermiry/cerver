@@ -30,6 +30,7 @@
 #include "cerver/utils/base64.h"
 
 static HttpResponse *bad_auth_error = NULL;
+static HttpResponse *not_found_error = NULL;
 static HttpResponse *server_error = NULL;
 static HttpResponse *catch_all = NULL;
 
@@ -38,6 +39,10 @@ static void http_static_path_delete (void *http_static_path_ptr);
 static int http_static_path_comparator (const void *a, const void *b);
 
 static void http_receive_handle_default_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+);
+
+static void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
 
@@ -223,6 +228,9 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->default_handler = NULL;
 
+		http_cerver->not_found_handler = false;
+		http_cerver->not_found = NULL;
+
 		http_cerver->uploads_path = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
 
@@ -282,6 +290,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 		http_cerver->default_handler = http_receive_handle_default_route;
 
+		http_cerver->not_found = http_receive_handle_not_found_route;
+
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
 
 		http_cerver->mutex = pthread_mutex_new ();
@@ -299,16 +309,20 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
 	);
 
+	not_found_error = http_response_json_key_value (
+		HTTP_STATUS_NOT_FOUND, "error", "Not found!"
+	);
+
 	server_error = http_response_json_key_value (
-		(http_status) 500, "error", "Internal error!"
+		HTTP_STATUS_INTERNAL_SERVER_ERROR, "error", "Internal error!"
 	);
 
 	catch_all = http_response_json_key_value (
-		(http_status) 200, "msg", "HTTP Cerver!"
+		HTTP_STATUS_OK, "msg", "HTTP Cerver!"
 	);
 
 	if (
-		bad_auth_error && server_error
+		bad_auth_error && not_found_error && server_error
 		&& catch_all
 	) retval = 0;
 
@@ -445,6 +459,7 @@ void http_cerver_end (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		http_respponse_delete (bad_auth_error);
+		http_respponse_delete (not_found_error);
 		http_respponse_delete (server_error);
 		http_respponse_delete (catch_all);
 	}
@@ -559,10 +574,16 @@ u8 http_receive_public_path_remove (
 
 #pragma region routes
 
-void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
+void http_cerver_route_register (
+	HttpCerver *http_cerver, HttpRoute *route
+) {
 
 	if (http_cerver && route) {
-		dlist_insert_after (http_cerver->routes, dlist_end (http_cerver->routes), route);
+		dlist_insert_after (
+			http_cerver->routes,
+			dlist_end (http_cerver->routes),
+			route
+		);
 	}
 
 }
@@ -570,13 +591,43 @@ void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
 void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
 	void (*catch_all_route)(
-		const struct _HttpReceive *http_receive,
+		const HttpReceive *http_receive,
 		const HttpRequest *request
 	)
 ) {
 
 	if (http_cerver && catch_all_route) {
 		http_cerver->default_handler = catch_all_route;
+	}
+
+}
+
+// enables the use of the default not found handler
+// which returns 404 status on no matching routes
+// by default this option is disabled
+// as the catch all handler is used instead
+void http_cerver_set_not_found_handler (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver)
+		http_cerver->not_found_handler = true;
+
+}
+
+// sets a custom handler to be executed on no matching routes
+// it should return status 404
+void http_cerver_set_not_found_route (
+	HttpCerver *http_cerver, 
+	void (*not_found)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver && not_found) {
+		http_cerver->not_found = not_found;
+		http_cerver->not_found_handler = true;
 	}
 
 }
@@ -649,7 +700,9 @@ void http_cerver_auth_set_jwt_priv_key_filename (
 	HttpCerver *http_cerver, const char *filename
 ) {
 
-	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+	if (http_cerver) {
+		http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+	}
 
 }
 
@@ -658,7 +711,9 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 	HttpCerver *http_cerver, const char *filename
 ) {
 
-	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+	if (http_cerver) {
+		http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+	}
 
 }
 
@@ -1704,6 +1759,14 @@ static void http_receive_handle_default_route (
 
 }
 
+static void http_receive_handle_not_found_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_response_send (not_found_error, http_receive);
+
+}
+
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (
 	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
@@ -1717,12 +1780,19 @@ static void http_receive_handle_catch_all (
 		request->url->str
 	);
 
-	// handle with default route
-	http_cerver->default_handler (http_receive, request);
+	if (http_cerver->not_found_handler) {
+		// handle with not found route
+		http_cerver->not_found (http_receive, request);
+	}
 
-	(void) pthread_mutex_lock (http_cerver->mutex);
-	http_cerver->n_catch_all_requests += 1;
-	(void) pthread_mutex_unlock (http_cerver->mutex);
+	else {
+		// handle with default route
+		http_cerver->default_handler (http_receive, request);
+
+		(void) pthread_mutex_lock (http_cerver->mutex);
+		http_cerver->n_catch_all_requests += 1;
+		(void) pthread_mutex_unlock (http_cerver->mutex);
+	}
 
 }
 
@@ -2110,6 +2180,7 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 }
 
+// FIXME: update no matching stats
 // TODO: handle authentication
 static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 

@@ -101,6 +101,13 @@ struct _HttpCerver {
 		const HttpRequest *request
 	);
 
+	// returns not found on not matching requests 
+	bool not_found_handler;
+	void (*not_found)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
 	// uploads
 	String *uploads_path;              // default uploads path
 	void (*uploads_filename_generator)(
@@ -191,10 +198,29 @@ CERVER_EXPORT void http_cerver_route_register (
 	HttpCerver *http_cerver, HttpRoute *route
 );
 
-// set a route to catch any requet that didn't match any registered route
+// set a route to catch any requet
+// that didn't match any registered route
 CERVER_EXPORT void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
 	void (*catch_all_route)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+);
+
+// enables the use of the default not found handler
+// which returns 404 status on no matching routes
+// by default this option is disabled
+// as the catch all handler is used instead
+CERVER_EXPORT void http_cerver_set_not_found_handler (
+	HttpCerver *http_cerver
+);
+
+// sets a custom handler to be executed on no matching routes
+// it should return status 404
+CERVER_EXPORT void http_cerver_set_not_found_route (
+	HttpCerver *http_cerver, 
+	void (*not_found)(
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
