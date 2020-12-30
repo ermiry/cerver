@@ -2063,7 +2063,8 @@ static inline u8 cerver_receive_http_actual (
 
 }
 
-// we expect only one request to be sent, so keep reading the socket until no more data is left,
+// we expect only one request to be sent,
+// so keep reading the socket until no more data is left,
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
@@ -2122,35 +2123,70 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	double process_time = timer_get_current_time () - start_time;
 
 	// log request summary
-	cerver_log_with_date (
-		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
-		cr->connection->ip->str,
-		http_request_method_str (http_receive->request_method),
-		http_receive->route->route->str,
-		total_received,
-		process_time,
-		http_receive->status, http_receive->sent
-	);
+	switch (http_receive->receive_status) {
+		case HTTP_RECEIVE_STATUS_COMPLETED: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+				cr->connection->ip->str,
+				http_request_method_str (http_receive->request->method),
+				http_receive->route->route->str,
+				total_received,
+				process_time,
+				http_receive->status, http_receive->sent
+			);
+
+			// update route stats
+			http_route_stats_update (
+				http_receive->route->stats[http_receive->request->method],
+				process_time,
+				total_received, http_receive->sent
+			);
+
+			if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+				http_route_file_stats_update (
+					http_receive->route->file_stats,
+					http_receive->file_stats
+				);
+			}
+		} break;
+
+		// no matching route to handle request
+		case HTTP_RECEIVE_STATUS_UNHANDLED: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> [%s] %s - %ld -> %fs -> No matching route -> %d - %ld",
+				cr->connection->ip->str,
+				http_request_method_str (http_receive->request->method),
+				http_receive->request->url->str,
+				total_received,
+				process_time,
+				http_receive->status, http_receive->sent
+			);
+
+			// update stats
+			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+			http_receive->http_cerver->n_unhandled_requests += 1;
+			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		} break;
+
+		// unable to process the request
+		default: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> Bad request",
+				cr->connection->ip->str
+			);
+
+			// update stats
+			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+			http_receive->http_cerver->n_incompleted_requests += 1;
+			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		} break;
+	}
 
 	// the connection has ended
 	connection_drop (cr->cerver, cr->connection);
-
-	// update http route stats
-	if (http_receive->route) {
-		http_route_stats_update (
-			http_receive->route->stats[http_receive->request_method],
-			process_time,
-			total_received, http_receive->sent
-		);
-
-		if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-			http_route_file_stats_update (
-				http_receive->route->file_stats,
-				http_receive->file_stats
-			);
-		}
-	}
 
 	http_receive_delete (http_receive);
 
