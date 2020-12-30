@@ -74,8 +74,26 @@ SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 # examples
-EXADEBUG	:= -g -D EXAMPLES_DEBUG
-EXAFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas
+EXAFLAGS	:= $(DEFINES)
+
+ifeq ($(TYPE), development)
+EXAFLAGS += -g -D EXAMPLES_DEBUG -fasynchronous-unwind-tables
+else ifeq ($(TYPE), test)
+EXAFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-clash-protection -O2
+else
+EXAFLAGS += -D_FORTIFY_SOURCE=2 -O2
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+EXAFLAGS += -std=c++11 -fpermissive
+else
+EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+# common flags
+EXAFLAGS += -Wall -Wno-unknown-pragmas
+
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
 
