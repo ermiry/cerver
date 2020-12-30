@@ -78,7 +78,7 @@ static unsigned int web_request_all_actual (
 	Session *sess
 ) {
 
-	unsigned int errors = 1;
+	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
 	char actual_address[128] = { 0 };
@@ -160,6 +160,9 @@ static unsigned int web_request_all (void) {
 			cerver_log_success (
 				"web_request_all () - All requests succeeded!"
 			);
+
+			cerver_log_line_break ();
+			cerver_log_line_break ();
 
 			retval = 0;
 		}
