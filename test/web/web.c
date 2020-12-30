@@ -103,7 +103,7 @@ static unsigned int web_request_all (void) {
 		if (!web_request_all_actual (curl)) {
 			cerver_log_line_break ();
 			cerver_log_line_break ();
-			
+
 			cerver_log_success (
 				"web_request_all () - All requests succeeded!"
 			);
@@ -121,7 +121,7 @@ static unsigned int web_request_all (void) {
 
 }
 
-int main (int argc, const char **argv) {
+int main (int argc, char **argv) {
 
 	cerver_log_init ();
 
