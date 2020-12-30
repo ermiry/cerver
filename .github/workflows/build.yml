@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: Install dependencies
+      - run: sudo apt-get install libcurl4-openssl-dev
+
       - name: gcc make
         run: make
       - name: gcc examples
