@@ -12,7 +12,7 @@ CURL		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:=  -D CERVER_DEBUG -D CERVER_STATS 			\
+DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
 				-D HANDLER_DEBUG 							\
@@ -45,6 +45,16 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
+# common flags
+# -Wconversion
+COMMON		:= -Wall -Wno-unknown-pragmas \
+				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
+				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
+				-Wuninitialized -Wmaybe-uninitialized \
+				-Wempty-body -Wcast-function-type \
+				-Wunused-parameter -Wunused-but-set-parameter -Wunused-result \
+				-Wformat -Wformat-nonliteral -Wformat-security -Wformat-overflow -Wformat-signedness -Wformat-truncation
+
 # main
 CFLAGS      := $(DEFINES)
 
@@ -64,7 +74,7 @@ CFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
 # common flags
-CFLAGS += -Wall -Wno-unknown-pragmas -fPIC
+CFLAGS += -fPIC $(COMMON)
 
 LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
@@ -92,7 +102,7 @@ EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
 # common flags
-EXAFLAGS += -Wall -Wno-unknown-pragmas
+EXAFLAGS += $(COMMON)
 
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
