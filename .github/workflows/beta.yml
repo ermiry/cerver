@@ -21,25 +21,25 @@ jobs:
         run: sudo apt-get install libcurl4-openssl-dev
 
       - name: gcc make
-        run: make DEVELOPMENT=''
+        run: make TYPE=test
       - name: gcc examples
-        run: make examples
+        run: make TYPE=test examples
       - name: gcc tests
         run: make test
       - name: gcc run tests
-        run: bash test.sh
+        run: bash test/run.sh
 
       - name: clean
         run: make clean
 
       - name: g++ make
-        run: make CC=g++ DEVELOPMENT=''
+        run: make TYPE=test CC=g++
       - name: g++ examples
-        run: make CC=g++ examples
+        run: make TYPE=test CC=g++ examples
       - name: g++ tests
         run: make CC=g++ test
       - name: g++ run tests
-        run: bash test.sh
+        run: bash test/run.sh
   
   docker:
     needs: build
