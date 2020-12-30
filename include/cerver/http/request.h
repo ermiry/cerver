@@ -100,7 +100,8 @@ struct _HttpRequest {
 	u8 n_values;
 	String *dirname;
 	
-	// body key-value pairs parsed from x-www-form-urlencoded data
+	// body key-value pairs
+	// parsed from x-www-form-urlencoded data
 	DoubleList *body_values;
 
 };

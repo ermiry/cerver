@@ -45,7 +45,7 @@ HttpRequest *http_request_new (void) {
 
 	HttpRequest *http_request = (HttpRequest *) malloc (sizeof (HttpRequest));
 	if (http_request) {
-		http_request->method = REQUEST_METHOD_GET;
+		http_request->method = REQUEST_METHOD_UNDEFINED;
 
 		http_request->url = NULL;
 		http_request->query = NULL;
