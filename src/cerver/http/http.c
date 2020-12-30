@@ -115,7 +115,9 @@ void key_value_pair_delete (void *kvp_ptr) {
 
 }
 
-KeyValuePair *key_value_pair_create (const char *key, const char *value) {
+KeyValuePair *key_value_pair_create (
+	const char *key, const char *value
+) {
 
 	KeyValuePair *kvp = key_value_pair_new ();
 	if (kvp) {
@@ -153,7 +155,9 @@ static KeyValuePair *key_value_pair_create_pieces (
 
 }
 
-const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *key_value_pairs_get_value (
+	const DoubleList *pairs, const char *key
+) {
 
 	const String *value = NULL;
 
@@ -172,7 +176,7 @@ const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
 
 }
 
-void key_value_pairs_print (DoubleList *pairs) {
+void key_value_pairs_print (const DoubleList *pairs) {
 
 	if (pairs) {
 		unsigned int idx = 1;
@@ -180,7 +184,10 @@ void key_value_pairs_print (DoubleList *pairs) {
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kv = (KeyValuePair *) le->data;
 
-			(void) printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
+			(void) printf (
+				"[%d] - %s = %s\n",
+				idx, kv->key->str, kv->value->str
+			);
 
 			idx++;
 		}
@@ -1066,13 +1073,15 @@ DoubleList *http_parse_query_into_pairs (
 
 }
 
-const String *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *http_query_pairs_get_value (
+	const DoubleList *pairs, const char *key
+) {
 
 	return key_value_pairs_get_value (pairs, key);
 
 }
 
-void http_query_pairs_print (DoubleList *pairs) {
+void http_query_pairs_print (const DoubleList *pairs) {
 
 	key_value_pairs_print (pairs);
 
@@ -1099,7 +1108,9 @@ static int http_receive_handle_url (
 
 }
 
-static inline RequestHeader http_receive_handle_header_field_handle (const char *header) {
+static inline RequestHeader http_receive_handle_header_field_handle (
+	const char *header
+) {
 
 	if (!strcasecmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
 	if (!strcasecmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
@@ -1148,7 +1159,8 @@ static int http_receive_handle_header_field (
 	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	(((HttpReceive *) parser->data)->request)->next_header = http_receive_handle_header_field_handle (header);
+	(((HttpReceive *) parser->data)->request)->next_header =
+		http_receive_handle_header_field_handle (header);
 
 	return 0;
 
@@ -1173,17 +1185,22 @@ static int http_receive_handle_header_value (
 
 }
 
+// TODO: what happens if the body is bigger than received buffer?
 static int http_receive_handle_body (
 	http_parser *parser, const char *at, size_t length
 ) {
 
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	if (http_receive->receive_status == HTTP_RECEIVE_STATUS_HEADERS)
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_BODY;
+
 	// printf ("Body: %.*s", (int) length, at);
 	// printf ("%.*s", (int) length, at);
 
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
-	request->body = str_new (NULL);
-	request->body->str = c_string_create ("%.*s", (int) length, at);
-	request->body->len = length;
+	http_receive->request->body = str_new (NULL);
+	http_receive->request->body->str = c_string_create ("%.*s", (int) length, at);
+	http_receive->request->body->len = length;
 
 	return 0;
 
@@ -1250,7 +1267,9 @@ static char *http_mpart_get_boundary (const char *content_type) {
 
 }
 
-static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) {
+static int http_receive_handle_mpart_part_data_begin (
+	multipart_parser *parser
+) {
 
 	// create a new multipart structure to handle new data
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
@@ -1288,7 +1307,8 @@ static int http_receive_handle_mpart_header_field (
 	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	(((HttpReceive *) parser->data)->request)->current_part->next_header = http_receive_handle_mpart_header_field_handle (header);
+	(((HttpReceive *) parser->data)->request)->current_part->next_header =
+		http_receive_handle_mpart_header_field_handle (header);
 
 	return 0;
 
@@ -1323,7 +1343,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	#endif
 
 	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
-		if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+		if (c_string_starts_with (
+			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")
+		) {
 			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
 			end += strlen ("form-data;");
 
@@ -1512,6 +1534,20 @@ static int http_receive_handle_headers_completed (http_parser *parser);
 
 static int http_receive_handle_message_completed (http_parser *parser);
 
+const char *http_receive_status_str (
+	const HttpReceiveStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string) case HTTP_RECEIVE_STATUS_##name: return #string;
+		HTTP_RECEIVE_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return http_receive_status_str (HTTP_RECEIVE_STATUS_NONE);
+
+}
+
 HttpReceive *http_receive_new (void) {
 
 	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
@@ -1543,7 +1579,6 @@ HttpReceive *http_receive_new (void) {
 		http_receive->request = http_request_new ();
 
 		http_receive->route = NULL;
-		http_receive->request_method = REQUEST_METHOD_DELETE;
 
 		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
@@ -1572,7 +1607,8 @@ void http_receive_delete (HttpReceive *http_receive) {
 		http_receive->route = NULL;
 		http_route_file_stats_delete (http_receive->file_stats);
 
-		if (http_receive->mpart_parser) multipart_parser_free (http_receive->mpart_parser);
+		if (http_receive->mpart_parser)
+			multipart_parser_free (http_receive->mpart_parser);
 
 		free (http_receive);
 	}
@@ -1597,6 +1633,8 @@ static void http_receive_handle_catch_all (
 	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
 ) {
 
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_UNHANDLED;
+
 	cerver_log_warning (
 		"No matching route for %s %s",
 		http_method_str ((enum http_method) request->method),
@@ -1606,6 +1644,7 @@ static void http_receive_handle_catch_all (
 	// handle with default route
 	http_cerver->default_handler (http_receive, request);
 
+	// FIXME: handle stats with mutex
 	http_cerver->n_cath_all_requests += 1;
 
 }
@@ -1878,7 +1917,9 @@ static void http_receive_handle_select (
 
 		else {
 			if (route->children->size) {
-				match = http_receive_handle_select_children (route, request, &found);
+				match = http_receive_handle_select_children (
+					route, request, &found
+				);
 			}
 		}
 
@@ -1888,7 +1929,6 @@ static void http_receive_handle_select (
 	// we have found a route!
 	if (match) {
 		http_receive->route = found;
-		http_receive->request_method = request->method;
 
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
@@ -1904,7 +1944,9 @@ static void http_receive_handle_select (
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (http_cerver, http_receive, found, request);
+					http_receive_handle_select_auth_bearer (
+						http_cerver, http_receive, found, request
+					);
 				}
 
 				// no authentication header was provided
@@ -1926,15 +1968,23 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
+
 	#ifdef HTTP_HEADERS_DEBUG
 	http_request_headers_print (http_receive->request);
 	#endif
 
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
-		if (is_multipart (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, "multipart/form-data")) {
+		if (is_multipart (
+			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
+			"multipart/form-data"
+		)) {
 			// printf ("\nis multipart!\n");
-			char *boundary = http_mpart_get_boundary (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str);
+			char *boundary = http_mpart_get_boundary (
+				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+			);
+
 			if (boundary) {
 				// printf ("\n%s\n", boundary);
 				http_receive->settings.on_body = http_receive_handle_mpart_body;
@@ -2033,6 +2083,8 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
+
 	http_receive->request->method = (RequestMethod) http_receive->parser->method;
 
 	#ifdef HTTP_DEBUG
@@ -2083,7 +2135,10 @@ static void http_receive_handle (
 	ssize_t rc, char *packet_buffer
 ) {
 
-	ssize_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
+	ssize_t n_parsed = http_parser_execute (
+		http_receive->parser, &http_receive->settings, packet_buffer, rc
+	);
+
 	if (n_parsed != rc) {
 		cerver_log_error (
 			"http_parser_execute () failed - n parsed %ld / received %ld",
@@ -2091,7 +2146,10 @@ static void http_receive_handle (
 		);
 
 		// send back error message
-		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
+		HttpResponse *res = http_response_json_error (
+			(http_status) 500, "Internal error!"
+		);
+
 		if (res) {
 			// http_response_print (res);
 			http_response_send (res, http_receive);

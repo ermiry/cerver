@@ -24,15 +24,15 @@ struct _HttpRouteFileStats;
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
-	XX(0, HTML, html, text/html; charset=UTF-8)				\
-	XX(1, CSS, css, text/css)								\
-	XX(2, JS, js, application/javascript)					\
-	XX(3, JPG, jpg, image/jpg)								\
-	XX(4, PNG, png, image/png)								\
-	XX(5, MP3, mp3, audio/mp3)								\
-	XX(6, ICO, ico, image/x-icon)							\
-	XX(7, GIF, gif, image/gif)								\
-	XX(8, OCTET, octet, application/octet-stream)			\
+	XX(0, HTML,		html,	text/html; charset=UTF-8)		\
+	XX(1, CSS,		css,	text/css)						\
+	XX(2, JS,		js,		application/javascript)			\
+	XX(3, JPG,		jpg,	image/jpg)						\
+	XX(4, PNG,		png,	image/png)						\
+	XX(5, MP3,		mp3,	audio/mp3)						\
+	XX(6, ICO,		ico,	image/x-icon)					\
+	XX(7, GIF,		gif,	image/gif)						\
+	XX(8, OCTET,	octet,	application/octet-stream)
 
 typedef enum ContentType {
 
@@ -74,10 +74,12 @@ CERVER_PUBLIC KeyValuePair *key_value_pair_create (
 );
 
 CERVER_PUBLIC const String *key_value_pairs_get_value (
-	DoubleList *pairs, const char *key
+	const DoubleList *pairs, const char *key
 );
 
-CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
+CERVER_PUBLIC void key_value_pairs_print (
+	const DoubleList *pairs
+);
 
 #pragma endregion
 
@@ -111,15 +113,18 @@ struct _HttpCerver {
 	// auth
 	jwt_alg_t jwt_alg;
 
-	String *jwt_opt_key_name;          // jwt private key filename
-	String *jwt_private_key;           // jwt actual private key
+	String *jwt_opt_key_name;		// jwt private key filename
+	String *jwt_private_key;		// jwt actual private key
 
-	String *jwt_opt_pub_key_name;      // jwt public key filename
-	String *jwt_public_key;            // jwt actual public key
+	String *jwt_opt_pub_key_name;	// jwt public key filename
+	String *jwt_public_key;			// jwt actual public key
 
 	// stats
-	size_t n_cath_all_requests;        // failed to match a route
-	size_t n_failed_auth_requests;     // failed to auth with private route 
+	size_t n_incompleted_requests;	// the request wasn't parsed completely
+	size_t n_unhandled_requests;	// failed to get matching route
+
+	size_t n_cath_all_requests;		// redirected to cath all route
+	size_t n_failed_auth_requests;	// failed to auth with private route 
 
 };
 
@@ -127,11 +132,17 @@ typedef struct _HttpCerver HttpCerver;
 
 CERVER_PRIVATE HttpCerver *http_cerver_new (void);
 
-CERVER_PRIVATE void http_cerver_delete (void *http_cerver_ptr);
+CERVER_PRIVATE void http_cerver_delete (
+	void *http_cerver_ptr
+);
 
-CERVER_PRIVATE HttpCerver *http_cerver_create (struct _Cerver *cerver);
+CERVER_PRIVATE HttpCerver *http_cerver_create (
+	struct _Cerver *cerver
+);
 
-CERVER_PRIVATE void http_cerver_init (HttpCerver *http_cerver);
+CERVER_PRIVATE void http_cerver_init (
+	HttpCerver *http_cerver
+);
 
 #pragma endregion
 
@@ -268,10 +279,12 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 
 #pragma region url
 
-// returns a newly allocated url-encoded version of str that should be deleted after use
+// returns a newly allocated url-encoded version of str
+// that should be deleted after use
 CERVER_PUBLIC char *http_url_encode (const char *str);
 
-// returns a newly allocated url-decoded version of str that should be deleted after use
+// returns a newly allocated url-decoded version of str
+// that should be deleted after use
 CERVER_PUBLIC char *http_url_decode (const char *str);
 
 #pragma endregion
@@ -285,23 +298,50 @@ CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (
 
 // gets the matching value for the requested key from a list of pairs
 CERVER_PUBLIC const String *http_query_pairs_get_value (
-	DoubleList *pairs, const char *key
+	const DoubleList *pairs, const char *key
 );
 
-CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
+CERVER_PUBLIC void http_query_pairs_print (
+	const DoubleList *pairs
+);
 
 #pragma endregion
 
 #pragma region handler
 
+#define HTTP_RECEIVE_STATUS_MAP(XX)			\
+	XX(0,  NONE,			Undefined)		\
+	XX(1,  HEADERS,			Headers)		\
+	XX(2,  BODY,			Body)			\
+	XX(3,  COMPLETED,		Completed)		\
+	XX(4,  INCOMPLETED,		Incompleted)	\
+	XX(5,  UNHANDLED,		Unhandled)	\
+
+typedef enum HttpReceiveStatus {
+
+	#define XX(num, name, string) HTTP_RECEIVE_STATUS_##name = num,
+	HTTP_RECEIVE_STATUS_MAP(XX)
+	#undef XX
+
+} HttpReceiveStatus;
+
+CERVER_PUBLIC const char *http_receive_status_str (
+	const HttpReceiveStatus status
+);
+
 struct _HttpReceive {
+
+	HttpReceiveStatus receive_status;
 
 	CerverReceive *cr;
 
-	// keep connection alive - don't close after request has ended
+	// keep connection alive
+	// don't close after request has ended
 	bool keep_alive;
 
-	void (*handler)(struct _HttpReceive *, ssize_t, char *);
+	void (*handler)(
+		struct _HttpReceive *, ssize_t, char *
+	);
 
 	HttpCerver *http_cerver;
 
@@ -310,11 +350,10 @@ struct _HttpReceive {
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
-	
+
 	HttpRequest *request;
 
 	HttpRoute *route;
-	RequestMethod request_method;
 
 	http_status status;
 	size_t sent;
@@ -329,20 +368,6 @@ CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
-);
-
-#pragma endregion
-
-#pragma region websockets
-
-// the default tmeout for a websocket sonnection
-#define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
-
-// sends a ws message to the selected connection
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_web_sockets_send (
-	Cerver *cerver, Connection *connection,
-	const char *msg, const size_t msg_len
 );
 
 #pragma endregion
