@@ -768,6 +768,9 @@ void cerver_log_line_break (void) {
 
 #pragma region main
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 static void *cerver_log_update (void *data) {
 
 	(void) sleep (log_file_update_interval);
@@ -780,6 +783,8 @@ static void *cerver_log_update (void *data) {
 	return NULL;
 
 }
+
+#pragma GCC diagnostic pop
 
 void cerver_log_init (void) {
 

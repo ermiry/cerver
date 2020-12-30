@@ -446,7 +446,7 @@ u8 admin_send_packet_pieces (Admin *admin, Packet *packet,
 			pieces, sizes, n_pieces,
 			0, &sent
 		)) {
-			printf ("admin_send_packet_pieces () - Sent to admin: %ld\n", sent);
+			printf ("admin_send_packet_pieces () - Sent to admin: %zu\n", sent);
 
 			admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
 

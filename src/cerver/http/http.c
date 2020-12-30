@@ -202,7 +202,7 @@ void key_value_pairs_print (const DoubleList *pairs) {
 			kv = (KeyValuePair *) le->data;
 
 			(void) printf (
-				"[%d] - %s = %s\n",
+				"[%u] - %s = %s\n",
 				idx, kv->key->str, kv->value->str
 			);
 
@@ -1753,6 +1753,9 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 static void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
@@ -1768,6 +1771,8 @@ static void http_receive_handle_not_found_route (
 	(void) http_response_send (not_found_error, http_receive);
 
 }
+
+#pragma GCC diagnostic pop
 
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (

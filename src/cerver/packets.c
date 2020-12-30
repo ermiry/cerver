@@ -71,8 +71,11 @@ PacketVersion *packet_version_create (void) {
 void packet_version_print (PacketVersion *version) {
 
 	if (version) {
-		printf ("Protocol id: %d\n", version->protocol_id);
-		printf ("Protocol version: { %d - %d }\n", version->protocol_version.major, version->protocol_version.minor);
+		(void) printf ("Protocol id: %u\n", version->protocol_id);
+		(void) printf (
+			"Protocol version: { %u - %u }\n",
+			version->protocol_version.major, version->protocol_version.minor
+		);
 	}
 
 }
@@ -650,16 +653,16 @@ static u8 packet_send_split_tcp (const Packet *packet, Connection *connection, i
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-static u8 packet_send_udp (const void *packet, size_t packet_size) {
+// #pragma GCC diagnostic push
+// #pragma GCC diagnostic ignored "-Wunused-function"
+// static u8 packet_send_udp (const void *packet, size_t packet_size) {
 
-	// TODO:
+// 	// TODO:
 
-	return 0;
+// 	return 0;
 
-}
-#pragma GCC diagnostic pop
+// }
+// #pragma GCC diagnostic pop
 
 static void packet_send_update_stats (
 	PacketType packet_type, size_t sent,
