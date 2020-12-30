@@ -150,7 +150,7 @@ CERVER_PUBLIC char *c_string_remove_sub_simetric_token (
 // returns a newly allocated string, and a option to get the substring
 CERVER_PUBLIC char *c_string_remove_sub_range_token (
 	char *str,
-	const char token, unsigned int first, unsigned int last,
+	const char token, int first, int last,
 	char **sub
 );
 

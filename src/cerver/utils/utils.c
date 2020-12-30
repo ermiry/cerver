@@ -629,7 +629,7 @@ char *c_string_remove_sub_simetric_token (
 // returns a newly allocated string, and a option to get the substring
 char *c_string_remove_sub_range_token (
 	char *str,
-	const char token, unsigned int first, unsigned int last,
+	const char token, int first, int last,
 	char **sub
 ) {
 
@@ -637,8 +637,8 @@ char *c_string_remove_sub_range_token (
 
 	if (str) {
 		if (first != last) {
-			unsigned int first_token_count = 0;
-			unsigned int last_token_count = 0;
+			int first_token_count = 0;
+			int last_token_count = 0;
 			char *ptr = str;
 			char *first_ptr = NULL;
 			char *last_ptr = NULL;
@@ -676,19 +676,5 @@ char *c_string_remove_sub_range_token (
 	}
 
 	return retval;
-
-}
-
-// removes a substring from a c string delimited by two different tokens
-// takes the first appearance of the first token, and the last appearance of the second one
-// example: test_20191118142101759__TEST__.png - first token: '_' - last token: 'T'
-// result: test__.png
-char *c_string_remove_sub_different_token (
-	char *str, const char token_one, const char token_two
-) {
-
-	// TODO:
-
-	return NULL;
 
 }
