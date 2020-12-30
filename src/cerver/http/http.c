@@ -909,7 +909,7 @@ static void http_cerver_route_children_stats_print (
 
 	cerver_log_msg ("\t\t%ld children:", route->children->size);
 
-	RequestMethod method = REQUEST_METHOD_UNDEFINED;
+	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 
 	HttpRoute *child = NULL;
 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
@@ -944,7 +944,7 @@ void http_cerver_route_stats_print (const HttpRoute *route) {
 	if (route) {
 		cerver_log_msg ("\t%s:", route->route->str);
 		
-		RequestMethod method = REQUEST_METHOD_UNDEFINED;
+		RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (route->handlers[i]) {
 				method = (RequestMethod) i;
