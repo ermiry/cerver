@@ -29,6 +29,10 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/base64.h"
 
+static HttpResponse *bad_auth_error = NULL;
+static HttpResponse *server_error = NULL;
+static HttpResponse *catch_all = NULL;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
@@ -47,10 +51,18 @@ static void http_receive_handle (
 static const char hex[] = "0123456789abcdef";
 
 // converts a hex character to its integer value
-static const char from_hex (const char ch) { return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10; }
+static const char from_hex (const char ch) {
+	
+	return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+	
+}
 
 // converts an integer value to its hex character
-static const char to_hex (const char code) { return hex[code & 15]; }
+static const char to_hex (const char code) {
+	
+	return hex[code & 15];
+	
+}
 
 #pragma endregion
 
@@ -230,6 +242,7 @@ HttpCerver *http_cerver_new (void) {
 
 }
 
+// TODO: http_respponse_delete (server_error);
 void http_cerver_delete (void *http_cerver_ptr) {
 
 	if (http_cerver_ptr) {
@@ -258,7 +271,9 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 	if (http_cerver) {
 		http_cerver->cerver = cerver;
 
-		http_cerver->static_paths = dlist_init (http_static_path_delete, http_static_path_comparator);
+		http_cerver->static_paths = dlist_init (
+			http_static_path_delete, http_static_path_comparator
+		);
 
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
@@ -271,12 +286,42 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 }
 
-static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_responses (void) {
+
+	unsigned int retval = 1;
+
+	bad_auth_error = http_response_json_key_value (
+		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
+	);
+
+	server_error = http_response_json_key_value (
+		(http_status) 500, "error", "Internal error!"
+	);
+
+	catch_all = http_response_json_key_value (
+		(http_status) 200, "msg", "HTTP Cerver!"
+	);
+
+	if (
+		bad_auth_error && server_error
+		&& catch_all
+	) retval = 0;
+
+	return retval;
+
+}
+
+static unsigned int http_cerver_init_load_jwt_private_key (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int retval = 1;
 
 	size_t private_keylen = 0;
-	char *private_key = file_read (http_cerver->jwt_opt_key_name->str, &private_keylen);
+	char *private_key = file_read (
+		http_cerver->jwt_opt_key_name->str, &private_keylen
+	);
+
 	if (private_key) {
 		http_cerver->jwt_private_key = str_new (NULL);
 		http_cerver->jwt_private_key->str = private_key;
@@ -304,12 +349,17 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 
 }
 
-static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_load_jwt_public_key (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int retval = 1;
 
 	size_t public_keylen = 0;
-	char *public_key = file_read (http_cerver->jwt_opt_pub_key_name->str, &public_keylen);
+	char *public_key = file_read (
+		http_cerver->jwt_opt_pub_key_name->str, &public_keylen
+	);
+
 	if (public_key) {
 		http_cerver->jwt_public_key = str_new (NULL);
 		http_cerver->jwt_public_key->str = public_key;
@@ -337,7 +387,9 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 
 }
 
-static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_load_jwt_keys (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int errors = 0 ;
 
@@ -360,9 +412,15 @@ void http_cerver_init (HttpCerver *http_cerver) {
 	if (http_cerver) {
 		cerver_log_msg ("Loading HTTP routes...");
 
+		// init common responses
+		(void) http_cerver_init_responses ();
+
 		// init top level routes
 		HttpRoute *route = NULL;
-		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+		for (
+			ListElement *le = dlist_start (http_cerver->routes);
+			le; le = le->next
+		) {
 			route = (HttpRoute *) le->data;
 			
 			http_route_init (route);
@@ -373,6 +431,17 @@ void http_cerver_init (HttpCerver *http_cerver) {
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
 
 		cerver_log_success ("Done loading HTTP routes!");
+	}
+
+}
+
+// destroy values allocated in http_cerver_init ()
+void http_cerver_end (HttpCerver *http_cerver) {
+
+	if (http_cerver) {
+		http_respponse_delete (bad_auth_error);
+		http_respponse_delete (server_error);
+		http_respponse_delete (catch_all);
 	}
 
 }
@@ -1619,12 +1688,7 @@ static void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, http_receive);
-		http_respponse_delete (res);
-	}
+	(void) http_response_send (catch_all, http_receive);
 
 }
 
@@ -1649,7 +1713,8 @@ static void http_receive_handle_catch_all (
 
 }
 
-// handles an actual route match & selects the right handler based on the request's method
+// handles an actual route match
+// selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
 	HttpReceive *http_receive,
@@ -1807,14 +1872,11 @@ static inline bool http_receive_handle_select_children (
 
 }
 
-static void http_receive_handle_select_failed_auth (HttpReceive *http_receive) {
+static void http_receive_handle_select_failed_auth (
+	HttpReceive *http_receive
+) {
 
-	HttpResponse *res = http_response_json_error (HTTP_STATUS_UNAUTHORIZED, "Failed to authenticate!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, http_receive);
-		http_respponse_delete (res);
-	}
+	(void) http_response_send (bad_auth_error, http_receive);
 
 }
 
@@ -2039,7 +2101,10 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	HttpStaticPath *static_path = NULL;
 	struct stat filestatus = { 0 };
 	char filename[256] = { 0 };
-	for (ListElement *le = dlist_start (http_receive->http_cerver->static_paths); le; le = le->next) {
+	for (
+		ListElement *le = dlist_start (http_receive->http_cerver->static_paths);
+		le; le = le->next
+	) {
 		static_path = (HttpStaticPath *) le->data;
 
 		(void) c_string_concat_safe (
@@ -2146,15 +2211,7 @@ static void http_receive_handle (
 		);
 
 		// send back error message
-		HttpResponse *res = http_response_json_error (
-			(http_status) 500, "Internal error!"
-		);
-
-		if (res) {
-			// http_response_print (res);
-			http_response_send (res, http_receive);
-			http_respponse_delete (res);
-		}
+		(void) http_response_send (server_error, http_receive);
 
 		connection_end (http_receive->cr->connection);
 	}
