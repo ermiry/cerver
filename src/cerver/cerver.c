@@ -2453,6 +2453,7 @@ static void cerver_clean (Cerver *cerver) {
 
 			case CERVER_TYPE_WEB: {
 				if (cerver->cerver_data) {
+					http_cerver_end ((HttpCerver *) cerver->cerver_data);
 					http_cerver_delete (cerver->cerver_data);
 					cerver->cerver_data = NULL;
 				}

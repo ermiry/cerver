@@ -108,6 +108,7 @@ struct _HttpCerver {
 		const char *original_filename,
 		char *generated_filename
 	);
+
 	String *(*uploads_dirname_generator)(const CerverReceive *);
 
 	// auth
@@ -141,6 +142,11 @@ CERVER_PRIVATE HttpCerver *http_cerver_create (
 );
 
 CERVER_PRIVATE void http_cerver_init (
+	HttpCerver *http_cerver
+);
+
+// destroy values allocated in http_cerver_init ()
+CERVER_PRIVATE void http_cerver_end (
 	HttpCerver *http_cerver
 );
 
