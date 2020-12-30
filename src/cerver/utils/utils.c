@@ -3,10 +3,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <stdint.h>
-#include <stddef.h>
+#include <math.h>
+
 #include <ctype.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "cerver/utils/utils.h"
 
@@ -30,9 +32,23 @@ int clamp_int (int val, int min, int max) {
 
 }
 
-int abs_int (int value) { return value > 0 ? value : (value * -1); }
+int abs_int (int value) {
+	
+	return value > 0 ? value : (value * -1);
+	
+}
 
-float lerp (float first, float second, float by) { return first * (1 - by) + second * by; }
+float lerp (float first, float second, float by) {
+	
+	return first * (1 - by) + second * by;
+	
+}
+
+bool float_compare (float f1, float f2) {
+
+	return fabs (f1 - f2) < 0.00001;
+
+}
 
 /*** random ***/
 

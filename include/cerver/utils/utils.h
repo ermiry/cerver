@@ -18,6 +18,8 @@ CERVER_PUBLIC int abs_int (int value);
 
 CERVER_PUBLIC float lerp (float first, float second, float by);
 
+CERVER_PUBLIC bool float_compare (float f1, float f2);
+
 /*** random ***/
 
 // init psuedo random generator based on our seed
