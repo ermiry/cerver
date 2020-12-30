@@ -1564,9 +1564,9 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 #pragma region start
 
-static void cerver_update (void *args);
+static void *cerver_update (void *args);
 
-static void cerver_update_interval (void *args);
+static void *cerver_update_interval (void *args);
 
 // inits cerver's auth capabilities
 static u8 cerver_auth_start (Cerver *cerver) {
@@ -1846,7 +1846,7 @@ static u8 cerver_update_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_thread_id,
-		(void *(*) (void *)) cerver_update,
+		cerver_update,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
@@ -1877,7 +1877,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_interval_thread_id,
-		(void *(*) (void *)) cerver_update_interval,
+		cerver_update_interval,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
@@ -2097,12 +2097,16 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
+static u8 cerver_start_udp (Cerver *cerver) { 
 
-static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
+	cerver_log_warning (
+		"Cerver %s - udp server is not yet implemented!",
+		cerver->info->name->str
+	);
 
-#pragma GCC diagnostic pop
+	return 1;
+
+}
 
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any)
@@ -2168,11 +2172,7 @@ u8 cerver_start (Cerver *cerver) {
 					} break;
 
 					case PROTOCOL_UDP: {
-						// retval = cerver_start_udp (cerver);
-						cerver_log_warning (
-							"Cerver %s - udp server is not yet implemented!",
-							cerver->info->name->str
-						);
+						retval = cerver_start_udp (cerver);
 					} break;
 
 					default: {
@@ -2229,9 +2229,9 @@ void cerver_update_delete (void *cerver_update_ptr) {
 
 }
 
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// called in a dedicated thread only if a user method was set
 // executes methods every tick
-static void cerver_update (void *args) {
+static void *cerver_update (void *args) {
 
 	if (args) {
 		Cerver *cerver = (Cerver *) args;
@@ -2300,11 +2300,13 @@ static void cerver_update (void *args) {
 		#endif
 	}
 
+	return NULL;
+
 }
 
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// called in a dedicated thread only if a user method was set
 // executes methods every x seconds
-static void cerver_update_interval (void *args) {
+static void *cerver_update_interval (void *args) {
 
 	if (args) {
 		Cerver *cerver = (Cerver *) args;
@@ -2339,6 +2341,8 @@ static void cerver_update_interval (void *args) {
 		);
 		#endif
 	}
+
+	return NULL;
 
 }
 
