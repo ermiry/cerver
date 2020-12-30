@@ -4,13 +4,13 @@
 make clean
 
 printf "sources\n\n"
-make DEVELOPMENT='' -j8
+make TYPE=test -j8
 
 printf "\n\nexamples\n\n"
-make DEVELOPMENT='' EXADEBUG='' examples -j8
+make TYPE=test examples -j8
 
 printf "\n\ntest\n\n"
-make DEVELOPMENT='' test -j8
+make TYPE=test test -j8
 
 printf "\n\nbench\n\n"
-make DEVELOPMENT='' bench -j8
+make TYPE=test bench -j8
