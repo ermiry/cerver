@@ -512,7 +512,9 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 }
 
 // sets authentication requirenments for a whole static path
-void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type) {
+void http_static_path_set_auth (
+	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+) {
 
 	if (static_path) static_path->auth_type = auth_type;
 
@@ -2180,7 +2182,6 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 }
 
-// FIXME: update no matching stats
 // TODO: handle authentication
 static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
@@ -2219,13 +2220,15 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	}
 
 	if (!found) {
-		// TODO: what to do here? - maybe something similar to catch all route
 		cerver_log_warning (
 			"Unable to find file %s",
 			http_receive->request->url->str
 		);
 
-		http_receive_handle_default_route (http_receive, http_receive->request);
+		http_receive_handle_catch_all (
+			http_receive->http_cerver,
+			http_receive, http_receive->request
+		);
 	}
 
 }
