@@ -124,8 +124,11 @@ struct _HttpCerver {
 	size_t n_incompleted_requests;	// the request wasn't parsed completely
 	size_t n_unhandled_requests;	// failed to get matching route
 
-	size_t n_cath_all_requests;		// redirected to cath all route
+	size_t n_catch_all_requests;	// redirected to catch all route
 	size_t n_failed_auth_requests;	// failed to auth with private route 
+
+	// used to correctly update stats
+	pthread_mutex_t *mutex;
 
 };
 

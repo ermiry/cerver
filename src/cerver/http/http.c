@@ -234,15 +234,16 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
-		http_cerver->n_cath_all_requests = 0;
+		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
+
+		http_cerver->mutex = NULL;
 	}
 
 	return http_cerver;
 
 }
 
-// TODO: http_respponse_delete (server_error);
 void http_cerver_delete (void *http_cerver_ptr) {
 
 	if (http_cerver_ptr) {
@@ -259,6 +260,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
+
+		pthread_mutex_delete (http_cerver->mutex);
 
 		free (http_cerver_ptr);
 	}
@@ -280,6 +283,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->default_handler = http_receive_handle_default_route;
 
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+
+		http_cerver->mutex = pthread_mutex_new ();
 	}
 
 	return http_cerver;
@@ -979,6 +984,13 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
 			http_cerver_route_stats_print ((HttpRoute *) le->data);
 		}
+
+		// print general stats
+		cerver_log_msg ("Incompleted requests: %ld", http_cerver->n_incompleted_requests);
+		cerver_log_msg ("Unhandled requests: %ld", http_cerver->n_unhandled_requests);
+
+		cerver_log_msg ("Catch requests: %ld", http_cerver->n_catch_all_requests);
+		cerver_log_msg ("Failed auth requests: %ld", http_cerver->n_failed_auth_requests);
 	}
 
 }
@@ -1708,8 +1720,9 @@ static void http_receive_handle_catch_all (
 	// handle with default route
 	http_cerver->default_handler (http_receive, request);
 
-	// FIXME: handle stats with mutex
-	http_cerver->n_cath_all_requests += 1;
+	(void) pthread_mutex_lock (http_cerver->mutex);
+	http_cerver->n_catch_all_requests += 1;
+	(void) pthread_mutex_unlock (http_cerver->mutex);
 
 }
 
@@ -1877,6 +1890,10 @@ static void http_receive_handle_select_failed_auth (
 ) {
 
 	(void) http_response_send (bad_auth_error, http_receive);
+
+	(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+	http_receive->http_cerver->n_failed_auth_requests += 1;
+	(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
 
 }
 
