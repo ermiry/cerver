@@ -22,26 +22,34 @@ static Cerver *client_cerver = NULL;
 
 #pragma region auth
 
+#define CREDENTIALS_FIELD_LEN		256
+
 typedef struct Credentials {
 
-	char username[64];
-	char password[64];
+	char username[CREDENTIALS_FIELD_LEN];
+	char password[CREDENTIALS_FIELD_LEN];
 
 } Credentials;
 
-Credentials *credentials_new (const char *username, const char *password) {
+Credentials *credentials_new (
+	const char *username, const char *password
+) {
 
 	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
 	if (credentials) {
-		strncpy (credentials->username, username, 64);
-		strncpy (credentials->password, password, 64);
+		(void) strncpy (credentials->username, username, CREDENTIALS_FIELD_LEN - 1);
+		(void) strncpy (credentials->password, password, CREDENTIALS_FIELD_LEN - 1);
 	}
 
 	return credentials;
 
 }
 
-void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (credentials_ptr); }
+void credentials_delete (void *credentials_ptr) {
+	
+	if (credentials_ptr) free (credentials_ptr);
+	
+}
 
 #pragma endregion
 
