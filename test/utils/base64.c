@@ -49,31 +49,31 @@ static void utils_tests_base64_decode (void) {
 	char decoded[8192] = { 0 };
 
 	c_string_copy (string, "");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "", NULL);
 
 	c_string_copy (string, "Zg==");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "f", NULL);
 
 	c_string_copy (string, "Zm8=");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "fo", NULL);
 
 	c_string_copy (string, "Zm9v");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "foo", NULL);
 
 	c_string_copy (string, "Zm9vYg==");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "foob", NULL);
 
 	c_string_copy (string, "Zm9vYmE=");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "fooba", NULL);
 
 	c_string_copy (string, "Zm9vYmFy");
-	base64_decode (decoded, string);
+	base64_decode (decoded, string, strlen (string));
 	test_check_str_eq (decoded, "foobar", NULL);
 
 }
