@@ -24,10 +24,10 @@ u8 thread_create_detachable (
     u8 retval = 1;
 
     if (thread) {
-        pthread_attr_t attr;
+        pthread_attr_t attr = { 0 };
         if (!pthread_attr_init (&attr)) {
             if (!pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED)) {
-                if (!pthread_create (thread, &attr, work, args) != THREAD_OK) {
+                if (pthread_create (thread, &attr, work, args) == THREAD_OK) {
                     retval = 0;     // success
                 }
 
