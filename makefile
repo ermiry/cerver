@@ -103,7 +103,7 @@ EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
 # common flags
-EXAFLAGS += $(COMMON)
+EXAFLAGS += -Wall -Wno-unknown-pragmas
 
 EXALIBS		:= -L ./bin -l cerver
 EXAINC		:= -I ./$(EXAMDIR)
