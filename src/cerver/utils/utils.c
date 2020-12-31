@@ -148,8 +148,20 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 			n--;
 		}
 
-		*to = '\0';
+		if (!n) *(--to) = '\0';
+		else *to = '\0';
 	}
+
+}
+
+static inline void c_string_concat_actual (
+	char *s1, char *s2, char *des
+) {
+
+	while (*s1) *des++ = *s1++;
+	while (*s2) *des++ = *s2++;
+
+	*des = '\0';
 
 }
 
@@ -163,17 +175,11 @@ char *c_string_concat (
 
 	if (s1 && s2) {
 		size_t len = strlen (s1) + strlen (s2);
-		retval = (char *) calloc (len, sizeof (char));
+		retval = (char *) calloc (len + 1, sizeof (char));
 		if (retval) {
-			char *end = retval;
-
-			char *s1_end = (char *) s1;
-			char *s2_end = (char *) s2;
-
-			while (*s1_end) *end++ = *s1_end++;
-			while (*s2_end) *end++ = *s2_end++;
-
-			*end = '\0';
+			c_string_concat_actual (
+				(char *) s1, (char *) s2, retval
+			);
 
 			*des_size = len;
 		}
@@ -195,14 +201,9 @@ size_t c_string_concat_safe (
 
 	if (s1 && s2 && des) {
 		if ((strlen (s1) + strlen (s2)) < des_size) {
-			char *s1_end = (char *) s1;
-			char *s2_end = (char *) s2;
-			char *end = (char *) des;
-
-			while (*s1_end) *end++ = *s1_end++;
-			while (*s2_end) *end++ = *s2_end++;
-
-			*end = '\0';
+			c_string_concat_actual (
+				(char *) s1, (char *) s2, (char *) des
+			);
 
 			retval = strlen (des);
 		}
