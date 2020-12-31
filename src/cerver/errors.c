@@ -20,7 +20,7 @@ u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_ty
 #pragma region types
 
 // get the description for the current error type
-const char *cerver_error_type_description (CerverErrorType type) {
+const char *cerver_error_type_description (const CerverErrorType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CERVER_ERROR_##name: return #description;
@@ -100,8 +100,8 @@ static CerverErrorEvent *cerver_error_event_new (void) {
 		cerver_error_event->create_thread = false;
 		cerver_error_event->drop_after_trigger = false;
 
-		cerver_error_event->action = NULL;
-		cerver_error_event->action_args = NULL;
+		cerver_error_event->work = NULL;
+		cerver_error_event->work_args = NULL;
 		cerver_error_event->delete_action_args = NULL;
 	}
 
@@ -114,9 +114,9 @@ void cerver_error_event_delete (void *event_ptr) {
 	if (event_ptr) {
 		CerverErrorEvent *event = (CerverErrorEvent *) event_ptr;
 
-		if (event->action_args) {
+		if (event->work_args) {
 			if (event->delete_action_args)
-				event->delete_action_args (event->action_args);
+				event->delete_action_args (event->work_args);
 		}
 
 		free (event);
@@ -132,7 +132,7 @@ void cerver_error_event_delete (void *event_ptr) {
 u8 cerver_error_event_register (
 	Cerver *cerver,
 	const CerverErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -146,8 +146,8 @@ u8 cerver_error_event_register (
 			error->create_thread = create_thread;
 			error->drop_after_trigger = drop_after_trigger;
 
-			error->action = action;
-			error->action_args = action_args;
+			error->work = work;
+			error->work_args = work_args;
 			error->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that error and remove it
@@ -166,7 +166,9 @@ u8 cerver_error_event_register (
 // unregister the action associated with an error event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if error is NOT registered
-u8 cerver_error_event_unregister (Cerver *cerver, const CerverErrorType error_type) {
+u8 cerver_error_event_unregister (
+	Cerver *cerver, const CerverErrorType error_type
+) {
 
 	u8 retval = 1;
 
@@ -195,26 +197,26 @@ void cerver_error_event_trigger (
 		CerverErrorEvent *error = cerver->errors[error_type];
 		if (error) {
 			// trigger the action
-			if (error->action) {
+			if (error->work) {
 				if (error->create_thread) {
 					pthread_t thread_id = 0;
-					thread_create_detachable (
+					(void) thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) error->action,
+						error->work,
 						cerver_error_event_data_create (
 							cerver,
 							client, connection,
-							error->action_args,
+							error->work_args,
 							error_message
 						)
 					);
 				}
 
 				else {
-					error->action (cerver_error_event_data_create (
+					error->work (cerver_error_event_data_create (
 						cerver,
 						client, connection,
-						error->action_args,
+						error->work_args,
 						error_message
 					));
 				}
