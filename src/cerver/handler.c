@@ -2290,6 +2290,9 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+
 static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection *connection) {
 
 	u8 retval = 1;
@@ -2360,6 +2363,8 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
 }
 
+#pragma GCC diagnostic pop
+
 static u8 cerver_register_new_connection_normal_default_create_detachable (CerverReceive *cr) {
 
 	u8 retval = 1;
@@ -2393,6 +2398,9 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
 	return retval;
 
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
 
 static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connection *connection) {
 
@@ -2497,6 +2505,8 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 	return retval;
 
 }
+
+#pragma GCC diagnostic pop
 
 static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *connection) {
 
