@@ -28,4 +28,6 @@ typedef u8 (*delegate)(void *);
 // takes an argument and returns a value generic value ptr
 typedef void *(*Work)(void *);
 
+typedef int (*Comparator)(const void *, const void *);
+
 #endif
