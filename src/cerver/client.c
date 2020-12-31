@@ -305,7 +305,12 @@ void client_delete (void *ptr) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 void client_delete_dummy (void *ptr) {}
+
+#pragma GCC diagnostic pop
 
 // creates a new client and inits its values
 Client *client_create (void) {
@@ -1163,7 +1168,7 @@ static ClientEventData *client_event_data_create (
 		event_data->response_data = event->response_data;
 		event_data->delete_response_data = event->delete_response_data;
 
-		event_data->action_args = event->action_args;
+		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
 	}
 
@@ -1184,8 +1189,8 @@ static ClientEvent *client_event_new (void) {
 		event->response_data = NULL;
 		event->delete_response_data = NULL;
 
-		event->action = NULL;
-		event->action_args = NULL;
+		event->work = NULL;
+		event->work_args = NULL;
 		event->delete_action_args = NULL;
 	}
 
@@ -1203,9 +1208,9 @@ static void client_event_delete (void *ptr) {
 				event->delete_response_data (event->response_data);
 		}
 
-		if (event->action_args) {
+		if (event->work_args) {
 			if (event->delete_action_args)
-				event->delete_action_args (event->action_args);
+				event->delete_action_args (event->work_args);
 		}
 
 		free (event);
@@ -1221,7 +1226,7 @@ static void client_event_delete (void *ptr) {
 u8 client_event_register (
 	Client *client,
 	const ClientEventType event_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -1235,8 +1240,8 @@ u8 client_event_register (
 			event->create_thread = create_thread;
 			event->drop_after_trigger = drop_after_trigger;
 
-			event->action = action;
-			event->action_args = action_args;
+			event->work = work;
+			event->work_args = work_args;
 			event->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that event and remove it
@@ -1300,12 +1305,12 @@ void client_event_trigger (
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			// trigger the action
-			if (event->action) {
+			if (event->work) {
 				if (event->create_thread) {
 					pthread_t thread_id = 0;
 					thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) event->action,
+						event->work,
 						client_event_data_create (
 							client, connection,
 							event
@@ -1314,7 +1319,7 @@ void client_event_trigger (
 				}
 
 				else {
-					event->action (client_event_data_create (
+					(void) event->work (client_event_data_create (
 						client, connection,
 						event
 					));
@@ -1403,8 +1408,8 @@ static ClientError *client_error_new (void) {
 		client_error->create_thread = false;
 		client_error->drop_after_trigger = false;
 
-		client_error->action = NULL;
-		client_error->action_args = NULL;
+		client_error->work = NULL;
+		client_error->work_args = NULL;
 		client_error->delete_action_args = NULL;
 	}
 
@@ -1417,9 +1422,9 @@ static void client_error_delete (void *client_error_ptr) {
 	if (client_error_ptr) {
 		ClientError *client_error = (ClientError *) client_error_ptr;
 
-		if (client_error->action_args) {
+		if (client_error->work_args) {
 			if (client_error->delete_action_args)
-				client_error->delete_action_args (client_error->action_args);
+				client_error->delete_action_args (client_error->work_args);
 		}
 
 		free (client_error_ptr);
@@ -1435,7 +1440,7 @@ static void client_error_delete (void *client_error_ptr) {
 u8 client_error_register (
 	Client *client,
 	const ClientErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -1449,8 +1454,8 @@ u8 client_error_register (
 			error->create_thread = create_thread;
 			error->drop_after_trigger = drop_after_trigger;
 
-			error->action = action;
-			error->action_args = action_args;
+			error->work = work;
+			error->work_args = work_args;
 			error->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that error and remove it
@@ -1500,12 +1505,12 @@ u8 client_error_trigger (
 		ClientError *error = client->errors[error_type];
 		if (error) {
 			// trigger the action
-			if (error->action) {
+			if (error->work) {
 				if (error->create_thread) {
 					pthread_t thread_id = 0;
 					retval = thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) error->action,
+						error->work,
 						client_error_data_create (
 							client, connection,
 							error,
@@ -1515,7 +1520,7 @@ u8 client_error_trigger (
 				}
 
 				else {
-					error->action (client_error_data_create (
+					(void) error->work (client_error_data_create (
 						client, connection,
 						error,
 						error_message
@@ -2089,7 +2094,7 @@ int client_connection_start (Client *client, Connection *connection) {
 			if (!client_start (client)) {
 				if (!thread_create_detachable (
 					&connection->update_thread_id,
-					(void *(*)(void *)) connection_update,
+					connection_update,
 					client_connection_aux_new (client, connection)
 				)) {
 					retval = 0;         // success
@@ -2143,13 +2148,15 @@ int client_connect_and_start (Client *client, Connection *connection) {
 
 }
 
-static void client_connection_start_wrapper (void *data_ptr) {
+static void *client_connection_start_wrapper (void *data_ptr) {
 
 	if (data_ptr) {
 		ClientConnection *cc = (ClientConnection *) data_ptr;
 		client_connect_and_start (cc->client, cc->connection);
 		client_connection_aux_delete (cc);
 	}
+
+	return NULL;
 
 }
 
@@ -2162,7 +2169,7 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 
 	return (client && connection) ? thread_create_detachable (
 		&thread_id,
-		(void *(*)(void *)) client_connection_start_wrapper,
+		client_connection_start_wrapper,
 		client_connection_aux_new (client, connection)
 	) : 1;
 

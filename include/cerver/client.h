@@ -404,8 +404,8 @@ struct _ClientEvent {
 	void *response_data;                // data that came with the response
 	Action delete_response_data;
 
-	Action action;                      // the action to be triggered
-	void *action_args;                  // the action arguments
+	Work work;                      	// the action to be triggered
+	void *work_args;                  // the action arguments
 	Action delete_action_args;          // how to get rid of the data
 
 };
@@ -420,7 +420,7 @@ typedef struct _ClientEvent ClientEvent;
 CERVER_EXPORT u8 client_event_register (
 	struct _Client *client,
 	const ClientEventType event_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
@@ -500,8 +500,8 @@ struct _ClientError {
 	bool create_thread;                 // create a detachable thread to run action
 	bool drop_after_trigger;            // if we only want to trigger the event once
 
-	Action action;                      // the action to be triggered
-	void *action_args;                  // the action arguments
+	Work work;                      	// the action to be triggered
+	void *work_args;                  // the action arguments
 	Action delete_action_args;          // how to get rid of the data
 
 };
@@ -516,7 +516,7 @@ typedef struct _ClientError ClientError;
 CERVER_EXPORT u8 client_error_register (
 	struct _Client *client,
 	const ClientErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
