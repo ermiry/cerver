@@ -814,7 +814,7 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 }
 
 // starts listening and receiving data in the connection sock
-void connection_update (void *client_connection_ptr) {
+void *connection_update (void *client_connection_ptr) {
 
 	if (client_connection_ptr) {
 		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
@@ -897,6 +897,8 @@ void connection_update (void *client_connection_ptr) {
 		str_delete (client_name);
 		str_delete (connection_name);
 	}
+
+	return NULL;
 
 }
 
