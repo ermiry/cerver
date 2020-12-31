@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "cerver/utils/sha-256.h"
+#include "cerver/utils/sha256.h"
 
 // Copyrigth 	Alain Mosnier, amosnier
 // https://github.com/amosnier/sha-2
@@ -123,7 +123,7 @@ static int calc_chunk (
  *   for bit string lengths that are not multiples of eight, and it really operates on arrays of bytes.
  *   In particular, the len parameter is a number of bytes.
  */
-void sha_256_calc (
+void sha256_calc (
 	uint8_t hash[32], const void * input, size_t len
 ) {
 	/*
@@ -227,7 +227,7 @@ void sha_256_calc (
 
 }
 
-void sha_256_hash_to_string (
+void sha256_hash_to_string (
 	char string[65], const uint8_t hash[32]
 ) {
 
@@ -238,20 +238,20 @@ void sha_256_hash_to_string (
 
 // generates a sha256 string from the input and places it in output
 // output must be at least 65 bytes long
-void sha_256_generate (
+void sha256_generate (
 	char *output, const char *input, const size_t inlen
 ) {
 
 	uint8_t hash[32] = { 0 };
 
-	sha_256_calc (hash, input, inlen);
-	sha_256_hash_to_string (output, hash);
+	sha256_calc (hash, input, inlen);
+	sha256_hash_to_string (output, hash);
 
 }
 
 // generates a sha256 string from the input
 // returns a newly allocated string
-char *sha_256_generate_output (
+char *sha256_generate_output (
 	const char *input, const size_t inlen
 ) {
 
@@ -259,8 +259,8 @@ char *sha_256_generate_output (
 	if (output) {
 		uint8_t hash[32] = { 0 };
 
-		sha_256_calc (hash, input, inlen);
-		sha_256_hash_to_string (output, hash);
+		sha256_calc (hash, input, inlen);
+		sha256_hash_to_string (output, hash);
 	}
 
 	return output;
