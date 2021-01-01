@@ -3,10 +3,13 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <pthread.h>
+#include "cerver/config.h"
 
-#include <poll.h>
-#include <errno.h>
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/poll.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -103,7 +106,7 @@ static CerverInfo *cerver_info_new (void) {
 
 	CerverInfo *cerver_info = (CerverInfo *) malloc (sizeof (CerverInfo));
 	if (cerver_info) {
-		memset (cerver_info, 0, sizeof (CerverInfo));
+		(void) memset (cerver_info, 0, sizeof (CerverInfo));
 		cerver_info->name = NULL;
 		cerver_info->welcome_msg = NULL;
 		cerver_info->cerver_info_packet = NULL;
@@ -160,7 +163,9 @@ u8 cerver_info_send_info_packet (
 			NULL
 		);
 
-		if (!packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
+		if (!packet_send (
+			cerver->info->cerver_info_packet, 0, NULL, false
+		)) {
 			retval = 0;
 		}
 
@@ -185,7 +190,7 @@ static CerverStats *cerver_stats_new (void) {
 
 	CerverStats *cerver_stats = (CerverStats *) malloc (sizeof (CerverStats));
 	if (cerver_stats) {
-		memset (cerver_stats, 0, sizeof (CerverStats));
+		(void) memset (cerver_stats, 0, sizeof (CerverStats));
 		cerver_stats->received_packets = packets_per_type_new ();
 		cerver_stats->sent_packets = packets_per_type_new ();
 	}
@@ -990,9 +995,9 @@ unsigned int cerver_get_n_handlers (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->n_handlers;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -1005,9 +1010,9 @@ unsigned int cerver_get_n_handlers_alive (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->num_handlers_alive;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -1020,9 +1025,9 @@ unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->num_handlers_working;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -1661,9 +1666,9 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 
 #pragma region start
 
-static void cerver_update (void *args);
+static void *cerver_update (void *args);
 
-static void cerver_update_interval (void *args);
+static void *cerver_update_interval (void *args);
 
 // inits cerver's auth capabilities
 static u8 cerver_auth_start (Cerver *cerver) {
@@ -1943,7 +1948,7 @@ static u8 cerver_update_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_thread_id,
-		(void *(*) (void *)) cerver_update,
+		cerver_update,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
@@ -1974,7 +1979,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_interval_thread_id,
-		(void *(*) (void *)) cerver_update_interval,
+		cerver_update_interval,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
@@ -2324,9 +2329,9 @@ void cerver_update_delete (void *cerver_update_ptr) {
 
 }
 
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// called in a dedicated thread only if a user method was set
 // executes methods every tick
-static void cerver_update (void *args) {
+static void *cerver_update (void *args) {
 
 	if (args) {
 		Cerver *cerver = (Cerver *) args;
@@ -2351,23 +2356,23 @@ static void cerver_update (void *args) {
 		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
 		while (cerver->isRunning) {
-			clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
 
 			// do stuff
 			if (cerver->update) cerver->update (cu);
 
 			// limit the fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
 			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
 			// printf ("temp: %d\n", temp);
 			sleep_time = time_per_frame - temp;
 			// printf ("sleep time: %d\n", sleep_time);
 			if (sleep_time > 0) {
-				usleep (sleep_time);
+				(void) usleep (sleep_time);
 			}
 
 			// count fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
 			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
 			delta_ticks += delta_time;
 			fps++;
@@ -2395,11 +2400,13 @@ static void cerver_update (void *args) {
 		#endif
 	}
 
+	return NULL;
+
 }
 
-// 31/01/2020 -- called in a dedicated thread only if a user method was set
+// called in a dedicated thread only if a user method was set
 // executes methods every x seconds
-static void cerver_update_interval (void *args) {
+static void *cerver_update_interval (void *args) {
 
 	if (args) {
 		Cerver *cerver = (Cerver *) args;
@@ -2411,19 +2418,23 @@ static void cerver_update_interval (void *args) {
 		);
 		#endif
 
-		CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+		CerverUpdate *cu = cerver_update_new (
+			cerver, cerver->update_interval_args
+		);
 
 		while (cerver->isRunning) {
 			if (cerver->update_interval) cerver->update_interval (cu);
 
-			sleep (cerver->update_interval_secs);
+			(void) sleep (cerver->update_interval_secs);
 		}
 
 		cerver_update_delete (cu);
 
 		if (cerver->update_interval_args) {
 			if (cerver->delete_update_interval_args) {
-				cerver->delete_update_interval_args (cerver->update_interval_args);
+				cerver->delete_update_interval_args (
+					cerver->update_interval_args
+				);
 			}
 		}
 
@@ -2434,6 +2445,8 @@ static void cerver_update_interval (void *args) {
 		);
 		#endif
 	}
+
+	return NULL;
 
 }
 
