@@ -245,7 +245,7 @@ unsigned int avl_clear_tree (
 
 		void (*actual_destroy)(void *) = destroy ? destroy : tree->destroy;
 
-		avl_internal_clear_tree (&tree->root, tree->destroy);
+		avl_internal_clear_tree (&tree->root, actual_destroy);
 
 		(void) pthread_mutex_unlock (tree->mutex);
 
