@@ -60,7 +60,7 @@ unsigned int input_password (char *password) {
 		new_term = old_term;
 		new_term.c_lflag &= ~ECHO;
 		if (!tcsetattr (fileno (stdin), TCSAFLUSH, &new_term) != 0) {
-			scanf ("%128s", password);
+			(void) scanf ("%128s", password);
 
 			/* Restore terminal. */
 			(void) tcsetattr (fileno (stdin), TCSAFLUSH, &old_term);
