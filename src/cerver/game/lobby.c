@@ -29,7 +29,7 @@
 
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
-#include "cerver/utils/sha-256.h"
+#include "cerver/utils/sha256.h"
 
 void lobby_poll (void *ptr);
 
@@ -45,8 +45,8 @@ void *lobby_default_id_generator (const void *data_ptr) {
     uint8_t hash[32];
     char hash_string[65];
 
-    sha_256_calc (hash, temp, len);
-    sha_256_hash_to_string (hash_string, hash);
+    sha256_calc (hash, temp, len);
+    sha256_hash_to_string (hash_string, hash);
 
     return str_new (hash_string);
 
