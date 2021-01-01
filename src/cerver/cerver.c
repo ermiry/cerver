@@ -33,8 +33,6 @@
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
 
-#include "cerver/http/http.h"
-
 #include "cerver/game/game.h"
 
 #include "cerver/utils/log.h"
@@ -2197,12 +2195,16 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
+static u8 cerver_start_udp (Cerver *cerver) {
 
-static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
+	cerver_log_warning (
+		"Cerver %s - udp server is not yet implemented!",
+		cerver->info->name->str
+	);
 
-#pragma GCC diagnostic pop
+	return 1;
+
+}
 
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any)
@@ -2268,11 +2270,7 @@ u8 cerver_start (Cerver *cerver) {
 					} break;
 
 					case PROTOCOL_UDP: {
-						// retval = cerver_start_udp (cerver);
-						cerver_log_warning (
-							"Cerver %s - udp server is not yet implemented!",
-							cerver->info->name->str
-						);
+						retval = cerver_start_udp (cerver);
 					} break;
 
 					default: {
