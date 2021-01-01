@@ -17,6 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
+      - name: System Information
+        run: gcc --version && g++ --version
+
       - name: gcc make
         run: make
       - name: gcc examples
@@ -24,7 +27,7 @@ jobs:
       - name: gcc tests
         run: make test
       - name: gcc run tests
-        run: bash test.sh
+        run: bash test/run.sh
 
       - name: clean
         run: make clean
@@ -36,4 +39,4 @@ jobs:
       - name: g++ tests
         run: make CC=g++ test
       - name: g++ run tests
-        run: bash test.sh
+        run: bash test/run.sh
