@@ -30,9 +30,13 @@ typedef enum HttpRouteModifier {
 
 } HttpRouteModifier;
 
-CERVER_PUBLIC const char *http_route_modifier_to_string (HttpRouteModifier modifier);
+CERVER_PUBLIC const char *http_route_modifier_to_string (
+	const HttpRouteModifier modifier
+);
 
-CERVER_PUBLIC const char *http_route_modifier_description (HttpRouteModifier modifier);
+CERVER_PUBLIC const char *http_route_modifier_description (
+	const HttpRouteModifier modifier
+);
 
 #define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
 	XX(0,	NONE, 			None,		Undefined)													\
@@ -46,9 +50,13 @@ typedef enum HttpRouteAuthType {
 
 } HttpRouteAuthType;
 
-CERVER_PUBLIC const char *http_route_auth_type_to_string (HttpRouteAuthType type);
+CERVER_PUBLIC const char *http_route_auth_type_to_string (
+	const HttpRouteAuthType type
+);
 
-CERVER_PUBLIC const char *http_route_auth_type_description (HttpRouteAuthType type);
+CERVER_PUBLIC const char *http_route_auth_type_description (
+	const HttpRouteAuthType type
+);
 
 struct _HttpRoutesTokens {
 
@@ -219,6 +227,8 @@ CERVER_EXPORT void http_route_set_decode_data (
 	void (*delete_decoded_data)(void *)
 );
 
-CERVER_EXPORT void http_route_print (HttpRoute *route);
+CERVER_EXPORT void http_route_print (
+	const HttpRoute *route
+);
 
 #endif

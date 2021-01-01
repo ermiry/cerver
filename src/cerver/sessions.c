@@ -11,7 +11,7 @@
 #include "cerver/sessions.h"
 
 #include "cerver/utils/utils.h"
-#include "cerver/utils/sha-256.h"
+#include "cerver/utils/sha256.h"
 
 SessionData *session_data_new (Packet *packet, AuthData *auth_data, Client *client) {
 
@@ -49,8 +49,8 @@ void *session_default_generate_id (const void *session_data) {
 		if (temp) {
 			uint8_t hash[32] = { 0 };
 			char hash_string[65] = { 0 };
-			sha_256_calc (hash, temp, strlen (temp));
-			sha_256_hash_to_string (hash_string, hash);
+			sha256_calc (hash, temp, strlen (temp));
+			sha256_hash_to_string (hash_string, hash);
 
 			retval = c_string_create ("%s", hash_string);
 

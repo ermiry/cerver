@@ -2063,7 +2063,8 @@ static inline u8 cerver_receive_http_actual (
 
 }
 
-// we expect only one request to be sent, so keep reading the socket until no more data is left,
+// we expect only one request to be sent,
+// so keep reading the socket until no more data is left,
 // and then handle the complete buffer
 static void *cerver_receive_http (void *cerver_receive_ptr) {
 
@@ -2075,13 +2076,12 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	size_t total_received = 0;
 
-	HttpReceive *http_receive = http_receive_new ();
-	http_receive->cr = cr;
-	http_receive->http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+	HttpReceive *http_receive = http_receive_create (cr);
 
 	i32 sock_fd = cr->socket->sock_fd;
 
-	// set the socket's timeout to prevent thread from getting stuck if no more data to read
+	// set the socket's timeout
+	// to prevent thread from getting stuck if no more data to read
 	(void) sock_set_timeout (sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
 
 	const size_t buffer_size = cr->cerver->receive_buffer_size;
@@ -2103,7 +2103,8 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	else {
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
-			"cerver_receive_http () - Failed to allocate packet buffer for connection with sock fd <%d>!",
+			"cerver_receive_http () - "
+			"Failed to allocate packet buffer for connection with sock fd <%d>!",
 			cr->connection->socket->sock_fd
 		);
 	}
@@ -2111,37 +2112,89 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-		"cerver_receive_http () - loop has ended - dropping sock fd <%d> connection...",
+		"cerver_receive_http () - "
+		"loop has ended - dropping sock fd <%d> connection...",
 		sock_fd
 	);
 	#endif
 
+	double process_time = timer_get_current_time () - start_time;
+
+	// log request summary
+	switch (http_receive->receive_status) {
+		case HTTP_RECEIVE_STATUS_COMPLETED: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+				cr->connection->ip->str,
+				http_request_method_str (http_receive->request->method),
+				http_receive->route->route->str,
+				total_received,
+				process_time,
+				http_receive->status, http_receive->sent
+			);
+
+			// update route stats
+			http_route_stats_update (
+				http_receive->route->stats[http_receive->request->method],
+				process_time,
+				total_received, http_receive->sent
+			);
+
+			if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+				http_route_file_stats_update (
+					http_receive->route->file_stats,
+					http_receive->file_stats
+				);
+			}
+		} break;
+
+		// no matching route to handle request
+		case HTTP_RECEIVE_STATUS_UNHANDLED: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> [%s] %s - %ld -> %fs -> No matching route -> %d - %ld",
+				cr->connection->ip->str,
+				http_request_method_str (http_receive->request->method),
+				http_receive->request->url->str,
+				total_received,
+				process_time,
+				http_receive->status, http_receive->sent
+			);
+
+			// update stats
+			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+			http_receive->http_cerver->n_unhandled_requests += 1;
+			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		} break;
+
+		// unable to process the request
+		default: {
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> Bad request",
+				cr->connection->ip->str
+			);
+
+			// update stats
+			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+			http_receive->http_cerver->n_incompleted_requests += 1;
+			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+		} break;
+	}
+
 	// the connection has ended
 	connection_drop (cr->cerver, cr->connection);
 
-	cerver_receive_delete (cr);
-
-	// update http route stats
-	double process_time = timer_get_current_time () - start_time;
-	if (http_receive->route) {
-		http_route_stats_update (
-			http_receive->route->stats[http_receive->request_method],
-			process_time,
-			total_received, http_receive->sent
-		);
-
-		if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-			http_route_file_stats_update (
-				http_receive->route->file_stats,
-				http_receive->file_stats
-			);
-		}
-	}
-
 	http_receive_delete (http_receive);
 
+	cerver_receive_delete (cr);
+
 	#if defined (HANDLER_DEBUG) && defined (HTTP_DEBUG)
-	cerver_log_debug ("cerver_receive_http () ended in %f seconds", process_time);
+	cerver_log_debug (
+		"cerver_receive_http () ended in %f seconds",
+		timer_get_current_time () - start_time
+	);
 	#endif
 
 	return NULL;
@@ -2235,6 +2288,9 @@ static u8 cerver_register_new_connection_auth_required (Cerver *cerver, Connecti
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+
 static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection *connection) {
 
 	u8 retval = 1;
@@ -2305,6 +2361,8 @@ static u8 cerver_register_new_connection_normal_web (Cerver *cerver, Connection 
 
 }
 
+#pragma GCC diagnostic pop
+
 static u8 cerver_register_new_connection_normal_default_create_detachable (CerverReceive *cr) {
 
 	u8 retval = 1;
@@ -2338,6 +2396,9 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (Cerve
 	return retval;
 
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
 
 static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connection *connection) {
 
@@ -2443,6 +2504,8 @@ static u8 cerver_register_new_connection_normal_default (Cerver *cerver, Connect
 
 }
 
+#pragma GCC diagnostic pop
+
 static u8 cerver_register_new_connection_normal (Cerver *cerver, Connection *connection) {
 
 	u8 retval = 1;
@@ -2476,13 +2539,13 @@ static void cerver_register_new_connection (
 
 	Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
 	if (connection) {
-		// #ifdef CERVER_DEBUG
+		#ifdef HANDLER_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"New connection from IP address: %s -- Port: %d",
 			connection->ip->str, connection->port
 		);
-		// #endif
+		#endif
 
 		connection->active = true;
 
@@ -2530,7 +2593,9 @@ static void cerver_accept (void *cerver_ptr) {
 		// accept the new connection
 		i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
 		if (new_fd > 0) {
-			printf ("Accepted fd: %d\n", new_fd);
+			#ifdef HANDLER_DEBUG
+			cerver_log_debug ("Accepted fd: %d", new_fd);
+			#endif
 			cerver_register_new_connection (cerver, new_fd, client_address);
 		}
 

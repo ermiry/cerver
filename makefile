@@ -1,3 +1,5 @@
+TYPE		:= development
+
 # TARGET      := cerver
 SLIB		:= libcerver.so
 
@@ -6,10 +8,11 @@ MATH		:= -lm
 
 OPENSSL		:= -l ssl -l crypto
 
+CURL		:= -l curl
+
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -g \
-				-D CERVER_DEBUG -D CERVER_STATS 			\
+DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
 				-D HANDLER_DEBUG 							\
@@ -20,6 +23,8 @@ DEVELOPMENT	:= -g \
 				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG -D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG -D HTTP_RESPONSE_DEBUG
 
 CC          := gcc
+
+GCCVGTEQ8 	:= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 8)
 
 SRCDIR      := src
 INCDIR      := include
@@ -42,31 +47,89 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
-CFLAGS      := $(DEVELOPMENT) $(DEFINES) -Wall -Wno-unknown-pragmas -fPIC
+# common flags
+# -Wconversion
+COMMON		:= -march=native \
+				-Wall -Wno-unknown-pragmas \
+				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
+				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
+				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
+				-Wunused-parameter -Wunused-but-set-parameter -Wunused-result \
+				-Wformat -Wformat-nonliteral -Wformat-security -Wformat-overflow -Wformat-signedness -Wformat-truncation
+
+# main
+CFLAGS      := $(DEFINES)
+
+ifeq ($(TYPE), development)
+	CFLAGS += -g -fasynchronous-unwind-tables $(DEVELOPMENT)
+else ifeq ($(TYPE), test)
+	CFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-protector -O2
+else
+	CFLAGS += -D_FORTIFY_SOURCE=2 -O2
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	CFLAGS += -std=c++11 -fpermissive
+else
+	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
+	# check for compiler version
+	ifeq "$(GCCVGTEQ8)" "1"
+    	CFLAGS += -Wcast-function-type
+	else
+		CFLAGS += -Wbad-function-cast
+	endif
+endif
+
+# common flags
+CFLAGS += -fPIC $(COMMON)
+
 LIB         := $(PTHREAD) $(MATH) $(OPENSSL)
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
-EXAFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
-EXALIBS		:= -L ./bin -l cerver
-EXAINC		:= -I ./$(EXAMDIR)
-
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
-TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
-TESTINC		:= -I ./$(TESTDIR)
-
-BENCHFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas
-BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
-BENCHINC	:= -I ./$(BENCHDIR)
-
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
+
+# examples
+EXAFLAGS	:= $(DEFINES)
+
+ifeq ($(TYPE), development)
+	EXAFLAGS += -g -D EXAMPLES_DEBUG -fasynchronous-unwind-tables
+else ifeq ($(TYPE), test)
+	EXAFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-protector -O2
+else
+	EXAFLAGS += -D_FORTIFY_SOURCE=2 -O2
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	EXAFLAGS += -std=c++11 -fpermissive
+else
+	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+# common flags
+EXAFLAGS += -Wall -Wno-unknown-pragmas
+
+EXALIBS		:= -L ./bin -l cerver
+EXAINC		:= -I ./$(EXAMDIR)
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+# tests
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
+TESTLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
+TESTINC		:= -I ./$(TESTDIR)
+
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+# benchmarks 
+BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
+BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
+BENCHINC	:= -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
@@ -147,8 +210,8 @@ examples: $(EXOBJS)
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
-	@$(CC) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
+	$(CC) $(EXADEBUG) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
+	@$(CC) $(EXADEBUG) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
 	@cp -f $(EXABUILD)/$*.$(DEPEXT) $(EXABUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
@@ -157,8 +220,12 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 test: $(TESTOBJS)
 	@mkdir -p ./$(TESTTARGET)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/dlist.o -o ./$(TESTTARGET)/dlist $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/web.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/web $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/api.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/api $(TESTLIBS)
+	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/web/upload.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/upload $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_encode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_encode $(TESTLIBS)
 	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/jwt_decode.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/jwt_decode $(TESTLIBS)
 
@@ -174,7 +241,9 @@ $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
+	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
+	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # compile BENCHs
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)

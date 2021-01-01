@@ -26,9 +26,9 @@ void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
-		printf ("\nHTTP Cerver stats:\n");
+		cerver_log_msg ("\nHTTP Cerver stats:\n");
 		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		printf ("\n");
+		cerver_log_line_break ();
 		cerver_teardown (web_cerver);
 	}
 
@@ -48,8 +48,12 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
-	if (http_response_render_file (http_receive, "./examples/web/public/index.html")) {
-		cerver_log_error ("Failed to send ./examples/web/public/index.html");
+	if (http_response_render_file (
+		http_receive, "./examples/web/public/index.html"
+	)) {
+		cerver_log_error (
+			"Failed to send ./examples/web/public/index.html"
+		);
 	}
 
 }
@@ -60,9 +64,13 @@ void test_handler (
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Test route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Test route works!"
+	);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -105,9 +113,13 @@ void hola_handler (
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Hola route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Hola route works!"
+	);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -120,9 +132,13 @@ void adios_handler (
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Adios route works!");
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Adios route works!"
+	);
 	if (res) {
+		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
+		#endif
 		http_response_send (res, http_receive);
 		http_respponse_delete (res);
 	}
@@ -184,7 +200,9 @@ int main (int argc, char **argv) {
 	srand (time (NULL));
 
 	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 

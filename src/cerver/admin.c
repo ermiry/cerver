@@ -446,7 +446,7 @@ u8 admin_send_packet_pieces (Admin *admin, Packet *packet,
 			pieces, sizes, n_pieces,
 			0, &sent
 		)) {
-			printf ("admin_send_packet_pieces () - Sent to admin: %ld\n", sent);
+			printf ("admin_send_packet_pieces () - Sent to admin: %zu\n", sent);
 
 			admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
 
@@ -907,7 +907,7 @@ static void *admin_poll (void *cerver_ptr);
 
 // called in a dedicated thread only if a user method was set
 // executes methods every tick
-static void admin_cerver_update (void *args) {
+static void *admin_cerver_update (void *args) {
 
 	if (args) {
 		AdminCerver *admin_cerver = (AdminCerver *) args;
@@ -919,7 +919,9 @@ static void admin_cerver_update (void *args) {
 		);
 		#endif
 
-		CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_args);
+		CerverUpdate *cu = cerver_update_new (
+			admin_cerver->cerver, admin_cerver->update_args
+		);
 
 		u32 time_per_frame = 1000000 / admin_cerver->update_ticks;
 		// printf ("time per frame: %d\n", time_per_frame);
@@ -932,13 +934,13 @@ static void admin_cerver_update (void *args) {
 		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
 		while (admin_cerver->cerver->isRunning) {
-			clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
 
 			// do stuff
 			if (admin_cerver->update) admin_cerver->update (cu);
 
 			// limit the fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
 			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
 			// printf ("temp: %d\n", temp);
 			sleep_time = time_per_frame - temp;
@@ -948,7 +950,7 @@ static void admin_cerver_update (void *args) {
 			}
 
 			// count fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
 			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
 			delta_ticks += delta_time;
 			fps++;
@@ -976,11 +978,13 @@ static void admin_cerver_update (void *args) {
 		#endif
 	}
 
+	return NULL;
+
 }
 
 // called in a dedicated thread only if a user method was set
 // executes methods every x seconds
-static void admin_cerver_update_interval (void *args) {
+static void *admin_cerver_update_interval (void *args) {
 
 	if (args) {
 		AdminCerver *admin_cerver = (AdminCerver *) args;
@@ -992,7 +996,9 @@ static void admin_cerver_update_interval (void *args) {
 		);
 		#endif
 
-		CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_interval_args);
+		CerverUpdate *cu = cerver_update_new (
+			admin_cerver->cerver, admin_cerver->update_interval_args
+		);
 
 		while (admin_cerver->cerver->isRunning) {
 			if (admin_cerver->update_interval) admin_cerver->update_interval (cu);
@@ -1015,6 +1021,8 @@ static void admin_cerver_update_interval (void *args) {
 		);
 		#endif
 	}
+
+	return NULL;
 
 }
 
@@ -1230,7 +1238,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 			if (admin_cerver->update) {
 				if (thread_create_detachable (
 					&admin_cerver->update_thread_id,
-					(void *(*) (void *)) admin_cerver_update,
+					admin_cerver_update,
 					admin_cerver
 				)) {
 					cerver_log_error (
@@ -1243,7 +1251,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 			if (admin_cerver->update_interval) {
 				if (thread_create_detachable (
 					&admin_cerver->update_interval_thread_id,
-					(void *(*) (void *)) admin_cerver_update_interval,
+					admin_cerver_update_interval,
 					admin_cerver
 				)) {
 					cerver_log_error (
@@ -1473,12 +1481,17 @@ static void admin_cerver_client_packet_handler (Packet *packet) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 // handles a request made from the admin
 static void admin_cerver_request_packet_handler (Packet *packet) {
 
 	// TODO:
 
 }
+
+#pragma GCC diagnostic pop
 
 // handles an PACKET_TYPE_APP packet type
 static void admin_app_packet_handler (Packet *packet) {

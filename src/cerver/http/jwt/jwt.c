@@ -312,7 +312,7 @@ void *jwt_b64_decode (const char *src, int *ret_len) {
 	if (buf == NULL)
 		return NULL;
 
-	*ret_len = base64_decode ((char *) buf, new_thing);
+	*ret_len = base64_decode ((char *) buf, new_thing, strlen (new_thing));
 
 	return buf;
 

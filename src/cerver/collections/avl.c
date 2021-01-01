@@ -3,15 +3,29 @@
 
 #include <pthread.h>
 
+#include "cerver/types/types.h"
+
 #include "cerver/collections/avl.h"
 
-static void *avl_internal_get_node_data (AVLTree *tree, void *id, Comparator comparator);
-static void avl_internal_clear_tree (AVLNode **node, void (*destroy)(void *data));
+static void *avl_internal_get_node_data (
+	AVLTree *tree, void *id, Comparator comparator
+);
 
-static unsigned int avl_insert_node_r (AVLNode **parent, Comparator comparator, void *id, char *flag);
-static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comparator, void *id, char *flag);
+static void avl_internal_clear_tree (
+	AVLNode **node, void (*destroy)(void *data)
+);
 
-unsigned int avl_clear_tree (AVLTree *tree, void (*destroy)(void *data));
+static unsigned int avl_insert_node_r (
+	AVLNode **parent, Comparator comparator, void *id, char *flag
+);
+
+static void *avl_remove_node_r (
+	AVLTree *tree, AVLNode **parent, Comparator comparator, void *id, char *flag
+);
+
+unsigned int avl_clear_tree (
+	AVLTree *tree, void (*destroy)(void *data)
+);
 
 static AVLTree *avl_new (void) {
 
@@ -36,7 +50,7 @@ void avl_delete (AVLTree *tree) {
 	if (tree) {
 		avl_clear_tree (tree, tree->destroy);
 
-		pthread_mutex_destroy (tree->mutex);
+		(void) pthread_mutex_destroy (tree->mutex);
 		free (tree->mutex);
 
 		free (tree);
@@ -44,11 +58,21 @@ void avl_delete (AVLTree *tree) {
 
 }
 
-void avl_set_comparator (AVLTree *tree, Comparator comparator) { if (tree) tree->comparator = comparator; }
+void avl_set_comparator (AVLTree *tree, Comparator comparator) {
+	
+	if (tree) tree->comparator = comparator;
+	
+}
 
-void avl_set_destroy (AVLTree *tree, void (*destroy)(void *data)) { if (tree) tree->destroy = destroy; }
+void avl_set_destroy (AVLTree *tree, void (*destroy)(void *data)) {
+	
+	if (tree) tree->destroy = destroy;
+	
+}
 
-AVLTree *avl_init (Comparator comparator, void (*destroy)(void *data)) {
+AVLTree *avl_init (
+	Comparator comparator, void (*destroy)(void *data)
+) {
 
 	AVLTree *tree = avl_new ();
 	if (tree) {
@@ -56,7 +80,7 @@ AVLTree *avl_init (Comparator comparator, void (*destroy)(void *data)) {
 		tree->destroy = destroy;
 
 		tree->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		pthread_mutex_init (tree->mutex, NULL);
+		(void) pthread_mutex_init (tree->mutex, NULL);
 	}
 
 	return tree;
@@ -69,11 +93,11 @@ bool avl_is_empty (AVLTree *tree) {
 	bool retval = true;
 
 	if (tree) {
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
 		retval = !(tree->root);
 
-		pthread_mutex_unlock (tree->mutex);
+		(void) pthread_mutex_unlock (tree->mutex);
 	}
 
 	return retval;
@@ -86,11 +110,11 @@ bool avl_is_not_empty (AVLTree *tree) {
 	bool retval = true;
 
 	if (tree) {
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
 		retval = !(tree->root);
 
-		pthread_mutex_unlock (tree->mutex);
+		(void) pthread_mutex_unlock (tree->mutex);
 	}
 
 	return retval;
@@ -103,11 +127,11 @@ size_t avl_size (const AVLTree *avl) {
 	size_t retval = 0;
 
 	if (avl) {
-		pthread_mutex_lock (avl->mutex);
+		(void) pthread_mutex_lock (avl->mutex);
 
 		retval = avl->size;
 
-		pthread_mutex_unlock (avl->mutex);
+		(void) pthread_mutex_unlock (avl->mutex);
 	}
 
 	return retval;
@@ -116,34 +140,40 @@ size_t avl_size (const AVLTree *avl) {
 
 // returns content of the required node
 // option to pass a different comparator than the one that was originally set
-void *avl_get_node_data (AVLTree *tree, void *id, Comparator comparator) {
+void *avl_get_node_data (
+	AVLTree *tree, void *id, Comparator comparator
+) {
+
+	void *data = NULL;
 
 	if (tree && id) {
 		Comparator comp = comparator ? comparator : tree->comparator;
 		if (comp) {
-			return avl_internal_get_node_data (tree, id, comp);
+			data = avl_internal_get_node_data (tree, id, comp);
 		}
 	}
 
-	return NULL;
+	return data;
 
 }
 
 // works as avl_get_node_data () but this method is thread safe
 // will lock tree mutex to perform search
-void *avl_get_node_data_safe (AVLTree *tree, void *id, Comparator comparator) {
+void *avl_get_node_data_safe (
+	AVLTree *tree, void *id, Comparator comparator
+) {
 
 	void *retval = NULL;
 
 	if (tree && id) {
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
 		Comparator comp = comparator ? comparator : tree->comparator;
 		if (comp) {
 			retval = avl_internal_get_node_data (tree, id, comp);
 		}
 
-		pthread_mutex_unlock (tree->mutex);
+		(void) pthread_mutex_unlock (tree->mutex);
 	}
 
 	return retval;
@@ -152,20 +182,24 @@ void *avl_get_node_data_safe (AVLTree *tree, void *id, Comparator comparator) {
 
 // inserts a new node in the tree
 // returns 0 on success, 1 on error
-unsigned int avl_insert_node (AVLTree *tree, void *data) {
+unsigned int avl_insert_node (
+	AVLTree *tree, void *data
+) {
 
 	unsigned int retval = 1;
 
 	if (tree && data) {
 		char flag = 0;
 
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
-		if (!avl_insert_node_r (&(tree->root), tree->comparator, data, &flag)) {
+		if (!avl_insert_node_r (
+			&(tree->root), tree->comparator, data, &flag)
+		) {
 			tree->size++;
 		}
 
-		pthread_mutex_unlock (tree->mutex);
+		(void) pthread_mutex_unlock (tree->mutex);
 	}
 
 	return retval;
@@ -173,37 +207,47 @@ unsigned int avl_insert_node (AVLTree *tree, void *data) {
 }
 
 // user function to remove a node
-void *avl_remove_node (AVLTree *tree, void *data) {
+void *avl_remove_node (
+	AVLTree *tree, void *data
+) {
 
 	void *retval = NULL;
 
 	if (tree && data) {
 		char flag = 0;
 
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
-		retval = avl_remove_node_r (tree, &tree->root, tree->comparator, data, &flag);
+		retval = avl_remove_node_r (
+			tree, &tree->root, tree->comparator, data, &flag
+		);
+
 		if (retval) tree->size--;
 
-		pthread_mutex_unlock (tree->mutex);
+		(void) pthread_mutex_unlock (tree->mutex);
 	}
 
 	return retval;
 
 }
 
-// removes all nodes from an avl tree, the node nada is only destroyed if a destroy method is set
+// removes all nodes from an avl tree
+// the nodes data is only destroyed if a destroy method is set
 // returns 0 on success, 1 on error
-unsigned int avl_clear_tree (AVLTree *tree, void (*destroy)(void *data)) {
+unsigned int avl_clear_tree (
+	AVLTree *tree, void (*destroy)(void *data)
+) {
 
 	unsigned int retval = 1;
 
 	if (tree) {
-		pthread_mutex_lock (tree->mutex);
+		(void) pthread_mutex_lock (tree->mutex);
 
-		avl_internal_clear_tree (&tree->root, tree->destroy);
+		void (*actual_destroy)(void *) = destroy ? destroy : tree->destroy;
 
-		pthread_mutex_unlock (tree->mutex);
+		avl_internal_clear_tree (&tree->root, actual_destroy);
+
+		(void) pthread_mutex_unlock (tree->mutex);
 
 		retval = 0;
 	}
@@ -229,7 +273,9 @@ static AVLNode *avl_node_new (void *data) {
 
 }
 
-static void *avl_internal_get_node_data (AVLTree *tree, void *id, Comparator comparator) {
+static void *avl_internal_get_node_data (
+	AVLTree *tree, void *id, Comparator comparator
+) {
 
 	int ret = 0;
 	AVLNode *node = tree->root;
@@ -245,7 +291,9 @@ static void *avl_internal_get_node_data (AVLTree *tree, void *id, Comparator com
 
 }
 
-static void avl_internal_clear_tree (AVLNode **node, void (*destroy)(void *data)) {
+static void avl_internal_clear_tree (
+	AVLNode **node, void (*destroy)(void *data)
+) {
 
 	if (*node) {
 		AVLNode *ptr = *node;
@@ -282,7 +330,9 @@ static void avl_left_rotation (AVLNode **parent) {
 }
 
 // fix balance based on given information
-static void avl_balance_fix (AVLNode *parent, int dependency) {
+static void avl_balance_fix (
+	AVLNode *parent, int dependency
+) {
 
 	parent->balance = 0;
 
@@ -306,7 +356,9 @@ static void avl_balance_fix (AVLNode *parent, int dependency) {
 }
 
 // verify and treat an insertion in right subtree
-static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
+static void avl_treat_left_insertion (
+	AVLNode **parent, char *flag
+) {
 
 	(*parent)->balance--;
 
@@ -324,7 +376,9 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 				if ((*parent)->left->right) {
 					avl_left_rotation (&(*parent)->left);
 					avl_right_rotation (parent);
-					avl_balance_fix (*parent, (*parent)->left->right->balance);
+					avl_balance_fix (
+						*parent, (*parent)->left->right->balance
+					);
 				}
 			}
 
@@ -337,7 +391,9 @@ static void avl_treat_left_insertion (AVLNode **parent, char *flag) {
 }
 
 // verify and treat a insertion in left subtree
-static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
+static void avl_treat_right_insertion (
+	AVLNode **parent, char *flag
+) {
 
 	(*parent)->balance++;
 
@@ -355,7 +411,9 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 				if ((*parent)->right->left) {
 					avl_right_rotation (&(*parent)->right);
 					avl_left_rotation (parent);
-					avl_balance_fix (*parent, (*parent)->right->left->balance);
+					avl_balance_fix (
+						*parent, (*parent)->right->left->balance
+					);
 				}
 			}
 
@@ -367,7 +425,9 @@ static void avl_treat_right_insertion (AVLNode **parent, char *flag) {
 }
 
 // verify and treat a removal in left subtree
-static void avl_treat_left_reduction (AVLNode **parent, char *flag) {
+static void avl_treat_left_reduction (
+	AVLNode **parent, char *flag
+) {
 
 	(*parent)->balance++;
 
@@ -378,27 +438,27 @@ static void avl_treat_left_reduction (AVLNode **parent, char *flag) {
 			if ((*parent)->right) {
 				short shortcut = (*parent)->right->balance;
 				switch (shortcut) {
-					case 1:
+					case 1: {
 						avl_left_rotation (parent);
 						(*parent)->balance = 0;
 						(*parent)->left->balance = 0;
 						*flag = 1;
-						break;
+					} break;
 
-					case 0:
+					case 0: {
 						avl_left_rotation (parent);
 						(*parent)->balance = -1;
 						(*parent)->left->balance = 1;
 						*flag = 0;
-						break;
+					} break;
 
-					case -1:
+					case -1: {
 						shortcut = (*parent)->right->left->balance;
 						avl_right_rotation (&(*parent)->right);
 						avl_left_rotation (parent);
 						avl_balance_fix (*parent, shortcut);
 						*flag = 1;
-						break;
+					} break;
 				}
 			}
 		} break;
@@ -409,7 +469,9 @@ static void avl_treat_left_reduction (AVLNode **parent, char *flag) {
 }
 
 // verify and treat a removal in right subtree
-static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
+static void avl_treat_right_reduction (
+	AVLNode **parent, char *flag
+) {
 
 	(*parent)->balance--;
 
@@ -420,25 +482,25 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 			if ((*parent)->left) {
 				short shortcut = (*parent)->left->balance;
 				switch (shortcut) {
-					case -1:
+					case -1: {
 						avl_right_rotation (parent);
 						(*parent)->balance = 0;
 						(*parent)->right->balance = 0;
 						*flag = 1;
-						break;
-					case 0:
+					} break;
+					case 0: {
 						avl_right_rotation(parent);
 						(*parent)->balance = 1;
 						(*parent)->right->balance = -1;
 						*flag = 0;
-						break;
-					case 1:
+					} break;
+					case 1: {
 						shortcut = (*parent)->left->right->balance;
 						avl_left_rotation (&(*parent)->left);
 						avl_right_rotation (parent);
 						avl_balance_fix (*parent, shortcut);
 						*flag  = 1;
-						break;
+					} break;
 				}
 			}
 		} break;
@@ -449,7 +511,9 @@ static void avl_treat_right_reduction (AVLNode **parent, char *flag) {
 }
 
 // recursive function to insert in the tree
-static unsigned int avl_insert_node_r (AVLNode **parent, Comparator comparator, void *id, char *flag) {
+static unsigned int avl_insert_node_r (
+	AVLNode **parent, Comparator comparator, void *id, char *flag
+) {
 
 	unsigned int retval = 1;
 
@@ -498,13 +562,18 @@ static unsigned int avl_insert_node_r (AVLNode **parent, Comparator comparator, 
 }
 
 // recursive function to remove a node from the tree
-static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comparator, void *id, char *flag) {
+static void *avl_remove_node_r (
+	AVLTree *tree, AVLNode **parent, Comparator comparator, void *id, char *flag
+) {
 
 	if (*parent != NULL) {
 		int ret = comparator ((*parent)->id, id);
 
 		if (ret < 0) {
-			void *data = avl_remove_node_r (tree, &(*parent)->right, comparator, id, flag);
+			void *data = avl_remove_node_r (
+				tree, &(*parent)->right, comparator, id, flag
+			);
+
 			if (*flag == 1) avl_treat_right_reduction (&(*parent), flag);
 			return data;
 		}
@@ -518,7 +587,9 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 				(*parent)->id = ptr->id;
 				ptr->id = copy.id;
 
-				return avl_remove_node_r (tree, &(*parent)->right, comparator, id, flag);
+				return avl_remove_node_r (
+					tree, &(*parent)->right, comparator, id, flag
+				);
 			}
 			
 			else {
@@ -552,7 +623,10 @@ static void *avl_remove_node_r (AVLTree *tree, AVLNode **parent, Comparator comp
 		}
 
 		else {
-			void *data = avl_remove_node_r (tree, &(*parent)->left, comparator, id, flag);
+			void *data = avl_remove_node_r (
+				tree, &(*parent)->left, comparator, id, flag
+			);
+			
 			if (*flag == 1) avl_treat_left_reduction (&(*parent), flag);
 			return data;
 		}

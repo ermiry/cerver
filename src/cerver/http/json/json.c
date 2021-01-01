@@ -22,6 +22,9 @@
 #include "cerver/http/json/utf.h"
 #include "cerver/http/json/value.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 #pragma region memory
 
 void *jsonp_malloc (size_t size) {
@@ -319,7 +322,7 @@ int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 	value = strtod (strbuffer->value, &end);
 	assert (end == strbuffer->value + strbuffer->length);
 
-	if ((value == HUGE_VAL || value == -HUGE_VAL) && errno == ERANGE) {
+	if ((value > HUGE_VAL || value < -HUGE_VAL) && errno == ERANGE) {
 		/* Overflow */
 		return -1;
 	}
@@ -1463,8 +1466,8 @@ static int lex_scan_number (
 
 	lex_unget_unsave(lex, c);
 
-	if (jsonp_strtod(&lex->saved_text, &doubleval)) {
-		error_set(error, lex, json_error_numeric_overflow, "real number overflow");
+	if (jsonp_strtod (&lex->saved_text, &doubleval)) {
+		error_set (error, lex, json_error_numeric_overflow, "real number overflow");
 		goto out;
 	}
 
@@ -1963,11 +1966,10 @@ json_t *json_loadf (
 
 static int fd_get_func (int *fd) {
 
-	#ifdef HAVE_UNISTD_H
-	uint8_t c;
-	if (read(*fd, &c, 1) == 1)
-		return c;
-	#endif
+	uint8_t c = 0;
+	if (read (*fd, &c, 1) == 1)
+		return (int) c;
+	
 	return EOF;
 
 }
@@ -3108,7 +3110,7 @@ static void print_json_object (
 	const char *key = NULL;
 	json_t *value = NULL;
 	size_t size = json_object_size (element);
-	printf ("JSON Object of %ld pair%s:\n", size, json_plural (size));
+	(void) printf ("JSON Object of %lu pair %s:\n", size, json_plural (size));
 	json_object_foreach (element, key, value) {
 		print_json_indent (indent + 2);
 		print_json_aux (value, indent + 2, key);
@@ -3123,7 +3125,7 @@ static void print_json_array (
 	print_json_indent (indent);
 
 	size_t size = json_array_size (element);
-	printf("JSON Array of %ld element%s:\n", size, json_plural (size));
+	(void) printf ("JSON Array of %lu element%s:\n", size, json_plural (size));
 	for (size_t i = 0; i < size; i++) {
 		print_json_aux (json_array_get (element, i), indent + 2, key);
 	}
@@ -3134,8 +3136,8 @@ static void print_json_string (
 	json_t *element, int indent, const char *key
 ) {
 
-	print_json_indent(indent);
-	printf ("[String] %s: \"%s\"\n", key, json_string_value (element));
+	print_json_indent (indent);
+	(void) printf ("[String] %s: \"%s\"\n", key, json_string_value (element));
 
 }
 
@@ -3144,7 +3146,10 @@ static void print_json_integer (
 ) {
 
 	print_json_indent (indent);
-	printf ("[Integer] %s: \"%" JSON_INTEGER_FORMAT "\"\n", key, json_integer_value(element));
+	(void) printf (
+		"[Integer] %s: \"%" JSON_INTEGER_FORMAT "\"\n",
+		key, json_integer_value (element)
+	);
 
 }
 
@@ -3153,34 +3158,34 @@ static void print_json_real (
 ) {
 
 	print_json_indent (indent);
-	printf ("[Real] %s: %f\n", key, json_real_value (element));
+	(void) printf ("[Real] %s: %f\n", key, json_real_value (element));
 
 }
 
 static void print_json_true (
-	json_t *element, int indent, const char *key
+	int indent, const char *key
 ) {
 
 	print_json_indent (indent);
-	printf ("%s: True\n", key);
+	(void) printf ("%s: True\n", key);
 
 }
 
 static void print_json_false (
-	json_t *element, int indent, const char *key
+	int indent, const char *key
 ) {
 
 	print_json_indent (indent);
-	printf ("%s: False\n", key);
+	(void) printf ("%s: False\n", key);
 
 }
 
 static void print_json_null (
-	json_t *element, int indent, const char *key
+	int indent, const char *key
 ) {
 
 	print_json_indent (indent);
-	printf ("%s: NULL\n", key);
+	(void) printf ("%s: NULL\n", key);
 
 }
 
@@ -3194,11 +3199,15 @@ static void print_json_aux (
 		case JSON_STRING: print_json_string (element, indent, key); break;
 		case JSON_INTEGER: print_json_integer (element, indent, key); break;
 		case JSON_REAL: print_json_real (element, indent, key); break;
-		case JSON_TRUE: print_json_true (element, indent, key); break;
-		case JSON_FALSE: print_json_false (element, indent, key); break;
-		case JSON_NULL: print_json_null (element, indent, key); break;
+		case JSON_TRUE: print_json_true (indent, key); break;
+		case JSON_FALSE: print_json_false (indent, key); break;
+		case JSON_NULL: print_json_null (indent, key); break;
 
-		default: fprintf (stderr, "unrecognized JSON type %d\n", json_typeof (element)); break;
+		default: {
+			(void) fprintf (
+				stderr, "unrecognized JSON type %u\n", json_typeof (element)
+			);
+		} break;
 	}
 
 }
@@ -3210,3 +3219,5 @@ void json_print (json_t *root) {
 }
 
 #pragma endregion
+
+#pragma GCC diagnostic pop

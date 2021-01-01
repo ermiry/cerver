@@ -1,4 +1,4 @@
-ARG CERVER_VERSION=2.0b-19
+ARG CERVER_VERSION=2.0b-21
 
 FROM gcc as builder
 
@@ -10,7 +10,7 @@ RUN mkdir /opt/cerver && cd /opt/cerver \
     && wget -q --no-check-certificate https://github.com/ermiry/cerver/archive/${CERVER_VERSION}.zip \
     && unzip ${CERVER_VERSION}.zip \
     && cd cerver-${CERVER_VERSION} \
-    && make DEVELOPMENT='' -j4
+    && make TYPE=production -j4
 
 ############
 FROM ubuntu:bionic

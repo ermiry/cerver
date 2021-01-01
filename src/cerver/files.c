@@ -866,6 +866,9 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 // opens the file using an already created filename
 // and use the fd to receive and save the file
 u8 file_receive_actual (
@@ -947,5 +950,7 @@ u8 file_receive_actual (
 	return retval;
 
 }
+
+#pragma GCC diagnostic pop
 
 #pragma endregion

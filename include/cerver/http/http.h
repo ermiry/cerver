@@ -21,18 +21,20 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+#define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
-	XX(0, HTML, html, text/html; charset=UTF-8)				\
-	XX(1, CSS, css, text/css)								\
-	XX(2, JS, js, application/javascript)					\
-	XX(3, JPG, jpg, image/jpg)								\
-	XX(4, PNG, png, image/png)								\
-	XX(5, MP3, mp3, audio/mp3)								\
-	XX(6, ICO, ico, image/x-icon)							\
-	XX(7, GIF, gif, image/gif)								\
-	XX(8, OCTET, octet, application/octet-stream)			\
+	XX(0, HTML,		html,	text/html; charset=UTF-8)		\
+	XX(1, CSS,		css,	text/css)						\
+	XX(2, JS,		js,		application/javascript)			\
+	XX(3, JPG,		jpg,	image/jpg)						\
+	XX(4, PNG,		png,	image/png)						\
+	XX(5, MP3,		mp3,	audio/mp3)						\
+	XX(6, ICO,		ico,	image/x-icon)					\
+	XX(7, GIF,		gif,	image/gif)						\
+	XX(8, OCTET,	octet,	application/octet-stream)
 
 typedef enum ContentType {
 
@@ -74,10 +76,12 @@ CERVER_PUBLIC KeyValuePair *key_value_pair_create (
 );
 
 CERVER_PUBLIC const String *key_value_pairs_get_value (
-	DoubleList *pairs, const char *key
+	const DoubleList *pairs, const char *key
 );
 
-CERVER_PUBLIC void key_value_pairs_print (DoubleList *pairs);
+CERVER_PUBLIC void key_value_pairs_print (
+	const DoubleList *pairs
+);
 
 #pragma endregion
 
@@ -99,6 +103,13 @@ struct _HttpCerver {
 		const HttpRequest *request
 	);
 
+	// returns not found on not matching requests 
+	bool not_found_handler;
+	void (*not_found)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
 	// uploads
 	String *uploads_path;              // default uploads path
 	void (*uploads_filename_generator)(
@@ -106,20 +117,30 @@ struct _HttpCerver {
 		const char *original_filename,
 		char *generated_filename
 	);
+
 	String *(*uploads_dirname_generator)(const CerverReceive *);
+
+	// delete uploaded files when the request ends
+	bool uploads_delete_when_done;
 
 	// auth
 	jwt_alg_t jwt_alg;
 
-	String *jwt_opt_key_name;          // jwt private key filename
-	String *jwt_private_key;           // jwt actual private key
+	String *jwt_opt_key_name;		// jwt private key filename
+	String *jwt_private_key;		// jwt actual private key
 
-	String *jwt_opt_pub_key_name;      // jwt public key filename
-	String *jwt_public_key;            // jwt actual public key
+	String *jwt_opt_pub_key_name;	// jwt public key filename
+	String *jwt_public_key;			// jwt actual public key
 
 	// stats
-	size_t n_cath_all_requests;        // failed to match a route
-	size_t n_failed_auth_requests;     // failed to auth with private route 
+	size_t n_incompleted_requests;	// the request wasn't parsed completely
+	size_t n_unhandled_requests;	// failed to get matching route
+
+	size_t n_catch_all_requests;	// redirected to catch all route
+	size_t n_failed_auth_requests;	// failed to auth with private route 
+
+	// used to correctly update stats
+	pthread_mutex_t *mutex;
 
 };
 
@@ -127,11 +148,22 @@ typedef struct _HttpCerver HttpCerver;
 
 CERVER_PRIVATE HttpCerver *http_cerver_new (void);
 
-CERVER_PRIVATE void http_cerver_delete (void *http_cerver_ptr);
+CERVER_PRIVATE void http_cerver_delete (
+	void *http_cerver_ptr
+);
 
-CERVER_PRIVATE HttpCerver *http_cerver_create (struct _Cerver *cerver);
+CERVER_PRIVATE HttpCerver *http_cerver_create (
+	struct _Cerver *cerver
+);
 
-CERVER_PRIVATE void http_cerver_init (HttpCerver *http_cerver);
+CERVER_PRIVATE void http_cerver_init (
+	HttpCerver *http_cerver
+);
+
+// destroy values allocated in http_cerver_init ()
+CERVER_PRIVATE void http_cerver_end (
+	HttpCerver *http_cerver
+);
 
 #pragma endregion
 
@@ -171,10 +203,29 @@ CERVER_EXPORT void http_cerver_route_register (
 	HttpCerver *http_cerver, HttpRoute *route
 );
 
-// set a route to catch any requet that didn't match any registered route
+// set a route to catch any requet
+// that didn't match any registered route
 CERVER_EXPORT void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
 	void (*catch_all_route)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+);
+
+// enables the use of the default not found handler
+// which returns 404 status on no matching routes
+// by default this option is disabled
+// as the catch all handler is used instead
+CERVER_EXPORT void http_cerver_set_not_found_handler (
+	HttpCerver *http_cerver
+);
+
+// sets a custom handler to be executed on no matching routes
+// it should return status 404
+CERVER_EXPORT void http_cerver_set_not_found_route (
+	HttpCerver *http_cerver, 
+	void (*not_found)(
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
@@ -208,6 +259,14 @@ extern void http_cerver_set_uploads_filename_generator (
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
 	String *(*dirname_generator)(const CerverReceive *)
+);
+
+// specifies whether uploads are deleted after the requested has ended
+// unless the request files have been explicitly saved using
+// http_request_multi_part_keep_files ()
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
+CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
+	HttpCerver *http_cerver, bool value
 );
 
 #pragma endregion
@@ -250,22 +309,30 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 #pragma region stats
 
 // print number of routes & handlers
-CERVER_PUBLIC void http_cerver_routes_stats_print (HttpCerver *http_cerver);
+CERVER_PUBLIC void http_cerver_routes_stats_print (
+	const HttpCerver *http_cerver
+);
 
 // print route's stats
-CERVER_PUBLIC void http_cerver_route_stats_print (HttpRoute *route);
+CERVER_PUBLIC void http_cerver_route_stats_print (
+	const HttpRoute *route
+);
 
 // print all http cerver stats, general & by route
-CERVER_PUBLIC void http_cerver_all_stats_print (HttpCerver *http_cerver);
+CERVER_PUBLIC void http_cerver_all_stats_print (
+	const HttpCerver *http_cerver
+);
 
 #pragma endregion
 
 #pragma region url
 
-// returns a newly allocated url-encoded version of str that should be deleted after use
+// returns a newly allocated url-encoded version of str
+// that should be deleted after use
 CERVER_PUBLIC char *http_url_encode (const char *str);
 
-// returns a newly allocated url-decoded version of str that should be deleted after use
+// returns a newly allocated url-decoded version of str
+// that should be deleted after use
 CERVER_PUBLIC char *http_url_decode (const char *str);
 
 #pragma endregion
@@ -279,23 +346,50 @@ CERVER_PUBLIC DoubleList *http_parse_query_into_pairs (
 
 // gets the matching value for the requested key from a list of pairs
 CERVER_PUBLIC const String *http_query_pairs_get_value (
-	DoubleList *pairs, const char *key
+	const DoubleList *pairs, const char *key
 );
 
-CERVER_PUBLIC void http_query_pairs_print (DoubleList *pairs);
+CERVER_PUBLIC void http_query_pairs_print (
+	const DoubleList *pairs
+);
 
 #pragma endregion
 
 #pragma region handler
 
+#define HTTP_RECEIVE_STATUS_MAP(XX)			\
+	XX(0,  NONE,			Undefined)		\
+	XX(1,  HEADERS,			Headers)		\
+	XX(2,  BODY,			Body)			\
+	XX(3,  COMPLETED,		Completed)		\
+	XX(4,  INCOMPLETED,		Incompleted)	\
+	XX(5,  UNHANDLED,		Unhandled)	\
+
+typedef enum HttpReceiveStatus {
+
+	#define XX(num, name, string) HTTP_RECEIVE_STATUS_##name = num,
+	HTTP_RECEIVE_STATUS_MAP(XX)
+	#undef XX
+
+} HttpReceiveStatus;
+
+CERVER_PUBLIC const char *http_receive_status_str (
+	const HttpReceiveStatus status
+);
+
 struct _HttpReceive {
+
+	HttpReceiveStatus receive_status;
 
 	CerverReceive *cr;
 
-	// keep connection alive - don't close after request has ended
+	// keep connection alive
+	// don't close after request has ended
 	bool keep_alive;
 
-	void (*handler)(struct _HttpReceive *, ssize_t, char *);
+	void (*handler)(
+		struct _HttpReceive *, ssize_t, char *
+	);
 
 	HttpCerver *http_cerver;
 
@@ -304,12 +398,14 @@ struct _HttpReceive {
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
-	
+
 	HttpRequest *request;
 
 	HttpRoute *route;
-	RequestMethod request_method;
+
+	http_status status;
 	size_t sent;
+
 	struct _HttpRouteFileStats *file_stats;
 
 };
@@ -318,20 +414,12 @@ typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
 
-CERVER_PRIVATE void http_receive_delete (HttpReceive *http_receive);
+CERVER_PRIVATE HttpReceive *http_receive_create (
+	CerverReceive *cerver_receive
+);
 
-#pragma endregion
-
-#pragma region websockets
-
-// the default tmeout for a websocket sonnection
-#define DEFAULT_WEB_SOCKET_RECV_TIMEOUT         5
-
-// sends a ws message to the selected connection
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_web_sockets_send (
-	Cerver *cerver, Connection *connection,
-	const char *msg, const size_t msg_len
+CERVER_PRIVATE void http_receive_delete (
+	HttpReceive *http_receive
 );
 
 #pragma endregion

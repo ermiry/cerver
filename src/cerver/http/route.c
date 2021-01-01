@@ -16,7 +16,7 @@
 
 #include "cerver/utils/utils.h"
 
-const char *http_route_modifier_to_string (HttpRouteModifier modifier) {
+const char *http_route_modifier_to_string (const HttpRouteModifier modifier) {
 
 	switch (modifier) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #string;
@@ -28,7 +28,7 @@ const char *http_route_modifier_to_string (HttpRouteModifier modifier) {
 
 }
 
-const char *http_route_modifier_description (HttpRouteModifier modifier) {
+const char *http_route_modifier_description (const HttpRouteModifier modifier) {
 
 	switch (modifier) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #description;
@@ -40,7 +40,7 @@ const char *http_route_modifier_description (HttpRouteModifier modifier) {
 
 }
 
-const char *http_route_auth_type_to_string (HttpRouteAuthType type) {
+const char *http_route_auth_type_to_string (const HttpRouteAuthType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #string;
@@ -52,7 +52,7 @@ const char *http_route_auth_type_to_string (HttpRouteAuthType type) {
 
 }
 
-const char *http_route_auth_type_description (HttpRouteAuthType type) {
+const char *http_route_auth_type_description (const HttpRouteAuthType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #description;
@@ -167,7 +167,9 @@ void http_route_stats_update (
 			route_stats->max_process_time = process_time;
 
 		route_stats->sum_process_times += process_time;
-		route_stats->mean_process_time = (route_stats->sum_process_times / route_stats->n_requests);
+		route_stats->mean_process_time = (
+			route_stats->sum_process_times / route_stats->n_requests
+		);
 
 		// request size
 		if (request_size < route_stats->min_request_size)
@@ -177,7 +179,9 @@ void http_route_stats_update (
 			route_stats->max_request_size = request_size;
 
 		route_stats->sum_request_sizes += request_size;
-		route_stats->mean_request_size = (route_stats->sum_request_sizes / route_stats->n_requests);
+		route_stats->mean_request_size = (
+			route_stats->sum_request_sizes / route_stats->n_requests
+		);
 
 		// response size
 		if (response_size < route_stats->min_response_size)
@@ -187,7 +191,9 @@ void http_route_stats_update (
 			route_stats->max_response_size = response_size;
 
 		route_stats->sum_response_sizes += response_size;
-		route_stats->mean_response_size = (route_stats->sum_response_sizes / route_stats->n_requests);
+		route_stats->mean_response_size = (
+			route_stats->sum_response_sizes / route_stats->n_requests
+		);
 
 		(void) pthread_mutex_unlock (route_stats->mutex);
 	}
@@ -257,7 +263,9 @@ void http_route_file_stats_update (
 			file_stats->max_n_files = new_file_stats->n_uploaded_files;
 
 		file_stats->sum_n_files += new_file_stats->n_uploaded_files;
-		file_stats->mean_n_files = ((double) file_stats->sum_n_files / (double) file_stats->n_requests);
+		file_stats->mean_n_files = (
+			(double) file_stats->sum_n_files / (double) file_stats->n_requests
+		);
 
 		// size
 		if (new_file_stats->min_file_size < file_stats->min_file_size)
@@ -267,7 +275,9 @@ void http_route_file_stats_update (
 			file_stats->max_file_size = new_file_stats->max_file_size;
 
 		file_stats->sum_file_size += new_file_stats->sum_file_size;
-		file_stats->mean_file_size = ((double) file_stats->sum_n_files / (double) file_stats->n_uploaded_files);
+		file_stats->mean_file_size = (
+			(double) file_stats->sum_n_files / (double) file_stats->n_uploaded_files
+		);
 
 		(void) pthread_mutex_unlock (file_stats->mutex);
 	}
@@ -510,7 +520,7 @@ void http_route_set_decode_data (
 }
 
 static void http_route_get_methods_string (
-	HttpRoute *route, const char *route_methods_str
+	const HttpRoute *route, const char *route_methods_str
 ) {
 
 	char *end = (char *) route_methods_str;
@@ -529,7 +539,7 @@ static void http_route_get_methods_string (
 
 }
 
-static void http_route_print_child (HttpRoute *child) {
+static void http_route_print_child (const HttpRoute *child) {
 
 	cerver_log_msg ("\t\tRoute: %s", child->route->str);
 
@@ -543,7 +553,7 @@ static void http_route_print_child (HttpRoute *child) {
 
 }
 
-void http_route_print (HttpRoute *route) {
+void http_route_print (const HttpRoute *route) {
 
 	if (route) {
 		cerver_log_msg ("Route: %s", route->route->str);

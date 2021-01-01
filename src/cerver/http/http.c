@@ -29,11 +29,20 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/base64.h"
 
+static HttpResponse *bad_auth_error = NULL;
+static HttpResponse *not_found_error = NULL;
+static HttpResponse *server_error = NULL;
+static HttpResponse *catch_all = NULL;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
 
 static void http_receive_handle_default_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+);
+
+static void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
 
@@ -47,10 +56,18 @@ static void http_receive_handle (
 static const char hex[] = "0123456789abcdef";
 
 // converts a hex character to its integer value
-static const char from_hex (const char ch) { return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10; }
+static const char from_hex (const char ch) {
+	
+	return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+	
+}
 
 // converts an integer value to its hex character
-static const char to_hex (const char code) { return hex[code & 15]; }
+static const char to_hex (const char code) {
+	
+	return hex[code & 15];
+	
+}
 
 #pragma endregion
 
@@ -115,7 +132,9 @@ void key_value_pair_delete (void *kvp_ptr) {
 
 }
 
-KeyValuePair *key_value_pair_create (const char *key, const char *value) {
+KeyValuePair *key_value_pair_create (
+	const char *key, const char *value
+) {
 
 	KeyValuePair *kvp = key_value_pair_new ();
 	if (kvp) {
@@ -153,7 +172,9 @@ static KeyValuePair *key_value_pair_create_pieces (
 
 }
 
-const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *key_value_pairs_get_value (
+	const DoubleList *pairs, const char *key
+) {
 
 	const String *value = NULL;
 
@@ -172,7 +193,7 @@ const String *key_value_pairs_get_value (DoubleList *pairs, const char *key) {
 
 }
 
-void key_value_pairs_print (DoubleList *pairs) {
+void key_value_pairs_print (const DoubleList *pairs) {
 
 	if (pairs) {
 		unsigned int idx = 1;
@@ -180,7 +201,10 @@ void key_value_pairs_print (DoubleList *pairs) {
 		for (ListElement *le = dlist_start (pairs); le; le = le->next) {
 			kv = (KeyValuePair *) le->data;
 
-			(void) printf ("[%d] - %s = %s\n", idx, kv->key->str, kv->value->str);
+			(void) printf (
+				"[%u] - %s = %s\n",
+				idx, kv->key->str, kv->value->str
+			);
 
 			idx++;
 		}
@@ -204,8 +228,13 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->default_handler = NULL;
 
+		http_cerver->not_found_handler = false;
+		http_cerver->not_found = NULL;
+
 		http_cerver->uploads_path = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
+
+		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
 
 		http_cerver->jwt_alg = JWT_ALG_NONE;
 
@@ -215,8 +244,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
-		http_cerver->n_cath_all_requests = 0;
+		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
+
+		http_cerver->mutex = NULL;
 	}
 
 	return http_cerver;
@@ -240,6 +271,8 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
 
+		pthread_mutex_delete (http_cerver->mutex);
+
 		free (http_cerver_ptr);
 	}
 
@@ -251,25 +284,65 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 	if (http_cerver) {
 		http_cerver->cerver = cerver;
 
-		http_cerver->static_paths = dlist_init (http_static_path_delete, http_static_path_comparator);
+		http_cerver->static_paths = dlist_init (
+			http_static_path_delete, http_static_path_comparator
+		);
 
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
 
 		http_cerver->default_handler = http_receive_handle_default_route;
 
+		http_cerver->not_found = http_receive_handle_not_found_route;
+
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+
+		http_cerver->mutex = pthread_mutex_new ();
 	}
 
 	return http_cerver;
 
 }
 
-static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_responses (void) {
+
+	unsigned int retval = 1;
+
+	bad_auth_error = http_response_json_key_value (
+		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
+	);
+
+	not_found_error = http_response_json_key_value (
+		HTTP_STATUS_NOT_FOUND, "error", "Not found!"
+	);
+
+	server_error = http_response_json_key_value (
+		HTTP_STATUS_INTERNAL_SERVER_ERROR, "error", "Internal error!"
+	);
+
+	catch_all = http_response_json_key_value (
+		HTTP_STATUS_OK, "msg", "HTTP Cerver!"
+	);
+
+	if (
+		bad_auth_error && not_found_error && server_error
+		&& catch_all
+	) retval = 0;
+
+	return retval;
+
+}
+
+static unsigned int http_cerver_init_load_jwt_private_key (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int retval = 1;
 
 	size_t private_keylen = 0;
-	char *private_key = file_read (http_cerver->jwt_opt_key_name->str, &private_keylen);
+	char *private_key = file_read (
+		http_cerver->jwt_opt_key_name->str, &private_keylen
+	);
+
 	if (private_key) {
 		http_cerver->jwt_private_key = str_new (NULL);
 		http_cerver->jwt_private_key->str = private_key;
@@ -297,12 +370,17 @@ static unsigned int http_cerver_init_load_jwt_private_key (HttpCerver *http_cerv
 
 }
 
-static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_load_jwt_public_key (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int retval = 1;
 
 	size_t public_keylen = 0;
-	char *public_key = file_read (http_cerver->jwt_opt_pub_key_name->str, &public_keylen);
+	char *public_key = file_read (
+		http_cerver->jwt_opt_pub_key_name->str, &public_keylen
+	);
+
 	if (public_key) {
 		http_cerver->jwt_public_key = str_new (NULL);
 		http_cerver->jwt_public_key->str = public_key;
@@ -330,7 +408,9 @@ static unsigned int http_cerver_init_load_jwt_public_key (HttpCerver *http_cerve
 
 }
 
-static unsigned int http_cerver_init_load_jwt_keys (HttpCerver *http_cerver) {
+static unsigned int http_cerver_init_load_jwt_keys (
+	HttpCerver *http_cerver
+) {
 
 	unsigned int errors = 0 ;
 
@@ -353,9 +433,15 @@ void http_cerver_init (HttpCerver *http_cerver) {
 	if (http_cerver) {
 		cerver_log_msg ("Loading HTTP routes...");
 
+		// init common responses
+		(void) http_cerver_init_responses ();
+
 		// init top level routes
 		HttpRoute *route = NULL;
-		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
+		for (
+			ListElement *le = dlist_start (http_cerver->routes);
+			le; le = le->next
+		) {
 			route = (HttpRoute *) le->data;
 			
 			http_route_init (route);
@@ -366,6 +452,18 @@ void http_cerver_init (HttpCerver *http_cerver) {
 		(void) http_cerver_init_load_jwt_keys (http_cerver);
 
 		cerver_log_success ("Done loading HTTP routes!");
+	}
+
+}
+
+// destroy values allocated in http_cerver_init ()
+void http_cerver_end (HttpCerver *http_cerver) {
+
+	if (http_cerver) {
+		http_respponse_delete (bad_auth_error);
+		http_respponse_delete (not_found_error);
+		http_respponse_delete (server_error);
+		http_respponse_delete (catch_all);
 	}
 
 }
@@ -416,7 +514,9 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 }
 
 // sets authentication requirenments for a whole static path
-void http_static_path_set_auth (HttpStaticPath *static_path, HttpRouteAuthType auth_type) {
+void http_static_path_set_auth (
+	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+) {
 
 	if (static_path) static_path->auth_type = auth_type;
 
@@ -478,10 +578,16 @@ u8 http_receive_public_path_remove (
 
 #pragma region routes
 
-void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
+void http_cerver_route_register (
+	HttpCerver *http_cerver, HttpRoute *route
+) {
 
 	if (http_cerver && route) {
-		dlist_insert_after (http_cerver->routes, dlist_end (http_cerver->routes), route);
+		dlist_insert_after (
+			http_cerver->routes,
+			dlist_end (http_cerver->routes),
+			route
+		);
 	}
 
 }
@@ -489,13 +595,43 @@ void http_cerver_route_register (HttpCerver *http_cerver, HttpRoute *route) {
 void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
 	void (*catch_all_route)(
-		const struct _HttpReceive *http_receive,
+		const HttpReceive *http_receive,
 		const HttpRequest *request
 	)
 ) {
 
 	if (http_cerver && catch_all_route) {
 		http_cerver->default_handler = catch_all_route;
+	}
+
+}
+
+// enables the use of the default not found handler
+// which returns 404 status on no matching routes
+// by default this option is disabled
+// as the catch all handler is used instead
+void http_cerver_set_not_found_handler (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver)
+		http_cerver->not_found_handler = true;
+
+}
+
+// sets a custom handler to be executed on no matching routes
+// it should return status 404
+void http_cerver_set_not_found_route (
+	HttpCerver *http_cerver, 
+	void (*not_found)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver && not_found) {
+		http_cerver->not_found = not_found;
+		http_cerver->not_found_handler = true;
 	}
 
 }
@@ -549,6 +685,20 @@ void http_cerver_set_uploads_dirname_generator (
 
 }
 
+// specifies whether uploads are deleted after the requested has ended
+// unless the request files have been explicitly saved using
+// http_request_multi_part_keep_files ()
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
+void http_cerver_set_uploads_delete_when_done (
+	HttpCerver *http_cerver, bool value
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_delete_when_done = value;
+	}
+
+}
+
 #pragma endregion
 
 #pragma region auth
@@ -568,7 +718,9 @@ void http_cerver_auth_set_jwt_priv_key_filename (
 	HttpCerver *http_cerver, const char *filename
 ) {
 
-	if (http_cerver) http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+	if (http_cerver) {
+		http_cerver->jwt_opt_key_name = filename ? str_new (filename) : NULL;
+	}
 
 }
 
@@ -577,7 +729,9 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 	HttpCerver *http_cerver, const char *filename
 ) {
 
-	if (http_cerver) http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+	if (http_cerver) {
+		http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+	}
 
 }
 
@@ -690,7 +844,7 @@ bool http_cerver_auth_validate_jwt (
 #pragma region stats
 
 static size_t http_cerver_stats_get_children_routes (
-	HttpCerver *http_cerver, size_t *handlers
+	const HttpCerver *http_cerver, size_t *handlers
 ) {
 
 	size_t count = 0;
@@ -722,13 +876,15 @@ static size_t http_cerver_stats_get_children_routes (
 }
 
 // print number of routes & handlers
-void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
+void http_cerver_routes_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		cerver_log_msg ("Main routes: %ld", http_cerver->routes->size);
 
 		size_t total_handlers = 0;
-		size_t children_routes = http_cerver_stats_get_children_routes (http_cerver, &total_handlers);
+		size_t children_routes = http_cerver_stats_get_children_routes (
+			http_cerver, &total_handlers
+		);
 
 		cerver_log_msg ("Children routes: %ld", children_routes);
 		cerver_log_msg ("Total handlers: %ld", total_handlers);
@@ -736,94 +892,152 @@ void http_cerver_routes_stats_print (HttpCerver *http_cerver) {
 
 }
 
-// print route's stats
-void http_cerver_route_stats_print (HttpRoute *route) {
+static void http_cerver_route_handler_stats_print (
+	const RequestMethod method, const HttpRouteStats *stats
+) {
 
-	if (route) {
-		unsigned int i = 0;
+	cerver_log_msg (
+		"\t\t%s\t%ld",
+		http_request_method_str (method),
+		stats->n_requests
+	);
 
-		cerver_log_msg ("\t%s:", route->route->str);
-		
-		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-			if (route->handlers[i]) {
-				cerver_log_msg (
-					"\t\t%s\t%ld",
-					http_request_method_str ((RequestMethod) i),
-					route->stats[i]->n_requests
+	// route stats
+	cerver_log_msg ("\t\tMin process time: %.4f secs", stats->first ? 0 : stats->min_process_time);
+	cerver_log_msg ("\t\tMax process time: %.4f secs", stats->max_process_time);
+	cerver_log_msg ("\t\tMean process time: %.4f secs", stats->mean_process_time);
+
+	cerver_log_msg ("\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\tMax request size: %ld", stats->max_request_size);
+	cerver_log_msg ("\t\tMean request size: %ld", stats->mean_request_size);
+
+	cerver_log_msg ("\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\tMax response size: %ld", stats->max_response_size);
+	cerver_log_msg ("\t\tMean response size: %ld", stats->mean_response_size);
+
+	
+
+}
+
+static void http_cerver_route_file_stats_print (
+	const HttpRouteFileStats *file_stats
+) {
+
+	cerver_log_line_break ();
+	cerver_log_msg ("\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+
+	cerver_log_msg ("\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\tMean n files: %.2f", file_stats->mean_n_files);
+
+	cerver_log_msg ("\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\tMean file size: %ld", file_stats->mean_file_size);
+
+}
+
+static void http_cerver_child_route_handler_stats_print (
+	const RequestMethod method, const HttpRouteStats *stats
+) {
+
+	cerver_log_msg (
+		"\t\t\t%s\t%ld",
+		http_request_method_str (method),
+		stats->n_requests
+	);
+
+	cerver_log_msg ("\t\t\tMin process time: %.4f secs", stats->first ? 0 : stats->min_process_time);
+	cerver_log_msg ("\t\t\tMax process time: %.4f secs", stats->max_process_time);
+	cerver_log_msg ("\t\t\tMean process time: %.4f secs", stats->mean_process_time);
+
+	cerver_log_msg ("\t\t\tMin request size: %ld", stats->first ? 0 : stats->min_request_size);
+	cerver_log_msg ("\t\t\tMax request size: %ld", stats->max_request_size);
+	cerver_log_msg ("\t\t\tMean request size: %ld", stats->mean_request_size);
+
+	cerver_log_msg ("\t\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
+	cerver_log_msg ("\t\t\tMax response size: %ld", stats->max_response_size);
+	cerver_log_msg ("\t\t\tMean response size: %ld", stats->mean_response_size);
+
+}
+
+static void http_cerver_child_route_file_stats_print (
+	const HttpRouteFileStats *file_stats
+) {
+
+	cerver_log_msg ("\t\t\tUploaded files: %ld", file_stats->n_uploaded_files);
+
+	cerver_log_msg ("\t\t\tMin n files: %ld", file_stats->first ? 0 : file_stats->min_n_files);
+	cerver_log_msg ("\t\t\tMax n files: %ld", file_stats->max_n_files);
+	cerver_log_msg ("\t\t\tMean n files: %.2f", file_stats->mean_n_files);
+
+	cerver_log_msg ("\t\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
+	cerver_log_msg ("\t\t\tMax file size: %ld", file_stats->max_file_size);
+	cerver_log_msg ("\t\t\tMean file size: %ld", file_stats->mean_file_size);
+
+}
+
+static void http_cerver_route_children_stats_print (
+	const HttpRoute *route
+) {
+
+	cerver_log_msg ("\t\t%ld children:", route->children->size);
+
+	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+
+	HttpRoute *child = NULL;
+	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+		child = (HttpRoute *) le->data;
+
+		cerver_log_msg ("\t\t%s:", child->actual->str);
+
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (child->handlers[i]) {
+				method = (RequestMethod) i;
+				http_cerver_child_route_handler_stats_print (
+					method, child->stats[i]
 				);
 
-				// route stats
-				cerver_log_msg ("\t\tMin process time: %.4f secs", route->stats[i]->first ? 0 : route->stats[i]->min_process_time);
-				cerver_log_msg ("\t\tMax process time: %.4f secs", route->stats[i]->max_process_time);
-				cerver_log_msg ("\t\tMean process time: %.4f secs", route->stats[i]->mean_process_time);
+				if (
+					(child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+					&& (method == REQUEST_METHOD_POST)
+				) {
+					http_cerver_child_route_file_stats_print (
+						child->file_stats
+					);
+				}
+			}
+		}
+	}
 
-				cerver_log_msg ("\t\tMin request size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_request_size);
-				cerver_log_msg ("\t\tMax request size: %ld", route->stats[i]->max_request_size);
-				cerver_log_msg ("\t\tMean request size: %ld", route->stats[i]->mean_request_size);
+}
 
-				cerver_log_msg ("\t\tMin response size: %ld", route->stats[i]->first ? 0 : route->stats[i]->min_response_size);
-				cerver_log_msg ("\t\tMax response size: %ld", route->stats[i]->max_response_size);
-				cerver_log_msg ("\t\tMean response size: %ld", route->stats[i]->mean_response_size);
+// print route's stats
+void http_cerver_route_stats_print (const HttpRoute *route) {
 
-				if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-					cerver_log_line_break ();
-					cerver_log_msg ("\t\tUploaded files: %ld", route->file_stats->n_uploaded_files);
+	if (route) {
+		cerver_log_msg ("\t%s:", route->route->str);
+		
+		RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
+		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
+			if (route->handlers[i]) {
+				method = (RequestMethod) i;
+				http_cerver_route_handler_stats_print (
+					method, route->stats[i]
+				);
 
-					cerver_log_msg ("\t\tMin n files: %ld", route->file_stats->first ? 0 : route->file_stats->min_n_files);
-					cerver_log_msg ("\t\tMax n files: %ld", route->file_stats->max_n_files);
-					cerver_log_msg ("\t\tMean n files: %.2f", route->file_stats->mean_n_files);
-
-					cerver_log_msg ("\t\tMin file size: %ld", route->file_stats->first ? 0 : route->file_stats->min_file_size);
-					cerver_log_msg ("\t\tMax file size: %ld", route->file_stats->max_file_size);
-					cerver_log_msg ("\t\tMean file size: %ld", route->file_stats->mean_file_size);
+				if (
+					(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+					&& (method == REQUEST_METHOD_POST)
+				) {
+					http_cerver_route_file_stats_print (
+						route->file_stats
+					);
 				}
 			}
 		}
 
 		if (route->children->size) {
-			cerver_log_msg ("\t\t%ld children:", route->children->size);
-
-			HttpRoute *child = NULL;
-			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-				child = (HttpRoute *) le->data;
-
-				cerver_log_msg ("\t\t%s:", child->actual->str);
-
-				for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-					if (child->handlers[i]) {
-						cerver_log_msg (
-							"\t\t\t%s\t%ld",
-							http_request_method_str ((RequestMethod) i),
-							child->stats[i]->n_requests
-						);
-
-						// route stats
-						cerver_log_msg ("\t\t\tMin process time: %.4f secs", child->stats[i]->first ? 0 : child->stats[i]->min_process_time);
-						cerver_log_msg ("\t\t\tMax process time: %.4f secs", child->stats[i]->max_process_time);
-						cerver_log_msg ("\t\t\tMean process time: %.4f secs", child->stats[i]->mean_process_time);
-
-						cerver_log_msg ("\t\t\tMin request size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_request_size);
-						cerver_log_msg ("\t\t\tMax request size: %ld", child->stats[i]->max_request_size);
-						cerver_log_msg ("\t\t\tMean request size: %ld", child->stats[i]->mean_request_size);
-
-						cerver_log_msg ("\t\t\tMin response size: %ld", child->stats[i]->first ? 0 : child->stats[i]->min_response_size);
-						cerver_log_msg ("\t\t\tMax response size: %ld", child->stats[i]->max_response_size);
-						cerver_log_msg ("\t\t\tMean response size: %ld", child->stats[i]->mean_response_size);
-
-						if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-							cerver_log_msg ("\t\t\tUploaded files: %ld", child->file_stats->n_uploaded_files);
-
-							cerver_log_msg ("\t\t\tMin n files: %ld", child->file_stats->first ? 0 : child->file_stats->min_n_files);
-							cerver_log_msg ("\t\t\tMax n files: %ld", child->file_stats->max_n_files);
-							cerver_log_msg ("\t\t\tMean n files: %.2f", child->file_stats->mean_n_files);
-
-							cerver_log_msg ("\t\t\tMin file size: %ld", child->file_stats->first ? 0 : child->file_stats->min_file_size);
-							cerver_log_msg ("\t\t\tMax file size: %ld", child->file_stats->max_file_size);
-							cerver_log_msg ("\t\t\tMean file size: %ld", child->file_stats->mean_file_size);
-						}
-					}
-				}
-			}
+			http_cerver_route_children_stats_print (route);
 		}
 
 		else {
@@ -834,7 +1048,7 @@ void http_cerver_route_stats_print (HttpRoute *route) {
 }
 
 // print all http cerver stats, general & by route
-void http_cerver_all_stats_print (HttpCerver *http_cerver) {
+void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		http_cerver_routes_stats_print (http_cerver);
@@ -843,6 +1057,13 @@ void http_cerver_all_stats_print (HttpCerver *http_cerver) {
 		for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
 			http_cerver_route_stats_print ((HttpRoute *) le->data);
 		}
+
+		// print general stats
+		cerver_log_msg ("Incompleted requests: %ld", http_cerver->n_incompleted_requests);
+		cerver_log_msg ("Unhandled requests: %ld", http_cerver->n_unhandled_requests);
+
+		cerver_log_msg ("Catch requests: %ld", http_cerver->n_catch_all_requests);
+		cerver_log_msg ("Failed auth requests: %ld", http_cerver->n_failed_auth_requests);
 	}
 
 }
@@ -1006,13 +1227,15 @@ DoubleList *http_parse_query_into_pairs (
 
 }
 
-const String *http_query_pairs_get_value (DoubleList *pairs, const char *key) {
+const String *http_query_pairs_get_value (
+	const DoubleList *pairs, const char *key
+) {
 
 	return key_value_pairs_get_value (pairs, key);
 
 }
 
-void http_query_pairs_print (DoubleList *pairs) {
+void http_query_pairs_print (const DoubleList *pairs) {
 
 	key_value_pairs_print (pairs);
 
@@ -1039,7 +1262,9 @@ static int http_receive_handle_url (
 
 }
 
-static inline RequestHeader http_receive_handle_header_field_handle (const char *header) {
+static inline RequestHeader http_receive_handle_header_field_handle (
+	const char *header
+) {
 
 	if (!strcasecmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
 	if (!strcasecmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
@@ -1088,7 +1313,8 @@ static int http_receive_handle_header_field (
 	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	(((HttpReceive *) parser->data)->request)->next_header = http_receive_handle_header_field_handle (header);
+	(((HttpReceive *) parser->data)->request)->next_header =
+		http_receive_handle_header_field_handle (header);
 
 	return 0;
 
@@ -1113,17 +1339,22 @@ static int http_receive_handle_header_value (
 
 }
 
+// TODO: what happens if the body is bigger than received buffer?
 static int http_receive_handle_body (
 	http_parser *parser, const char *at, size_t length
 ) {
 
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	if (http_receive->receive_status == HTTP_RECEIVE_STATUS_HEADERS)
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_BODY;
+
 	// printf ("Body: %.*s", (int) length, at);
 	// printf ("%.*s", (int) length, at);
 
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
-	request->body = str_new (NULL);
-	request->body->str = c_string_create ("%.*s", (int) length, at);
-	request->body->len = length;
+	http_receive->request->body = str_new (NULL);
+	http_receive->request->body->str = c_string_create ("%.*s", (int) length, at);
+	http_receive->request->body->len = length;
 
 	return 0;
 
@@ -1190,7 +1421,9 @@ static char *http_mpart_get_boundary (const char *content_type) {
 
 }
 
-static int http_receive_handle_mpart_part_data_begin (multipart_parser *parser) {
+static int http_receive_handle_mpart_part_data_begin (
+	multipart_parser *parser
+) {
 
 	// create a new multipart structure to handle new data
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
@@ -1228,7 +1461,8 @@ static int http_receive_handle_mpart_header_field (
 	(void) snprintf (header, 32, "%.*s", (int) length, at);
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	(((HttpReceive *) parser->data)->request)->current_part->next_header = http_receive_handle_mpart_header_field_handle (header);
+	(((HttpReceive *) parser->data)->request)->current_part->next_header =
+		http_receive_handle_mpart_header_field_handle (header);
 
 	return 0;
 
@@ -1263,7 +1497,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	#endif
 
 	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
-		if (c_string_starts_with (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")) {
+		if (c_string_starts_with (
+			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")
+		) {
 			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
 			end += strlen ("form-data;");
 
@@ -1452,20 +1688,69 @@ static int http_receive_handle_headers_completed (http_parser *parser);
 
 static int http_receive_handle_message_completed (http_parser *parser);
 
+const char *http_receive_status_str (
+	const HttpReceiveStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string) case HTTP_RECEIVE_STATUS_##name: return #string;
+		HTTP_RECEIVE_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return http_receive_status_str (HTTP_RECEIVE_STATUS_NONE);
+
+}
+
 HttpReceive *http_receive_new (void) {
 
 	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
 	if (http_receive) {
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
+
 		http_receive->cr = NULL;
 
 		http_receive->keep_alive = false;
 
-		http_receive->handler = http_receive_handle;
+		http_receive->handler = NULL;
 
 		http_receive->http_cerver = NULL;
 
+		http_receive->parser = NULL;
+		(void) memset (&http_receive->settings, 0, sizeof (http_parser_settings));
+
+		http_receive->mpart_parser = NULL;
+		(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
+
+		http_receive->request = NULL;
+
+		http_receive->route = NULL;
+
+		http_receive->status = HTTP_STATUS_NONE;
+		http_receive->sent = 0;
+
+		http_receive->file_stats = NULL;
+	}
+
+	return http_receive;
+
+}
+
+HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
+
+	HttpReceive *http_receive = http_receive_new ();
+	if (http_receive) {
+		http_receive->cr = cerver_receive;
+
+		http_receive->handler = http_receive_handle;
+
+		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
+
 		http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
 		http_parser_init (http_receive->parser, HTTP_REQUEST);
+
+		// http_receive->parser->data = http_receive->request;
+		http_receive->parser->data = http_receive;
 
 		http_receive->settings.on_message_begin = NULL;
 		http_receive->settings.on_url = http_receive_handle_url;
@@ -1478,17 +1763,10 @@ HttpReceive *http_receive_new (void) {
 		http_receive->settings.on_chunk_header = NULL;
 		http_receive->settings.on_chunk_complete = NULL;
 
-		http_receive->mpart_parser = NULL;
-
 		http_receive->request = http_request_new ();
+		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
 
-		http_receive->route = NULL;
-		http_receive->request_method = REQUEST_METHOD_GET;
-		http_receive->sent = 0;
 		http_receive->file_stats = http_route_file_stats_new ();
-
-		// http_receive->parser->data = http_receive->request;
-		http_receive->parser->data = http_receive;
 	}
 
 	return http_receive;
@@ -1504,35 +1782,47 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		free (http_receive->parser);
 
+		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
 
 		http_receive->route = NULL;
 		http_route_file_stats_delete (http_receive->file_stats);
 
-		if (http_receive->mpart_parser) multipart_parser_free (http_receive->mpart_parser);
+		if (http_receive->mpart_parser)
+			multipart_parser_free (http_receive->mpart_parser);
 
 		free (http_receive);
 	}
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 static void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "HTTP Cerver!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, http_receive);
-		http_respponse_delete (res);
-	}
+	(void) http_response_send (catch_all, http_receive);
 
 }
+
+static void http_receive_handle_not_found_route (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_response_send (not_found_error, http_receive);
+
+}
+
+#pragma GCC diagnostic pop
 
 // catch all mismatches and handle with cath all route
 static void http_receive_handle_catch_all (
 	HttpCerver *http_cerver, HttpReceive *http_receive, HttpRequest *request
 ) {
+
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_UNHANDLED;
 
 	cerver_log_warning (
 		"No matching route for %s %s",
@@ -1540,14 +1830,24 @@ static void http_receive_handle_catch_all (
 		request->url->str
 	);
 
-	// handle with default route
-	http_cerver->default_handler (http_receive, request);
+	if (http_cerver->not_found_handler) {
+		// handle with not found route
+		http_cerver->not_found (http_receive, request);
+	}
 
-	http_cerver->n_cath_all_requests += 1;
+	else {
+		// handle with default route
+		http_cerver->default_handler (http_receive, request);
+
+		(void) pthread_mutex_lock (http_cerver->mutex);
+		http_cerver->n_catch_all_requests += 1;
+		(void) pthread_mutex_unlock (http_cerver->mutex);
+	}
 
 }
 
-// handles an actual route match & selects the right handler based on the request's method
+// handles an actual route match
+// selects the right handler based on the request's method
 static void http_receive_handle_match (
 	HttpCerver *http_cerver, 
 	HttpReceive *http_receive,
@@ -1705,14 +2005,15 @@ static inline bool http_receive_handle_select_children (
 
 }
 
-static void http_receive_handle_select_failed_auth (HttpReceive *http_receive) {
+static void http_receive_handle_select_failed_auth (
+	HttpReceive *http_receive
+) {
 
-	HttpResponse *res = http_response_json_error (HTTP_STATUS_UNAUTHORIZED, "Failed to authenticate!");
-	if (res) {
-		http_response_print (res);
-		http_response_send (res, http_receive);
-		http_respponse_delete (res);
-	}
+	(void) http_response_send (bad_auth_error, http_receive);
+
+	(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+	http_receive->http_cerver->n_failed_auth_requests += 1;
+	(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
 
 }
 
@@ -1815,7 +2116,9 @@ static void http_receive_handle_select (
 
 		else {
 			if (route->children->size) {
-				match = http_receive_handle_select_children (route, request, &found);
+				match = http_receive_handle_select_children (
+					route, request, &found
+				);
 			}
 		}
 
@@ -1825,7 +2128,6 @@ static void http_receive_handle_select (
 	// we have found a route!
 	if (match) {
 		http_receive->route = found;
-		http_receive->request_method = request->method;
 
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
@@ -1841,7 +2143,9 @@ static void http_receive_handle_select (
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (http_cerver, http_receive, found, request);
+					http_receive_handle_select_auth_bearer (
+						http_cerver, http_receive, found, request
+					);
 				}
 
 				// no authentication header was provided
@@ -1863,15 +2167,23 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
+
 	#ifdef HTTP_HEADERS_DEBUG
 	http_request_headers_print (http_receive->request);
 	#endif
 
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
-		if (is_multipart (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, "multipart/form-data")) {
+		if (is_multipart (
+			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
+			"multipart/form-data"
+		)) {
 			// printf ("\nis multipart!\n");
-			char *boundary = http_mpart_get_boundary (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str);
+			char *boundary = http_mpart_get_boundary (
+				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+			);
+
 			if (boundary) {
 				// printf ("\n%s\n", boundary);
 				http_receive->settings.on_body = http_receive_handle_mpart_body;
@@ -1926,7 +2238,10 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	HttpStaticPath *static_path = NULL;
 	struct stat filestatus = { 0 };
 	char filename[256] = { 0 };
-	for (ListElement *le = dlist_start (http_receive->http_cerver->static_paths); le; le = le->next) {
+	for (
+		ListElement *le = dlist_start (http_receive->http_cerver->static_paths);
+		le; le = le->next
+	) {
 		static_path = (HttpStaticPath *) le->data;
 
 		(void) c_string_concat_safe (
@@ -1953,13 +2268,15 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	}
 
 	if (!found) {
-		// TODO: what to do here? - maybe something similar to catch all route
 		cerver_log_warning (
 			"Unable to find file %s",
 			http_receive->request->url->str
 		);
 
-		http_receive_handle_default_route (http_receive, http_receive->request);
+		http_receive_handle_catch_all (
+			http_receive->http_cerver,
+			http_receive, http_receive->request
+		);
 	}
 
 }
@@ -1969,6 +2286,8 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	// printf ("\non message complete!\n");
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 
 	http_receive->request->method = (RequestMethod) http_receive->parser->method;
 
@@ -2020,7 +2339,10 @@ static void http_receive_handle (
 	ssize_t rc, char *packet_buffer
 ) {
 
-	ssize_t n_parsed = http_parser_execute (http_receive->parser, &http_receive->settings, packet_buffer, rc);
+	ssize_t n_parsed = http_parser_execute (
+		http_receive->parser, &http_receive->settings, packet_buffer, rc
+	);
+
 	if (n_parsed != rc) {
 		cerver_log_error (
 			"http_parser_execute () failed - n parsed %ld / received %ld",
@@ -2028,12 +2350,7 @@ static void http_receive_handle (
 		);
 
 		// send back error message
-		HttpResponse *res = http_response_json_error ((http_status) 500, "Internal error!");
-		if (res) {
-			// http_response_print (res);
-			http_response_send (res, http_receive);
-			http_respponse_delete (res);
-		}
+		(void) http_response_send (server_error, http_receive);
 
 		connection_end (http_receive->cr->connection);
 	}

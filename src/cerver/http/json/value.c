@@ -7,10 +7,11 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 #include <math.h>
+
 #include <stddef.h>
+#include <stdint.h>
 
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
@@ -19,20 +20,28 @@
 #include "cerver/http/json/utf.h"
 #include "cerver/http/json/value.h"
 
-json_t *do_deep_copy(const json_t *json, hashtable_t *parents);
+#include "cerver/utils/utils.h"
 
-static CERVER_INLINE void json_init(json_t *json, json_type type) {
+json_t *do_deep_copy (const json_t *json, hashtable_t *parents);
+
+static inline void json_init (json_t *json, json_type type) {
+
     json->type = type;
     json->refcount = 1;
+
 }
 
-int jsonp_loop_check(hashtable_t *parents, const json_t *json, char *key,
-                     size_t key_size) {
-    snprintf(key, key_size, "%p", json);
-    if (hashtable_get(parents, key))
+int jsonp_loop_check (
+    hashtable_t *parents, const json_t *json,
+    char *key, size_t key_size
+) {
+
+    (void) snprintf (key, key_size, "%p", (void *) json);
+    if (hashtable_get (parents, key))
         return -1;
 
-    return hashtable_set(parents, key, json_null());
+    return hashtable_set (parents, key, json_null ());
+
 }
 
 /*** object ***/
@@ -885,8 +894,10 @@ int json_real_set(json_t *json, double value) {
 
 static void json_delete_real(json_real_t *real) { jsonp_free(real); }
 
-static int json_real_equal(const json_t *real1, const json_t *real2) {
-    return json_real_value(real1) == json_real_value(real2);
+static int json_real_equal (const json_t *real1, const json_t *real2) {
+
+    return float_compare (json_real_value (real1), json_real_value (real2));
+
 }
 
 static json_t *json_real_copy(const json_t *real) {
