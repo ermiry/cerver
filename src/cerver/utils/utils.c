@@ -3,10 +3,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <stdint.h>
-#include <stddef.h>
+#include <math.h>
+
 #include <ctype.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "cerver/utils/utils.h"
 
@@ -30,9 +32,23 @@ int clamp_int (int val, int min, int max) {
 
 }
 
-int abs_int (int value) { return value > 0 ? value : (value * -1); }
+int abs_int (int value) {
+	
+	return value > 0 ? value : (value * -1);
+	
+}
 
-float lerp (float first, float second, float by) { return first * (1 - by) + second * by; }
+float lerp (float first, float second, float by) {
+	
+	return first * (1 - by) + second * by;
+	
+}
+
+bool float_compare (float f1, float f2) {
+
+	return fabs (f1 - f2) < 0.00001;
+
+}
 
 /*** random ***/
 
@@ -132,8 +148,20 @@ void c_string_n_copy (char *to, const char *from, size_t n) {
 			n--;
 		}
 
-		*to = '\0';
+		if (!n) *(--to) = '\0';
+		else *to = '\0';
 	}
+
+}
+
+static inline void c_string_concat_actual (
+	char *s1, char *s2, char *des
+) {
+
+	while (*s1) *des++ = *s1++;
+	while (*s2) *des++ = *s2++;
+
+	*des = '\0';
 
 }
 
@@ -147,17 +175,11 @@ char *c_string_concat (
 
 	if (s1 && s2) {
 		size_t len = strlen (s1) + strlen (s2);
-		retval = (char *) calloc (len, sizeof (char));
+		retval = (char *) calloc (len + 1, sizeof (char));
 		if (retval) {
-			char *end = retval;
-
-			char *s1_end = (char *) s1;
-			char *s2_end = (char *) s2;
-
-			while (*s1_end) *end++ = *s1_end++;
-			while (*s2_end) *end++ = *s2_end++;
-
-			*end = '\0';
+			c_string_concat_actual (
+				(char *) s1, (char *) s2, retval
+			);
 
 			*des_size = len;
 		}
@@ -179,14 +201,9 @@ size_t c_string_concat_safe (
 
 	if (s1 && s2 && des) {
 		if ((strlen (s1) + strlen (s2)) < des_size) {
-			char *s1_end = (char *) s1;
-			char *s2_end = (char *) s2;
-			char *end = (char *) des;
-
-			while (*s1_end) *end++ = *s1_end++;
-			while (*s2_end) *end++ = *s2_end++;
-
-			*end = '\0';
+			c_string_concat_actual (
+				(char *) s1, (char *) s2, (char *) des
+			);
 
 			retval = strlen (des);
 		}
@@ -242,6 +259,18 @@ void c_string_remove_line_breaks (char *s) {
 	const char *d = s;
 	do {
 		while (*d == '\r' || *d == '\n') {
+			++d;
+		}
+	} while ((*s++ = *d++));
+
+}
+
+// removes all spaces and CRLF in the c string
+void c_string_remove_spaces_and_line_breaks (char *s) {
+
+	const char *d = s;
+	do {
+		while (*d == ' ' || *d == '\r' || *d == '\n') {
 			++d;
 		}
 	} while ((*s++ = *d++));
@@ -617,7 +646,7 @@ char *c_string_remove_sub_simetric_token (
 // returns a newly allocated string, and a option to get the substring
 char *c_string_remove_sub_range_token (
 	char *str,
-	const char token, unsigned int first, unsigned int last,
+	const char token, int first, int last,
 	char **sub
 ) {
 
@@ -625,8 +654,8 @@ char *c_string_remove_sub_range_token (
 
 	if (str) {
 		if (first != last) {
-			unsigned int first_token_count = 0;
-			unsigned int last_token_count = 0;
+			int first_token_count = 0;
+			int last_token_count = 0;
 			char *ptr = str;
 			char *first_ptr = NULL;
 			char *last_ptr = NULL;
@@ -664,19 +693,5 @@ char *c_string_remove_sub_range_token (
 	}
 
 	return retval;
-
-}
-
-// removes a substring from a c string delimited by two different tokens
-// takes the first appearance of the first token, and the last appearance of the second one
-// example: test_20191118142101759__TEST__.png - first token: '_' - last token: 'T'
-// result: test__.png
-char *c_string_remove_sub_different_token (
-	char *str, const char token_one, const char token_two
-) {
-
-	// TODO:
-
-	return NULL;
 
 }
