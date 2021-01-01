@@ -18,7 +18,7 @@ u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type);
 #pragma region types
 
 // get the description for the current event type
-const char *cerver_event_type_description (CerverEventType type) {
+const char *cerver_event_type_description (const CerverEventType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CERVER_EVENT_##name: return #description;
@@ -70,7 +70,7 @@ static CerverEventData *cerver_event_data_create (
 		event_data->client = client;
 		event_data->connection = connection;
 
-		event_data->action_args = event->action_args;
+		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
 	}
 
@@ -91,8 +91,8 @@ static CerverEvent *cerver_event_new (void) {
 		cerver_event->create_thread = false;
 		cerver_event->drop_after_trigger = false;
 
-		cerver_event->action = NULL;
-		cerver_event->action_args = NULL;
+		cerver_event->work = NULL;
+		cerver_event->work_args = NULL;
 		cerver_event->delete_action_args = NULL;
 	}
 
@@ -105,9 +105,9 @@ void cerver_event_delete (void *event_ptr) {
 	if (event_ptr) {
 		CerverEvent *event = (CerverEvent *) event_ptr;
 
-		if (event->action_args) {
+		if (event->work_args) {
 			if (event->delete_action_args)
-				event->delete_action_args (event->action_args);
+				event->delete_action_args (event->work_args);
 		}
 
 		free (event);
@@ -123,7 +123,7 @@ void cerver_event_delete (void *event_ptr) {
 u8 cerver_event_register (
 	Cerver *cerver,
 	const CerverEventType event_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -137,8 +137,8 @@ u8 cerver_event_register (
 			event->create_thread = create_thread;
 			event->drop_after_trigger = drop_after_trigger;
 
-			event->action = action;
-			event->action_args = action_args;
+			event->work = work;
+			event->work_args = work_args;
 			event->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that event and remove it
@@ -157,7 +157,9 @@ u8 cerver_event_register (
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if event is NOT registered
-u8 cerver_event_unregister (Cerver *cerver, const CerverEventType event_type) {
+u8 cerver_event_unregister (
+	Cerver *cerver, const CerverEventType event_type
+) {
 
 	u8 retval = 1;
 
@@ -185,12 +187,12 @@ void cerver_event_trigger (
 		CerverEvent *event = cerver->events[event_type];
 		if (event) {
 			// trigger the action
-			if (event->action) {
+			if (event->work) {
 				if (event->create_thread) {
 					pthread_t thread_id = 0;
-					thread_create_detachable (
+					(void) thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) event->action,
+						event->work,
 						cerver_event_data_create (
 							cerver,
 							client, connection,
@@ -200,7 +202,7 @@ void cerver_event_trigger (
 				}
 
 				else {
-					event->action (cerver_event_data_create (
+					(void) event->work (cerver_event_data_create (
 						cerver,
 						client, connection,
 						event
