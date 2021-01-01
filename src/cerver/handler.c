@@ -2076,9 +2076,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	size_t total_received = 0;
 
-	HttpReceive *http_receive = http_receive_new ();
-	http_receive->cr = cr;
-	http_receive->http_cerver = (HttpCerver *) cr->cerver->cerver_data;
+	HttpReceive *http_receive = http_receive_create (cr);
 
 	i32 sock_fd = cr->socket->sock_fd;
 

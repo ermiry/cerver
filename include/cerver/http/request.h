@@ -104,6 +104,8 @@ struct _HttpRequest {
 	// parsed from x-www-form-urlencoded data
 	DoubleList *body_values;
 
+	bool keep_files;
+
 };
 
 typedef struct _HttpRequest HttpRequest;
@@ -115,6 +117,11 @@ CERVER_PUBLIC void http_request_delete (
 );
 
 CERVER_PUBLIC HttpRequest *http_request_create (void);
+
+// destroys any information related to the request
+CERVER_PRIVATE void http_request_destroy (
+	HttpRequest *http_request
+);
 
 CERVER_PUBLIC void http_request_headers_print (
 	const HttpRequest *http_request
@@ -170,6 +177,14 @@ CERVER_EXPORT DoubleList *http_request_multi_parts_get_all_saved_filenames (
 // http_request_multi_parts_get_all_filenames () or http_request_multi_parts_get_all_saved_filenames ()
 CERVER_EXPORT void http_request_multi_parts_all_filenames_delete (
 	DoubleList *all_filenames
+);
+
+// signals that the files referenced by the request should be kept
+// so they won't be deleted after the request has ended
+// files only get deleted if the http cerver's uploads_delete_when_done
+// is set to TRUE
+CERVER_EXPORT void http_request_multi_part_keep_files (
+	HttpRequest *http_request
 );
 
 // discards all the saved files from the multipart request

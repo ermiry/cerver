@@ -234,6 +234,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->uploads_path = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
 
+		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
+
 		http_cerver->jwt_alg = JWT_ALG_NONE;
 
 		http_cerver->jwt_opt_key_name = NULL;
@@ -679,6 +681,20 @@ void http_cerver_set_uploads_dirname_generator (
 
 	if (http_cerver) {
 		http_cerver->uploads_dirname_generator = dirname_generator;
+	}
+
+}
+
+// specifies whether uploads are deleted after the requested has ended
+// unless the request files have been explicitly saved using
+// http_request_multi_part_keep_files ()
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
+void http_cerver_set_uploads_delete_when_done (
+	HttpCerver *http_cerver, bool value
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_delete_when_done = value;
 	}
 
 }
@@ -1690,16 +1706,51 @@ HttpReceive *http_receive_new (void) {
 
 	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
 	if (http_receive) {
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
+
 		http_receive->cr = NULL;
 
 		http_receive->keep_alive = false;
 
-		http_receive->handler = http_receive_handle;
+		http_receive->handler = NULL;
 
 		http_receive->http_cerver = NULL;
 
+		http_receive->parser = NULL;
+		(void) memset (&http_receive->settings, 0, sizeof (http_parser_settings));
+
+		http_receive->mpart_parser = NULL;
+		(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
+
+		http_receive->request = NULL;
+
+		http_receive->route = NULL;
+
+		http_receive->status = HTTP_STATUS_NONE;
+		http_receive->sent = 0;
+
+		http_receive->file_stats = NULL;
+	}
+
+	return http_receive;
+
+}
+
+HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
+
+	HttpReceive *http_receive = http_receive_new ();
+	if (http_receive) {
+		http_receive->cr = cerver_receive;
+
+		http_receive->handler = http_receive_handle;
+
+		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
+
 		http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
 		http_parser_init (http_receive->parser, HTTP_REQUEST);
+
+		// http_receive->parser->data = http_receive->request;
+		http_receive->parser->data = http_receive;
 
 		http_receive->settings.on_message_begin = NULL;
 		http_receive->settings.on_url = http_receive_handle_url;
@@ -1712,19 +1763,10 @@ HttpReceive *http_receive_new (void) {
 		http_receive->settings.on_chunk_header = NULL;
 		http_receive->settings.on_chunk_complete = NULL;
 
-		http_receive->mpart_parser = NULL;
-
 		http_receive->request = http_request_new ();
-
-		http_receive->route = NULL;
-
-		http_receive->status = HTTP_STATUS_NONE;
-		http_receive->sent = 0;
+		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
 
 		http_receive->file_stats = http_route_file_stats_new ();
-
-		// http_receive->parser->data = http_receive->request;
-		http_receive->parser->data = http_receive;
 	}
 
 	return http_receive;
@@ -1740,6 +1782,7 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		free (http_receive->parser);
 
+		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
 
 		http_receive->route = NULL;

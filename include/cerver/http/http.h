@@ -21,6 +21,8 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+#define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
@@ -117,6 +119,9 @@ struct _HttpCerver {
 	);
 
 	String *(*uploads_dirname_generator)(const CerverReceive *);
+
+	// delete uploaded files when the request ends
+	bool uploads_delete_when_done;
 
 	// auth
 	jwt_alg_t jwt_alg;
@@ -254,6 +259,14 @@ extern void http_cerver_set_uploads_filename_generator (
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
 	String *(*dirname_generator)(const CerverReceive *)
+);
+
+// specifies whether uploads are deleted after the requested has ended
+// unless the request files have been explicitly saved using
+// http_request_multi_part_keep_files ()
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
+CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
+	HttpCerver *http_cerver, bool value
 );
 
 #pragma endregion
@@ -400,6 +413,10 @@ struct _HttpReceive {
 typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
+
+CERVER_PRIVATE HttpReceive *http_receive_create (
+	CerverReceive *cerver_receive
+);
 
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive

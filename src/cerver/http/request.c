@@ -17,6 +17,10 @@ static const char *request_method_strings[] = {
 
 };
 
+void http_request_multi_part_discard_files (
+	const HttpRequest *http_request
+);
+
 const char *http_request_method_str (
 	const RequestMethod request_method
 ) {
@@ -74,6 +78,8 @@ HttpRequest *http_request_new (void) {
 		http_request->dirname = NULL;
 		
 		http_request->body_values = NULL;
+
+		http_request->keep_files = false;
 	}
 
 	return http_request;
@@ -114,6 +120,17 @@ void http_request_delete (HttpRequest *http_request) {
 HttpRequest *http_request_create (void) {
 
 	return http_request_new ();
+
+}
+
+// destroys any information related to the request
+void http_request_destroy (HttpRequest *http_request) {
+
+	if (http_request) {
+		if (!http_request->keep_files) {
+			http_request_multi_part_discard_files (http_request);
+		}
+	}
 
 }
 
@@ -288,6 +305,20 @@ void http_request_multi_parts_all_filenames_delete (
 	if (all_filenames) {
 		dlist_clear (all_filenames);
 		dlist_delete (all_filenames);
+	}
+
+}
+
+// signals that the files referenced by the request should be kept
+// so they won't be deleted after the request has ended
+// files only get deleted if the http cerver's uploads_delete_when_done
+// is set to TRUE
+void http_request_multi_part_keep_files (
+	HttpRequest *http_request
+) {
+
+	if (http_request) {
+		http_request->keep_files = true;
 	}
 
 }
