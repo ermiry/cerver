@@ -121,7 +121,7 @@ static u8 cerver_client_connect (Client *client, Connection **connection) {
 
 }
 
-static void client_event_connection_close (void *client_event_data_ptr) {
+static void *client_event_connection_close (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -136,9 +136,11 @@ static void client_event_connection_close (void *client_event_data_ptr) {
 		client_event_data_delete (client_event_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_event_auth_sent (void *client_event_data_ptr) {
+static void *client_event_auth_sent (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -153,9 +155,11 @@ static void client_event_auth_sent (void *client_event_data_ptr) {
 		client_event_data_delete (client_event_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_error_failed_auth (void *client_error_data_ptr) {
+static void *client_error_failed_auth (void *client_error_data_ptr) {
 
 	if (client_error_data_ptr) {
 		ClientErrorData *client_error_data = (ClientErrorData *) client_error_data_ptr;
@@ -170,9 +174,11 @@ static void client_error_failed_auth (void *client_error_data_ptr) {
 		client_error_data_delete (client_error_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_event_success_auth (void *client_event_data_ptr) {
+static void *client_event_success_auth (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -186,6 +192,8 @@ static void client_event_success_auth (void *client_event_data_ptr) {
 
 		client_event_data_delete (client_event_data);
 	}
+
+	return NULL;
 
 }
 
@@ -262,7 +270,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -270,9 +278,11 @@ static void on_cever_teardown (void *event_data_ptr) {
 		printf ("\nCerver %s is going to be destroyed!\n\n", event_data->cerver->info->name->str);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -285,9 +295,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -297,6 +309,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 			event_data->cerver->info->name->str
 		);
 	}
+
+	return NULL;
 
 }
 
