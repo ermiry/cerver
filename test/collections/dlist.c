@@ -1128,17 +1128,17 @@ static void *test_thread_add (void *args) {
 
 }
 
-static void *test_thread_remove (void *args) {
+// static void *test_thread_remove (void *args) {
 
-	DoubleList *dlist = (DoubleList *) args;
+// 	DoubleList *dlist = (DoubleList *) args;
 
-	for (unsigned int i = 0; i < 10; i++) {
-		integer_delete (dlist_remove_element (dlist, dlist->end));
-	}
+// 	for (unsigned int i = 0; i < 10; i++) {
+// 		integer_delete (dlist_remove_element (dlist, dlist->end));
+// 	}
 
-	return NULL;
+// 	return NULL;
 
-}
+// }
 
 static int dlist_test_insert_threads (void) {
 
