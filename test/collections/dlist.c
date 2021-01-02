@@ -1664,19 +1664,9 @@ static int dlist_test_merge_many (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+int collections_tests_dlist (void) {
 
-	srand ((unsigned) time (NULL));
-
-	cerver_log_init ();
-
-	if (argc > 1) {
-		for (unsigned int i = 1; i < argc; i++) {
-			if (!strcmp (argv[i], "--quiet")) {
-				cerver_log_set_quiet (true);
-			}
-		}
-	}
+	(void) printf ("Testing COLLECTIONS dlist...\n");
 
 	int res = 0;
 
@@ -1779,7 +1769,7 @@ int main (int argc, char **argv) {
 
 	res |= dlist_test_merge_many ();
 
-	cerver_log_end ();
+	(void) printf ("Done!\n");
 
 	return res;
 
