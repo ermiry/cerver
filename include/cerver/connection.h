@@ -326,4 +326,8 @@ CERVER_PRIVATE u8 connection_remove_from_cerver (
 // starts listening and receiving data in the connection sock
 CERVER_PRIVATE void *connection_update (void *ptr);
 
+#ifdef __cplusplus
+}
+#endif
+
 #endif
