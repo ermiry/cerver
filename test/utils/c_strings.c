@@ -93,7 +93,7 @@ static void test_c_string_concat_safe (void) {
 	c_string_n_copy (s1, "holay", STRING_LEN);
 	c_string_n_copy (s2, "adios", STRING_LEN);
 	res_len = c_string_concat_safe (s1, s2, result, STRING_LEN);
-	test_check_int_eq ((int) strlen (result), res_len, NULL);
+	test_check_int_eq ((int) strlen (result), (int) res_len, NULL);
 	test_check_str_eq (result, "holayadios", NULL);
 
 	test_check_str_eq (s1, "holay", NULL);
@@ -104,9 +104,9 @@ static void test_c_string_concat_safe (void) {
 static void test_c_string_create (void) {
 
 	int integer = 16;
-	char *s1 = { "hola" };
-	char *s2 = { "y" };
-	char *s3 = { "adios" };
+	char s1[] = { "hola" };
+	char s2[] = { "y" };
+	char s3[] = { "adios" };
 
 	char *created = c_string_create ("%d-%s%s%s", integer, s1, s2, s3);
 	test_check (created != NULL, NULL);
