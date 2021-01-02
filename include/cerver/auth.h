@@ -11,6 +11,10 @@
 #include "cerver/client.h"
 #include "cerver/packets.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Connection;
 
@@ -125,5 +129,9 @@ CERVER_PRIVATE u8 on_hold_poll_unregister_sock_fd (
 CERVER_PRIVATE void *on_hold_poll (void *cerver_ptr);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

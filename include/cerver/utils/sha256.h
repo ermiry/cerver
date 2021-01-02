@@ -8,6 +8,10 @@
 
 #define SHA256_STRING_LEN		80
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 CERVER_PUBLIC void sha256_calc (
 	uint8_t hash[32], const void *input, size_t len
 );
@@ -27,5 +31,9 @@ CERVER_PUBLIC void sha256_generate (
 CERVER_PUBLIC char *sha256_generate_output (
 	const char *input, const size_t inlen
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

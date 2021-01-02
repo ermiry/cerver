@@ -15,6 +15,10 @@
 
 #include "cerver/game/lobby.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Socket;
 
 struct _Admin;
@@ -347,5 +351,9 @@ CERVER_PRIVATE u8 cerver_poll (struct _Cerver *cerver);
 CERVER_PRIVATE u8 cerver_threads (struct _Cerver *cerver);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -9,6 +9,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Packet;
@@ -159,5 +163,9 @@ typedef struct SError {
 } SError;
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

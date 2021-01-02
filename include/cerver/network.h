@@ -15,6 +15,10 @@
 #define IP_TO_STR_LEN       16
 #define IPV6_TO_STR_LEN     46
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum Protocol {
 
 	PROTOCOL_TCP = IPPROTO_TCP,
@@ -61,5 +65,9 @@ CERVER_PUBLIC int sock_set_timeout (
 // this should avoid errors when binding sockets
 // returns 0 on success, 1 on any error
 CERVER_PUBLIC int sock_set_reusable (int sock_fd);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

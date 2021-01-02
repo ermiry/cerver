@@ -30,6 +30,10 @@
 
 #define CONNECTION_DEFAULT_RECEIVE_PACKETS			true
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Socket;
 struct _Cerver;
 struct _CerverReport;

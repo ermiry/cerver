@@ -11,6 +11,10 @@
 
 #define THREAD_NAME_BUFFER_LEN			64
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma region threads
 
 // creates a custom detachable thread (will go away on its own upon completion)
@@ -44,5 +48,9 @@ CERVER_PUBLIC pthread_cond_t *pthread_cond_new (void);
 CERVER_PUBLIC void pthread_cond_delete (pthread_cond_t *cond);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

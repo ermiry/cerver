@@ -9,6 +9,10 @@
 
 #define HTAB_DEFAULT_INIT_SIZE				32
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct HtabNode {
 
 	struct HtabNode *next;
@@ -124,5 +128,9 @@ extern void htab_destroy (Htab *ht);
 // currently only works if both keys and values are int
 // used for debugging and testing
 extern void htab_print (Htab *htab);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

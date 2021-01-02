@@ -16,13 +16,6 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
-struct _Cerver;
-struct _Client;
-struct _Handler;
-struct _Packet;
-
-struct _AdminCerver;
-
 #define ADMIN_CERVER_DEFAULT_MAX_ADMINS					1
 #define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
 #define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
@@ -36,6 +29,17 @@ struct _AdminCerver;
 
 #define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
 #define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct _Cerver;
+struct _Client;
+struct _Handler;
+struct _Packet;
+
+struct _AdminCerver;
 
 #pragma region stats
 
@@ -453,5 +457,9 @@ CERVER_PRIVATE u8 admin_cerver_poll_unregister_sock_fd (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

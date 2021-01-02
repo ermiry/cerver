@@ -9,6 +9,10 @@
 
 #include "cerver/threads/bsem.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Job {
 
 	// struct Job *prev;
@@ -21,7 +25,9 @@ CERVER_PUBLIC Job *job_new (void);
 
 CERVER_PUBLIC void job_delete (void *job_ptr);
 
-CERVER_PUBLIC Job *job_create (void (*method) (void *args), void *args);
+CERVER_PUBLIC Job *job_create (
+	void (*method) (void *args), void *args
+);
 
 typedef struct JobQueue {
 
@@ -52,5 +58,9 @@ CERVER_PUBLIC Job *job_queue_pull (JobQueue *job_queue);
 
 // clears the job queue -> destroys all jobs
 CERVER_PUBLIC void job_queue_clear (JobQueue *job_queue);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

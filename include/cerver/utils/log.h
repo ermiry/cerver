@@ -26,6 +26,10 @@
 
 #define LOG_DEFAULT_UPDATE_INTERVAL			1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma region types
 
 #define LOG_TYPE_MAP(XX)						\
@@ -187,5 +191,9 @@ CERVER_PRIVATE void cerver_log_init (void);
 CERVER_PRIVATE void cerver_log_end (void);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
