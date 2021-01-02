@@ -147,15 +147,17 @@ directories:
 	@mkdir -p $(TARGETDIR)
 	@mkdir -p $(BUILDDIR)
 
-clean:
+clear:
 	@$(RM) -rf $(BUILDDIR) 
-	@$(RM) -rf $(TARGETDIR)
 	@$(RM) -rf $(EXABUILD)
 	@$(RM) -rf $(EXATARGET)
 	@$(RM) -rf $(TESTBUILD)
 	@$(RM) -rf $(TESTTARGET)
 	@$(RM) -rf $(BENCHBUILD)
 	@$(RM) -rf $(BENCHTARGET)
+
+clean: clear
+	@$(RM) -rf $(TARGETDIR)
 
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
@@ -238,4 +240,4 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
 
-.PHONY: all clean examples test bench
+.PHONY: all clean clear examples test bench
