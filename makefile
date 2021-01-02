@@ -26,18 +26,6 @@ INCDIR      := include
 BUILDDIR    := objs
 TARGETDIR   := bin
 
-EXAMDIR		:= examples
-EXABUILD	:= $(EXAMDIR)/objs
-EXATARGET	:= $(EXAMDIR)/bin
-
-TESTDIR		:= test
-TESTBUILD	:= $(TESTDIR)/objs
-TESTTARGET	:= $(TESTDIR)/bin
-
-BENCHDIR	:= benchmarks
-BENCHBUILD	:= $(BENCHDIR)/objs
-BENCHTARGET	:= $(BENCHDIR)/bin
-
 SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
@@ -87,6 +75,10 @@ SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 # examples
+EXAMDIR		:= examples
+EXABUILD	:= $(EXAMDIR)/objs
+EXATARGET	:= $(EXAMDIR)/bin
+
 EXAFLAGS	:= $(DEFINES)
 
 ifeq ($(TYPE), development)
@@ -114,6 +106,10 @@ EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
 # tests
+TESTDIR		:= test
+TESTBUILD	:= $(TESTDIR)/objs
+TESTTARGET	:= $(TESTDIR)/bin
+
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
 TESTINC		:= -I ./$(TESTDIR)
@@ -121,7 +117,11 @@ TESTINC		:= -I ./$(TESTDIR)
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
-# benchmarks 
+# benchmarks
+BENCHDIR	:= benchmarks
+BENCHBUILD	:= $(BENCHDIR)/objs
+BENCHTARGET	:= $(BENCHDIR)/bin
+
 BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
 BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
 BENCHINC	:= -I ./$(BENCHDIR)
