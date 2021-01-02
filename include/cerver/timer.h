@@ -1,10 +1,6 @@
 #ifndef _CERVER_TIMER_H_
 #define _CERVER_TIMER_H_
 
-#ifndef __USE_POSIX199309
-	#define __USE_POSIX199309
-#endif
-
 #include <time.h>
 
 #include "cerver/types/types.h"
