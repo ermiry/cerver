@@ -22,7 +22,6 @@ jobs:
 
       - name: gcc make
         run: make
-
       - name: gcc examples
         run: make examples
 
