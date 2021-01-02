@@ -1,9 +1,15 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
-#include <time.h>
+#include "cerver/config.h"
+
 #include <pthread.h>
-#include <poll.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/poll.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -248,7 +254,10 @@ static Connection *admin_connection_get_by_sock_fd (
 
 	if (admin) {
 		Connection *connection = NULL;
-		for (ListElement *le_sub = dlist_start (admin->client->connections); le_sub; le_sub = le_sub->next) {
+		for (
+			ListElement *le_sub = dlist_start (admin->client->connections);
+			le_sub; le_sub = le_sub->next
+		) {
 			connection = (Connection *) le_sub->data;
 			if (connection->socket->sock_fd == sock_fd) {
 				retval = connection;
@@ -269,8 +278,13 @@ Admin *admin_get_by_sock_fd (
 	Admin *retval = NULL;
 
 	if (admin_cerver) {
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-			if (admin_connection_get_by_sock_fd ((Admin *) le->data, sock_fd)) {
+		for (
+			ListElement *le = dlist_start (admin_cerver->admins);
+			le; le = le->next
+		) {
+			if (admin_connection_get_by_sock_fd (
+				(Admin *) le->data, sock_fd)
+			) {
 				retval = (Admin *) le->data;
 				break;
 			}
@@ -290,7 +304,10 @@ Admin *admin_get_by_session_id (
 
 	if (admin_cerver) {
 		Admin *admin = NULL;
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+		for (
+			ListElement *le = dlist_start (admin_cerver->admins);
+			le; le = le->next
+		) {
 			admin = (Admin *) le->data;
 			if (admin->client->session_id) {
 				if (!strcmp (admin->client->session_id->str, session_id)) {
@@ -431,7 +448,9 @@ u8 admin_send_packet (Admin *admin, Packet *packet) {
 		if (!packet_send (packet, 0, &sent, false)) {
 			// printf ("admin_send_packet () - Sent to admin: %ld\n", sent);
 
-			admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
+			admin_cerver_packet_send_update_stats (
+				admin->admin_cerver->stats, packet->packet_type, sent
+			);
 
 			retval = 0;
 		}
@@ -460,7 +479,10 @@ u8 admin_send_packet_split (Admin *admin, Packet *packet) {
 			(Connection *) dlist_start (admin->client->connections)->data,
 			NULL
 		)) {
-			// printf ("admin_send_packet_split () - Sent to admin: %ld\n", sent);
+			// (void) printf (
+			// 	"admin_send_packet_split () - Sent to admin: %ld\n",
+			// 	sent
+			// );
 
 			admin_cerver_packet_send_update_stats (
 				admin->admin_cerver->stats, packet->packet_type, sent
@@ -504,9 +526,14 @@ u8 admin_send_packet_pieces (
 			pieces, sizes, n_pieces,
 			0, &sent
 		)) {
-			printf ("admin_send_packet_pieces () - Sent to admin: %ld\n", sent);
+			// (void) printf (
+			// 	"admin_send_packet_pieces () - Sent to admin: %lu\n",
+			// 	sent
+			// );
 
-			admin_cerver_packet_send_update_stats (admin->admin_cerver->stats, packet->packet_type, sent);
+			admin_cerver_packet_send_update_stats (
+				admin->admin_cerver->stats, packet->packet_type, sent
+			);
 
 			retval = 0;
 		}
@@ -770,9 +797,9 @@ unsigned int admin_cerver_get_n_handlers_alive (
 	unsigned int retval = 0;
 
 	if (admin_cerver) {
-		pthread_mutex_lock (admin_cerver->handlers_lock);
+		(void) pthread_mutex_lock (admin_cerver->handlers_lock);
 		retval = admin_cerver->num_handlers_alive;
-		pthread_mutex_unlock (admin_cerver->handlers_lock);
+		(void) pthread_mutex_unlock (admin_cerver->handlers_lock);
 	}
 
 	return retval;
@@ -787,9 +814,9 @@ unsigned int admin_cerver_get_n_handlers_working (
 	unsigned int retval = 0;
 
 	if (admin_cerver) {
-		pthread_mutex_lock (admin_cerver->handlers_lock);
+		(void) pthread_mutex_lock (admin_cerver->handlers_lock);
 		retval = admin_cerver->num_handlers_working;
-		pthread_mutex_unlock (admin_cerver->handlers_lock);
+		(void) pthread_mutex_unlock (admin_cerver->handlers_lock);
 	}
 
 	return retval;
@@ -866,7 +893,10 @@ u8 admin_cerver_broadcast_to_admins (
 
 	if (admin_cerver && packet) {
 		u8 errors = 0;
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+		for (
+			ListElement *le = dlist_start (admin_cerver->admins);
+			le; le = le->next
+		) {
 			errors |= admin_send_packet ((Admin *) le->data, packet);
 		}
 
@@ -888,7 +918,10 @@ u8 admin_cerver_broadcast_to_admins_split (
 	if (admin_cerver && packet) {
 		u8 errors = 0;
 
-		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
+		for (
+			ListElement *le = dlist_start (admin_cerver->admins);
+			le; le = le->next
+		) {
 			errors |= admin_send_packet_split ((Admin *) le->data, packet);
 		}
 
@@ -911,7 +944,9 @@ u8 admin_cerver_broadcast_to_admins_pieces (
 	if (admin_cerver && packet) {
 		u8 errors = 0;
 		for (ListElement *le = dlist_start (admin_cerver->admins); le; le = le->next) {
-			errors |= admin_send_packet_pieces ((Admin *) le->data, packet, pieces, sizes, n_pieces);
+			errors |= admin_send_packet_pieces (
+				(Admin *) le->data, packet, pieces, sizes, n_pieces
+			);
 		}
 
 		retval = errors;
@@ -972,8 +1007,13 @@ u8 admin_cerver_unregister_admin (
 	if (admin_cerver && admin) {
 		if (dlist_remove (admin_cerver->admins, admin, NULL)) {
 			// unregister all his active connections from the poll array
-			for (ListElement *le = dlist_start (admin->client->connections); le; le = le->next) {
-				admin_cerver_poll_unregister_connection (admin_cerver, (Connection *) le->data);
+			for (
+				ListElement *le = dlist_start (admin->client->connections);
+				le; le = le->next
+			) {
+				admin_cerver_poll_unregister_connection (
+					admin_cerver, (Connection *) le->data
+				);
 			}
 
 			admin->admin_cerver = NULL;
@@ -1022,7 +1062,7 @@ static void *admin_poll (void *cerver_ptr);
 
 // called in a dedicated thread only if a user method was set
 // executes methods every tick
-static void admin_cerver_update (void *args) {
+static void *admin_cerver_update (void *args) {
 
 	if (args) {
 		AdminCerver *admin_cerver = (AdminCerver *) args;
@@ -1047,23 +1087,23 @@ static void admin_cerver_update (void *args) {
 		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
 		while (admin_cerver->cerver->isRunning) {
-			clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
 
 			// do stuff
 			if (admin_cerver->update) admin_cerver->update (cu);
 
 			// limit the fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
 			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
 			// printf ("temp: %d\n", temp);
 			sleep_time = time_per_frame - temp;
 			// printf ("sleep time: %d\n", sleep_time);
 			if (sleep_time > 0) {
-				usleep (sleep_time);
+				(void) usleep (sleep_time);
 			}
 
 			// count fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
 			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
 			delta_ticks += delta_time;
 			fps++;
@@ -1091,11 +1131,13 @@ static void admin_cerver_update (void *args) {
 		#endif
 	}
 
+	return NULL;
+
 }
 
 // called in a dedicated thread only if a user method was set
 // executes methods every x seconds
-static void admin_cerver_update_interval (void *args) {
+static void *admin_cerver_update_interval (void *args) {
 
 	if (args) {
 		AdminCerver *admin_cerver = (AdminCerver *) args;
@@ -1107,19 +1149,24 @@ static void admin_cerver_update_interval (void *args) {
 		);
 		#endif
 
-		CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_interval_args);
+		CerverUpdate *cu = cerver_update_new (
+			admin_cerver->cerver, admin_cerver->update_interval_args
+		);
 
 		while (admin_cerver->cerver->isRunning) {
-			if (admin_cerver->update_interval) admin_cerver->update_interval (cu);
+			if (admin_cerver->update_interval)
+				admin_cerver->update_interval (cu);
 
-			sleep (admin_cerver->update_interval_secs);
+			(void) sleep (admin_cerver->update_interval_secs);
 		}
 
 		cerver_update_delete (cu);
 
 		if (admin_cerver->update_interval_args) {
 			if (admin_cerver->delete_update_interval_args) {
-				admin_cerver->delete_update_interval_args (admin_cerver->update_interval_args);
+				admin_cerver->delete_update_interval_args (
+					admin_cerver->update_interval_args
+				);
 			}
 		}
 
@@ -1131,6 +1178,8 @@ static void admin_cerver_update_interval (void *args) {
 		#endif
 	}
 
+	return NULL;
+
 }
 
 // inits admin cerver's internal structures & values
@@ -1139,9 +1188,14 @@ static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
 	u8 retval = 1;
 
 	if (admin_cerver) {
-		admin_cerver->fds = (struct pollfd *) calloc (admin_cerver->max_n_fds, sizeof (struct pollfd));
+		admin_cerver->fds = (struct pollfd *) calloc (
+			admin_cerver->max_n_fds, sizeof (struct pollfd)
+		);
+
 		if (admin_cerver->fds) {
-			memset (admin_cerver->fds, 0, sizeof (struct pollfd) * admin_cerver->max_n_fds);
+			(void) memset (
+				admin_cerver->fds, 0, sizeof (struct pollfd) * admin_cerver->max_n_fds
+			);
 
 			for (u32 i = 0; i < admin_cerver->max_n_fds; i++)
 				admin_cerver->fds[i].fd = -1;
@@ -1149,7 +1203,7 @@ static u8 admin_cerver_start_internal (AdminCerver *admin_cerver) {
 			admin_cerver->current_n_fds = 0;
 
 			admin_cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			pthread_mutex_init (admin_cerver->poll_lock, NULL);
+			(void) pthread_mutex_init (admin_cerver->poll_lock, NULL);
 
 			retval = 0;
 		}
@@ -1289,7 +1343,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 		#endif
 
 		admin_cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		pthread_mutex_init (admin_cerver->handlers_lock, NULL);
+		(void) pthread_mutex_init (admin_cerver->handlers_lock, NULL);
 
 		errors |= admin_cerver_app_handler_start (admin_cerver);
 
@@ -1345,7 +1399,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 			if (admin_cerver->update) {
 				if (thread_create_detachable (
 					&admin_cerver->update_thread_id,
-					(void *(*) (void *)) admin_cerver_update,
+					admin_cerver_update,
 					admin_cerver
 				)) {
 					cerver_log_error (
@@ -1358,7 +1412,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 			if (admin_cerver->update_interval) {
 				if (thread_create_detachable (
 					&admin_cerver->update_interval_thread_id,
-					(void *(*) (void *)) admin_cerver_update_interval,
+					admin_cerver_update_interval,
 					admin_cerver
 				)) {
 					cerver_log_error (
@@ -1406,7 +1460,9 @@ static u8 admin_cerver_app_handler_destroy (AdminCerver *admin_cerver) {
 		if (admin_cerver->app_packet_handler) {
 			if (!admin_cerver->app_packet_handler->direct_handle) {
 				// stop app handler
-				bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
+				bsem_post_all (
+					admin_cerver->app_packet_handler->job_queue->has_jobs
+				);
 			}
 		}
 	}
@@ -1423,7 +1479,9 @@ static u8 admin_cerver_app_error_handler_destroy (AdminCerver *admin_cerver) {
 		if (admin_cerver->app_error_packet_handler) {
 			if (!admin_cerver->app_error_packet_handler->direct_handle) {
 				// stop app error handler
-				bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
+				bsem_post_all (
+					admin_cerver->app_error_packet_handler->job_queue->has_jobs
+				);
 			}
 		}
 	}
@@ -1440,7 +1498,9 @@ static u8 admin_cerver_custom_handler_destroy (AdminCerver *admin_cerver) {
 		if (admin_cerver->custom_packet_handler) {
 			if (!admin_cerver->custom_packet_handler->direct_handle) {
 				// stop custom handler
-				bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
+				bsem_post_all (
+					admin_cerver->custom_packet_handler->job_queue->has_jobs
+				);
 			}
 		}
 	}

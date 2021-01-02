@@ -186,7 +186,7 @@ static u8 my_auth_method (void *auth_method_ptr)  {
 
 #pragma region events
 
-static void on_hold_connected (void *event_data_ptr) {
+static void *on_hold_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -200,9 +200,11 @@ static void on_hold_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_hold_disconnected (void *event_data_ptr) {
+static void *on_hold_disconnected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -215,9 +217,11 @@ static void on_hold_disconnected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_hold_drop (void *event_data_ptr) {
+static void *on_hold_drop (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -230,9 +234,11 @@ static void on_hold_drop (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_failed_auth (void *event_data_ptr) {
+static void *on_admin_failed_auth (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -246,9 +252,11 @@ static void on_admin_failed_auth (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_connected (void *event_data_ptr) {
+static void *on_admin_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -263,9 +271,11 @@ static void on_admin_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_new_connection (void *event_data_ptr) {
+static void *on_admin_new_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -280,9 +290,11 @@ static void on_admin_new_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_close_connection (void *event_data_ptr) {
+static void *on_admin_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -295,9 +307,11 @@ static void on_admin_close_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_disconnected (void *event_data_ptr) {
+static void *on_admin_disconnected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -310,9 +324,11 @@ static void on_admin_disconnected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_dropped (void *event_data_ptr) {
+static void *on_admin_dropped (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -324,6 +340,8 @@ static void on_admin_dropped (void *event_data_ptr) {
 			event_data->cerver->info->name->str
 		);
 	}
+
+	return NULL;
 
 }
 

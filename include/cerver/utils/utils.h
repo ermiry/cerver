@@ -18,6 +18,8 @@ CERVER_PUBLIC int abs_int (int value);
 
 CERVER_PUBLIC float lerp (float first, float second, float by);
 
+CERVER_PUBLIC bool float_compare (float f1, float f2);
+
 /*** random ***/
 
 // init psuedo random generator based on our seed
@@ -69,6 +71,9 @@ CERVER_PUBLIC void c_string_remove_spaces (char *s);
 
 // removes any CRLF characters in a string
 CERVER_PUBLIC void c_string_remove_line_breaks (char *s);
+
+// removes all spaces and CRLF in the c string
+CERVER_PUBLIC void c_string_remove_spaces_and_line_breaks (char *s);
 
 // get how many tokens will be extracted by counting the number of apperances of the delim
 // the original string won't be affected
@@ -147,7 +152,7 @@ CERVER_PUBLIC char *c_string_remove_sub_simetric_token (
 // returns a newly allocated string, and a option to get the substring
 CERVER_PUBLIC char *c_string_remove_sub_range_token (
 	char *str,
-	const char token, unsigned int first, unsigned int last,
+	const char token, int first, int last,
 	char **sub
 );
 

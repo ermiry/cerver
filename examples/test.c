@@ -83,7 +83,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_started (void *event_data_ptr) {
+static void *on_cever_started (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -98,9 +98,11 @@ static void on_cever_started (void *event_data_ptr) {
 		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
 	}
 
+	return NULL;
+
 }
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -113,9 +115,11 @@ static void on_cever_teardown (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -130,9 +134,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -144,6 +150,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 			event_data->cerver->info->name->str
 		);
 	}
+
+	return NULL;
 
 }
 

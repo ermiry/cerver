@@ -43,7 +43,9 @@ typedef enum CerverErrorType {
 } CerverErrorType;
 
 // get the description for the current error type
-CERVER_EXPORT const char *cerver_error_type_description (CerverErrorType type);
+CERVER_EXPORT const char *cerver_error_type_description (
+	const CerverErrorType type
+);
 
 #pragma endregion
 
@@ -56,8 +58,8 @@ typedef struct CerverErrorEvent {
 	bool create_thread;                 // create a detachable thread to run action
 	bool drop_after_trigger;            // if we only want to trigger the event once
 
-	Action action;                      // the action to be triggered
-	void *action_args;                  // the action arguments
+	Work work;                      // the action to be triggered
+	void *work_args;                  // the action arguments
 	Action delete_action_args;          // how to get rid of the data when deleting the listeners
 
 } CerverErrorEvent;
@@ -72,20 +74,23 @@ CERVER_PUBLIC void cerver_error_event_delete (void *event_ptr);
 CERVER_EXPORT u8 cerver_error_event_register (
 	struct _Cerver *cerver,
 	const CerverErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
 // unregister the action associated with an error event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if error is NOT registered
-CERVER_EXPORT u8 cerver_error_event_unregister (struct _Cerver *cerver, const CerverErrorType error_type);
+CERVER_EXPORT u8 cerver_error_event_unregister (
+	struct _Cerver *cerver, const CerverErrorType error_type
+);
 
 // triggers all the actions that are registred to an error
 CERVER_PRIVATE void cerver_error_event_trigger (
 	const CerverErrorType error_type,
 	const struct _Cerver *cerver,
-	const struct _Client *client, const struct _Connection *connection,
+	const struct _Client *client,
+	const struct _Connection *connection,
 	const char *error_message
 );
 
@@ -107,27 +112,35 @@ typedef struct CerverErrorEventData {
 
 } CerverErrorEventData;
 
-CERVER_PUBLIC void cerver_error_event_data_delete (CerverErrorEventData *error_event_data);
+CERVER_PUBLIC void cerver_error_event_data_delete (
+	CerverErrorEventData *error_event_data
+);
 
 #pragma endregion
 
 #pragma region handler
 
 // handles error packets
-CERVER_PRIVATE void cerver_error_packet_handler (struct _Packet *packet);
+CERVER_PRIVATE void cerver_error_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 
 #pragma region packets
 
 // creates an error packet ready to be sent
-CERVER_PUBLIC struct _Packet *error_packet_generate (const CerverErrorType type, const char *msg);
+CERVER_PUBLIC struct _Packet *error_packet_generate (
+	const CerverErrorType type, const char *msg
+);
 
 // creates and send a new error packet
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 error_packet_generate_and_send (
 	const CerverErrorType type, const char *msg,
-	struct _Cerver *cerver, struct _Client *client, struct _Connection *connection
+	struct _Cerver *cerver,
+	struct _Client *client,
+	struct _Connection *connection
 );
 
 #pragma endregion

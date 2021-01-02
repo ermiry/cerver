@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cerver/config.h"
+
+#include <dirent.h>
+#include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
-#include <fcntl.h>
-
-#define _XOPEN_SOURCE 700
-#include <dirent.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -370,11 +370,15 @@ unsigned int files_create_dir (
 				}
 
 				else {
-					cerver_log_error ("Failed to create dir %s!", dir_path);
+					cerver_log_error (
+						"Failed to create dir %s!", dir_path
+					);
 				}
 			} break;
 			case 0: {
-				cerver_log_warning ("Dir %s already exists!", dir_path);
+				cerver_log_warning (
+					"Dir %s already exists!", dir_path
+				);
 			} break;
 
 			default: break;
@@ -402,7 +406,7 @@ char *files_get_file_extension (const char *filename) {
 			if (ext_len) {
 				retval = (char *) calloc (ext_len + 1, sizeof (char));
 				if (retval) {
-					memcpy (retval, ptr + 1, ext_len);
+					(void) memcpy (retval, ptr + 1, ext_len);
 					retval[ext_len] = '\0';
 				}
 			}
@@ -430,7 +434,9 @@ DoubleList *files_get_from_dir (const char *dir) {
 				if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
 					file = str_create ("%s/%s", dir, ep->d_name);
 
-					dlist_insert_after (images, dlist_end (images), file);
+					(void) dlist_insert_after (
+						images, dlist_end (images), file
+					);
 				}
 			}
 
@@ -482,7 +488,7 @@ DoubleList *file_get_lines (
 				String *line = NULL;
 			
 				while ((line = file_get_line (file, buffer, buffer_size))) {
-					dlist_insert_at_end_unsafe (lines, line);
+					(void) dlist_insert_at_end_unsafe (lines, line);
 				}
 
 				free (buffer);
@@ -517,12 +523,14 @@ bool file_exists (const char *filename) {
 }
 
 // opens a file and returns it as a FILE
-FILE *file_open_as_file (const char *filename, const char *modes, struct stat *filestatus) {
+FILE *file_open_as_file (
+	const char *filename, const char *modes, struct stat *filestatus
+) {
 
 	FILE *fp = NULL;
 
 	if (filename) {
-		memset (filestatus, 0, sizeof (struct stat));
+		(void) memset (filestatus, 0, sizeof (struct stat));
 		if (!stat (filename, filestatus))
 			fp = fopen (filename, modes);
 
@@ -565,7 +573,7 @@ char *file_read (const char *filename, size_t *file_size) {
 				free (file_contents);
 			}
 
-			fclose (fp);
+			(void) fclose (fp);
 		}
 
 		else {
@@ -584,12 +592,14 @@ char *file_read (const char *filename, size_t *file_size) {
 
 // opens a file with the required flags
 // returns fd on success, -1 on error
-int file_open_as_fd (const char *filename, struct stat *filestatus, int flags) {
+int file_open_as_fd (
+	const char *filename, struct stat *filestatus, int flags
+) {
 
 	int retval = -1;
 
 	if (filename) {
-		memset (filestatus, 0, sizeof (struct stat));
+		(void) memset (filestatus, 0, sizeof (struct stat));
 		if (!stat (filename, filestatus)) {
 			retval = open (filename, flags);
 		}
@@ -646,7 +656,7 @@ static u8 file_send_header (
 		end += sizeof (PacketHeader);
 
 		FileHeader *file_header = (FileHeader *) end;
-		strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+		(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
 		file_header->len = filelen;
 
 		packet_set_network_values (packet, cerver, client, connection, NULL);
@@ -667,7 +677,7 @@ static ssize_t file_send_actual (
 
 	ssize_t retval = 0;
 
-	pthread_mutex_lock (connection->socket->write_mutex);
+	(void) pthread_mutex_lock (connection->socket->write_mutex);
 
 	// send a first packet with file info
 	if (!file_send_header (
@@ -675,7 +685,9 @@ static ssize_t file_send_actual (
 		actual_filename, filelen
 	)) {
 		// send the actual file
-		retval = sendfile (connection->socket->sock_fd, file_fd, NULL, filelen);
+		retval = sendfile (
+			connection->socket->sock_fd, file_fd, NULL, filelen
+		);
 	}
 
 	else {
@@ -685,7 +697,7 @@ static ssize_t file_send_actual (
 		);
 	}
 
-	pthread_mutex_unlock (connection->socket->write_mutex);
+	(void) pthread_mutex_unlock (connection->socket->write_mutex);
 
 	return retval;
 
@@ -739,7 +751,7 @@ ssize_t file_send (
 				file_fd, actual_filename, filestatus.st_size
 			);
 
-			close (file_fd);
+			(void) close (file_fd);
 		}
 	}
 
@@ -802,7 +814,10 @@ static inline u8 file_receive_internal_receive (
 
 		default: {
 			#ifdef FILES_DEBUG
-			cerver_log_debug ("file_receive_internal_receive () - spliced %ld bytes", *received);
+			cerver_log_debug (
+				"file_receive_internal_receive () - spliced %ld bytes",
+				*received
+			);
 			#endif
 
 			retval = 0;
@@ -843,7 +858,10 @@ static inline u8 file_receive_internal_move (
 
 		default: {
 			#ifdef FILES_DEBUG
-			cerver_log_debug ("file_receive_internal_move () - spliced %ld bytes", *moved);
+			cerver_log_debug (
+				"file_receive_internal_move () - spliced %ld bytes",
+				*moved
+			);
 			#endif
 
 			retval = 0;
@@ -854,7 +872,9 @@ static inline u8 file_receive_internal_move (
 
 }
 
-static u8 file_receive_internal (Connection *connection, size_t filelen, int file_fd) {
+static u8 file_receive_internal (
+	Connection *connection, size_t filelen, int file_fd
+) {
 
 	u8 retval = 1;
 
@@ -867,15 +887,19 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 		while (len > 0) {
 			if (buff_size > len) buff_size = len;
 
-			if (file_receive_internal_receive (connection, pipefds[1], buff_size, &received)) break;
+			if (file_receive_internal_receive (
+				connection, pipefds[1], buff_size, &received
+			)) break;
 
-			if (file_receive_internal_move (pipefds[0], file_fd, buff_size, &moved)) break;
+			if (file_receive_internal_move (
+				pipefds[0], file_fd, buff_size, &moved
+			)) break;
 
 			len -= buff_size;
 		}
 
-		close (pipefds[0]);
-		close (pipefds[1]);
+		(void) close (pipefds[0]);
+		(void) close (pipefds[1]);
 
 		if (len <= 0) retval = 0;
 	}
@@ -883,6 +907,9 @@ static u8 file_receive_internal (Connection *connection, size_t filelen, int fil
 	return retval;
 
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // opens the file using an already created filename
 // and use the fd to receive and save the file
@@ -911,7 +938,7 @@ u8 file_receive_actual (
 			if (wrote < 0) {
 				cerver_log_error ("file_receive_actual () - write () has failed!");
 				perror ("Error");
-				printf ("\n");
+				cerver_log_line_break ();
 			}
 
 			else {
@@ -952,7 +979,7 @@ u8 file_receive_actual (
 			}
 		}
 
-		close (file_fd);
+		(void) close (file_fd);
 	}
 
 	else {
@@ -965,5 +992,7 @@ u8 file_receive_actual (
 	return retval;
 
 }
+
+#pragma GCC diagnostic pop
 
 #pragma endregion

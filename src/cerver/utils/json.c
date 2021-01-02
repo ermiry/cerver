@@ -35,6 +35,10 @@
 
 #include "cerver/utils/json.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wformat="
+
 #ifdef _MSC_VER
 	#ifndef _CRT_SECURE_NO_WARNINGS
 		#define _CRT_SECURE_NO_WARNINGS
@@ -1000,3 +1004,5 @@ void json_value_free (json_value * value) {
 	json_value_free_ex (&settings, value);
 
 }
+
+#pragma GCC diagnostic pop
