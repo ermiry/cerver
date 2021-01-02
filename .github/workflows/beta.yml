@@ -21,10 +21,6 @@ jobs:
         run: make TYPE=test
       - name: gcc examples
         run: make TYPE=test examples
-      - name: gcc tests
-        run: make test
-      - name: gcc run tests
-        run: bash test/run.sh
 
       - name: clean
         run: make clean
@@ -33,14 +29,36 @@ jobs:
         run: make TYPE=test CC=g++
       - name: g++ examples
         run: make TYPE=test CC=g++ examples
+  
+  test:
+    name: Cerver tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Get Shared Library
+        uses: actions/download-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin
+
+      - name: gcc tests
+        run: make test
+      - name: gcc run tests
+        run: bash test/run.sh
+
+      - name: clean
+        run: make clean
+
       - name: g++ tests
         run: make CC=g++ test
       - name: g++ run tests
         run: bash test/run.sh
   
   docker:
-    needs: build
     name: Docker build test
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
