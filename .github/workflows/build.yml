@@ -61,8 +61,8 @@ jobs:
       - name: gcc run tests
         run: bash test/run.sh
 
-      - name: clean
-        run: make clean
+      - name: clear
+        run: make clear
 
       - name: g++ tests
         run: make CC=g++ test
