@@ -20,6 +20,13 @@ jobs:
       - name: gcc examples
         run: make TYPE=production examples
 
+      - name: Archive Shared Library
+        uses: actions/upload-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin/libcerver.so
+          retention-days: 1
+
       - name: clean
         run: make clean
 
