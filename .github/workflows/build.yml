@@ -53,6 +53,9 @@ jobs:
         with:
           name: cerver-lib
 
+      - name: Display working directory structure
+        run: ls -R
+
       - name: gcc tests
         run: make test
       - name: gcc run tests
