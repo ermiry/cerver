@@ -1,7 +1,32 @@
 TYPE		:= development
 
-# TARGET      := cerver
 SLIB		:= libcerver.so
+
+all: directories $(SLIB)
+
+install: $(SLIB)
+	install -m 644 ./bin/libcerver.so /usr/local/lib/
+	cp -R ./include/cerver /usr/local/include
+
+uninstall:
+	rm /usr/local/lib/libcerver.so
+	rm -r /usr/local/include/cerver
+
+directories:
+	@mkdir -p $(TARGETDIR)
+	@mkdir -p $(BUILDDIR)
+
+clear:
+	@$(RM) -rf $(BUILDDIR) 
+	@$(RM) -rf $(EXABUILD)
+	@$(RM) -rf $(EXATARGET)
+	@$(RM) -rf $(TESTBUILD)
+	@$(RM) -rf $(TESTTARGET)
+	@$(RM) -rf $(BENCHBUILD)
+	@$(RM) -rf $(BENCHTARGET)
+
+clean: clear
+	@$(RM) -rf $(TARGETDIR)
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
@@ -15,7 +40,7 @@ DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
-				-D FILES_DEBUG								\
+				-D FILES_DEBUG
 
 CC          := gcc
 
@@ -83,6 +108,22 @@ OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJE
 
 SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
+# pull in dependency info for *existing* .o files
+-include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
+
+$(SLIB): $(OBJECTS)
+	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
+
+# compile sources
+$(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(INC) $(LIB) -c -o $@ $<
+	@$(CC) $(CFLAGS) $(INCDEP) -MM $(SRCDIR)/$*.$(SRCEXT) > $(BUILDDIR)/$*.$(DEPEXT)
+	@cp -f $(BUILDDIR)/$*.$(DEPEXT) $(BUILDDIR)/$*.$(DEPEXT).tmp
+	@sed -e 's|.*:|$(BUILDDIR)/$*.$(OBJEXT):|' < $(BUILDDIR)/$*.$(DEPEXT).tmp > $(BUILDDIR)/$*.$(DEPEXT)
+	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
+	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
+
 # examples
 EXAMDIR		:= examples
 EXABUILD	:= $(EXAMDIR)/objs
@@ -113,95 +154,6 @@ EXAINC		:= -I ./$(EXAMDIR)
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
-
-# tests
-TESTDIR		:= test
-TESTBUILD	:= $(TESTDIR)/objs
-TESTTARGET	:= $(TESTDIR)/bin
-TESTCOV		:= coverage/test
-
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
-
-ifeq ($(TYPE), test)
-	TESTFLAGS += -fprofile-arcs -ftest-coverage
-endif
-
-TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
-
-ifeq ($(TYPE), test)
-	TESTLIBS += -lgcov --coverage
-endif
-
-TESTINC		:= -I ./$(TESTDIR)
-
-TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
-TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
-
-TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
-
-COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
-
-# benchmarks
-BENCHDIR	:= benchmarks
-BENCHBUILD	:= $(BENCHDIR)/objs
-BENCHTARGET	:= $(BENCHDIR)/bin
-
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
-BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
-BENCHINC	:= -I ./$(BENCHDIR)
-
-BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
-BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
-
-# all: directories $(TARGET)
-all: directories $(SLIB)
-
-# run: 
-# 	./$(TARGETDIR)/$(TARGET)
-
-install: $(SLIB)
-	install -m 644 ./bin/libcerver.so /usr/local/lib/
-	cp -R ./include/cerver /usr/local/include
-
-uninstall:
-	rm /usr/local/lib/libcerver.so
-	rm -r /usr/local/include/cerver
-
-directories:
-	@mkdir -p $(TARGETDIR)
-	@mkdir -p $(BUILDDIR)
-
-clear:
-	@$(RM) -rf $(BUILDDIR) 
-	@$(RM) -rf $(EXABUILD)
-	@$(RM) -rf $(EXATARGET)
-	@$(RM) -rf $(TESTBUILD)
-	@$(RM) -rf $(TESTTARGET)
-	@$(RM) -rf $(BENCHBUILD)
-	@$(RM) -rf $(BENCHTARGET)
-
-clean: clear
-	@$(RM) -rf $(TARGETDIR)
-
-# pull in dependency info for *existing* .o files
--include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
-
-# link
-# $(TARGET): $(OBJECTS)
-# 	$(CC) $^ $(LIB) -o $(TARGETDIR)/$(TARGET)
-
-$(SLIB): $(OBJECTS)
-	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
-
-# compile sources
-$(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
-	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(INC) $(LIB) -c -o $@ $<
-	@$(CC) $(CFLAGS) $(INCDEP) -MM $(SRCDIR)/$*.$(SRCEXT) > $(BUILDDIR)/$*.$(DEPEXT)
-	@cp -f $(BUILDDIR)/$*.$(DEPEXT) $(BUILDDIR)/$*.$(DEPEXT).tmp
-	@sed -e 's|.*:|$(BUILDDIR)/$*.$(OBJEXT):|' < $(BUILDDIR)/$*.$(DEPEXT).tmp > $(BUILDDIR)/$*.$(DEPEXT)
-	@sed -e 's/.*://' -e 's/\\$$//' < $(BUILDDIR)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BUILDDIR)/$*.$(DEPEXT)
-	@rm -f $(BUILDDIR)/$*.$(DEPEXT).tmp
 
 examples: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)
@@ -234,6 +186,33 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
 	@rm -f $(EXABUILD)/$*.$(DEPEXT).tmp
+
+# tests
+TESTDIR		:= test
+TESTBUILD	:= $(TESTDIR)/objs
+TESTTARGET	:= $(TESTDIR)/bin
+TESTCOV		:= coverage/test
+
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
+
+ifeq ($(TYPE), test)
+	TESTFLAGS += -fprofile-arcs -ftest-coverage
+endif
+
+TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
+
+ifeq ($(TYPE), test)
+	TESTLIBS += -lgcov --coverage
+endif
+
+TESTINC		:= -I ./$(TESTDIR)
+
+TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
+TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
+
+COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
 
 test: $(TESTOBJS)
 	@mkdir -p ./$(TESTTARGET)
@@ -272,11 +251,23 @@ $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
 	mv $(notdir $@) ./$(TESTCOV)
 
+# benchmarks
+BENCHDIR	:= benchmarks
+BENCHBUILD	:= $(BENCHDIR)/objs
+BENCHTARGET	:= $(BENCHDIR)/bin
+
+BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
+BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
+BENCHINC	:= -I ./$(BENCHDIR)
+
+BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
+BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
+
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 
-# compile BENCHs
+# compile benchs
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
 	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) $(BENCHLIBS) -c -o $@ $<
