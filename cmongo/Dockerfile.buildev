@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y libssl-dev
 WORKDIR /opt/cerver
 COPY ./src .
 COPY ./include .
+COPY makefile .
 RUN make -j4
 
 ############
