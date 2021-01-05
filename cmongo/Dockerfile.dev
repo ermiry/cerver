@@ -9,7 +9,7 @@ COPY ./include .
 RUN make -j4
 
 ############
-FROM ermiry/cmongo:development
+FROM ermiry/cmongo:dev
 
 # cerver files
 COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/
