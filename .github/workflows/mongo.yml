@@ -46,7 +46,7 @@ jobs:
       # buildev
       # build cerver & cmongo development builder image
       # used to build projects with development cerver & cmongo libraries
-      - name: Build buildev image
+      - name: Build and push buildev image
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -57,7 +57,7 @@ jobs:
       # builder
       # build cerver & cmongo production builder image
       # used to build projects with production cerver & cmongo libraries
-      - name: Build builder image
+      - name: Build and push builder image
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -68,7 +68,7 @@ jobs:
       # production
       # build cerver & cmongo production ready image
       # generates an ubuntu based docker with production libraries
-      - name: Build production image
+      - name: Build and push production image
         uses: docker/build-push-action@v2
         with:
           context: .

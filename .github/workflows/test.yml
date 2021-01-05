@@ -28,7 +28,7 @@ jobs:
       # development
       # build cerver & cmongo development image
       # generates an ubuntu based docker with development libraries
-      - name: Build and push development image
+      - name: Build development image
         uses: docker/build-push-action@v2
         with:
           context: .
