@@ -4,9 +4,7 @@ RUN apt-get update && apt-get install -y libssl-dev
 
 # build cerver with production flags
 WORKDIR /opt/cerver
-COPY ./src .
-COPY ./include .
-COPY makefile .
+COPY . .
 RUN make TYPE=production -j4
 
 ############
