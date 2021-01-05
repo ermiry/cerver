@@ -116,7 +116,9 @@ extern void *htab_get (
 	Htab *ht, const void *key, size_t key_size
 );
 
-// removes the data associated with the key from the htab
+// removes and returns the data associated with the key from the htab
+// the data should be deleted by the user
+// returns NULL if no data was found with the provided key
 extern void *htab_remove (
 	Htab *ht, const void *key, size_t key_size
 );
