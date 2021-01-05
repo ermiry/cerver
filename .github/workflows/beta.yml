@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-      - uses: actions/checkout@v2
+        uses: actions/checkout@v2
 
       - name: Get Shared Library
         uses: actions/download-artifact@v2
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-      - uses: actions/checkout@v2
+        uses: actions/checkout@v2
 
       # docker setup
       - name: Set up QEMU
