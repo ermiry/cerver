@@ -15,6 +15,7 @@ jobs:
     name: Cerver build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
       - uses: actions/checkout@v2
 
       - name: System Information
@@ -52,9 +53,6 @@ jobs:
         with:
           name: cerver-lib
           path: ./bin
-
-      # - name: Display working directory structure
-      #   run: ls -R
 
       - name: gcc tests
         run: make test
