@@ -3,4 +3,6 @@
 
 extern int collections_tests_dlist (void);
 
+extern void collections_tests_htab (void);
+
 #endif

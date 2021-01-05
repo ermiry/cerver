@@ -27,6 +27,8 @@ int main (int argc, char **argv) {
 
 	(void) collections_tests_dlist ();
 
+	collections_tests_htab ();
+
 	(void) printf ("\nDone with COLLECTIONS tests!\n\n");
 
 	cerver_log_end ();
