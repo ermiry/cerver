@@ -30,6 +30,8 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
+COVEXT		:= gcov
+
 # common flags
 # -Wconversion
 COMMON		:= -march=native \
@@ -68,11 +70,18 @@ endif
 CFLAGS += -fPIC $(COMMON)
 
 LIB         := $(PTHREAD) $(MATH)
+
+ifeq ($(TYPE), test)
+	LIB += -lgcov --coverage
+endif
+
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
 SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
+
+SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
 # examples
 EXAMDIR		:= examples
@@ -109,13 +118,28 @@ EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT
 TESTDIR		:= test
 TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
+TESTCOV		:= coverage/test
 
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
+
+ifeq ($(TYPE), test)
+	TESTFLAGS += -fprofile-arcs -ftest-coverage
+endif
+
 TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
+
+ifeq ($(TYPE), test)
+	TESTLIBS += -lgcov --coverage
+endif
+
 TESTINC		:= -I ./$(TESTDIR)
 
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
+
+TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
+
+COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
 
 # benchmarks
 BENCHDIR	:= benchmarks
@@ -132,8 +156,8 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 # all: directories $(TARGET)
 all: directories $(SLIB)
 
-run: 
-	./$(TARGETDIR)/$(TARGET)
+# run: 
+# 	./$(TARGETDIR)/$(TARGET)
 
 install: $(SLIB)
 	install -m 644 ./bin/libcerver.so /usr/local/lib/
@@ -226,6 +250,28 @@ $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(TESTBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(TESTBUILD)/$*.$(DEPEXT)
 	@rm -f $(TESTBUILD)/$*.$(DEPEXT).tmp
 
+# test-run:
+# 	@bash test/run.sh
+
+test-coverage: $(COVOBJS)
+
+coverage-init:
+	@mkdir -p ./coverage
+	@mkdir -p ./$(TESTCOV)
+
+coverage: coverage-init test-coverage
+
+# get lib coverage reports
+$(BUILDDIR)/%.$(SRCEXT).$(COVEXT): $(SRCDIR)/%.$(SRCEXT)
+	@mkdir -p ./coverage/$(dir $<)
+	gcov -r $< --object-directory $(dir $@)
+	mv $(notdir $@) ./coverage/$<.gcov
+
+# get tests coverage reports
+$(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
+	gcov -r $< --object-directory $(dir $@)
+	mv $(notdir $@) ./$(TESTCOV)
+
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
@@ -240,4 +286,4 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
 
-.PHONY: all clean clear examples test bench
+.PHONY: all clean clear examples test coverage bench
