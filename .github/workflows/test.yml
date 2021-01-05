@@ -1,0 +1,66 @@
+name: Cerver Test CMongo Integration
+
+on:
+  pull_request:
+    branches:
+      - 'master'
+      - '*beta'
+
+jobs:
+  build:
+    # test cerver integration with cmongo images
+    name: Build docker images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+      - uses: actions/checkout@v2
+
+      - name: Read version file
+        id: get_version
+        run: echo "::set-output name=version::$(cat version.txt)"
+
+      # docker setup
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      # development
+      # build cerver & cmongo development image
+      # generates an ubuntu based docker with development libraries
+      - name: Build and push development image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./cmongo/Dockerfile.dev
+          tags: ermiry/cerver-cmongo:dev-${{ steps.get_version.outputs.version }}
+
+      # buildev
+      # build cerver & cmongo development builder image
+      # used to build projects with development cerver & cmongo libraries
+      - name: Build buildev image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./cmongo/Dockerfile.buildev
+          tags: ermiry/cerver-cmongo:buildev-${{ steps.get_version.outputs.version }}
+      
+      # builder
+      # build cerver & cmongo production builder image
+      # used to build projects with production cerver & cmongo libraries
+      - name: Build builder image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./cmongo/Dockerfile.builder
+          tags: ermiry/cerver-cmongo:builder-${{ steps.get_version.outputs.version }}
+
+      # production
+      # build cerver & cmongo production ready image
+      # generates an ubuntu based docker with production libraries
+      - name: Build production image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./cmongo/Dockerfile
+          tags: ermiry/cerver-cmongo:${{ steps.get_version.outputs.version }}
