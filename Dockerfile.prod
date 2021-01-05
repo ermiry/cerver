@@ -5,9 +5,7 @@ WORKDIR /opt/cerver
 RUN apt-get update && apt-get install -y cmake libssl-dev
 
 # cerver
-COPY ./src .
-COPY ./include .
-COPY ./examples .
+COPY . .
 RUN make TYPE=production -j4 && make TYPE=production -j4 examples
 
 ############
