@@ -1,0 +1,30 @@
+FROM gcc as builder
+
+WORKDIR /opt/cerver
+
+RUN apt-get update && apt-get install -y cmake libssl-dev
+
+# cerver
+COPY ./src .
+COPY ./include .
+COPY ./examples .
+RUN make TYPE=production -j4 && make TYPE=production -j4 examples
+
+############
+FROM ubuntu:bionic
+
+ARG RUNTIME_DEPS='libssl-dev'
+
+RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
+
+# install cerver
+COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/
+COPY --from=builder /opt/cerver/include/cerver /usr/local/include/cerver
+
+RUN ldconfig
+
+# cerver
+WORKDIR /home/cerver
+COPY --from=builder /opt/cerver/examples/bin ./examples
+
+CMD ["/bin/bash"]
