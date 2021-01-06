@@ -4,6 +4,10 @@
 #include "cerver/http/json/private.h"
 #include "cerver/http/json/hashtable.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum json_type {
 
 	JSON_OBJECT,
@@ -63,5 +67,9 @@ typedef struct {
 	json_int_t value;
 
 } json_integer_t;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

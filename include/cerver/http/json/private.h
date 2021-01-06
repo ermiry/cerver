@@ -8,6 +8,10 @@
 
 #include "cerver/http/json/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef JANSSON_USING_CMAKE /* disabled if using cmake */
 #if JSON_INTEGER_IS_LONG_LONG
 #ifdef _WIN32
@@ -105,5 +109,9 @@ extern struct json_t *json_copy (
 extern struct json_t *json_deep_copy (
 	const struct json_t *value
 ) CERVER_ATTRS((warn_unused_result));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

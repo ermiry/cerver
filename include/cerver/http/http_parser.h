@@ -50,6 +50,10 @@
 # define HTTP_MAX_HEADER_SIZE (80*1024)
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum http_parser_type { HTTP_REQUEST, HTTP_RESPONSE, HTTP_BOTH };
 
 /* Flag values for http_parser.flags field */
@@ -70,53 +74,52 @@ enum flags {
  *
  * The provided argument should be a macro that takes 2 arguments.
  */
-#define HTTP_ERRNO_MAP(XX)                                           \
-	/* No error */                                                     \
-	XX(OK, "success")                                                  \
-																																		 \
-	/* Callback-related errors */                                      \
-	XX(CB_message_begin, "the on_message_begin callback failed")       \
-	XX(CB_url, "the on_url callback failed")                           \
-	XX(CB_header_field, "the on_header_field callback failed")         \
-	XX(CB_header_value, "the on_header_value callback failed")         \
-	XX(CB_headers_complete, "the on_headers_complete callback failed") \
-	XX(CB_body, "the on_body callback failed")                         \
-	XX(CB_message_complete, "the on_message_complete callback failed") \
-	XX(CB_status, "the on_status callback failed")                     \
-	XX(CB_chunk_header, "the on_chunk_header callback failed")         \
-	XX(CB_chunk_complete, "the on_chunk_complete callback failed")     \
-																																		 \
-	/* Parsing-related errors */                                       \
-	XX(INVALID_EOF_STATE, "stream ended at an unexpected time")        \
-	XX(HEADER_OVERFLOW,                                                \
-		 "too many header bytes seen; overflow detected")                \
-	XX(CLOSED_CONNECTION,                                              \
-		 "data received after completed connection: close message")      \
-	XX(INVALID_VERSION, "invalid HTTP version")                        \
-	XX(INVALID_STATUS, "invalid HTTP status code")                     \
-	XX(INVALID_METHOD, "invalid HTTP method")                          \
-	XX(INVALID_URL, "invalid URL")                                     \
-	XX(INVALID_HOST, "invalid host")                                   \
-	XX(INVALID_PORT, "invalid port")                                   \
-	XX(INVALID_PATH, "invalid path")                                   \
-	XX(INVALID_QUERY_STRING, "invalid query string")                   \
-	XX(INVALID_FRAGMENT, "invalid fragment")                           \
-	XX(LF_EXPECTED, "LF character expected")                           \
-	XX(INVALID_HEADER_TOKEN, "invalid character in header")            \
-	XX(INVALID_CONTENT_LENGTH,                                         \
-		 "invalid character in content-length header")                   \
-	XX(UNEXPECTED_CONTENT_LENGTH,                                      \
-		 "unexpected content-length header")                             \
-	XX(INVALID_CHUNK_SIZE,                                             \
-		 "invalid character in chunk size header")                       \
-	XX(INVALID_CONSTANT, "invalid constant string")                    \
-	XX(INVALID_INTERNAL_STATE, "encountered unexpected internal state")\
-	XX(STRICT, "strict mode assertion failed")                         \
-	XX(PAUSED, "parser is paused")                                     \
-	XX(UNKNOWN, "an unknown error occurred")                           \
-	XX(INVALID_TRANSFER_ENCODING,                                      \
-		 "request has invalid transfer-encoding")                        \
-
+#define HTTP_ERRNO_MAP(XX)                                           	\
+	/* No error */                                                     	\
+	XX(OK, "success")                                                  	\
+																		\
+	/* Callback-related errors */                                      	\
+	XX(CB_message_begin, "the on_message_begin callback failed")       	\
+	XX(CB_url, "the on_url callback failed")                           	\
+	XX(CB_header_field, "the on_header_field callback failed")         	\
+	XX(CB_header_value, "the on_header_value callback failed")         	\
+	XX(CB_headers_complete, "the on_headers_complete callback failed") 	\
+	XX(CB_body, "the on_body callback failed")                         	\
+	XX(CB_message_complete, "the on_message_complete callback failed") 	\
+	XX(CB_status, "the on_status callback failed")                     	\
+	XX(CB_chunk_header, "the on_chunk_header callback failed")         	\
+	XX(CB_chunk_complete, "the on_chunk_complete callback failed")     	\
+																		\
+	/* Parsing-related errors */                                       	\
+	XX(INVALID_EOF_STATE, "stream ended at an unexpected time")        	\
+	XX(HEADER_OVERFLOW,                                                	\
+		 "too many header bytes seen; overflow detected")              	\
+	XX(CLOSED_CONNECTION,                                              	\
+		 "data received after completed connection: close message")    	\
+	XX(INVALID_VERSION, "invalid HTTP version")                        	\
+	XX(INVALID_STATUS, "invalid HTTP status code")                     	\
+	XX(INVALID_METHOD, "invalid HTTP method")                          	\
+	XX(INVALID_URL, "invalid URL")                                     	\
+	XX(INVALID_HOST, "invalid host")                                   	\
+	XX(INVALID_PORT, "invalid port")                                   	\
+	XX(INVALID_PATH, "invalid path")                                   	\
+	XX(INVALID_QUERY_STRING, "invalid query string")                   	\
+	XX(INVALID_FRAGMENT, "invalid fragment")                           	\
+	XX(LF_EXPECTED, "LF character expected")                           	\
+	XX(INVALID_HEADER_TOKEN, "invalid character in header")            	\
+	XX(INVALID_CONTENT_LENGTH,                                         	\
+		 "invalid character in content-length header")                 	\
+	XX(UNEXPECTED_CONTENT_LENGTH,                                      	\
+		 "unexpected content-length header")                           	\
+	XX(INVALID_CHUNK_SIZE,                                             	\
+		 "invalid character in chunk size header")                     	\
+	XX(INVALID_CONSTANT, "invalid constant string")                    	\
+	XX(INVALID_INTERNAL_STATE, "encountered unexpected internal state")	\
+	XX(STRICT, "strict mode assertion failed")                         	\
+	XX(PAUSED, "parser is paused")                                     	\
+	XX(UNKNOWN, "an unknown error occurred")                           	\
+	XX(INVALID_TRANSFER_ENCODING,                                      	\
+		 "request has invalid transfer-encoding")
 
 /* Define HPE_* values for each errno value above */
 #define HTTP_ERRNO_GEN(n, s) HPE_##n,
@@ -286,7 +289,9 @@ CERVER_EXPORT const char *http_errno_description (enum http_errno err);
 CERVER_EXPORT void http_parser_url_init (struct http_parser_url *u);
 
 /* Parse a URL; return nonzero on failure */
-CERVER_EXPORT int http_parser_parse_url (const char *buf, size_t buflen, int is_connect, struct http_parser_url *u);
+CERVER_EXPORT int http_parser_parse_url (
+	const char *buf, size_t buflen, int is_connect, struct http_parser_url *u
+);
 
 /* Pause or un-pause the parser; a nonzero value pauses */
 CERVER_EXPORT void http_parser_pause (http_parser *parser, int paused);
@@ -296,5 +301,9 @@ CERVER_EXPORT int http_body_is_final (const http_parser *parser);
 
 /* Change the maximum header size provided at compile time. */
 CERVER_EXPORT void http_parser_set_max_header_size (uint32_t size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

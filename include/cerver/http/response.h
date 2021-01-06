@@ -10,6 +10,10 @@
 
 #define RESPONSE_HEADERS_SIZE			8
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _HttpReceive;
 
 #define RESPONSE_HEADER_MAP(XX)									\
@@ -239,5 +243,9 @@ CERVER_EXPORT u8 http_response_json_custom_reference_send (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

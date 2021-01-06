@@ -12,6 +12,10 @@
 
 #include "cerver/http/json/private.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct json_t;
 
 struct hashtable_list {
@@ -66,7 +70,9 @@ typedef struct hashtable_t hashtable_t;
  *
  * Returns 0 on success, -1 on error (out of memory).
  */
-extern int hashtable_init (hashtable_t *hashtable) CERVER_ATTRS((warn_unused_result));
+extern int hashtable_init (
+	hashtable_t *hashtable
+) CERVER_ATTRS((warn_unused_result));
 
 /**
  * hashtable_close - Release all resources used by a hashtable object
@@ -92,7 +98,9 @@ extern void hashtable_close (hashtable_t *hashtable);
  *
  * Returns 0 on success, -1 on failure (out of memory).
  */
-extern int hashtable_set (hashtable_t *hashtable, const char *key, struct json_t *value);
+extern int hashtable_set (
+	hashtable_t *hashtable, const char *key, struct json_t *value
+);
 
 /**
  * hashtable_get - Get a value associated with a key
@@ -102,7 +110,9 @@ extern int hashtable_set (hashtable_t *hashtable, const char *key, struct json_t
  *
  * Returns value if it is found, or NULL otherwise.
  */
-extern void *hashtable_get (hashtable_t *hashtable, const char *key);
+extern void *hashtable_get (
+	hashtable_t *hashtable, const char *key
+);
 
 /**
  * hashtable_del - Remove a value from the hashtable
@@ -112,7 +122,9 @@ extern void *hashtable_get (hashtable_t *hashtable, const char *key);
  *
  * Returns 0 on success, or -1 if the key was not found.
  */
-extern int hashtable_del (hashtable_t *hashtable, const char *key);
+extern int hashtable_del (
+	hashtable_t *hashtable, const char *key
+);
 
 /**
  * hashtable_clear - Clear hashtable
@@ -149,7 +161,9 @@ extern void *hashtable_iter (hashtable_t *hashtable);
  * Like hashtable_iter() but returns an iterator pointing to a
  * specific key.
  */
-extern void *hashtable_iter_at (hashtable_t *hashtable, const char *key);
+extern void *hashtable_iter_at (
+	hashtable_t *hashtable, const char *key
+);
 
 /**
  * hashtable_iter_next - Advance an iterator
@@ -160,7 +174,9 @@ extern void *hashtable_iter_at (hashtable_t *hashtable, const char *key);
  * Returns a new iterator pointing to the next element in the
  * hashtable or NULL if the whole hastable has been iterated over.
  */
-extern void *hashtable_iter_next (hashtable_t *hashtable, void *iter);
+extern void *hashtable_iter_next (
+	hashtable_t *hashtable, void *iter
+);
 
 /**
  * hashtable_iter_key - Retrieve the key pointed by an iterator
@@ -182,6 +198,12 @@ extern void *hashtable_iter_value (void *iter);
  * @iter: The iterator
  * @value: The value to set
  */
-extern void hashtable_iter_set (void *iter, struct json_t *value);
+extern void hashtable_iter_set (
+	void *iter, struct json_t *value
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

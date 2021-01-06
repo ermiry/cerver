@@ -3,10 +3,14 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/json/hashtable.h"
 #include "cerver/http/json/internal.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/types.h"
-#include "cerver/http/json/hashtable.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define json_to_object(json_)  container_of(json_, json_object_t, json)
 #define json_to_array(json_)   container_of(json_, json_array_t, json)
@@ -258,13 +262,21 @@ extern json_t *json_object (void);
 
 extern json_t *json_array (void);
 
-extern json_t *json_string (const char *value);
+extern json_t *json_string (
+	const char *value
+);
 
-extern json_t *json_stringn (const char *value, size_t len);
+extern json_t *json_stringn (
+	const char *value, size_t len
+);
 
-extern json_t *json_string_nocheck (const char *value);
+extern json_t *json_string_nocheck (
+	const char *value
+);
 
-extern json_t *json_stringn_nocheck (const char *value, size_t len);
+extern json_t *json_stringn_nocheck (
+	const char *value, size_t len
+);
 
 extern json_t *json_integer (json_int_t value);
 
@@ -277,5 +289,9 @@ extern json_t *json_false (void);
 #define json_boolean(val) ((val) ? json_true() : json_false())
 
 extern json_t *json_null (void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

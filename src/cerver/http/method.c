@@ -10,7 +10,7 @@ const char *method_strings[] = {
 
 };
 
-const char *http_method_str (enum http_method m) {
+const char *http_method_str (const enum http_method m) {
 
   return ELEM_AT (method_strings, m, "<unknown>");
 

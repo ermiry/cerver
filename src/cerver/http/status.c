@@ -1,6 +1,6 @@
 #include "cerver/http/status.h"
 
-const char *http_status_str (enum http_status s) {
+const char *http_status_str (const enum http_status s) {
 
 	switch (s) {
 		#define XX(num, name, string) case HTTP_STATUS_##name: return #string;

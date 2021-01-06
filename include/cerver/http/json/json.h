@@ -14,6 +14,10 @@
 #include "cerver/http/json/types.h"
 #include "cerver/http/json/value.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define json_typeof(json)     ((json)->type)
 #define json_is_object(json)  ((json) && json_typeof(json) == JSON_OBJECT)
 #define json_is_array(json)   ((json) && json_typeof(json) == JSON_ARRAY)
@@ -220,5 +224,9 @@ extern int json_dump_callback (
 extern void json_print (json_t *root);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

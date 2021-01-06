@@ -14,6 +14,10 @@
 
 #define DEFAULT_ROUTES_TOKENS_SIZE				16
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _HttpRoute;
 struct _HttpReceive;
 
@@ -230,5 +234,9 @@ CERVER_EXPORT void http_route_set_decode_data (
 CERVER_EXPORT void http_route_print (
 	const HttpRoute *route
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

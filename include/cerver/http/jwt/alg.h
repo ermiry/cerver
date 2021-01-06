@@ -3,6 +3,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define JWT_ALG_MAP(XX)					\
 	XX(0,	NONE, 		None)			\
 	XX(1,	HS256, 		HS256)			\
@@ -37,7 +41,7 @@ typedef enum jwt_alg_t {
  * @returns Returns a string (e.g. "RS256") matching the alg or NULL for
  *     invalid alg.
  */
-CERVER_PUBLIC const char *jwt_alg_str (jwt_alg_t alg);
+CERVER_PUBLIC const char *jwt_alg_str (const jwt_alg_t alg);
 
 /**
  * Convert alg string to type.
@@ -51,5 +55,9 @@ CERVER_PUBLIC const char *jwt_alg_str (jwt_alg_t alg);
  * Note, this only works for algorithms that LibJWT supports or knows about.
  */
 CERVER_PUBLIC jwt_alg_t jwt_str_alg (const char *alg);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
