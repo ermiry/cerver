@@ -38,6 +38,46 @@
 #define test_check_int_gt(X, Y) test_check (X > Y, NULL)
 
 #define																\
+	test_check_ptr(ptr)												\
+	({																\
+		if (!ptr) {													\
+			where;													\
+			(void) fprintf (stderr, "Pointer is NULL!");			\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_null_ptr(ptr)												\
+	({																\
+		if (ptr) {													\
+			where;													\
+			(void) fprintf (stderr, "Pointer is NOT NULL!");		\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_true(value)											\
+	({																\
+		if (!value) {												\
+			where;													\
+			(void) fprintf (stderr, "Value is NOT true!");			\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_false(value)											\
+	({																\
+		if (value) {												\
+			where;													\
+			(void) fprintf (stderr, "Value is NOT false!");			\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
 	test_check_int_eq(value, expected, msg)							\
 	({																\
 		if (value != expected) {									\
