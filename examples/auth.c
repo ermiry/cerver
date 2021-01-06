@@ -316,21 +316,24 @@ static void *on_client_close_connection (void *event_data_ptr) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Auth Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver with auth options enabled");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -413,12 +416,10 @@ int main (void) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}

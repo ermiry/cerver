@@ -14,6 +14,10 @@
 
 #include "cerver/game/lobby.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Socket;
 struct _Cerver;
 struct _Client;
@@ -433,5 +437,9 @@ CERVER_EXPORT u8 packet_send_to_socket (
 CERVER_EXPORT bool packet_check (Packet *packet);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

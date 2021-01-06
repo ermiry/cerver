@@ -22,6 +22,10 @@
 #define LOBBY_DEFAULT_POLL_TIMEOUT			2000
 #define LOBBY_DEFAULT_MAX_PLAYERS			4
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Connection;
@@ -239,5 +243,9 @@ typedef struct LobbyJoin {
 	SStringS game_type;
 
 } LobbyJoin;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

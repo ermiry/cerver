@@ -1,16 +1,16 @@
 #ifndef _CERVER_TIMER_H_
 #define _CERVER_TIMER_H_
 
-#ifndef __USE_POSIX199309
-	#define __USE_POSIX199309
-#endif
-
 #include <time.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/config.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct timespec TimeSpec;
 
@@ -47,5 +47,9 @@ CERVER_EXPORT String *timer_date_and_time_to_string (
 CERVER_EXPORT String *timer_time_to_string_custom (
 	const struct tm *timeinfo, const char *format
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

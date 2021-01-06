@@ -15,14 +15,18 @@
 #include "cerver/game/player.h"
 #include "cerver/game/lobby.h"
 
-struct _Cerver;
-struct _Client;
-struct _Packet;
-
 #define DEFAULT_PLAYER_TIMEOUT      30
 #define DEFAULT_FPS                 20
 #define DEFAULT_MIN_PLAYERS         2
-#define DEFAULT_MAX_PLAYERS         4    
+#define DEFAULT_MAX_PLAYERS         4
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct _Cerver;
+struct _Client;
+struct _Packet;
 
 typedef struct GameCerverStats {
 
@@ -105,5 +109,9 @@ typedef struct LobbyPlayer {
     struct _Player *player;
 
 } LobbyPlayer;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

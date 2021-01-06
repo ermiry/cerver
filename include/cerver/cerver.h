@@ -64,6 +64,10 @@
 #define CERVER_DEFAULT_UPDATE_TICKS					30
 #define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _AdminCerver;
 struct _Client;
@@ -699,5 +703,9 @@ CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
 CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

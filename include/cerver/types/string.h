@@ -5,6 +5,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct String {
 
     unsigned int len;
@@ -41,7 +45,9 @@ CERVER_PUBLIC void str_to_upper (String *string);
 
 CERVER_PUBLIC void str_to_lower (String *string);
 
-CERVER_PUBLIC char **str_split (String *string, const char delim, int *n_tokens);
+CERVER_PUBLIC char **str_split (
+    String *string, const char delim, int *n_tokens
+);
 
 CERVER_PUBLIC void str_remove_char (String *string, char garbage);
 
@@ -98,6 +104,12 @@ typedef struct SStringXL {
 } SStringXL;
 
 // returns a ptr to a serialized str
-CERVER_PUBLIC void *str_selialize (String *str, SStringSize size);
+CERVER_PUBLIC void *str_selialize (
+    String *str, SStringSize size
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

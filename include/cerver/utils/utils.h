@@ -6,6 +6,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*** misc ***/
 
 CERVER_PUBLIC bool system_is_little_endian (void);
@@ -155,5 +159,9 @@ CERVER_PUBLIC char *c_string_remove_sub_range_token (
 	const char token, int first, int last,
 	char **sub
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

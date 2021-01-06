@@ -260,6 +260,8 @@ static void start (HandlersType type) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 
+		cerver_set_reusable_address_flags (my_cerver, true);
+
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);
 
@@ -321,12 +323,10 @@ static void start (HandlersType type) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
@@ -346,30 +346,34 @@ static void start (HandlersType type) {
 
 static void print_help (void) {
 
-	printf ("\n");
+	cerver_log_line_break ();
 	printf ("Usage: ./bin/handlers -t [type]\n");
 	printf ("-h       	Print this help\n");
 	printf ("-t [type]  Type to tun (d for direct / q for job queue)\n");
-	printf ("\n");
+	cerver_log_line_break ();
 
 }
 
 int main (int argc, char **argv) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("App & Custom Handlers Example");
+	cerver_log_line_break ();
 	cerver_log_debug ("Testing correct handling of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR & PACKET_TYPE_CUSTOM packet types");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	char *type = NULL;
 	int j = 0;
@@ -390,11 +394,9 @@ int main (int argc, char **argv) {
 			}
 
 			else {
-				char *status = c_string_create ("Unknown argument: %s", curr_arg);
-				if (status) {
-					cerver_log_warning (status);
-					free (status);
-				}
+				cerver_log_warning (
+					"Unknown argument: %s", curr_arg
+				);
 			}
 		}
 
@@ -402,11 +404,7 @@ int main (int argc, char **argv) {
 			if (!strcmp (type, "d")) start (HANDLERS_TYPE_DIRECT);
 			else if (!strcmp (type, "q")) start (HANDLERS_TYPE_QUEUE);
 			else {
-				char *status = c_string_create ("Unknown type: %s", type);
-				if (status) {
-					cerver_log_error (status);
-					free (status);
-				}
+				cerver_log_error ("Unknown type: %s", type);
 			}
 		}
 	}

@@ -6,6 +6,10 @@
 #include "cerver/types/string.h"
 #include "cerver/collections/dlist.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _GameType {
 
 	String *name;
@@ -63,5 +67,9 @@ extern int game_type_unregister (DoubleList *game_types, const char *name);
 
 // gets a registered game type by its name
 extern GameType *game_type_get_by_name (DoubleList *game_types, const char *name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
