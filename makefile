@@ -287,16 +287,27 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
 
-clear:
-	@$(RM) -rf $(BUILDDIR) 
-	@$(RM) -rf $(EXABUILD)
-	@$(RM) -rf $(EXATARGET)
-	@$(RM) -rf $(TESTBUILD)
-	@$(RM) -rf $(COVDIR)
-	@$(RM) -rf $(BENCHBUILD)
-	@$(RM) -rf $(BENCHTARGET)
+clear: clean-objects clean-examples clean-tests clean-coverage clean-bench
 
 clean: clear
 	@$(RM) -rf $(TARGETDIR)
+
+clean-objects:
+	@$(RM) -rf $(BUILDDIR)
+
+clean-examples:
+	@$(RM) -rf $(EXABUILD)
+	@$(RM) -rf $(EXATARGET)
+
+clean-tests:
+	@$(RM) -rf $(TESTBUILD)
+	@$(RM) -rf $(TESTTARGET)
+
+clean-coverage:
+	@$(RM) -rf $(COVDIR)
+
+clean-bench:
+	@$(RM) -rf $(BENCHBUILD)
+	@$(RM) -rf $(BENCHTARGET)
 
 .PHONY: all clean clear examples test coverage bench
