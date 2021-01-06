@@ -14,6 +14,10 @@
 #include "cerver/http/json/types.h"
 #include "cerver/http/json/value.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define json_typeof(json)     ((json)->type)
 #define json_is_object(json)  ((json) && json_typeof(json) == JSON_OBJECT)
 #define json_is_array(json)   ((json) && json_typeof(json) == JSON_ARRAY)
@@ -66,13 +70,9 @@ enum json_error_code {
 
 };
 
-static CERVER_INLINE enum json_error_code json_error_code (
+extern enum json_error_code json_error_code (
 	const json_error_t *e
-) {
-
-	return (enum json_error_code) e->text[JSON_ERROR_TEXT_LENGTH - 1];
-
-}
+);
 
 extern void jsonp_error_init (
 	json_error_t *error, const char *source
@@ -220,5 +220,9 @@ extern int json_dump_callback (
 extern void json_print (json_t *root);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

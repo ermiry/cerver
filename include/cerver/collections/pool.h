@@ -6,6 +6,10 @@
 
 #include "cerver/collections/dlist.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct Pool {
 
 	DoubleList *dlist;
@@ -56,5 +60,9 @@ extern void pool_reset (Pool *pool);
 
 // deletes the pool and all of its members using the destroy method
 extern void pool_delete (Pool *pool);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -3,6 +3,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define HTTP_STATUS_MAP(XX)													\
 	XX(0,   NONE,                            Undefined)                       \
 	XX(100, CONTINUE,                        Continue)                        \
@@ -76,6 +80,12 @@ enum http_status {
 typedef enum http_status http_status;
 
 // returns a string version of the HTTP status code
-CERVER_PUBLIC const char *http_status_str (enum http_status s);
+CERVER_PUBLIC const char *http_status_str (
+	const enum http_status s
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -5,6 +5,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * Given a source string of length len, this returns the amount of
  * memory the destination string should have.
@@ -127,5 +131,9 @@ CERVER_PUBLIC size_t base64_encode (
 CERVER_PUBLIC size_t base64_decode (
 	char *output, const char *bufcoded, size_t codedlen
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

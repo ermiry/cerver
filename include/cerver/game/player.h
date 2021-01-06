@@ -12,6 +12,10 @@
 
 #include "cerver/collections/dlist.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Packet;
@@ -70,5 +74,9 @@ extern Player *player_get_by_sock_fd_list (struct _Lobby *lobby, i32 sock_fd);
 // broadcasts a packet to all the players in the lobby
 extern void player_broadcast_to_all (struct _Cerver *cerver, const struct _Lobby *lobby, struct _Packet *packet, 
 	Protocol protocol, int flags);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

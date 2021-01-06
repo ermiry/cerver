@@ -29,6 +29,10 @@
 #define JWT_VALIDATION_GRANT_MISSING		0x0080
 #define JWT_VALIDATION_GRANT_MISMATCH		0x0100
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /** JWT Memory allocation overrides */
 typedef void *(*jwt_malloc_t)(size_t);
 typedef void *(*jwt_realloc_t)(void *, size_t);
@@ -913,5 +917,9 @@ CERVER_PUBLIC int jwt_valid_set_headers (
 );
 
 /** @} */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

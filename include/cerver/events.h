@@ -7,6 +7,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Connection;
@@ -122,5 +126,9 @@ CERVER_PUBLIC void cerver_event_data_delete (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

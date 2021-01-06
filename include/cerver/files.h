@@ -12,13 +12,17 @@
 
 #include "cerver/config.h"
 
+#define DEFAULT_FILENAME_LEN			1024
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Connection;
 
 struct _FileHeader;
-
-#define DEFAULT_FILENAME_LEN			1024
 
 #pragma region cerver
 
@@ -63,7 +67,7 @@ struct _FileCerver {
 		struct _Cerver *, struct _Client *, struct _Connection *,
 		const char *saved_filename
 	);
-
+	
 	FileCerverStats *stats;
 
 };
@@ -221,5 +225,9 @@ CERVER_PRIVATE u8 file_receive_actual (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

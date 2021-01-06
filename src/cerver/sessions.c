@@ -13,7 +13,9 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/sha256.h"
 
-SessionData *session_data_new (Packet *packet, AuthData *auth_data, Client *client) {
+SessionData *session_data_new (
+	Packet *packet, AuthData *auth_data, Client *client
+) {
 
 	SessionData *session_data = (SessionData *) malloc (sizeof (SessionData));
 	if (session_data) {

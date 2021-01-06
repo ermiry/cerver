@@ -9,11 +9,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdint.h>
+
 #include <assert.h>
 #include <errno.h>
 #include <math.h>
-#include <stdint.h>
 #include <unistd.h>
+
+#include "cerver/config.h"
 
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
@@ -60,6 +63,14 @@ char *jsonp_strndup (const char *str, size_t len) {
 #pragma endregion
 
 #pragma region error
+
+CERVER_INLINE enum json_error_code json_error_code (
+	const json_error_t *e
+) {
+
+	return (enum json_error_code) e->text[JSON_ERROR_TEXT_LENGTH - 1];
+
+}
 
 void jsonp_error_init (
 	json_error_t *error, const char *source

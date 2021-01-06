@@ -7,6 +7,10 @@
 #include "cerver/config.h"
 #include "cerver/threads/jobs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _PoolThread;
 
 typedef struct Thpool {
@@ -59,5 +63,9 @@ CERVER_EXPORT void thpool_wait (Thpool *thpool);
 
 // destroys the thpool and deletes all of its data
 CERVER_EXPORT void thpool_destroy (Thpool *thpool);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

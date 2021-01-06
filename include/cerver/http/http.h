@@ -17,11 +17,15 @@
 
 #include "cerver/http/jwt/alg.h"
 
+#define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 
 struct _HttpRouteFileStats;
-
-#define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
 #pragma region content
 
@@ -423,5 +427,9 @@ CERVER_PRIVATE void http_receive_delete (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

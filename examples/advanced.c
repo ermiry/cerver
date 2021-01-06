@@ -186,21 +186,24 @@ static void end (int dummy) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Advanced Cerver Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver example with multiple featues enabled");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -217,6 +220,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_reusable_address_flags (my_cerver, true);
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);
@@ -256,12 +261,10 @@ int main (void) {
 		cerver_set_update_interval (my_cerver, update_interval_thread, interval, str_delete, interval_value);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}

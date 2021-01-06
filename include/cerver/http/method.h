@@ -3,6 +3,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define HTTP_METHOD_MAP(XX)         \
 	XX(0,  DELETE,      DELETE)       \
 	XX(1,  GET,         GET)          \
@@ -60,6 +64,12 @@ typedef enum http_method http_method;
 CERVER_PUBLIC const char *method_strings[];
 
 // returns a string version of the HTTP method
-CERVER_PUBLIC const char *http_method_str (enum http_method m);
+CERVER_PUBLIC const char *http_method_str (
+	const enum http_method m
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

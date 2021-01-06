@@ -3,9 +3,9 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <ctype.h>
 #include <math.h>
 
-#include <ctype.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>

@@ -12,13 +12,11 @@ on:
 
 jobs:
   build:
-    name: Cerver test build
+    name: Cerver build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Install Dependencies
-        run: sudo apt-get install libcurl4-openssl-dev
+      - name: Checkout
+        uses: actions/checkout@v2
 
       - name: System Information
         run: gcc --version && g++ --version
@@ -27,18 +25,44 @@ jobs:
         run: make
       - name: gcc examples
         run: make examples
+      
+      - name: clean examples
+        run: make clean-examples
+
+      - name: g++ examples
+        run: make CC=g++ examples
+
+      - name: Archive Shared Library
+        uses: actions/upload-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin/libcerver.so
+          retention-days: 1
+
+  test:
+    name: Cerver tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
+
+      - name: Get Shared Library
+        uses: actions/download-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin
+
       - name: gcc tests
         run: make test
       - name: gcc run tests
         run: bash test/run.sh
 
-      - name: clean
-        run: make clean
+      - name: clean tests
+        run: make clean-tests
 
-      - name: g++ make
-        run: make CC=g++
-      - name: g++ examples
-        run: make CC=g++ examples
       - name: g++ tests
         run: make CC=g++ test
       - name: g++ run tests

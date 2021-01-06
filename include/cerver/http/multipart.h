@@ -13,6 +13,10 @@
 #define HTTP_MULTI_PART_GENERATED_FILENAME_LEN			512
 #define HTTP_MULTI_PART_SAVED_FILENAME_LEN				1024
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma region parts
 
 typedef enum MultiPartHeader {
@@ -104,12 +108,22 @@ struct multipart_parser {
 
 typedef struct multipart_parser multipart_parser;
 
-CERVER_PRIVATE multipart_parser *multipart_parser_init (const char *boundary, const multipart_parser_settings *settings);
+CERVER_PRIVATE multipart_parser *multipart_parser_init (
+	const char *boundary, const multipart_parser_settings *settings
+);
 
-CERVER_PRIVATE void multipart_parser_free (multipart_parser* p);
+CERVER_PRIVATE void multipart_parser_free (
+	multipart_parser *p
+);
 
-CERVER_PRIVATE size_t multipart_parser_execute (multipart_parser *p, const char *buf, size_t len);
+CERVER_PRIVATE size_t multipart_parser_execute (
+	multipart_parser *p, const char *buf, size_t len
+);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

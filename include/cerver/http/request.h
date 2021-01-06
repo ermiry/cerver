@@ -11,6 +11,10 @@
 
 #define REQUEST_METHOD_UNDEFINED		5
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define REQUEST_METHOD_MAP(XX)			\
 	XX(0,  DELETE,      DELETE)       	\
 	XX(1,  GET,         GET)          	\
@@ -201,5 +205,9 @@ CERVER_PUBLIC void http_request_multi_parts_print (
 CERVER_EXPORT const String *http_request_body_get_value (
 	const HttpRequest *http_request, const char *key
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

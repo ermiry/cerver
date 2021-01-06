@@ -3,10 +3,14 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/json/hashtable.h"
 #include "cerver/http/json/internal.h"
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/types.h"
-#include "cerver/http/json/hashtable.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define json_to_object(json_)  container_of(json_, json_object_t, json)
 #define json_to_array(json_)   container_of(json_, json_array_t, json)
@@ -100,69 +104,30 @@ extern int json_object_iter_set_new (
 		 index < json_array_size(array) && (value = json_array_get(array, index));       \
 		 index++)
 
-static CERVER_INLINE int json_object_set (
+extern int json_object_set (
 	json_t *object, const char *key, json_t *value
-) {
+);
 
-	return json_object_set_new (
-		object, key, json_incref (value)
-	);
-
-}
-
-static CERVER_INLINE int json_object_set_nocheck (
+extern int json_object_set_nocheck (
 	json_t *object, const char *key,
 	json_t *value
-) {
+);
 
-	return json_object_set_new_nocheck (
-		object, key, json_incref(value)
-	);
-
-}
-
-static CERVER_INLINE int json_object_iter_set (
+extern int json_object_iter_set (
 	json_t *object, void *iter, json_t *value
-) {
+);
 
-	return json_object_iter_set_new (
-		object, iter, json_incref(value)
-	);
-
-}
-
-static CERVER_INLINE int json_object_update_new (
+extern int json_object_update_new (
 	json_t *object, json_t *other
-) {
+);
 
-	int ret = json_object_update (object, other);
-	json_decref (other);
-
-	return ret;
-
-}
-
-static CERVER_INLINE int json_object_update_existing_new (
+extern int json_object_update_existing_new (
 	json_t *object, json_t *other
-) {
+);
 
-	int ret = json_object_update_existing (object, other);
-	json_decref (other);
-
-	return ret;
-
-}
-
-static CERVER_INLINE int json_object_update_missing_new (
+extern int json_object_update_missing_new (
 	json_t *object, json_t *other
-) {
-
-	int ret = json_object_update_missing (object, other);
-	json_decref (other);
-
-	return ret;
-
-}
+);
 
 extern size_t json_array_size (
 	const json_t *array
@@ -196,29 +161,17 @@ extern int json_array_extend (
 	json_t *array, json_t *other
 );
 
-static CERVER_INLINE int json_array_set (
+extern int json_array_set (
 	json_t *array, size_t ind, json_t *value
-) {
+);
 
-	return json_array_set_new(array, ind, json_incref(value));
-
-}
-
-static CERVER_INLINE int json_array_append (
+extern int json_array_append (
 	json_t *array, json_t *value
-) {
+);
 
-	return json_array_append_new(array, json_incref(value));
-
-}
-
-static CERVER_INLINE int json_array_insert (
+extern int json_array_insert (
 	json_t *array, size_t ind, json_t *value
-) {
-
-	return json_array_insert_new (array, ind, json_incref(value));
-
-}
+);
 
 extern const char *json_string_value (const json_t *string);
 
@@ -258,13 +211,21 @@ extern json_t *json_object (void);
 
 extern json_t *json_array (void);
 
-extern json_t *json_string (const char *value);
+extern json_t *json_string (
+	const char *value
+);
 
-extern json_t *json_stringn (const char *value, size_t len);
+extern json_t *json_stringn (
+	const char *value, size_t len
+);
 
-extern json_t *json_string_nocheck (const char *value);
+extern json_t *json_string_nocheck (
+	const char *value
+);
 
-extern json_t *json_stringn_nocheck (const char *value, size_t len);
+extern json_t *json_stringn_nocheck (
+	const char *value, size_t len
+);
 
 extern json_t *json_integer (json_int_t value);
 
@@ -277,5 +238,9 @@ extern json_t *json_false (void);
 #define json_boolean(val) ((val) ? json_true() : json_false())
 
 extern json_t *json_null (void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

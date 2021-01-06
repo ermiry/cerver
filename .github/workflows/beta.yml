@@ -12,56 +12,84 @@ on:
 
 jobs:
   build:
+    # build sources with beta flags
     name: Cerver beta build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Install dependencies
-        run: sudo apt-get install libcurl4-openssl-dev
+      - name: Checkout
+        uses: actions/checkout@v2
 
       - name: gcc make
-        run: make TYPE=test
+        run: make TYPE=beta
       - name: gcc examples
-        run: make TYPE=test examples
+        run: make TYPE=beta examples
+
+      - name: clean examples
+        run: make clean-examples
+
+      - name: g++ examples
+        run: make TYPE=beta CC=g++ examples
+
+      - name: Archive Shared Library
+        uses: actions/upload-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin/libcerver.so
+          retention-days: 1
+  
+  test:
+    # run tests with generated lib
+    name: Cerver beta tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
+
+      - name: Get Shared Library
+        uses: actions/download-artifact@v2
+        with:
+          name: cerver-lib
+          path: ./bin
+
       - name: gcc tests
         run: make test
       - name: gcc run tests
         run: bash test/run.sh
 
-      - name: clean
-        run: make clean
+      - name: clean tests
+        run: make clean-tests
 
-      - name: g++ make
-        run: make TYPE=test CC=g++
-      - name: g++ examples
-        run: make TYPE=test CC=g++ examples
       - name: g++ tests
         run: make CC=g++ test
       - name: g++ run tests
         run: bash test/run.sh
   
   docker:
-    needs: build
-    name: Docker build test
+    # test compilation inside dockers
+    name: Docker build tests
+    needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2
 
-      -
-        name: Set up QEMU
+      # docker setup
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
-      -
-        name: Set up Docker Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
-      -
-        name: Build Docker Image
+
+      # build cerver beta image
+      - name: Build Docker Beta Image
         id: docker_build
         uses: docker/build-push-action@v2
         with:
           context: .
-          file: ./Dockerfile.test
-          tags: ermiry/cerver:test
-      -
-        name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+          file: ./Dockerfile.beta
+          tags: ermiry/cerver:beta
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }} 

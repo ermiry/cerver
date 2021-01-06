@@ -320,21 +320,24 @@ static void *cerver_client_connect_and_start (void *args) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Cerver Client Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver creates a new client that will use to make requests to another cerver");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	client_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -352,6 +355,8 @@ int main (void) {
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
 
+		cerver_set_reusable_address_flags (client_cerver, true);
+
 		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (client_cerver, 2000);
 
@@ -364,12 +369,10 @@ int main (void) {
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
 		if (cerver_start (client_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				client_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				client_cerver->info->name->str
+			);
 
 			cerver_delete (client_cerver);
 		}

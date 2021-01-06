@@ -3,7 +3,7 @@
 
 #include "cerver/http/jwt/alg.h"
 
-const char *jwt_alg_str (jwt_alg_t alg) {
+const char *jwt_alg_str (const jwt_alg_t alg) {
 
 	switch (alg) {
 		#define XX(num, name, string) case JWT_ALG_##name: return #string;

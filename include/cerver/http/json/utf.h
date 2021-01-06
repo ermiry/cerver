@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern int utf8_encode (
 	int32_t codepoint, char *buffer, size_t *size
 );
@@ -21,5 +25,9 @@ extern const char *utf8_iterate (
 extern int utf8_check_string (
 	const char *string, size_t length
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
