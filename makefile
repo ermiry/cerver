@@ -195,7 +195,7 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 TESTDIR		:= test
 TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
-TESTCOV		:= $(COVDIR)/test
+TESTCOVDIR	:= $(COVDIR)/test
 
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 
@@ -247,21 +247,21 @@ COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
 test-coverage: $(COVOBJS)
 
 coverage-init:
-	@mkdir -p ./coverage
-	@mkdir -p ./$(TESTCOV)
+	@mkdir -p ./$(COVDIR)
+	@mkdir -p ./$(TESTCOVDIR)
 
 coverage: coverage-init test-coverage
 
 # get lib coverage reports
 $(BUILDDIR)/%.$(SRCEXT).$(COVEXT): $(SRCDIR)/%.$(SRCEXT)
-	@mkdir -p ./coverage/$(dir $<)
+	@mkdir -p ./$(COVDIR)/$(dir $<)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./coverage/$<.gcov
+	mv $(notdir $@) ./$(COVDIR)/$<.gcov
 
 # get tests coverage reports
 $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(TESTCOV)
+	mv $(notdir $@) ./$(TESTCOVDIR)
 
 # benchmarks 
 BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
