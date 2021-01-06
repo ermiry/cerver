@@ -15,6 +15,10 @@
 
 #include "cerver/game/lobby.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Socket;
 struct _Cerver;
 struct _Client;
@@ -94,26 +98,36 @@ CERVER_PRIVATE void handler_delete (void *handler_ptr);
 
 // creates a new handler
 // handler method is your actual app packet handler
-CERVER_EXPORT Handler *handler_create (Action handler_method);
+CERVER_EXPORT Handler *handler_create (
+	Action handler_method
+);
 
 // creates a new handler that will be used for cerver's multiple app handlers configuration
 // it should be registered to the cerver before it starts
 // the user is responsible for setting the unique id, which will be used to match
 // incoming packets
 // handler method is your actual app packet handler
-CERVER_EXPORT Handler *handler_create_with_id (int id, Action handler_method);
+CERVER_EXPORT Handler *handler_create_with_id (
+	int id, Action handler_method
+);
 
 // sets the handler's data directly
 // this data will be passed to the handler method using a HandlerData structure
-CERVER_EXPORT void handler_set_data (Handler *handler, void *data);
+CERVER_EXPORT void handler_set_data (
+	Handler *handler, void *data
+);
 
 // set a method to create the handler's data before it starts handling any packet
 // this data will be passed to the handler method using a HandlerData structure
-CERVER_EXPORT void handler_set_data_create (Handler *handler,
-	void *(*data_create) (void *args), void *data_create_args);
+CERVER_EXPORT void handler_set_data_create (
+	Handler *handler,
+	void *(*data_create) (void *args), void *data_create_args
+);
 
 // set the method to be used to delete the handler's data
-CERVER_EXPORT void handler_set_data_delete (Handler *handler, Action data_delete);
+CERVER_EXPORT void handler_set_data_delete (
+	Handler *handler, Action data_delete
+);
 
 // used to avoid pushing job to the queue and instead handle
 // the packet directly in the same thread
@@ -121,7 +135,9 @@ CERVER_EXPORT void handler_set_data_delete (Handler *handler, Action data_delete
 //          - handler method can be called from multiple threads
 // neutral  - data create and delete will be executed every time
 // cons     - calling thread will be busy until handler method is done
-CERVER_EXPORT void handler_set_direct_handle (Handler *handler, bool direct_handle);
+CERVER_EXPORT void handler_set_direct_handle (
+	Handler *handler, bool direct_handle
+);
 
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods
@@ -132,7 +148,9 @@ CERVER_PRIVATE int handler_start (Handler *handler);
 #pragma region handlers
 
 // sends back a test packet to the client!
-CERVER_PRIVATE void cerver_test_packet_handler (struct _Packet *packet);
+CERVER_PRIVATE void cerver_test_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 
@@ -212,12 +230,15 @@ CERVER_PRIVATE CerverReceive *cerver_receive_create (
 	ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd
 );
 
-CERVER_PRIVATE CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
+CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
+	ReceiveType receive_type,
 	struct _Cerver *cerver,
 	struct _Client *client, struct _Connection *connection
 );
 
-CERVER_PRIVATE void cerver_switch_receive_handle_failed (CerverReceive *cr);
+CERVER_PRIVATE void cerver_switch_receive_handle_failed (
+	CerverReceive *cr
+);
 
 // receive all incoming data from the socket
 CERVER_PRIVATE void cerver_receive (void *ptr);
@@ -228,10 +249,14 @@ CERVER_PRIVATE void cerver_receive (void *ptr);
 
 // reallocs main cerver poll fds
 // returns 0 on success, 1 on error
-CERVER_PRIVATE u8 cerver_realloc_main_poll_fds (struct _Cerver *cerver);
+CERVER_PRIVATE u8 cerver_realloc_main_poll_fds (
+	struct _Cerver *cerver
+);
 
 // get a free index in the main cerver poll strcuture
-CERVER_PRIVATE i32 cerver_poll_get_free_idx (struct _Cerver *cerver);
+CERVER_PRIVATE i32 cerver_poll_get_free_idx (
+	struct _Cerver *cerver
+);
 
 // get the idx of the connection sock fd in the cerver poll fds
 CERVER_PRIVATE i32 cerver_poll_get_idx_by_sock_fd (
@@ -258,15 +283,23 @@ CERVER_PRIVATE u8 cerver_poll_unregister_connection (
 );
 
 // server poll loop to handle events in the registered socket's fds
-CERVER_PRIVATE u8 cerver_poll (struct _Cerver *cerver);
+CERVER_PRIVATE u8 cerver_poll (
+	struct _Cerver *cerver
+);
 
 #pragma endregion
 
 #pragma region threads
 
 // handle new connections in dedicated threads
-CERVER_PRIVATE u8 cerver_threads (struct _Cerver *cerver);
+CERVER_PRIVATE u8 cerver_threads (
+	struct _Cerver *cerver
+);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

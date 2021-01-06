@@ -5,10 +5,14 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct String {
 
-	unsigned int len;
-	char *str;
+    unsigned int len;
+    char *str;
 
 } String;
 
@@ -41,7 +45,9 @@ CERVER_PUBLIC void str_to_upper (String *string);
 
 CERVER_PUBLIC void str_to_lower (String *string);
 
-CERVER_PUBLIC char **str_split (String *string, const char delim, int *n_tokens);
+CERVER_PUBLIC char **str_split (
+    String *string, const char delim, int *n_tokens
+);
 
 CERVER_PUBLIC void str_remove_char (String *string, char garbage);
 
@@ -58,46 +64,52 @@ CERVER_PUBLIC int str_contains (String *str, char *to_find);
 
 typedef enum SStringSize {
 
-	SS_SMALL = 64,
-	SS_MEDIUM = 128,
-	SS_LARGE = 256,
-	SS_EXTRA_LARGE = 512
+    SS_SMALL = 64,
+    SS_MEDIUM = 128,
+    SS_LARGE = 256,
+    SS_EXTRA_LARGE = 512
 
 } SStringSize;
 
 // serialized str (small)
 typedef struct SStringS {
 
-	u16 len;
-	char str[64];
+    u16 len;
+    char str[64];
 
 } SStringS;
 
 // serialized str (medium)
 typedef struct SStringM {
 
-	u16 len;
-	char str[128];
+    u16 len;
+    char str[128];
 
 } SStringM;
 
 // serialized str (large)
 typedef struct SStringL {
 
-	u16 len;
-	char str[256];
+    u16 len;
+    char str[256];
 
 } SStringL;
 
 // serialized str (extra large)
 typedef struct SStringXL {
 
-	u16 len;
-	char str[512];
+    u16 len;
+    char str[512];
 
 } SStringXL;
 
 // returns a ptr to a serialized str
-CERVER_PUBLIC void *str_selialize (String *str, SStringSize size);
+CERVER_PUBLIC void *str_selialize (
+    String *str, SStringSize size
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

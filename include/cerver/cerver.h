@@ -31,7 +31,11 @@
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				10
+
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
+
+#define CERVER_DEFAULT_REUSABLE_FLAGS				false
+
 #define CERVER_DEFAULT_POOL_THREADS					4
 
 #define CERVER_DEFAULT_SOCKETS_INIT					10
@@ -58,6 +62,10 @@
 
 #define CERVER_DEFAULT_UPDATE_TICKS					30
 #define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct _Cerver;
 struct _AdminCerver;
@@ -213,6 +221,7 @@ struct _Cerver {
 
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	bool blocking;                      // sokcet fd is blocking?
+	bool reusable;						// socket fd with reusable flags?
 
 	void *cerver_data;
 	Action delete_cerver_data;
@@ -345,6 +354,13 @@ CERVER_EXPORT void cerver_set_connection_queue (
 // sets the cerver's receive buffer size used in recv method
 CERVER_EXPORT void cerver_set_receive_buffer_size (
 	Cerver *cerver, const u32 size
+);
+
+// sets the cerver's ability to use reusable flags in sock fd
+// if TRUE, this can prevent failing when trying to bind address
+// the default value is CERVER_DEFAULT_REUSABLE_FLAGS
+CERVER_EXPORT void cerver_set_reusable_address_flags (
+	Cerver *cerver, bool value
 );
 
 // sets the cerver's data and a way to free it
@@ -666,11 +682,19 @@ typedef struct SCerver {
 
 } SCerver;
 
-CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
+CERVER_PRIVATE CerverReport *cerver_deserialize (
+	SCerver *scerver
+);
 
 // creates a cerver info packet ready to be sent
-CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
+CERVER_PRIVATE struct _Packet *cerver_packet_generate (
+	Cerver *cerver
+);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

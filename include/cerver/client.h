@@ -22,6 +22,10 @@
 
 #define CLIENT_FILES_MAX_PATHS           32
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Connection;
@@ -789,5 +793,9 @@ CERVER_EXPORT u8 client_teardown (Client *client);
 CERVER_EXPORT u8 client_teardown_async (Client *client);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

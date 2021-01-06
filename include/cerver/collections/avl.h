@@ -7,6 +7,10 @@
 
 #include "cerver/types/types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct AVLNode {
 
 	void *id;
@@ -90,5 +94,9 @@ extern void *avl_remove_node (
 extern unsigned int avl_clear_tree (
 	AVLTree *tree, void (*destroy)(void *data)
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
