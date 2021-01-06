@@ -18,9 +18,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Install Dependencies
-        run: sudo apt-get install libcurl4-openssl-dev
-
       - name: System Information
         run: gcc --version && g++ --version
 
@@ -50,6 +47,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
 
       - name: Get Shared Library
         uses: actions/download-artifact@v2

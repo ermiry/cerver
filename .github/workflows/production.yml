@@ -16,9 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Install Dependencies
-        run: sudo apt-get install libcurl4-openssl-dev
-
       - name: gcc make
         run: make TYPE=production
       - name: gcc examples
@@ -46,6 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
 
       - name: Get Shared Library
         uses: actions/download-artifact@v2
