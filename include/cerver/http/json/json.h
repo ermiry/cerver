@@ -70,13 +70,9 @@ enum json_error_code {
 
 };
 
-static CERVER_INLINE enum json_error_code json_error_code (
+extern enum json_error_code json_error_code (
 	const json_error_t *e
-) {
-
-	return (enum json_error_code) e->text[JSON_ERROR_TEXT_LENGTH - 1];
-
-}
+);
 
 extern void jsonp_error_init (
 	json_error_t *error, const char *source

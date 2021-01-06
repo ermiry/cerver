@@ -13,6 +13,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cerver/config.h"
+
 #include "cerver/http/json/config.h"
 #include "cerver/http/json/hashtable.h"
 #include "cerver/http/json/json.h"
@@ -48,33 +50,37 @@ int jsonp_loop_check (
 
 extern volatile uint32_t hashtable_seed;
 
-json_t *json_object(void) {
-    json_object_t *object = (json_object_t *) jsonp_malloc(sizeof(json_object_t));
+json_t *json_object (void) {
+
+    json_object_t *object = (json_object_t *) jsonp_malloc (sizeof (json_object_t));
     if (!object)
         return NULL;
 
     if (!hashtable_seed) {
         /* Autoseed */
-        json_object_seed(0);
+        json_object_seed (0);
     }
 
-    json_init(&object->json, JSON_OBJECT);
+    json_init (&object->json, JSON_OBJECT);
 
-    if (hashtable_init(&object->hashtable)) {
-        jsonp_free(object);
+    if (hashtable_init (&object->hashtable)) {
+        jsonp_free (object);
         return NULL;
     }
 
     return &object->json;
+
 }
 
-static void json_delete_object(json_object_t *object) {
-    hashtable_close(&object->hashtable);
-    jsonp_free(object);
+static void json_delete_object (json_object_t *object) {
+
+    hashtable_close (&object->hashtable);
+    jsonp_free (object);
+
 }
 
 size_t json_object_size(const json_t *json) {
-    json_object_t *object;
+    json_object_t *object = NULL;
 
     if (!json_is_object(json))
         return 0;
@@ -93,8 +99,11 @@ json_t *json_object_get(const json_t *json, const char *key) {
     return (json_t *) hashtable_get(&object->hashtable, key);
 }
 
-int json_object_set_new_nocheck(json_t *json, const char *key, json_t *value) {
-    json_object_t *object;
+int json_object_set_new_nocheck (
+    json_t *json, const char *key, json_t *value
+) {
+
+    json_object_t *object = NULL;
 
     if (!value)
         return -1;
@@ -360,6 +369,70 @@ out:
     hashtable_del(parents, loop_key);
 
     return result;
+}
+
+CERVER_INLINE int json_object_set (
+	json_t *object, const char *key, json_t *value
+) {
+
+	return json_object_set_new (
+		object, key, json_incref (value)
+	);
+
+}
+
+CERVER_INLINE int json_object_set_nocheck (
+	json_t *object, const char *key,
+	json_t *value
+) {
+
+	return json_object_set_new_nocheck (
+		object, key, json_incref(value)
+	);
+
+}
+
+CERVER_INLINE int json_object_iter_set (
+	json_t *object, void *iter, json_t *value
+) {
+
+	return json_object_iter_set_new (
+		object, iter, json_incref(value)
+	);
+
+}
+
+CERVER_INLINE int json_object_update_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update (object, other);
+	json_decref (other);
+
+	return ret;
+
+}
+
+CERVER_INLINE int json_object_update_existing_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update_existing (object, other);
+	json_decref (other);
+
+	return ret;
+
+}
+
+CERVER_INLINE int json_object_update_missing_new (
+	json_t *object, json_t *other
+) {
+
+	int ret = json_object_update_missing (object, other);
+	json_decref (other);
+
+	return ret;
+
 }
 
 /*** array ***/
@@ -645,6 +718,30 @@ out:
     hashtable_del(parents, loop_key);
 
     return result;
+}
+
+CERVER_INLINE int json_array_set (
+	json_t *array, size_t ind, json_t *value
+) {
+
+	return json_array_set_new (array, ind, json_incref(value));
+
+}
+
+CERVER_INLINE int json_array_append (
+	json_t *array, json_t *value
+) {
+
+	return json_array_append_new (array, json_incref(value));
+
+}
+
+CERVER_INLINE int json_array_insert (
+	json_t *array, size_t ind, json_t *value
+) {
+
+	return json_array_insert_new (array, ind, json_incref(value));
+
 }
 
 /*** string ***/
@@ -1016,7 +1113,8 @@ json_t *json_copy(json_t *json) {
     }
 }
 
-json_t *json_deep_copy(const json_t *json) {
+json_t *json_deep_copy (const json_t *json) {
+
     json_t *res;
     hashtable_t parents_set;
 
@@ -1026,9 +1124,13 @@ json_t *json_deep_copy(const json_t *json) {
     hashtable_close(&parents_set);
 
     return res;
+
 }
 
-json_t *do_deep_copy(const json_t *json, hashtable_t *parents) {
+json_t *do_deep_copy (
+    const json_t *json, hashtable_t *parents
+) {
+
     if (!json)
         return NULL;
 
