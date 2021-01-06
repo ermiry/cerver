@@ -40,7 +40,7 @@ jobs:
           # verbose: true
 
       - name: clean tests
-        run: make clea-tests
+        run: make clean-tests
 
       - name: g++ tests
         run: make TYPE=test CC=g++ test
