@@ -377,8 +377,11 @@ int htab_insert (
 				ht,
 				key, key_size, node->key, node->key_size
 			)) {
-				node->next = htab_node_create (key, key_size, val, val_size,
-					ht->key_create);
+				node->next = htab_node_create (
+					key, key_size, val, val_size,
+					ht->key_create
+				);
+				
 				if (node->next) {
 					node = node->next;
 
@@ -453,7 +456,8 @@ void *htab_get (
 
 }
 
-// removes the data associated with the key from the htab
+// removes and returns the data associated with the key from the htab
+// the data should be deleted by the user
 // returns NULL if no data was found with the provided key
 void *htab_remove (
 	Htab *ht, const void *key, size_t key_size
@@ -478,6 +482,7 @@ void *htab_remove (
 
 				retval = node->val;
 
+				node->val = NULL;
 				htab_node_delete (node, ht->key_delete, ht->delete_data);
 
 				bucket->count--;
