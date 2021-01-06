@@ -22,34 +22,26 @@ static Cerver *client_cerver = NULL;
 
 #pragma region auth
 
-#define CREDENTIALS_FIELD_LEN		256
-
 typedef struct Credentials {
 
-	char username[CREDENTIALS_FIELD_LEN];
-	char password[CREDENTIALS_FIELD_LEN];
+	char username[64];
+	char password[64];
 
 } Credentials;
 
-Credentials *credentials_new (
-	const char *username, const char *password
-) {
+Credentials *credentials_new (const char *username, const char *password) {
 
 	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
 	if (credentials) {
-		(void) strncpy (credentials->username, username, CREDENTIALS_FIELD_LEN - 1);
-		(void) strncpy (credentials->password, password, CREDENTIALS_FIELD_LEN - 1);
+		strncpy (credentials->username, username, 64);
+		strncpy (credentials->password, password, 64);
 	}
 
 	return credentials;
 
 }
 
-void credentials_delete (void *credentials_ptr) {
-	
-	if (credentials_ptr) free (credentials_ptr);
-	
-}
+void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (credentials_ptr); }
 
 #pragma endregion
 
@@ -397,21 +389,24 @@ static void *cerver_client_connect_and_start (void *args) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Cerver Client Auth Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver creates a new client that will authenticate with a cerver & then, perform requests");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	client_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -428,6 +423,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
+
+		cerver_set_reusable_address_flags (client_cerver, true);
 
 		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (client_cerver, 2000);
@@ -458,15 +455,15 @@ int main (void) {
 		);
 
 		pthread_t client_thread = 0;
-		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
+		(void) thread_create_detachable (
+			&client_thread, cerver_client_connect_and_start, NULL
+		);
 
 		if (cerver_start (client_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				client_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				client_cerver->info->name->str
+			);
 
 			cerver_delete (client_cerver);
 		}
