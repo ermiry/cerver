@@ -39,8 +39,8 @@ jobs:
           fail_ci_if_error: true
           # verbose: true
 
-      - name: clear
-        run: make clear
+      - name: clean tests
+        run: make clea-tests
 
       - name: g++ tests
         run: make TYPE=test CC=g++ test

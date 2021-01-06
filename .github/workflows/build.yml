@@ -25,6 +25,12 @@ jobs:
         run: make
       - name: gcc examples
         run: make examples
+      
+      - name: clean examples
+        run: make clean-examples
+
+      - name: g++ examples
+        run: make CC=g++ examples
 
       - name: Archive Shared Library
         uses: actions/upload-artifact@v2
@@ -32,14 +38,6 @@ jobs:
           name: cerver-lib
           path: ./bin/libcerver.so
           retention-days: 1
-      
-      - name: clean
-        run: make clean
-
-      - name: g++ make
-        run: make CC=g++
-      - name: g++ examples
-        run: make CC=g++ examples
 
   test:
     name: Cerver tests
@@ -62,8 +60,8 @@ jobs:
       - name: gcc run tests
         run: bash test/run.sh
 
-      - name: clear
-        run: make clear
+      - name: clean tests
+        run: make clean-tests
 
       - name: g++ tests
         run: make CC=g++ test
