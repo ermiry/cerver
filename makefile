@@ -4,6 +4,10 @@ SLIB		:= libcerver.so
 
 all: directories $(SLIB)
 
+directories:
+	@mkdir -p $(TARGETDIR)
+	@mkdir -p $(BUILDDIR)
+
 install: $(SLIB)
 	install -m 644 ./bin/libcerver.so /usr/local/lib/
 	cp -R ./include/cerver /usr/local/include
@@ -11,22 +15,6 @@ install: $(SLIB)
 uninstall:
 	rm /usr/local/lib/libcerver.so
 	rm -r /usr/local/include/cerver
-
-directories:
-	@mkdir -p $(TARGETDIR)
-	@mkdir -p $(BUILDDIR)
-
-clear:
-	@$(RM) -rf $(BUILDDIR) 
-	@$(RM) -rf $(EXABUILD)
-	@$(RM) -rf $(EXATARGET)
-	@$(RM) -rf $(TESTBUILD)
-	@$(RM) -rf $(TESTTARGET)
-	@$(RM) -rf $(BENCHBUILD)
-	@$(RM) -rf $(BENCHTARGET)
-
-clean: clear
-	@$(RM) -rf $(TARGETDIR)
 
 PTHREAD 	:= -l pthread
 MATH		:= -lm
@@ -280,5 +268,28 @@ $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@sed -e 's|.*:|$(BENCHBUILD)/$*.$(OBJEXT):|' < $(BENCHBUILD)/$*.$(DEPEXT).tmp > $(BENCHBUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
 	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
+
+clear: clean-objects clean-examples clean-tests clean-coverage clean-bench
+
+clean: clear
+	@$(RM) -rf $(TARGETDIR)
+
+clean-objects:
+	@$(RM) -rf $(BUILDDIR)
+
+clean-examples:
+	@$(RM) -rf $(EXABUILD)
+	@$(RM) -rf $(EXATARGET)
+
+clean-tests:
+	@$(RM) -rf $(TESTBUILD)
+	@$(RM) -rf $(TESTTARGET)
+
+clean-coverage:
+	@$(RM) -rf $(COVDIR)
+
+clean-bench:
+	@$(RM) -rf $(BENCHBUILD)
+	@$(RM) -rf $(BENCHTARGET)
 
 .PHONY: all clean clear examples test coverage bench
