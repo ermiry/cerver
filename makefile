@@ -1,5 +1,7 @@
 TYPE		:= development
 
+NATIVE		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -56,8 +58,7 @@ COVEXT		:= gcov
 
 # common flags
 # -Wconversion
-COMMON		:= -march=native \
-				-Wall -Wno-unknown-pragmas \
+COMMON		:= -Wall -Wno-unknown-pragmas \
 				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
 				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
 				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
@@ -88,6 +89,10 @@ else
 	else
 		CFLAGS += -Wbad-function-cast
 	endif
+endif
+
+ifeq ($(NATIVE), 1)
+	CFLAGS += -march=native
 endif
 
 # common flags
@@ -147,6 +152,10 @@ else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
+ifeq ($(NATIVE), 1)
+	EXAFLAGS += -march=native
+endif
+
 # common flags
 EXAFLAGS += -Wall -Wno-unknown-pragmas
 
@@ -201,6 +210,10 @@ TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 
 ifeq ($(TYPE), test)
 	TESTFLAGS += -fprofile-arcs -ftest-coverage
+endif
+
+ifeq ($(NATIVE), 1)
+	TESTFLAGS += -march=native
 endif
 
 TESTLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
@@ -264,7 +277,12 @@ $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	mv $(notdir $@) ./$(TESTCOVDIR)
 
 # benchmarks 
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
+BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
+
+ifeq ($(NATIVE), 1)
+	BENCHFLAGS += -march=native -mavx2
+endif
+
 BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
 BENCHINC	:= -I ./$(BENCHDIR)
 
