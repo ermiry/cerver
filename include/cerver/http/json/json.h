@@ -70,24 +70,24 @@ enum json_error_code {
 
 };
 
-extern enum json_error_code json_error_code (
+CERVER_PUBLIC enum json_error_code json_error_code (
 	const json_error_t *e
 );
 
-extern void jsonp_error_init (
+CERVER_PUBLIC void jsonp_error_init (
 	json_error_t *error, const char *source
 );
 
-extern void jsonp_error_set_source (
+CERVER_PUBLIC void jsonp_error_set_source (
 	json_error_t *error, const char *source
 );
 
-extern void jsonp_error_set (
+CERVER_PUBLIC void jsonp_error_set (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, ...
 );
 
-extern void jsonp_error_vset (
+CERVER_PUBLIC void jsonp_error_vset (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, va_list ap
 );
@@ -96,16 +96,16 @@ extern void jsonp_error_vset (
 
 #pragma region pack
 
-extern json_t *json_pack (
+CERVER_PUBLIC json_t *json_pack (
 	const char *fmt, ...
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_pack_ex (
+CERVER_PUBLIC json_t *json_pack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, ...
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_vpack_ex (
+CERVER_PUBLIC json_t *json_vpack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, va_list ap
 ) CERVER_ATTRS((warn_unused_result));
@@ -117,16 +117,16 @@ extern json_t *json_vpack_ex (
 #define JSON_VALIDATE_ONLY 	0x1
 #define JSON_STRICT        	0x2
 
-extern int json_unpack (
+CERVER_PUBLIC int json_unpack (
 	json_t *root, const char *fmt, ...
 );
 
-extern int json_unpack_ex (
+CERVER_PUBLIC int json_unpack_ex (
 	json_t *root, json_error_t *error, size_t flags,
 	const char *fmt, ...
 );
 
-extern int json_vunpack_ex (
+CERVER_PUBLIC int json_vunpack_ex (
 	json_t *root, json_error_t *error, size_t flags,
 	const char *fmt, va_list ap
 );
@@ -145,27 +145,27 @@ typedef size_t (*json_load_callback_t) (
 	void *buffer, size_t buflen, void *data
 );
 
-extern json_t *json_loads (
+CERVER_PUBLIC json_t *json_loads (
 	const char *input, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_loadb (
+CERVER_PUBLIC json_t *json_loadb (
 	const char *buffer, size_t buflen, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_loadf (
+CERVER_PUBLIC json_t *json_loadf (
 	FILE *input, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_loadfd (
+CERVER_PUBLIC json_t *json_loadfd (
 	int input, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_load_file (
+CERVER_PUBLIC json_t *json_load_file (
 	const char *path, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
-extern json_t *json_load_callback (
+CERVER_PUBLIC json_t *json_load_callback (
 	json_load_callback_t callback, void *data, size_t flags, json_error_t *error
 ) CERVER_ATTRS((warn_unused_result));
 
@@ -188,27 +188,27 @@ typedef int (*json_dump_callback_t) (
 	const char *buffer, size_t size, void *data
 );
 
-extern char *json_dumps (
+CERVER_PUBLIC char *json_dumps (
 	const json_t *json, size_t flags
 ) CERVER_ATTRS((warn_unused_result));
 
-extern size_t json_dumpb (
+CERVER_PUBLIC size_t json_dumpb (
 	const json_t *json, char *buffer, size_t size, size_t flags
 );
 
-extern int json_dumpf (
+CERVER_PUBLIC int json_dumpf (
 	const json_t *json, FILE *output, size_t flags
 );
 
-extern int json_dumpfd (
+CERVER_PUBLIC int json_dumpfd (
 	const json_t *json, int output, size_t flags
 );
 
-extern int json_dump_file (
+CERVER_PUBLIC int json_dump_file (
 	const json_t *json, const char *path, size_t flags
 );
 
-extern int json_dump_callback (
+CERVER_PUBLIC int json_dump_callback (
 	const json_t *json, json_dump_callback_t callback,
 	void *data, size_t flags
 );
@@ -217,7 +217,7 @@ extern int json_dump_callback (
 
 #pragma region print
 
-extern void json_print (json_t *root);
+CERVER_PUBLIC void json_print (json_t *root);
 
 #pragma endregion
 

@@ -54,30 +54,30 @@ struct json_t;
 struct hashtable_t;
 
 /* Create a string by taking ownership of an existing buffer */
-extern struct json_t *jsonp_stringn_nocheck_own (
+CERVER_PUBLIC struct json_t *jsonp_stringn_nocheck_own (
 	const char *value, size_t len
 );
 
-extern int jsonp_dtostr (
+CERVER_PUBLIC int jsonp_dtostr (
 	char *buffer, size_t size, double value, int prec
 );
 
 /* Wrappers for custom memory functions */
-extern void *jsonp_malloc (
+CERVER_PUBLIC void *jsonp_malloc (
 	size_t size
 ) CERVER_ATTRS((warn_unused_result));
 
-extern void jsonp_free (void *ptr);
+CERVER_PUBLIC void jsonp_free (void *ptr);
 
-extern char *jsonp_strndup (
+CERVER_PUBLIC char *jsonp_strndup (
 	const char *str, size_t length
 ) CERVER_ATTRS((warn_unused_result));
 
-extern char *jsonp_strdup (
+CERVER_PUBLIC char *jsonp_strdup (
 	const char *str
 ) CERVER_ATTRS((warn_unused_result));
 
-extern char *jsonp_strndup (
+CERVER_PUBLIC char *jsonp_strndup (
 	const char *str, size_t len
 ) CERVER_ATTRS((warn_unused_result));
 
@@ -85,28 +85,28 @@ extern char *jsonp_strndup (
 /* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
 #define LOOP_KEY_LEN (2 + (sizeof(struct json_t *) * 2) + 1)
 
-extern int jsonp_loop_check (
+CERVER_PUBLIC int jsonp_loop_check (
 	struct hashtable_t *parents,
 	const struct json_t *json, char *key, size_t key_size
 );
 
-extern struct json_t *json_sprintf (
+CERVER_PUBLIC struct json_t *json_sprintf (
 	const char *fmt, ...
 ) CERVER_ATTRS((warn_unused_result, format(printf, 1, 2)));
 
-extern struct json_t *json_vsprintf (
+CERVER_PUBLIC struct json_t *json_vsprintf (
 	const char *fmt, va_list ap
 ) CERVER_ATTRS((warn_unused_result, format(printf, 1, 0)));
 
-extern int json_equal (
+CERVER_PUBLIC int json_equal (
 	const struct json_t *value1, const struct json_t *value2
 );
 
-extern struct json_t *json_copy (
+CERVER_PUBLIC struct json_t *json_copy (
 	struct json_t *value
 ) CERVER_ATTRS((warn_unused_result));
 
-extern struct json_t *json_deep_copy (
+CERVER_PUBLIC struct json_t *json_deep_copy (
 	const struct json_t *value
 ) CERVER_ATTRS((warn_unused_result));
 
