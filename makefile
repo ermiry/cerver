@@ -276,7 +276,11 @@ $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
 	mv $(notdir $@) ./$(TESTCOVDIR)
 
-# benchmarks 
+# benchmarks
+BENCHDIR	:= benchmarks
+BENCHBUILD	:= $(BENCHDIR)/objs
+BENCHTARGET	:= $(BENCHDIR)/bin
+
 BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
 
 ifeq ($(NATIVE), 1)
@@ -284,16 +288,16 @@ ifeq ($(NATIVE), 1)
 endif
 
 BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./bin -l cerver
-BENCHINC	:= -I ./$(BENCHDIR)
+BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
-	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
-	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
-	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
+	$(CC) -g $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) -g $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
+	$(CC) -g $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
