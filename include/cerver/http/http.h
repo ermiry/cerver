@@ -27,6 +27,8 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+struct jwt;
+
 #pragma region content
 
 #define CONTENT_TYPE_MAP(XX)								\
@@ -276,6 +278,37 @@ CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
 #pragma endregion
 
 #pragma region auth
+
+#define HTTP_JWT_VALUE_KEY_SIZE		128
+#define HTTP_JWT_VALUE_VALUE_SIZE	128
+
+#define HTTP_JWT_VALUES_SIZE		16
+#define HTTP_JWT_BEARER_SIZE		2048
+#define HTTP_JWT_TOKEN_SIZE			4096
+
+typedef struct HttpJwtValue {
+
+	char key[HTTP_JWT_VALUE_KEY_SIZE];
+
+	union {
+		bool value_bool;
+		int value_int;
+		char value_str[HTTP_JWT_VALUE_VALUE_SIZE];
+	};
+
+} HttpJwtValue;
+
+typedef struct HttpJwt {
+
+	struct jwt *jwt;
+
+	u8 n_values;
+	HttpJwtValue values[HTTP_JWT_VALUES_SIZE];
+
+	char bearer[HTTP_JWT_BEARER_SIZE];
+	char json[HTTP_JWT_TOKEN_SIZE];
+
+} HttpJwt;
 
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256

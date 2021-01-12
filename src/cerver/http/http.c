@@ -431,10 +431,15 @@ static unsigned int http_cerver_init_load_jwt_keys (
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Loading HTTP routes...");
+		cerver_log_msg ("Initializing HTTP cerver...");
 
 		// init common responses
 		(void) http_cerver_init_responses ();
+
+		// init http jwt pool
+		// TODO:
+
+		cerver_log_msg ("Loading HTTP routes...");
 
 		// init top level routes
 		HttpRoute *route = NULL;
@@ -731,6 +736,110 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 
 	if (http_cerver) {
 		http_cerver->jwt_opt_pub_key_name = filename ? str_new (filename) : NULL;
+	}
+
+}
+
+static HttpJwt *http_jwt_new (void) {
+
+	HttpJwt *http_jwt = (HttpJwt *) malloc (sizeof (HttpJwt));
+	if (http_jwt) {
+		(void) memset (http_jwt, 0, sizeof (HttpJwt));
+
+		http_jwt->jwt = NULL;
+	}
+
+	return http_jwt;
+
+}
+
+static void http_jwt_delete (void *http_jwt_ptr) {
+
+	if (http_jwt_ptr) {
+		HttpJwt *http_jwt = (HttpJwt *) http_jwt_ptr;
+
+		if (http_jwt->jwt) jwt_free (http_jwt->jwt);
+
+		free (http_jwt_ptr);
+	}
+
+}
+
+HttpJwt *http_cerver_auth_jwt_new (void) {
+
+	// TODO:
+
+}
+
+void http_cerver_auth_jwt_delete (HttpJwt *http_jwt) {
+
+	// TODO:
+
+}
+
+static inline u8 http_cerver_auth_jwt_add_value_internal (
+	HttpJwt *http_jwt, const char *key
+) {
+
+	u8 retval = 1;
+
+	if (http_jwt) {
+		if (http_jwt->n_values < HTTP_JWT_VALUES_SIZE) {
+			(void) strncpy (
+				http_jwt->values[http_jwt->n_values].key,
+				key,
+				HTTP_JWT_VALUE_KEY_SIZE - 1
+			);
+			
+			http_jwt->n_values += 1;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+void http_cerver_auth_jwt_add_value (
+	HttpJwt *http_jwt,
+	const char *key, const char *value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		(void) strncpy (
+			http_jwt->values[http_jwt->n_values - 1].value_str,
+			value,
+			HTTP_JWT_VALUE_VALUE_SIZE - 1
+		);
+	}
+
+}
+
+void http_cerver_auth_jwt_add_value_bool (
+	HttpJwt *http_jwt,
+	const char *key, const bool value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
+	}
+
+}
+
+void http_cerver_auth_jwt_add_value_int (
+	HttpJwt *http_jwt,
+	const char *key, const int value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
 	}
 
 }
