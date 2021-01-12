@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+#include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
@@ -290,6 +291,8 @@ typedef struct HttpJwtValue {
 
 	char key[HTTP_JWT_VALUE_KEY_SIZE];
 
+	cerver_type_t type;
+
 	union {
 		bool value_bool;
 		int value_int;
@@ -326,10 +329,32 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (
 	HttpCerver *http_cerver, const char *filename
 );
 
-// generates and signs a jwt token that is ready to be sent
+// generates and signs a jwt token that is ready to be used
 // returns a newly allocated string that should be deleted after use
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (
-	HttpCerver *http_cerver, DoubleList *values
+	const HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+// generates and signs a bearer jwt that is ready to be used
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+// generates and signs a bearer jwt
+// and places it inside a json packet
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+// works as http_cerver_auth_generate_bearer_jwt_json ()
+// but with the ability to add an extra string value to
+// the generated json
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
+	HttpCerver *http_cerver, HttpJwt *http_jwt,
+	const char *key, const char *value
 );
 
 // returns TRUE if the jwt has been decoded and validate successfully

@@ -809,6 +809,7 @@ void http_cerver_auth_jwt_add_value (
 	if (!http_cerver_auth_jwt_add_value_internal (
 		http_jwt, key
 	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_UTF8;
 		(void) strncpy (
 			http_jwt->values[http_jwt->n_values - 1].value_str,
 			value,
@@ -826,6 +827,7 @@ void http_cerver_auth_jwt_add_value_bool (
 	if (!http_cerver_auth_jwt_add_value_internal (
 		http_jwt, key
 	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_BOOL;
 		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
 	}
 
@@ -839,44 +841,165 @@ void http_cerver_auth_jwt_add_value_int (
 	if (!http_cerver_auth_jwt_add_value_internal (
 		http_jwt, key
 	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_INT32;
 		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
 	}
 
 }
 
-// generates and signs a jwt token that is ready to be sent
+static int http_cerver_auth_generate_jwt_internal (
+	const HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	// add grants
+	for (u8 i = 0; i < http_jwt->n_values; i++) {
+		switch (http_jwt->values[i].type) {
+			case CERVER_TYPE_UTF8: {
+				(void) jwt_add_grant (
+					http_jwt->jwt,
+					http_jwt->values[i].key,
+					http_jwt->values[i].value_str
+				);
+			} break;
+
+			case CERVER_TYPE_BOOL: {
+				(void) jwt_add_grant_bool (
+					http_jwt->jwt,
+					http_jwt->values[i].key,
+					http_jwt->values[i].value_bool
+				);
+			} break;
+
+			case CERVER_TYPE_INT32: {
+				(void) jwt_add_grant_int (
+					http_jwt->jwt,
+					http_jwt->values[i].key,
+					http_jwt->values[i].value_int
+				);
+			} break;
+
+			default: break;
+		}
+	}
+
+	(void) jwt_add_grant_int (http_jwt->jwt, "iat", time (NULL));
+
+	return jwt_set_alg (
+		http_jwt->jwt, 
+		http_cerver->jwt_alg, 
+		(const unsigned char *) http_cerver->jwt_private_key->str, 
+		http_cerver->jwt_private_key->len
+	);
+
+}
+
+// generates and signs a jwt token that is ready to be used
 // returns a newly allocated string that should be deleted after use
 char *http_cerver_auth_generate_jwt (
-	HttpCerver *http_cerver, DoubleList *values
+	const HttpCerver *http_cerver, HttpJwt *http_jwt
 ) {
 
 	char *token = NULL;
 
-	jwt_t *jwt = NULL;
-	if (!jwt_new (&jwt)) {
-		time_t iat = time (NULL);
-
-		KeyValuePair *kvp = NULL;
-		for (ListElement *le = dlist_start (values); le; le = le->next) {
-			kvp = (KeyValuePair *) le->data;
-			(void) jwt_add_grant (jwt, kvp->key->str, kvp->value->str);
+	if (http_cerver && http_jwt) {
+		if (!jwt_new (&http_jwt->jwt)) {
+			if (!http_cerver_auth_generate_jwt_internal (
+				http_cerver, http_jwt
+			)) {
+				token = jwt_encode_str (http_jwt->jwt);
+			}
 		}
-
-		(void) jwt_add_grant_int (jwt, "iat", iat);
-
-		if (!jwt_set_alg (
-			jwt, 
-			http_cerver->jwt_alg, 
-			(const unsigned char *) http_cerver->jwt_private_key->str, 
-			http_cerver->jwt_private_key->len
-		)) {
-			token = jwt_encode_str (jwt);
-		}
-
-		jwt_free (jwt);
 	}
 
 	return token;
+
+}
+
+// generates and signs a bearer jwt that is ready to be used
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && http_jwt) {
+		char *token = http_cerver_auth_generate_jwt (
+			http_cerver, http_jwt
+		);
+
+		if (token) {
+			(void) snprintf (
+				http_jwt->bearer,
+				HTTP_JWT_BEARER_SIZE -1,
+				"Bearer %s",
+				token
+			);
+			
+			free (token);
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// generates and signs a bearer jwt
+// and places it inside a json packet
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt_json (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	u8 retval = 1;
+
+	if (!http_cerver_auth_generate_bearer_jwt (
+		http_cerver, http_jwt
+	)) {
+		(void) snprintf (
+			http_jwt->json,
+			HTTP_JWT_TOKEN_SIZE -1,
+			"{\"token\": \"%s\"}",
+			http_jwt->bearer
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// works as http_cerver_auth_generate_bearer_jwt_json ()
+// but with the ability to add an extra string value to
+// the generated json
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
+	HttpCerver *http_cerver, HttpJwt *http_jwt,
+	const char *key, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (key && value) {
+		if (!http_cerver_auth_generate_bearer_jwt (
+			http_cerver, http_jwt
+		)) {
+			(void) snprintf (
+				http_jwt->json,
+				HTTP_JWT_TOKEN_SIZE -1,
+				"{\"token\": \"%s\", \"%s\": \"%s\"}",
+				http_jwt->bearer,
+				key, value
+			);
+
+			retval = 0;
+		}
+	}
+
+	return retval;
 
 }
 
