@@ -25,6 +25,18 @@ static jwt_malloc_t pfn_malloc = NULL;
 static jwt_realloc_t pfn_realloc = NULL;
 static jwt_free_t pfn_free = NULL;
 
+const char *jwt_error_str (const jwt_error_t error) {
+
+	switch (error) {
+		#define XX(num, name, string) case JWT_VALIDATION_##name: return #string;
+		JWT_VALIDATION_MAP(XX)
+		#undef XX
+	}
+
+	return NULL;
+
+}
+
 void *jwt_malloc (size_t size) {
 
 	if (pfn_malloc)
@@ -97,8 +109,7 @@ static void jwt_scrub_key (jwt_t *jwt) {
 
 int jwt_set_alg (
 	jwt_t *jwt, jwt_alg_t alg, const unsigned char *key, int len
-) 
-{
+) {
 	/* No matter what happens here, we do this. */
 	jwt_scrub_key(jwt);
 

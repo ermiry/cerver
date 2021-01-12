@@ -17,21 +17,40 @@
 
 #include "cerver/http/jwt/alg.h"
 
-/** JWT Validation exception types. These are bit values. */
-#define JWT_VALIDATION_SUCCESS		   		0x0000
-#define JWT_VALIDATION_ERROR		      	0x0001	/* General failures */
-#define JWT_VALIDATION_ALG_MISMATCH	   		0x0002
-#define JWT_VALIDATION_EXPIRED		   		0x0004
-#define JWT_VALIDATION_TOO_NEW		   		0x0008
-#define JWT_VALIDATION_ISS_MISMATCH 		0x0010
-#define JWT_VALIDATION_SUB_MISMATCH	   		0x0020
-#define JWT_VALIDATION_AUD_MISMATCH	   		0x0040
-#define JWT_VALIDATION_GRANT_MISSING		0x0080
-#define JWT_VALIDATION_GRANT_MISMATCH		0x0100
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define JWT_VALIDATION_MAP(XX)						\
+	XX(0x0000,	SUCCESS, 		Success)			\
+	XX(0x0001,	ERROR, 			Error)				\
+	XX(0x0002,	ALG_MISMATCH, 	Alg Mismatch)		\
+	XX(0x0004,	EXPIRED, 		Expired)			\
+	XX(0x0008,	TOO_NEW, 		Not old enough)		\
+	XX(0x0010,	ISS_MISMATCH, 	ISS Mismatch)		\
+	XX(0x0020,	SUB_MISMATCH, 	Sub Mismatch)		\
+	XX(0x0040,	AUD_MISMATCH, 	Aud Mismatch)		\
+	XX(0x0080,	GRANT_MISSING, 	Grant Missing)		\
+	XX(0x0100,	GRANT_MISMATCH, Grant Mismatch)
+
+typedef enum jwt_error_t {
+
+	#define XX(num, name, string) JWT_VALIDATION_##name = num,
+	JWT_VALIDATION_MAP (XX)
+	#undef XX
+
+} jwt_error_t;
+
+/**
+ * Converts error type to it's string representation.
+ *
+ * Returns a string that matches the error type provided.
+ *
+ * @param error A valid jwt_error_t specifier.
+ * @returns Returns a string (e.g. "Expired") matching the error or NULL for
+ *     invalid error.
+ */
+CERVER_PUBLIC const char *jwt_error_str (const jwt_error_t error);
 
 /** JWT Memory allocation overrides */
 typedef void *(*jwt_malloc_t)(size_t);
