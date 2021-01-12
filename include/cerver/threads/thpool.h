@@ -1,5 +1,5 @@
-#ifndef _THREADS_THPOOL_H_
-#define _THREADS_THPOOL_H_
+#ifndef _CERVER_THREADS_THPOOL_H_
+#define _CERVER_THREADS_THPOOL_H_
 
 #include <stdbool.h>
 #include <pthread.h>
