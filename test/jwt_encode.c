@@ -8,7 +8,7 @@
 #include <cerver/version.h>
 
 #include <cerver/http/http.h>
-#include <cerver/http/json/json.h>
+
 #include <cerver/http/jwt/alg.h>
 
 #include <cerver/utils/utils.h>
@@ -61,33 +61,23 @@ int main (int argc, char **argv) {
 			user_print (user);
 
 			// create token
-			DoubleList *payload = dlist_init (key_value_pair_delete, NULL);
-			dlist_insert_at_end_unsafe (payload, key_value_pair_create ("id", user->id->str));
-			dlist_insert_at_end_unsafe (payload, key_value_pair_create ("name", user->name->str));
-			dlist_insert_at_end_unsafe (payload, key_value_pair_create ("username", user->username->str));
-			dlist_insert_at_end_unsafe (payload, key_value_pair_create ("role", user->role->str));
+			HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+			http_cerver_auth_jwt_add_value (http_jwt, "id", user->id->str);
+			http_cerver_auth_jwt_add_value (http_jwt, "name", user->name->str);
+			http_cerver_auth_jwt_add_value (http_jwt, "username", user->username->str);
+			http_cerver_auth_jwt_add_value (http_jwt, "role", user->role->str);
 
-			char *token = http_cerver_auth_generate_jwt (
-				http_cerver, payload
-			);
-
-			if (token) {
-				char *bearer = c_string_create ("Bearer %s", token);
-				json_t *json = json_pack ("{s:s}", "token", bearer);
-				char *json_str = json_dumps (json, 0);
-
-				(void) printf ("\n\n%s\n\n", json_str);
-
-				free (json_str);
-				free (bearer);
-				free (token);
+			if (!http_cerver_auth_generate_bearer_jwt_json (
+				http_cerver, http_jwt
+			)) {
+				(void) printf ("\n\n%s\n\n", http_jwt->json);
 			}
 
 			else {
 				cerver_log_error ("Failed to generate token!\n");
 			}
 
-			dlist_delete (payload);
+			http_cerver_auth_jwt_delete (http_jwt);
 		}
 
 		cerver_teardown (api_cerver);
