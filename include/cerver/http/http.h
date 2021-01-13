@@ -371,6 +371,11 @@ CERVER_EXPORT char *http_cerver_auth_generate_jwt (
 	const HttpCerver *http_cerver, HttpJwt *http_jwt
 );
 
+CERVER_PRIVATE u8 http_cerver_auth_generate_bearer_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+);
+
 // generates and signs a bearer jwt that is ready to be used
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt (

@@ -978,34 +978,48 @@ char *http_cerver_auth_generate_jwt (
 
 }
 
+u8 http_cerver_auth_generate_bearer_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+) {
+
+	u8 retval = 1;
+
+	char *token = http_cerver_auth_generate_jwt_actual (
+		http_jwt,
+		alg, key, keylen
+	);
+
+	if (token) {
+		(void) snprintf (
+			http_jwt->bearer,
+			HTTP_JWT_BEARER_SIZE -1,
+			"Bearer %s",
+			token
+		);
+
+		free (token);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // generates and signs a bearer jwt that is ready to be used
 // returns 0 on success, 1 on error
 u8 http_cerver_auth_generate_bearer_jwt (
 	HttpCerver *http_cerver, HttpJwt *http_jwt
 ) {
 
-	u8 retval = 1;
-
-	if (http_cerver && http_jwt) {
-		char *token = http_cerver_auth_generate_jwt (
-			http_cerver, http_jwt
-		);
-
-		if (token) {
-			(void) snprintf (
-				http_jwt->bearer,
-				HTTP_JWT_BEARER_SIZE -1,
-				"Bearer %s",
-				token
-			);
-			
-			free (token);
-
-			retval = 0;
-		}
-	}
-
-	return retval;
+	return (http_cerver && http_jwt) ?
+		http_cerver_auth_generate_bearer_jwt_actual (
+			http_jwt,
+			http_cerver->jwt_alg, 
+			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_private_key->len
+		) : 1;
 
 }
 
