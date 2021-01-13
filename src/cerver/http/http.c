@@ -717,6 +717,22 @@ void http_cerver_set_uploads_delete_when_done (
 
 #pragma region auth
 
+// loads a key from a filename that can be used for jwt
+// returns a newly allocated c string on success, NULL on error
+char *http_cerver_auth_load_key (
+	const char *filename, size_t *keylen
+) {
+
+	char *key = NULL;
+
+	if (filename && keylen) {
+		key = file_read (filename, keylen);
+	}
+
+	return key;
+
+}
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
 void http_cerver_auth_set_jwt_algorithm (

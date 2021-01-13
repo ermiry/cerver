@@ -319,6 +319,12 @@ CERVER_PRIVATE void *http_jwt_new (void);
 
 CERVER_PRIVATE void http_jwt_delete (void *http_jwt_ptr);
 
+// loads a key from a filename that can be used for jwt
+// returns a newly allocated c string on success, NULL on error
+CERVER_PUBLIC char *http_cerver_auth_load_key (
+	const char *filename, size_t *keylen
+);
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
 CERVER_EXPORT void http_cerver_auth_set_jwt_algorithm (
