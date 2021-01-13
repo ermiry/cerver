@@ -121,7 +121,7 @@ void *user_parse_from_json (void *user_json_ptr) {
 			user->username = str_new (username);
 			user->role = str_new (role);
 
-			user_print (user);
+			// user_print (user);
 		}
 
 		else {
