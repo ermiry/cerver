@@ -2,80 +2,79 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+
 #include <cerver/cerver.h>
-#include <cerver/version.h>
 
 #include <cerver/http/http.h>
 
-#include <cerver/utils/utils.h>
-#include <cerver/utils/log.h>
+#include <cerver/http/jwt/alg.h>
 
+#include "http.h"
+#include "../test.h"
 #include "../users.h"
 
-static Cerver *api_cerver = NULL;
+void http_tests_jwt_decode (void) {
 
-int main (int argc, char **argv) {
+	(void) printf ("Testing HTTP jwt decode integration...\n");
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	cerver_init ();
-
-	cerver_version_print_full ();
-
-	cerver_log_debug ("Cerver JWT decode test");
-	printf ("\n");
-
-	api_cerver = cerver_create (
+	Cerver *test_cerver = cerver_create (
 		CERVER_TYPE_WEB,
-		"api-cerver",
+		"test-cerver",
 		8080,
 		PROTOCOL_TCP,
 		false,
 		2
 	);
 
-	if (api_cerver) {
-		/*** web cerver configuration ***/
-		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
+	test_check_ptr (test_cerver);
 
-		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
-		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
-		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+	/*** web cerver configuration ***/
+	test_check_ptr (test_cerver->cerver_data);
+	HttpCerver *http_cerver = (HttpCerver *) test_cerver->cerver_data;
 
-		http_cerver_init (http_cerver);
+	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	test_check_int_eq (http_cerver->jwt_alg, JWT_ALG_RS256, NULL);
 
-		/*** test ***/
-		const char *bearer_token = { "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2MDc1NTU2ODYsImlkIjoiMTYwNzU1NTY4NiIsIm5hbWUiOiJFcmljayBTYWxhcyIsInJvbGUiOiJjb21tb24iLCJ1c2VybmFtZSI6ImVybWlyeSJ9.QIEZXo8vkthUPQzjozQNJ8P5ZTxbA6w2OWjeVplWVB2cs1ZySTRMvZ6Dh8dDe-CAHH4P9zcJumJIR0LWxZQ63O61c-cKZuupaPiI9qQaqql30oBnywznWCDkkXgkoTh683fSxoFR71Gzqp5e41mX-KxopH-Kh4Bz3eM3d27p-8tKOUGUlVk1AgWfGU2LFfTu1ZLkVYwo4ceGxHdntS1C_6IiutG8TLFjuKixgujIhK0ireG1cfAs7uvtGhWLXokLpvTbIrrjKSKLEjCcPh_yPpWeay0Y4yV1e5zSQKHiG7ry0D3qDWJcfHtjNLjAFb93TnpXtoXhftq_uL4d7BV16Y9ssQ5MpNoEh3bxHBgaCHOCGuCAVJfdDsRBT5C60_jme7S1utQ4qkpA8YbAoYKi58yGkHxnnYYbaYFQYSykbsYPFZ-4dieFlaIc5-m-vymwG--AMjfhu8Sdm0V0xA3Vq_9FzUIfXvo32-k0eH4QGPX6W8-FinR_Lj-Zj29mXfgALpTlF-m7Sbo3hVebnpwAFKZR495UBLL8B8u3MHB9XQxX6z4fHAxv5Nkftr4ShGRWwI_yVD73sLq44V9FEBQksoXLEBm5RqRC8qvhoxOIzbEYokd6MWLak1sZRUfIIqu65fERA5sMjs9JRnlYu7twP3Fk_VPy-tZBXXA7KTc3lkE" };
+	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	test_check_ptr (http_cerver->jwt_opt_key_name);
+	test_check_str_eq (http_cerver->jwt_opt_key_name->str, private_key, NULL);
 
-		User *decoded_user = NULL;
-		if (http_cerver_auth_validate_jwt (
-			http_cerver,
-			bearer_token,
-			user_parse_from_json,
-			((void **) &decoded_user)
-		)) {
-			(void) printf ("\n\n");
-			user_print (decoded_user);
-			(void) printf ("\n\n");
+	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+	test_check_ptr (http_cerver->jwt_opt_pub_key_name);
+	test_check_str_eq (http_cerver->jwt_opt_pub_key_name->str, public_key, NULL);
 
-			user_delete (decoded_user);
-		}
+	http_cerver_init (http_cerver);
 
-		else {
-			cerver_log_error ("Token is invalid!");
-		}
+	/*** test ***/
+	User *decoded_user = NULL;
 
-		cerver_teardown (api_cerver);
-	}
+	bool result = http_cerver_auth_validate_jwt (
+		http_cerver,
+		bearer_token,
+		user_parse_from_json,
+		((void **) &decoded_user)
+	);
 
-	else {
-		cerver_log_error ("Failed to create cerver!");
+	test_check_bool_eq (result, true, NULL);
+	test_check_ptr (decoded_user);
 
-		cerver_delete (api_cerver);
-	}
+	test_check_int_eq (decoded_user->iat, STATIC_DATE, NULL);
+	test_check_str_eq (decoded_user->id->str, STATIC_ID, NULL);
+	test_check_str_len (decoded_user->id->str, strlen (STATIC_ID), NULL);
+	test_check_str_eq (decoded_user->name->str, "Erick Salas", NULL);
+	test_check_str_len (decoded_user->name->str, strlen ("Erick Salas"), NULL);
+	test_check_str_eq (decoded_user->username->str, "ermiry", NULL);
+	test_check_str_len (decoded_user->username->str, strlen ("ermiry"), NULL);
+	test_check_str_eq (decoded_user->role->str, "common", NULL);
+	test_check_str_len (decoded_user->role->str, strlen ("common"), NULL);
 
-	cerver_end ();
+	user_delete (decoded_user);
 
-	return 0;
+	cerver_teardown (test_cerver);
+
+	(void) printf ("Done!\n");
 
 }
