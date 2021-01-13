@@ -54,23 +54,20 @@ void users_login_handler (
 			if (!strcmp (user->password->str, password->str)) {
 				// printf ("\nPasswords match!\n");
 
-				DoubleList *payload = dlist_init (key_value_pair_delete, NULL);
-				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("id", user->id->str));
-				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("name", user->name->str));
-				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("username", user->username->str));
-				(void) dlist_insert_at_end_unsafe (payload, key_value_pair_create ("role", user->role->str));
+				HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+				http_cerver_auth_jwt_add_value (http_jwt, "id", user->id->str);
+				http_cerver_auth_jwt_add_value (http_jwt, "name", user->name->str);
+				http_cerver_auth_jwt_add_value (http_jwt, "username", user->username->str);
+				http_cerver_auth_jwt_add_value (http_jwt, "role", user->role->str);
 
-				// generate & send back auth token
-				char *token = http_cerver_auth_generate_jwt (
-					(HttpCerver *) http_receive->cr->cerver->cerver_data, payload
-				);
+				if (!http_cerver_auth_generate_bearer_jwt_json (
+					(HttpCerver *) http_receive->cr->cerver->cerver_data,
+					http_jwt
+				)) {
+					HttpResponse *res = http_response_create (
+						200, http_jwt->json, strlen (http_jwt->json)
+					);
 
-				if (token) {
-					char *bearer = c_string_create ("Bearer %s", token);
-					json_t *json = json_pack ("{s:s}", "token", bearer);
-					char *json_str = json_dumps (json, 0);
-
-					HttpResponse *res = http_response_create (200, json_str, strlen (json_str));
 					if (res) {
 						http_response_compile (res);
 						#ifdef EXAMPLES_DEBUG
@@ -79,10 +76,6 @@ void users_login_handler (
 						http_response_send (res, http_receive);
 						http_respponse_delete (res);
 					}
-
-					free (json_str);
-					free (bearer);
-					free (token);
 				}
 
 				else {
@@ -98,7 +91,7 @@ void users_login_handler (
 					}
 				}
 
-				dlist_delete (payload);
+				http_cerver_auth_jwt_delete (http_jwt);
 			}
 
 			else {
