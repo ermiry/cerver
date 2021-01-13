@@ -1,9 +1,6 @@
 #ifndef _CERVER_TESTS_JSON_H_
 #define _CERVER_TESTS_JSON_H_
 
-#include <stdio.h>
-#include <stdlib.h>
-
 #if HAVE_LOCALE_H
 #include <locale.h>
 #endif
