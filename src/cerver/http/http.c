@@ -10,9 +10,11 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/collections/pool.h"
+
+#include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
-#include "cerver/files.h"
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
@@ -34,9 +36,13 @@ static HttpResponse *not_found_error = NULL;
 static HttpResponse *server_error = NULL;
 static HttpResponse *catch_all = NULL;
 
+static Pool *http_jwt_pool = NULL;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
+
+static unsigned int http_jwt_init_pool (void);
 
 static void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -58,7 +64,7 @@ static const char hex[] = "0123456789abcdef";
 // converts a hex character to its integer value
 static const char from_hex (const char ch) {
 	
-	return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+	return isdigit (ch) ? ch - '0' : tolower (ch) - 'a' + 10;
 	
 }
 
@@ -437,7 +443,7 @@ void http_cerver_init (HttpCerver *http_cerver) {
 		(void) http_cerver_init_responses ();
 
 		// init http jwt pool
-		// TODO:
+		(void) http_jwt_init_pool ();
 
 		cerver_log_msg ("Loading HTTP routes...");
 
@@ -465,6 +471,9 @@ void http_cerver_init (HttpCerver *http_cerver) {
 void http_cerver_end (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
+		pool_delete (http_jwt_pool);
+		http_jwt_pool = NULL;
+
 		http_respponse_delete (bad_auth_error);
 		http_respponse_delete (not_found_error);
 		http_respponse_delete (server_error);
@@ -740,7 +749,7 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 
 }
 
-static HttpJwt *http_jwt_new (void) {
+void *http_jwt_new (void) {
 
 	HttpJwt *http_jwt = (HttpJwt *) malloc (sizeof (HttpJwt));
 	if (http_jwt) {
@@ -753,7 +762,7 @@ static HttpJwt *http_jwt_new (void) {
 
 }
 
-static void http_jwt_delete (void *http_jwt_ptr) {
+void http_jwt_delete (void *http_jwt_ptr) {
 
 	if (http_jwt_ptr) {
 		HttpJwt *http_jwt = (HttpJwt *) http_jwt_ptr;
@@ -765,15 +774,48 @@ static void http_jwt_delete (void *http_jwt_ptr) {
 
 }
 
+static unsigned int http_jwt_init_pool (void) {
+
+	unsigned int retval = 1;
+
+	http_jwt_pool = pool_create (http_jwt_delete);
+	if (http_jwt_pool) {
+		pool_set_create (http_jwt_pool, http_jwt_new);
+		pool_set_produce_if_empty (http_jwt_pool, true);
+		if (!pool_init (http_jwt_pool, http_jwt_new, HTTP_JWT_POOL_INIT)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error ("Failed to init http jwt pool!");
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create http jwt pool!");
+	}
+
+	return retval;
+
+}
+
 HttpJwt *http_cerver_auth_jwt_new (void) {
 
-	// TODO:
+	return (HttpJwt *) pool_pop (http_jwt_pool);
 
 }
 
 void http_cerver_auth_jwt_delete (HttpJwt *http_jwt) {
 
-	// TODO:
+	if (http_jwt) {
+		if (http_jwt->jwt) jwt_free (http_jwt->jwt);
+
+		(void) memset (http_jwt, 0, sizeof (HttpJwt));
+
+		http_jwt->jwt = NULL;
+
+		(void) pool_push (http_jwt_pool, http_jwt);
+	}
 
 }
 
@@ -842,7 +884,7 @@ void http_cerver_auth_jwt_add_value_int (
 		http_jwt, key
 	)) {
 		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_INT32;
-		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
+		http_jwt->values[http_jwt->n_values - 1].value_int = value;
 	}
 
 }

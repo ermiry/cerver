@@ -280,6 +280,8 @@ CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
 
 #pragma region auth
 
+#define HTTP_JWT_POOL_INIT			32
+
 #define HTTP_JWT_VALUE_KEY_SIZE		128
 #define HTTP_JWT_VALUE_VALUE_SIZE	128
 
@@ -313,6 +315,10 @@ typedef struct HttpJwt {
 
 } HttpJwt;
 
+CERVER_PRIVATE void *http_jwt_new (void);
+
+CERVER_PRIVATE void http_jwt_delete (void *http_jwt_ptr);
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
 CERVER_EXPORT void http_cerver_auth_set_jwt_algorithm (
@@ -327,6 +333,25 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_priv_key_filename (
 // sets the filename from where the jwt public key will be loaded
 CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (
 	HttpCerver *http_cerver, const char *filename
+);
+
+CERVER_EXPORT HttpJwt *http_cerver_auth_jwt_new (void);
+
+CERVER_EXPORT void http_cerver_auth_jwt_delete (HttpJwt *http_jwt);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value (
+	HttpJwt *http_jwt,
+	const char *key, const char *value
+);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value_bool (
+	HttpJwt *http_jwt,
+	const char *key, const bool value
+);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value_int (
+	HttpJwt *http_jwt,
+	const char *key, const int value
 );
 
 // generates and signs a jwt token that is ready to be used
