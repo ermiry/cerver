@@ -48,7 +48,7 @@
 	})
 
 #define																\
-	test_check_null_ptr(ptr)												\
+	test_check_null_ptr(ptr)										\
 	({																\
 		if (ptr) {													\
 			where;													\
@@ -78,13 +78,29 @@
 	})
 
 #define																\
-	test_check_bool_eq(value, expected, msg)							\
+	test_check_bool_eq(value, expected, msg)						\
 	({																\
 		if (value != expected) {									\
 			where;													\
 			(void) fprintf (										\
 				stderr,												\
 				"BOOL %d does not match %d\n",						\
+				value, expected										\
+			);														\
+																	\
+			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_unsigned_eq(value, expected, msg)					\
+	({																\
+		if (value != expected) {									\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"UNSIGNED %d does not match %d\n",					\
 				value, expected										\
 			);														\
 																	\
