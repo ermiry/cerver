@@ -360,6 +360,11 @@ CERVER_EXPORT void http_cerver_auth_jwt_add_value_int (
 	const char *key, const int value
 );
 
+CERVER_PRIVATE char *http_cerver_auth_generate_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+);
+
 // generates and signs a jwt token that is ready to be used
 // returns a newly allocated string that should be deleted after use
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (

@@ -905,49 +905,55 @@ void http_cerver_auth_jwt_add_value_int (
 
 }
 
-static int http_cerver_auth_generate_jwt_internal (
-	const HttpCerver *http_cerver, HttpJwt *http_jwt
+char *http_cerver_auth_generate_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
 ) {
 
-	// add grants
-	for (u8 i = 0; i < http_jwt->n_values; i++) {
-		switch (http_jwt->values[i].type) {
-			case CERVER_TYPE_UTF8: {
-				(void) jwt_add_grant (
-					http_jwt->jwt,
-					http_jwt->values[i].key,
-					http_jwt->values[i].value_str
-				);
-			} break;
+	char *token = NULL;
 
-			case CERVER_TYPE_BOOL: {
-				(void) jwt_add_grant_bool (
-					http_jwt->jwt,
-					http_jwt->values[i].key,
-					http_jwt->values[i].value_bool
-				);
-			} break;
+	if (!jwt_new (&http_jwt->jwt)) {
+		// add grants
+		for (u8 i = 0; i < http_jwt->n_values; i++) {
+			switch (http_jwt->values[i].type) {
+				case CERVER_TYPE_UTF8: {
+					(void) jwt_add_grant (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_str
+					);
+				} break;
 
-			case CERVER_TYPE_INT32: {
-				(void) jwt_add_grant_int (
-					http_jwt->jwt,
-					http_jwt->values[i].key,
-					http_jwt->values[i].value_int
-				);
-			} break;
+				case CERVER_TYPE_BOOL: {
+					(void) jwt_add_grant_bool (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_bool
+					);
+				} break;
 
-			default: break;
+				case CERVER_TYPE_INT32: {
+					(void) jwt_add_grant_int (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_int
+					);
+				} break;
+
+				default: break;
+			}
+		}
+
+		// sign
+		if (!jwt_set_alg (
+			http_jwt->jwt, 
+			alg, key, keylen
+		)) {
+			token = jwt_encode_str (http_jwt->jwt);
 		}
 	}
 
-	(void) jwt_add_grant_int (http_jwt->jwt, "iat", time (NULL));
-
-	return jwt_set_alg (
-		http_jwt->jwt, 
-		http_cerver->jwt_alg, 
-		(const unsigned char *) http_cerver->jwt_private_key->str, 
-		http_cerver->jwt_private_key->len
-	);
+	return token;
 
 }
 
@@ -960,13 +966,12 @@ char *http_cerver_auth_generate_jwt (
 	char *token = NULL;
 
 	if (http_cerver && http_jwt) {
-		if (!jwt_new (&http_jwt->jwt)) {
-			if (!http_cerver_auth_generate_jwt_internal (
-				http_cerver, http_jwt
-			)) {
-				token = jwt_encode_str (http_jwt->jwt);
-			}
-		}
+		token = http_cerver_auth_generate_jwt_actual (
+			http_jwt,
+			http_cerver->jwt_alg, 
+			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_private_key->len
+		);
 	}
 
 	return token;
