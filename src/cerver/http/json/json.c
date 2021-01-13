@@ -333,8 +333,8 @@ int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 	value = strtod (strbuffer->value, &end);
 	assert (end == strbuffer->value + strbuffer->length);
 
-	if ((value > HUGE_VAL || value < -HUGE_VAL) && errno == ERANGE) {
-		/* Overflow */
+	if (errno == ERANGE) {
+		/* Overflow or Underflow */
 		return -1;
 	}
 
