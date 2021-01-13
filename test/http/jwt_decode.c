@@ -10,7 +10,7 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-#include "users.h"
+#include "../users.h"
 
 static Cerver *api_cerver = NULL;
 
