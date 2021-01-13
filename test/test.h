@@ -157,4 +157,20 @@
 		}															\
 	})
 
+#define																\
+	test_check_str_len(string, expected, msg)						\
+	({																\
+		if (strlen ((char *) string) != expected) {					\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"STRING %s LEN does not match %d\n",				\
+				(char *) string, expected							\
+			);														\
+																	\
+			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
+			exit (1);												\
+		}															\
+	})
+
 #endif
