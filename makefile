@@ -1,5 +1,7 @@
 TYPE		:= development
 
+NATIVE		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -36,6 +38,7 @@ GCCVGTEQ8 	:= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 8)
 
 SRCDIR      := src
 INCDIR      := include
+
 BUILDDIR    := objs
 TARGETDIR   := bin
 
@@ -43,12 +46,12 @@ SRCEXT      := c
 DEPEXT      := d
 OBJEXT      := o
 
+COVDIR		:= coverage
 COVEXT		:= gcov
 
 # common flags
 # -Wconversion
-COMMON		:= -march=native \
-				-Wall -Wno-unknown-pragmas \
+COMMON		:= -Wall -Wno-unknown-pragmas \
 				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
 				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
 				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
@@ -81,10 +84,14 @@ else
 	endif
 endif
 
+ifeq ($(NATIVE), 1)
+	CFLAGS += -march=native
+endif
+
 # common flags
 CFLAGS += -fPIC $(COMMON)
 
-LIB         := $(PTHREAD) $(MATH)
+LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL)
 
 ifeq ($(TYPE), test)
 	LIB += -lgcov --coverage
@@ -138,11 +145,15 @@ else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
+ifeq ($(NATIVE), 1)
+	EXAFLAGS += -march=native
+endif
+
 # common flags
 EXAFLAGS += -Wall -Wno-unknown-pragmas
 
-EXALIBS		:= -L ./bin -l cerver
-EXAINC		:= -I ./$(EXAMDIR)
+EXALIBS		:= -L ./$(TARGETDIR) -l cerver
+EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
@@ -151,23 +162,23 @@ examples: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)
 	@mkdir -p ./$(EXATARGET)/client
 	@mkdir -p ./$(EXATARGET)/web
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/multi.o -o ./$(EXATARGET)/multi -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/threads.o -o ./$(EXATARGET)/threads -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/advanced.o -o ./$(EXATARGET)/advanced -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/requests.o -o ./$(EXATARGET)/requests -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/files.o -o ./$(EXATARGET)/files -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/auth.o -o ./$(EXATARGET)/auth -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/sessions.o -o ./$(EXATARGET)/sessions -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/admin.o -o ./$(EXATARGET)/admin -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/packets.o -o ./$(EXATARGET)/packets -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth -l cerver
-	$(CC) -I ./$(INCDIR) -L ./$(TARGETDIR) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files -l cerver
+	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/multi.o -o ./$(EXATARGET)/multi $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/threads.o -o ./$(EXATARGET)/threads $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/advanced.o -o ./$(EXATARGET)/advanced $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/requests.o -o ./$(EXATARGET)/requests $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/files.o -o ./$(EXATARGET)/files $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/auth.o -o ./$(EXATARGET)/auth $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/sessions.o -o ./$(EXATARGET)/sessions $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/admin.o -o ./$(EXATARGET)/admin $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/packets.o -o ./$(EXATARGET)/packets $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS)
 
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
@@ -183,7 +194,7 @@ $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 TESTDIR		:= test
 TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
-TESTCOV		:= coverage/test
+TESTCOVDIR	:= $(COVDIR)/test
 
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 
@@ -191,30 +202,34 @@ ifeq ($(TYPE), test)
 	TESTFLAGS += -fprofile-arcs -ftest-coverage
 endif
 
-TESTLIBS	:= $(PTHREAD) -L ./bin -l cerver
+ifeq ($(NATIVE), 1)
+	TESTFLAGS += -march=native
+endif
+
+TESTLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
 
 ifeq ($(TYPE), test)
 	TESTLIBS += -lgcov --coverage
 endif
 
-TESTINC		:= -I ./$(TESTDIR)
+TESTINC		:= -I $(INCDIR) -I ./$(TESTDIR)
 
 TESTS		:= $(shell find $(TESTDIR) -type f -name *.$(SRCEXT))
 TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)))
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
-COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
-
 test: $(TESTOBJS)
 	@mkdir -p ./$(TESTTARGET)
-	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
-	$(CC) -g -I ./$(INCDIR) $(TESTINC) -L ./$(TARGETDIR) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(TESTFLAGS) $(INC) $(TESTINC) $(TESTLIBS) -c -o $@ $<
+	$(CC) $(TESTFLAGS) $(TESTINC) $(TESTLIBS) -c -o $@ $<
 	@$(CC) $(TESTFLAGS) $(INCDEP) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
 	@cp -f $(TESTBUILD)/$*.$(DEPEXT) $(TESTBUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(TESTBUILD)/$*.$(OBJEXT):|' < $(TESTBUILD)/$*.$(DEPEXT).tmp > $(TESTBUILD)/$*.$(DEPEXT)
@@ -224,42 +239,50 @@ $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 # test-run:
 # 	@bash test/run.sh
 
+#coverage
+COVOBJS		:= $(SRCCOVS) $(TESTCOVS)
+
 test-coverage: $(COVOBJS)
 
 coverage-init:
-	@mkdir -p ./coverage
-	@mkdir -p ./$(TESTCOV)
+	@mkdir -p ./$(COVDIR)
+	@mkdir -p ./$(TESTCOVDIR)
 
 coverage: coverage-init test-coverage
 
 # get lib coverage reports
 $(BUILDDIR)/%.$(SRCEXT).$(COVEXT): $(SRCDIR)/%.$(SRCEXT)
-	@mkdir -p ./coverage/$(dir $<)
+	@mkdir -p ./$(COVDIR)/$(dir $<)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./coverage/$<.gcov
+	mv $(notdir $@) ./$(COVDIR)/$<.gcov
 
 # get tests coverage reports
 $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(TESTCOV)
+	mv $(notdir $@) ./$(TESTCOVDIR)
 
 # benchmarks
 BENCHDIR	:= benchmarks
 BENCHBUILD	:= $(BENCHDIR)/objs
 BENCHTARGET	:= $(BENCHDIR)/bin
 
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3 -march=native -mavx2
-BENCHLIBS	:= $(PTHREAD) -L ./bin -l cerver
-BENCHINC	:= -I ./$(BENCHDIR)
+BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
+
+ifeq ($(NATIVE), 1)
+	BENCHFLAGS += -march=native -mavx2
+endif
+
+BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
+BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
 BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
 
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
-	$(CC) -g -I ./$(INCDIR) $(BENCHINC) -L ./$(TARGETDIR) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
 
-# compile benchs
+# compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
 	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) $(BENCHLIBS) -c -o $@ $<
