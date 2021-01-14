@@ -6,38 +6,7 @@
 
 #include "../test.h"
 
-typedef struct Data {
-
-	unsigned int idx;
-	unsigned int value;
-
-} Data;
-
-static inline Data *data_new (
-	const unsigned int idx, const unsigned int value
-) {
-
-	Data *data = (Data *) malloc (sizeof (Data));
-	if (data) {
-		data->idx = idx;
-		data->value = value;
-	}
-
-	return data;
-
-}
-
-static inline void data_delete (void *data_ptr) {
-
-	if (data_ptr) free (data_ptr);
-
-}
-
-static inline void data_print (Data *data) {
-
-	(void) printf ("idx: %u - value: %u\n", data->idx, data->value);
-
-}
+#include "data.h"
 
 static Htab *test_htab_create (void) {
 
@@ -67,13 +36,13 @@ static void test_htab_int_insert_single (void) {
 	Data *data = data_new (idx, value);
 
 	const void *key = &idx;
-	int resutl = htab_insert (
+	int result = htab_insert (
 		map,
 		key, sizeof (unsigned int),
 		data, sizeof (Data)
 	);
 
-	test_check_int_eq (resutl, 0, NULL);
+	test_check_int_eq (result, 0, NULL);
 	test_check_int_eq ((int) map->count, 1, NULL);
 	test_check_false (htab_is_empty (map));
 	test_check_true (htab_is_not_empty (map));
@@ -127,14 +96,14 @@ static void test_htab_int_remove_single (void) {
 	Data *data = data_new (idx, value);
 
 	void *key = &idx;
-	int resutl = htab_insert (
+	int result = htab_insert (
 		map,
 		key, sizeof (unsigned int),
 		data, sizeof (Data)
 	);
 
 	// after insertion
-	test_check_int_eq (resutl, 0, NULL);
+	test_check_int_eq (result, 0, NULL);
 	test_check_int_eq ((int) map->count, 1, NULL);
 	test_check_false (htab_is_empty (map));
 	test_check_true (htab_is_not_empty (map));
@@ -305,12 +274,12 @@ static void test_htab_int_remove_multiple (void) {
 	// insert a new value
 	unsigned int final_value = 18;
 	key = &final_value;
-	int resutl = htab_insert (
+	int result = htab_insert (
 		map,
 		key, sizeof (unsigned int),
 		data, sizeof (Data)
 	);
-	test_check_int_eq (resutl, 0, NULL);
+	test_check_int_eq (result, 0, NULL);
 	test_check_int_eq ((int) map->count, 1, NULL);
 	test_check_false (htab_is_empty (map));
 	test_check_true (htab_is_not_empty (map));
@@ -327,13 +296,13 @@ static void test_htab_int_get_single (void) {
 	Data *data = data_new (idx, 1000);
 
 	const void *key = &idx;
-	int resutl = htab_insert (
+	int result = htab_insert (
 		map,
 		key, sizeof (unsigned int),
 		data, sizeof (Data)
 	);
 
-	test_check_int_eq (resutl, 0, NULL);
+	test_check_int_eq (result, 0, NULL);
 	test_check_int_eq ((int) map->count, 1, NULL);
 	test_check_false (htab_is_empty (map));
 	test_check_true (htab_is_not_empty (map));

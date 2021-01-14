@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+#include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
@@ -26,6 +27,8 @@ extern "C" {
 struct _Cerver;
 
 struct _HttpRouteFileStats;
+
+struct jwt;
 
 #pragma region content
 
@@ -277,6 +280,51 @@ CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
 
 #pragma region auth
 
+#define HTTP_JWT_POOL_INIT			32
+
+#define HTTP_JWT_VALUE_KEY_SIZE		128
+#define HTTP_JWT_VALUE_VALUE_SIZE	128
+
+#define HTTP_JWT_VALUES_SIZE		16
+#define HTTP_JWT_BEARER_SIZE		2048
+#define HTTP_JWT_TOKEN_SIZE			4096
+
+typedef struct HttpJwtValue {
+
+	char key[HTTP_JWT_VALUE_KEY_SIZE];
+
+	cerver_type_t type;
+
+	union {
+		bool value_bool;
+		int value_int;
+		char value_str[HTTP_JWT_VALUE_VALUE_SIZE];
+	};
+
+} HttpJwtValue;
+
+typedef struct HttpJwt {
+
+	struct jwt *jwt;
+
+	u8 n_values;
+	HttpJwtValue values[HTTP_JWT_VALUES_SIZE];
+
+	char bearer[HTTP_JWT_BEARER_SIZE];
+	char json[HTTP_JWT_TOKEN_SIZE];
+
+} HttpJwt;
+
+CERVER_PRIVATE void *http_jwt_new (void);
+
+CERVER_PRIVATE void http_jwt_delete (void *http_jwt_ptr);
+
+// loads a key from a filename that can be used for jwt
+// returns a newly allocated c string on success, NULL on error
+CERVER_PUBLIC char *http_cerver_auth_load_key (
+	const char *filename, size_t *keylen
+);
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
 CERVER_EXPORT void http_cerver_auth_set_jwt_algorithm (
@@ -293,10 +341,61 @@ CERVER_EXPORT void http_cerver_auth_set_jwt_pub_key_filename (
 	HttpCerver *http_cerver, const char *filename
 );
 
-// generates and signs a jwt token that is ready to be sent
+CERVER_EXPORT HttpJwt *http_cerver_auth_jwt_new (void);
+
+CERVER_EXPORT void http_cerver_auth_jwt_delete (HttpJwt *http_jwt);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value (
+	HttpJwt *http_jwt,
+	const char *key, const char *value
+);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value_bool (
+	HttpJwt *http_jwt,
+	const char *key, const bool value
+);
+
+CERVER_EXPORT void http_cerver_auth_jwt_add_value_int (
+	HttpJwt *http_jwt,
+	const char *key, const int value
+);
+
+CERVER_PRIVATE char *http_cerver_auth_generate_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+);
+
+// generates and signs a jwt token that is ready to be used
 // returns a newly allocated string that should be deleted after use
 CERVER_EXPORT char *http_cerver_auth_generate_jwt (
-	HttpCerver *http_cerver, DoubleList *values
+	const HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+CERVER_PRIVATE u8 http_cerver_auth_generate_bearer_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+);
+
+// generates and signs a bearer jwt that is ready to be used
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+// generates and signs a bearer jwt
+// and places it inside a json packet
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+);
+
+// works as http_cerver_auth_generate_bearer_jwt_json ()
+// but with the ability to add an extra string value to
+// the generated json
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
+	HttpCerver *http_cerver, HttpJwt *http_jwt,
+	const char *key, const char *value
 );
 
 // returns TRUE if the jwt has been decoded and validate successfully

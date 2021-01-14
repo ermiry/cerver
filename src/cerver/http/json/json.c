@@ -93,18 +93,8 @@ void jsonp_error_set_source (
 	json_error_t *error, const char *source
 ) {
 
-	size_t length = 0;
-
-	if (!error || !source)
-		return;
-
-	length = strlen(source);
-	if (length < JSON_ERROR_SOURCE_LENGTH)
-		(void) strncpy (error->source, source, length + 1);
-	else {
-		size_t extra = length - JSON_ERROR_SOURCE_LENGTH + 4;
-		(void) memcpy (error->source, "...", 3);
-		(void) strncpy (error->source + 3, source + extra, length - extra + 1);
+	if (error && source) {
+		(void) strncpy (error->source, source, JSON_ERROR_SOURCE_LENGTH - 1);
 	}
 
 }
@@ -333,8 +323,8 @@ int jsonp_strtod (strbuffer_t *strbuffer, double *out) {
 	value = strtod (strbuffer->value, &end);
 	assert (end == strbuffer->value + strbuffer->length);
 
-	if ((value > HUGE_VAL || value < -HUGE_VAL) && errno == ERANGE) {
-		/* Overflow */
+	if (errno == ERANGE) {
+		/* Overflow or Underflow */
 		return -1;
 	}
 
@@ -984,7 +974,7 @@ static void error_set (
 ) {
 	va_list ap;
 	char msg_text[JSON_ERROR_TEXT_LENGTH];
-	char msg_with_context[JSON_ERROR_TEXT_LENGTH];
+	char msg_with_context[JSON_ERROR_TEXT_LENGTH_MAX];
 
 	int line = -1, col = -1;
 	size_t pos = 0;
@@ -1007,23 +997,32 @@ static void error_set (
 
 		if (saved_text && saved_text[0]) {
 			if (lex->saved_text.length <= 20) {
-				snprintf(msg_with_context, JSON_ERROR_TEXT_LENGTH_MAX, "%s near '%s'",
-						 msg_text, saved_text);
-				msg_with_context[JSON_ERROR_TEXT_LENGTH_MAX - 1] = '\0';
+				(void) snprintf (
+					msg_with_context, JSON_ERROR_TEXT_LENGTH_MAX - 1,
+					"%s near '%s'", msg_text, saved_text
+				);
+				
 				result = msg_with_context;
 			}
-		} else {
+		}
+		
+		else {
 			if (code == json_error_invalid_syntax) {
 				/* More specific error code for premature end of file. */
 				code = json_error_premature_end_of_input;
 			}
+
 			if (lex->stream.state == STREAM_STATE_ERROR) {
 				/* No context for UTF-8 decoding errors */
 				result = msg_text;
-			} else {
-				snprintf(msg_with_context, JSON_ERROR_TEXT_LENGTH_MAX, "%s near end of file",
-						 msg_text);
-				msg_with_context[JSON_ERROR_TEXT_LENGTH_MAX - 1] = '\0';
+			}
+			
+			else {
+				(void) snprintf (
+					msg_with_context, JSON_ERROR_TEXT_LENGTH_MAX - 1,
+					"%s near end of file", msg_text
+				);
+				
 				result = msg_with_context;
 			}
 		}

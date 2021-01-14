@@ -10,9 +10,11 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/collections/pool.h"
+
+#include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
-#include "cerver/files.h"
 
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
@@ -34,9 +36,13 @@ static HttpResponse *not_found_error = NULL;
 static HttpResponse *server_error = NULL;
 static HttpResponse *catch_all = NULL;
 
+static Pool *http_jwt_pool = NULL;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
+
+static unsigned int http_jwt_init_pool (void);
 
 static void http_receive_handle_default_route (
 	const HttpReceive *http_receive, const HttpRequest *request
@@ -58,7 +64,7 @@ static const char hex[] = "0123456789abcdef";
 // converts a hex character to its integer value
 static const char from_hex (const char ch) {
 	
-	return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+	return isdigit (ch) ? ch - '0' : tolower (ch) - 'a' + 10;
 	
 }
 
@@ -431,10 +437,15 @@ static unsigned int http_cerver_init_load_jwt_keys (
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Loading HTTP routes...");
+		cerver_log_msg ("Initializing HTTP cerver...");
 
 		// init common responses
 		(void) http_cerver_init_responses ();
+
+		// init http jwt pool
+		(void) http_jwt_init_pool ();
+
+		cerver_log_msg ("Loading HTTP routes...");
 
 		// init top level routes
 		HttpRoute *route = NULL;
@@ -460,6 +471,9 @@ void http_cerver_init (HttpCerver *http_cerver) {
 void http_cerver_end (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
+		pool_delete (http_jwt_pool);
+		http_jwt_pool = NULL;
+
 		http_respponse_delete (bad_auth_error);
 		http_respponse_delete (not_found_error);
 		http_respponse_delete (server_error);
@@ -703,6 +717,22 @@ void http_cerver_set_uploads_delete_when_done (
 
 #pragma region auth
 
+// loads a key from a filename that can be used for jwt
+// returns a newly allocated c string on success, NULL on error
+char *http_cerver_auth_load_key (
+	const char *filename, size_t *keylen
+) {
+
+	char *key = NULL;
+
+	if (filename && keylen) {
+		key = file_read (filename, keylen);
+	}
+
+	return key;
+
+}
+
 // sets the jwt algorithm used for encoding & decoding jwt tokens
 // the default value is JWT_ALG_HS256
 void http_cerver_auth_set_jwt_algorithm (
@@ -735,39 +765,318 @@ void http_cerver_auth_set_jwt_pub_key_filename (
 
 }
 
-// generates and signs a jwt token that is ready to be sent
-// returns a newly allocated string that should be deleted after use
-char *http_cerver_auth_generate_jwt (
-	HttpCerver *http_cerver, DoubleList *values
+void *http_jwt_new (void) {
+
+	HttpJwt *http_jwt = (HttpJwt *) malloc (sizeof (HttpJwt));
+	if (http_jwt) {
+		(void) memset (http_jwt, 0, sizeof (HttpJwt));
+
+		http_jwt->jwt = NULL;
+	}
+
+	return http_jwt;
+
+}
+
+void http_jwt_delete (void *http_jwt_ptr) {
+
+	if (http_jwt_ptr) {
+		HttpJwt *http_jwt = (HttpJwt *) http_jwt_ptr;
+
+		if (http_jwt->jwt) jwt_free (http_jwt->jwt);
+
+		free (http_jwt_ptr);
+	}
+
+}
+
+static unsigned int http_jwt_init_pool (void) {
+
+	unsigned int retval = 1;
+
+	http_jwt_pool = pool_create (http_jwt_delete);
+	if (http_jwt_pool) {
+		pool_set_create (http_jwt_pool, http_jwt_new);
+		pool_set_produce_if_empty (http_jwt_pool, true);
+		if (!pool_init (http_jwt_pool, http_jwt_new, HTTP_JWT_POOL_INIT)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error ("Failed to init http jwt pool!");
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create http jwt pool!");
+	}
+
+	return retval;
+
+}
+
+HttpJwt *http_cerver_auth_jwt_new (void) {
+
+	return (HttpJwt *) pool_pop (http_jwt_pool);
+
+}
+
+void http_cerver_auth_jwt_delete (HttpJwt *http_jwt) {
+
+	if (http_jwt) {
+		if (http_jwt->jwt) jwt_free (http_jwt->jwt);
+
+		(void) memset (http_jwt, 0, sizeof (HttpJwt));
+
+		http_jwt->jwt = NULL;
+
+		(void) pool_push (http_jwt_pool, http_jwt);
+	}
+
+}
+
+static inline u8 http_cerver_auth_jwt_add_value_internal (
+	HttpJwt *http_jwt, const char *key
+) {
+
+	u8 retval = 1;
+
+	if (http_jwt) {
+		if (http_jwt->n_values < HTTP_JWT_VALUES_SIZE) {
+			(void) strncpy (
+				http_jwt->values[http_jwt->n_values].key,
+				key,
+				HTTP_JWT_VALUE_KEY_SIZE - 1
+			);
+			
+			http_jwt->n_values += 1;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+void http_cerver_auth_jwt_add_value (
+	HttpJwt *http_jwt,
+	const char *key, const char *value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_UTF8;
+		(void) strncpy (
+			http_jwt->values[http_jwt->n_values - 1].value_str,
+			value,
+			HTTP_JWT_VALUE_VALUE_SIZE - 1
+		);
+	}
+
+}
+
+void http_cerver_auth_jwt_add_value_bool (
+	HttpJwt *http_jwt,
+	const char *key, const bool value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_BOOL;
+		http_jwt->values[http_jwt->n_values - 1].value_bool = value;
+	}
+
+}
+
+void http_cerver_auth_jwt_add_value_int (
+	HttpJwt *http_jwt,
+	const char *key, const int value
+) {
+
+	if (!http_cerver_auth_jwt_add_value_internal (
+		http_jwt, key
+	)) {
+		http_jwt->values[http_jwt->n_values - 1].type = CERVER_TYPE_INT32;
+		http_jwt->values[http_jwt->n_values - 1].value_int = value;
+	}
+
+}
+
+char *http_cerver_auth_generate_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
 ) {
 
 	char *token = NULL;
 
-	jwt_t *jwt = NULL;
-	if (!jwt_new (&jwt)) {
-		time_t iat = time (NULL);
+	if (!jwt_new (&http_jwt->jwt)) {
+		// add grants
+		for (u8 i = 0; i < http_jwt->n_values; i++) {
+			switch (http_jwt->values[i].type) {
+				case CERVER_TYPE_UTF8: {
+					(void) jwt_add_grant (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_str
+					);
+				} break;
 
-		KeyValuePair *kvp = NULL;
-		for (ListElement *le = dlist_start (values); le; le = le->next) {
-			kvp = (KeyValuePair *) le->data;
-			(void) jwt_add_grant (jwt, kvp->key->str, kvp->value->str);
+				case CERVER_TYPE_BOOL: {
+					(void) jwt_add_grant_bool (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_bool
+					);
+				} break;
+
+				case CERVER_TYPE_INT32: {
+					(void) jwt_add_grant_int (
+						http_jwt->jwt,
+						http_jwt->values[i].key,
+						http_jwt->values[i].value_int
+					);
+				} break;
+
+				default: break;
+			}
 		}
 
-		(void) jwt_add_grant_int (jwt, "iat", iat);
-
+		// sign
 		if (!jwt_set_alg (
-			jwt, 
-			http_cerver->jwt_alg, 
-			(const unsigned char *) http_cerver->jwt_private_key->str, 
-			http_cerver->jwt_private_key->len
+			http_jwt->jwt, 
+			alg, key, keylen
 		)) {
-			token = jwt_encode_str (jwt);
+			token = jwt_encode_str (http_jwt->jwt);
 		}
-
-		jwt_free (jwt);
 	}
 
 	return token;
+
+}
+
+// generates and signs a jwt token that is ready to be used
+// returns a newly allocated string that should be deleted after use
+char *http_cerver_auth_generate_jwt (
+	const HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	char *token = NULL;
+
+	if (http_cerver && http_jwt) {
+		token = http_cerver_auth_generate_jwt_actual (
+			http_jwt,
+			http_cerver->jwt_alg, 
+			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_private_key->len
+		);
+	}
+
+	return token;
+
+}
+
+u8 http_cerver_auth_generate_bearer_jwt_actual (
+	HttpJwt *http_jwt,
+	jwt_alg_t alg, const unsigned char *key, int keylen
+) {
+
+	u8 retval = 1;
+
+	char *token = http_cerver_auth_generate_jwt_actual (
+		http_jwt,
+		alg, key, keylen
+	);
+
+	if (token) {
+		(void) snprintf (
+			http_jwt->bearer,
+			HTTP_JWT_BEARER_SIZE -1,
+			"Bearer %s",
+			token
+		);
+
+		free (token);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// generates and signs a bearer jwt that is ready to be used
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	return (http_cerver && http_jwt) ?
+		http_cerver_auth_generate_bearer_jwt_actual (
+			http_jwt,
+			http_cerver->jwt_alg, 
+			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_private_key->len
+		) : 1;
+
+}
+
+// generates and signs a bearer jwt
+// and places it inside a json packet
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt_json (
+	HttpCerver *http_cerver, HttpJwt *http_jwt
+) {
+
+	u8 retval = 1;
+
+	if (!http_cerver_auth_generate_bearer_jwt (
+		http_cerver, http_jwt
+	)) {
+		(void) snprintf (
+			http_jwt->json,
+			HTTP_JWT_TOKEN_SIZE -1,
+			"{\"token\": \"%s\"}",
+			http_jwt->bearer
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// works as http_cerver_auth_generate_bearer_jwt_json ()
+// but with the ability to add an extra string value to
+// the generated json
+// returns 0 on success, 1 on error
+u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
+	HttpCerver *http_cerver, HttpJwt *http_jwt,
+	const char *key, const char *value
+) {
+
+	u8 retval = 1;
+
+	if (key && value) {
+		if (!http_cerver_auth_generate_bearer_jwt (
+			http_cerver, http_jwt
+		)) {
+			(void) snprintf (
+				http_jwt->json,
+				HTTP_JWT_TOKEN_SIZE -1,
+				"{\"token\": \"%s\", \"%s\": \"%s\"}",
+				http_jwt->bearer,
+				key, value
+			);
+
+			retval = 0;
+		}
+	}
+
+	return retval;
 
 }
 

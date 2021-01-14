@@ -48,7 +48,7 @@
 	})
 
 #define																\
-	test_check_null_ptr(ptr)												\
+	test_check_null_ptr(ptr)										\
 	({																\
 		if (ptr) {													\
 			where;													\
@@ -73,6 +73,38 @@
 		if (value) {												\
 			where;													\
 			(void) fprintf (stderr, "Value is NOT false!");			\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_bool_eq(value, expected, msg)						\
+	({																\
+		if (value != expected) {									\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"BOOL %d does not match %d\n",						\
+				value, expected										\
+			);														\
+																	\
+			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_unsigned_eq(value, expected, msg)					\
+	({																\
+		if (value != expected) {									\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"UNSIGNED %d does not match %d\n",					\
+				value, expected										\
+			);														\
+																	\
+			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
 			exit (1);												\
 		}															\
 	})
@@ -118,6 +150,22 @@
 				stderr,												\
 				"STRING %s does not match %s\n",					\
 				(char *) value, (char *) expected					\
+			);														\
+																	\
+			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
+			exit (1);												\
+		}															\
+	})
+
+#define																\
+	test_check_str_len(string, expected, msg)						\
+	({																\
+		if (strlen ((char *) string) != expected) {					\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"STRING %s LEN does not match %d\n",				\
+				(char *) string, expected							\
 			);														\
 																	\
 			if (msg) (void) fprintf (stderr, "%s\n", (char *) msg);	\
