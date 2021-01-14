@@ -49,6 +49,9 @@ char *input_get_line (void) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-result"
+
 unsigned int input_password (char *password) {
 
 	unsigned int retval = 1;
@@ -72,3 +75,5 @@ unsigned int input_password (char *password) {
 	return retval;
 
 }
+
+#pragma GCC diagnostic pop
