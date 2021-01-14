@@ -1,24 +1,21 @@
 ## General
-- Added extern "C" modifiers in headers witch check for __cplusplus
-- Added clear makefile instruction to remove all the objects
-- Changed beta & production workflows tests to use clear instead of clean
-- Added cerver documentation submodule
-- Added base documentation workflow
-- Added base codecov configuration
-- Updated makefile to compile sources & tests with coverage flags
-- Added dedicated version file
-- Added CHANGELOG.md to keep track of the latest changes
-- Added dedicated coverage workflow to run on every pull request
-- Added pre-release workflow to be executed on beta branches
-- Added base release workflow to create new releases from master
-- Added TYPE=beta to compile sources and examples for beta tests
-- Added dedicated beta & production Dockerfiles
-- Added base cerver-cmongo integration Dockerfiles and workflows
-
-## Examples
-- Updated examples cerver configuration and better main methods
-- Added dedicated collections test sources
+- Added dedicated makefile instructions to clean each directory
+- Added development & production builder image Dockerfile
+- Added dedicated coverage script
+- Updated docker images build documentation
+- Added builders workflow to test builders docker images build
+- Added NATIVE option to add  -march=native compilation flag
+- Added base cerver types identifiers definitions
+- Added workflow to check matching versions in source & file
 
 ## Tests
-- Added more tests definitions & macros
-- Added base htab unit tests
+- Refactored test run script to exit on any error
+- Added more check macros definitions in test header
+- Added test data structure and methods in dedicated source
+- Added base main cerver methods unit tests
+- Added base avl methods unit tests
+- Added dedicated test to check for version match
+
+## Fixes
+- Updated avl methods to fix return value errors
+- Fixed string truncation warnings in main sources

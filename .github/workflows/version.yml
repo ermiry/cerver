@@ -1,0 +1,30 @@
+name: Cerver Version Check
+
+on:
+  push:
+    branches:
+      - '*beta'
+      - 'master'
+  pull_request:
+    branches:
+      - '*beta'
+      - 'master'
+
+jobs:
+  build:
+    name: Cerver build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
+
+      - name: gcc make
+        run: make
+      - name: gcc tests
+        run: make test
+
+      - name: Check version
+        run: LD_LIBRARY_PATH=bin ./test/bin/version
