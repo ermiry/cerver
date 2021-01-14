@@ -2890,10 +2890,19 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
 		if (scerver) {
 			scerver->type = cerver->type;
 
-			strncpy (scerver->name, cerver->info->name->str, S_CERVER_NAME_LENGTH);
+			(void) strncpy (
+				scerver->name,
+				cerver->info->name->str,
+				S_CERVER_NAME_LENGTH - 1
+			);
 
-			if (cerver->info->welcome_msg)
-				strncpy (scerver->welcome, cerver->info->welcome_msg->str, S_CERVER_WELCOME_LENGTH);
+			if (cerver->info->welcome_msg) {
+				(void) strncpy (
+					scerver->welcome,
+					cerver->info->welcome_msg->str,
+					S_CERVER_WELCOME_LENGTH - 1
+				);
+			}
 
 			scerver->use_ipv6 = cerver->use_ipv6;
 			scerver->protocol = cerver->protocol;

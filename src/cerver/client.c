@@ -2431,7 +2431,7 @@ u8 client_file_get (
 				end += sizeof (PacketHeader);
 
 				FileHeader *file_header = (FileHeader *) end;
-				strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+				(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
 				file_header->len = 0;
 
 				packet_set_network_values (packet, NULL, client, connection, NULL);
