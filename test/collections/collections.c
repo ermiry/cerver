@@ -25,6 +25,8 @@ int main (int argc, char **argv) {
 		}
 	}
 
+	collections_tests_avl ();
+
 	(void) collections_tests_dlist ();
 
 	collections_tests_htab ();
