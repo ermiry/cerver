@@ -112,7 +112,7 @@ bool avl_is_not_empty (AVLTree *tree) {
 	if (tree) {
 		(void) pthread_mutex_lock (tree->mutex);
 
-		retval = !(tree->root);
+		retval = (tree->root);
 
 		(void) pthread_mutex_unlock (tree->mutex);
 	}
@@ -197,6 +197,7 @@ unsigned int avl_insert_node (
 			&(tree->root), tree->comparator, data, &flag)
 		) {
 			tree->size++;
+			retval = 0;
 		}
 
 		(void) pthread_mutex_unlock (tree->mutex);
