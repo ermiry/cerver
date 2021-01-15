@@ -1058,6 +1058,60 @@ u8 packet_send_to_socket (
 
 }
 
+// sends a ping packet (PACKET_TYPE_TEST)
+// returns 0 on success, 1 on error
+u8 packet_send_ping (
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
+) {
+
+	u8 retval = 1;
+
+	PacketHeader header = {
+		.packet_type = PACKET_TYPE_TEST,
+		.packet_size = sizeof (PacketHeader),
+
+		.handler_id = 0,
+
+		.request_type = 0,
+
+		.sock_fd = 0,
+	};
+
+	Packet ping = {
+		.cerver = cerver,
+		.client = client,
+		.connection = connection,
+		.lobby = lobby,
+
+		.packet_type = PACKET_TYPE_TEST,
+		.req_type = 0,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.header = NULL,
+		.version = NULL,
+		.packet_size = sizeof (PacketHeader),
+		.packet = &header,
+		.packet_ref = false
+	};
+
+	size_t sent = 0;
+	if (!packet_send (&ping, 0, &sent, false)) {
+		if (sent == sizeof (PacketHeader)) {
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet
 bool packet_check (Packet *packet) {

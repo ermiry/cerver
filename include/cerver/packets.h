@@ -432,6 +432,14 @@ CERVER_EXPORT u8 packet_send_to_socket (
 	struct _Socket *socket, int flags, size_t *total_sent, bool raw
 );
 
+// sends a ping packet (PACKET_TYPE_TEST)
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 packet_send_ping (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection,
+	struct _Lobby *lobby
+);
+
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (Packet *packet);
