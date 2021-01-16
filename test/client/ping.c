@@ -15,10 +15,9 @@ int main (int argc, const char **argv) {
 	test_check_ptr (client);
 
 	client_set_name (client, "test-client");
-
-	// Handler *app_handler = handler_create (client_app_handler);
-	// handler_set_direct_handle (app_handler, true);
-	// client_set_app_handlers (client, app_handler, NULL);
+	test_check_ptr (client->name->str);
+	test_check_str_eq (client->name->str, "test-client", NULL);
+	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
 
 	Connection *connection = client_connection_create (
 		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
@@ -33,19 +32,32 @@ int main (int argc, const char **argv) {
 		"Failed to connect to cerver!"
 	);
 
-	// send 10 requests message every second for 5 seconds
-	for (unsigned int sec = 0; sec < 5; sec++) {
+	/*** send **/
+	unsigned int n_sent_packets = 0;
+
+	// send 10 requests message every second for 3 seconds
+	for (unsigned int sec = 0; sec < 3; sec++) {
 		for (unsigned int i = 0; i < 10; i++) {
 			test_check_unsigned_eq (
 				packet_send_ping (NULL, client, connection, NULL), 0, NULL
 			);
+
+			n_sent_packets += 1;
 		}
 
 		(void) sleep (1);
 	}
 
-	client_connection_end (client, connection);
+	/*** check ***/
+	// check that we received matching responses
+	test_check_unsigned_eq (
+		client->stats->received_packets->n_test_packets,
+		n_sent_packets,
+		NULL
+	);
 
+	/*** end **/
+	client_connection_end (client, connection);
 	client_teardown (client);
 
 	(void) printf ("Done!\n\n");
