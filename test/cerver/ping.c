@@ -92,7 +92,7 @@ int main (int argc, char **argv) {
 	event_result = cerver_event_register (
 		cerver, 
 		CERVER_EVENT_STARTED,
-		on_cever_started, test_event_data, str_delete,
+		on_cever_started, test_event_data, free,
 		false, false
 	);
 
@@ -125,6 +125,7 @@ int main (int argc, char **argv) {
 
 	test_check_unsigned_eq (event_result, 0, NULL);
 
+	/*** start ***/
 	test_check_unsigned_eq (
 		cerver_start (cerver), 0, "Failed to start cerver!"
 	);
