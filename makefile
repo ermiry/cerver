@@ -91,7 +91,7 @@ endif
 # common flags
 CFLAGS += -fPIC $(COMMON)
 
-LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL)
+LIB         := -L /usr/local/lib $(PTHREAD) $(MATH)
 
 ifeq ($(TYPE), test)
 	LIB += -lgcov --coverage
