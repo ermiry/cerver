@@ -213,7 +213,7 @@ ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
-TESTLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
+TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
 
 ifeq ($(TYPE), test)
 	TESTLIBS += -lgcov --coverage
@@ -226,23 +226,47 @@ TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
-testout:
-	@mkdir -p ./$(TESTTARGET)
-	@mkdir -p ./$(TESTTARGET)/client
+TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
+TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
+TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -std=c11 -fPIC -Wpedantic -pedantic-errors $(COMMON)
+TESTAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
+
+testapp:
+	@mkdir -p ./$(TESTTARGET)/app
+	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
 
 units: testout $(TESTOBJS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
-integration: testout $(TESTOBJS)
+integration-cerver:
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/ping.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/ping $(TESTLIBS) $(TESTAPP)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/packets.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/packets $(TESTLIBS) $(TESTAPP)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/requests.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/requests $(TESTLIBS) $(TESTAPP)
+
+integration-client:
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/ping.o -o ./$(TESTTARGET)/client/ping $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/packets.o -o ./$(TESTTARGET)/client/packets $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/requests.o -o ./$(TESTTARGET)/client/requests $(TESTLIBS)
+
+integration: testout $(TESTOBJS)
+	$(MAKE) integration-cerver
+	$(MAKE) integration-client
+
+testout:
+	@mkdir -p ./$(TESTTARGET)
+	@mkdir -p ./$(TESTTARGET)/cerver
+	@mkdir -p ./$(TESTTARGET)/client
 
 test: testout
 	$(MAKE) $(TESTOBJS)
 	$(MAKE) units
+	$(MAKE) testapp
 	$(MAKE) integration
 
 # compile tests
