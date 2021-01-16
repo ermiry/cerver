@@ -193,7 +193,10 @@ u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {
 
 #pragma region packets
 
-u8 packet_append_data (Packet *packet, void *data, size_t data_size);
+u8 packet_append_data (
+	Packet *packet,
+	const void *data, const size_t data_size
+);
 
 Packet *packet_new (void) {
 
@@ -227,13 +230,18 @@ Packet *packet_new (void) {
 // create a new packet with the option to pass values directly
 // data is copied into packet buffer and can be safely freed
 Packet *packet_create (
-	PacketType type, void *data, size_t data_size
+	const PacketType type, const u32 req_type,
+	const void *data, const size_t data_size
 ) {
 
 	Packet *packet = packet_new ();
 	if (packet) {
 		packet->packet_type = type;
-		if (data) packet_append_data (packet, data, data_size);
+		packet->req_type = req_type;
+
+		if (data) {
+			packet_append_data (packet, data, data_size);
+		}
 	}
 
 	return packet;
@@ -325,7 +333,8 @@ void packet_set_header_values (
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
 u8 packet_set_data (
-	Packet *packet, void *data, size_t data_size
+	Packet *packet,
+	const void *data, const size_t data_size
 ) {
 
 	u8 retval = 1;
@@ -359,7 +368,8 @@ u8 packet_set_data (
 // it creates a new copy of the data and the original can be safely freed
 // this does not work if the data has been set using a reference
 u8 packet_append_data (
-	Packet *packet, void *data, size_t data_size
+	Packet *packet,
+	const void *data, const size_t data_size
 ) {
 
 	u8 retval = 1;
@@ -388,7 +398,10 @@ u8 packet_append_data (
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to realloc packet data!");
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_NONE,
+					"Failed to realloc packet data!"
+				);
 				#endif
 				packet->data = NULL;
 				packet->data_size = 0;
@@ -413,7 +426,10 @@ u8 packet_append_data (
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to allocate packet data!");
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_NONE,
+					"Failed to allocate packet data!"
+				);
 				#endif
 				packet->data = NULL;
 				packet->data_size = 0;
@@ -517,8 +533,11 @@ u8 packet_generate (Packet *packet) {
 		}
 
 		packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-		if (!packet->header)
-			packet->header = packet_header_create (packet->packet_type, packet->packet_size, packet->req_type);
+		if (!packet->header) {
+			packet->header = packet_header_create (
+				packet->packet_type, packet->packet_size, packet->req_type
+			);
+		}
 
 		// create the packet buffer to be sent
 		packet->packet = malloc (packet->packet_size);
@@ -539,11 +558,59 @@ u8 packet_generate (Packet *packet) {
 
 }
 
+// creates a request packet that is ready to be sent
+// returns 0 on success, 1 on error
+u8 packet_create_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	u8 retval = 1;
+
+	if (packet) {
+		PacketHeader *header = packet_header_create (
+			packet_type,
+			sizeof (PacketHeader),
+			request_type
+		);
+
+		if (header) {
+			*packet = (Packet) {
+				.cerver = NULL,
+				.client = NULL,
+				.connection = NULL,
+				.lobby = NULL,
+
+				.packet_type = packet_type,
+				.req_type = request_type,
+
+				.data_size = 0,
+				.data = NULL,
+				.data_ptr = NULL,
+				.data_end = NULL,
+				.data_ref = false,
+
+				.header = NULL,
+				.version = NULL,
+				.packet_size = sizeof (PacketHeader),
+				.packet = (void *) header,
+				.packet_ref = false
+			};
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 Packet *packet_generate_request (
-	PacketType packet_type, u32 req_type,
-	void *data, size_t data_size
+	const PacketType packet_type, const u32 req_type,
+	const void *data, const size_t data_size
 ) {
 
 	Packet *packet = packet_new ();

@@ -285,7 +285,8 @@ CERVER_PUBLIC void packet_delete (void *ptr);
 // creates a new packet with the option to pass values directly
 // data is copied into packet buffer and can be safely freed
 CERVER_EXPORT Packet *packet_create (
-	PacketType type, void *data, size_t data_size
+	const PacketType type, const u32 req_type,
+	const void *data, const size_t data_size
 );
 
 // sets the packet destinatary to whom this packet is going to be sent
@@ -315,7 +316,8 @@ CERVER_EXPORT void packet_set_header_values (
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_set_data (
-	Packet *packet, void *data, size_t data_size
+	Packet *packet,
+	const void *data, const size_t data_size
 );
 
 // appends the data to the end if the packet already has data
@@ -324,7 +326,8 @@ CERVER_EXPORT u8 packet_set_data (
 // this does not work if the data has been set using a reference
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_append_data (
-	Packet *packet, void *data, size_t data_size
+	Packet *packet,
+	const void *data, const size_t data_size
 );
 
 // sets a reference to a data buffer to send
@@ -357,12 +360,20 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
+// creates a request packet that is ready to be sent
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 packet_create_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
 CERVER_EXPORT Packet *packet_generate_request (
-	PacketType packet_type, u32 req_type,
-	void *data, size_t data_size
+	const PacketType packet_type, const u32 req_type,
+	const void *data, const size_t data_size
 );
 
 // sends a packet using its network values
