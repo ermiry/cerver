@@ -1,23 +1,79 @@
 #!/bin/bash
 
-# ensure a clean build
-make clean
+# compile docker
+sudo docker build -t ermiry/cerver:test -f Dockerfile.test .
 
-# gcc
-printf "gcc make\n\n"
-make TYPE=test -j8
-printf "\n\ngcc examples\n\n"
-make TYPE=test examples -j8
-printf "\n\ngcc test\n\n"
-make test -j8
+# ping
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./examples/test
 
-# g++
-printf "\n\ng++ make\n\n"
-make TYPE=test CC=g++ -j8
-printf "\n\ng++ examples\n\n"
-make TYPE=test CC=g++ examples -j8
-printf "\n\ng++ test\n\n"
-make CC=g++ test -j8
+sleep 2
 
-# clean up
-make clean
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+LD_LIBRARY_PATH=bin ./test/bin/client/ping
+
+sudo docker kill $(sudo docker ps -q)
+
+# packets
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./examples/packets
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+LD_LIBRARY_PATH=bin ./test/bin/client/packets
+
+sudo docker kill $(sudo docker ps -q)
+
+# requests
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./examples/requests
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+LD_LIBRARY_PATH=bin ./test/bin/client/requests
+
+sudo docker kill $(sudo docker ps -q)
+
+# auth
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./examples/auth
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+LD_LIBRARY_PATH=bin ./test/bin/client/auth
+
+sudo docker kill $(sudo docker ps -q)
+
+# sessions
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./examples/sessions
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+LD_LIBRARY_PATH=bin ./test/bin/client/sessions
+
+sudo docker kill $(sudo docker ps -q)
