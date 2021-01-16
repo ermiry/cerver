@@ -34,6 +34,10 @@ extern AppMessage *app_data_new (void);
 
 extern void app_data_delete (void *app_data_ptr);
 
+extern void app_message_create_internal (
+	AppMessage *app_message, const char *message
+);
+
 extern AppMessage *app_data_create (const char *message);
 
 extern void app_data_print (AppMessage *app_message);

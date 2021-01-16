@@ -33,20 +33,30 @@ void app_data_delete (void *app_data_ptr) {
 
 }
 
+void app_message_create_internal (
+	AppMessage *app_message, const char *message
+) {
+
+	(void) time (&app_message->timestamp);
+
+	if (message) {
+		app_message->len = strlen (message);
+		(void) strncpy (
+			app_message->message,
+			message,
+			APP_MESSAGE_LEN - 1
+		);
+	}
+
+}
+
 AppMessage *app_data_create (const char *message) {
 
 	AppMessage *app_message = app_data_new ();
 	if (app_message) {
-		(void) time (&app_message->timestamp);
-
-		if (message) {
-			app_message->len = strlen (message);
-			(void) strncpy (
-				app_message->message,
-				message,
-				APP_MESSAGE_LEN - 1
-			);
-		}
+		app_message_create_internal (
+			app_message, message
+		);
 	}
 
 	return app_message;
