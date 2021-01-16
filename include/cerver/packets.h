@@ -432,6 +432,16 @@ CERVER_EXPORT u8 packet_send_to_socket (
 	struct _Socket *socket, int flags, size_t *total_sent, bool raw
 );
 
+// sends a packet of selected types without any data
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 packet_send_request (
+	const PacketType packet_type,
+	const u32 request_type,
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection,
+	struct _Lobby *lobby
+);
+
 // sends a ping packet (PACKET_TYPE_TEST)
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send_ping (

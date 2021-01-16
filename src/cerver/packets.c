@@ -1058,9 +1058,11 @@ u8 packet_send_to_socket (
 
 }
 
-// sends a ping packet (PACKET_TYPE_TEST)
+// sends a packet of selected types without any data
 // returns 0 on success, 1 on error
-u8 packet_send_ping (
+u8 packet_send_request (
+	const PacketType packet_type,
+	const u32 request_type,
 	Cerver *cerver,
 	Client *client, Connection *connection,
 	Lobby *lobby
@@ -1069,12 +1071,12 @@ u8 packet_send_ping (
 	u8 retval = 1;
 
 	PacketHeader header = {
-		.packet_type = PACKET_TYPE_TEST,
+		.packet_type = packet_type,
 		.packet_size = sizeof (PacketHeader),
 
 		.handler_id = 0,
 
-		.request_type = 0,
+		.request_type = request_type,
 
 		.sock_fd = 0,
 	};
@@ -1085,8 +1087,8 @@ u8 packet_send_ping (
 		.connection = connection,
 		.lobby = lobby,
 
-		.packet_type = PACKET_TYPE_TEST,
-		.req_type = 0,
+		.packet_type = packet_type,
+		.req_type = request_type,
 
 		.data_size = 0,
 		.data = NULL,
@@ -1109,6 +1111,23 @@ u8 packet_send_ping (
 	}
 
 	return retval;
+
+}
+
+// sends a ping packet (PACKET_TYPE_TEST)
+// returns 0 on success, 1 on error
+u8 packet_send_ping (
+	Cerver *cerver,
+	Client *client, Connection *connection,
+	Lobby *lobby
+) {
+
+	return packet_send_request (
+		PACKET_TYPE_TEST, 0,
+		cerver,
+		client, connection,
+		lobby
+	);
 
 }
 
