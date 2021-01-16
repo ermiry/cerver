@@ -564,7 +564,7 @@ CERVER_PUBLIC struct _Packet *client_error_packet_generate (
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 client_error_packet_generate_and_send (
 	const ClientErrorType type, const char *msg,
-	Client *client, Connection *connection
+	Client *client, struct _Connection *connection
 );
 
 #pragma endregion
@@ -750,7 +750,7 @@ CERVER_EXPORT u8 client_file_send (
 // to handle incomming data
 // returns 0 on success, 1 on error
 CERVER_PRIVATE unsigned int client_receive_internal (
-	Client *client, Connection *connection,
+	Client *client, struct _Connection *connection,
 	char *buffer, const size_t buffer_size
 );
 
@@ -766,7 +766,7 @@ CERVER_PUBLIC unsigned int client_receive (
 // does not send a close connection packet to the cerver
 // returns 0 on success, 1 on error
 CERVER_PUBLIC int client_connection_stop (
-	Client *client, Connection *connection
+	Client *client, struct _Connection *connection
 );
 
 // terminates the connection & closes the socket
