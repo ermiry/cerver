@@ -10,6 +10,7 @@
 #include <cerver/handler.h>
 #include <cerver/sessions.h>
 
+#include <app/auth.h>
 #include <app/handler.h>
 
 #include "cerver.h"
@@ -86,7 +87,7 @@ int main (int argc, char **argv) {
 
 	/*** auth ***/
 	test_check_unsigned_eq (
-		cerver_set_auth (cerver, 1, NULL),
+		cerver_set_auth (cerver, 1, app_auth_method),
 		0, NULL
 	);
 
