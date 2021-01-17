@@ -73,20 +73,20 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
-# # sessions
-# sudo docker run \
-# 	-d \
-# 	--name test --rm \
-# 	-p 7000:7000 \
-# 	ermiry/cerver:test ./bin/cerver/sessions
+# sessions
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./bin/cerver/sessions
 
-# sleep 2
+sleep 2
 
-# sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
-# LD_LIBRARY_PATH=bin ./test/bin/client/sessions
+./test/bin/client/sessions || { exit 1; }
 
-# sudo docker kill $(sudo docker ps -q)
+sudo docker kill $(sudo docker ps -q)
 
 # threads
 sudo docker run \
