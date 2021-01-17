@@ -1,4 +1,4 @@
-name: Cerver Integration Tests
+name: Cerver Tests
 
 on:
   pull_request:
