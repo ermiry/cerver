@@ -241,7 +241,18 @@ TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT)
 
 TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
 TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
-TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -std=c11 -fPIC -Wpedantic -pedantic-errors $(COMMON)
+
+TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	TESTAPPFGS += -std=c++11 -fpermissive
+else
+	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+TESTAPPFGS += $(COMMON)
+
 TESTAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
 
 testapp:
