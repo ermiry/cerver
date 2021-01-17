@@ -96,6 +96,8 @@ static void *on_cever_started (void *event_data_ptr) {
 		);
 
 		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -113,6 +115,8 @@ static void *on_cever_teardown (void *event_data_ptr) {
 			"Cerver %s is going to be destroyed!\n", 
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -132,6 +136,8 @@ static void *on_client_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -149,6 +155,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
