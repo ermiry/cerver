@@ -1,0 +1,26 @@
+name: Cerver Integration Tests
+
+on:
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    name: Cerver tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Compile Sources
+        run: make
+
+      - name: Compile Tests
+        run: make test
+
+      - name: Unit Tests
+        run: bash test/run.sh
+
+      - name: Build Docker Image
+        run: sudo docker build -t ermiry/cerver:test -f Dockerfile.test .
