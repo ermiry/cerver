@@ -8,6 +8,26 @@
 #include "app.h"
 #include "auth.h"
 
+Credentials *credentials_new (
+	const char *username, const char *password
+) {
+
+	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
+	if (credentials) {
+		(void) strncpy (credentials->username, username, USERNAME_SIZE - 1);
+		(void) strncpy (credentials->password, password, PASSWORD_SIZE - 1);
+	}
+
+	return credentials;
+
+}
+
+void credentials_delete (void *credentials_ptr) {
+	
+	if (credentials_ptr) free (credentials_ptr);
+	
+}
+
 static u8 app_auth_method_username (
 	AuthMethod *auth_method, const char *username
 ) {
