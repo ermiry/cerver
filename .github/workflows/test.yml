@@ -17,10 +17,10 @@ jobs:
         run: docker build -t ermiry/cerver:test -f Dockerfile.test .
 
       - name: Compile Sources
-        run: make
+        run: make TYPE=test COVERAGE=1
 
       - name: Compile Tests
-        run: make test
+        run: make TYPE=test COVERAGE=1 test
 
       - name: Unit Tests
         run: bash test/run.sh
@@ -64,3 +64,16 @@ jobs:
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/threads
           sudo docker kill $(sudo docker ps -q)
+
+      - name: Coverage
+        run: make coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage/
+          flags: unittests
+          name: build
+          fail_ci_if_error: true
+          # verbose: true
