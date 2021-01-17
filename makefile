@@ -246,15 +246,29 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
+INTCERVERIN		:= ./$(TESTBUILD)/cerver
+INTCERVEROUT	:= ./$(TESTTARGET)/cerver
+INTCERVERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
 integration-cerver:
-	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/ping.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/ping $(TESTLIBS) $(TESTAPP)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/packets.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/packets $(TESTLIBS) $(TESTAPP)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/requests.o ./$(TESTBUILD)/cerver/cerver.o -o ./$(TESTTARGET)/cerver/requests $(TESTLIBS) $(TESTAPP)
+	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/requests.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/requests $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
+
+INTCLIENTIN		:= ./$(TESTBUILD)/client
+INTCLIENTOUT	:= ./$(TESTTARGET)/client
+INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
 
 integration-client:
-	$(CC) $(TESTINC) ./$(TESTBUILD)/client/ping.o -o ./$(TESTTARGET)/client/ping $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/client/packets.o -o ./$(TESTTARGET)/client/packets $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/client/requests.o -o ./$(TESTTARGET)/client/requests $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
 
 integration: testout $(TESTOBJS)
 	$(MAKE) integration-cerver
