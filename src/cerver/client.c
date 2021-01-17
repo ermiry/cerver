@@ -1960,8 +1960,20 @@ void client_connection_get_next_packet (
 
 	if (client && connection) {
 		connection->full_packet = false;
-		while (!connection->full_packet) {
-			(void) client_receive (client, connection);
+
+		char *packet_buffer = (char *) calloc (
+			connection->receive_packet_buffer_size, sizeof (char)
+		);
+		
+		if (packet_buffer) {
+			while (!connection->full_packet) {
+				client_receive_internal (
+					client, connection,
+					packet_buffer, connection->receive_packet_buffer_size
+				);
+			}
+
+			free (packet_buffer);
 		}
 	}
 
