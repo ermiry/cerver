@@ -2,6 +2,7 @@
 
 ![Cerver Production Integration](https://github.com/ermiry/cerver/workflows/Cerver%20Production%20Integration/badge.svg)
 ![Cerver Continuous Integration](https://github.com/ermiry/cerver/workflows/Cerver%20Continuous%20Integration/badge.svg)
+![Cerver Tests](https://github.com/ermiry/cerver/workflows/Cerver%20Tests/badge.svg)
 
 **Cerver** is a development framework, created by Ermiry, designed to provide you with the necessary tools for creating fast and reliable multipurpose servers written in C/C++.
 
