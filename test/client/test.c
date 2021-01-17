@@ -16,7 +16,7 @@ static Client *test_client_create (void) {
 	Client *client = client_create ();
 
 	test_check_str_eq (client->name->str, "no-name", NULL);
-	test_check_str_len (client->name, strlen ("no-name"), NULL);
+	test_check_str_len (client->name->str, strlen ("no-name"), NULL);
 	test_check_unsigned_ne (client->connected_timestamp, 0);
 	test_check_ptr (client->connections);
 	test_check_ptr (client->lock);
