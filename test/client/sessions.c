@@ -3,6 +3,9 @@
 
 #include <cerver/client.h>
 #include <cerver/packets.h>
+#include <cerver/sessions.h>
+
+#include <cerver/threads/thread.h>
 
 #include <app/app.h>
 #include <app/auth.h>
@@ -18,6 +21,9 @@ static const char *client_name = "test-client";
 static const char *main_connection_name = "main-connection";
 static const char *second_connection_name = "second-connection";
 
+static Client *client = NULL;
+
+static pthread_mutex_t *responses_lock = NULL; 
 static unsigned int responses = 0;
 
 static void app_handler (void *packet_ptr) {
@@ -28,9 +34,11 @@ static void app_handler (void *packet_ptr) {
 		switch (packet->header->request_type) {
 			case APP_REQUEST_NONE: break;
 
-			case APP_REQUEST_TEST:
+			case APP_REQUEST_TEST: {
+				(void) pthread_mutex_lock (responses_lock);
 				responses += 1;
-				break;
+				(void) pthread_mutex_unlock (responses_lock);
+			} break;
 
 			case APP_REQUEST_MESSAGE: break;
 
@@ -42,11 +50,85 @@ static void app_handler (void *packet_ptr) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+// use the received session id to create a new connection
+static void *connect_with_session (void *args) {
+
+	Connection *connection = client_connection_create (
+		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
+	);
+
+	test_check_ptr (connection);
+
+	connection_set_name (connection, second_connection_name);
+	connection_set_max_sleep (connection, 30);
+
+	// set the received session id as the connection's auth data
+	test_check_ptr (client->session_id);
+
+	SToken *s_token = (SToken *) malloc (sizeof (SToken));
+	strncpy (s_token->token, client->session_id->str, TOKEN_SIZE);
+
+	connection_set_auth_data (
+		connection, 
+		s_token, sizeof (SToken), 
+		NULL,
+		false
+	);
+
+	/*** start ***/
+	test_check_int_eq (
+		client_connect_and_start (client, connection), 0,
+		"Failed to connect to cerver!"
+	);
+
+	// wait to be authenticated with cerver
+	(void) sleep (3);
+
+	test_check_bool_eq (
+		connection->authenticated, true, "Failed to authenticate!"
+	);
+
+	/*** send ***/
+	// send a bunch of requests to the cerver
+	Packet *request = NULL;
+	for (unsigned int i = 0; i < SECOND_REQUESTS; i++) {
+		request = packet_new ();
+		if (request) {
+			(void) packet_create_request (
+				request,
+				PACKET_TYPE_APP, APP_REQUEST_TEST
+			);
+
+			packet_set_network_values (
+				request,
+				NULL, client, connection, NULL
+			);
+
+			test_check_unsigned_eq (
+				packet_send (request, 0, NULL, false),
+				0, NULL
+			);
+
+			packet_delete (request);
+		}
+	}
+
+	return NULL;
+
+}
+
+#pragma GCC diagnostic pop
+
 int main (int argc, const char **argv) {
 
 	(void) printf ("Testing CLIENT sessions...\n");
 
-	Client *client = client_create ();
+	responses_lock = pthread_mutex_new ();
+
+	client = client_create ();
 
 	test_check_ptr (client);
 
@@ -136,6 +218,13 @@ int main (int argc, const char **argv) {
 		connection->authenticated, true, "Failed to authenticate!"
 	);
 
+	/*** session ***/
+	pthread_t thread_id = 0;
+	test_check_int_eq (
+		pthread_create (&thread_id, NULL, connect_with_session, NULL),
+		0, "Failed to create sessions thread!"
+	);
+
 	/*** send ***/
 	// send a bunch of requests to the cerver
 	Packet *request = NULL;
@@ -161,8 +250,11 @@ int main (int argc, const char **argv) {
 		}
 	}
 
-	// wait for any response to arrive
-	(void) sleep (4);
+	// wait for sessions thread to finish
+	(void) pthread_join (thread_id, NULL);
+
+	// wait for any missing response
+	(void) sleep (5);
 
 	/*** check ***/
 	// check that we have received all the responses
@@ -173,6 +265,8 @@ int main (int argc, const char **argv) {
 	/*** end ***/
 	client_connection_end (client, connection);
 	client_teardown (client);
+
+	pthread_mutex_delete (responses_lock);
 
 	(void) printf ("Done!\n\n");
 
