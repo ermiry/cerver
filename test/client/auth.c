@@ -159,13 +159,16 @@ int main (int argc, const char **argv) {
 		}
 	}
 
-	/*** end ***/
-	client_connection_end (client, connection);
-	client_teardown (client);
+	// wait for any response to arrive
+	(void) sleep (2);
 
 	/*** check ***/
 	// check that we have received all the responses
-	// test_check_unsigned_eq (responses, REQUESTS, NULL);
+	test_check_unsigned_eq (responses, REQUESTS, NULL);
+
+	/*** end ***/
+	client_connection_end (client, connection);
+	client_teardown (client);
 
 	(void) printf ("Done!\n\n");
 
