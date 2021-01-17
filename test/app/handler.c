@@ -26,8 +26,8 @@ static void app_handler_test (const Packet *packet) {
 		.connection = packet->connection,
 		.lobby = packet->lobby,
 
-		.packet_type = PACKET_TYPE_TEST,
-		.req_type = 0,
+		.packet_type = PACKET_TYPE_APP,
+		.req_type = APP_REQUEST_TEST,
 
 		.data_size = 0,
 		.data = NULL,
