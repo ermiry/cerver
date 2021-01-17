@@ -32,3 +32,9 @@ jobs:
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/ping
           sudo docker kill $(sudo docker ps -q)
+
+      - name: Packets Integration Test
+        run: |
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/ping
+          sudo docker kill $(sudo docker ps -q)
