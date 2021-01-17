@@ -9,6 +9,9 @@
 #include <cerver/events.h>
 #include <cerver/handler.h>
 
+#include <app/app.h>
+#include <app/handler.h>
+
 #include "cerver.h"
 #include "../test.h"
 
@@ -74,5 +77,37 @@ int main (int argc, char **argv) {
 
 	cerver_set_poll_time_out (cerver, 1000);
 	test_check_int_eq (cerver->poll_timeout, 1000, NULL);
+
+	/*** handlers ***/
+	Handler *app_packet_handler = handler_create (app_handler);
+	handler_set_direct_handle (app_packet_handler, true);
+	cerver_set_app_handlers (cerver, app_packet_handler, NULL);
+
+	/*** events ***/
+	u8 event_result = 0;
+	event_result = cerver_event_register (
+		cerver, 
+		CERVER_EVENT_CLIENT_CONNECTED,
+		on_client_connected, NULL, NULL,
+		false, false
+	);
+
+	test_check_unsigned_eq (event_result, 0, NULL);
+
+	event_result = cerver_event_register (
+		cerver, 
+		CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+		on_client_close_connection, NULL, NULL,
+		false, false
+	);
+
+	test_check_unsigned_eq (event_result, 0, NULL);
+
+	/*** start ***/
+	test_check_unsigned_eq (
+		cerver_start (cerver), 0, "Failed to start cerver!"
+	);
+
+	return 0;
 
 }
