@@ -156,6 +156,9 @@ int main (int argc, const char **argv) {
 	single_app_message_generate_request (MESSAGE);
 	single_app_message_manual (MESSAGE);
 
+	// wait for any response to arrive
+	(void) sleep (2);
+
 	/*** end ***/
 	client_connection_end (client, connection);
 	client_teardown (client);
