@@ -863,25 +863,9 @@ void cerver_test_packet_handler (Packet *packet) {
 	);
 	#endif
 
-	Packet *test_packet = packet_new ();
-	if (test_packet) {
-		packet_set_network_values (
-			test_packet,
-			packet->cerver, packet->client, packet->connection, packet->lobby
-		);
-
-		test_packet->packet_type = PACKET_TYPE_TEST;
-		packet_generate (test_packet);
-		if (packet_send (test_packet, 0, NULL, false)) {
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_PACKET,
-				"Failed to send error packet from cerver %s.",
-				packet->cerver->info->name->str
-			);
-		}
-
-		packet_delete (test_packet);
-	}
+	(void) packet_send_ping (
+		packet->cerver, packet->client, packet->connection, packet->lobby
+	);
 
 }
 
