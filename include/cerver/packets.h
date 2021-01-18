@@ -151,24 +151,31 @@ typedef struct _PacketHeader PacketHeader;
 
 CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
-CERVER_PUBLIC void packet_header_delete (
-	PacketHeader *header
-);
+CERVER_PUBLIC void packet_header_delete (PacketHeader *header);
 
 CERVER_PUBLIC PacketHeader *packet_header_create (
-	PacketType packet_type, size_t packet_size, u32 req_type
+	const PacketType packet_type,
+	const size_t packet_size,
+	const u32 req_type
 );
 
-// prints an already existing PacketHeader
-// mostly used for debugging
-CERVER_PUBLIC void packet_header_print (
-	PacketHeader *header
+// allocates a new packet header and copies the values from source
+CERVER_PUBLIC PacketHeader *packet_header_create_from (
+	const PacketHeader *source
 );
 
-// allocates space for the dest packet header and copies the data from source
+// copies the data from the source header to the destination
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 packet_header_copy (
-	PacketHeader **dest, PacketHeader *source
+	PacketHeader *dest, const PacketHeader *source
+);
+
+CERVER_PUBLIC void packet_header_print (
+	const PacketHeader *header
+);
+
+CERVER_PUBLIC void packet_header_log (
+	const PacketHeader *header
 );
 
 #pragma endregion
@@ -266,7 +273,7 @@ struct _Packet {
 	bool data_ref;
 
 	// the actual packet to be sent
-	PacketHeader *header;
+	PacketHeader header;
 	PacketVersion *version;
 	size_t packet_size;
 	void *packet;
@@ -361,12 +368,15 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
 // creates a request packet that is ready to be sent
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 packet_create_request (
-	Packet *packet,
+// returns a newly allocated packet
+CERVER_EXPORT Packet *packet_create_request (
 	const PacketType packet_type,
 	const u32 request_type
 );
+
+// creates a new ping packet (PACKET_TYPE_TEST)
+// returns a newly allocated packet
+CERVER_EXPORT Packet *packet_create_ping (void);
 
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data

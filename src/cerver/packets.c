@@ -140,7 +140,9 @@ void packet_header_delete (PacketHeader *header) {
 }
 
 PacketHeader *packet_header_create (
-	PacketType packet_type, size_t packet_size, u32 req_type
+	const PacketType packet_type,
+	const size_t packet_size,
+	const u32 req_type
 ) {
 
 	PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
@@ -159,33 +161,54 @@ PacketHeader *packet_header_create (
 
 }
 
-void packet_header_print (PacketHeader *header) {
+// allocates a new packet header and copies the values from source
+PacketHeader *packet_header_create_from (const PacketHeader *source) {
+
+	PacketHeader *header = packet_header_new ();
+	if (header && source) {
+		(void) memcpy (header, source, sizeof (PacketHeader));
+	}
+
+	return header;
+
+}
+
+// copies the data from the source header to the destination
+// returns 0 on success, 1 on error
+u8 packet_header_copy (PacketHeader *dest, const PacketHeader *source) {
+
+	u8 retval = 1;
+
+	if (dest && source) {
+		(void) memcpy (dest, source, sizeof (PacketHeader));
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+void packet_header_print (const PacketHeader *header) {
 
 	if (header) {
-		cerver_log_msg ("Packet type: %d\n", header->packet_type);
-		cerver_log_msg ("Packet size: %ld\n", header->packet_size);
-		cerver_log_msg ("Handler id: %d\n", header->handler_id);
-		cerver_log_msg ("Request type: %d\n", header->request_type);
-		cerver_log_msg ("Sock fd: %d\n", header->sock_fd);
+		(void) printf ("Packet type: %u\n", header->packet_type);
+		(void) printf ("Packet size: %lu\n", header->packet_size);
+		(void) printf ("Handler id: %u\n", header->handler_id);
+		(void) printf ("Request type: %u\n", header->request_type);
+		(void) printf ("Sock fd: %u\n", header->sock_fd);
 	}
 
 }
 
-// allocates space for the dest packet header and copies the data from source
-// returns 0 on success, 1 on error
-u8 packet_header_copy (PacketHeader **dest, PacketHeader *source) {
+void packet_header_log (const PacketHeader *header) {
 
-	u8 retval = 1;
-
-	if (source) {
-		*dest = (PacketHeader *) malloc (sizeof (PacketHeader));
-		if (*dest) {
-			(void) memcpy (*dest, source, sizeof (PacketHeader));
-			retval = 0;
-		}
+	if (header) {
+		cerver_log_msg ("Packet type: %u", header->packet_type);
+		cerver_log_msg ("Packet size: %lu", header->packet_size);
+		cerver_log_msg ("Handler id: %u", header->handler_id);
+		cerver_log_msg ("Request type: %u", header->request_type);
+		cerver_log_msg ("Sock fd: %u", header->sock_fd);
 	}
-
-	return retval;
 
 }
 
@@ -216,7 +239,14 @@ Packet *packet_new (void) {
 		packet->data_end = NULL;
 		packet->data_ref = false;
 
-		packet->header = NULL;
+		packet->header = (PacketHeader) {
+			.packet_type = PACKET_TYPE_NONE,
+			.packet_size = 0,
+			.handler_id = 0,
+			.request_type = 0,
+			.sock_fd = 0
+		};
+
 		packet->version = NULL;
 		packet->packet_size = 0;
 		packet->packet = NULL;
@@ -262,7 +292,6 @@ void packet_delete (void *packet_ptr) {
 			if (packet->data) free (packet->data);
 		}
 
-		packet_header_delete (packet->header);
 		packet_version_delete (packet->version);
 
 		if (!packet->packet_ref) {
@@ -298,11 +327,7 @@ void packet_set_header (
 ) {
 
 	if (packet && header) {
-		if (!packet->header)
-			packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
-
-		if (packet->header)
-			(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+		(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 	}
 
 }
@@ -317,14 +342,11 @@ void packet_set_header_values (
 ) {
 
 	if (packet) {
-		if (!packet->header) packet->header = (PacketHeader *) malloc (sizeof (PacketHeader));
-		if (packet->header) {
-			packet->header->packet_type = packet_type;
-			packet->header->packet_size = packet_size;
-			packet->header->handler_id = handler_id;
-			packet->header->request_type = request_type;
-			packet->header->sock_fd = sock_fd;
-		}
+		packet->header.packet_type = packet_type;
+		packet->header.packet_size = packet_size;
+		packet->header.handler_id = handler_id;
+		packet->header.request_type = request_type;
+		packet->header.sock_fd = sock_fd;
 	}
 
 }
@@ -533,17 +555,16 @@ u8 packet_generate (Packet *packet) {
 		}
 
 		packet->packet_size = sizeof (PacketHeader) + packet->data_size;
-		if (!packet->header) {
-			packet->header = packet_header_create (
-				packet->packet_type, packet->packet_size, packet->req_type
-			);
-		}
+
+		packet->header.packet_type = packet->packet_type;
+		packet->header.packet_size = packet->packet_size;
+		packet->header.request_type = packet->req_type;
 
 		// create the packet buffer to be sent
 		packet->packet = malloc (packet->packet_size);
 		if (packet->packet) {
 			char *end = (char *) packet->packet;
-			(void) memcpy (end, packet->header, sizeof (PacketHeader));
+			(void) memcpy (end, &packet->header, sizeof (PacketHeader));
 
 			if (packet->data_size > 0) {
 				end += sizeof (PacketHeader);
@@ -559,50 +580,56 @@ u8 packet_generate (Packet *packet) {
 }
 
 // creates a request packet that is ready to be sent
-// returns 0 on success, 1 on error
-u8 packet_create_request (
-	Packet *packet,
+// returns a newly allocated packet
+Packet *packet_create_request (
 	const PacketType packet_type,
 	const u32 request_type
 ) {
 
-	u8 retval = 1;
-
+	Packet *packet = (Packet *) malloc (sizeof (Packet));
 	if (packet) {
-		PacketHeader *header = packet_header_create (
-			packet_type,
-			sizeof (PacketHeader),
-			request_type
-		);
+		*packet = (Packet) {
+			.cerver = NULL,
+			.client = NULL,
+			.connection = NULL,
+			.lobby = NULL,
 
-		if (header) {
-			*packet = (Packet) {
-				.cerver = NULL,
-				.client = NULL,
-				.connection = NULL,
-				.lobby = NULL,
+			.packet_type = packet_type,
+			.req_type = request_type,
 
+			.data_size = 0,
+			.data = NULL,
+			.data_ptr = NULL,
+			.data_end = NULL,
+			.data_ref = false,
+
+			.header = (PacketHeader) {
 				.packet_type = packet_type,
-				.req_type = request_type,
-
-				.data_size = 0,
-				.data = NULL,
-				.data_ptr = NULL,
-				.data_end = NULL,
-				.data_ref = false,
-
-				.header = NULL,
-				.version = NULL,
 				.packet_size = sizeof (PacketHeader),
-				.packet = (void *) header,
-				.packet_ref = false
-			};
 
-			retval = 0;
-		}
+				.handler_id = 0,
+
+				.request_type = request_type,
+
+				.sock_fd = 0
+			},
+
+			.version = NULL,
+			.packet_size = sizeof (PacketHeader),
+			.packet = (void *) &packet->header,
+			.packet_ref = false
+		};
 	}
 
-	return retval;
+	return packet;
+
+}
+
+// creates a new ping packet (PACKET_TYPE_TEST)
+// returns a newly allocated packet
+Packet *packet_create_ping (void) {
+
+	return packet_create_request (PACKET_TYPE_TEST, 0);
 
 }
 
@@ -704,7 +731,7 @@ static u8 packet_send_split_tcp (
 		// first send the header
 		bool fail = false;
 		ssize_t sent = 0;
-		char *p = (char *) packet->header;
+		char *p = (char *) &packet->header;
 		size_t packet_size = sizeof (PacketHeader);
 
 		while (packet_size > 0) {
@@ -1057,7 +1084,7 @@ u8 packet_send_pieces (
 		// first send the header
 		if (!packet_send_pieces_actual (
 			packet->connection->socket,
-			(char *) packet->header, sizeof (PacketHeader),
+			(char *) &packet->header, sizeof (PacketHeader),
 			flags,
 			&actual_sent
 		)) {
@@ -1137,18 +1164,7 @@ u8 packet_send_request (
 
 	u8 retval = 1;
 
-	PacketHeader header = {
-		.packet_type = packet_type,
-		.packet_size = sizeof (PacketHeader),
-
-		.handler_id = 0,
-
-		.request_type = request_type,
-
-		.sock_fd = 0,
-	};
-
-	Packet ping = {
+	Packet request = {
 		.cerver = cerver,
 		.client = client,
 		.connection = connection,
@@ -1163,15 +1179,25 @@ u8 packet_send_request (
 		.data_end = NULL,
 		.data_ref = false,
 
-		.header = NULL,
+		.header = (PacketHeader) {
+			.packet_type = packet_type,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = request_type,
+
+			.sock_fd = 0,
+		},
+
 		.version = NULL,
 		.packet_size = sizeof (PacketHeader),
-		.packet = &header,
+		.packet = &request.header,
 		.packet_ref = false
 	};
 
 	size_t sent = 0;
-	if (!packet_send (&ping, 0, &sent, false)) {
+	if (!packet_send (&request, 0, &sent, false)) {
 		if (sent == sizeof (PacketHeader)) {
 			retval = 0;
 		}
