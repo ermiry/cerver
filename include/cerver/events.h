@@ -7,6 +7,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Cerver;
 struct _Client;
 struct _Connection;
@@ -50,7 +54,9 @@ typedef enum CerverEventType {
 } CerverEventType;
 
 // get the description for the current event type
-CERVER_EXPORT const char *cerver_event_type_description (CerverEventType type);
+CERVER_EXPORT const char *cerver_event_type_description (
+	const CerverEventType type
+);
 
 #pragma endregion
 
@@ -58,14 +64,14 @@ CERVER_EXPORT const char *cerver_event_type_description (CerverEventType type);
 
 typedef struct CerverEvent {
 
-	CerverEventType type;               // the event we are waiting to happen
+	CerverEventType type;			// the event we are waiting to happen
 
-	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once
+	bool create_thread;				// create a detachable thread to run action
+	bool drop_after_trigger;		// if we only want to trigger the event once
 
-	Action action;                      // the action to be triggered
-	void *action_args;                  // the action arguments
-	Action delete_action_args;          // how to get rid of the data when deleting the events
+	Work work;						// the work to be triggered
+	void *work_args;				// the work arguments
+	Action delete_action_args;		// how to get rid of the data when deleting the events
 
 } CerverEvent;
 
@@ -79,20 +85,23 @@ CERVER_PUBLIC void cerver_event_delete (void *event_ptr);
 CERVER_EXPORT u8 cerver_event_register (
 	struct _Cerver *cerver,
 	const CerverEventType event_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 );
 
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if event is NOT registered
-CERVER_EXPORT u8 cerver_event_unregister (struct _Cerver *cerver, const CerverEventType event_type);
+CERVER_EXPORT u8 cerver_event_unregister (
+	struct _Cerver *cerver, const CerverEventType event_type
+);
 
 // triggers all the actions that are registred to an event
 CERVER_PRIVATE void cerver_event_trigger (
 	const CerverEventType event_type,
 	const struct _Cerver *cerver,
-	const struct _Client *client, const struct _Connection *connection
+	const struct _Client *client,
+	const struct _Connection *connection
 );
 
 #pragma endregion
@@ -112,8 +121,14 @@ typedef struct CerverEventData {
 
 } CerverEventData;
 
-CERVER_PUBLIC void cerver_event_data_delete (CerverEventData *event_data);
+CERVER_PUBLIC void cerver_event_data_delete (
+	CerverEventData *event_data
+);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

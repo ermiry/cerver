@@ -121,7 +121,7 @@ static u8 cerver_client_connect (Client *client, Connection **connection) {
 
 }
 
-static void client_event_connection_close (void *client_event_data_ptr) {
+static void *client_event_connection_close (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -136,9 +136,11 @@ static void client_event_connection_close (void *client_event_data_ptr) {
 		client_event_data_delete (client_event_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_event_auth_sent (void *client_event_data_ptr) {
+static void *client_event_auth_sent (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -153,9 +155,11 @@ static void client_event_auth_sent (void *client_event_data_ptr) {
 		client_event_data_delete (client_event_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_error_failed_auth (void *client_error_data_ptr) {
+static void *client_error_failed_auth (void *client_error_data_ptr) {
 
 	if (client_error_data_ptr) {
 		ClientErrorData *client_error_data = (ClientErrorData *) client_error_data_ptr;
@@ -170,9 +174,11 @@ static void client_error_failed_auth (void *client_error_data_ptr) {
 		client_error_data_delete (client_error_data);
 	}
 
+	return NULL;
+
 }
 
-static void client_event_success_auth (void *client_event_data_ptr) {
+static void *client_event_success_auth (void *client_event_data_ptr) {
 
 	if (client_event_data_ptr) {
 		ClientEventData *client_event_data = (ClientEventData *) client_event_data_ptr;
@@ -186,6 +192,8 @@ static void client_event_success_auth (void *client_event_data_ptr) {
 
 		client_event_data_delete (client_event_data);
 	}
+
+	return NULL;
 
 }
 
@@ -262,7 +270,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -270,9 +278,11 @@ static void on_cever_teardown (void *event_data_ptr) {
 		printf ("\nCerver %s is going to be destroyed!\n\n", event_data->cerver->info->name->str);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -285,9 +295,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -297,6 +309,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 			event_data->cerver->info->name->str
 		);
 	}
+
+	return NULL;
 
 }
 
@@ -375,23 +389,34 @@ static void *cerver_client_connect_and_start (void *args) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Cerver Client Auth Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver creates a new client that will authenticate with a cerver & then, perform requests");
-	printf ("\n");
+	cerver_log_line_break ();
 
-	client_cerver = cerver_create (CERVER_TYPE_CUSTOM, "client-cerver", 7001, PROTOCOL_TCP, false, 2, 2000);
+	client_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"client-cerver",
+		7001,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (client_cerver) {
 		cerver_set_welcome_msg (client_cerver, "Welcome - Cerver Client Auth Example");
 
@@ -399,8 +424,12 @@ int main (void) {
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
 
+		cerver_set_reusable_address_flags (client_cerver, true);
+
+		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (client_cerver, 2000);
+
 		Handler *app_handler = handler_create (handler);
-		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (client_cerver, app_handler, NULL);
 
@@ -426,15 +455,15 @@ int main (void) {
 		);
 
 		pthread_t client_thread = 0;
-		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
+		(void) thread_create_detachable (
+			&client_thread, cerver_client_connect_and_start, NULL
+		);
 
 		if (cerver_start (client_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				client_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				client_cerver->info->name->str
+			);
 
 			cerver_delete (client_cerver);
 		}

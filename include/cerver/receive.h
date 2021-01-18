@@ -1,6 +1,10 @@
 #ifndef _CERVER_RECEIVE_H_
 #define _CERVER_RECEIVE_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum ReceiveType {
 
     RECEIVE_TYPE_NONE            = 0,
@@ -10,5 +14,9 @@ typedef enum ReceiveType {
     RECEIVE_TYPE_ADMIN           = 3,
 
 } ReceiveType;
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -1,0 +1,39 @@
+name: Cerver Release
+
+on:
+  push:
+    branches:
+      - 'master'
+
+jobs:
+  build:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Read version file
+        id: get_version
+        run: echo "::set-output name=version::$(cat version.txt)"
+
+      - name: Read changelog
+        id: get_changes
+        run: |
+          changes=$(cat CHANGELOG.md)
+          changes="${changes//'%'/'%25'}"
+          changes="${changes//$'\n'/'%0A'}"
+          changes="${changes//$'\r'/'%0D'}"
+          echo "::set-output name=changes::$changes"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          body: ${{ steps.get_changes.outputs.changes }}
+          draft: false
+          prerelease: false

@@ -28,23 +28,37 @@ static void end (int dummy) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Welcome Example");
-	printf ("\n");
+	cerver_log_line_break ();
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"my-cerver",
+		7000,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome to cerver!");
+
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, 2000);
 
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);

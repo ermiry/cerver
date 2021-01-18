@@ -47,6 +47,10 @@
 	#endif
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
 
 	unsigned long max_memory;
@@ -134,17 +138,29 @@ struct _json_value {
 
 typedef struct _json_value json_value;
 
-CERVER_PUBLIC json_value *json_parse (const json_char * json, size_t length);
+CERVER_PUBLIC json_value *json_parse (
+	const json_char * json, size_t length
+);
 
 #define json_error_max 128
 
-CERVER_PUBLIC json_value *json_parse_ex (json_settings *settings, const json_char *json, size_t length, char *error);
+CERVER_PUBLIC json_value *json_parse_ex (
+	json_settings *settings,
+	const json_char *json, size_t length,
+	char *error
+);
 
 CERVER_PUBLIC void json_value_free (json_value *);
 
 /* Not usually necessary, unless you used a custom mem_alloc and now want to
  * use a custom mem_free.
  */
-CERVER_PUBLIC void json_value_free_ex (json_settings *settings, json_value *);
+CERVER_PUBLIC void json_value_free_ex (
+	json_settings *settings, json_value *
+);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

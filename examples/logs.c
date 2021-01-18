@@ -36,14 +36,6 @@ static void end (int dummy) {
 
 }
 
-static void quit (int dummy) {
-
-	cerver_end ();
-
-	exit (0);
-
-}
-
 #pragma endregion
 
 #pragma region handler
@@ -89,7 +81,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -104,9 +96,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -119,6 +113,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
 #pragma endregion
@@ -127,11 +123,13 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 int main (int argc, char **argv) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
-	signal (SIGSEGV, quit);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_log_set_output_type (LOG_OUTPUT_TYPE_BOTH);
 	cerver_log_set_path ("./logs");
@@ -140,15 +138,24 @@ int main (int argc, char **argv) {
 
 	cerver_init ();
 
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Simple Logs Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Simple test cerver with custom logs configuartions");
-	printf ("\n");
+	cerver_log_line_break ();
 
-	my_cerver = cerver_create (CERVER_TYPE_CUSTOM, "my-cerver", 7000, PROTOCOL_TCP, false, 2, 2000);
+	my_cerver = cerver_create (
+		CERVER_TYPE_CUSTOM,
+		"my-cerver",
+		7000,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+
 	if (my_cerver) {
 		cerver_set_welcome_msg (my_cerver, "Welcome - Simple Test Message Example");
 
@@ -156,8 +163,12 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
 
+		cerver_set_reusable_address_flags (my_cerver, true);
+
+		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
+		cerver_set_poll_time_out (my_cerver, 2000);
+
 		Handler *app_handler = handler_create (handler);
-		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 
@@ -176,12 +187,10 @@ int main (int argc, char **argv) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}
