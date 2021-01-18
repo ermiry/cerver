@@ -9,6 +9,89 @@
 
 #define BUFFER_SIZE			128
 
+static void test_packet_header_create (void) {
+
+	u32 request_type = 10;
+	size_t packet_size = sizeof (PacketHeader);
+
+	PacketHeader *header = packet_header_create (
+		PACKET_TYPE_APP,
+		packet_size,
+		request_type
+	);
+
+	test_check_ptr (header);
+	test_check_unsigned_eq (header->packet_type, PACKET_TYPE_APP, NULL);
+	test_check_unsigned_eq (header->packet_size, packet_size, NULL);
+	test_check_unsigned_eq (header->handler_id, 0, NULL);
+	test_check_unsigned_eq (header->request_type, request_type, NULL);
+	test_check_unsigned_eq (header->sock_fd, 0, NULL);
+
+	packet_header_delete (header);
+
+}
+
+static void test_packet_header_create_from (void) {
+
+	u32 request_type = 10;
+	u8 handler_id = 2;
+	size_t packet_size = sizeof (PacketHeader);
+	u16 sock_fd = 16;
+
+	PacketHeader source = {
+		.packet_type = PACKET_TYPE_APP,
+		.packet_size = packet_size,
+
+		.handler_id = handler_id,
+
+		.request_type = request_type,
+
+		.sock_fd = sock_fd
+	};
+
+	PacketHeader *real_header = packet_header_create_from (&source);
+
+	test_check_ptr (real_header);
+	test_check_unsigned_eq (real_header->packet_type, PACKET_TYPE_APP, NULL);
+	test_check_unsigned_eq (real_header->packet_size, packet_size, NULL);
+	test_check_unsigned_eq (real_header->handler_id, handler_id, NULL);
+	test_check_unsigned_eq (real_header->request_type, request_type, NULL);
+	test_check_unsigned_eq (real_header->sock_fd, sock_fd, NULL);
+
+	packet_header_delete (real_header);
+
+}
+
+static void test_packet_header_copy (void) {
+
+	u32 request_type = 10;
+	u8 handler_id = 2;
+	size_t packet_size = sizeof (PacketHeader);
+	u16 sock_fd = 16;
+
+	PacketHeader source = {
+		.packet_type = PACKET_TYPE_APP,
+		.packet_size = packet_size,
+
+		.handler_id = handler_id,
+
+		.request_type = request_type,
+
+		.sock_fd = sock_fd
+	};
+
+	PacketHeader destination = { 0 };
+
+	test_check_unsigned_eq (packet_header_copy (&destination, &source), 0, NULL);
+
+	test_check_unsigned_eq (destination.packet_type, PACKET_TYPE_APP, NULL);
+	test_check_unsigned_eq (destination.packet_size, packet_size, NULL);
+	test_check_unsigned_eq (destination.handler_id, handler_id, NULL);
+	test_check_unsigned_eq (destination.request_type, request_type, NULL);
+	test_check_unsigned_eq (destination.sock_fd, sock_fd, NULL);
+
+}
+
 static void test_packets_create_ping (void) {
 
 	Packet *ping = packet_create_ping ();
@@ -297,6 +380,10 @@ static void test_packets_generate_request (void) {
 int main (int argc, char **argv) {
 
 	(void) printf ("Testing PACKETS...\n");
+
+	test_packet_header_create ();
+	test_packet_header_create_from ();
+	test_packet_header_copy ();
 
 	test_packets_create_ping ();
 	test_packets_append_data ();
