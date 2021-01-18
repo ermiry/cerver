@@ -185,7 +185,7 @@ static void handler_do_while_cerver (Handler *handler) {
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -285,7 +285,7 @@ static void handler_do_while_admin (Handler *handler) {
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -535,92 +535,90 @@ static CerverHandlerError cerver_client_packet_handler (
 
 	CerverHandlerError error = CERVER_HANDLER_ERROR_NONE;
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// the client is going to close its current connection
-			// but will remain in the cerver if it has another connection active
-			// if not, it will be dropped
-			case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
-				#ifdef HANDLER_DEBUG
-				cerver_log_debug (
-					"Client %ld requested to close the connection",
-					packet->client->id
-				);
-				#endif
+	switch (packet->header.request_type) {
+		// the client is going to close its current connection
+		// but will remain in the cerver if it has another connection active
+		// if not, it will be dropped
+		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+			#ifdef HANDLER_DEBUG
+			cerver_log_debug (
+				"Client %ld requested to close the connection",
+				packet->client->id
+			);
+			#endif
 
-				// check if the client is inside a lobby
-				if (packet->lobby) {
-					#ifdef HANDLER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-						"Client %ld inside lobby %s wants to close the connection...",
-						packet->client->id, packet->lobby->id->str
-					);
-					#endif
-
-					// remove the player from the lobby
-					(void) player_unregister_from_lobby (
-						packet->lobby,
-						player_get_by_sock_fd_list (
-							packet->lobby, packet->connection->socket->sock_fd
-						)
-					);
-				}
-
-				switch (client_remove_connection_by_sock_fd (
-					packet->cerver,
-					packet->client, packet->connection->socket->sock_fd
-				)) {
-					case CLIENT_CONNECTIONS_STATUS_DROPPED:
-						error = CERVER_HANDLER_ERROR_DROPPED;
-						break;
-
-					default: break;
-				}
-			} break;
-
-			// the client is going to disconnect
-			// and will close all of its active connections
-			// so drop it from the server
-			case CLIENT_PACKET_TYPE_DISCONNECT: {
-				// check if the client is inside a lobby
-				if (packet->lobby) {
-					#ifdef HANDLER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-						"Client %ld inside lobby %s wants to close the connection...",
-						packet->client->id, packet->lobby->id->str
-					);
-					#endif
-
-					// remove the player from the lobby
-					(void) player_unregister_from_lobby (
-						packet->lobby,
-						player_get_by_sock_fd_list (
-							packet->lobby, packet->connection->socket->sock_fd
-						)
-					);
-				}
-
-				client_drop (packet->cerver, packet->client);
-
-				cerver_event_trigger (
-					CERVER_EVENT_CLIENT_DISCONNECTED,
-					packet->cerver,
-					NULL, NULL
-				);
-			} break;
-
-			default: {
+			// check if the client is inside a lobby
+			if (packet->lobby) {
 				#ifdef HANDLER_DEBUG
 				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Got an unknown client packet in cerver %s",
-					packet->cerver->info->name->str
+					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+					"Client %ld inside lobby %s wants to close the connection...",
+					packet->client->id, packet->lobby->id->str
 				);
 				#endif
-			} break;
-		}
+
+				// remove the player from the lobby
+				(void) player_unregister_from_lobby (
+					packet->lobby,
+					player_get_by_sock_fd_list (
+						packet->lobby, packet->connection->socket->sock_fd
+					)
+				);
+			}
+
+			switch (client_remove_connection_by_sock_fd (
+				packet->cerver,
+				packet->client, packet->connection->socket->sock_fd
+			)) {
+				case CLIENT_CONNECTIONS_STATUS_DROPPED:
+					error = CERVER_HANDLER_ERROR_DROPPED;
+					break;
+
+				default: break;
+			}
+		} break;
+
+		// the client is going to disconnect
+		// and will close all of its active connections
+		// so drop it from the server
+		case CLIENT_PACKET_TYPE_DISCONNECT: {
+			// check if the client is inside a lobby
+			if (packet->lobby) {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+					"Client %ld inside lobby %s wants to close the connection...",
+					packet->client->id, packet->lobby->id->str
+				);
+				#endif
+
+				// remove the player from the lobby
+				(void) player_unregister_from_lobby (
+					packet->lobby,
+					player_get_by_sock_fd_list (
+						packet->lobby, packet->connection->socket->sock_fd
+					)
+				);
+			}
+
+			client_drop (packet->cerver, packet->client);
+
+			cerver_event_trigger (
+				CERVER_EVENT_CLIENT_DISCONNECTED,
+				packet->cerver,
+				NULL, NULL
+			);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Got an unknown client packet in cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 	return error;
@@ -830,28 +828,26 @@ void cerver_request_send_file (Packet *packet) {
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// request from a client to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE:
-				cerver_request_get_file (packet);
-				break;
+	switch (packet->header.request_type) {
+		// request from a client to get a file
+		case REQUEST_PACKET_TYPE_GET_FILE:
+			cerver_request_get_file (packet);
+			break;
 
-			// request from a client to upload a file
-			case REQUEST_PACKET_TYPE_SEND_FILE:
-				cerver_request_send_file (packet);
-				break;
+		// request from a client to upload a file
+		case REQUEST_PACKET_TYPE_SEND_FILE:
+			cerver_request_send_file (packet);
+			break;
 
-			default: {
-				#ifdef HANDLER_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Got an unknown request packet in cerver %s",
-					packet->cerver->info->name->str
-				);
-				#endif
-			} break;
-		}
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Got an unknown request packet in cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 }
@@ -894,17 +890,17 @@ static void cerver_app_packet_handler (Packet *packet) {
 
 	if (packet->cerver->multiple_handlers) {
 		// select which handler to use
-		if (packet->header->handler_id < packet->cerver->n_handlers) {
-			if (packet->cerver->handlers[packet->header->handler_id]) {
+		if (packet->header.handler_id < packet->cerver->n_handlers) {
+			if (packet->cerver->handlers[packet->header.handler_id]) {
 				// add the packet to the handler's job queueu to be handled
 				// as soon as the handler is available
 				if (job_queue_push (
-					packet->cerver->handlers[packet->header->handler_id]->job_queue,
+					packet->cerver->handlers[packet->header.handler_id]->job_queue,
 					job_create (NULL, packet)
 				)) {
 					cerver_log_error (
 						"Failed to push a new job to cerver's %s <%d> handler!",
-						packet->cerver->info->name->str, packet->header->handler_id
+						packet->cerver->info->name->str, packet->header.handler_id
 					);
 				}
 			}
@@ -1053,7 +1049,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 
 	CerverHandlerError error = CERVER_HANDLER_ERROR_NONE;
 
-	switch (packet->header->packet_type) {
+	switch (packet->header.packet_type) {
 		case PACKET_TYPE_NONE: break;
 
 		case PACKET_TYPE_CERVER: break;
