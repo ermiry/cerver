@@ -2394,28 +2394,26 @@ static void cerver_register_new_connection (
 // accepst a new connection to the cerver
 static void cerver_accept (void *cerver_ptr) {
 
-	if (cerver_ptr) {
-		Cerver *cerver = (Cerver *) cerver_ptr;
+	Cerver *cerver = (Cerver *) cerver_ptr;
 
-		struct sockaddr_storage client_address;
-		memset (&client_address, 0, sizeof (struct sockaddr_storage));
-		socklen_t socklen = sizeof (struct sockaddr_storage);
+	struct sockaddr_storage client_address = { 0 };
+	// (void) memset (&client_address, 0, sizeof (struct sockaddr_storage));
+	socklen_t socklen = sizeof (struct sockaddr_storage);
 
-		// accept the new connection
-		i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
-		if (new_fd > 0) {
-			#ifdef HANDLER_DEBUG
-			cerver_log_debug ("Accepted fd: %d", new_fd);
-			#endif
-			cerver_register_new_connection (cerver, new_fd, client_address);
-		}
+	// accept the new connection
+	i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
+	if (new_fd > 0) {
+		#ifdef HANDLER_DEBUG
+		cerver_log_debug ("Accepted fd: %d", new_fd);
+		#endif
+		cerver_register_new_connection (cerver, new_fd, client_address);
+	}
 
-		else {
-			// if we get EWOULDBLOCK, we have accepted all connections
-			if (errno != EWOULDBLOCK) {
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
-				perror ("Error");
-			}
+	else {
+		// if we get EWOULDBLOCK, we have accepted all connections
+		if (errno != EWOULDBLOCK) {
+			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
+			perror ("Error");
 		}
 	}
 
