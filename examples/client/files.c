@@ -226,19 +226,22 @@ static void *cerver_client_connect_and_start (void *args) {
 
 static void start (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
 
-	printf ("\n");
+	(void) signal (SIGPIPE, SIG_IGN);
+
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Cerver Client Files Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver creates a new client that will use to make files requests to another cerver");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	client_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -255,6 +258,8 @@ static void start (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
+
+		cerver_set_reusable_address_flags (client_cerver, true);
 
 		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (client_cerver, 2000);

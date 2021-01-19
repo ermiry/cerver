@@ -194,19 +194,22 @@ static void app_packet_handler (void *data) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Requests Example");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -223,6 +226,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_reusable_address_flags (my_cerver, true);
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);

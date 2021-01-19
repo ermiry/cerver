@@ -124,10 +124,12 @@ int main (void) {
 			game_type_register (game_cerver->game_types, arcade_game_type);
 
 			if (cerver_start (my_cerver)) {
-				cerver_log_error (
-					"Failed to start %s!",
-					my_cerver->info->name->str
-				);
+				char *s = c_string_create ("Failed to start %s!",
+					my_cerver->info->name->str);
+				if (s) {
+					cerver_log_error (s);
+					free (s);
+				}
 
 				cerver_delete (my_cerver);
 			}
