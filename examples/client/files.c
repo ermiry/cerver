@@ -71,7 +71,7 @@ static void cerver_app_handler_direct (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: cerver_handle_test_request (packet); break;
 
 			default:
@@ -93,7 +93,7 @@ static void client_app_handler (void *data) {
 
 		// AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: {
 				cerver_log_debug ("Got a test message from cerver!");
 			} break;
