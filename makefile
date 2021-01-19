@@ -348,38 +348,7 @@ $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
 	mv $(notdir $@) ./$(TESTCOVDIR)
 
-# benchmarks
-BENCHDIR	:= benchmarks
-BENCHBUILD	:= $(BENCHDIR)/objs
-BENCHTARGET	:= $(BENCHDIR)/bin
-
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
-
-ifeq ($(NATIVE), 1)
-	BENCHFLAGS += -march=native -mavx2
-endif
-
-BENCHLIBS	:= $(PTHREAD) -L ./$(TARGETDIR) -l cerver
-BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
-
-BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
-BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJEXT)))
-
-bench: $(BENCHOBJS)
-	@mkdir -p ./$(BENCHTARGET)
-	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
-
-# compile benchmarks
-$(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
-	@mkdir -p $(dir $@)
-	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) $(BENCHLIBS) -c -o $@ $<
-	@$(CC) $(BENCHFLAGS) $(INCDEP) -MM $(BENCHDIR)/$*.$(SRCEXT) > $(BENCHBUILD)/$*.$(DEPEXT)
-	@cp -f $(BENCHBUILD)/$*.$(DEPEXT) $(BENCHBUILD)/$*.$(DEPEXT).tmp
-	@sed -e 's|.*:|$(BENCHBUILD)/$*.$(OBJEXT):|' < $(BENCHBUILD)/$*.$(DEPEXT).tmp > $(BENCHBUILD)/$*.$(DEPEXT)
-	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
-	@rm -f $(BENCHBUILD)/$*.$(DEPEXT).tmp
-
-clear: clean-objects clean-examples clean-tests clean-coverage clean-bench
+clear: clean-objects clean-examples clean-tests clean-coverage
 
 clean: clear
 	@$(RM) -rf $(TARGETDIR)
@@ -398,8 +367,4 @@ clean-tests:
 clean-coverage:
 	@$(RM) -rf $(COVDIR)
 
-clean-bench:
-	@$(RM) -rf $(BENCHBUILD)
-	@$(RM) -rf $(BENCHTARGET)
-
-.PHONY: all clean clear examples test coverage bench
+.PHONY: all clean clear examples test coverage
