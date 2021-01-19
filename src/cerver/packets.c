@@ -239,6 +239,8 @@ Packet *packet_new (void) {
 		packet->data_end = NULL;
 		packet->data_ref = false;
 
+		packet->remaining_data = 0;
+
 		packet->header = (PacketHeader) {
 			.packet_type = PACKET_TYPE_NONE,
 			.packet_size = 0,
@@ -247,31 +249,14 @@ Packet *packet_new (void) {
 			.sock_fd = 0
 		};
 
+		packet->header_end = NULL;
+		packet->remaining_header = 0;
+
 		packet->version = NULL;
+
 		packet->packet_size = 0;
 		packet->packet = NULL;
 		packet->packet_ref = false;
-	}
-
-	return packet;
-
-}
-
-// create a new packet with the option to pass values directly
-// data is copied into packet buffer and can be safely freed
-Packet *packet_create (
-	const PacketType type, const u32 req_type,
-	const void *data, const size_t data_size
-) {
-
-	Packet *packet = packet_new ();
-	if (packet) {
-		packet->packet_type = type;
-		packet->req_type = req_type;
-
-		if (data) {
-			packet_append_data (packet, data, data_size);
-		}
 	}
 
 	return packet;
@@ -300,6 +285,51 @@ void packet_delete (void *packet_ptr) {
 
 		free (packet);
 	}
+
+}
+
+// create a new packet with the option to pass values directly
+// data is copied into packet buffer and can be safely freed
+Packet *packet_create (
+	const PacketType type, const u32 req_type,
+	const void *data, const size_t data_size
+) {
+
+	Packet *packet = packet_new ();
+	if (packet) {
+		packet->packet_type = type;
+		packet->req_type = req_type;
+
+		if (data) {
+			packet_append_data (packet, data, data_size);
+		}
+	}
+
+	return packet;
+
+}
+
+// creates a packet with a data buffer of the specified size
+Packet *packet_create_with_data (
+	const size_t data_size
+) {
+
+	Packet *packet = packet_new ();
+	if (packet) {
+		packet->data = malloc (data_size);
+		if (packet->data) {
+			packet->data_size = data_size;
+			packet->data_end = packet->data;
+			packet->remaining_data = data_size;
+		}
+
+		else {
+			packet_delete (packet);
+			packet = NULL;
+		}
+	}
+
+	return packet;
 
 }
 
@@ -376,6 +406,32 @@ u8 packet_set_data (
 
 			// point to the start of the data
 			packet->data_ptr = (char *) packet->data;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// adds the data to the packet's existing data buffer
+// the data size must be <= the packet's remaining data
+// returns 0 on success, 1 on error
+u8 packet_add_data (
+	Packet *packet,
+	const void *data, const size_t data_size
+) {
+
+	u8 retval = 1;
+
+	if (packet && data) {
+		// check that we can copy the data
+		if (data_size <= packet->remaining_data) {
+			(void) memcpy (packet->data_end, data, data_size);
+
+			packet->data_end += data_size;
+			packet->remaining_data -= data_size;
 
 			retval = 0;
 		}

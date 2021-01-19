@@ -272,9 +272,19 @@ struct _Packet {
 	char *data_end;
 	bool data_ref;
 
-	// the actual packet to be sent
-	PacketHeader header;
+	// used to handle big packets
+	// that don't fit inside a single buffer
+	size_t remaining_data;
+
+	// used to handle split headers between buffers
+	// this can happen when the header is at the buffer's end
+	PacketHeader header;	
+	char *header_end;
+	unsigned int remaining_header;
+
 	PacketVersion *version;
+
+	// the actual packet to be sent
 	size_t packet_size;
 	void *packet;
 	bool packet_ref;
@@ -294,6 +304,11 @@ CERVER_PUBLIC void packet_delete (void *ptr);
 CERVER_EXPORT Packet *packet_create (
 	const PacketType type, const u32 req_type,
 	const void *data, const size_t data_size
+);
+
+// creates a packet with a data buffer of the specified size
+CERVER_PRIVATE Packet *packet_create_with_data (
+	const size_t data_size
 );
 
 // sets the packet destinatary to whom this packet is going to be sent
@@ -323,6 +338,14 @@ CERVER_EXPORT void packet_set_header_values (
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_set_data (
+	Packet *packet,
+	const void *data, const size_t data_size
+);
+
+// adds the data to the packet's existing data buffer
+// the data size must be <= the packet's remaining data
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_add_data (
 	Packet *packet,
 	const void *data, const size_t data_size
 );
