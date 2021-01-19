@@ -7,12 +7,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/cerver.h"
 #include "cerver/config.h"
-#include "cerver/client.h"
 #include "cerver/network.h"
-
-#include "cerver/game/lobby.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -276,6 +272,7 @@ struct _Packet {
 	// that don't fit inside a single buffer
 	size_t remaining_data;
 
+	// FIXME: move to receive handle?
 	// used to handle split headers between buffers
 	// this can happen when the header is at the buffer's end
 	PacketHeader header;	
