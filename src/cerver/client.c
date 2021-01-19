@@ -2533,7 +2533,7 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 // handles cerver type packets
 void client_cerver_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
+	switch (packet->header.request_type) {
 		case CERVER_PACKET_TYPE_INFO:
 			client_cerver_packet_handle_info (packet);
 			break;
@@ -2557,7 +2557,7 @@ void client_cerver_packet_handler (Packet *packet) {
 // handles a client type packet
 static void client_client_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
+	switch (packet->header.request_type) {
 		// the cerver close our connection
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION:
 			client_connection_end (packet->client, packet->connection);
@@ -2748,25 +2748,23 @@ static void client_request_send_file (Packet *packet) {
 // handles a request made from the cerver
 static void client_request_packet_handler (Packet *packet) {
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// request from a cerver to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE:
-				client_request_get_file (packet);
-				break;
+	switch (packet->header.request_type) {
+		// request from a cerver to get a file
+		case REQUEST_PACKET_TYPE_GET_FILE:
+			client_request_get_file (packet);
+			break;
 
-			// request from a cerver to receive a file
-			case REQUEST_PACKET_TYPE_SEND_FILE:
-				client_request_send_file (packet);
-				break;
+		// request from a cerver to receive a file
+		case REQUEST_PACKET_TYPE_SEND_FILE:
+			client_request_send_file (packet);
+			break;
 
-			default:
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Unknown request from cerver"
-				);
-				break;
-		}
+		default:
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Unknown request from cerver"
+			);
+			break;
 	}
 
 }
@@ -2819,7 +2817,7 @@ static void client_auth_success_handler (Packet *packet) {
 
 static void client_auth_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
+	switch (packet->header.request_type) {
 		// cerver requested authentication, if not, we will be disconnected
 		case AUTH_PACKET_TYPE_REQUEST_AUTH:
 			break;
@@ -2949,6 +2947,8 @@ static void client_custom_packet_handler (Packet *packet) {
 static void client_packet_handler (void *packet_ptr) {
 
 	if (packet_ptr) {
+		printf ("client_packet_handler\n");
+
 		Packet *packet = (Packet *) packet_ptr;
 		packet->client->stats->n_packets_received += 1;
 
@@ -2968,7 +2968,8 @@ static void client_packet_handler (void *packet_ptr) {
 		}
 
 		if (good) {
-			switch (packet->header->packet_type) {
+			printf ("packet->header.packet_type: %u\n", packet->header.packet_type);
+			switch (packet->header.packet_type) {
 				case PACKET_TYPE_NONE: break;
 
 				// handles cerver type packets
@@ -3038,6 +3039,7 @@ static void client_packet_handler (void *packet_ptr) {
 
 				// handles a test packet form the cerver
 				case PACKET_TYPE_TEST:
+					printf ("hola!\n");
 					packet->client->stats->received_packets->n_test_packets += 1;
 					packet->connection->stats->received_packets->n_test_packets += 1;
 					cerver_log (LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver");
@@ -3083,7 +3085,7 @@ static void client_receive_handle_spare_packet (
 
 			// check if we can handler the packet
 			size_t curr_packet_size = connection->sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (connection->sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+			if (connection->sock_receive->spare_packet->header.packet_size == curr_packet_size) {
 				connection->sock_receive->spare_packet->client = client;
 				connection->sock_receive->spare_packet->connection = connection;
 
@@ -3111,6 +3113,8 @@ static void client_receive_handle_buffer (
 ) {
 
 	char *end = buffer;
+	packet_header_print ((PacketHeader *) end);
+
 	size_t buffer_pos = 0;
 
 	SockReceive *sock_receive = connection->sock_receive;
@@ -3134,8 +3138,11 @@ static void client_receive_handle_buffer (
 	while (buffer_pos < buffer_size) {
 		remaining_buffer_size = buffer_size - buffer_pos;
 
+		printf ("remaining_buffer_size: %lu\n", remaining_buffer_size);
+
 		if (sock_receive->complete_header) {
-			packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+			// FIXME:
+			packet_header_copy (header, (PacketHeader *) sock_receive->header);
 			// header = ((PacketHeader *) sock_receive->header);
 			// packet_header_print (header);
 
@@ -3156,10 +3163,16 @@ static void client_receive_handle_buffer (
 
 		else if (remaining_buffer_size >= sizeof (PacketHeader)) {
 			header = (PacketHeader *) end;
-			end += sizeof (PacketHeader);
-			buffer_pos += sizeof (PacketHeader);
+			
 
 			// packet_header_print (header);
+
+			// if (end) {
+			// 	printf ("kjzhckjhzlkfhjdskjhn\n\n\n");
+			// }
+
+			end += sizeof (PacketHeader);
+			buffer_pos += sizeof (PacketHeader);
 
 			spare_header = false;
 		}
@@ -3175,7 +3188,10 @@ static void client_receive_handle_buffer (
 
 				Packet *packet = packet_new ();
 				if (packet) {
-					packet_header_copy (&packet->header, header);
+					printf ("packet_new ()\n");
+					printf ("header->packet_size: %lu\n", header->packet_size);
+					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+					printf ("packet->header.packet_size %lu\n", packet->header.packet_size);
 					packet->packet_size = header->packet_size;
 					// packet->cerver = cerver;
 					// packet->lobby = lobby;
@@ -3187,8 +3203,14 @@ static void client_receive_handle_buffer (
 						header = NULL;
 					}
 
+					printf ("packet_real_size: %lu\n", packet_real_size);
+					printf ("packet->header.packet_size: %lu\n", packet->header.packet_size);
+
+					// FIXME: problems if packet->header.packet_size is less than sizeof (PacketHeader)
 					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
+
+					printf ("2 packet_real_size: %lu\n", packet_real_size);
 					to_copy_size = 0;
 					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
 						sock_receive->spare_packet = packet;
@@ -3212,7 +3234,7 @@ static void client_receive_handle_buffer (
 						sock_receive->spare_packet = NULL;
 					}
 
-					// printf ("to copy size: %ld\n", to_copy_size);
+					printf ("to copy size: %lu\n", to_copy_size);
 					packet_set_data (packet, (void *) end, to_copy_size);
 
 					end += to_copy_size;
@@ -3298,6 +3320,11 @@ unsigned int client_receive_internal (
 	unsigned int retval = 1;
 
 	ssize_t rc = recv (connection->socket->sock_fd, buffer, buffer_size, 0);
+
+	// printf ("\n\n");
+	// packet_header_print ((PacketHeader *) buffer);
+	// printf ("\n\n");
+
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
@@ -3354,7 +3381,8 @@ unsigned int client_receive_internal (
 			connection->stats->n_receives_done += 1;
 			connection->stats->total_bytes_received += rc;
 
-			// handle the recived packet buffer -> split them in packets of the correct size
+			// handle the recived packet buffer
+			// split them in packets of the correct size
 			client_receive_handle_buffer (
 				client,
 				connection,
