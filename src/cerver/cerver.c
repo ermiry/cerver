@@ -2878,7 +2878,11 @@ static inline SCerver *scerver_new (void) {
 
 }
 
-static inline void scerver_delete (void *ptr) { if (ptr) free (ptr); }
+static inline void scerver_delete (void *ptr) {
+	
+	if (ptr) free (ptr);
+	
+}
 
 // srealizes the cerver
 static SCerver *cerver_serliaze (Cerver *cerver) {
@@ -2927,7 +2931,9 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
 			cerver_report->type = scerver->type;
 
 			cerver_report->name = str_new (scerver->name);
-			if (strlen (scerver->welcome)) cerver_report->welcome = str_new (scerver->welcome);
+			if (strlen (scerver->welcome)) {
+				cerver_report->welcome = str_new (scerver->welcome);
+			}
 
 			cerver_report->use_ipv6 = scerver->use_ipv6;
 			cerver_report->protocol = scerver->protocol;
@@ -2950,7 +2956,11 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 	if (cerver) {
 		SCerver *scerver = cerver_serliaze (cerver);
 		if (scerver) {
-			packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, scerver, sizeof (SCerver));
+			packet = packet_generate_request (
+				PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+				scerver, sizeof (SCerver)
+			);
+			
 			scerver_delete (scerver);
 		}
 	}
