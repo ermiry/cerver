@@ -243,6 +243,10 @@ CERVER_PRIVATE void cerver_receive_handle_buffer (
 	void *receive_handle_ptr
 );
 
+CERVER_PRIVATE void cerver_receive_handle_buffer_new (
+	void *receive_handle_ptr
+);
+
 typedef struct CerverReceive {
 
 	ReceiveType type;

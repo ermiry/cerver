@@ -1696,6 +1696,103 @@ void cerver_receive_handle_buffer (
 
 }
 
+void cerver_receive_handle_buffer_new (
+	void *receive_handle_ptr
+) {
+
+	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
+
+	char *end = receive_handle->buffer;
+	size_t buffer_pos = 0;
+
+	Cerver *cerver = receive_handle->cerver;
+	size_t received_size = receive_handle->received_size;
+
+	SockReceive *sock_receive = receive_handle->connection->sock_receive;
+
+	PacketHeader *header = NULL;
+	size_t packet_size = 0;
+
+	size_t remaining_buffer_size = 0;
+	size_t packet_real_size = 0;
+	size_t to_copy_size = 0;
+
+	bool spare_header = false;
+
+	u8 stop_handler = 0;
+
+	do {
+		remaining_buffer_size = received_size - buffer_pos;
+		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
+		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
+
+		// we have a complete packet header in the buffer
+		if (remaining_buffer_size >= sizeof (PacketHeader)) {
+			header = (PacketHeader *) end;
+			end += sizeof (PacketHeader);
+			buffer_pos += sizeof (PacketHeader);
+			(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+
+			packet_header_print (header);
+
+			packet_size = header->packet_size;
+
+			// TODO: make max value a variable
+			// check that we have a valid packet size
+			if ((packet_size > 0) && (packet_size < 65536)) {
+				// we can safely process the complete packet
+				Packet *packet = packet_new ();
+
+				// set packet's values
+				(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+				packet->cerver = cerver;
+				packet->client = receive_handle->client;
+				packet->connection = receive_handle->connection;
+				packet->lobby = receive_handle->lobby;
+
+				packet->packet_size = packet->header.packet_size;
+				packet->data_size = packet->packet_size - sizeof (PacketHeader);
+				packet->data = calloc (packet->data_size, sizeof (char));
+
+				// check how much of the packet's data is in the current buffer
+				if (packet->data_size <= (remaining_buffer_size - sizeof (PacketHeader))) {
+					// the full packet's data is in the current buffer
+					(void) memcpy (packet->data, end, packet->data_size);
+
+					// we can safely handle the packet
+					stop_handler = cerver_packet_select_handler (
+						receive_handle, packet
+					);
+
+					end += packet->data_size;
+					buffer_pos += packet->data_size;
+
+					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+				}
+
+				else {
+					// just some part of the packet's data is in the current buffer
+					// we should copy all the remaining buffer and wait for the next read
+					// TODO: use an aux structure
+				}
+			}
+
+			else {
+				// we must likely have a bad packet
+				// we need to keep reading packets until we find
+				// the start of the next one and we can continue
+				// TODO:
+			}
+		}
+
+		else {
+			// TODO:
+			// we need to handle just a part of the header
+		}
+	} while ((buffer_pos < received_size) && !stop_handler);
+
+}
+
 // handles a failed receive from a connection associatd with a client
 // ends the connection to prevent seg faults or signals for bad sock fd
 void cerver_receive_handle_failed (CerverReceive *cr) {
@@ -1996,14 +2093,17 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	else {
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
-			"cerver_receive_threads () - Failed to allocate packet buffer for sock fd <%d> connection!",
+			"cerver_receive_threads () - "
+			"Failed to allocate packet buffer for sock fd <%d> connection!",
 			cr->connection->socket->sock_fd
 		);
 	}
 
 	// check if the connection has already ended
 	if (cr->socket->sock_fd > 0) {
-		client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
+		client_remove_connection_by_sock_fd (
+			cr->cerver, cr->client, cr->socket->sock_fd
+		);
 	}
 
 	cerver_receive_delete (cr);
@@ -2011,7 +2111,8 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-		"cerver_receive_threads () - loop has ended - dropping sock fd <%d> connection...",
+		"cerver_receive_threads () - loop has ended - "
+		"dropping sock fd <%d> connection...",
 		sock_fd
 	);
 	#endif
