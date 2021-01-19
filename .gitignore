@@ -3,6 +3,8 @@
 bin
 objs
 
+coverage
+
 keys
 
 data
