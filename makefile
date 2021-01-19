@@ -295,16 +295,26 @@ integration: testout $(TESTOBJS)
 	$(MAKE) integration-cerver
 	$(MAKE) integration-client
 
+TESTHANDLERIN	:= ./$(TESTBUILD)/handler
+TESTHANDLEROUT	:= ./$(TESTTARGET)/handler
+TESTHANDLERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+testhandler: testout $(TESTOBJS)
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/cerver.o -o $(TESTHANDLEROUT)/cerver $(TESTHANDLERLIBS)
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/client.o -o $(TESTHANDLEROUT)/client $(TESTHANDLERLIBS)
+
 testout:
 	@mkdir -p ./$(TESTTARGET)
 	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/handler
 
 test: testout
 	$(MAKE) $(TESTOBJS)
 	$(MAKE) units
 	$(MAKE) testapp
 	$(MAKE) integration
+	$(MAKE) testhandler
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
