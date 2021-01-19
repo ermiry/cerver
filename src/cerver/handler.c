@@ -1697,6 +1697,58 @@ void cerver_receive_handle_buffer (
 
 }
 
+static u8 cerver_receive_handle_buffer_new_spare_packet (
+	ReceiveHandle *receive_handle,
+	SockReceive *sock_receive,
+	size_t received_size,
+	char **end, size_t *buffer_pos
+) {
+
+	u8 retval = 0;
+
+	// FIXME: use static value
+	// check if we have a spare header
+	// that was incompleted from the last buffer
+	if (sock_receive->header) {
+		// copy the remaining header size
+		(void) memcpy (
+			sock_receive->header_end,
+			(void *) *end,
+			sock_receive->remaining_header
+		);
+
+		packet_header_print (sock_receive->header);
+
+		sock_receive->complete_header = true;
+
+		(void) printf ("We have a COMPLETE HEADER!");
+	}
+
+	// check if we have a spare packet
+	else if (sock_receive->spare_packet) {
+		// check if the current buffer is big enough
+		if (sock_receive->missing_packet <= received_size) {
+			// copy packet's remaining data
+			// TODO: use buffer offset to copy the data
+
+			// we can safely handle the packet
+			retval = cerver_packet_select_handler (
+				receive_handle, sock_receive->spare_packet
+			);
+		}
+
+		else {
+			// copy the complete buffer
+			// TODO: use buffer offset to copy the data
+
+			// handle how much is left to complete the packet
+		}
+	}
+
+	return retval;
+
+}
+
 void cerver_receive_handle_buffer_new (
 	void *receive_handle_ptr
 ) {
@@ -1722,10 +1774,17 @@ void cerver_receive_handle_buffer_new (
 
 	u8 stop_handler = 0;
 
+	(void) printf ("WHILE has started!\n\n");
+
 	do {
 		remaining_buffer_size = received_size - buffer_pos;
 		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
 		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
+
+		// check if we have a spare packet with a complete header
+		if (sock_receive->complete_header) {
+			// TODO: do we still need this check?
+		}
 
 		// we have a complete packet header in the buffer
 		if (remaining_buffer_size >= sizeof (PacketHeader)) {
@@ -1786,11 +1845,33 @@ void cerver_receive_handle_buffer_new (
 			}
 		}
 
+		// we need to handle just a part of the header
 		else {
-			// TODO:
-			// we need to handle just a part of the header
+			(void) printf (
+				"Only %lu of %lu header bytes left in buffer\n",
+				remaining_buffer_size, sizeof (PacketHeader)
+			);
+
+			// the remaining buffer must contain a part of the header
+			// so copy it to our aux structure
+			// FIXME: use static value
+			sock_receive->header = malloc (sizeof (PacketHeader));
+			(void) memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
+
+			// pointer to the last byte of the new header
+			sock_receive->header_end = (char *) sock_receive->header;
+			sock_receive->header_end += remaining_buffer_size;
+
+			// keep track of how much header's data we are missing
+			sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
+
+			buffer_pos += remaining_buffer_size;
+
+			(void) printf ("while loop should end now!\n");
 		}
 	} while ((buffer_pos < received_size) && !stop_handler);
+
+	(void) printf ("WHILE has ended!\n\n");
 
 }
 
