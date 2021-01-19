@@ -41,7 +41,13 @@ int main (int argc, const char **argv) {
 			client->stats->received_packets->n_test_packets
 			!= n_sent_packets
 		) {
-			cerver_log_error ("Responses don't match n_sent_packets!");
+			(void) printf ("\n\n");
+			cerver_log_error (
+				"Responses %lu don't match n_sent_packets %lu!",
+				client->stats->received_packets->n_test_packets,
+				n_sent_packets
+			);
+			(void) printf ("\n\n");
 		}
 	}
 
