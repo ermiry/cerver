@@ -71,13 +71,11 @@ int main (int argc, const char **argv) {
 	// send a bunch of requests to the cerver
 	Packet *request = NULL;
 	for (unsigned int i = 0; i < REQUESTS; i++) {
-		request = packet_new ();
-		if (request) {
-			(void) packet_create_request (
-				request,
-				PACKET_TYPE_APP, APP_REQUEST_TEST
-			);
+		request = packet_create_request (
+			PACKET_TYPE_APP, APP_REQUEST_TEST
+		);
 
+		if (request) {
 			packet_set_network_values (
 				request,
 				NULL, client, connection, NULL
