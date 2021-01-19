@@ -1476,7 +1476,7 @@ static u8 cerver_receive_handle_spare_packet (
 
 			// check if we can handle the packet
 			size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+			if (sock_receive->spare_packet->header.packet_size == curr_packet_size) {
 				errors = cerver_packet_select_handler (
 					receive_handle, sock_receive->spare_packet
 				);
@@ -1527,7 +1527,8 @@ static void cerver_receive_handle_buffer_internal (
 		remaining_buffer_size = received_size - buffer_pos;
 
 		if (sock_receive->complete_header) {
-			(void) packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+			// FIXME:
+			(void) packet_header_copy (header, (PacketHeader *) sock_receive->header);
 			// header = ((PacketHeader *) sock_receive->header);
 			// packet_header_print (header);
 
@@ -1551,7 +1552,7 @@ static void cerver_receive_handle_buffer_internal (
 			end += sizeof (PacketHeader);
 			buffer_pos += sizeof (PacketHeader);
 
-			// packet_header_print (header);
+			packet_header_print (header);
 
 			spare_header = false;
 		}
@@ -1566,7 +1567,7 @@ static void cerver_receive_handle_buffer_internal (
 
 				Packet *packet = packet_new ();
 				if (packet) {
-					packet_header_copy (&packet->header, header);
+					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 					packet->packet_size = header->packet_size;
 					packet->cerver = cerver;
 					packet->lobby = lobby;
@@ -1577,7 +1578,7 @@ static void cerver_receive_handle_buffer_internal (
 					}
 
 					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
 					to_copy_size = 0;
 					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
 						sock_receive->spare_packet = packet;
