@@ -9,6 +9,8 @@
 
 #define BUFFER_SIZE			128
 
+#pragma region header
+
 static void test_packet_header_create (void) {
 
 	u32 request_type = 10;
@@ -91,6 +93,137 @@ static void test_packet_header_copy (void) {
 	test_check_unsigned_eq (destination.sock_fd, sock_fd, NULL);
 
 }
+
+#pragma endregion
+
+#pragma region handler
+
+static void test_packets_create_with_data (void) {
+
+	size_t data_size = BUFFER_SIZE;
+
+	Packet *packet = packet_create_with_data (data_size);
+
+	test_check_null_ptr (packet->cerver);
+	test_check_null_ptr (packet->client);
+	test_check_null_ptr (packet->connection);
+	test_check_null_ptr (packet->lobby);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_ptr (packet->data);
+	test_check_null_ptr (packet->data_ptr);
+	test_check_ptr (packet->data_end);
+
+	test_check_unsigned_eq (packet->header.packet_type, PACKET_TYPE_NONE, NULL);
+	test_check_unsigned_eq (packet->header.packet_size, 0, NULL);
+	test_check_unsigned_eq (packet->header.handler_id, 0, NULL);
+	test_check_unsigned_eq (packet->header.request_type, 0, NULL);
+	test_check_unsigned_eq (packet->header.sock_fd, 0, NULL);
+
+	test_check_null_ptr (packet->version);
+
+	test_check_unsigned_eq (packet->packet_size, 0, NULL);
+	test_check_null_ptr (packet->packet);
+	test_check_false (packet->packet_ref);
+
+	packet_delete (packet);
+
+}
+
+static void test_packets_add_data_good (void) {
+	
+	size_t data_size = BUFFER_SIZE;
+
+	Packet *packet = packet_create_with_data (data_size);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_ptr (packet->data);
+	test_check_null_ptr (packet->data_ptr);
+	test_check_ptr (packet->data_end);
+
+	char buffer[BUFFER_SIZE] = { 0 };
+	(void) strncpy (buffer, "1234567890", BUFFER_SIZE - 1);
+	// size_t buffer_len = strlen (buffer);
+
+	test_check_unsigned_eq (
+		packet_add_data (packet, buffer, BUFFER_SIZE), 0, NULL
+	);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_unsigned_eq (packet->remaining_data, 0, NULL);
+
+	packet_delete (packet);
+
+}
+
+static void test_packets_add_data_bad (void) {
+	
+	size_t data_size = BUFFER_SIZE;
+
+	Packet *packet = packet_create_with_data (data_size);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_ptr (packet->data);
+	test_check_null_ptr (packet->data_ptr);
+	test_check_ptr (packet->data_end);
+
+	char buffer[BUFFER_SIZE] = { 0 };
+	(void) strncpy (buffer, "1234567890", BUFFER_SIZE - 1);
+	// size_t buffer_len = strlen (buffer);
+
+	test_check_unsigned_eq (
+		packet_add_data (packet, buffer, data_size * 2), 1, NULL
+	);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_unsigned_eq (packet->remaining_data, data_size, NULL);
+
+	packet_delete (packet);
+
+}
+
+static void test_packets_add_data_multiple (void) {
+	
+	size_t data_size = BUFFER_SIZE;
+
+	Packet *packet = packet_create_with_data (data_size);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_ptr (packet->data);
+	test_check_null_ptr (packet->data_ptr);
+	test_check_ptr (packet->data_end);
+
+	char buffer[BUFFER_SIZE] = { 0 };
+	(void) strncpy (buffer, "1234567890", BUFFER_SIZE - 1);
+	size_t buffer_len = strlen (buffer);
+
+	size_t n_copies = BUFFER_SIZE / buffer_len;
+	for (size_t i = 0; i < 20; i++) {
+		if (i < n_copies) {
+			test_check_unsigned_eq (
+				packet_add_data (packet, buffer, buffer_len), 0, NULL
+			);
+		}
+
+		else {
+			test_check_unsigned_eq (
+				packet_add_data (packet, buffer, buffer_len), 1, NULL
+			);
+		}
+	}
+
+	test_check_str_len (packet->data, n_copies * buffer_len, NULL);
+
+	test_check_unsigned_eq (packet->data_size, data_size, NULL);
+	test_check_unsigned_eq (packet->remaining_data, BUFFER_SIZE % buffer_len, NULL);
+
+	packet_delete (packet);
+
+}
+
+#pragma endregion
+
+#pragma region public
 
 static void test_packets_create_ping (void) {
 
@@ -377,14 +510,24 @@ static void test_packets_generate_request (void) {
 
 }
 
+#pragma endregion
+
 int main (int argc, char **argv) {
 
 	(void) printf ("Testing PACKETS...\n");
 
+	// header
 	test_packet_header_create ();
 	test_packet_header_create_from ();
 	test_packet_header_copy ();
 
+	// handler
+	test_packets_create_with_data ();
+	test_packets_add_data_good ();
+	test_packets_add_data_bad ();
+	test_packets_add_data_multiple ();
+
+	// public
 	test_packets_create_ping ();
 	test_packets_append_data ();
 	test_packets_create_no_data ();
