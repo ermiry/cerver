@@ -1128,17 +1128,17 @@ static void *test_thread_add (void *args) {
 
 }
 
-static void *test_thread_remove (void *args) {
+// static void *test_thread_remove (void *args) {
 
-	DoubleList *dlist = (DoubleList *) args;
+// 	DoubleList *dlist = (DoubleList *) args;
 
-	for (unsigned int i = 0; i < 10; i++) {
-		integer_delete (dlist_remove_element (dlist, dlist->end));
-	}
+// 	for (unsigned int i = 0; i < 10; i++) {
+// 		integer_delete (dlist_remove_element (dlist, dlist->end));
+// 	}
 
-	return NULL;
+// 	return NULL;
 
-}
+// }
 
 static int dlist_test_insert_threads (void) {
 
@@ -1173,44 +1173,44 @@ static int dlist_test_insert_threads (void) {
 
 }
 
-static int dlist_test_remove_threads (void) {
+// static int dlist_test_remove_threads (void) {
 
-	cerver_log_raw ("dlist_test_remove_threads ()\n");
+// 	cerver_log_raw ("dlist_test_remove_threads ()\n");
 
-	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+// 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-	Integer *integer = NULL;
-	for (unsigned int i = 0; i < 50; i++) {
-		integer = integer_new (i);
-		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
-	}
+// 	Integer *integer = NULL;
+// 	for (unsigned int i = 0; i < 50; i++) {
+// 		integer = integer_new (i);
+// 		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
+// 	}
 
-	// create threads
-	const unsigned int N_THREADS = 4;
-	pthread_t threads[N_THREADS];
+// 	// create threads
+// 	const unsigned int N_THREADS = 4;
+// 	pthread_t threads[N_THREADS];
 
- 	(void) pthread_create (&threads[0], NULL, test_thread_remove, dlist);
- 	(void) pthread_create (&threads[1], NULL, test_thread_remove, dlist);
- 	(void) pthread_create (&threads[2], NULL, test_thread_remove, dlist);
- 	(void) pthread_create (&threads[3], NULL, test_thread_remove, dlist);
- 	(void) pthread_join (threads[0], NULL);
- 	(void) pthread_join (threads[1], NULL);
- 	(void) pthread_join (threads[2], NULL);
- 	(void) pthread_join (threads[3], NULL);
+//  	(void) pthread_create (&threads[0], NULL, test_thread_remove, dlist);
+//  	(void) pthread_create (&threads[1], NULL, test_thread_remove, dlist);
+//  	(void) pthread_create (&threads[2], NULL, test_thread_remove, dlist);
+//  	(void) pthread_create (&threads[3], NULL, test_thread_remove, dlist);
+//  	(void) pthread_join (threads[0], NULL);
+//  	(void) pthread_join (threads[1], NULL);
+//  	(void) pthread_join (threads[2], NULL);
+//  	(void) pthread_join (threads[3], NULL);
 
-	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
+// 	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
 
-	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
-		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
-	}
+// 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+// 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
+// 	}
 
-	dlist_delete (dlist);
+// 	dlist_delete (dlist);
 
-	cerver_log_raw ("\n\n----------------------------------------\n");
+// 	cerver_log_raw ("\n\n----------------------------------------\n");
 
-	return 0;
+// 	return 0;
 
-}
+// }
 
 #pragma endregion
 
@@ -1664,19 +1664,9 @@ static int dlist_test_merge_many (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+int collections_tests_dlist (void) {
 
-	srand ((unsigned) time (NULL));
-
-	cerver_log_init ();
-
-	if (argc > 1) {
-		for (unsigned int i = 1; i < argc; i++) {
-			if (!strcmp (argv[i], "--quiet")) {
-				cerver_log_set_quiet (true);
-			}
-		}
-	}
+	(void) printf ("Testing COLLECTIONS dlist...\n");
 
 	int res = 0;
 
@@ -1779,7 +1769,7 @@ int main (int argc, char **argv) {
 
 	res |= dlist_test_merge_many ();
 
-	cerver_log_end ();
+	(void) printf ("Done!\n");
 
 	return res;
 
