@@ -1,0 +1,79 @@
+name: Cerver Tests
+
+on:
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+  test:
+    name: Cerver tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Build Docker Image
+        run: docker build -t ermiry/cerver:test -f Dockerfile.test .
+
+      - name: Compile Sources
+        run: make TYPE=test COVERAGE=1
+
+      - name: Compile Tests
+        run: make TYPE=test COVERAGE=1 test
+
+      - name: Unit Tests
+        run: bash test/run.sh
+
+      - name: Ping Integration Test
+        run: |
+          docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/ping
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Packets Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/packets
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/packets
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Auth Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/auth
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Sessions Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/sessions
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/sessions
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Threads Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/threads
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/threads
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Coverage
+        run: make coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage/
+          flags: unittests
+          name: build
+          fail_ci_if_error: true
+          # verbose: true
