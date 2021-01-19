@@ -31,7 +31,7 @@ static void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST: {
@@ -95,13 +95,11 @@ static void *connect_with_session (void *args) {
 	// send a bunch of requests to the cerver
 	Packet *request = NULL;
 	for (unsigned int i = 0; i < SECOND_REQUESTS; i++) {
-		request = packet_new ();
-		if (request) {
-			(void) packet_create_request (
-				request,
-				PACKET_TYPE_APP, APP_REQUEST_TEST
-			);
+		request = packet_create_request (
+			PACKET_TYPE_APP, APP_REQUEST_TEST
+		);
 
+		if (request) {
 			packet_set_network_values (
 				request,
 				NULL, client, connection, NULL
@@ -229,13 +227,11 @@ int main (int argc, const char **argv) {
 	// send a bunch of requests to the cerver
 	Packet *request = NULL;
 	for (unsigned int i = 0; i < MAIN_REQUESTS; i++) {
-		request = packet_new ();
-		if (request) {
-			(void) packet_create_request (
-				request,
-				PACKET_TYPE_APP, APP_REQUEST_TEST
-			);
+		request = packet_create_request (
+			PACKET_TYPE_APP, APP_REQUEST_TEST
+		);
 
+		if (request) {
 			packet_set_network_values (
 				request,
 				NULL, client, connection, NULL

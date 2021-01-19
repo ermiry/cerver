@@ -17,7 +17,7 @@ static void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:
@@ -38,13 +38,11 @@ static void send_request (
 	Client *client, Connection *connection
 ) {
 
-	Packet *request = packet_new ();
-	if (request) {
-		(void) packet_create_request (
-			request,
-			PACKET_TYPE_APP, APP_REQUEST_TEST
-		);
+	Packet *request = packet_create_request (
+		PACKET_TYPE_APP, APP_REQUEST_TEST
+	);
 
+	if (request) {
 		test_check_unsigned_eq (
 			client_request_to_cerver (
 				client, connection, request
