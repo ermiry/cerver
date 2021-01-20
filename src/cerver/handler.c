@@ -2192,49 +2192,38 @@ static inline void cerver_receive_success_receive_handle (
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
-	// FIXME:
-	// ReceiveHandle *receive_handle = receive_handle_new ();
 	ReceiveHandle *receive_handle = cr->connection->receive_handle;
-	if (receive_handle) {
-		receive_handle->type = cr->type;
+	receive_handle->type = cr->type;
 
-		receive_handle->cerver = cr->cerver;
+	receive_handle->cerver = cr->cerver;
 
-		receive_handle->socket = cr->socket;
-		receive_handle->connection = cr->connection;
-		receive_handle->client = cr->client;
-		receive_handle->admin = cr->admin;
+	receive_handle->socket = cr->socket;
+	receive_handle->connection = cr->connection;
+	receive_handle->client = cr->client;
+	receive_handle->admin = cr->admin;
 
-		receive_handle->lobby = cr->lobby;
+	receive_handle->lobby = cr->lobby;
 
-		receive_handle->buffer = packet_buffer;
-		receive_handle->buffer_size = packet_buffer_size;
-		receive_handle->received_size = received;
+	receive_handle->buffer = packet_buffer;
+	receive_handle->buffer_size = packet_buffer_size;
+	receive_handle->received_size = received;
 
-		if (receive_handle->state == RECEIVE_HANDLE_STATE_NONE) {
-			receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
-		}
-
-		switch (receive_handle->cerver->handler_type) {
-			case CERVER_HANDLER_TYPE_NONE: break;
-
-			case CERVER_HANDLER_TYPE_POLL: {
-				cr->cerver->handle_received_buffer (receive_handle);
-			} break;
-
-			case CERVER_HANDLER_TYPE_THREADS: {
-				cr->cerver->handle_received_buffer (receive_handle);
-			} break;
-
-			default: break;
-		}
-
-		// FIXME:
-		// receive_handle_delete (receive_handle);
+	if (receive_handle->state == RECEIVE_HANDLE_STATE_NONE) {
+		receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 	}
 
-	else {
-		printf ("ERROR: NO ReceiveHandle in connection\n\n");
+	switch (receive_handle->cerver->handler_type) {
+		case CERVER_HANDLER_TYPE_NONE: break;
+
+		case CERVER_HANDLER_TYPE_POLL: {
+			cr->cerver->handle_received_buffer (receive_handle);
+		} break;
+
+		case CERVER_HANDLER_TYPE_THREADS: {
+			cr->cerver->handle_received_buffer (receive_handle);
+		} break;
+
+		default: break;
 	}
 
 }
