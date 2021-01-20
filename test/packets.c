@@ -120,8 +120,6 @@ static void test_packets_create_with_data (void) {
 	test_check_unsigned_eq (packet->header.request_type, 0, NULL);
 	test_check_unsigned_eq (packet->header.sock_fd, 0, NULL);
 
-	test_check_null_ptr (packet->version);
-
 	test_check_unsigned_eq (packet->packet_size, 0, NULL);
 	test_check_null_ptr (packet->packet);
 	test_check_false (packet->packet_ref);
@@ -246,8 +244,6 @@ static void test_packets_create_ping (void) {
 	test_check_unsigned_eq (ping->header.handler_id, 0, NULL);
 	test_check_unsigned_eq (ping->header.request_type, 0, NULL);
 	test_check_unsigned_eq (ping->header.sock_fd, 0, NULL);
-
-	test_check_null_ptr (ping->version);
 
 	// check real packet
 	test_check_unsigned_eq (ping->packet_size, sizeof (PacketHeader), NULL);
