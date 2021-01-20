@@ -27,7 +27,7 @@ const char *receive_handle_state_to_string (
 		#undef XX
 	}
 
-	return cerver_type_to_string (RECEIVE_HANDLE_STATE_NONE);
+	return receive_handle_state_to_string (RECEIVE_HANDLE_STATE_NONE);
 
 }
 
