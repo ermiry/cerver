@@ -2508,6 +2508,34 @@ u8 client_file_send (
 
 #pragma region handler
 
+const char *client_handler_error_to_string (
+	const ClientHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CLIENT_HANDLER_ERROR_##name: return #string;
+		CLIENT_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return client_handler_error_to_string (CLIENT_HANDLER_ERROR_NONE);
+
+}
+
+const char *client_handler_error_description (
+	const ClientHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CLIENT_HANDLER_ERROR_##name: return #description;
+		CLIENT_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return client_handler_error_description (CLIENT_HANDLER_ERROR_NONE);
+
+}
+
 static void client_cerver_packet_handle_info (Packet *packet) {
 
 	if (packet->data && (packet->data_size > 0)) {
