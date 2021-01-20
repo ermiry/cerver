@@ -2449,6 +2449,8 @@ u8 client_file_get (
 				packet_set_network_values (packet, NULL, client, connection, NULL);
 
 				retval = packet_send (packet, 0, NULL, false);
+
+				packet_delete (packet);
 			}
 		}
 	}
@@ -3535,10 +3537,10 @@ static void client_receive_handle_buffer_new_actual (
 
 				// set packet's values
 				(void) memcpy (&packet->header, header, sizeof (PacketHeader));
-				packet->cerver = receive_handle->cerver;
+				// packet->cerver = receive_handle->cerver;
 				packet->client = receive_handle->client;
 				packet->connection = receive_handle->connection;
-				packet->lobby = receive_handle->lobby;
+				// packet->lobby = receive_handle->lobby;
 
 				packet->packet_size = packet->header.packet_size;
 
@@ -3549,11 +3551,8 @@ static void client_receive_handle_buffer_new_actual (
 					);
 					#endif
 
-					// FIXME:
 					// we can safely handle the packet
-					// stop_handler = cerver_packet_select_handler (
-					// 	receive_handle, packet
-					// );
+					stop_handler = client_packet_handler (packet);
 
 					#ifdef CLIENT_RECEIVE_DEBUG
 					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
@@ -3572,11 +3571,8 @@ static void client_receive_handle_buffer_new_actual (
 					// so we can safely copy the complete packet
 					(void) memcpy (packet->data, end, packet->data_size);
 
-					// FIXME:
 					// we can safely handle the packet
-					// stop_handler = cerver_packet_select_handler (
-					// 	receive_handle, packet
-					// );
+					stop_handler = client_packet_handler (packet);
 
 					// update buffer positions & values
 					end += packet->data_size;
@@ -3627,7 +3623,9 @@ static void client_receive_handle_buffer_new_actual (
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
+					#ifdef CLIENT_RECEIVE_DEBUG
 					(void) printf ("while loop should end now!\n");
+					#endif
 				}
 			}
 
@@ -3665,10 +3663,8 @@ static void client_receive_handle_buffer_new_actual (
 }
 
 static void client_receive_handle_buffer_new (
-	Client *client, Connection *connection
+	ReceiveHandle *receive_handle
 ) {
-
-	ReceiveHandle *receive_handle = &connection->receive_handle;
 
 	char *end = receive_handle->buffer;
 	size_t buffer_pos = 0;
@@ -3758,11 +3754,10 @@ static void client_receive_handle_buffer_new (
 				(void) printf ("Spare packet is COMPLETED!\n");
 				#endif
 
-				// FIXME:
 				// we can safely handle the packet
-				// stop_handler = cerver_packet_select_handler (
-				// 	receive_handle, receive_handle->spare_packet
-				// );
+				stop_handler = client_packet_handler (
+					receive_handle->spare_packet
+				);
 
 				// update buffer positions
 				end += to_copy_data_size;
@@ -3917,6 +3912,7 @@ unsigned int client_receive_internal (
 			connection->stats->n_receives_done += 1;
 			connection->stats->total_bytes_received += rc;
 
+			// FIXME:
 			// handle the recived packet buffer
 			// split them in packets of the correct size
 			// client_receive_handle_buffer (
@@ -3931,7 +3927,7 @@ unsigned int client_receive_internal (
 			connection->receive_handle.received_size = rc;
 
 			client_receive_handle_buffer_new (
-				client, connection
+				&connection->receive_handle
 			);
 
 			retval = 0;
