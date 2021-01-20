@@ -833,7 +833,8 @@ static ConnectionCustomReceiveData *connection_custom_receive_data_new (
 	void *args
 ) {
 
-	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
+	ConnectionCustomReceiveData *custom_data =
+		(ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
 	if (custom_data) {
 		custom_data->client = client;
 		custom_data->connection = connection;
@@ -855,52 +856,74 @@ void *connection_update (void *client_connection_ptr) {
 
 	if (client_connection_ptr) {
 		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
-		// thread_set_name (c_string_create ("connection-%s", cc->connection->name->str));
 
-		String *client_name = str_new (cc->client->name->str);
-		String *connection_name = str_new (cc->connection->name->str);
+		char client_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char connection_name[THREAD_NAME_BUFFER_LEN] = { 0 };
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has started",
-			client_name->str, connection_name->str
+			cc->client->name->str, cc->connection->name->str
 		);
 		#endif
 
-		ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (
-			cc->client, cc->connection,
-			cc->connection->custom_receive_args
-		);
+		(void) strncpy (client_name, cc->client->name->str, THREAD_NAME_BUFFER_LEN - 1);
 
-		if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
+		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name->str)) {
+			(void) strncpy (
+				connection_name,
+				cc->connection->name->str,
+				THREAD_NAME_BUFFER_LEN - 1
+			);
 
-		size_t buffer_size = cc->connection->receive_packet_buffer_size;
+			(void) thread_set_name (connection_name);
+		}
+
+		cc->connection->receive_handle.client = cc->client;
+		cc->connection->receive_handle.connection = cc->connection;
+
+		cc->connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
+
+		const size_t buffer_size = cc->connection->receive_packet_buffer_size;
 		char *buffer = (char *) calloc (buffer_size, sizeof (char));
 		if (buffer) {
-			(void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
+			(void) sock_set_timeout (
+				cc->connection->socket->sock_fd,
+				cc->connection->update_timeout
+			);
 
 			cc->connection->updating = true;
 
-			while (cc->client->running && cc->connection->active) {
-				// pthread_mutex_lock (cc->client->lock);
+			// check if we have a custom receive method
+			if (cc->connection->custom_receive) {
+				ConnectionCustomReceiveData custom_data = {
+					.client = cc->client,
+					.connection = cc->connection,
+					.args = cc->connection->custom_receive_args
+				};
 
-				if (cc->connection->custom_receive) {
-					// if a custom receive method is set, use that one directly
-					if (cc->connection->custom_receive (custom_data, buffer, buffer_size)) {
-						// break;      // an error has ocurred
-					}
-				}
+				while (
+					cc->client->running
+					&& cc->connection->active
+					&& !cc->connection->custom_receive (
+						&custom_data,
+						buffer, buffer_size
+					)
+				);
+			}
 
-				else {
-					// use the default receive method that expects cerver type packages
-					(void) client_receive_internal (
+			// use the default receive method
+			// that handles cerver type packages
+			else {
+				while (
+					cc->client->running
+					&& cc->connection->active
+					&& !client_receive_internal (
 						cc->client, cc->connection,
 						buffer, buffer_size
-					);
-				}
-
-				// pthread_mutex_unlock (cc->client->lock);
+					)
+				);
 			}
 
 			free (buffer);
@@ -909,8 +932,9 @@ void *connection_update (void *client_connection_ptr) {
 		else {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
-				"connection_update () - Failed to allocate buffer for client %s - connection %s!",
-				client_name->str, connection_name->str
+				"connection_update () - "
+				"Failed to allocate buffer for client %s - connection %s!",
+				client_name, connection_name
 			);
 		}
 
@@ -920,19 +944,15 @@ void *connection_update (void *client_connection_ptr) {
 		(void) pthread_cond_signal (cc->connection->cond);
 		(void) pthread_mutex_unlock (cc->connection->mutex);
 
-		connection_custom_receive_data_delete (custom_data);
 		client_connection_aux_delete (cc);
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has ended",
-			client_name->str, connection_name->str
+			client_name, connection_name
 		);
 		#endif
-
-		str_delete (client_name);
-		str_delete (connection_name);
 	}
 
 	return NULL;
