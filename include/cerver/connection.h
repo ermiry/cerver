@@ -93,7 +93,9 @@ struct _Connection {
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
+	
 	struct _SockReceive *sock_receive;      // used for inter-cerver communications
+	struct _ReceiveHandle *receive_handle;
 
 	pthread_t update_thread_id;
 	u32 update_timeout;

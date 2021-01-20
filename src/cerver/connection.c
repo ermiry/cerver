@@ -122,7 +122,9 @@ Connection *connection_new (void) {
 		connection->bad_packets = 0;
 
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
+
 		connection->sock_receive = NULL;
+		connection->receive_handle = NULL;
 
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
@@ -172,6 +174,7 @@ void connection_delete (void *ptr) {
 		cerver_report_delete (connection->cerver_report);
 
 		sock_receive_delete (connection->sock_receive);
+		receive_handle_delete (connection->receive_handle);
 
 		if (connection->received_data && connection->received_data_delete)
 			connection->received_data_delete (connection->received_data);
@@ -198,10 +201,15 @@ Connection *connection_create_empty (void) {
 
 	Connection *connection = connection_new ();
 	if (connection) {
+		printf ("connection_create_empty ()\n\n");
+
 		connection->name = str_new ("no-name");
 
 		connection->socket = (Socket *) socket_create_empty ();
+		
 		connection->sock_receive = sock_receive_new ();
+		connection->receive_handle = receive_handle_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
