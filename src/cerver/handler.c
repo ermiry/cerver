@@ -2317,7 +2317,7 @@ static inline u8 cerver_receive_threads_actual (
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
-				#ifdef HANDLER_DEBUG
+				#ifdef SOCKET_DEBUG
 				cerver_log_debug (
 					"cerver_receive_threads () - sock fd: %d timed out",
 					cr->socket->sock_fd

@@ -3831,7 +3831,7 @@ unsigned int client_receive_internal (
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
-				#ifdef CONNECTION_DEBUG
+				#ifdef SOCKET_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_receive_internal () - connection %s sock fd: %d timed out",
