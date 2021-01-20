@@ -1,8 +1,25 @@
 #include <stdlib.h>
+#include <string.h>
 
 #include "cerver/handler.h"
 
-const char *receive_handle_state_to_string (ReceiveHandleState state) {
+const char *receive_type_to_string (
+	const ReceiveType type
+) {
+
+	switch (type) {
+		#define XX(num, name, string) case RECEIVE_TYPE_##name: return #string;
+		RECEIVE_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return receive_type_to_string (RECEIVE_TYPE_NONE);
+
+}
+
+const char *receive_handle_state_to_string (
+	const ReceiveHandleState state
+) {
 
 	switch (state) {
 		#define XX(num, name, string) case RECEIVE_HANDLE_STATE_##name: return #string;

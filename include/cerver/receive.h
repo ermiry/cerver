@@ -14,15 +14,23 @@ struct _Admin;
 
 struct _Lobby;
 
+#define RECEIVE_TYPE_MAP(XX)			    \
+	XX(0,	NONE,       None)				\
+	XX(1,	NORMAL,     Normal)				\
+	XX(2,	ON_HOLD,    On-Hold)		    \
+	XX(3,	ADMIN,      Admin)
+
 typedef enum ReceiveType {
 
-    RECEIVE_TYPE_NONE            = 0,
-
-    RECEIVE_TYPE_NORMAL          = 1,
-    RECEIVE_TYPE_ON_HOLD         = 2,
-    RECEIVE_TYPE_ADMIN           = 3,
+    #define XX(num, name, string) RECEIVE_TYPE_##name = num,
+	RECEIVE_TYPE_MAP (XX)
+	#undef XX
 
 } ReceiveType;
+
+CERVER_PUBLIC const char *receive_type_to_string (
+    const ReceiveType type
+);
 
 #define RECEIVE_HANDLE_STATE_MAP(XX)			\
 	XX(0,	NONE, 			None)				\
@@ -41,7 +49,7 @@ typedef enum ReceiveHandleState {
 } ReceiveHandleState;
 
 CERVER_PUBLIC const char *receive_handle_state_to_string (
-	ReceiveHandleState state
+	const ReceiveHandleState state
 );
 
 struct _ReceiveHandle {
