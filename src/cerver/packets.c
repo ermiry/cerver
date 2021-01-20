@@ -316,16 +316,18 @@ Packet *packet_create_with_data (
 
 	Packet *packet = packet_new ();
 	if (packet) {
-		packet->data = malloc (data_size);
-		if (packet->data) {
-			packet->data_size = data_size;
-			packet->data_end = packet->data;
-			packet->remaining_data = data_size;
-		}
+		if (data_size > 0) {
+			packet->data = malloc (data_size);
+			if (packet->data) {
+				packet->data_size = data_size;
+				packet->data_end = packet->data;
+				packet->remaining_data = data_size;
+			}
 
-		else {
-			packet_delete (packet);
-			packet = NULL;
+			else {
+				packet_delete (packet);
+				packet = NULL;
+			}
 		}
 	}
 
