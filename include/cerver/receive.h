@@ -14,22 +14,22 @@ struct _Admin;
 
 struct _Lobby;
 
-#define RECEIVE_TYPE_MAP(XX)			    \
-	XX(0,	NONE,       None)				\
-	XX(1,	NORMAL,     Normal)				\
-	XX(2,	ON_HOLD,    On-Hold)		    \
-	XX(3,	ADMIN,      Admin)
+#define RECEIVE_TYPE_MAP(XX)			\
+	XX(0,	NONE,		None)			\
+	XX(1,	NORMAL,		Normal)			\
+	XX(2,	ON_HOLD,	On-Hold)		\
+	XX(3,	ADMIN,		Admin)
 
 typedef enum ReceiveType {
 
-    #define XX(num, name, string) RECEIVE_TYPE_##name = num,
+	#define XX(num, name, string) RECEIVE_TYPE_##name = num,
 	RECEIVE_TYPE_MAP (XX)
 	#undef XX
 
 } ReceiveType;
 
 CERVER_PUBLIC const char *receive_type_to_string (
-    const ReceiveType type
+	const ReceiveType type
 );
 
 #define RECEIVE_HANDLE_STATE_MAP(XX)			\
@@ -73,7 +73,7 @@ struct _ReceiveHandle {
 
 	// used to handle split headers between buffers
 	// this can happen when the header is at the buffer's end
-	PacketHeader header;	
+	PacketHeader header;
 	char *header_end;
 	unsigned int remaining_header;
 
