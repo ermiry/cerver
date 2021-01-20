@@ -262,8 +262,6 @@ struct _ReceiveHandle {
 	char *header_end;
 	unsigned int remaining_header;
 
-	char header_buffer[sizeof (PacketHeader)];
-
 	struct _Packet *spare_packet;
 
 };

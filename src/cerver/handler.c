@@ -1767,12 +1767,10 @@ static void cerver_receive_handle_buffer_new_actual (
 
 					// reset previous header
 					(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
-					(void) memset (receive_handle->header_buffer, 0, sizeof (PacketHeader));
 
 					// the remaining buffer must contain a part of the header
 					// so copy it to our aux structure
-					// receive_handle->header_end = (char *) &receive_handle->header;
-					receive_handle->header_end = receive_handle->header_buffer;
+					receive_handle->header_end = (char *) &receive_handle->header;
 					(void) memcpy (
 						receive_handle->header_end, (void *) end, remaining_buffer_size
 					);
@@ -1982,8 +1980,6 @@ void cerver_receive_handle_buffer_new (
 				"Copied %u missing header bytes\n",
 				receive_handle->remaining_header
 			);
-
-			(void) memcpy (&receive_handle->header, receive_handle->header_buffer, sizeof (PacketHeader));
 
 			// receive_handle->header_end = (char *) &receive_handle->header;
 			for (size_t i = 0; i < receive_handle->remaining_header; i++)
