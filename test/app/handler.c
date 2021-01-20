@@ -67,7 +67,9 @@ static void app_handler_message (const Packet *packet) {
 	end += sizeof (PacketHeader);
 
 	// print the client's message
+	#ifdef TEST_APP_DEBUG
 	(void) printf ("|%s|\n", end);
+	#endif
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 

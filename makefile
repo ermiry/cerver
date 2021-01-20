@@ -4,6 +4,8 @@ NATIVE		:= 0
 
 COVERAGE	:= 0
 
+DEBUG		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -252,6 +254,10 @@ TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
 
 ifeq ($(TYPE), development)
 	TESTAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	TESTAPPFGS += -D TEST_APP_DEBUG
 endif
 
 # check which compiler we are using
