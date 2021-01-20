@@ -191,11 +191,12 @@ u8 packet_header_copy (PacketHeader *dest, const PacketHeader *source) {
 void packet_header_print (const PacketHeader *header) {
 
 	if (header) {
-		(void) printf ("Packet type: %u\n", header->packet_type);
-		(void) printf ("Packet size: %lu\n", header->packet_size);
-		(void) printf ("Handler id: %u\n", header->handler_id);
-		(void) printf ("Request type: %u\n", header->request_type);
-		(void) printf ("Sock fd: %u\n", header->sock_fd);
+		(void) printf ("Header size: %ld\n", sizeof (PacketHeader));
+		(void) printf ("Packet type [%lu]: %u\n", sizeof (PacketType), header->packet_type);
+		(void) printf ("Packet size: [%lu] %lu\n", sizeof (size_t), header->packet_size);
+		(void) printf ("Handler id [%lu]: %u\n", sizeof (u8), header->handler_id);
+		(void) printf ("Request type [%lu]: %u\n", sizeof (u32), header->request_type);
+		(void) printf ("Sock fd [%lu]: %u\n", sizeof (u16), header->sock_fd);
 	}
 
 }
