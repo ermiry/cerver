@@ -25,14 +25,18 @@ MATH		:= -lm
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
+BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG								\
 				-D CONNECTION_DEBUG							\
-				-D HANDLER_DEBUG 							\
-				-D PACKETS_DEBUG 							\
+				-D HANDLER_DEBUG							\
+				-D PACKETS_DEBUG							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG
+
+EXTRA_DEBUG	:= -D RECEIVE_DEBUG
+
+DEVELOPMENT := $(BASE_DEBUG) $(EXTRA_DEBUG)
 
 CC          := gcc
 
