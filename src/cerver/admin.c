@@ -1906,7 +1906,7 @@ static AdminCerverHandlerError admin_packet_handler_check_version (
 	if (packet->cerver->check_packets) {
 		// we expect the packet version in the packet's data
 		if (packet->data) {
-			packet->version = (PacketVersion *) packet->data_ptr;
+			(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 			packet->data_ptr += sizeof (PacketVersion);
 
 			// TODO: return errors to client

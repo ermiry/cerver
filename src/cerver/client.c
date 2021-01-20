@@ -2956,7 +2956,7 @@ static void client_packet_handler (void *packet_ptr) {
 		if (packet->client->check_packets) {
 			// we expect the packet version in the packet's data
 			if (packet->data) {
-				packet->version = (PacketVersion *) packet->data_ptr;
+				(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 				packet->data_ptr += sizeof (PacketVersion);
 				good = packet_check (packet);
 			}
