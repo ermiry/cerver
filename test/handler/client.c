@@ -49,7 +49,9 @@ static void app_handler (void *packet_ptr) {
 
 }
 
-static void single_app_message (const char *msg) {
+static u8 single_app_message (const char *msg) {
+
+	u8 retval = 1;
 
 	Packet *message = packet_create (
 		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
@@ -67,9 +69,11 @@ static void single_app_message (const char *msg) {
 	);
 
 	size_t sent = 0;
-	(void) packet_send (message, 0, &sent, false);
+	retval = packet_send (message, 0, &sent, false);
 
 	packet_delete (message);
+
+	return retval;
 
 }
 
@@ -95,26 +99,39 @@ int main (int argc, const char **argv) {
 		unsigned int n_sent_packets = 0;
 
 		/*** send **/
-		for (size_t i = 0; i < 10000; i++) {
-			single_app_message (MESSAGE);
+		register size_t i = 0;
+		for (; i < 10000; i++) {
+			if (!single_app_message (MESSAGE)) {
+				n_sent_packets += 1;
+			}
 		}
 
 		// wait for remaining packets
 		(void) sleep (4);
 
 		// check that we received matching responses
-		// if (
-		// 	client->stats->received_packets->n_test_packets
-		// 	!= n_sent_packets
-		// ) {
-		// 	(void) printf ("\n\n");
-		// 	cerver_log_error (
-		// 		"Responses %lu don't match n_sent_packets %lu!",
-		// 		client->stats->received_packets->n_test_packets,
-		// 		n_sent_packets
-		// 	);
-		// 	(void) printf ("\n\n");
-		// }
+		if (
+			client->stats->received_packets->n_app_packets
+			!= n_sent_packets
+		) {
+			(void) printf ("\n\n");
+			cerver_log_error (
+				"Responses %lu don't match n_sent_packets %lu!",
+				client->stats->received_packets->n_app_packets,
+				n_sent_packets
+			);
+			(void) printf ("\n\n");
+		}
+
+		else {
+			(void) printf ("\n\n");
+			cerver_log_success (
+				"Got %lu / %lu responses!",
+				client->stats->received_packets->n_app_packets,
+				n_sent_packets
+			);
+			(void) printf ("\n\n");
+		}
 	}
 
 	else {
@@ -124,9 +141,10 @@ int main (int argc, const char **argv) {
 	client_connection_end (client, connection);
 	client_teardown (client);
 
-	cerver_log_end ();
+	cerver_log_line_break ();
+	cerver_log_success ("Done!\n\n");
 
-	(void) printf ("Done!\n\n");
+	cerver_log_end ();
 
 	return 0;
 
