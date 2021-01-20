@@ -3009,118 +3009,164 @@ static void client_custom_packet_handler (Packet *packet) {
 }
 
 // the client handles a packet based on its type
-static void client_packet_handler (void *packet_ptr) {
+static ClientHandlerError client_packet_handler_actual (
+	Packet *packet
+) {
 
-	if (packet_ptr) {
-		printf ("client_packet_handler\n");
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;	
 
-		Packet *packet = (Packet *) packet_ptr;
-		packet->client->stats->n_packets_received += 1;
+	switch (packet->header.packet_type) {
+		case PACKET_TYPE_NONE: break;
 
-		bool good = true;
-		if (packet->client->check_packets) {
-			// we expect the packet version in the packet's data
-			if (packet->data) {
-				(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
-				packet->data_ptr += sizeof (PacketVersion);
-				good = packet_check (packet);
-			}
+		// handles cerver type packets
+		case PACKET_TYPE_CERVER:
+			packet->client->stats->received_packets->n_cerver_packets += 1;
+			packet->connection->stats->received_packets->n_cerver_packets += 1;
+			error = client_cerver_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-			else {
-				cerver_log_error ("client_packet_handler () - No packet version to check!");
-				good = false;
-			}
-		}
+		// handles a client type packet
+		case PACKET_TYPE_CLIENT:
+			error = client_client_packet_handler (packet);
+			break;
 
-		if (good) {
-			printf ("packet->header.packet_type: %u\n", packet->header.packet_type);
-			switch (packet->header.packet_type) {
-				case PACKET_TYPE_NONE: break;
+		// handles an error from the server
+		case PACKET_TYPE_ERROR:
+			packet->client->stats->received_packets->n_error_packets += 1;
+			packet->connection->stats->received_packets->n_error_packets += 1;
+			client_error_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles cerver type packets
-				case PACKET_TYPE_CERVER:
-					packet->client->stats->received_packets->n_cerver_packets += 1;
-					packet->connection->stats->received_packets->n_cerver_packets += 1;
-					client_cerver_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// handles a request made from the server
+		case PACKET_TYPE_REQUEST:
+			packet->client->stats->received_packets->n_request_packets += 1;
+			packet->connection->stats->received_packets->n_request_packets += 1;
+			client_request_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles a client type packet
-				case PACKET_TYPE_CLIENT:
-					client_client_packet_handler (packet);
-					break;
+		// handles authentication packets
+		case PACKET_TYPE_AUTH:
+			packet->client->stats->received_packets->n_auth_packets += 1;
+			packet->connection->stats->received_packets->n_auth_packets += 1;
+			client_auth_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles an error from the server
-				case PACKET_TYPE_ERROR:
-					packet->client->stats->received_packets->n_error_packets += 1;
-					packet->connection->stats->received_packets->n_error_packets += 1;
-					client_error_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// handles a game packet sent from the server
+		case PACKET_TYPE_GAME:
+			packet->client->stats->received_packets->n_game_packets += 1;
+			packet->connection->stats->received_packets->n_game_packets += 1;
+			packet_delete (packet);
+			break;
 
-				// handles a request made from the server
-				case PACKET_TYPE_REQUEST:
-					packet->client->stats->received_packets->n_request_packets += 1;
-					packet->connection->stats->received_packets->n_request_packets += 1;
-					client_request_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// user set handler to handler app specific packets
+		case PACKET_TYPE_APP:
+			packet->client->stats->received_packets->n_app_packets += 1;
+			packet->connection->stats->received_packets->n_app_packets += 1;
+			client_app_packet_handler (packet);
+			break;
 
-				// handles authentication packets
-				case PACKET_TYPE_AUTH:
-					packet->client->stats->received_packets->n_auth_packets += 1;
-					packet->connection->stats->received_packets->n_auth_packets += 1;
-					client_auth_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// user set handler to handle app specific errors
+		case PACKET_TYPE_APP_ERROR:
+			packet->client->stats->received_packets->n_app_error_packets += 1;
+			packet->connection->stats->received_packets->n_app_error_packets += 1;
+			client_app_error_packet_handler (packet);
+			break;
 
-				// handles a game packet sent from the server
-				case PACKET_TYPE_GAME:
-					packet->client->stats->received_packets->n_game_packets += 1;
-					packet->connection->stats->received_packets->n_game_packets += 1;
-					packet_delete (packet);
-					break;
+		// custom packet hanlder
+		case PACKET_TYPE_CUSTOM:
+			packet->client->stats->received_packets->n_custom_packets += 1;
+			packet->connection->stats->received_packets->n_custom_packets += 1;
+			client_custom_packet_handler (packet);
+			break;
 
-				// user set handler to handler app specific packets
-				case PACKET_TYPE_APP:
-					packet->client->stats->received_packets->n_app_packets += 1;
-					packet->connection->stats->received_packets->n_app_packets += 1;
-					client_app_packet_handler (packet);
-					break;
+		// handles a test packet form the cerver
+		case PACKET_TYPE_TEST:
+			packet->client->stats->received_packets->n_test_packets += 1;
+			packet->connection->stats->received_packets->n_test_packets += 1;
+			cerver_log (LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver");
+			packet_delete (packet);
+			break;
 
-				// user set handler to handle app specific errors
-				case PACKET_TYPE_APP_ERROR:
-					packet->client->stats->received_packets->n_app_error_packets += 1;
-					packet->connection->stats->received_packets->n_app_error_packets += 1;
-					client_app_error_packet_handler (packet);
-					break;
+		default:
+			packet->client->stats->received_packets->n_bad_packets += 1;
+			packet->connection->stats->received_packets->n_bad_packets += 1;
+			#ifdef CLIENT_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Got a packet of unknown type"
+			);
+			#endif
+			packet_delete (packet);
+			break;
+	}
 
-				// custom packet hanlder
-				case PACKET_TYPE_CUSTOM:
-					packet->client->stats->received_packets->n_custom_packets += 1;
-					packet->connection->stats->received_packets->n_custom_packets += 1;
-					client_custom_packet_handler (packet);
-					break;
+	return error;
 
-				// handles a test packet form the cerver
-				case PACKET_TYPE_TEST:
-					packet->client->stats->received_packets->n_test_packets += 1;
-					packet->connection->stats->received_packets->n_test_packets += 1;
-					cerver_log (LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver");
-					packet_delete (packet);
-					break;
+}
 
-				default:
-					packet->client->stats->received_packets->n_bad_packets += 1;
-					packet->connection->stats->received_packets->n_bad_packets += 1;
-					#ifdef CLIENT_DEBUG
-					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got a packet of unknown type");
-					#endif
-					packet_delete (packet);
-					break;
-			}
+static ClientHandlerError client_packet_handler_check_version (
+	Packet *packet
+) {
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+
+	// we expect the packet version in the packet's data
+	if (packet->data) {
+		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
+		packet->data_ptr += sizeof (PacketVersion);
+		
+		// TODO: return errors to cerver/client
+		// TODO: drop client on max bad packets
+		if (packet_check (packet)) {
+			error = CLIENT_HANDLER_ERROR_PACKET;
 		}
 	}
+
+	else {
+		cerver_log_error (
+			"client_packet_handler () - No packet version to check!"
+		);
+		
+		// TODO: add to bad packets count
+
+		error = CLIENT_HANDLER_ERROR_PACKET;
+	}
+
+	return error;
+
+}
+
+static u8 client_packet_handler (Packet *packet) {
+
+	u8 retval = 1;
+
+	// update general stats
+	packet->client->stats->n_packets_received += 1;
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+	if (packet->client->check_packets) {
+		if (!client_packet_handler_check_version (packet)) {
+			error = client_packet_handler_actual (packet);
+		}
+	}
+
+	else {
+		error = client_packet_handler_actual (packet);
+	}
+
+	switch (error) {
+		case CLIENT_HANDLER_ERROR_NONE:
+			retval = 0;
+			break;
+
+		default: break;
+	}
+
+	return retval;
 
 }
 
