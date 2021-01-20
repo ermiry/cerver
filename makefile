@@ -370,7 +370,7 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
 endif
 
-BENCHLIBS	:= $(PTHREAD) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
@@ -379,6 +379,7 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
 
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
