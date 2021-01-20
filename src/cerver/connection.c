@@ -19,6 +19,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
@@ -124,7 +125,37 @@ Connection *connection_new (void) {
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
 
 		connection->sock_receive = NULL;
-		connection->receive_handle = NULL;
+		connection->receive_handle = (ReceiveHandle) {
+			.type = RECEIVE_TYPE_NONE,
+
+			.cerver = NULL,
+
+			.socket = NULL,
+			.connection = NULL,
+			.client = NULL,
+			.admin = NULL,
+
+			.lobby = NULL,
+
+			.buffer = NULL,
+			.buffer_size = 0,
+			.received_size = 0,
+
+			.state = RECEIVE_HANDLE_STATE_NONE,
+
+			.header = (PacketHeader) {
+				.packet_type = PACKET_TYPE_NONE,
+				.packet_size = 0,
+				.handler_id = 0,
+				.request_type = 0,
+				.sock_fd = 0
+			},
+
+			.header_end = NULL,
+			.remaining_header = 0,
+
+			.spare_packet = NULL
+		};
 
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
@@ -174,7 +205,6 @@ void connection_delete (void *ptr) {
 		cerver_report_delete (connection->cerver_report);
 
 		sock_receive_delete (connection->sock_receive);
-		receive_handle_delete (connection->receive_handle);
 
 		if (connection->received_data && connection->received_data_delete)
 			connection->received_data_delete (connection->received_data);
@@ -208,7 +238,6 @@ Connection *connection_create_empty (void) {
 		connection->socket = (Socket *) socket_create_empty ();
 		
 		connection->sock_receive = sock_receive_new ();
-		connection->receive_handle = receive_handle_new ();
 
 		connection->stats = connection_stats_new ();
 	}
