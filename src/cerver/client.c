@@ -206,7 +206,7 @@ Client *client_new (void) {
 		client->id = 0;
 		client->session_id = NULL;
 
-		client->name = NULL;
+		(void) memset (client->name, 0, CLIENT_NAME_SIZE);
 
 		client->connections = NULL;
 
@@ -261,8 +261,6 @@ void client_delete (void *ptr) {
 		Client *client = (Client *) ptr;
 
 		str_delete (client->session_id);
-
-		str_delete (client->name);
 
 		dlist_delete (client->connections);
 
@@ -320,7 +318,7 @@ Client *client_create (void) {
 		client->id = next_client_id;
 		next_client_id += 1;
 
-		client->name = str_new ("no-name");
+		(void) strncpy (client->name, CLIENT_DEFAULT_NAME, CLIENT_NAME_SIZE - 1);
 
 		(void) time (&client->connected_timestamp);
 
@@ -343,7 +341,7 @@ Client *client_create (void) {
 // creates a new client and registers a new connection
 Client *client_create_with_connection (
 	Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address
+	const i32 sock_fd, const struct sockaddr_storage *address
 ) {
 
 	Client *client = client_create ();
@@ -365,8 +363,7 @@ Client *client_create_with_connection (
 void client_set_name (Client *client, const char *name) {
 
 	if (client) {
-		if (client->name) str_delete (client->name);
-		client->name = name ? str_new (name) : NULL;
+		(void) strncpy (client->name, name, CLIENT_NAME_SIZE - 1);
 	}
 
 }
@@ -382,7 +379,7 @@ char *client_get_identifier (
 
 	if (client) {
 		if (client->name) {
-			retval = client->name->str;
+			retval = client->name;
 			*is_name = true;
 		}
 
@@ -1721,7 +1718,7 @@ static u8 client_app_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s app_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1729,7 +1726,7 @@ static u8 client_app_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s app_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1740,7 +1737,7 @@ static u8 client_app_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have an app_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1760,7 +1757,7 @@ static u8 client_app_error_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s app_error_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1768,7 +1765,7 @@ static u8 client_app_error_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s app_error_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1779,7 +1776,7 @@ static u8 client_app_error_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have an app_error_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1799,7 +1796,7 @@ static u8 client_custom_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s custom_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1807,7 +1804,7 @@ static u8 client_custom_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s custom_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1818,7 +1815,7 @@ static u8 client_custom_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have a custom_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1835,7 +1832,7 @@ static u8 client_handlers_start (Client *client) {
 	if (client) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_debug (
-			"Initializing %s handlers...", client->name->str
+			"Initializing %s handlers...", client->name
 		);
 		#endif
 
@@ -1851,7 +1848,7 @@ static u8 client_handlers_start (Client *client) {
 		if (!errors) {
 			#ifdef CLIENT_DEBUG
 			cerver_log_success (
-				"Done initializing client %s handlers!", client->name->str
+				"Done initializing client %s handlers!", client->name
 			);
 			#endif
 		}
@@ -2115,7 +2112,7 @@ int client_connection_start (Client *client, Connection *connection) {
 				else {
 					cerver_log_error (
 						"client_connection_start () - Failed to create update thread for client %s",
-						client->name->str
+						client->name
 					);
 				}
 			}
@@ -2123,7 +2120,7 @@ int client_connection_start (Client *client, Connection *connection) {
 			else {
 				cerver_log_error (
 					"client_connection_start () - Failed to start client %s",
-					client->name->str
+					client->name
 				);
 			}
 		}
@@ -2151,7 +2148,7 @@ int client_connect_and_start (Client *client, Connection *connection) {
 		else {
 			cerver_log_error (
 				"client_connect_and_start () - Client %s failed to connect",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -2805,7 +2802,7 @@ static void client_request_send_file (Packet *packet) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_warning (
 			"Client %s is unable to handle REQUEST_PACKET_TYPE_SEND_FILE packets!",
-			packet->client->name->str
+			packet->client->name
 		);
 		#endif
 	}
@@ -2867,7 +2864,7 @@ static void client_auth_success_handler (Packet *packet) {
 				#ifdef AUTH_DEBUG
 				cerver_log_debug (
 					"Got client's <%s> session id <%s>",
-					packet->client->name->str,
+					packet->client->name,
 					packet->client->session_id->str
 				);
 				#endif
@@ -2927,7 +2924,7 @@ static void client_app_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s app_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -2936,7 +2933,7 @@ static void client_app_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a app_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
@@ -2961,7 +2958,7 @@ static void client_app_error_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s app_error_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -2970,7 +2967,7 @@ static void client_app_error_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a app_error_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
@@ -2995,7 +2992,7 @@ static void client_custom_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s custom_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -3004,7 +3001,7 @@ static void client_custom_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a custom_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
@@ -3863,7 +3860,7 @@ unsigned int client_receive_internal (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_receive_internal () - connection %s sock fd: %d timed out",
-					connection->name->str, connection->socket->sock_fd
+					connection->name, connection->socket->sock_fd
 				);
 				#endif
 
@@ -3875,7 +3872,7 @@ unsigned int client_receive_internal (
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 					"client_receive_internal () - rc < 0 - connection %s sock fd: %d",
-					connection->name->str, connection->socket->sock_fd
+					connection->name, connection->socket->sock_fd
 				);
 
 				perror ("Error ");
@@ -3890,7 +3887,7 @@ unsigned int client_receive_internal (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"client_receive_internal () - rc == 0 - connection %s sock fd: %d",
-				connection->name->str, connection->socket->sock_fd
+				connection->name, connection->socket->sock_fd
 			);
 
 			// perror ("Error ");
@@ -4117,7 +4114,7 @@ static void client_handlers_destroy (Client *client) {
 	if (client) {
 		cerver_log_debug (
 			"Client %s num_handlers_alive: %d",
-			client->name->str, client->num_handlers_alive
+			client->name, client->num_handlers_alive
 		);
 
 		client_app_handler_destroy (client);

@@ -20,7 +20,10 @@
 
 #include "cerver/utils/log.h"
 
-#define CLIENT_FILES_MAX_PATHS           32
+#define CLIENT_NAME_SIZE						64
+#define CLIENT_FILES_MAX_PATHS           		32
+
+#define CLIENT_DEFAULT_NAME						"no-name"
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,7 +125,7 @@ struct _Client {
 	u64 id;
 	time_t connected_timestamp;
 
-	String *name;
+	char name[CLIENT_NAME_SIZE];
 
 	DoubleList *connections;
 
@@ -199,7 +202,7 @@ CERVER_PUBLIC Client *client_create (void);
 // creates a new client and registers a new connection
 CERVER_PUBLIC Client *client_create_with_connection (
 	struct _Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address
+	const i32 sock_fd, const struct sockaddr_storage *address
 );
 
 // sets the client's name
