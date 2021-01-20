@@ -1890,7 +1890,9 @@ static void cerver_receive_handle_buffer_new_actual (
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("while loop should end now!\n");
+					#endif
 				}
 			}
 
@@ -2431,7 +2433,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 // create a new connection but check if we can use the cerver's socket pool first
 static Connection *cerver_connection_create (
 	Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address
+	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
 	Connection *retval = NULL;
@@ -2735,7 +2737,7 @@ static inline u8 cerver_register_new_connection_select (
 
 static void cerver_register_new_connection (
 	Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address
+	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
 	Connection *connection = cerver_connection_create (
@@ -2747,7 +2749,7 @@ static void cerver_register_new_connection (
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"New connection from IP address: %s -- Port: %d",
-			connection->ip->str, connection->port
+			connection->ip, connection->port
 		);
 		// #endif
 
@@ -2801,7 +2803,7 @@ static void cerver_accept (void *cerver_ptr) {
 		#ifdef HANDLER_DEBUG
 		cerver_log_debug ("Accepted fd: %d", new_fd);
 		#endif
-		cerver_register_new_connection (cerver, new_fd, client_address);
+		cerver_register_new_connection (cerver, new_fd, &client_address);
 	}
 
 	else {

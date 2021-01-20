@@ -2738,14 +2738,14 @@ static void cerver_report_check_info_handle_auth (
 					if (!connection_generate_auth_packet (connection)) {
 						cerver_log_success (
 							"cerver_check_info () - Generated connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to generate connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2762,7 +2762,7 @@ static void cerver_report_check_info_handle_auth (
 					if (!packet_send (connection->auth_packet, 0, NULL, false)) {
 						cerver_log_success (
 							"cerver_check_info () - Sent connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 
 						client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
@@ -2771,7 +2771,7 @@ static void cerver_report_check_info_handle_auth (
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to send connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2784,14 +2784,17 @@ static void cerver_report_check_info_handle_auth (
 			else {
 				cerver_log_error (
 					"Connection %s does NOT have an auth packet!",
-					connection->name->str
+					connection->name
 				);
 			}
 		}
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver does NOT require authentication.");
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_NONE,
+				"Cerver does NOT require authentication"
+			);
 			#endif
 		}
 	}
