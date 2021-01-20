@@ -68,7 +68,15 @@ CERVER_PUBLIC void packet_version_delete (PacketVersion *version);
 
 CERVER_PUBLIC PacketVersion *packet_version_create (void);
 
-CERVER_PUBLIC void packet_version_print (PacketVersion *version);
+// copies the data from the source version to the destination
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_version_copy (
+	PacketVersion *dest, const PacketVersion *source
+);
+
+CERVER_PUBLIC void packet_version_print (
+	const PacketVersion *version
+);
 
 #pragma endregion
 
@@ -274,7 +282,7 @@ struct _Packet {
 
 	PacketHeader header;	
 
-	PacketVersion *version;
+	PacketVersion version;
 
 	// the actual packet to be sent
 	size_t packet_size;

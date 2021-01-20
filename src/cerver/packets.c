@@ -28,13 +28,29 @@
 static ProtocolID protocol_id = 0;
 static ProtocolVersion protocol_version = { 0, 0 };
 
-ProtocolID packets_get_protocol_id (void) { return protocol_id; }
+ProtocolID packets_get_protocol_id (void) {
+	
+	return protocol_id;
+	
+}
 
-void packets_set_protocol_id (ProtocolID proto_id) { protocol_id = proto_id; }
+void packets_set_protocol_id (ProtocolID proto_id) {
+	
+	protocol_id = proto_id;
+	
+}
 
-ProtocolVersion packets_get_protocol_version (void) { return protocol_version; }
+ProtocolVersion packets_get_protocol_version (void) {
+	
+	return protocol_version;
+	
+}
 
-void packets_set_protocol_version (ProtocolVersion version) { protocol_version = version; }
+void packets_set_protocol_version (ProtocolVersion version) {
+	
+	protocol_version = version;
+	
+}
 
 #pragma endregion
 
@@ -45,14 +61,19 @@ PacketVersion *packet_version_new (void) {
 	PacketVersion *version = (PacketVersion *) malloc (sizeof (PacketVersion));
 	if (version) {
 		version->protocol_id = 0;
-		version->protocol_version.minor = version->protocol_version.major = 0;
+		version->protocol_version.minor = 0;
+		version->protocol_version.major = 0;
 	}
 
 	return version;
 
 }
 
-void packet_version_delete (PacketVersion *version) { if (version) free (version); }
+void packet_version_delete (PacketVersion *version) {
+	
+	if (version) free (version);
+	
+}
 
 PacketVersion *packet_version_create (void) {
 
@@ -66,13 +87,37 @@ PacketVersion *packet_version_create (void) {
 
 }
 
-void packet_version_print (PacketVersion *version) {
+// copies the data from the source version to the destination
+// returns 0 on success, 1 on error
+u8 packet_version_copy (
+	PacketVersion *dest, const PacketVersion *source
+) {
+
+	u8 retval = 1;
+
+	if (dest && source) {
+		(void) memcpy (dest, source, sizeof (PacketVersion));
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+void packet_version_print (
+	const PacketVersion *version
+) {
 
 	if (version) {
-		(void) printf ("Protocol id: %u\n", version->protocol_id);
+		(void) printf (
+			"Protocol id: %u\n",
+			version->protocol_id
+		);
+
 		(void) printf (
 			"Protocol version: { %u - %u }\n",
-			version->protocol_version.major, version->protocol_version.minor
+			version->protocol_version.major,
+			version->protocol_version.minor
 		);
 	}
 
@@ -191,7 +236,7 @@ u8 packet_header_copy (PacketHeader *dest, const PacketHeader *source) {
 void packet_header_print (const PacketHeader *header) {
 
 	if (header) {
-		(void) printf ("Header size: %ld\n", sizeof (PacketHeader));
+		(void) printf ("Header size: %lu\n", sizeof (PacketHeader));
 		(void) printf ("Packet type [%lu]: %u\n", sizeof (PacketType), header->packet_type);
 		(void) printf ("Packet size: [%lu] %lu\n", sizeof (size_t), header->packet_size);
 		(void) printf ("Handler id [%lu]: %u\n", sizeof (u8), header->handler_id);
@@ -250,7 +295,13 @@ Packet *packet_new (void) {
 			.sock_fd = 0
 		};
 
-		packet->version = NULL;
+		packet->version = (PacketVersion) {
+			.protocol_id = 0,
+			.protocol_version = {
+				.major = 0,
+				.minor = 0
+			}
+		};
 
 		packet->packet_size = 0;
 		packet->packet = NULL;
@@ -274,8 +325,6 @@ void packet_delete (void *packet_ptr) {
 		if (!packet->data_ref) {
 			if (packet->data) free (packet->data);
 		}
-
-		packet_version_delete (packet->version);
 
 		if (!packet->packet_ref) {
 			if (packet->packet) free (packet->packet);
@@ -670,7 +719,6 @@ Packet *packet_create_request (
 				.sock_fd = 0
 			},
 
-			.version = NULL,
 			.packet_size = sizeof (PacketHeader),
 			.packet = (void *) &packet->header,
 			.packet_ref = false
@@ -1246,7 +1294,14 @@ u8 packet_send_request (
 			.sock_fd = 0,
 		},
 
-		.version = NULL,
+		.version = (PacketVersion) {
+			.protocol_id = 0,
+			.protocol_version = {
+				.major = 0,
+				.minor = 0
+			}
+		},
+
 		.packet_size = sizeof (PacketHeader),
 		.packet = &request.header,
 		.packet_ref = false
@@ -1287,25 +1342,31 @@ bool packet_check (Packet *packet) {
 	bool retval = false;
 
 	if (packet) {
-		if (packet->version) {
-			if (packet->version->protocol_id == protocol_id) {
-				if ((packet->version->protocol_version.major <= protocol_version.major)
-					&& (packet->version->protocol_version.minor >= protocol_version.minor)) {
-					retval = true;
-				}
-
-				else {
-					#ifdef PACKETS_DEBUG
-					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with incompatible version.");
-					#endif
-				}
+		if (packet->version.protocol_id == protocol_id) {
+			if (
+				(packet->version.protocol_version.major <= protocol_version.major)
+				&& (packet->version.protocol_version.minor >= protocol_version.minor)
+			) {
+				retval = true;
 			}
 
 			else {
 				#ifdef PACKETS_DEBUG
-				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Packet with unknown protocol ID.");
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+					"Packet with incompatible version"
+				);
 				#endif
 			}
+		}
+
+		else {
+			#ifdef PACKETS_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+				"Packet with unknown protocol ID"
+			);
+			#endif
 		}
 	}
 
