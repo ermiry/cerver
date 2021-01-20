@@ -2559,7 +2559,9 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 }
 
 // handles cerver type packets
-void client_cerver_packet_handler (Packet *packet) {
+static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
 
 	switch (packet->header.request_type) {
 		case CERVER_PACKET_TYPE_INFO:
@@ -2569,38 +2571,58 @@ void client_cerver_packet_handler (Packet *packet) {
 		// the cerves is going to be teardown, we have to disconnect
 		case CERVER_PACKET_TYPE_TEARDOWN:
 			#ifdef CLIENT_DEBUG
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "---> Server teardown! <---");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"---> Cerver teardown <---"
+			);
 			#endif
+
 			client_got_disconnected (packet->client);
 			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
+
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown cerver type packet.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown cerver type packet"
+			);
 			break;
 	}
+
+	return error;
 
 }
 
 // handles a client type packet
-static void client_client_packet_handler (Packet *packet) {
+static ClientHandlerError client_client_packet_handler (Packet *packet) {
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
 
 	switch (packet->header.request_type) {
 		// the cerver close our connection
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION:
 			client_connection_end (packet->client, packet->connection);
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		// the cerver has disconneted us
 		case CLIENT_PACKET_TYPE_DISCONNECT:
 			client_got_disconnected (packet->client);
 			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown client packet type.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown client packet type"
+			);
 			break;
 	}
+
+	return error;
 
 }
 
@@ -2617,7 +2639,10 @@ static void client_request_get_file (Packet *packet) {
 		FileHeader *file_header = (FileHeader *) end;
 
 		// search for the requested file in the configured paths
-		String *actual_filename = client_files_search_file (client, file_header->filename);
+		String *actual_filename = client_files_search_file (
+			client, file_header->filename
+		);
+
 		if (actual_filename) {
 			#ifdef CLIENT_DEBUG
 			cerver_log_debug (
@@ -2652,7 +2677,10 @@ static void client_request_get_file (Packet *packet) {
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_warning ("client_request_get_file () - file not found");
+			cerver_log_warning (
+				"client_request_get_file () - "
+				"file not found"
+			);
 			#endif
 
 			// if not found, return an error to the client
@@ -2668,7 +2696,10 @@ static void client_request_get_file (Packet *packet) {
 
 	else {
 		#ifdef CLIENT_DEBUG
-		cerver_log_warning ("client_request_get_file () - missing file header");
+		cerver_log_warning (
+			"client_request_get_file () - "
+			"missing file header"
+		);
 		#endif
 
 		// return a bad request error packet
@@ -2726,7 +2757,10 @@ static void client_request_send_file_actual (Packet *packet) {
 		}
 
 		else {
-			cerver_log_error ("client_request_send_file () - Failed to receive file");
+			cerver_log_error (
+				"client_request_send_file () - "
+				"Failed to receive file"
+			);
 
 			client->file_stats->n_bad_files_received += 1;
 		}
@@ -2734,7 +2768,10 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	else {
 		#ifdef CLIENT_DEBUG
-		cerver_log_warning ("client_request_send_file () - missing file header");
+		cerver_log_warning (
+			"client_request_send_file () - "
+			"missing file header"
+		);
 		#endif
 
 		// return a bad request error packet
