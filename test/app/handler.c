@@ -24,6 +24,8 @@ static void app_handler_test (const Packet *packet) {
 		.data_end = NULL,
 		.data_ref = false,
 
+		.remaining_data = 0,
+
 		.header = (PacketHeader) {
 			.packet_type = PACKET_TYPE_APP,
 			.packet_size = sizeof (PacketHeader),
@@ -33,6 +35,14 @@ static void app_handler_test (const Packet *packet) {
 			.request_type = APP_REQUEST_TEST,
 
 			.sock_fd = 0,
+		},
+
+		.version = (PacketVersion) {
+			.protocol_id = 0,
+			.protocol_version = {
+				.major = 0,
+				.minor = 0
+			}
 		},
 
 		.packet_size = sizeof (PacketHeader),
