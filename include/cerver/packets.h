@@ -272,12 +272,7 @@ struct _Packet {
 	// that don't fit inside a single buffer
 	size_t remaining_data;
 
-	// FIXME: move to receive handle?
-	// used to handle split headers between buffers
-	// this can happen when the header is at the buffer's end
 	PacketHeader header;	
-	char *header_end;
-	unsigned int remaining_header;
 
 	PacketVersion *version;
 

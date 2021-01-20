@@ -250,9 +250,6 @@ Packet *packet_new (void) {
 			.sock_fd = 0
 		};
 
-		packet->header_end = NULL;
-		packet->remaining_header = 0;
-
 		packet->version = NULL;
 
 		packet->packet_size = 0;
