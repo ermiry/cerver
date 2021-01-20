@@ -210,13 +210,6 @@ CERVER_EXPORT void client_set_name (
 	Client *client, const char *name
 );
 
-// this methods is primarily used for logging
-// returns the client's name directly (if any) & should NOT be deleted, if not
-// returns a newly allocated string with the clients id that should be deleted after use
-CERVER_EXPORT char *client_get_identifier (
-	Client *client, bool *is_name
-);
-
 // sets the client's session id
 CERVER_PUBLIC u8 client_set_session_id (
 	Client *client, const char *session_id

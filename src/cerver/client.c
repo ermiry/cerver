@@ -368,31 +368,6 @@ void client_set_name (Client *client, const char *name) {
 
 }
 
-// this methods is primarily used for logging
-// returns the client's name directly (if any) & should NOT be deleted
-// returns a newly allocated string with the clients id that should be deleted after use
-char *client_get_identifier (
-	Client *client, bool *is_name
-) {
-
-	char *retval = NULL;
-
-	if (client) {
-		if (client->name) {
-			retval = client->name;
-			*is_name = true;
-		}
-
-		else {
-		   retval = c_string_create ("%ld", client->id);
-		   *is_name = false;
-		}
-	}
-
-	return retval;
-
-}
-
 // sets the client's session id
 // returns 0 on succes, 1 on error
 u8 client_set_session_id (
