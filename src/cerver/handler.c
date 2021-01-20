@@ -1726,33 +1726,38 @@ static void cerver_receive_handle_buffer_new_actual (
 	PacketHeader *header = NULL;
 	size_t packet_size = 0;
 
+	Packet *packet = NULL;
+
 	u8 stop_handler = 0;
 
+	#ifdef RECEIVE_DEBUG
 	(void) printf ("WHILE has started!\n\n");
+	#endif
 
 	do {
-		// TODO: we might not need this anymore as we are updating the value
-		// on each condition
-		// remaining_buffer_size = received_size - buffer_pos;
-		
+		#ifdef RECEIVE_DEBUG
 		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
 		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
+		#endif
 
 		switch (receive_handle->state) {
 			// check if we have a complete packet header in the buffer
 			case RECEIVE_HANDLE_STATE_NORMAL: {
 				if (remaining_buffer_size >= sizeof (PacketHeader)) {
+					#ifdef RECEIVE_DEBUG
 					(void) printf (
 						"Complete header in current buffer\n"
 					);
+					#endif
 
 					header = (PacketHeader *) end;
 					end += sizeof (PacketHeader);
 					buffer_pos += sizeof (PacketHeader);
 
+					#ifdef RECEIVE_DEBUG
 					packet_header_print (header);
-					
 					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
 
 					packet_size = header->packet_size;
 					remaining_buffer_size -= sizeof (PacketHeader);
@@ -1760,10 +1765,12 @@ static void cerver_receive_handle_buffer_new_actual (
 
 				// we need to handle just a part of the header
 				else {
+					#ifdef RECEIVE_DEBUG
 					(void) printf (
 						"Only %lu of %lu header bytes left in buffer\n",
 						remaining_buffer_size, sizeof (PacketHeader)
 					);
+					#endif
 
 					// reset previous header
 					(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
@@ -1775,17 +1782,17 @@ static void cerver_receive_handle_buffer_new_actual (
 						receive_handle->header_end, (void *) end, remaining_buffer_size
 					);
 
-					for (size_t i = 0; i < sizeof (PacketHeader); i++)
-						printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++)
+					// 	printf ("%4x", (unsigned int) receive_handle->header_end[i]);
 
-					printf ("\n");
+					// printf ("\n");
 
-					for (size_t i = 0; i < sizeof (PacketHeader); i++) {
-						printf ("%4x", (unsigned int) *end);
-						end += 1;
-					}
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++) {
+					// 	printf ("%4x", (unsigned int) *end);
+					// 	end += 1;
+					// }
 
-					printf ("\n");
+					// printf ("\n");
 
 					// packet_header_print (&receive_handle->header);
 
@@ -1798,11 +1805,15 @@ static void cerver_receive_handle_buffer_new_actual (
 
 					buffer_pos += remaining_buffer_size;
 
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_HEADER;
 
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("while loop should end now!\n");
+					#endif
 				}
 			} break;
 
@@ -1819,10 +1830,12 @@ static void cerver_receive_handle_buffer_new_actual (
 			default: break;
 		}
 
+		#ifdef RECEIVE_DEBUG
 		(void) printf (
 			"State BEFORE CHECKING for packet size: %s\n",
 			receive_handle_state_to_string (receive_handle->state)
 		);
+		#endif
 
 		if (
 			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
@@ -1832,7 +1845,7 @@ static void cerver_receive_handle_buffer_new_actual (
 			// check that we have a valid packet size
 			if ((packet_size > 0) && (packet_size < 65536)) {
 				// we can safely process the complete packet
-				Packet *packet = packet_create_with_data (
+				packet = packet_create_with_data (
 					header->packet_size - sizeof (PacketHeader)
 				);
 
@@ -1846,23 +1859,29 @@ static void cerver_receive_handle_buffer_new_actual (
 				packet->packet_size = packet->header.packet_size;
 
 				if (packet->data_size == 0) {
+					#ifdef RECEIVE_DEBUG
 					(void) printf (
 						"Packet has no more data\n"
 					);
+					#endif
 
 					// we can safely handle the packet
 					stop_handler = cerver_packet_select_handler (
 						receive_handle, packet
 					);
 
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
 				}
 
 				// check how much of the packet's data is in the current buffer
 				else if (packet->data_size <= remaining_buffer_size) {
+					#ifdef RECEIVE_DEBUG
 					(void) printf (
 						"Complete packet in current buffer\n"
 					);
+					#endif
 
 					// the full packet's data is in the current buffer
 					// so we can safely copy the complete packet
@@ -1878,19 +1897,25 @@ static void cerver_receive_handle_buffer_new_actual (
 					buffer_pos += packet->data_size;
 					remaining_buffer_size -= packet->data_size;
 
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
 				}
 
 				else {
 					// just some part of the packet's data is in the current buffer
 					// we should copy all the remaining buffer and wait for the next read
+					#ifdef RECEIVE_DEBUG
 					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
+					#endif
 					
 					if (remaining_buffer_size > 0) {
+						#ifdef RECEIVE_DEBUG
 						(void) printf (
 							"We can only get %lu / %lu from the current buffer\n",
 							remaining_buffer_size, packet->data_size
 						);
+						#endif
 
 						// TODO: handle errors
 						(void) packet_add_data (
@@ -1907,9 +1932,11 @@ static void cerver_receive_handle_buffer_new_actual (
 					}
 
 					else {
+						#ifdef RECEIVE_DEBUG
 						(void) printf (
 							"We have NO more data left in current buffer\n"
 						);
+						#endif
 					}
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
@@ -1922,12 +1949,16 @@ static void cerver_receive_handle_buffer_new_actual (
 				// we must likely have a bad packet
 				// we need to keep reading the buffer until we find
 				// the start of the next one and we can continue
+				#ifdef RECEIVE_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
 					"Got a packet of invalid size: %ld", packet_size
 				);
+				#endif
 
+				#ifdef RECEIVE_DEBUG
 				(void) printf ("\n\nWE ARE LOST!\n\n");
+				#endif
 
 				receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
 
@@ -1938,9 +1969,12 @@ static void cerver_receive_handle_buffer_new_actual (
 
 		// reset common loop values
 		header = NULL;
+		packet = NULL;
 	} while ((buffer_pos < receive_handle->received_size) && !stop_handler);
 
+	#ifdef RECEIVE_DEBUG
 	(void) printf ("WHILE has ended!\n\n");
+	#endif
 
 }
 
@@ -1957,12 +1991,14 @@ void cerver_receive_handle_buffer_new (
 
 	u8 stop_handler = 0;
 
+	#ifdef RECEIVE_DEBUG
 	(void) printf ("Received size: %lu\n", receive_handle->received_size);
 
 	(void) printf (
 		"State BEFORE checking for SPARE PARTS: %s\n",
 		receive_handle_state_to_string (receive_handle->state)
 	);
+	#endif
 
 	// check if we have any spare parts 
 	switch (receive_handle->state) {
@@ -1976,18 +2012,22 @@ void cerver_receive_handle_buffer_new (
 				receive_handle->remaining_header
 			);
 
+			#ifdef RECEIVE_DEBUG
 			(void) printf (
 				"Copied %u missing header bytes\n",
 				receive_handle->remaining_header
 			);
+			#endif
 
 			// receive_handle->header_end = (char *) &receive_handle->header;
-			for (size_t i = 0; i < receive_handle->remaining_header; i++)
-				printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+			// for (size_t i = 0; i < receive_handle->remaining_header; i++)
+			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
 
-			printf ("\n");
+			// (void) printf ("\n");
 			
+			#ifdef RECEIVE_DEBUG
 			packet_header_print (&receive_handle->header);
+			#endif
 
 			// update buffer positions
 			end += receive_handle->remaining_header;
@@ -2003,7 +2043,9 @@ void cerver_receive_handle_buffer_new (
 			// we can expect to get the packet's data from the current buffer
 			receive_handle->state = RECEIVE_HANDLE_STATE_COMP_HEADER;
 
+			#ifdef RECEIVE_DEBUG
 			(void) printf ("We have a COMPLETE HEADER!\n");
+			#endif
 		} break;
 
 		// check if we have a spare packet
@@ -2021,12 +2063,14 @@ void cerver_receive_handle_buffer_new (
 					receive_handle->spare_packet->remaining_data
 				);
 
+				#ifdef RECEIVE_DEBUG
 				(void) printf (
 					"Copied %lu missing packet bytes\n",
 					to_copy_data_size
 				);
 
 				(void) printf ("Spare packet is COMPLETED!\n");
+				#endif
 
 				// we can safely handle the packet
 				stop_handler = cerver_packet_select_handler (
@@ -2045,11 +2089,13 @@ void cerver_receive_handle_buffer_new (
 			}
 
 			else {
+				#ifdef RECEIVE_DEBUG
 				(void) printf (
 					"We can only get %lu / %lu of the remaining packet's data\n",
 					receive_handle->spare_packet->remaining_data,
 					receive_handle->received_size
 				);
+				#endif
 
 				// copy the complete buffer
 				(void) packet_add_data (
@@ -2058,20 +2104,24 @@ void cerver_receive_handle_buffer_new (
 					receive_handle->received_size
 				);
 
+				#ifdef RECEIVE_DEBUG
 				(void) printf (
 					"We are still missing %lu to complete the packet!\n",
 					receive_handle->spare_packet->remaining_data
 				);
+				#endif
 			}
 		} break;
 
 		default: break;
 	}
 
+	#ifdef RECEIVE_DEBUG
 	(void) printf (
 		"State BEFORE LOOP: %s\n",
 		receive_handle_state_to_string (receive_handle->state)
 	);
+	#endif
 
 	if (
 		!stop_handler
