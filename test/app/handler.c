@@ -35,7 +35,6 @@ static void app_handler_test (const Packet *packet) {
 			.sock_fd = 0,
 		},
 
-		.version = NULL,
 		.packet_size = sizeof (PacketHeader),
 		.packet = &response.header,
 		.packet_ref = false
@@ -66,6 +65,9 @@ static void app_handler_message (const Packet *packet) {
 	header->request_type = APP_REQUEST_MESSAGE;
 
 	end += sizeof (PacketHeader);
+
+	// print the client's message
+	(void) printf ("|%s|\n", end);
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 
