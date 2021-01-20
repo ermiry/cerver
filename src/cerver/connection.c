@@ -101,14 +101,14 @@ Connection *connection_new (void) {
 
 	Connection *connection = (Connection *) malloc (sizeof (Connection));
 	if (connection) {
-		connection->name = NULL;
+		(void) memset (connection->name, 0, CONNECTION_NAME_SIZE);
 
 		connection->socket = NULL;
 		connection->port = 0;
 		connection->protocol = CONNECTION_DEFAULT_PROTOCOL;
 		connection->use_ipv6 = CONNECTION_DEFAULT_USE_IPV6;
 
-		connection->ip = NULL;
+		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
 		connection->connected_timestamp = 0;
@@ -189,18 +189,14 @@ Connection *connection_new (void) {
 
 }
 
-void connection_delete (void *ptr) {
+void connection_delete (void *connection_ptr) {
 
-	if (ptr) {
-		Connection *connection = (Connection *) ptr;
-
-		str_delete (connection->name);
+	if (connection_ptr) {
+		Connection *connection = (Connection *) connection_ptr;
 
 		socket_delete (connection->socket);
 
 		if (connection->active) connection_end (connection);
-
-		str_delete (connection->ip);
 
 		cerver_report_delete (connection->cerver_report);
 
@@ -231,9 +227,11 @@ Connection *connection_create_empty (void) {
 
 	Connection *connection = connection_new ();
 	if (connection) {
-		printf ("connection_create_empty ()\n\n");
-
-		connection->name = str_new ("no-name");
+		(void) strncpy (
+			connection->name,
+			CONNECTION_DEFAULT_NAME,
+			CONNECTION_NAME_SIZE - 1
+		);
 
 		connection->socket = (Socket *) socket_create_empty ();
 		
@@ -247,14 +245,14 @@ Connection *connection_create_empty (void) {
 }
 
 Connection *connection_create (
-	const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage *address,
+	const Protocol protocol
 ) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
 		connection->socket->sock_fd = sock_fd;
-		memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
+		(void) memcpy (&connection->address, address, sizeof (struct sockaddr_storage));
 		connection->protocol = protocol;
 
 		connection_get_values (connection);
@@ -282,12 +280,13 @@ int connection_comparator (const void *a, const void *b) {
 
 }
 
-// sets the connection's name, if it had a name before, it will be replaced
-void connection_set_name (Connection *connection, const char *name) {
+// sets the connection's name
+void connection_set_name (
+	Connection *connection, const char *name
+) {
 
 	if (connection) {
-		if (connection->name) str_delete (connection->name);
-		connection->name = name ? str_new (name) : NULL;
+		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
 	}
 
 }
@@ -296,8 +295,14 @@ void connection_set_name (Connection *connection, const char *name) {
 void connection_get_values (Connection *connection) {
 
 	if (connection) {
-		connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
-		connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
+		(void) sock_ip_to_string_actual (
+			(const struct sockaddr *) &connection->address,
+			connection->ip
+		);
+
+		connection->port = sock_ip_port (
+			(const struct sockaddr *) &connection->address
+		);
 	}
 
 }
@@ -309,8 +314,8 @@ void connection_set_values (
 ) {
 
 	if (connection) {
-		if (connection->ip) str_delete (connection->ip);
-		connection->ip = ip_address ? str_new (ip_address) : NULL;
+		(void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+
 		connection->port = port;
 		connection->protocol = protocol;
 		connection->use_ipv6 = use_ipv6;
@@ -490,7 +495,7 @@ u8 connection_init (Connection *connection) {
 						else {
 							struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
 							addr->sin_family = AF_INET;
-							addr->sin_addr.s_addr = inet_addr (connection->ip->str);
+							addr->sin_addr.s_addr = inet_addr (connection->ip);
 							addr->sin_port = htons (connection->port);
 						}
 
@@ -864,16 +869,16 @@ void *connection_update (void *client_connection_ptr) {
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has started",
-			cc->client->name->str, cc->connection->name->str
+			cc->client->name->str, cc->connection->name
 		);
 		#endif
 
 		(void) strncpy (client_name, cc->client->name->str, THREAD_NAME_BUFFER_LEN - 1);
 
-		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name->str)) {
+		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
 			(void) strncpy (
 				connection_name,
-				cc->connection->name->str,
+				cc->connection->name,
 				THREAD_NAME_BUFFER_LEN - 1
 			);
 

@@ -16,6 +16,11 @@
 
 #include "cerver/threads/thread.h"
 
+#define CONNECTION_NAME_SIZE						64
+#define CONNECTION_IP_SIZE							64
+
+#define CONNECTION_DEFAULT_NAME						"no-name"
+
 #define CONNECTION_DEFAULT_PROTOCOL					PROTOCOL_TCP
 #define CONNECTION_DEFAULT_USE_IPV6					false
 
@@ -72,14 +77,14 @@ CERVER_PUBLIC void connection_stats_print (
 // a connection from a client
 struct _Connection {
 
-	String *name;
+	char name[CONNECTION_NAME_SIZE];
 
 	struct _Socket *socket;
 	u16 port;
 	Protocol protocol;
 	bool use_ipv6;
 
-	String *ip;
+	char ip[CONNECTION_IP_SIZE];
 	struct sockaddr_storage address;
 
 	time_t connected_timestamp;             // when the connection started
@@ -101,10 +106,11 @@ struct _Connection {
 	pthread_t update_thread_id;
 	u32 update_timeout;
 
-	// 16/06/2020 - used for direct requests to cerver
+	// used for direct requests to cerver
 	bool full_packet;
 
-	// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+	// a place to safely store the request response
+	// like when using client_connection_request_to_cerver ()
 	void *received_data;
 	size_t received_data_size;
 	Action received_data_delete;
@@ -137,14 +143,14 @@ typedef struct _Connection Connection;
 
 CERVER_PUBLIC Connection *connection_new (void);
 
-CERVER_PUBLIC void connection_delete (void *ptr);
+CERVER_PUBLIC void connection_delete (void *connection_ptr);
 
 CERVER_PUBLIC Connection *connection_create_empty (void);
 
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
-	const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage *address,
+	const Protocol protocol
 );
 
 // compare two connections by their socket fds
