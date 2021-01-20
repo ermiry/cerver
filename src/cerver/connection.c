@@ -470,46 +470,42 @@ u8 connection_init (Connection *connection) {
 			// init the new connection socket
 			switch (connection->protocol) {
 				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
+					connection->socket->sock_fd = socket (
+						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
+						SOCK_STREAM, 0
+					);
 					break;
 				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
+					connection->socket->sock_fd = socket (
+						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
+						SOCK_DGRAM, 0
+					);
 					break;
 
-				default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
+				default:
+					cerver_log (
+						LOG_TYPE_ERROR, LOG_TYPE_NONE,
+						"Unkonw protocol type!"
+					);
+					return 1;
 			}
 
 			if (connection->socket->sock_fd > 0) {
-				// if (connection->async) {
-				//     if (sock_set_blocking (connection->sock_fd, connection->blocking)) {
-				//         connection->blocking = false;
+				if (connection->use_ipv6) {
+					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
+					addr->sin6_family = AF_INET6;
+					addr->sin6_addr = in6addr_any;
+					addr->sin6_port = htons (connection->port);
+				}
 
-						// get the address ready
-						if (connection->use_ipv6) {
-							struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-							addr->sin6_family = AF_INET6;
-							addr->sin6_addr = in6addr_any;
-							addr->sin6_port = htons (connection->port);
-						}
+				else {
+					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
+					addr->sin_family = AF_INET;
+					addr->sin_addr.s_addr = inet_addr (connection->ip);
+					addr->sin_port = htons (connection->port);
+				}
 
-						else {
-							struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-							addr->sin_family = AF_INET;
-							addr->sin_addr.s_addr = inet_addr (connection->ip);
-							addr->sin_port = htons (connection->port);
-						}
-
-						retval = 0;     // connection setup was successfull
-					// }
-
-					// else {
-					//     #ifdef CLIENT_DEBUG
-					//     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					//         "Failed to set the socket to non blocking mode!");
-					//     #endif
-					//     close (connection->sock_fd);
-				//     }
-				// }
+				retval = 0;     // connection setup was successfull
 			}
 
 			else {
@@ -833,6 +829,9 @@ u8 connection_remove_from_cerver (
 
 #pragma region receive
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static ConnectionCustomReceiveData *connection_custom_receive_data_new (
 	Client *client, Connection *connection, 
 	void *args
@@ -856,6 +855,8 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 
 }
 
+#pragma GCC diagnostic pop
+
 // starts listening and receiving data in the connection sock
 void *connection_update (void *client_connection_ptr) {
 
@@ -869,11 +870,11 @@ void *connection_update (void *client_connection_ptr) {
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has started",
-			cc->client->name->str, cc->connection->name
+			cc->client->name, cc->connection->name
 		);
 		#endif
 
-		(void) strncpy (client_name, cc->client->name->str, THREAD_NAME_BUFFER_LEN - 1);
+		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN - 1);
 
 		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
 			(void) strncpy (
