@@ -20,6 +20,8 @@ static Cerver *cerver = NULL;
 
 static void end (int dummy) {
 	
+	cerver_stats_print (cerver, true, true);
+
 	cerver_teardown (cerver);
 
 	cerver_end ();
