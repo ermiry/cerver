@@ -244,6 +244,10 @@ TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
 
 TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
 
+ifeq ($(TYPE), development)
+	TESTAPPFGS += -g
+endif
+
 # check which compiler we are using
 ifeq ($(CC), g++) 
 	TESTAPPFGS += -std=c++11 -fpermissive
