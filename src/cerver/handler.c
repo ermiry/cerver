@@ -2318,7 +2318,7 @@ void cerver_receive_internal (
 		case -1: {
 			// no more data to read
 			if (errno != EWOULDBLOCK) {
-				#ifdef CERVER_DEBUG
+				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 					"cerver_receive () - rc < 0 - sock fd: %d",
@@ -2335,7 +2335,7 @@ void cerver_receive_internal (
 		case 0: {
 			// man recv -> steam socket perfomed an orderly shutdown
 			// but in dgram it might mean something?
-			#ifdef CERVER_DEBUG
+			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"cerver_recieve () - rc == 0 - sock fd: %d",
@@ -2349,6 +2349,13 @@ void cerver_receive_internal (
 		} break;
 
 		default: {
+			#ifdef RECEIVE_DEBUG
+			cerver_log_debug (
+				"recv () - %ld bytes from %d sock fd",
+				rc, cr->socket->sock_fd
+			);
+			#endif
+
 			cerver_receive_success (
 				cr, rc,
 				packet_buffer, packet_buffer_size
