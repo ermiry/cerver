@@ -1003,7 +1003,7 @@ static CerverHandlerError cerver_packet_handler_check_version (
 
 	// we expect the packet version in the packet's data
 	if (packet->data) {
-		packet->version = (PacketVersion *) packet->data_ptr;
+		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 		packet->data_ptr += sizeof (PacketVersion);
 		
 		// TODO: return errors to client
@@ -1232,57 +1232,6 @@ static u8 cerver_packet_select_handler (
 #pragma region receive
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
-
-const char *receive_handle_state_to_string (ReceiveHandleState state) {
-
-	switch (state) {
-		#define XX(num, name, string) case RECEIVE_HANDLE_STATE_##name: return #string;
-		RECEIVE_HANDLE_STATE_MAP(XX)
-		#undef XX
-	}
-
-	return cerver_type_to_string (RECEIVE_HANDLE_STATE_NONE);
-
-}
-
-ReceiveHandle *receive_handle_new (void) {
-
-	ReceiveHandle *receive_handle =
-		(ReceiveHandle *) malloc (sizeof (ReceiveHandle));
-
-	if (receive_handle) {
-		receive_handle->type = RECEIVE_TYPE_NONE;
-
-		receive_handle->cerver = NULL;
-
-		receive_handle->socket = NULL;
-		receive_handle->connection = NULL;
-		receive_handle->client = NULL;
-		receive_handle->admin = NULL;
-
-		receive_handle->lobby = NULL;
-
-		receive_handle->buffer = NULL;
-		receive_handle->buffer_size = 0;
-
-		receive_handle->state = RECEIVE_HANDLE_STATE_NONE;
-
-		(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
-		receive_handle->header_end = NULL;
-		receive_handle->remaining_header = 0;
-
-		receive_handle->spare_packet = NULL;
-	}
-
-	return receive_handle;
-
-}
-
-void receive_handle_delete (void *receive_ptr) {
-	
-	if (receive_ptr) free (receive_ptr);
-	
-}
 
 CerverReceive *cerver_receive_new (void) {
 
@@ -2192,7 +2141,7 @@ static inline void cerver_receive_success_receive_handle (
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
-	ReceiveHandle *receive_handle = cr->connection->receive_handle;
+	ReceiveHandle *receive_handle = &cr->connection->receive_handle;
 	receive_handle->type = cr->type;
 
 	receive_handle->cerver = cr->cerver;
@@ -2500,7 +2449,6 @@ static Connection *cerver_connection_create (
 
 				// FIXME:
 				retval->sock_receive = sock_receive_new ();
-				retval->receive_handle = receive_handle_new ();
 
 				retval->stats = connection_stats_new ();
 
