@@ -61,7 +61,7 @@ int main (int argc, char **argv) {
 
 	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
 
-	cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer_new);
+	cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
 
 	/*** handlers ***/
 	Handler *app_packet_handler = handler_create (app_handler);
