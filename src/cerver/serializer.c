@@ -29,7 +29,7 @@ bool s_relative_valid (void *relative_ptr, void *valid_begin, void *valid_end) {
 
 	void *pointee = s_relative_to_ptr (relative_ptr);
 	return pointee >= valid_begin && pointee < valid_end;
-	
+    
 }
 
 bool s_array_valid (void *array, size_t elem_size, void *valid_begin, void *valid_end) {
@@ -42,7 +42,7 @@ bool s_array_valid (void *array, size_t elem_size, void *valid_begin, void *vali
 
 	return array_.n_elems == 0
 		|| (begin >= valid_begin && begin < valid_end &&
-			end >= valid_begin && end <= valid_end);
+		    end >= valid_begin && end <= valid_end);
 
 }
 
