@@ -4,6 +4,8 @@ NATIVE		:= 0
 
 COVERAGE	:= 0
 
+DEBUG		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -25,17 +27,22 @@ MATH		:= -lm
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -g \
-				-D CERVER_DEBUG -D CERVER_STATS 			\
+BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
-				-D HANDLER_DEBUG 							\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG								\
 				-D BALANCER_DEBUG							\
 				-D SERVICE_DEBUG
+
+HAND_DEBUG	:= -D HANDLER_DEBUG -D SOCKET_DEBUG
+RECV_DEBUG	:= -D RECEIVE_DEBUG -D CLIENT_RECEIVE_DEBUG
+
+EXTRA_DEBUG	:= $(HAND_DEBUG) $(RECV_DEBUG)
+
+DEVELOPMENT := $(BASE_DEBUG)
 
 CC          := gcc
 
@@ -251,6 +258,14 @@ TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
 TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
 
 TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	TESTAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	TESTAPPFGS += -D TEST_APP_DEBUG
+endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
