@@ -30,7 +30,7 @@ static u8 balancer_client_receive (
 
 #pragma region types
 
-const char *balancer_type_to_string (BalancerType type) {
+const char *balancer_type_to_string (const BalancerType type) {
 
 	switch (type) {
 		#define XX(num, name, string) case BALANCER_TYPE_##name: return #string;
@@ -63,7 +63,7 @@ static void balancer_stats_delete (BalancerStats *stats) {
 
 }
 
-void balancer_stats_print (Balancer *balancer) {
+void balancer_stats_print (const Balancer *balancer) {
 
 	if (balancer) {
 		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
@@ -218,7 +218,9 @@ typedef struct {
 
 } BalancerService;
 
-static BalancerService *balancer_service_aux_new (Balancer *balancer, Service *service) {
+static BalancerService *balancer_service_aux_new (
+	Balancer *balancer, Service *service
+) {
 
 	BalancerService *bs = (BalancerService *) malloc (sizeof (BalancerService));
 	if (bs) {
@@ -243,7 +245,9 @@ static void balancer_service_aux_delete (void *bs_ptr) {
 
 }
 
-const char *balancer_service_status_to_string (ServiceStatus status) {
+const char *balancer_service_status_to_string (
+	const ServiceStatus status
+) {
 
 	switch (status) {
 		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #string;
@@ -255,7 +259,9 @@ const char *balancer_service_status_to_string (ServiceStatus status) {
 
 }
 
-const char *balancer_service_status_description (ServiceStatus status) {
+const char *balancer_service_status_description (
+	const ServiceStatus status
+) {
 
 	switch (status) {
 		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #description;
@@ -271,7 +277,7 @@ static ServiceStats *balancer_service_stats_new (void) {
 
 	ServiceStats *stats = (ServiceStats *) malloc (sizeof (ServiceStats));
 	if (stats) {
-		memset (stats, 0, sizeof (ServiceStats));
+		(void) memset (stats, 0, sizeof (ServiceStats));
 	}
 
 	return stats;
@@ -357,7 +363,9 @@ static Service *balancer_service_create (void) {
 
 }
 
-static void balancer_service_set_status (Service *service, ServiceStatus status) {
+static void balancer_service_set_status (
+	Service *service, ServiceStatus status
+) {
 
 	if (service) {
 		service->status = status;
@@ -365,7 +373,9 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 }
 
-static u8 balancer_service_forward_pipe_create (Service *service) {
+static u8 balancer_service_forward_pipe_create (
+	Service *service
+) {
 
 	u8 retval = 1;
 
@@ -373,7 +383,8 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 		if (!pipe (service->forward_pipe_fds)) {
 			#ifdef SERVICE_DEBUG
 			cerver_log_debug (
-				"balancer_service_forward_pipe_create () - created %s FORWARD pipe",
+				"balancer_service_forward_pipe_create () - "
+				"created %s FORWARD pipe",
 				service->connection->name->str
 			);
 			#endif
@@ -383,7 +394,8 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 
 		else {
 			cerver_log_error (
-				"balancer_service_forward_pipe_create () - %s FORWARD pipe () failed!",
+				"balancer_service_forward_pipe_create () - "
+				"%s FORWARD pipe () failed!",
 				service->connection->name->str
 			);
 			perror ("Error");
@@ -395,7 +407,9 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 
 }
 
-static u8 balancer_service_receive_pipe_create (Service *service) {
+static u8 balancer_service_receive_pipe_create (
+	Service *service
+) {
 
 	u8 retval = 1;
 
@@ -403,7 +417,8 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 		if (!pipe (service->receive_pipe_fds)) {
 			#ifdef SERVICE_DEBUG
 			cerver_log_debug (
-				"balancer_service_receive_pipe_create () - created %s RECEIVE pipe",
+				"balancer_service_receive_pipe_create () - "
+				"created %s RECEIVE pipe",
 				service->connection->name->str
 			);
 			#endif
@@ -413,7 +428,8 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 
 		else {
 			cerver_log_error (
-				"balancer_service_receive_pipe_create () - %s RECEIVE pipe () failed!",
+				"balancer_service_receive_pipe_create () - "
+				"%s RECEIVE pipe () failed!",
 				service->connection->name->str
 			);
 			perror ("Error");
@@ -428,11 +444,11 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 static void balancer_service_pipe_destroy (Service *service) {
 
 	if (service) {
-		close (service->forward_pipe_fds[0]);
-		close (service->forward_pipe_fds[1]);
+		(void) close (service->forward_pipe_fds[0]);
+		(void) close (service->forward_pipe_fds[1]);
 
-		close (service->receive_pipe_fds[0]);
-		close (service->receive_pipe_fds[1]);
+		(void) close (service->receive_pipe_fds[0]);
+		(void) close (service->receive_pipe_fds[1]);
 	}
 
 }
@@ -449,7 +465,9 @@ static void balancer_service_pipe_destroy (Service *service) {
 
 // }
 
-static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
+static inline int balancer_get_next_service_round_robin (
+	Balancer *balancer
+) {
 
 	balancer->next_service += 1;
 	if (balancer->next_service >= balancer->n_services)
@@ -459,7 +477,9 @@ static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
 
 }
 
-static int balancer_get_next_service (Balancer *balancer) {
+static int balancer_get_next_service (
+	Balancer *balancer
+) {
 
 	int retval = -1;
 
@@ -510,7 +530,7 @@ u8 balancer_service_register (
 					service->connection = connection;
 
 					char name[64] = { 0 };
-					snprintf (name, 64, "service-%d", balancer->next_service);
+					(void) snprintf (name, 64, "service-%d", balancer->next_service);
 
 					connection_set_name (connection, name);
 					connection_set_max_sleep (connection, 30);
@@ -537,7 +557,9 @@ u8 balancer_service_register (
 }
 
 // sets the service's name
-void balancer_service_set_name (Service *service, const char *name) {
+void balancer_service_set_name (
+	Service *service, const char *name
+) {
 
 	if (service && name) {
 		connection_set_name (service->connection, name);
@@ -547,14 +569,18 @@ void balancer_service_set_name (Service *service, const char *name) {
 
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
-void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time) {
+void balancer_service_set_reconnect_wait_time (
+	Service *service, unsigned int wait_time
+) {
 
 	if (service) service->reconnect_wait_time = wait_time;
 
 }
 
 // sends a test message to the service & waits for the request
-static u8 balancer_service_test (Balancer *balancer, Service *service) {
+static u8 balancer_service_test (
+	Balancer *balancer, Service *service
+) {
 
 	u8 retval = 1;
 
@@ -581,7 +607,9 @@ static u8 balancer_service_test (Balancer *balancer, Service *service) {
 
 // connects to the service & sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
-static u8 balancer_service_connect (Balancer *balancer, Service *service) {
+static u8 balancer_service_connect (
+	Balancer *balancer, Service *service
+) {
 
 	u8 retval = 1;
 

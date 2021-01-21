@@ -12,6 +12,10 @@
 
 #include "cerver/threads/thread.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Balancer;
 struct _Service;
 
@@ -29,7 +33,9 @@ typedef enum BalancerType {
 
 } BalancerType;
 
-const char *balancer_type_to_string (BalancerType type);
+const char *balancer_type_to_string (
+	const BalancerType type
+);
 
 #pragma endregion
 
@@ -65,7 +71,9 @@ typedef struct BalancerStats {
 
 } BalancerStats;
 
-CERVER_EXPORT void balancer_stats_print (struct _Balancer *balancer);
+CERVER_EXPORT void balancer_stats_print (
+	const struct _Balancer *balancer
+);
 
 #pragma endregion
 
@@ -130,9 +138,13 @@ typedef enum ServiceStatus {
 
 } ServiceStatus;
 
-CERVER_EXPORT const char *balancer_service_status_to_string (ServiceStatus status);
+CERVER_EXPORT const char *balancer_service_status_to_string (
+	const ServiceStatus status
+);
 
-CERVER_EXPORT const char *balancer_service_status_description (ServiceStatus status);
+CERVER_EXPORT const char *balancer_service_status_description (
+	const ServiceStatus status
+);
 
 typedef struct ServiceStats {
 
@@ -155,7 +167,9 @@ typedef struct ServiceStats {
 
 } ServiceStats;
 
-CERVER_EXPORT void balancer_service_stats_print (struct _Service *service);
+CERVER_EXPORT void balancer_service_stats_print (
+	struct _Service *service
+);
 
 struct _Service {
 
@@ -182,11 +196,15 @@ CERVER_EXPORT u8 balancer_service_register (
 );
 
 // sets the service's name
-CERVER_EXPORT void balancer_service_set_name (Service *service, const char *name);
+CERVER_EXPORT void balancer_service_set_name (
+	Service *service, const char *name
+);
 
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
-CERVER_EXPORT void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time);
+CERVER_EXPORT void balancer_service_set_reconnect_wait_time (
+	Service *service, unsigned int wait_time
+);
 
 #pragma endregion
 
@@ -222,5 +240,9 @@ CERVER_PRIVATE void balancer_route_to_service (
 CERVER_EXPORT u8 balancer_teardown (Balancer *balancer);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
