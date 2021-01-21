@@ -44,8 +44,6 @@
 
 static int unique_handler_id = 0;
 
-static int unique_handler_id = 0;
-
 static HandlerData *handler_data_new (void) {
 
 	HandlerData *handler_data = (HandlerData *) malloc (sizeof (HandlerData));
@@ -588,7 +586,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 		String *actual_filename = file_cerver_search_file (
 			file_cerver, file_header->filename
 		);
-		
+
 		if (actual_filename) {
 			#ifdef HANDLER_DEBUG
 			cerver_log_debug (
@@ -1821,65 +1819,46 @@ void cerver_receive_handle_buffer (
 
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
-static void cerver_receive_handle_failed (void *cr_ptr) {
+void cerver_receive_handle_failed (CerverReceive *cr) {
 
-	if (cr_ptr) {
-		CerverReceive *cr = (CerverReceive *) cr_ptr;
+	if (cr->socket) {
+		(void) pthread_mutex_lock (cr->socket->read_mutex);
 
-		if (cr->socket) {
-			pthread_mutex_lock (cr->socket->read_mutex);
-
-			if (cr->socket->sock_fd > 0) {
-				switch (cr->type) {
-					case RECEIVE_TYPE_NORMAL: {
-						// check if the socket belongs to a player inside a lobby
-						if (cr->lobby) {
-							if (cr->lobby->players->size > 0) {
-								Player *player = player_get_by_sock_fd_list (cr->lobby, cr->socket->sock_fd);
-								if (player) player_unregister_from_lobby (cr->lobby, player);
-							}
+		if (cr->socket->sock_fd > 0) {
+			switch (cr->type) {
+				case RECEIVE_TYPE_NORMAL: {
+					// check if the socket belongs to a player inside a lobby
+					if (cr->lobby) {
+						if (cr->lobby->players->size > 0) {
+							(void) player_unregister_from_lobby (
+								cr->lobby,
+								player_get_by_sock_fd_list (
+									cr->lobby, cr->socket->sock_fd
+								)
+							);
 						}
+					}
 
-						client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
-					} break;
+					(void) client_remove_connection_by_sock_fd (
+						cr->cerver, cr->client, cr->socket->sock_fd
+					);
+				} break;
 
-					case RECEIVE_TYPE_ON_HOLD: {
-						on_hold_connection_drop (cr->cerver, cr->connection);
-					} break;
+				case RECEIVE_TYPE_ON_HOLD: {
+					on_hold_connection_drop (cr->cerver, cr->connection);
+				} break;
 
-					case RECEIVE_TYPE_ADMIN: {
-						admin_remove_connection_by_sock_fd (cr->cerver->admin, cr->admin, cr->socket->sock_fd);
-					} break;
+				case RECEIVE_TYPE_ADMIN: {
+					(void) admin_remove_connection_by_sock_fd (
+						cr->cerver->admin, cr->admin, cr->socket->sock_fd
+					);
+				} break;
 
-					default: break;
-				}
-			}
-
-			pthread_mutex_unlock (cr->socket->read_mutex);
-		}
-
-		cerver_receive_delete (cr);
-	}
-
-}
-
-// 28/05/2020 -- correctly call cerver_receive_handle_failed ()
-void cerver_switch_receive_handle_failed (CerverReceive *cr) {
-
-	if (cr) {
-		if (cr->cerver->thpool) {
-			if (thpool_add_work (cr->cerver->thpool, cerver_receive_handle_failed, cr)) {
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					"Failed to add cerver_receive_handle_failed () to cerver's %s thpool!",
-					cr->cerver->info->name->str
-				);
+				default: break;
 			}
 		}
 
-		else {
-			cerver_receive_handle_failed (cr);
-		}
+		(void) pthread_mutex_unlock (cr->socket->read_mutex);
 	}
 
 }
@@ -1980,7 +1959,9 @@ static void cerver_receive_success (
 
 }
 
-void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_size) {
+void balancer_receive_consume_from_connection (
+	CerverReceive *cr, size_t data_size
+) {
 
 	size_t to_read = 0;
 
@@ -1995,7 +1976,7 @@ void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_si
 			);
 			#endif
 
-			cerver_switch_receive_handle_failed (cr);
+			cerver_receive_handle_failed (cr);
 			break;
 		}
 
@@ -2006,7 +1987,9 @@ void balancer_receive_consume_from_connection (CerverReceive *cr, size_t data_si
 
 // we received a packet of a bad type (the handler is unable to handle it)
 // consume from the socket until the next packet header
-static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) {
+static void balancer_receive_bad_type (
+	CerverReceive *cr, PacketHeader *header
+) {
 
 	if (header->packet_size > sizeof (PacketHeader)) {
 		size_t data_size = header->packet_size - sizeof (PacketHeader);
@@ -2023,13 +2006,15 @@ static void balancer_receive_bad_type (CerverReceive *cr, PacketHeader *header) 
 			);
 			#endif
 
-			cerver_switch_receive_handle_failed (cr);
+			cerver_receive_handle_failed (cr);
 		}
 	}
 
 }
 
-static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *header) {
+static inline void balancer_receive_success (
+	CerverReceive *cr, PacketHeader *header
+) {
 
 	size_t rc = sizeof (PacketHeader);
 
@@ -2087,7 +2072,22 @@ static inline void balancer_receive_success (CerverReceive *cr, PacketHeader *he
 		} break;
 	}
 
-	cerver_receive_success_update_stats (cr, rc);
+	// update stats
+	cr->cerver->stats->total_n_receives_done += 1;
+	cr->cerver->stats->total_bytes_received += rc;
+
+	cr->cerver->stats->client_receives_done += 1;
+	cr->cerver->stats->client_bytes_received += rc;
+
+	#ifdef CLIENT_STATS
+	cr->client->stats->n_receives_done += 1;
+	cr->client->stats->total_bytes_received += rc;
+	#endif
+
+	#ifdef CONNECTION_STATS
+	cr->connection->stats->n_receives_done += 1;
+	cr->connection->stats->total_bytes_received += rc;
+	#endif
 
 }
 
