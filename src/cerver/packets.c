@@ -721,7 +721,7 @@ Packet *packet_create_request (
 
 			.packet_size = sizeof (PacketHeader),
 			.packet = (void *) &packet->header,
-			.packet_ref = false
+			.packet_ref = true
 		};
 	}
 
@@ -1303,8 +1303,8 @@ u8 packet_send_request (
 		},
 
 		.packet_size = sizeof (PacketHeader),
-		.packet = &request.header,
-		.packet_ref = false
+		.packet = (void *) &request.header,
+		.packet_ref = true
 	};
 
 	size_t sent = 0;
