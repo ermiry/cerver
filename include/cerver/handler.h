@@ -189,29 +189,6 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 
 #pragma endregion
 
-#pragma region sock receive
-
-struct _SockReceive {
-
-	struct _Packet *spare_packet;
-	size_t missing_packet;
-
-	void *header;
-	char *header_end;
-	// unsigned int curr_header_pos;
-	unsigned int remaining_header;
-	bool complete_header;
-
-};
-
-typedef struct _SockReceive SockReceive;
-
-CERVER_PRIVATE SockReceive *sock_receive_new (void);
-
-CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
-
-#pragma endregion
-
 #pragma region receive
 
 // the default timeout when handling a connection in dedicated thread
