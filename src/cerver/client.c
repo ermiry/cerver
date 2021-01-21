@@ -45,7 +45,9 @@ static u64 next_client_id = 0;
 
 #pragma region aux
 
-static ClientConnection *client_connection_aux_new (Client *client, Connection *connection) {
+static ClientConnection *client_connection_aux_new (
+	Client *client, Connection *connection
+) {
 
 	ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
 	if (cc) {
@@ -68,7 +70,7 @@ static ClientStats *client_stats_new (void) {
 
 	ClientStats *client_stats = (ClientStats *) malloc (sizeof (ClientStats));
 	if (client_stats) {
-		memset (client_stats, 0, sizeof (ClientStats));
+		(void) memset (client_stats, 0, sizeof (ClientStats));
 		client_stats->received_packets = packets_per_type_new ();
 		client_stats->sent_packets = packets_per_type_new ();
 	}
@@ -131,7 +133,7 @@ static ClientFileStats *client_file_stats_new (void) {
 
 	ClientFileStats *file_stats = (ClientFileStats *) malloc (sizeof (ClientFileStats));
 	if (file_stats) {
-		memset (file_stats, 0, sizeof (ClientFileStats));
+		(void) memset (file_stats, 0, sizeof (ClientFileStats));
 	}
 
 	return file_stats;
@@ -169,6 +171,34 @@ void client_file_stats_print (Client *client) {
 
 #pragma region main
 
+const char *client_connections_status_to_string (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #string;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_to_string (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
+
+const char *client_connections_status_description (
+	const ClientConnectionsStatus status
+) {
+
+	switch (status) {
+		#define XX(num, name, string, description) case CLIENT_CONNECTIONS_STATUS_##name: return #description;
+		CLIENT_CONNECTIONS_STATUS_MAP(XX)
+		#undef XX
+	}
+
+	return client_connections_status_description (CLIENT_CONNECTIONS_STATUS_NONE);
+
+}
+
 Client *client_new (void) {
 
 	Client *client = (Client *) malloc (sizeof (Client));
@@ -176,7 +206,7 @@ Client *client_new (void) {
 		client->id = 0;
 		client->session_id = NULL;
 
-		client->name = NULL;
+		(void) memset (client->name, 0, CLIENT_NAME_SIZE);
 
 		client->connections = NULL;
 
@@ -232,8 +262,6 @@ void client_delete (void *ptr) {
 
 		str_delete (client->session_id);
 
-		str_delete (client->name);
-
 		dlist_delete (client->connections);
 
 		if (client->data) {
@@ -241,7 +269,6 @@ void client_delete (void *ptr) {
 			else free (client->data);
 		}
 
-		// 16/06/2020
 		if (client->handlers_lock) {
 			pthread_mutex_destroy (client->handlers_lock);
 			free (client->handlers_lock);
@@ -276,7 +303,12 @@ void client_delete (void *ptr) {
 
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 void client_delete_dummy (void *ptr) {}
+
+#pragma GCC diagnostic pop
 
 // creates a new client and inits its values
 Client *client_create (void) {
@@ -286,11 +318,13 @@ Client *client_create (void) {
 		client->id = next_client_id;
 		next_client_id += 1;
 
-		client->name = str_new ("no-name");
+		(void) strncpy (client->name, CLIENT_DEFAULT_NAME, CLIENT_NAME_SIZE - 1);
 
-		time (&client->connected_timestamp);
+		(void) time (&client->connected_timestamp);
 
-		client->connections = dlist_init (connection_delete, connection_comparator);
+		client->connections = dlist_init (
+			connection_delete, connection_comparator
+		);
 
 		client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (client->lock, NULL);
@@ -305,8 +339,10 @@ Client *client_create (void) {
 }
 
 // creates a new client and registers a new connection
-Client *client_create_with_connection (Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address) {
+Client *client_create_with_connection (
+	Cerver *cerver,
+	const i32 sock_fd, const struct sockaddr_storage *address
+) {
 
 	Client *client = client_create ();
 	if (client) {
@@ -327,38 +363,16 @@ Client *client_create_with_connection (Cerver *cerver,
 void client_set_name (Client *client, const char *name) {
 
 	if (client) {
-		if (client->name) str_delete (client->name);
-		client->name = name ? str_new (name) : NULL;
+		(void) strncpy (client->name, name, CLIENT_NAME_SIZE - 1);
 	}
-
-}
-
-// this methods is primarily used for logging
-// returns the client's name directly (if any) & should NOT be deleted, if not
-// returns a newly allocated string with the clients id that should be deleted after use
-char *client_get_identifier (Client *client, bool *is_name) {
-
-	char *retval = NULL;
-
-	if (client) {
-		if (client->name) {
-			retval = client->name->str;
-			*is_name = true;
-		}
-
-		else {
-		   retval = c_string_create ("%ld", client->id);
-		   *is_name = false;
-		}
-	}
-
-	return retval;
 
 }
 
 // sets the client's session id
 // returns 0 on succes, 1 on error
-u8 client_set_session_id (Client *client, const char *session_id) {
+u8 client_set_session_id (
+	Client *client, const char *session_id
+) {
 
 	u8 retval = 1;
 
@@ -374,11 +388,17 @@ u8 client_set_session_id (Client *client, const char *session_id) {
 }
 
 // returns the client's app data
-void *client_get_data (Client *client) { return (client ? client->data : NULL); }
+void *client_get_data (Client *client) {
+
+	return (client ? client->data : NULL);
+
+}
 
 // sets client's data and a way to destroy it
 // deletes the previous data of the client
-void client_set_data (Client *client, void *data, Action delete_data) {
+void client_set_data (
+	Client *client, void *data, Action delete_data
+) {
 
 	if (client) {
 		if (client->data) {
@@ -393,8 +413,10 @@ void client_set_data (Client *client, void *data, Action delete_data) {
 }
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-void client_set_app_handlers (Client *client,
-	Handler *app_handler, Handler *app_error_handler) {
+void client_set_app_handlers (
+	Client *client,
+	Handler *app_handler, Handler *app_error_handler
+) {
 
 	if (client) {
 		client->app_packet_handler = app_handler;
@@ -413,7 +435,9 @@ void client_set_app_handlers (Client *client,
 }
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
-void client_set_custom_handler (Client *client, Handler *custom_handler) {
+void client_set_custom_handler (
+	Client *client, Handler *custom_handler
+) {
 
 	if (client) {
 		client->custom_packet_handler = custom_handler;
@@ -430,7 +454,9 @@ void client_set_custom_handler (Client *client, Handler *custom_handler) {
 // if packets do not pass the checks, won't be handled and will be inmediately destroyed
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
-void client_set_check_packets (Client *client, bool check_packets) {
+void client_set_check_packets (
+	Client *client, bool check_packets
+) {
 
 	if (client) {
 		client->check_packets = check_packets;
@@ -439,7 +465,9 @@ void client_set_check_packets (Client *client, bool check_packets) {
 }
 
 // compare clients based on their client ids
-int client_comparator_client_id (const void *a, const void *b) {
+int client_comparator_client_id (
+	const void *a, const void *b
+) {
 
 	if (a && b) {
 		Client *client_a = (Client *) a;
@@ -455,9 +483,14 @@ int client_comparator_client_id (const void *a, const void *b) {
 }
 
 // compare clients based on their session ids
-int client_comparator_session_id (const void *a, const void *b) {
+int client_comparator_session_id (
+	const void *a, const void *b
+) {
 
-	if (a && b) return str_compare (((Client *) a)->session_id, ((Client *) b)->session_id);
+	if (a && b) return str_compare (
+		((Client *) a)->session_id, ((Client *) b)->session_id
+	);
+
 	if (a && !b) return -1;
 	if (!a && b) return 1;
 
@@ -519,26 +552,36 @@ void client_drop (Cerver *cerver, Client *client) {
 u8 client_connection_add (Client *client, Connection *connection) {
 
 	return (client && connection) ?
-		(u8) dlist_insert_after (client->connections, dlist_end (client->connections), connection) : 1;
+		(u8) dlist_insert_after (
+			client->connections, dlist_end (client->connections), connection
+		) : 1;
 
 }
 
 // removes the connection from the client
 // returns 0 on success, 1 on error
-u8 client_connection_remove (Client *client, Connection *connection) {
+u8 client_connection_remove (
+	Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
-	if (client && connection) retval = dlist_remove (client->connections, connection, NULL) ? 0 : 1;
+	if (client && connection)
+		retval = dlist_remove (
+			client->connections, connection, NULL
+		) ? 0 : 1;
 
 	return retval;
 
 }
 
-// closes the connection & then removes it from the client & finally deletes the connection
+// closes the connection & then removes it from the client
+// finally deletes the connection
 // moves the socket to the cerver's socket pool
 // returns 0 on success, 1 on error
-u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connection) {
+u8 client_connection_drop (
+	Cerver *cerver, Client *client, Connection *connection
+) {
 
 	u8 retval = 1;
 
@@ -557,10 +600,12 @@ u8 client_connection_drop (Cerver *cerver, Client *client, Connection *connectio
 // removes the connection from the client referred to by the sock fd by calling client_connection_drop ()
 // and also remove the client & connection from the cerver's structures when needed
 // also checks if there is another active connection in the client, if not it will be dropped
-// returns 0 on success, 1 on error
-u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock_fd) {
+// returns the resulting status after the operation
+ClientConnectionsStatus client_remove_connection_by_sock_fd (
+	Cerver *cerver, Client *client, const i32 sock_fd
+) {
 
-	u8 retval = 1;
+	ClientConnectionsStatus status = CLIENT_CONNECTIONS_STATUS_ERROR;
 
 	if (cerver && client) {
 		Connection *connection = NULL;
@@ -569,20 +614,24 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%ld> does not have ANY connection - removing him from cerver...",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%ld> does not have ANY connection - removing him from cerver...",
 					client->id
 				);
 				#endif
 
-				client_remove_from_cerver (cerver, client);
+				(void) client_remove_from_cerver (cerver, client);
 				client_delete (client);
+
+				status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 			} break;
 
 			case 1: {
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has only 1 connection left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has only 1 connection left!",
 					client->id
 				);
 				#endif
@@ -590,7 +639,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				connection = (Connection *) client->connections->start->data;
 
 				// remove the connection from cerver structures & poll array
-				connection_remove_from_cerver (cerver, connection);
+				(void) connection_remove_from_cerver (cerver, connection);
 
 				// remove, close & delete the connection
 				if (!client_connection_drop (
@@ -614,7 +663,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 						NULL, NULL
 					);
 
-					retval = 0;
+					status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 				}
 			} break;
 
@@ -622,16 +671,20 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 				#ifdef CLIENT_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-					"client_remove_connection_by_sock_fd () - Client <%d> has %ld connections left!",
+					"client_remove_connection_by_sock_fd () - "
+					"Client <%d> has %ld connections left!",
 					client->id, dlist_size (client->connections)
 				);
 				#endif
 
 				// search the connection in the client
-				connection = connection_get_by_sock_fd_from_client (client, sock_fd);
+				connection = connection_get_by_sock_fd_from_client (
+					client, sock_fd
+				);
+
 				if (connection) {
 					// remove the connection from cerver structures & poll array
-					connection_remove_from_cerver (cerver, connection);
+					(void) connection_remove_from_cerver (cerver, connection);
 
 					if (!client_connection_drop (
 						cerver,
@@ -644,7 +697,7 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 							NULL, NULL
 						);
 
-						retval = 0;
+						status = CLIENT_CONNECTIONS_STATUS_DROPPED;
 					}
 				}
 
@@ -663,13 +716,15 @@ u8 client_remove_connection_by_sock_fd (Cerver *cerver, Client *client, i32 sock
 		}
 	}
 
-	return retval;
+	return status;
 
 }
 
 // registers all the active connections from a client to the cerver's structures (like maps)
 // returns 0 on success registering at least one, 1 if all connections failed
-u8 client_register_connections_to_cerver (Cerver *cerver, Client *client) {
+u8 client_register_connections_to_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -705,7 +760,9 @@ u8 client_register_connections_to_cerver (Cerver *cerver, Client *client) {
 
 // unregiters all the active connections from a client from the cerver's structures (like maps)
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
-u8 client_unregister_connections_from_cerver (Cerver *cerver, Client *client) {
+u8 client_unregister_connections_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -741,7 +798,9 @@ u8 client_unregister_connections_from_cerver (Cerver *cerver, Client *client) {
 
 // registers all the active connections from a client to the cerver's poll
 // returns 0 on success registering at least one, 1 if all connections failed
-u8 client_register_connections_to_cerver_poll (Cerver *cerver, Client *client) {
+u8 client_register_connections_to_cerver_poll (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -778,7 +837,9 @@ u8 client_register_connections_to_cerver_poll (Cerver *cerver, Client *client) {
 
 // unregisters all the active connections from a client from the cerver's poll
 // returns 0 on success unregistering at least 1 connection, 1 failed to unregister all
-u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *client) {
+u8 client_unregister_connections_from_cerver_poll (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -813,9 +874,10 @@ u8 client_unregister_connections_from_cerver_poll (Cerver *cerver, Client *clien
 
 }
 
-// 07/06/2020
 // removes the client from cerver data structures, not taking into account its connections
-Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
+Client *client_remove_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	Client *retval = NULL;
 
@@ -856,14 +918,17 @@ Client *client_remove_from_cerver (Cerver *cerver, Client *client) {
 
 }
 
-static void client_register_to_cerver_internal (Cerver *cerver, Client *client) {
+static void client_register_to_cerver_internal (
+	Cerver *cerver, Client *client
+) {
 
 	(void) avl_insert_node (cerver->clients, client);
 
 	#ifdef CLIENT_DEBUG
 	cerver_log (
 		LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
-		"Registered a new client to cerver %s.", cerver->info->name->str
+		"Registered a new client to cerver %s.",
+		cerver->info->name->str
 	);
 	#endif
 
@@ -874,7 +939,8 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 		"Connected clients to cerver %s: %i.",
-		cerver->info->name->str, cerver->stats->current_n_connected_clients
+		cerver->info->name->str,
+		cerver->stats->current_n_connected_clients
 	);
 	#endif
 
@@ -883,7 +949,9 @@ static void client_register_to_cerver_internal (Cerver *cerver, Client *client) 
 // registers a client to the cerver --> add it to cerver's structures
 // registers all of the current active client connections to the cerver poll
 // returns 0 on success, 1 on error
-u8 client_register_to_cerver (Cerver *cerver, Client *client) {
+u8 client_register_to_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	u8 retval = 1;
 
@@ -916,7 +984,9 @@ u8 client_register_to_cerver (Cerver *cerver, Client *client) {
 }
 
 // unregisters a client from a cerver -- removes it from cerver's structures
-Client *client_unregister_from_cerver (Cerver *cerver, Client *client) {
+Client *client_unregister_from_cerver (
+	Cerver *cerver, Client *client
+) {
 
 	Client *retval = NULL;
 
@@ -963,7 +1033,9 @@ Client *client_get_by_sock_fd (Cerver *cerver, i32 sock_fd) {
 
 // searches the avl tree to get the client associated with the session id
 // the cerver must support sessions
-Client *client_get_by_session_id (Cerver *cerver, const char *session_id) {
+Client *client_get_by_session_id (
+	Cerver *cerver, const char *session_id
+) {
 
 	Client *client = NULL;
 
@@ -1019,7 +1091,7 @@ void client_broadcast_to_all_avl (
 u8 client_event_unregister (Client *client, ClientEventType event_type);
 
 // get the description for the current event type
-const char *client_event_type_description (ClientEventType type) {
+const char *client_event_type_description (const ClientEventType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CLIENT_EVENT_##name: return #description;
@@ -1068,7 +1140,7 @@ static ClientEventData *client_event_data_create (
 		event_data->response_data = event->response_data;
 		event_data->delete_response_data = event->delete_response_data;
 
-		event_data->action_args = event->action_args;
+		event_data->action_args = event->work_args;
 		event_data->delete_action_args = event->delete_action_args;
 	}
 
@@ -1089,8 +1161,8 @@ static ClientEvent *client_event_new (void) {
 		event->response_data = NULL;
 		event->delete_response_data = NULL;
 
-		event->action = NULL;
-		event->action_args = NULL;
+		event->work = NULL;
+		event->work_args = NULL;
 		event->delete_action_args = NULL;
 	}
 
@@ -1108,9 +1180,9 @@ static void client_event_delete (void *ptr) {
 				event->delete_response_data (event->response_data);
 		}
 
-		if (event->action_args) {
+		if (event->work_args) {
 			if (event->delete_action_args)
-				event->delete_action_args (event->action_args);
+				event->delete_action_args (event->work_args);
 		}
 
 		free (event);
@@ -1126,7 +1198,7 @@ static void client_event_delete (void *ptr) {
 u8 client_event_register (
 	Client *client,
 	const ClientEventType event_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -1140,8 +1212,8 @@ u8 client_event_register (
 			event->create_thread = create_thread;
 			event->drop_after_trigger = drop_after_trigger;
 
-			event->action = action;
-			event->action_args = action_args;
+			event->work = work;
+			event->work_args = work_args;
 			event->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that event and remove it
@@ -1160,7 +1232,9 @@ u8 client_event_register (
 // unregister the action associated with an event
 // deletes the action args using the delete_action_args () if NOT NULL
 // returns 0 on success, 1 on error or if event is NOT registered
-u8 client_event_unregister (Client *client, const ClientEventType event_type) {
+u8 client_event_unregister (
+	Client *client, const ClientEventType event_type
+) {
 
 	u8 retval = 1;
 
@@ -1203,12 +1277,12 @@ void client_event_trigger (
 		ClientEvent *event = client->events[event_type];
 		if (event) {
 			// trigger the action
-			if (event->action) {
+			if (event->work) {
 				if (event->create_thread) {
 					pthread_t thread_id = 0;
 					thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) event->action,
+						event->work,
 						client_event_data_create (
 							client, connection,
 							event
@@ -1217,7 +1291,7 @@ void client_event_trigger (
 				}
 
 				else {
-					event->action (client_event_data_create (
+					(void) event->work (client_event_data_create (
 						client, connection,
 						event
 					));
@@ -1239,7 +1313,7 @@ void client_event_trigger (
 u8 client_error_unregister (Client *client, const ClientErrorType error_type);
 
 // get the description for the current error type
-const char *client_error_type_description (ClientErrorType type) {
+const char *client_error_type_description (const ClientErrorType type) {
 
 	switch (type) {
 		#define XX(num, name, description) case CLIENT_ERROR_##name: return #description;
@@ -1306,8 +1380,8 @@ static ClientError *client_error_new (void) {
 		client_error->create_thread = false;
 		client_error->drop_after_trigger = false;
 
-		client_error->action = NULL;
-		client_error->action_args = NULL;
+		client_error->work = NULL;
+		client_error->work_args = NULL;
 		client_error->delete_action_args = NULL;
 	}
 
@@ -1320,9 +1394,9 @@ static void client_error_delete (void *client_error_ptr) {
 	if (client_error_ptr) {
 		ClientError *client_error = (ClientError *) client_error_ptr;
 
-		if (client_error->action_args) {
+		if (client_error->work_args) {
 			if (client_error->delete_action_args)
-				client_error->delete_action_args (client_error->action_args);
+				client_error->delete_action_args (client_error->work_args);
 		}
 
 		free (client_error_ptr);
@@ -1338,7 +1412,7 @@ static void client_error_delete (void *client_error_ptr) {
 u8 client_error_register (
 	Client *client,
 	const ClientErrorType error_type,
-	Action action, void *action_args, Action delete_action_args,
+	Work work, void *work_args, Action delete_action_args,
 	bool create_thread, bool drop_after_trigger
 ) {
 
@@ -1352,8 +1426,8 @@ u8 client_error_register (
 			error->create_thread = create_thread;
 			error->drop_after_trigger = drop_after_trigger;
 
-			error->action = action;
-			error->action_args = action_args;
+			error->work = work;
+			error->work_args = work_args;
 			error->delete_action_args = delete_action_args;
 
 			// search if there is an action already registred for that error and remove it
@@ -1403,12 +1477,12 @@ u8 client_error_trigger (
 		ClientError *error = client->errors[error_type];
 		if (error) {
 			// trigger the action
-			if (error->action) {
+			if (error->work) {
 				if (error->create_thread) {
 					pthread_t thread_id = 0;
 					retval = thread_create_detachable (
 						&thread_id,
-						(void *(*)(void *)) error->action,
+						error->work,
 						client_error_data_create (
 							client, connection,
 							error,
@@ -1418,7 +1492,7 @@ u8 client_error_trigger (
 				}
 
 				else {
-					error->action (client_error_data_create (
+					(void) error->work (client_error_data_create (
 						client, connection,
 						error,
 						error_message
@@ -1553,7 +1627,9 @@ static void client_error_packet_handler (Packet *packet) {
 }
 
 // creates an error packet ready to be sent
-Packet *client_error_packet_generate (const ClientErrorType type, const char *msg) {
+Packet *client_error_packet_generate (
+	const ClientErrorType type, const char *msg
+) {
 
 	Packet *packet = packet_new ();
 	if (packet) {
@@ -1617,7 +1693,7 @@ static u8 client_app_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s app_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1625,7 +1701,7 @@ static u8 client_app_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s app_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1636,7 +1712,7 @@ static u8 client_app_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have an app_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1656,7 +1732,7 @@ static u8 client_app_error_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s app_error_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1664,7 +1740,7 @@ static u8 client_app_error_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s app_error_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1675,7 +1751,7 @@ static u8 client_app_error_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have an app_error_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1695,7 +1771,7 @@ static u8 client_custom_handler_start (Client *client) {
 					#ifdef CLIENT_DEBUG
 					cerver_log_success (
 						"Client %s custom_packet_handler has started!",
-						client->name->str
+						client->name
 					);
 					#endif
 				}
@@ -1703,7 +1779,7 @@ static u8 client_custom_handler_start (Client *client) {
 				else {
 					cerver_log_error (
 						"Failed to start client %s custom_packet_handler!",
-						client->name->str
+						client->name
 					);
 
 					retval = 1;
@@ -1714,7 +1790,7 @@ static u8 client_custom_handler_start (Client *client) {
 		else {
 			cerver_log_warning (
 				"Client %s does not have a custom_packet_handler",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -1723,7 +1799,7 @@ static u8 client_custom_handler_start (Client *client) {
 
 }
 
-// 16/06/2020 -- starts all client's handlers
+// starts all client's handlers
 static u8 client_handlers_start (Client *client) {
 
 	u8 errors = 0;
@@ -1731,7 +1807,7 @@ static u8 client_handlers_start (Client *client) {
 	if (client) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_debug (
-			"Initializing %s handlers...", client->name->str
+			"Initializing %s handlers...", client->name
 		);
 		#endif
 
@@ -1747,7 +1823,7 @@ static u8 client_handlers_start (Client *client) {
 		if (!errors) {
 			#ifdef CLIENT_DEBUG
 			cerver_log_success (
-				"Done initializing client %s handlers!", client->name->str
+				"Done initializing client %s handlers!", client->name
 			);
 			#endif
 		}
@@ -1813,7 +1889,9 @@ Connection *client_connection_create (
 
 // registers an existing connection to a client
 // retuns 0 on success, 1 on error
-int client_connection_register (Client *client, Connection *connection) {
+int client_connection_register (
+	Client *client, Connection *connection
+) {
 
 	int retval = 1;
 
@@ -1831,7 +1909,9 @@ int client_connection_register (Client *client, Connection *connection) {
 
 // unregister an exitsing connection from the client
 // returns 0 on success, 1 on error or if the connection does not belong to the client
-int client_connection_unregister (Client *client, Connection *connection) {
+int client_connection_unregister (
+	Client *client, Connection *connection
+) {
 
 	int retval = 1;
 
@@ -1846,12 +1926,26 @@ int client_connection_unregister (Client *client, Connection *connection) {
 }
 
 // performs a receive in the connection's socket to get a complete packet & handle it
-void client_connection_get_next_packet (Client *client, Connection *connection) {
+void client_connection_get_next_packet (
+	Client *client, Connection *connection
+) {
 
 	if (client && connection) {
 		connection->full_packet = false;
-		while (!connection->full_packet) {
-			(void) client_receive (client, connection);
+
+		char *packet_buffer = (char *) calloc (
+			connection->receive_packet_buffer_size, sizeof (char)
+		);
+		
+		if (packet_buffer) {
+			while (!connection->full_packet) {
+				client_receive_internal (
+					client, connection,
+					packet_buffer, connection->receive_packet_buffer_size
+				);
+			}
+
+			free (packet_buffer);
 		}
 	}
 
@@ -1866,7 +1960,9 @@ void client_connection_get_next_packet (Client *client, Connection *connection) 
 // this is a blocking method, as it will wait until the connection has been successfull or a timeout
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 when the connection has been established, 1 on error or failed to connect
-unsigned int client_connect (Client *client, Connection *connection) {
+unsigned int client_connect (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
@@ -1893,7 +1989,9 @@ unsigned int client_connect (Client *client, Connection *connection) {
 // performs a first read to get the cerver info packet
 // this is a blocking method, and works exactly the same as if only calling client_connect ()
 // returns 0 when the connection has been established, 1 on error or failed to connect
-unsigned int client_connect_to_cerver (Client *client, Connection *connection) {
+unsigned int client_connect_to_cerver (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
@@ -1934,20 +2032,26 @@ static void *client_connect_thread (void *client_connection_ptr) {
 // open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 on success connection thread creation, 1 on error
-unsigned int client_connect_async (Client *client, Connection *connection) {
+unsigned int client_connect_async (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
 	if (client && connection) {
 		ClientConnection *cc = client_connection_aux_new (client, connection);
 		if (cc) {
-			if (!thread_create_detachable (&cc->connection_thread_id, client_connect_thread, cc)) {
+			if (!thread_create_detachable (
+				&cc->connection_thread_id, client_connect_thread, cc
+			)) {
 				retval = 0;         // success
 			}
 
 			else {
 				#ifdef CLIENT_DEBUG
-				cerver_log_error ("Failed to create client_connect_thread () detachable thread!");
+				cerver_log_error (
+					"Failed to create client_connect_thread () detachable thread!"
+				);
 				#endif
 			}
 		}
@@ -1974,7 +2078,7 @@ int client_connection_start (Client *client, Connection *connection) {
 			if (!client_start (client)) {
 				if (!thread_create_detachable (
 					&connection->update_thread_id,
-					(void *(*)(void *)) connection_update,
+					connection_update,
 					client_connection_aux_new (client, connection)
 				)) {
 					retval = 0;         // success
@@ -1983,7 +2087,7 @@ int client_connection_start (Client *client, Connection *connection) {
 				else {
 					cerver_log_error (
 						"client_connection_start () - Failed to create update thread for client %s",
-						client->name->str
+						client->name
 					);
 				}
 			}
@@ -1991,7 +2095,7 @@ int client_connection_start (Client *client, Connection *connection) {
 			else {
 				cerver_log_error (
 					"client_connection_start () - Failed to start client %s",
-					client->name->str
+					client->name
 				);
 			}
 		}
@@ -2019,7 +2123,7 @@ int client_connect_and_start (Client *client, Connection *connection) {
 		else {
 			cerver_log_error (
 				"client_connect_and_start () - Client %s failed to connect",
-				client->name->str
+				client->name
 			);
 		}
 	}
@@ -2028,13 +2132,15 @@ int client_connect_and_start (Client *client, Connection *connection) {
 
 }
 
-static void client_connection_start_wrapper (void *data_ptr) {
+static void *client_connection_start_wrapper (void *data_ptr) {
 
 	if (data_ptr) {
 		ClientConnection *cc = (ClientConnection *) data_ptr;
 		client_connect_and_start (cc->client, cc->connection);
 		client_connection_aux_delete (cc);
 	}
+
+	return NULL;
 
 }
 
@@ -2047,7 +2153,7 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 
 	return (client && connection) ? thread_create_detachable (
 		&thread_id,
-		(void *(*)(void *)) client_connection_start_wrapper,
+		client_connection_start_wrapper,
 		client_connection_aux_new (client, connection)
 	) : 1;
 
@@ -2064,7 +2170,9 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // retruns 0 when the response has been handled, 1 on error
-unsigned int client_request_to_cerver (Client *client, Connection *connection, Packet *request) {
+unsigned int client_request_to_cerver (
+	Client *client, Connection *connection, Packet *request
+) {
 
 	unsigned int retval = 1;
 
@@ -2116,7 +2224,9 @@ static void *client_request_to_cerver_thread (void *cc_ptr) {
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
 // returns 0 on success request, 1 on error
-unsigned int client_request_to_cerver_async (Client *client, Connection *connection, Packet *request) {
+unsigned int client_request_to_cerver_async (
+	Client *client, Connection *connection, Packet *request
+) {
 
 	unsigned int retval = 1;
 
@@ -2127,7 +2237,9 @@ unsigned int client_request_to_cerver_async (Client *client, Connection *connect
 			ClientConnection *cc = client_connection_aux_new (client, connection);
 			if (cc) {
 				// create a new thread to receive & handle the response
-				if (!thread_create_detachable (&cc->connection_thread_id, client_request_to_cerver_thread, cc)) {
+				if (!thread_create_detachable (
+					&cc->connection_thread_id, client_request_to_cerver_thread, cc
+				)) {
 					retval = 0;         // success
 				}
 
@@ -2201,7 +2313,9 @@ u8 client_files_add_path (Client *client, const char *path) {
 }
 
 // sets the default uploads path to be used when receiving a file
-void client_files_set_uploads_path (Client *client, const char *uploads_path) {
+void client_files_set_uploads_path (
+	Client *client, const char *uploads_path
+) {
 
 	if (client && uploads_path) {
 		str_delete (client->uploads_path);
@@ -2246,7 +2360,9 @@ void client_files_set_file_upload_cb (
 
 // search for the requested file in the configured paths
 // returns the actual filename (path + directory) where it was found, NULL on error
-String *client_files_search_file (Client *client, const char *filename) {
+String *client_files_search_file (
+	Client *client, const char *filename
+) {
 
 	String *retval = NULL;
 
@@ -2273,7 +2389,10 @@ String *client_files_search_file (Client *client, const char *filename) {
 // requests a file from the cerver
 // the client's uploads_path should have been configured before calling this method
 // returns 0 on success sending request, 1 on failed to send request
-u8 client_file_get (Client *client, Connection *connection, const char *filename) {
+u8 client_file_get (
+	Client *client, Connection *connection,
+	const char *filename
+) {
 
 	u8 retval = 1;
 
@@ -2296,12 +2415,14 @@ u8 client_file_get (Client *client, Connection *connection, const char *filename
 				end += sizeof (PacketHeader);
 
 				FileHeader *file_header = (FileHeader *) end;
-				strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+				(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
 				file_header->len = 0;
 
 				packet_set_network_values (packet, NULL, client, connection, NULL);
 
 				retval = packet_send (packet, 0, NULL, false);
+
+				packet_delete (packet);
 			}
 		}
 	}
@@ -2312,7 +2433,10 @@ u8 client_file_get (Client *client, Connection *connection, const char *filename
 
 // sends a file to the cerver
 // returns 0 on success sending request, 1 on failed to send request
-u8 client_file_send (Client *client, Connection *connection, const char *filename) {
+u8 client_file_send (
+	Client *client, Connection *connection,
+	const char *filename
+) {
 
 	u8 retval = 1;
 
@@ -2358,6 +2482,34 @@ u8 client_file_send (Client *client, Connection *connection, const char *filenam
 
 #pragma region handler
 
+const char *client_handler_error_to_string (
+	const ClientHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CLIENT_HANDLER_ERROR_##name: return #string;
+		CLIENT_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return client_handler_error_to_string (CLIENT_HANDLER_ERROR_NONE);
+
+}
+
+const char *client_handler_error_description (
+	const ClientHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CLIENT_HANDLER_ERROR_##name: return #description;
+		CLIENT_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return client_handler_error_description (CLIENT_HANDLER_ERROR_NONE);
+
+}
+
 static void client_cerver_packet_handle_info (Packet *packet) {
 
 	if (packet->data && (packet->data_size > 0)) {
@@ -2368,16 +2520,24 @@ static void client_cerver_packet_handle_info (Packet *packet) {
 		#endif
 
 		CerverReport *cerver_report = cerver_deserialize ((SCerver *) end);
-		if (cerver_report_check_info (cerver_report, packet->client, packet->connection))
-			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to correctly check cerver info!");
+		if (cerver_report_check_info (
+			cerver_report, packet->client, packet->connection
+		)) {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				"Failed to correctly check cerver info!"
+			);
+		}
 	}
 
 }
 
 // handles cerver type packets
-void client_cerver_packet_handler (Packet *packet) {
+static ClientHandlerError client_cerver_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+
+	switch (packet->header.request_type) {
 		case CERVER_PACKET_TYPE_INFO:
 			client_cerver_packet_handle_info (packet);
 			break;
@@ -2385,38 +2545,58 @@ void client_cerver_packet_handler (Packet *packet) {
 		// the cerves is going to be teardown, we have to disconnect
 		case CERVER_PACKET_TYPE_TEARDOWN:
 			#ifdef CLIENT_DEBUG
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "---> Server teardown! <---");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"---> Cerver teardown <---"
+			);
 			#endif
+
 			client_got_disconnected (packet->client);
 			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
+
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown cerver type packet.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown cerver type packet"
+			);
 			break;
 	}
+
+	return error;
 
 }
 
 // handles a client type packet
-static void client_client_packet_handler (Packet *packet) {
+static ClientHandlerError client_client_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+
+	switch (packet->header.request_type) {
 		// the cerver close our connection
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION:
 			client_connection_end (packet->client, packet->connection);
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		// the cerver has disconneted us
 		case CLIENT_PACKET_TYPE_DISCONNECT:
 			client_got_disconnected (packet->client);
 			client_event_trigger (CLIENT_EVENT_DISCONNECTED, packet->client, NULL);
+			error = CLIENT_HANDLER_ERROR_CLOSED;
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown client packet type.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown client packet type"
+			);
 			break;
 	}
+
+	return error;
 
 }
 
@@ -2433,7 +2613,10 @@ static void client_request_get_file (Packet *packet) {
 		FileHeader *file_header = (FileHeader *) end;
 
 		// search for the requested file in the configured paths
-		String *actual_filename = client_files_search_file (client, file_header->filename);
+		String *actual_filename = client_files_search_file (
+			client, file_header->filename
+		);
+
 		if (actual_filename) {
 			#ifdef CLIENT_DEBUG
 			cerver_log_debug (
@@ -2468,7 +2651,10 @@ static void client_request_get_file (Packet *packet) {
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_warning ("client_request_get_file () - file not found");
+			cerver_log_warning (
+				"client_request_get_file () - "
+				"file not found"
+			);
 			#endif
 
 			// if not found, return an error to the client
@@ -2484,7 +2670,10 @@ static void client_request_get_file (Packet *packet) {
 
 	else {
 		#ifdef CLIENT_DEBUG
-		cerver_log_warning ("client_request_get_file () - missing file header");
+		cerver_log_warning (
+			"client_request_get_file () - "
+			"missing file header"
+		);
 		#endif
 
 		// return a bad request error packet
@@ -2542,7 +2731,10 @@ static void client_request_send_file_actual (Packet *packet) {
 		}
 
 		else {
-			cerver_log_error ("client_request_send_file () - Failed to receive file");
+			cerver_log_error (
+				"client_request_send_file () - "
+				"Failed to receive file"
+			);
 
 			client->file_stats->n_bad_files_received += 1;
 		}
@@ -2550,7 +2742,10 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	else {
 		#ifdef CLIENT_DEBUG
-		cerver_log_warning ("client_request_send_file () - missing file header");
+		cerver_log_warning (
+			"client_request_send_file () - "
+			"missing file header"
+		);
 		#endif
 
 		// return a bad request error packet
@@ -2582,7 +2777,7 @@ static void client_request_send_file (Packet *packet) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_warning (
 			"Client %s is unable to handle REQUEST_PACKET_TYPE_SEND_FILE packets!",
-			packet->client->name->str
+			packet->client->name
 		);
 		#endif
 	}
@@ -2592,18 +2787,23 @@ static void client_request_send_file (Packet *packet) {
 // handles a request made from the cerver
 static void client_request_packet_handler (Packet *packet) {
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// request from a cerver to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE: client_request_get_file (packet); break;
+	switch (packet->header.request_type) {
+		// request from a cerver to get a file
+		case REQUEST_PACKET_TYPE_GET_FILE:
+			client_request_get_file (packet);
+			break;
 
-			// request from a cerver to receive a file
-			case REQUEST_PACKET_TYPE_SEND_FILE: client_request_send_file (packet); break;
+		// request from a cerver to receive a file
+		case REQUEST_PACKET_TYPE_SEND_FILE:
+			client_request_send_file (packet);
+			break;
 
-			default:
-				cerver_log (LOG_TYPE_WARNING, LOG_TYPE_HANDLER, "Unknown request from cerver");
-				break;
-		}
+		default:
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Unknown request from cerver"
+			);
+			break;
 	}
 
 }
@@ -2639,21 +2839,25 @@ static void client_auth_success_handler (Packet *packet) {
 				#ifdef AUTH_DEBUG
 				cerver_log_debug (
 					"Got client's <%s> session id <%s>",
-					packet->client->name->str, packet->client->session_id->str
+					packet->client->name,
+					packet->client->session_id->str
 				);
 				#endif
 			}
 		}
 	}
 
-	client_event_trigger (CLIENT_EVENT_SUCCESS_AUTH, packet->client, packet->connection);
+	client_event_trigger (
+		CLIENT_EVENT_SUCCESS_AUTH,
+		packet->client, packet->connection
+	);
 
 }
 
 static void client_auth_packet_handler (Packet *packet) {
 
-	switch (packet->header->request_type) {
-		// 24/01/2020 -- cerver requested authentication, if not, we will be disconnected
+	switch (packet->header.request_type) {
+		// cerver requested authentication, if not, we will be disconnected
 		case AUTH_PACKET_TYPE_REQUEST_AUTH:
 			break;
 
@@ -2667,13 +2871,15 @@ static void client_auth_packet_handler (Packet *packet) {
 			break;
 
 		default:
-			cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Unknown auth packet type.");
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Unknown auth packet type"
+			);
 			break;
 	}
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_APP packet type
 static void client_app_packet_handler (Packet *packet) {
 
@@ -2693,7 +2899,7 @@ static void client_app_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s app_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -2702,13 +2908,12 @@ static void client_app_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a app_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_APP_ERROR packet type
 static void client_app_error_packet_handler (Packet *packet) {
 
@@ -2728,7 +2933,7 @@ static void client_app_error_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s app_error_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -2737,13 +2942,12 @@ static void client_app_error_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a app_error_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
 }
 
-// 16/06/2020
 // handles a PACKET_TYPE_CUSTOM packet type
 static void client_custom_packet_handler (Packet *packet) {
 
@@ -2763,7 +2967,7 @@ static void client_custom_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to client's %s custom_packet_handler!",
-					packet->client->name->str
+					packet->client->name
 				);
 			}
 		}
@@ -2772,122 +2976,171 @@ static void client_custom_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Client %s does not have a custom_packet_handler!",
-			packet->client->name->str
+			packet->client->name
 		);
 	}
 
 }
 
 // the client handles a packet based on its type
-static void client_packet_handler (void *packet_ptr) {
+static ClientHandlerError client_packet_handler_actual (
+	Packet *packet
+) {
 
-	if (packet_ptr) {
-		Packet *packet = (Packet *) packet_ptr;
-		packet->client->stats->n_packets_received += 1;
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;	
 
-		bool good = true;
-		if (packet->client->check_packets) {
-			// we expect the packet version in the packet's data
-			if (packet->data) {
-				packet->version = (PacketVersion *) packet->data_ptr;
-				packet->data_ptr += sizeof (PacketVersion);
-				good = packet_check (packet);
-			}
+	switch (packet->header.packet_type) {
+		case PACKET_TYPE_NONE: break;
 
-			else {
-				cerver_log_error ("client_packet_handler () - No packet version to check!");
-				good = false;
-			}
-		}
+		// handles cerver type packets
+		case PACKET_TYPE_CERVER:
+			packet->client->stats->received_packets->n_cerver_packets += 1;
+			packet->connection->stats->received_packets->n_cerver_packets += 1;
+			error = client_cerver_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-		if (good) {
-			switch (packet->header->packet_type) {
-				case PACKET_TYPE_NONE: break;
+		// handles a client type packet
+		case PACKET_TYPE_CLIENT:
+			error = client_client_packet_handler (packet);
+			break;
 
-				// handles cerver type packets
-				case PACKET_TYPE_CERVER:
-					packet->client->stats->received_packets->n_cerver_packets += 1;
-					packet->connection->stats->received_packets->n_cerver_packets += 1;
-					client_cerver_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// handles an error from the server
+		case PACKET_TYPE_ERROR:
+			packet->client->stats->received_packets->n_error_packets += 1;
+			packet->connection->stats->received_packets->n_error_packets += 1;
+			client_error_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles a client type packet
-				case PACKET_TYPE_CLIENT:
-					client_client_packet_handler (packet);
-					break;
+		// handles a request made from the server
+		case PACKET_TYPE_REQUEST:
+			packet->client->stats->received_packets->n_request_packets += 1;
+			packet->connection->stats->received_packets->n_request_packets += 1;
+			client_request_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles an error from the server
-				case PACKET_TYPE_ERROR:
-					packet->client->stats->received_packets->n_error_packets += 1;
-					packet->connection->stats->received_packets->n_error_packets += 1;
-					client_error_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// handles authentication packets
+		case PACKET_TYPE_AUTH:
+			packet->client->stats->received_packets->n_auth_packets += 1;
+			packet->connection->stats->received_packets->n_auth_packets += 1;
+			client_auth_packet_handler (packet);
+			packet_delete (packet);
+			break;
 
-				// handles a request made from the server
-				case PACKET_TYPE_REQUEST:
-					packet->client->stats->received_packets->n_request_packets += 1;
-					packet->connection->stats->received_packets->n_request_packets += 1;
-					client_request_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// handles a game packet sent from the server
+		case PACKET_TYPE_GAME:
+			packet->client->stats->received_packets->n_game_packets += 1;
+			packet->connection->stats->received_packets->n_game_packets += 1;
+			packet_delete (packet);
+			break;
 
-				// handles authentication packets
-				case PACKET_TYPE_AUTH:
-					packet->client->stats->received_packets->n_auth_packets += 1;
-					packet->connection->stats->received_packets->n_auth_packets += 1;
-					client_auth_packet_handler (packet);
-					packet_delete (packet);
-					break;
+		// user set handler to handler app specific packets
+		case PACKET_TYPE_APP:
+			packet->client->stats->received_packets->n_app_packets += 1;
+			packet->connection->stats->received_packets->n_app_packets += 1;
+			client_app_packet_handler (packet);
+			break;
 
-				// handles a game packet sent from the server
-				case PACKET_TYPE_GAME:
-					packet->client->stats->received_packets->n_game_packets += 1;
-					packet->connection->stats->received_packets->n_game_packets += 1;
-					packet_delete (packet);
-					break;
+		// user set handler to handle app specific errors
+		case PACKET_TYPE_APP_ERROR:
+			packet->client->stats->received_packets->n_app_error_packets += 1;
+			packet->connection->stats->received_packets->n_app_error_packets += 1;
+			client_app_error_packet_handler (packet);
+			break;
 
-				// user set handler to handler app specific packets
-				case PACKET_TYPE_APP:
-					packet->client->stats->received_packets->n_app_packets += 1;
-					packet->connection->stats->received_packets->n_app_packets += 1;
-					client_app_packet_handler (packet);
-					break;
+		// custom packet hanlder
+		case PACKET_TYPE_CUSTOM:
+			packet->client->stats->received_packets->n_custom_packets += 1;
+			packet->connection->stats->received_packets->n_custom_packets += 1;
+			client_custom_packet_handler (packet);
+			break;
 
-				// user set handler to handle app specific errors
-				case PACKET_TYPE_APP_ERROR:
-					packet->client->stats->received_packets->n_app_error_packets += 1;
-					packet->connection->stats->received_packets->n_app_error_packets += 1;
-					client_app_error_packet_handler (packet);
-					break;
+		// handles a test packet form the cerver
+		case PACKET_TYPE_TEST:
+			packet->client->stats->received_packets->n_test_packets += 1;
+			packet->connection->stats->received_packets->n_test_packets += 1;
+			cerver_log (LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver");
+			packet_delete (packet);
+			break;
 
-				// custom packet hanlder
-				case PACKET_TYPE_CUSTOM:
-					packet->client->stats->received_packets->n_custom_packets += 1;
-					packet->connection->stats->received_packets->n_custom_packets += 1;
-					client_custom_packet_handler (packet);
-					break;
+		default:
+			packet->client->stats->received_packets->n_bad_packets += 1;
+			packet->connection->stats->received_packets->n_bad_packets += 1;
+			#ifdef CLIENT_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_NONE,
+				"Got a packet of unknown type"
+			);
+			#endif
+			packet_delete (packet);
+			break;
+	}
 
-				// handles a test packet form the cerver
-				case PACKET_TYPE_TEST:
-					packet->client->stats->received_packets->n_test_packets += 1;
-					packet->connection->stats->received_packets->n_test_packets += 1;
-					cerver_log (LOG_TYPE_TEST, LOG_TYPE_NONE, "Got a test packet from cerver");
-					packet_delete (packet);
-					break;
+	return error;
 
-				default:
-					packet->client->stats->received_packets->n_bad_packets += 1;
-					packet->connection->stats->received_packets->n_bad_packets += 1;
-					#ifdef CLIENT_DEBUG
-					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_NONE, "Got a packet of unknown type");
-					#endif
-					packet_delete (packet);
-					break;
-			}
+}
+
+static ClientHandlerError client_packet_handler_check_version (
+	Packet *packet
+) {
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+
+	// we expect the packet version in the packet's data
+	if (packet->data) {
+		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
+		packet->data_ptr += sizeof (PacketVersion);
+		
+		// TODO: return errors to cerver/client
+		// TODO: drop client on max bad packets
+		if (packet_check (packet)) {
+			error = CLIENT_HANDLER_ERROR_PACKET;
 		}
 	}
+
+	else {
+		cerver_log_error (
+			"client_packet_handler () - No packet version to check!"
+		);
+		
+		// TODO: add to bad packets count
+
+		error = CLIENT_HANDLER_ERROR_PACKET;
+	}
+
+	return error;
+
+}
+
+static u8 client_packet_handler (Packet *packet) {
+
+	u8 retval = 1;
+
+	// update general stats
+	packet->client->stats->n_packets_received += 1;
+
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
+	if (packet->client->check_packets) {
+		if (!client_packet_handler_check_version (packet)) {
+			error = client_packet_handler_actual (packet);
+		}
+	}
+
+	else {
+		error = client_packet_handler_actual (packet);
+	}
+
+	switch (error) {
+		case CLIENT_HANDLER_ERROR_NONE:
+			retval = 0;
+			break;
+
+		default: break;
+	}
+
+	return retval;
 
 }
 
@@ -2916,7 +3169,7 @@ static void client_receive_handle_spare_packet (
 
 			// check if we can handler the packet
 			size_t curr_packet_size = connection->sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (connection->sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+			if (connection->sock_receive->spare_packet->header.packet_size == curr_packet_size) {
 				connection->sock_receive->spare_packet->client = client;
 				connection->sock_receive->spare_packet->connection = connection;
 
@@ -2944,6 +3197,8 @@ static void client_receive_handle_buffer (
 ) {
 
 	char *end = buffer;
+	packet_header_print ((PacketHeader *) end);
+
 	size_t buffer_pos = 0;
 
 	SockReceive *sock_receive = connection->sock_receive;
@@ -2967,8 +3222,11 @@ static void client_receive_handle_buffer (
 	while (buffer_pos < buffer_size) {
 		remaining_buffer_size = buffer_size - buffer_pos;
 
+		printf ("remaining_buffer_size: %lu\n", remaining_buffer_size);
+
 		if (sock_receive->complete_header) {
-			packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+			// FIXME:
+			packet_header_copy (header, (PacketHeader *) sock_receive->header);
 			// header = ((PacketHeader *) sock_receive->header);
 			// packet_header_print (header);
 
@@ -2989,10 +3247,16 @@ static void client_receive_handle_buffer (
 
 		else if (remaining_buffer_size >= sizeof (PacketHeader)) {
 			header = (PacketHeader *) end;
-			end += sizeof (PacketHeader);
-			buffer_pos += sizeof (PacketHeader);
+			
 
 			// packet_header_print (header);
+
+			// if (end) {
+			// 	printf ("kjzhckjhzlkfhjdskjhn\n\n\n");
+			// }
+
+			end += sizeof (PacketHeader);
+			buffer_pos += sizeof (PacketHeader);
 
 			spare_header = false;
 		}
@@ -3008,7 +3272,10 @@ static void client_receive_handle_buffer (
 
 				Packet *packet = packet_new ();
 				if (packet) {
-					packet_header_copy (&packet->header, header);
+					printf ("packet_new ()\n");
+					printf ("header->packet_size: %lu\n", header->packet_size);
+					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+					printf ("packet->header.packet_size %lu\n", packet->header.packet_size);
 					packet->packet_size = header->packet_size;
 					// packet->cerver = cerver;
 					// packet->lobby = lobby;
@@ -3020,8 +3287,14 @@ static void client_receive_handle_buffer (
 						header = NULL;
 					}
 
+					printf ("packet_real_size: %lu\n", packet_real_size);
+					printf ("packet->header.packet_size: %lu\n", packet->header.packet_size);
+
+					// FIXME: problems if packet->header.packet_size is less than sizeof (PacketHeader)
 					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
+
+					printf ("2 packet_real_size: %lu\n", packet_real_size);
 					to_copy_size = 0;
 					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
 						sock_receive->spare_packet = packet;
@@ -3045,7 +3318,7 @@ static void client_receive_handle_buffer (
 						sock_receive->spare_packet = NULL;
 					}
 
-					// printf ("to copy size: %ld\n", to_copy_size);
+					printf ("to copy size: %lu\n", to_copy_size);
 					packet_set_data (packet, (void *) end, to_copy_size);
 
 					end += to_copy_size;
@@ -3102,9 +3375,430 @@ static void client_receive_handle_buffer (
 
 }
 
+static void client_receive_handle_buffer_new_actual (
+	ReceiveHandle *receive_handle,
+	char *end, size_t buffer_pos,
+	size_t remaining_buffer_size
+) {
+
+	PacketHeader *header = NULL;
+	size_t packet_size = 0;
+
+	Packet *packet = NULL;
+
+	u8 stop_handler = 0;
+
+	#ifdef CLIENT_RECEIVE_DEBUG
+	(void) printf ("WHILE has started!\n\n");
+	#endif
+
+	do {
+		#ifdef CLIENT_RECEIVE_DEBUG
+		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
+		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
+		#endif
+
+		switch (receive_handle->state) {
+			// check if we have a complete packet header in the buffer
+			case RECEIVE_HANDLE_STATE_NORMAL: {
+				if (remaining_buffer_size >= sizeof (PacketHeader)) {
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf (
+						"Complete header in current buffer\n"
+					);
+					#endif
+
+					header = (PacketHeader *) end;
+					end += sizeof (PacketHeader);
+					buffer_pos += sizeof (PacketHeader);
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					packet_header_print (header);
+					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
+
+					packet_size = header->packet_size;
+					remaining_buffer_size -= sizeof (PacketHeader);
+				}
+
+				// we need to handle just a part of the header
+				else {
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf (
+						"Only %lu of %lu header bytes left in buffer\n",
+						remaining_buffer_size, sizeof (PacketHeader)
+					);
+					#endif
+
+					// reset previous header
+					(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
+
+					// the remaining buffer must contain a part of the header
+					// so copy it to our aux structure
+					receive_handle->header_end = (char *) &receive_handle->header;
+					(void) memcpy (
+						receive_handle->header_end, (void *) end, remaining_buffer_size
+					);
+
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++)
+					// 	printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+
+					// printf ("\n");
+
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++) {
+					// 	printf ("%4x", (unsigned int) *end);
+					// 	end += 1;
+					// }
+
+					// printf ("\n");
+
+					// packet_header_print (&receive_handle->header);
+
+					// pointer to the last byte of the new header
+					receive_handle->header_end += remaining_buffer_size;
+
+					// keep track of how much header's data we are missing
+					receive_handle->remaining_header =
+						sizeof (PacketHeader) - remaining_buffer_size;
+
+					buffer_pos += remaining_buffer_size;
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
+
+					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_HEADER;
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("while loop should end now!\n");
+					#endif
+				}
+			} break;
+
+			// we already have a complete header from the spare packet
+			// we just need to check if it is correct
+			case RECEIVE_HANDLE_STATE_COMP_HEADER: {
+				header = &receive_handle->header;
+				packet_size = header->packet_size;
+				// remaining_buffer_size -= buffer_pos;
+
+				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
+			} break;
+
+			default: break;
+		}
+
+		#ifdef CLIENT_RECEIVE_DEBUG
+		(void) printf (
+			"State BEFORE CHECKING for packet size: %s\n",
+			receive_handle_state_to_string (receive_handle->state)
+		);
+		#endif
+
+		if (
+			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
+			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
+		) {
+			// TODO: make max value a variable
+			// check that we have a valid packet size
+			if ((packet_size > 0) && (packet_size < 65536)) {
+				// we can safely process the complete packet
+				packet = packet_create_with_data (
+					header->packet_size - sizeof (PacketHeader)
+				);
+
+				// set packet's values
+				(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+				// packet->cerver = receive_handle->cerver;
+				packet->client = receive_handle->client;
+				packet->connection = receive_handle->connection;
+				// packet->lobby = receive_handle->lobby;
+
+				packet->packet_size = packet->header.packet_size;
+
+				if (packet->data_size == 0) {
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf (
+						"Packet has no more data\n"
+					);
+					#endif
+
+					// we can safely handle the packet
+					stop_handler = client_packet_handler (packet);
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
+				}
+
+				// check how much of the packet's data is in the current buffer
+				else if (packet->data_size <= remaining_buffer_size) {
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf (
+						"Complete packet in current buffer\n"
+					);
+					#endif
+
+					// the full packet's data is in the current buffer
+					// so we can safely copy the complete packet
+					(void) memcpy (packet->data, end, packet->data_size);
+
+					// we can safely handle the packet
+					stop_handler = client_packet_handler (packet);
+
+					// update buffer positions & values
+					end += packet->data_size;
+					buffer_pos += packet->data_size;
+					remaining_buffer_size -= packet->data_size;
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
+				}
+
+				else {
+					// just some part of the packet's data is in the current buffer
+					// we should copy all the remaining buffer and wait for the next read
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
+					#endif
+					
+					if (remaining_buffer_size > 0) {
+						#ifdef CLIENT_RECEIVE_DEBUG
+						(void) printf (
+							"We can only get %lu / %lu from the current buffer\n",
+							remaining_buffer_size, packet->data_size
+						);
+						#endif
+
+						// TODO: handle errors
+						(void) packet_add_data (
+							packet, end, remaining_buffer_size
+						);
+
+						// update buffer positions & values
+						end += packet->data_size;
+						buffer_pos += packet->data_size;
+						remaining_buffer_size -= packet->data_size;
+
+						// set the newly created packet as spare
+						receive_handle->spare_packet = packet;
+					}
+
+					else {
+						#ifdef CLIENT_RECEIVE_DEBUG
+						(void) printf (
+							"We have NO more data left in current buffer\n"
+						);
+						#endif
+					}
+
+					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
+
+					#ifdef CLIENT_RECEIVE_DEBUG
+					(void) printf ("while loop should end now!\n");
+					#endif
+				}
+			}
+
+			else {
+				// we must likely have a bad packet
+				// we need to keep reading the buffer until we find
+				// the start of the next one and we can continue
+				#ifdef CLIENT_RECEIVE_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+					"Got a packet of invalid size: %ld", packet_size
+				);
+				#endif
+
+				#ifdef CLIENT_RECEIVE_DEBUG
+				(void) printf ("\n\nWE ARE LOST!\n\n");
+				#endif
+
+				receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
+
+				// FIXME: this is just for testing!
+				break;
+			}
+		}
+
+		// reset common loop values
+		header = NULL;
+		packet = NULL;
+	} while ((buffer_pos < receive_handle->received_size) && !stop_handler);
+
+	#ifdef CLIENT_RECEIVE_DEBUG
+	(void) printf ("WHILE has ended!\n\n");
+	#endif
+
+}
+
+static void client_receive_handle_buffer_new (
+	ReceiveHandle *receive_handle
+) {
+
+	char *end = receive_handle->buffer;
+	size_t buffer_pos = 0;
+
+	size_t remaining_buffer_size = receive_handle->received_size;
+
+	u8 stop_handler = 0;
+
+	#ifdef CLIENT_RECEIVE_DEBUG
+	(void) printf ("Received size: %lu\n", receive_handle->received_size);
+
+	(void) printf (
+		"State BEFORE checking for SPARE PARTS: %s\n",
+		receive_handle_state_to_string (receive_handle->state)
+	);
+	#endif
+
+		// check if we have any spare parts 
+	switch (receive_handle->state) {
+		// check if we have a spare header
+		// that was incompleted from the last buffer
+		case RECEIVE_HANDLE_STATE_SPLIT_HEADER: {
+			// copy the remaining header size
+			(void) memcpy (
+				receive_handle->header_end,
+				(void *) end,
+				receive_handle->remaining_header
+			);
+
+			#ifdef CLIENT_RECEIVE_DEBUG
+			(void) printf (
+				"Copied %u missing header bytes\n",
+				receive_handle->remaining_header
+			);
+			#endif
+
+			// receive_handle->header_end = (char *) &receive_handle->header;
+			// for (size_t i = 0; i < receive_handle->remaining_header; i++)
+			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+
+			// (void) printf ("\n");
+			
+			#ifdef CLIENT_RECEIVE_DEBUG
+			packet_header_print (&receive_handle->header);
+			#endif
+
+			// update buffer positions
+			end += receive_handle->remaining_header;
+			buffer_pos += receive_handle->remaining_header;
+
+			// update how much we have still left to handle from the current buffer
+			remaining_buffer_size -= receive_handle->remaining_header;
+
+			// reset receive handler values
+			receive_handle->header_end = NULL;
+			receive_handle->remaining_header = 0;
+
+			// we can expect to get the packet's data from the current buffer
+			receive_handle->state = RECEIVE_HANDLE_STATE_COMP_HEADER;
+
+			#ifdef CLIENT_RECEIVE_DEBUG
+			(void) printf ("We have a COMPLETE HEADER!\n");
+			#endif
+		} break;
+
+		// check if we have a spare packet
+		case RECEIVE_HANDLE_STATE_SPLIT_PACKET: {
+			// check if the current buffer is big enough
+			if (
+				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
+			) {
+				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
+				
+				// copy packet's remaining data
+				(void) packet_add_data (
+					receive_handle->spare_packet,
+					end,
+					receive_handle->spare_packet->remaining_data
+				);
+
+				#ifdef CLIENT_RECEIVE_DEBUG
+				(void) printf (
+					"Copied %lu missing packet bytes\n",
+					to_copy_data_size
+				);
+
+				(void) printf ("Spare packet is COMPLETED!\n");
+				#endif
+
+				// we can safely handle the packet
+				stop_handler = client_packet_handler (
+					receive_handle->spare_packet
+				);
+
+				// update buffer positions
+				end += to_copy_data_size;
+				buffer_pos += to_copy_data_size;
+
+				// update how much we have still left to handle from the current buffer
+				remaining_buffer_size -= to_copy_data_size;
+
+				// we still need to process more data from the buffer
+				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
+			}
+
+			else {
+				#ifdef CLIENT_RECEIVE_DEBUG
+				(void) printf (
+					"We can only get %lu / %lu of the remaining packet's data\n",
+					receive_handle->spare_packet->remaining_data,
+					receive_handle->received_size
+				);
+				#endif
+
+				// copy the complete buffer
+				(void) packet_add_data (
+					receive_handle->spare_packet,
+					end,
+					receive_handle->received_size
+				);
+
+				#ifdef CLIENT_RECEIVE_DEBUG
+				(void) printf (
+					"We are still missing %lu to complete the packet!\n",
+					receive_handle->spare_packet->remaining_data
+				);
+				#endif
+			}
+		} break;
+
+		default: break;
+	}
+
+	#ifdef CLIENT_RECEIVE_DEBUG
+	(void) printf (
+		"State BEFORE LOOP: %s\n",
+		receive_handle_state_to_string (receive_handle->state)
+	);
+	#endif
+
+	if (
+		!stop_handler
+		&& (buffer_pos < receive_handle->received_size)
+		&& (
+			receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL
+			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
+		)
+	) {
+		client_receive_handle_buffer_new_actual (
+			receive_handle,
+			end, buffer_pos,
+			remaining_buffer_size
+		);
+	}
+
+}
+
 // handles a failed recive from a connection associatd with a client
 // end sthe connection to prevent seg faults or signals for bad sock fd
-static void client_receive_handle_failed (Client *client, Connection *connection) {
+static void client_receive_handle_failed (
+	Client *client, Connection *connection
+) {
 
 	if (connection->active) {
 		if (!client_connection_end (client, connection)) {
@@ -3128,15 +3822,20 @@ unsigned int client_receive_internal (
 
 	unsigned int retval = 1;
 
-	ssize_t rc = recv (connection->socket->sock_fd, buffer, buffer_size, 0);
+	ssize_t rc = recv (
+		connection->socket->sock_fd,
+		buffer, buffer_size,
+		0
+	);
+
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
-				#ifdef CONNECTION_DEBUG
+				#ifdef SOCKET_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_receive_internal () - connection %s sock fd: %d timed out",
-					connection->name->str, connection->socket->sock_fd
+					connection->name, connection->socket->sock_fd
 				);
 				#endif
 
@@ -3148,7 +3847,7 @@ unsigned int client_receive_internal (
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 					"client_receive_internal () - rc < 0 - connection %s sock fd: %d",
-					connection->name->str, connection->socket->sock_fd
+					connection->name, connection->socket->sock_fd
 				);
 
 				perror ("Error ");
@@ -3163,7 +3862,7 @@ unsigned int client_receive_internal (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"client_receive_internal () - rc == 0 - connection %s sock fd: %d",
-				connection->name->str, connection->socket->sock_fd
+				connection->name, connection->socket->sock_fd
 			);
 
 			// perror ("Error ");
@@ -3185,12 +3884,22 @@ unsigned int client_receive_internal (
 			connection->stats->n_receives_done += 1;
 			connection->stats->total_bytes_received += rc;
 
-			// handle the recived packet buffer -> split them in packets of the correct size
-			client_receive_handle_buffer (
-				client,
-				connection,
-				buffer,
-				rc
+			// FIXME:
+			// handle the recived packet buffer
+			// split them in packets of the correct size
+			// client_receive_handle_buffer (
+			// 	client,
+			// 	connection,
+			// 	buffer,
+			// 	rc
+			// );
+
+			connection->receive_handle.buffer = buffer;
+			connection->receive_handle.buffer_size = buffer_size;
+			connection->receive_handle.received_size = rc;
+
+			client_receive_handle_buffer_new (
+				&connection->receive_handle
 			);
 
 			retval = 0;
@@ -3202,13 +3911,19 @@ unsigned int client_receive_internal (
 }
 
 // allocates a new packet buffer to receive incoming data from the connection's socket
-// returns 0 on success handle, 1 if any error ocurred and must likely the connection was ended
-unsigned int client_receive (Client *client, Connection *connection) {
+// returns 0 on success handle
+// returns 1 if any error ocurred and must likely the connection was ended
+unsigned int client_receive (
+	Client *client, Connection *connection
+) {
 
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		char *packet_buffer = (char *) calloc (connection->receive_packet_buffer_size, sizeof (char));
+		char *packet_buffer = (char *) calloc (
+			connection->receive_packet_buffer_size, sizeof (char)
+		);
+
 		if (packet_buffer) {
 			retval = client_receive_internal (
 				client, connection,
@@ -3236,14 +3951,20 @@ unsigned int client_receive (Client *client, Connection *connection) {
 
 #pragma region end
 
-// ends a connection with a cerver by sending a disconnect packet and the closing the connection
-static void client_connection_terminate (Client *client, Connection *connection) {
+// ends a connection with a cerver
+// by sending a disconnect packet and the closing the connection
+static void client_connection_terminate (
+	Client *client, Connection *connection
+) {
 
 	if (connection) {
 		if (connection->active) {
 			if (connection->cerver_report) {
 				// send a close connection packet
-				Packet *packet = packet_generate_request (PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0);
+				Packet *packet = packet_generate_request (
+					PACKET_TYPE_CLIENT, CLIENT_PACKET_TYPE_CLOSE_CONNECTION, NULL, 0
+				);
+
 				if (packet) {
 					packet_set_network_values (packet, NULL, client, connection, NULL);
 					if (packet_send (packet, 0, NULL, false)) {
@@ -3368,7 +4089,7 @@ static void client_handlers_destroy (Client *client) {
 	if (client) {
 		cerver_log_debug (
 			"Client %s num_handlers_alive: %d",
-			client->name->str, client->num_handlers_alive
+			client->name, client->num_handlers_alive
 		);
 
 		client_app_handler_destroy (client);

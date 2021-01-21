@@ -19,6 +19,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
@@ -100,14 +101,14 @@ Connection *connection_new (void) {
 
 	Connection *connection = (Connection *) malloc (sizeof (Connection));
 	if (connection) {
-		connection->name = NULL;
+		(void) memset (connection->name, 0, CONNECTION_NAME_SIZE);
 
 		connection->socket = NULL;
 		connection->port = 0;
 		connection->protocol = CONNECTION_DEFAULT_PROTOCOL;
 		connection->use_ipv6 = CONNECTION_DEFAULT_USE_IPV6;
 
-		connection->ip = NULL;
+		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
 		connection->connected_timestamp = 0;
@@ -122,7 +123,39 @@ Connection *connection_new (void) {
 		connection->bad_packets = 0;
 
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
+
 		connection->sock_receive = NULL;
+		connection->receive_handle = (ReceiveHandle) {
+			.type = RECEIVE_TYPE_NONE,
+
+			.cerver = NULL,
+
+			.socket = NULL,
+			.connection = NULL,
+			.client = NULL,
+			.admin = NULL,
+
+			.lobby = NULL,
+
+			.buffer = NULL,
+			.buffer_size = 0,
+			.received_size = 0,
+
+			.state = RECEIVE_HANDLE_STATE_NONE,
+
+			.header = (PacketHeader) {
+				.packet_type = PACKET_TYPE_NONE,
+				.packet_size = 0,
+				.handler_id = 0,
+				.request_type = 0,
+				.sock_fd = 0
+			},
+
+			.header_end = NULL,
+			.remaining_header = 0,
+
+			.spare_packet = NULL
+		};
 
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
@@ -156,18 +189,14 @@ Connection *connection_new (void) {
 
 }
 
-void connection_delete (void *ptr) {
+void connection_delete (void *connection_ptr) {
 
-	if (ptr) {
-		Connection *connection = (Connection *) ptr;
-
-		str_delete (connection->name);
+	if (connection_ptr) {
+		Connection *connection = (Connection *) connection_ptr;
 
 		socket_delete (connection->socket);
 
 		if (connection->active) connection_end (connection);
-
-		str_delete (connection->ip);
 
 		cerver_report_delete (connection->cerver_report);
 
@@ -198,10 +227,16 @@ Connection *connection_create_empty (void) {
 
 	Connection *connection = connection_new ();
 	if (connection) {
-		connection->name = str_new ("no-name");
+		(void) strncpy (
+			connection->name,
+			CONNECTION_DEFAULT_NAME,
+			CONNECTION_NAME_SIZE - 1
+		);
 
 		connection->socket = (Socket *) socket_create_empty ();
+		
 		connection->sock_receive = sock_receive_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
@@ -210,14 +245,14 @@ Connection *connection_create_empty (void) {
 }
 
 Connection *connection_create (
-	const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage *address,
+	const Protocol protocol
 ) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
 		connection->socket->sock_fd = sock_fd;
-		memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
+		(void) memcpy (&connection->address, address, sizeof (struct sockaddr_storage));
 		connection->protocol = protocol;
 
 		connection_get_values (connection);
@@ -245,12 +280,13 @@ int connection_comparator (const void *a, const void *b) {
 
 }
 
-// sets the connection's name, if it had a name before, it will be replaced
-void connection_set_name (Connection *connection, const char *name) {
+// sets the connection's name
+void connection_set_name (
+	Connection *connection, const char *name
+) {
 
 	if (connection) {
-		if (connection->name) str_delete (connection->name);
-		connection->name = name ? str_new (name) : NULL;
+		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
 	}
 
 }
@@ -259,8 +295,14 @@ void connection_set_name (Connection *connection, const char *name) {
 void connection_get_values (Connection *connection) {
 
 	if (connection) {
-		connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
-		connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
+		(void) sock_ip_to_string_actual (
+			(const struct sockaddr *) &connection->address,
+			connection->ip
+		);
+
+		connection->port = sock_ip_port (
+			(const struct sockaddr *) &connection->address
+		);
 	}
 
 }
@@ -272,8 +314,8 @@ void connection_set_values (
 ) {
 
 	if (connection) {
-		if (connection->ip) str_delete (connection->ip);
-		connection->ip = ip_address ? str_new (ip_address) : NULL;
+		(void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+
 		connection->port = port;
 		connection->protocol = protocol;
 		connection->use_ipv6 = use_ipv6;
@@ -335,7 +377,7 @@ void connection_set_received_data (
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 void connection_set_custom_receive (
-	Connection *connection,
+	Connection *connection, 
 	u8 (*custom_receive) (
 		void *custom_data_ptr,
 		char *buffer, const size_t buffer_size
@@ -428,46 +470,42 @@ u8 connection_init (Connection *connection) {
 			// init the new connection socket
 			switch (connection->protocol) {
 				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
+					connection->socket->sock_fd = socket (
+						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
+						SOCK_STREAM, 0
+					);
 					break;
 				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
+					connection->socket->sock_fd = socket (
+						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
+						SOCK_DGRAM, 0
+					);
 					break;
 
-				default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
+				default:
+					cerver_log (
+						LOG_TYPE_ERROR, LOG_TYPE_NONE,
+						"Unkonw protocol type!"
+					);
+					return 1;
 			}
 
 			if (connection->socket->sock_fd > 0) {
-				// if (connection->async) {
-				//     if (sock_set_blocking (connection->sock_fd, connection->blocking)) {
-				//         connection->blocking = false;
+				if (connection->use_ipv6) {
+					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
+					addr->sin6_family = AF_INET6;
+					addr->sin6_addr = in6addr_any;
+					addr->sin6_port = htons (connection->port);
+				}
 
-						// get the address ready
-						if (connection->use_ipv6) {
-							struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-							addr->sin6_family = AF_INET6;
-							addr->sin6_addr = in6addr_any;
-							addr->sin6_port = htons (connection->port);
-						}
+				else {
+					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
+					addr->sin_family = AF_INET;
+					addr->sin_addr.s_addr = inet_addr (connection->ip);
+					addr->sin_port = htons (connection->port);
+				}
 
-						else {
-							struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-							addr->sin_family = AF_INET;
-							addr->sin_addr.s_addr = inet_addr (connection->ip->str);
-							addr->sin_port = htons (connection->port);
-						}
-
-						retval = 0;     // connection setup was successfull
-					// }
-
-					// else {
-					//     #ifdef CLIENT_DEBUG
-					//     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					//         "Failed to set the socket to non blocking mode!");
-					//     #endif
-					//     close (connection->sock_fd);
-				//     }
-				// }
+				retval = 0;     // connection setup was successfull
 			}
 
 			else {
@@ -791,12 +829,16 @@ u8 connection_remove_from_cerver (
 
 #pragma region receive
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static ConnectionCustomReceiveData *connection_custom_receive_data_new (
-	Client *client, Connection *connection,
+	Client *client, Connection *connection, 
 	void *args
 ) {
 
-	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
+	ConnectionCustomReceiveData *custom_data =
+		(ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
 	if (custom_data) {
 		custom_data->client = client;
 		custom_data->connection = connection;
@@ -813,57 +855,81 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 
 }
 
+#pragma GCC diagnostic pop
+
 // starts listening and receiving data in the connection sock
-void connection_update (void *client_connection_ptr) {
+void *connection_update (void *client_connection_ptr) {
 
 	if (client_connection_ptr) {
 		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
-		// thread_set_name (c_string_create ("connection-%s", cc->connection->name->str));
 
-		String *client_name = str_new (cc->client->name->str);
-		String *connection_name = str_new (cc->connection->name->str);
+		char client_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char connection_name[THREAD_NAME_BUFFER_LEN] = { 0 };
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has started",
-			client_name->str, connection_name->str
+			cc->client->name, cc->connection->name
 		);
 		#endif
 
-		ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (
-			cc->client, cc->connection,
-			cc->connection->custom_receive_args
-		);
+		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN - 1);
 
-		if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
+		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
+			(void) strncpy (
+				connection_name,
+				cc->connection->name,
+				THREAD_NAME_BUFFER_LEN - 1
+			);
 
-		size_t buffer_size = cc->connection->receive_packet_buffer_size;
+			(void) thread_set_name (connection_name);
+		}
+
+		cc->connection->receive_handle.client = cc->client;
+		cc->connection->receive_handle.connection = cc->connection;
+
+		cc->connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
+
+		const size_t buffer_size = cc->connection->receive_packet_buffer_size;
 		char *buffer = (char *) calloc (buffer_size, sizeof (char));
 		if (buffer) {
-			(void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
+			(void) sock_set_timeout (
+				cc->connection->socket->sock_fd,
+				cc->connection->update_timeout
+			);
 
 			cc->connection->updating = true;
 
-			while (cc->client->running && cc->connection->active) {
-				// pthread_mutex_lock (cc->client->lock);
+			// check if we have a custom receive method
+			if (cc->connection->custom_receive) {
+				ConnectionCustomReceiveData custom_data = {
+					.client = cc->client,
+					.connection = cc->connection,
+					.args = cc->connection->custom_receive_args
+				};
 
-				if (cc->connection->custom_receive) {
-					// if a custom receive method is set, use that one directly
-					if (cc->connection->custom_receive (custom_data, buffer, buffer_size)) {
-						// break;      // an error has ocurred
-					}
-				}
+				while (
+					cc->client->running
+					&& cc->connection->active
+					&& !cc->connection->custom_receive (
+						&custom_data,
+						buffer, buffer_size
+					)
+				);
+			}
 
-				else {
-					// use the default receive method that expects cerver type packages
-					(void) client_receive_internal (
+			// use the default receive method
+			// that handles cerver type packages
+			else {
+				while (
+					cc->client->running
+					&& cc->connection->active
+					&& !client_receive_internal (
 						cc->client, cc->connection,
 						buffer, buffer_size
-					);
-				}
-
-				// pthread_mutex_unlock (cc->client->lock);
+					)
+				);
 			}
 
 			free (buffer);
@@ -872,8 +938,9 @@ void connection_update (void *client_connection_ptr) {
 		else {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
-				"connection_update () - Failed to allocate buffer for client %s - connection %s!",
-				client_name->str, connection_name->str
+				"connection_update () - "
+				"Failed to allocate buffer for client %s - connection %s!",
+				client_name, connection_name
 			);
 		}
 
@@ -883,20 +950,18 @@ void connection_update (void *client_connection_ptr) {
 		(void) pthread_cond_signal (cc->connection->cond);
 		(void) pthread_mutex_unlock (cc->connection->mutex);
 
-		connection_custom_receive_data_delete (custom_data);
 		client_connection_aux_delete (cc);
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has ended",
-			client_name->str, connection_name->str
+			client_name, connection_name
 		);
 		#endif
-
-		str_delete (client_name);
-		str_delete (connection_name);
 	}
+
+	return NULL;
 
 }
 
