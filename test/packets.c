@@ -82,7 +82,16 @@ static void test_packet_header_copy (void) {
 		.sock_fd = sock_fd
 	};
 
-	PacketHeader destination = { 0 };
+	PacketHeader destination = {
+		.packet_type = PACKET_TYPE_NONE,
+		.packet_size = 0,
+
+		.handler_id = 0,
+
+		.request_type = 0,
+
+		.sock_fd = 0
+	};
 
 	test_check_unsigned_eq (packet_header_copy (&destination, &source), 0, NULL);
 
@@ -119,8 +128,6 @@ static void test_packets_create_with_data (void) {
 	test_check_unsigned_eq (packet->header.handler_id, 0, NULL);
 	test_check_unsigned_eq (packet->header.request_type, 0, NULL);
 	test_check_unsigned_eq (packet->header.sock_fd, 0, NULL);
-
-	test_check_null_ptr (packet->version);
 
 	test_check_unsigned_eq (packet->packet_size, 0, NULL);
 	test_check_null_ptr (packet->packet);
@@ -247,8 +254,6 @@ static void test_packets_create_ping (void) {
 	test_check_unsigned_eq (ping->header.request_type, 0, NULL);
 	test_check_unsigned_eq (ping->header.sock_fd, 0, NULL);
 
-	test_check_null_ptr (ping->version);
-
 	// check real packet
 	test_check_unsigned_eq (ping->packet_size, sizeof (PacketHeader), NULL);
 	test_check_ptr (ping->packet);
@@ -258,7 +263,7 @@ static void test_packets_create_ping (void) {
 	test_check_unsigned_eq (((PacketHeader *) ping->packet)->request_type, 0, NULL);
 	test_check_unsigned_eq (((PacketHeader *) ping->packet)->sock_fd, 0, NULL);
 
-	test_check_bool_eq (ping->packet_ref, false, NULL);
+	test_check_bool_eq (ping->packet_ref, true, NULL);
 
 }
 
@@ -282,7 +287,7 @@ static void test_packets_append_data (void) {
 	test_check_unsigned_eq (request->data_size, BUFFER_SIZE, NULL);
 
 	// check packet's data content
-	char *data = request->data;
+	char *data = (char *) request->data;
 	test_check_str_eq (data, buffer, NULL);
 	test_check_str_len (data, strlen (buffer), NULL);
 
@@ -501,7 +506,7 @@ static void test_packets_generate_request (void) {
 	test_check_unsigned_eq (((PacketHeader *) request->packet)->request_type, request_type, NULL);
 	test_check_unsigned_eq (((PacketHeader *) request->packet)->sock_fd, 0, NULL);
 
-	char *end = request->packet;
+	char *end = (char *) request->packet;
 	end += sizeof (PacketHeader);
 	test_check_str_eq (end, buffer, NULL);
 	test_check_str_len (end, strlen (buffer), NULL);

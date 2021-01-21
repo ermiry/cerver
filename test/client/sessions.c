@@ -131,9 +131,8 @@ int main (int argc, const char **argv) {
 	test_check_ptr (client);
 
 	client_set_name (client, client_name);
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, client_name, NULL);
-	test_check_str_len (client->name->str, strlen (client_name), NULL);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	/*** handler ***/
 	Handler *app_packet_handler = handler_create (app_handler);

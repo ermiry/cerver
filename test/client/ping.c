@@ -6,6 +6,8 @@
 
 #include "../test.h"
 
+static const char *client_name = { "test-client" };
+
 int main (int argc, const char **argv) {
 
 	(void) printf ("Testing CLIENT ping...\n");
@@ -14,10 +16,9 @@ int main (int argc, const char **argv) {
 
 	test_check_ptr (client);
 
-	client_set_name (client, "test-client");
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, "test-client", NULL);
-	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
+	client_set_name (client, client_name);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	Connection *connection = client_connection_create (
 		client, "127.0.0.1", 7000, PROTOCOL_TCP, false

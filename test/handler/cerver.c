@@ -20,6 +20,8 @@ static Cerver *cerver = NULL;
 
 static void end (int dummy) {
 	
+	cerver_stats_print (cerver, true, true);
+
 	cerver_teardown (cerver);
 
 	cerver_end ();
@@ -54,8 +56,10 @@ int main (int argc, char **argv) {
 	cerver_set_thpool_n_threads (cerver, 4);
 	cerver_set_reusable_address_flags (cerver, true);
 
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_POLL);
-	cerver_set_poll_time_out (cerver, 1000);
+	// cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_POLL);
+	// cerver_set_poll_time_out (cerver, 1000);
+
+	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
 
 	cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer_new);
 

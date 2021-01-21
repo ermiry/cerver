@@ -10,6 +10,8 @@
 
 #define REQUESTS			64
 
+static const char *client_name = { "test-client" };
+
 static unsigned int responses = 0;
 
 static void app_handler (void *packet_ptr) {
@@ -42,10 +44,9 @@ int main (int argc, const char **argv) {
 
 	test_check_ptr (client);
 
-	client_set_name (client, "test-client");
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, "test-client", NULL);
-	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
+	client_set_name (client, client_name);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	/*** handler ***/
 	Handler *app_packet_handler = handler_create (app_handler);

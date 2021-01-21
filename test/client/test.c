@@ -15,8 +15,8 @@ static Client *test_client_create (void) {
 
 	Client *client = client_create ();
 
-	test_check_str_eq (client->name->str, "no-name", NULL);
-	test_check_str_len (client->name->str, strlen ("no-name"), NULL);
+	test_check_str_eq (client->name, CLIENT_DEFAULT_NAME, NULL);
+	test_check_str_len (client->name, strlen (CLIENT_DEFAULT_NAME), NULL);
 	test_check_unsigned_ne (client->connected_timestamp, 0);
 	test_check_ptr (client->connections);
 	test_check_ptr (client->lock);
@@ -32,8 +32,8 @@ static void test_client_base_configuration (void) {
 	Client *client = test_client_create ();
 
 	client_set_name (client,client_name);
-	test_check_str_eq (client->name->str, client_name, NULL);
-	test_check_str_len (client->name->str, strlen (client_name), NULL);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	client_delete (client);
 
