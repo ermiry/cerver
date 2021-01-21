@@ -170,7 +170,7 @@ static void handler (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			case APP_MSG: handle_app_message (packet); break;

@@ -75,7 +75,7 @@ static void handle_test_request (Packet *packet) {
 
 		Packet *test_packet = packet_new ();
 		if (test_packet) {
-			packet_set_header_values (test_packet, PACKET_TYPE_APP, sizeof (PacketHeader), 0, TEST_MSG, packet->header->sock_fd);
+			packet_set_header_values (test_packet, PACKET_TYPE_APP, sizeof (PacketHeader), 0, TEST_MSG, packet->header.sock_fd);
 			(void) packet_generate (test_packet);
 			packet_set_network_values (test_packet, packet->cerver, packet->client, packet->connection, NULL);
 			size_t sent = 0;
@@ -134,7 +134,7 @@ static void handle_app_message (Packet *packet) {
 
 			header->request_type = APP_MSG;
 
-			header->sock_fd = packet->header->sock_fd;
+			header->sock_fd = packet->header.sock_fd;
 
 			end += sizeof (PacketHeader);
 
@@ -172,7 +172,7 @@ static void handler (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			case APP_MSG: handle_app_message (packet); break;
@@ -191,7 +191,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_started (void *event_data_ptr) {
+static void *on_cever_started (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -206,9 +206,11 @@ static void on_cever_started (void *event_data_ptr) {
 		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
 	}
 
+	return NULL;
+
 }
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -221,9 +223,11 @@ static void on_cever_teardown (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -238,9 +242,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -252,6 +258,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 			event_data->cerver->info->name->str
 		);
 	}
+
+	return NULL;
 
 }
 
