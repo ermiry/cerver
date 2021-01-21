@@ -6,6 +6,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*** misc ***/
 
 CERVER_PUBLIC bool system_is_little_endian (void);
@@ -17,6 +21,8 @@ CERVER_PUBLIC int clamp_int (int val, int min, int max);
 CERVER_PUBLIC int abs_int (int value);
 
 CERVER_PUBLIC float lerp (float first, float second, float by);
+
+CERVER_PUBLIC bool float_compare (float f1, float f2);
 
 /*** random ***/
 
@@ -150,8 +156,12 @@ CERVER_PUBLIC char *c_string_remove_sub_simetric_token (
 // returns a newly allocated string, and a option to get the substring
 CERVER_PUBLIC char *c_string_remove_sub_range_token (
 	char *str,
-	const char token, unsigned int first, unsigned int last,
+	const char token, int first, int last,
 	char **sub
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

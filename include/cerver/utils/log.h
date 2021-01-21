@@ -26,6 +26,10 @@
 
 #define LOG_DEFAULT_UPDATE_INTERVAL			1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma region types
 
 #define LOG_TYPE_MAP(XX)						\
@@ -141,6 +145,14 @@ CERVER_PUBLIC void cerver_log (
 );
 
 // creates and prints a message of custom types
+// and adds the date & time
+// if the log_time_type has been configured, it will be kept
+CERVER_PUBLIC void cerver_log_with_date (
+	LogType first_type, LogType second_type,
+	const char *format, ...
+);
+
+// creates and prints a message of custom types
 // to stdout or stderr based on type
 // and to log file if available
 // this messages ignore the quiet flag
@@ -179,5 +191,9 @@ CERVER_PRIVATE void cerver_log_init (void);
 CERVER_PRIVATE void cerver_log_end (void);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
