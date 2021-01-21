@@ -1,11 +1,15 @@
-#ifndef _THREADS_THPOOL_H_
-#define _THREADS_THPOOL_H_
+#ifndef _CERVER_THREADS_THPOOL_H_
+#define _CERVER_THREADS_THPOOL_H_
 
 #include <stdbool.h>
 #include <pthread.h>
 
 #include "cerver/config.h"
 #include "cerver/threads/jobs.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct _PoolThread;
 
@@ -59,5 +63,9 @@ CERVER_EXPORT void thpool_wait (Thpool *thpool);
 
 // destroys the thpool and deletes all of its data
 CERVER_EXPORT void thpool_destroy (Thpool *thpool);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
