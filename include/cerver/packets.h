@@ -7,12 +7,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
-#include "cerver/cerver.h"
 #include "cerver/config.h"
-#include "cerver/client.h"
 #include "cerver/network.h"
-
-#include "cerver/game/lobby.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,7 +68,15 @@ CERVER_PUBLIC void packet_version_delete (PacketVersion *version);
 
 CERVER_PUBLIC PacketVersion *packet_version_create (void);
 
-CERVER_PUBLIC void packet_version_print (PacketVersion *version);
+// copies the data from the source version to the destination
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_version_copy (
+	PacketVersion *dest, const PacketVersion *source
+);
+
+CERVER_PUBLIC void packet_version_print (
+	const PacketVersion *version
+);
 
 #pragma endregion
 
@@ -151,24 +155,31 @@ typedef struct _PacketHeader PacketHeader;
 
 CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
-CERVER_PUBLIC void packet_header_delete (
-	PacketHeader *header
-);
+CERVER_PUBLIC void packet_header_delete (PacketHeader *header);
 
 CERVER_PUBLIC PacketHeader *packet_header_create (
-	PacketType packet_type, size_t packet_size, u32 req_type
+	const PacketType packet_type,
+	const size_t packet_size,
+	const u32 req_type
 );
 
-// prints an already existing PacketHeader
-// mostly used for debugging
-CERVER_PUBLIC void packet_header_print (
-	PacketHeader *header
+// allocates a new packet header and copies the values from source
+CERVER_PUBLIC PacketHeader *packet_header_create_from (
+	const PacketHeader *source
 );
 
-// allocates space for the dest packet header and copies the data from source
+// copies the data from the source header to the destination
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 packet_header_copy (
-	PacketHeader **dest, PacketHeader *source
+	PacketHeader *dest, const PacketHeader *source
+);
+
+CERVER_PUBLIC void packet_header_print (
+	const PacketHeader *header
+);
+
+CERVER_PUBLIC void packet_header_log (
+	const PacketHeader *header
 );
 
 #pragma endregion
@@ -265,9 +276,15 @@ struct _Packet {
 	char *data_end;
 	bool data_ref;
 
+	// used to handle big packets
+	// that don't fit inside a single buffer
+	size_t remaining_data;
+
+	PacketHeader header;	
+
+	PacketVersion version;
+
 	// the actual packet to be sent
-	PacketHeader *header;
-	PacketVersion *version;
 	size_t packet_size;
 	void *packet;
 	bool packet_ref;
@@ -287,6 +304,11 @@ CERVER_PUBLIC void packet_delete (void *ptr);
 CERVER_EXPORT Packet *packet_create (
 	const PacketType type, const u32 req_type,
 	const void *data, const size_t data_size
+);
+
+// creates a packet with a data buffer of the specified size
+CERVER_PRIVATE Packet *packet_create_with_data (
+	const size_t data_size
 );
 
 // sets the packet destinatary to whom this packet is going to be sent
@@ -316,6 +338,14 @@ CERVER_EXPORT void packet_set_header_values (
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_set_data (
+	Packet *packet,
+	const void *data, const size_t data_size
+);
+
+// adds the data to the packet's existing data buffer
+// the data size must be <= the packet's remaining data
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_add_data (
 	Packet *packet,
 	const void *data, const size_t data_size
 );
@@ -361,12 +391,15 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
 // creates a request packet that is ready to be sent
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 packet_create_request (
-	Packet *packet,
+// returns a newly allocated packet
+CERVER_EXPORT Packet *packet_create_request (
 	const PacketType packet_type,
 	const u32 request_type
 );
+
+// creates a new ping packet (PACKET_TYPE_TEST)
+// returns a newly allocated packet
+CERVER_EXPORT Packet *packet_create_ping (void);
 
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data

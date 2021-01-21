@@ -16,6 +16,8 @@
 #define MESSAGE_3		"Malesuada pellentesque elit eget gravida cum. Pharetra vel turpis nunc eget lorem dolor sed viverra."
 #define MESSAGE_4		"Justo donec enim diam vulputate. Dui nunc mattis enim ut. Quis vel eros donec ac odio tempor. Lorem ipsum dolor sit amet consectetur."
 
+static const char *client_name = { "test-client" };
+
 static Client *client = NULL;
 static Connection *connection = NULL;
 
@@ -129,10 +131,9 @@ int main (int argc, const char **argv) {
 
 	test_check_ptr (client);
 
-	client_set_name (client, "test-client");
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, "test-client", NULL);
-	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
+	client_set_name (client, client_name);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	// Handler *app_handler = handler_create (client_app_handler);
 	// handler_set_direct_handle (app_handler, true);

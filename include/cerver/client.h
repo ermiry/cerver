@@ -20,7 +20,10 @@
 
 #include "cerver/utils/log.h"
 
-#define CLIENT_FILES_MAX_PATHS           32
+#define CLIENT_NAME_SIZE						64
+#define CLIENT_FILES_MAX_PATHS           		32
+
+#define CLIENT_DEFAULT_NAME						"no-name"
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,7 +125,7 @@ struct _Client {
 	u64 id;
 	time_t connected_timestamp;
 
-	String *name;
+	char name[CLIENT_NAME_SIZE];
 
 	DoubleList *connections;
 
@@ -199,19 +202,12 @@ CERVER_PUBLIC Client *client_create (void);
 // creates a new client and registers a new connection
 CERVER_PUBLIC Client *client_create_with_connection (
 	struct _Cerver *cerver,
-	const i32 sock_fd, const struct sockaddr_storage address
+	const i32 sock_fd, const struct sockaddr_storage *address
 );
 
 // sets the client's name
 CERVER_EXPORT void client_set_name (
 	Client *client, const char *name
-);
-
-// this methods is primarily used for logging
-// returns the client's name directly (if any) & should NOT be deleted, if not
-// returns a newly allocated string with the clients id that should be deleted after use
-CERVER_EXPORT char *client_get_identifier (
-	Client *client, bool *is_name
 );
 
 // sets the client's session id
@@ -743,7 +739,28 @@ CERVER_EXPORT u8 client_file_send (
 	const char *filename
 );
 
-/*** update ***/
+/*** handler ***/
+
+#define CLIENT_HANDLER_ERROR_MAP(XX)										\
+	XX(0,	NONE,		None,				No handler error)				\
+	XX(1,	PACKET,		Bad Packet,			Packet check failed)			\
+	XX(2,	CLOSED,		Closed Connection, 	The connection has been ended)
+
+typedef enum ClientHandlerError {
+
+	#define XX(num, name, string, description) CLIENT_HANDLER_ERROR_##name = num,
+	CLIENT_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} ClientHandlerError;
+
+CERVER_PUBLIC const char *client_handler_error_to_string (
+	const ClientHandlerError error
+);
+
+CERVER_PUBLIC const char *client_handler_error_description (
+	const ClientHandlerError error
+);
 
 // receive data from connection's socket
 // this method does not perform any checks and expects a valid buffer

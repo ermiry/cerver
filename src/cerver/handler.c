@@ -185,7 +185,7 @@ static void handler_do_while_cerver (Handler *handler) {
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -285,7 +285,7 @@ static void handler_do_while_admin (Handler *handler) {
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -535,92 +535,90 @@ static CerverHandlerError cerver_client_packet_handler (
 
 	CerverHandlerError error = CERVER_HANDLER_ERROR_NONE;
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// the client is going to close its current connection
-			// but will remain in the cerver if it has another connection active
-			// if not, it will be dropped
-			case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
-				#ifdef HANDLER_DEBUG
-				cerver_log_debug (
-					"Client %ld requested to close the connection",
-					packet->client->id
-				);
-				#endif
+	switch (packet->header.request_type) {
+		// the client is going to close its current connection
+		// but will remain in the cerver if it has another connection active
+		// if not, it will be dropped
+		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+			#ifdef HANDLER_DEBUG
+			cerver_log_debug (
+				"Client %ld requested to close the connection",
+				packet->client->id
+			);
+			#endif
 
-				// check if the client is inside a lobby
-				if (packet->lobby) {
-					#ifdef HANDLER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-						"Client %ld inside lobby %s wants to close the connection...",
-						packet->client->id, packet->lobby->id->str
-					);
-					#endif
-
-					// remove the player from the lobby
-					(void) player_unregister_from_lobby (
-						packet->lobby,
-						player_get_by_sock_fd_list (
-							packet->lobby, packet->connection->socket->sock_fd
-						)
-					);
-				}
-
-				switch (client_remove_connection_by_sock_fd (
-					packet->cerver,
-					packet->client, packet->connection->socket->sock_fd
-				)) {
-					case CLIENT_CONNECTIONS_STATUS_DROPPED:
-						error = CERVER_HANDLER_ERROR_DROPPED;
-						break;
-
-					default: break;
-				}
-			} break;
-
-			// the client is going to disconnect
-			// and will close all of its active connections
-			// so drop it from the server
-			case CLIENT_PACKET_TYPE_DISCONNECT: {
-				// check if the client is inside a lobby
-				if (packet->lobby) {
-					#ifdef HANDLER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-						"Client %ld inside lobby %s wants to close the connection...",
-						packet->client->id, packet->lobby->id->str
-					);
-					#endif
-
-					// remove the player from the lobby
-					(void) player_unregister_from_lobby (
-						packet->lobby,
-						player_get_by_sock_fd_list (
-							packet->lobby, packet->connection->socket->sock_fd
-						)
-					);
-				}
-
-				client_drop (packet->cerver, packet->client);
-
-				cerver_event_trigger (
-					CERVER_EVENT_CLIENT_DISCONNECTED,
-					packet->cerver,
-					NULL, NULL
-				);
-			} break;
-
-			default: {
+			// check if the client is inside a lobby
+			if (packet->lobby) {
 				#ifdef HANDLER_DEBUG
 				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Got an unknown client packet in cerver %s",
-					packet->cerver->info->name->str
+					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+					"Client %ld inside lobby %s wants to close the connection...",
+					packet->client->id, packet->lobby->id->str
 				);
 				#endif
-			} break;
-		}
+
+				// remove the player from the lobby
+				(void) player_unregister_from_lobby (
+					packet->lobby,
+					player_get_by_sock_fd_list (
+						packet->lobby, packet->connection->socket->sock_fd
+					)
+				);
+			}
+
+			switch (client_remove_connection_by_sock_fd (
+				packet->cerver,
+				packet->client, packet->connection->socket->sock_fd
+			)) {
+				case CLIENT_CONNECTIONS_STATUS_DROPPED:
+					error = CERVER_HANDLER_ERROR_DROPPED;
+					break;
+
+				default: break;
+			}
+		} break;
+
+		// the client is going to disconnect
+		// and will close all of its active connections
+		// so drop it from the server
+		case CLIENT_PACKET_TYPE_DISCONNECT: {
+			// check if the client is inside a lobby
+			if (packet->lobby) {
+				#ifdef HANDLER_DEBUG
+				cerver_log (
+					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+					"Client %ld inside lobby %s wants to close the connection...",
+					packet->client->id, packet->lobby->id->str
+				);
+				#endif
+
+				// remove the player from the lobby
+				(void) player_unregister_from_lobby (
+					packet->lobby,
+					player_get_by_sock_fd_list (
+						packet->lobby, packet->connection->socket->sock_fd
+					)
+				);
+			}
+
+			client_drop (packet->cerver, packet->client);
+
+			cerver_event_trigger (
+				CERVER_EVENT_CLIENT_DISCONNECTED,
+				packet->cerver,
+				NULL, NULL
+			);
+		} break;
+
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Got an unknown client packet in cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 	return error;
@@ -830,28 +828,26 @@ void cerver_request_send_file (Packet *packet) {
 // handles a request made from the client
 static void cerver_request_packet_handler (Packet *packet) {
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// request from a client to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE:
-				cerver_request_get_file (packet);
-				break;
+	switch (packet->header.request_type) {
+		// request from a client to get a file
+		case REQUEST_PACKET_TYPE_GET_FILE:
+			cerver_request_get_file (packet);
+			break;
 
-			// request from a client to upload a file
-			case REQUEST_PACKET_TYPE_SEND_FILE:
-				cerver_request_send_file (packet);
-				break;
+		// request from a client to upload a file
+		case REQUEST_PACKET_TYPE_SEND_FILE:
+			cerver_request_send_file (packet);
+			break;
 
-			default: {
-				#ifdef HANDLER_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Got an unknown request packet in cerver %s",
-					packet->cerver->info->name->str
-				);
-				#endif
-			} break;
-		}
+		default: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Got an unknown request packet in cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 }
@@ -867,25 +863,9 @@ void cerver_test_packet_handler (Packet *packet) {
 	);
 	#endif
 
-	Packet *test_packet = packet_new ();
-	if (test_packet) {
-		packet_set_network_values (
-			test_packet,
-			packet->cerver, packet->client, packet->connection, packet->lobby
-		);
-
-		test_packet->packet_type = PACKET_TYPE_TEST;
-		packet_generate (test_packet);
-		if (packet_send (test_packet, 0, NULL, false)) {
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_PACKET,
-				"Failed to send error packet from cerver %s.",
-				packet->cerver->info->name->str
-			);
-		}
-
-		packet_delete (test_packet);
-	}
+	(void) packet_send_ping (
+		packet->cerver, packet->client, packet->connection, packet->lobby
+	);
 
 }
 
@@ -894,17 +874,17 @@ static void cerver_app_packet_handler (Packet *packet) {
 
 	if (packet->cerver->multiple_handlers) {
 		// select which handler to use
-		if (packet->header->handler_id < packet->cerver->n_handlers) {
-			if (packet->cerver->handlers[packet->header->handler_id]) {
+		if (packet->header.handler_id < packet->cerver->n_handlers) {
+			if (packet->cerver->handlers[packet->header.handler_id]) {
 				// add the packet to the handler's job queueu to be handled
 				// as soon as the handler is available
 				if (job_queue_push (
-					packet->cerver->handlers[packet->header->handler_id]->job_queue,
+					packet->cerver->handlers[packet->header.handler_id]->job_queue,
 					job_create (NULL, packet)
 				)) {
 					cerver_log_error (
 						"Failed to push a new job to cerver's %s <%d> handler!",
-						packet->cerver->info->name->str, packet->header->handler_id
+						packet->cerver->info->name->str, packet->header.handler_id
 					);
 				}
 			}
@@ -1023,7 +1003,7 @@ static CerverHandlerError cerver_packet_handler_check_version (
 
 	// we expect the packet version in the packet's data
 	if (packet->data) {
-		packet->version = (PacketVersion *) packet->data_ptr;
+		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 		packet->data_ptr += sizeof (PacketVersion);
 		
 		// TODO: return errors to client
@@ -1053,7 +1033,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 
 	CerverHandlerError error = CERVER_HANDLER_ERROR_NONE;
 
-	switch (packet->header->packet_type) {
+	switch (packet->header.packet_type) {
 		case PACKET_TYPE_NONE: break;
 
 		case PACKET_TYPE_CERVER: break;
@@ -1252,37 +1232,6 @@ static u8 cerver_packet_select_handler (
 #pragma region receive
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
-
-static ReceiveHandle *receive_handle_new (void) {
-
-	ReceiveHandle *receive_handle =
-		(ReceiveHandle *) malloc (sizeof (ReceiveHandle));
-
-	if (receive_handle) {
-		receive_handle->type = RECEIVE_TYPE_NONE;
-
-		receive_handle->cerver = NULL;
-
-		receive_handle->socket = NULL;
-		receive_handle->connection = NULL;
-		receive_handle->client = NULL;
-		receive_handle->admin = NULL;
-
-		receive_handle->lobby = NULL;
-
-		receive_handle->buffer = NULL;
-		receive_handle->buffer_size = 0;
-	}
-
-	return receive_handle;
-
-}
-
-void receive_handle_delete (void *receive_ptr) {
-	
-	if (receive_ptr) free (receive_ptr);
-	
-}
 
 CerverReceive *cerver_receive_new (void) {
 
@@ -1496,7 +1445,7 @@ static u8 cerver_receive_handle_spare_packet (
 
 			// check if we can handle the packet
 			size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (sock_receive->spare_packet->header->packet_size == curr_packet_size) {
+			if (sock_receive->spare_packet->header.packet_size == curr_packet_size) {
 				errors = cerver_packet_select_handler (
 					receive_handle, sock_receive->spare_packet
 				);
@@ -1547,7 +1496,8 @@ static void cerver_receive_handle_buffer_internal (
 		remaining_buffer_size = received_size - buffer_pos;
 
 		if (sock_receive->complete_header) {
-			(void) packet_header_copy (&header, (PacketHeader *) sock_receive->header);
+			// FIXME:
+			(void) packet_header_copy (header, (PacketHeader *) sock_receive->header);
 			// header = ((PacketHeader *) sock_receive->header);
 			// packet_header_print (header);
 
@@ -1571,7 +1521,7 @@ static void cerver_receive_handle_buffer_internal (
 			end += sizeof (PacketHeader);
 			buffer_pos += sizeof (PacketHeader);
 
-			// packet_header_print (header);
+			packet_header_print (header);
 
 			spare_header = false;
 		}
@@ -1586,7 +1536,7 @@ static void cerver_receive_handle_buffer_internal (
 
 				Packet *packet = packet_new ();
 				if (packet) {
-					packet_header_copy (&packet->header, header);
+					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 					packet->packet_size = header->packet_size;
 					packet->cerver = cerver;
 					packet->lobby = lobby;
@@ -1597,7 +1547,7 @@ static void cerver_receive_handle_buffer_internal (
 					}
 
 					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header->packet_size - sizeof (PacketHeader);
+					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
 					to_copy_size = 0;
 					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
 						sock_receive->spare_packet = packet;
@@ -1716,6 +1666,431 @@ void cerver_receive_handle_buffer (
 
 }
 
+static void cerver_receive_handle_buffer_new_actual (
+	ReceiveHandle *receive_handle,
+	char *end, size_t buffer_pos,
+	size_t remaining_buffer_size
+) {
+
+	PacketHeader *header = NULL;
+	size_t packet_size = 0;
+
+	Packet *packet = NULL;
+
+	u8 stop_handler = 0;
+
+	#ifdef RECEIVE_DEBUG
+	(void) printf ("WHILE has started!\n\n");
+	#endif
+
+	do {
+		#ifdef RECEIVE_DEBUG
+		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
+		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
+		#endif
+
+		switch (receive_handle->state) {
+			// check if we have a complete packet header in the buffer
+			case RECEIVE_HANDLE_STATE_NORMAL: {
+				if (remaining_buffer_size >= sizeof (PacketHeader)) {
+					#ifdef RECEIVE_DEBUG
+					(void) printf (
+						"Complete header in current buffer\n"
+					);
+					#endif
+
+					header = (PacketHeader *) end;
+					end += sizeof (PacketHeader);
+					buffer_pos += sizeof (PacketHeader);
+
+					#ifdef RECEIVE_DEBUG
+					packet_header_print (header);
+					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
+
+					packet_size = header->packet_size;
+					remaining_buffer_size -= sizeof (PacketHeader);
+				}
+
+				// we need to handle just a part of the header
+				else {
+					#ifdef RECEIVE_DEBUG
+					(void) printf (
+						"Only %lu of %lu header bytes left in buffer\n",
+						remaining_buffer_size, sizeof (PacketHeader)
+					);
+					#endif
+
+					// reset previous header
+					(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
+
+					// the remaining buffer must contain a part of the header
+					// so copy it to our aux structure
+					receive_handle->header_end = (char *) &receive_handle->header;
+					(void) memcpy (
+						receive_handle->header_end, (void *) end, remaining_buffer_size
+					);
+
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++)
+					// 	printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+
+					// printf ("\n");
+
+					// for (size_t i = 0; i < sizeof (PacketHeader); i++) {
+					// 	printf ("%4x", (unsigned int) *end);
+					// 	end += 1;
+					// }
+
+					// printf ("\n");
+
+					// packet_header_print (&receive_handle->header);
+
+					// pointer to the last byte of the new header
+					receive_handle->header_end += remaining_buffer_size;
+
+					// keep track of how much header's data we are missing
+					receive_handle->remaining_header =
+						sizeof (PacketHeader) - remaining_buffer_size;
+
+					buffer_pos += remaining_buffer_size;
+
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
+					#endif
+
+					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_HEADER;
+
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("while loop should end now!\n");
+					#endif
+				}
+			} break;
+
+			// we already have a complete header from the spare packet
+			// we just need to check if it is correct
+			case RECEIVE_HANDLE_STATE_COMP_HEADER: {
+				header = &receive_handle->header;
+				packet_size = header->packet_size;
+				// remaining_buffer_size -= buffer_pos;
+
+				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
+			} break;
+
+			default: break;
+		}
+
+		#ifdef RECEIVE_DEBUG
+		(void) printf (
+			"State BEFORE CHECKING for packet size: %s\n",
+			receive_handle_state_to_string (receive_handle->state)
+		);
+		#endif
+
+		if (
+			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
+			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
+		) {
+			// TODO: make max value a variable
+			// check that we have a valid packet size
+			if ((packet_size > 0) && (packet_size < 65536)) {
+				// we can safely process the complete packet
+				packet = packet_create_with_data (
+					header->packet_size - sizeof (PacketHeader)
+				);
+
+				// set packet's values
+				(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+				packet->cerver = receive_handle->cerver;
+				packet->client = receive_handle->client;
+				packet->connection = receive_handle->connection;
+				packet->lobby = receive_handle->lobby;
+
+				packet->packet_size = packet->header.packet_size;
+
+				if (packet->data_size == 0) {
+					#ifdef RECEIVE_DEBUG
+					(void) printf (
+						"Packet has no more data\n"
+					);
+					#endif
+
+					// we can safely handle the packet
+					stop_handler = cerver_packet_select_handler (
+						receive_handle, packet
+					);
+
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
+				}
+
+				// check how much of the packet's data is in the current buffer
+				else if (packet->data_size <= remaining_buffer_size) {
+					#ifdef RECEIVE_DEBUG
+					(void) printf (
+						"Complete packet in current buffer\n"
+					);
+					#endif
+
+					// the full packet's data is in the current buffer
+					// so we can safely copy the complete packet
+					(void) memcpy (packet->data, end, packet->data_size);
+
+					// we can safely handle the packet
+					stop_handler = cerver_packet_select_handler (
+						receive_handle, packet
+					);
+
+					// update buffer positions & values
+					end += packet->data_size;
+					buffer_pos += packet->data_size;
+					remaining_buffer_size -= packet->data_size;
+
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
+					#endif
+				}
+
+				else {
+					// just some part of the packet's data is in the current buffer
+					// we should copy all the remaining buffer and wait for the next read
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
+					#endif
+					
+					if (remaining_buffer_size > 0) {
+						#ifdef RECEIVE_DEBUG
+						(void) printf (
+							"We can only get %lu / %lu from the current buffer\n",
+							remaining_buffer_size, packet->data_size
+						);
+						#endif
+
+						// TODO: handle errors
+						(void) packet_add_data (
+							packet, end, remaining_buffer_size
+						);
+
+						// update buffer positions & values
+						end += packet->data_size;
+						buffer_pos += packet->data_size;
+						remaining_buffer_size -= packet->data_size;
+
+						// set the newly created packet as spare
+						receive_handle->spare_packet = packet;
+					}
+
+					else {
+						#ifdef RECEIVE_DEBUG
+						(void) printf (
+							"We have NO more data left in current buffer\n"
+						);
+						#endif
+					}
+
+					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
+
+					#ifdef RECEIVE_DEBUG
+					(void) printf ("while loop should end now!\n");
+					#endif
+				}
+			}
+
+			else {
+				// we must likely have a bad packet
+				// we need to keep reading the buffer until we find
+				// the start of the next one and we can continue
+				#ifdef RECEIVE_DEBUG
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+					"Got a packet of invalid size: %ld", packet_size
+				);
+				#endif
+
+				#ifdef RECEIVE_DEBUG
+				(void) printf ("\n\nWE ARE LOST!\n\n");
+				#endif
+
+				receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
+
+				// FIXME: this is just for testing!
+				break;
+			}
+		}
+
+		// reset common loop values
+		header = NULL;
+		packet = NULL;
+	} while ((buffer_pos < receive_handle->received_size) && !stop_handler);
+
+	#ifdef RECEIVE_DEBUG
+	(void) printf ("WHILE has ended!\n\n");
+	#endif
+
+}
+
+void cerver_receive_handle_buffer_new (
+	void *receive_handle_ptr
+) {
+
+	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
+
+	char *end = receive_handle->buffer;
+	size_t buffer_pos = 0;
+
+	size_t remaining_buffer_size = receive_handle->received_size;
+
+	u8 stop_handler = 0;
+
+	#ifdef RECEIVE_DEBUG
+	(void) printf ("Received size: %lu\n", receive_handle->received_size);
+
+	(void) printf (
+		"State BEFORE checking for SPARE PARTS: %s\n",
+		receive_handle_state_to_string (receive_handle->state)
+	);
+	#endif
+
+	// check if we have any spare parts 
+	switch (receive_handle->state) {
+		// check if we have a spare header
+		// that was incompleted from the last buffer
+		case RECEIVE_HANDLE_STATE_SPLIT_HEADER: {
+			// copy the remaining header size
+			(void) memcpy (
+				receive_handle->header_end,
+				(void *) end,
+				receive_handle->remaining_header
+			);
+
+			#ifdef RECEIVE_DEBUG
+			(void) printf (
+				"Copied %u missing header bytes\n",
+				receive_handle->remaining_header
+			);
+			#endif
+
+			// receive_handle->header_end = (char *) &receive_handle->header;
+			// for (size_t i = 0; i < receive_handle->remaining_header; i++)
+			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
+
+			// (void) printf ("\n");
+			
+			#ifdef RECEIVE_DEBUG
+			packet_header_print (&receive_handle->header);
+			#endif
+
+			// update buffer positions
+			end += receive_handle->remaining_header;
+			buffer_pos += receive_handle->remaining_header;
+
+			// update how much we have still left to handle from the current buffer
+			remaining_buffer_size -= receive_handle->remaining_header;
+
+			// reset receive handler values
+			receive_handle->header_end = NULL;
+			receive_handle->remaining_header = 0;
+
+			// we can expect to get the packet's data from the current buffer
+			receive_handle->state = RECEIVE_HANDLE_STATE_COMP_HEADER;
+
+			#ifdef RECEIVE_DEBUG
+			(void) printf ("We have a COMPLETE HEADER!\n");
+			#endif
+		} break;
+
+		// check if we have a spare packet
+		case RECEIVE_HANDLE_STATE_SPLIT_PACKET: {
+			// check if the current buffer is big enough
+			if (
+				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
+			) {
+				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
+				
+				// copy packet's remaining data
+				(void) packet_add_data (
+					receive_handle->spare_packet,
+					end,
+					receive_handle->spare_packet->remaining_data
+				);
+
+				#ifdef RECEIVE_DEBUG
+				(void) printf (
+					"Copied %lu missing packet bytes\n",
+					to_copy_data_size
+				);
+
+				(void) printf ("Spare packet is COMPLETED!\n");
+				#endif
+
+				// we can safely handle the packet
+				stop_handler = cerver_packet_select_handler (
+					receive_handle, receive_handle->spare_packet
+				);
+
+				// update buffer positions
+				end += to_copy_data_size;
+				buffer_pos += to_copy_data_size;
+
+				// update how much we have still left to handle from the current buffer
+				remaining_buffer_size -= to_copy_data_size;
+
+				// we still need to process more data from the buffer
+				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
+			}
+
+			else {
+				#ifdef RECEIVE_DEBUG
+				(void) printf (
+					"We can only get %lu / %lu of the remaining packet's data\n",
+					receive_handle->spare_packet->remaining_data,
+					receive_handle->received_size
+				);
+				#endif
+
+				// copy the complete buffer
+				(void) packet_add_data (
+					receive_handle->spare_packet,
+					end,
+					receive_handle->received_size
+				);
+
+				#ifdef RECEIVE_DEBUG
+				(void) printf (
+					"We are still missing %lu to complete the packet!\n",
+					receive_handle->spare_packet->remaining_data
+				);
+				#endif
+			}
+		} break;
+
+		default: break;
+	}
+
+	#ifdef RECEIVE_DEBUG
+	(void) printf (
+		"State BEFORE LOOP: %s\n",
+		receive_handle_state_to_string (receive_handle->state)
+	);
+	#endif
+
+	if (
+		!stop_handler
+		&& (buffer_pos < receive_handle->received_size)
+		&& (
+			receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL
+			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
+		)
+	) {
+		cerver_receive_handle_buffer_new_actual (
+			receive_handle,
+			end, buffer_pos,
+			remaining_buffer_size
+		);
+	}
+
+}
+
 // handles a failed receive from a connection associatd with a client
 // ends the connection to prevent seg faults or signals for bad sock fd
 void cerver_receive_handle_failed (CerverReceive *cr) {
@@ -1768,38 +2143,38 @@ static inline void cerver_receive_success_receive_handle (
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
 
-	ReceiveHandle *receive_handle = receive_handle_new ();
-	if (receive_handle) {
-		receive_handle->type = cr->type;
+	ReceiveHandle *receive_handle = &cr->connection->receive_handle;
+	receive_handle->type = cr->type;
 
-		receive_handle->cerver = cr->cerver;
+	receive_handle->cerver = cr->cerver;
 
-		receive_handle->socket = cr->socket;
-		receive_handle->connection = cr->connection;
-		receive_handle->client = cr->client;
-		receive_handle->admin = cr->admin;
+	receive_handle->socket = cr->socket;
+	receive_handle->connection = cr->connection;
+	receive_handle->client = cr->client;
+	receive_handle->admin = cr->admin;
 
-		receive_handle->lobby = cr->lobby;
+	receive_handle->lobby = cr->lobby;
 
-		receive_handle->buffer = packet_buffer;
-		receive_handle->buffer_size = packet_buffer_size;
-		receive_handle->received_size = received;
+	receive_handle->buffer = packet_buffer;
+	receive_handle->buffer_size = packet_buffer_size;
+	receive_handle->received_size = received;
 
-		switch (receive_handle->cerver->handler_type) {
-			case CERVER_HANDLER_TYPE_NONE: break;
+	if (receive_handle->state == RECEIVE_HANDLE_STATE_NONE) {
+		receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
+	}
 
-			case CERVER_HANDLER_TYPE_POLL: {
-				cr->cerver->handle_received_buffer (receive_handle);
-			} break;
+	switch (receive_handle->cerver->handler_type) {
+		case CERVER_HANDLER_TYPE_NONE: break;
 
-			case CERVER_HANDLER_TYPE_THREADS: {
-				cr->cerver->handle_received_buffer (receive_handle);
-			} break;
+		case CERVER_HANDLER_TYPE_POLL: {
+			cr->cerver->handle_received_buffer (receive_handle);
+		} break;
 
-			default: break;
-		}
+		case CERVER_HANDLER_TYPE_THREADS: {
+			cr->cerver->handle_received_buffer (receive_handle);
+		} break;
 
-		receive_handle_delete (receive_handle);
+		default: break;
 	}
 
 }
@@ -1883,7 +2258,7 @@ void cerver_receive_internal (
 		case -1: {
 			// no more data to read
 			if (errno != EWOULDBLOCK) {
-				#ifdef CERVER_DEBUG
+				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 					"cerver_receive () - rc < 0 - sock fd: %d",
@@ -1900,7 +2275,7 @@ void cerver_receive_internal (
 		case 0: {
 			// man recv -> steam socket perfomed an orderly shutdown
 			// but in dgram it might mean something?
-			#ifdef CERVER_DEBUG
+			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"cerver_recieve () - rc == 0 - sock fd: %d",
@@ -1914,6 +2289,13 @@ void cerver_receive_internal (
 		} break;
 
 		default: {
+			#ifdef RECEIVE_DEBUG
+			cerver_log_debug (
+				"recv () - %ld bytes from %d sock fd",
+				rc, cr->socket->sock_fd
+			);
+			#endif
+
 			cerver_receive_success (
 				cr, rc,
 				packet_buffer, packet_buffer_size
@@ -1935,7 +2317,7 @@ static inline u8 cerver_receive_threads_actual (
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
-				#ifdef HANDLER_DEBUG
+				#ifdef SOCKET_DEBUG
 				cerver_log_debug (
 					"cerver_receive_threads () - sock fd: %d timed out",
 					cr->socket->sock_fd
@@ -2016,14 +2398,17 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	else {
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
-			"cerver_receive_threads () - Failed to allocate packet buffer for sock fd <%d> connection!",
+			"cerver_receive_threads () - "
+			"Failed to allocate packet buffer for sock fd <%d> connection!",
 			cr->connection->socket->sock_fd
 		);
 	}
 
 	// check if the connection has already ended
 	if (cr->socket->sock_fd > 0) {
-		client_remove_connection_by_sock_fd (cr->cerver, cr->client, cr->socket->sock_fd);
+		client_remove_connection_by_sock_fd (
+			cr->cerver, cr->client, cr->socket->sock_fd
+		);
 	}
 
 	cerver_receive_delete (cr);
@@ -2031,7 +2416,8 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-		"cerver_receive_threads () - loop has ended - dropping sock fd <%d> connection...",
+		"cerver_receive_threads () - loop has ended - "
+		"dropping sock fd <%d> connection...",
 		sock_fd
 	);
 	#endif
@@ -2044,43 +2430,51 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 #pragma region accept
 
-// 07/06/2020 - create a new connection but check if we can use the cerver's socket pool first
-static Connection *cerver_connection_create (Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address) {
+// create a new connection but check if we can use the cerver's socket pool first
+static Connection *cerver_connection_create (
+	Cerver *cerver,
+	const i32 new_fd, const struct sockaddr_storage *client_address
+) {
 
 	Connection *retval = NULL;
 
-	if (cerver) {
-		if (cerver->sockets_pool) {
-			// use a socket from the pool to create a new connection
-			Socket *socket = cerver_sockets_pool_pop (cerver);
-			if (socket) {
-				// manually create the connection
-				retval = connection_new ();
-				if (retval) {
-					// from connection_create_empty ()
-					// retval->socket = (Socket *) socket_create_empty ();
-					retval->socket = socket;
-					retval->sock_receive = sock_receive_new ();
-					retval->stats = connection_stats_new ();
+	if (cerver->sockets_pool) {
+		// use a socket from the pool to create a new connection
+		Socket *socket = cerver_sockets_pool_pop (cerver);
+		if (socket) {
+			// manually create the connection
+			retval = connection_new ();
+			if (retval) {
+				// from connection_create_empty ()
+				// retval->socket = (Socket *) socket_create_empty ();
+				retval->socket = socket;
 
-					// from connection_create ()
-					retval->socket->sock_fd = new_fd;
-					memcpy (&retval->address, &client_address, sizeof (struct sockaddr_storage));
-					retval->protocol = cerver->protocol;
+				// FIXME:
+				retval->sock_receive = sock_receive_new ();
 
-					connection_get_values (retval);
-				}
-			}
+				retval->stats = connection_stats_new ();
 
-			else {
-				retval = connection_create (new_fd, client_address, cerver->protocol);
+				// from connection_create ()
+				retval->socket->sock_fd = new_fd;
+				(void) memcpy (
+					&retval->address,
+					&client_address,
+					sizeof (struct sockaddr_storage)
+				);
+
+				retval->protocol = cerver->protocol;
+
+				connection_get_values (retval);
 			}
 		}
 
 		else {
 			retval = connection_create (new_fd, client_address, cerver->protocol);
 		}
+	}
+
+	else {
+		retval = connection_create (new_fd, client_address, cerver->protocol);
 	}
 
 	return retval;
@@ -2343,16 +2737,19 @@ static inline u8 cerver_register_new_connection_select (
 
 static void cerver_register_new_connection (
 	Cerver *cerver,
-	const i32 new_fd, const struct sockaddr_storage client_address
+	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	Connection *connection = cerver_connection_create (cerver, new_fd, client_address);
+	Connection *connection = cerver_connection_create (
+		cerver, new_fd, client_address
+	);
+	
 	if (connection) {
 		// #ifdef CERVER_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"New connection from IP address: %s -- Port: %d",
-			connection->ip->str, connection->port
+			connection->ip, connection->port
 		);
 		// #endif
 
@@ -2394,28 +2791,26 @@ static void cerver_register_new_connection (
 // accepst a new connection to the cerver
 static void cerver_accept (void *cerver_ptr) {
 
-	if (cerver_ptr) {
-		Cerver *cerver = (Cerver *) cerver_ptr;
+	Cerver *cerver = (Cerver *) cerver_ptr;
 
-		struct sockaddr_storage client_address;
-		memset (&client_address, 0, sizeof (struct sockaddr_storage));
-		socklen_t socklen = sizeof (struct sockaddr_storage);
+	struct sockaddr_storage client_address = { 0 };
+	// (void) memset (&client_address, 0, sizeof (struct sockaddr_storage));
+	socklen_t socklen = sizeof (struct sockaddr_storage);
 
-		// accept the new connection
-		i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
-		if (new_fd > 0) {
-			#ifdef HANDLER_DEBUG
-			cerver_log_debug ("Accepted fd: %d", new_fd);
-			#endif
-			cerver_register_new_connection (cerver, new_fd, client_address);
-		}
+	// accept the new connection
+	i32 new_fd = accept (cerver->sock, (struct sockaddr *) &client_address, &socklen);
+	if (new_fd > 0) {
+		#ifdef HANDLER_DEBUG
+		cerver_log_debug ("Accepted fd: %d", new_fd);
+		#endif
+		cerver_register_new_connection (cerver, new_fd, &client_address);
+	}
 
-		else {
-			// if we get EWOULDBLOCK, we have accepted all connections
-			if (errno != EWOULDBLOCK) {
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
-				perror ("Error");
-			}
+	else {
+		// if we get EWOULDBLOCK, we have accepted all connections
+		if (errno != EWOULDBLOCK) {
+			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
+			perror ("Error");
 		}
 	}
 

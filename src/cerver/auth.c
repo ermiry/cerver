@@ -868,8 +868,8 @@ static CerverAuthError cerver_auth_packet_handler (Packet *packet) {
 
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
 
-	if (packet->header && (packet->data_size > 0)) {
-		switch (packet->header->request_type) {
+	if (packet->data_size > 0) {
+		switch (packet->header.request_type) {
 			// the client sent use its data to authenticate itself
 			case AUTH_PACKET_TYPE_CLIENT_AUTH:
 				error = auth_try (packet);
@@ -911,7 +911,7 @@ static CerverAuthError on_hold_packet_handler_actual (Packet *packet) {
 
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
 
-	switch (packet->header->packet_type) {
+	switch (packet->header.packet_type) {
 		// handles authentication packets
 		case PACKET_TYPE_AUTH:
 			error = cerver_auth_packet_handler (packet);
@@ -950,7 +950,7 @@ static CerverAuthError on_hold_packet_handler_check_version (
 	if (packet->cerver->on_hold_check_packets) {
 		// we expect the packet version in the packet's data
 		if (packet->data) {
-			packet->version = (PacketVersion *) packet->data_ptr;
+			(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 			packet->data_ptr += sizeof (PacketVersion);
 
 			// TODO: return errors to client

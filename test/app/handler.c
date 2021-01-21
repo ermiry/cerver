@@ -9,17 +9,6 @@
 // send back a test message
 static void app_handler_test (const Packet *packet) {
 
-	PacketHeader header = {
-		.packet_type = PACKET_TYPE_APP,
-		.packet_size = sizeof (PacketHeader),
-
-		.handler_id = 0,
-
-		.request_type = APP_REQUEST_TEST,
-
-		.sock_fd = 0,
-	};
-
 	Packet response = {
 		.cerver = packet->cerver,
 		.client = packet->client,
@@ -35,10 +24,29 @@ static void app_handler_test (const Packet *packet) {
 		.data_end = NULL,
 		.data_ref = false,
 
-		.header = NULL,
-		.version = NULL,
+		.remaining_data = 0,
+
+		.header = (PacketHeader) {
+			.packet_type = PACKET_TYPE_APP,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = APP_REQUEST_TEST,
+
+			.sock_fd = 0,
+		},
+
+		.version = (PacketVersion) {
+			.protocol_id = 0,
+			.protocol_version = {
+				.major = 0,
+				.minor = 0
+			}
+		},
+
 		.packet_size = sizeof (PacketHeader),
-		.packet = &header,
+		.packet = &response.header,
 		.packet_ref = false
 	};
 
@@ -67,6 +75,11 @@ static void app_handler_message (const Packet *packet) {
 	header->request_type = APP_REQUEST_MESSAGE;
 
 	end += sizeof (PacketHeader);
+
+	// print the client's message
+	#ifdef TEST_APP_DEBUG
+	(void) printf ("|%s|\n", end);
+	#endif
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 
@@ -99,7 +112,7 @@ void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:

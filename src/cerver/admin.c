@@ -1631,66 +1631,64 @@ static AdminCerverHandlerError admin_cerver_client_packet_handler (
 
 	AdminCerverHandlerError error = ADMIN_CERVER_HANDLER_ERROR_NONE;
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// the client is going to close its current connection
-			// but will remain in the cerver if it has another connection active
-			// if not, it will be dropped
-			case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
-				#ifdef ADMIN_DEBUG
-				cerver_log_debug (
-					"Admin with client %ld requested to close the connection",
-					packet->client->id
-				);
-				#endif
+	switch (packet->header.request_type) {
+		// the client is going to close its current connection
+		// but will remain in the cerver if it has another connection active
+		// if not, it will be dropped
+		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
+			#ifdef ADMIN_DEBUG
+			cerver_log_debug (
+				"Admin with client %ld requested to close the connection",
+				packet->client->id
+			);
+			#endif
 
-				switch (admin_remove_connection_by_sock_fd (
+			switch (admin_remove_connection_by_sock_fd (
+				packet->cerver->admin,
+				admin_get_by_sock_fd (
 					packet->cerver->admin,
-					admin_get_by_sock_fd (
-						packet->cerver->admin,
-						packet->connection->socket->sock_fd
-					),
 					packet->connection->socket->sock_fd
-				)) {
-					case ADMIN_CONNECTIONS_STATUS_DROPPED:
-						error = ADMIN_CERVER_HANDLER_ERROR_DROPPED;
-						break;
-
-					default: break;
-				}
-			} break;
-
-			// the client is going to disconnect and will close all of its active connections
-			// so drop it from the server
-			case CLIENT_PACKET_TYPE_DISCONNECT: {
-				if (!admin_cerver_drop_admin (
-					packet->cerver->admin,
-					admin_get_by_sock_fd (
-						packet->cerver->admin,
-						packet->connection->socket->sock_fd
-					)
-				)) {
-					cerver_event_trigger (
-						CERVER_EVENT_ADMIN_DISCONNECTED,
-						packet->cerver,
-						NULL, NULL
-					);
-
+				),
+				packet->connection->socket->sock_fd
+			)) {
+				case ADMIN_CONNECTIONS_STATUS_DROPPED:
 					error = ADMIN_CERVER_HANDLER_ERROR_DROPPED;
-				}
-			} break;
+					break;
 
-			default: {
-				#ifdef ADMIN_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
-					"admin_cerver_client_packet_handler () - "
-					"Got an unknown client packet in ADMIN cerver %s",
-					packet->cerver->info->name->str
+				default: break;
+			}
+		} break;
+
+		// the client is going to disconnect and will close all of its active connections
+		// so drop it from the server
+		case CLIENT_PACKET_TYPE_DISCONNECT: {
+			if (!admin_cerver_drop_admin (
+				packet->cerver->admin,
+				admin_get_by_sock_fd (
+					packet->cerver->admin,
+					packet->connection->socket->sock_fd
+				)
+			)) {
+				cerver_event_trigger (
+					CERVER_EVENT_ADMIN_DISCONNECTED,
+					packet->cerver,
+					NULL, NULL
 				);
-				#endif
-			} break;
-		}
+
+				error = ADMIN_CERVER_HANDLER_ERROR_DROPPED;
+			}
+		} break;
+
+		default: {
+			#ifdef ADMIN_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
+				"admin_cerver_client_packet_handler () - "
+				"Got an unknown client packet in ADMIN cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 	return error;
@@ -1700,28 +1698,26 @@ static AdminCerverHandlerError admin_cerver_client_packet_handler (
 // handles a request made from the admin
 static void admin_cerver_request_packet_handler (Packet *packet) {
 
-	if (packet->header) {
-		switch (packet->header->request_type) {
-			// request from a client to get a file
-			case REQUEST_PACKET_TYPE_GET_FILE:
-				cerver_request_get_file (packet);
-				break;
+	switch (packet->header.request_type) {
+		// request from a client to get a file
+		case REQUEST_PACKET_TYPE_GET_FILE:
+			cerver_request_get_file (packet);
+			break;
 
-			// request from a client to upload a file
-			case REQUEST_PACKET_TYPE_SEND_FILE:
-				cerver_request_send_file (packet);
-				break;
+		// request from a client to upload a file
+		case REQUEST_PACKET_TYPE_SEND_FILE:
+			cerver_request_send_file (packet);
+			break;
 
-			default: {
-				#ifdef ADMIN_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
-					"Got an unknown request packet in ADMIN cerver %s",
-					packet->cerver->info->name->str
-				);
-				#endif
-			} break;
-		}
+		default: {
+			#ifdef ADMIN_DEBUG
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"Got an unknown request packet in ADMIN cerver %s",
+				packet->cerver->info->name->str
+			);
+			#endif
+		} break;
 	}
 
 }
@@ -1843,7 +1839,7 @@ static AdminCerverHandlerError admin_packet_handler_actual (
 
 	AdminCerverHandlerError error = ADMIN_CERVER_HANDLER_ERROR_NONE;
 
-	switch (packet->header->packet_type) {
+	switch (packet->header.packet_type) {
 		case PACKET_TYPE_CLIENT:
 			packet->cerver->admin->stats->received_packets->n_client_packets += 1;
 			packet->client->stats->received_packets->n_client_packets += 1;
@@ -1910,7 +1906,7 @@ static AdminCerverHandlerError admin_packet_handler_check_version (
 	if (packet->cerver->check_packets) {
 		// we expect the packet version in the packet's data
 		if (packet->data) {
-			packet->version = (PacketVersion *) packet->data_ptr;
+			(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 			packet->data_ptr += sizeof (PacketVersion);
 
 			// TODO: return errors to client

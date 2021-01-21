@@ -217,29 +217,12 @@ CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
 // the default timeout when handling a connection in dedicated thread
 #define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
 
-typedef struct ReceiveHandle {
-
-	ReceiveType type;
-
-	struct _Cerver *cerver;
-
-	struct _Socket *socket;
-	struct _Connection *connection;
-	struct _Client *client;
-	struct _Admin *admin;
-
-	struct _Lobby *lobby;
-
-	char *buffer;
-	size_t buffer_size;
-	size_t received_size;
-
-} ReceiveHandle;
-
-CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
-
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+);
+
+CERVER_PRIVATE void cerver_receive_handle_buffer_new (
 	void *receive_handle_ptr
 );
 

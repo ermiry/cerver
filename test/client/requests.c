@@ -10,6 +10,8 @@
 
 #define REQUESTS			64
 
+static const char *client_name = { "test-client" };
+
 static unsigned int responses = 0;
 
 static void app_handler (void *packet_ptr) {
@@ -17,7 +19,7 @@ static void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:
@@ -38,13 +40,11 @@ static void send_request (
 	Client *client, Connection *connection
 ) {
 
-	Packet *request = packet_new ();
-	if (request) {
-		(void) packet_create_request (
-			request,
-			PACKET_TYPE_APP, APP_REQUEST_TEST
-		);
+	Packet *request = packet_create_request (
+		PACKET_TYPE_APP, APP_REQUEST_TEST
+	);
 
+	if (request) {
 		test_check_unsigned_eq (
 			client_request_to_cerver (
 				client, connection, request
@@ -64,10 +64,9 @@ int main (int argc, const char **argv) {
 
 	test_check_ptr (client);
 
-	client_set_name (client, "test-client");
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, "test-client", NULL);
-	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
+	client_set_name (client, client_name);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	Handler *app_packet_handler = handler_create (app_handler);
 	handler_set_direct_handle (app_packet_handler, true);

@@ -2738,14 +2738,14 @@ static void cerver_report_check_info_handle_auth (
 					if (!connection_generate_auth_packet (connection)) {
 						cerver_log_success (
 							"cerver_check_info () - Generated connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to generate connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2762,7 +2762,7 @@ static void cerver_report_check_info_handle_auth (
 					if (!packet_send (connection->auth_packet, 0, NULL, false)) {
 						cerver_log_success (
 							"cerver_check_info () - Sent connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 
 						client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
@@ -2771,7 +2771,7 @@ static void cerver_report_check_info_handle_auth (
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to send connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2784,14 +2784,17 @@ static void cerver_report_check_info_handle_auth (
 			else {
 				cerver_log_error (
 					"Connection %s does NOT have an auth packet!",
-					connection->name->str
+					connection->name
 				);
 			}
 		}
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver does NOT require authentication.");
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_NONE,
+				"Cerver does NOT require authentication"
+			);
 			#endif
 		}
 	}
@@ -2878,7 +2881,11 @@ static inline SCerver *scerver_new (void) {
 
 }
 
-static inline void scerver_delete (void *ptr) { if (ptr) free (ptr); }
+static inline void scerver_delete (void *ptr) {
+	
+	if (ptr) free (ptr);
+	
+}
 
 // srealizes the cerver
 static SCerver *cerver_serliaze (Cerver *cerver) {
@@ -2927,7 +2934,9 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
 			cerver_report->type = scerver->type;
 
 			cerver_report->name = str_new (scerver->name);
-			if (strlen (scerver->welcome)) cerver_report->welcome = str_new (scerver->welcome);
+			if (strlen (scerver->welcome)) {
+				cerver_report->welcome = str_new (scerver->welcome);
+			}
 
 			cerver_report->use_ipv6 = scerver->use_ipv6;
 			cerver_report->protocol = scerver->protocol;
@@ -2950,7 +2959,11 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 	if (cerver) {
 		SCerver *scerver = cerver_serliaze (cerver);
 		if (scerver) {
-			packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, scerver, sizeof (SCerver));
+			packet = packet_generate_request (
+				PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+				scerver, sizeof (SCerver)
+			);
+			
 			scerver_delete (scerver);
 		}
 	}
