@@ -8,12 +8,16 @@
 
 #define DEFAULT_SCORE_SIZE      5   // default players inside the scoreboard
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct ScoreBoard {
 
-	Htab *scores;
-	u8 registeredPlayers;
-	u8 scoresNum;
-	char **scoreTypes;
+    Htab *scores;
+    u8 registeredPlayers;
+    u8 scoresNum;
+    char **scoreTypes;
 
 } ScoreBoard;
 
@@ -33,5 +37,9 @@ extern void game_score_set (ScoreBoard *sb, char *playerName, char *scoreType, i
 extern i32 game_score_get (ScoreBoard *sb, char *playerName, char *scoreType);
 extern void game_score_update (ScoreBoard *sb, char *playerName, char *scoreType, i32 value);
 extern void game_score_reset (ScoreBoard *sb, char *playerName);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
