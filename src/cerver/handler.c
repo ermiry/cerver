@@ -2212,48 +2212,49 @@ static Connection *cerver_connection_create (
 	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	Connection *retval = NULL;
+	Connection *connection = NULL;
 
 	if (cerver->sockets_pool) {
 		// use a socket from the pool to create a new connection
 		Socket *socket = cerver_sockets_pool_pop (cerver);
 		if (socket) {
 			// manually create the connection
-			retval = connection_new ();
-			if (retval) {
+			connection = connection_new ();
+			if (connection) {
 				// from connection_create_empty ()
-				// retval->socket = (Socket *) socket_create_empty ();
-				retval->socket = socket;
+				// connection->socket = (Socket *) socket_create_empty ();
+				connection->socket = socket;
 
-				// FIXME:
-				retval->sock_receive = sock_receive_new ();
-
-				retval->stats = connection_stats_new ();
+				connection->stats = connection_stats_new ();
 
 				// from connection_create ()
-				retval->socket->sock_fd = new_fd;
+				connection->socket->sock_fd = new_fd;
 				(void) memcpy (
-					&retval->address,
+					&connection->address,
 					&client_address,
 					sizeof (struct sockaddr_storage)
 				);
 
-				retval->protocol = cerver->protocol;
+				connection->protocol = cerver->protocol;
 
-				connection_get_values (retval);
+				connection_get_values (connection);
 			}
 		}
 
 		else {
-			retval = connection_create (new_fd, client_address, cerver->protocol);
+			connection = connection_create (
+				new_fd, client_address, cerver->protocol
+			);
 		}
 	}
 
 	else {
-		retval = connection_create (new_fd, client_address, cerver->protocol);
+		connection = connection_create (
+			new_fd, client_address, cerver->protocol
+		);
 	}
 
-	return retval;
+	return connection;
 
 }
 
