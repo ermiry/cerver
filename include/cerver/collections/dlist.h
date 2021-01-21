@@ -5,6 +5,10 @@
 
 #include <pthread.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct ListElement {
 
 	struct ListElement *prev;
@@ -333,5 +337,9 @@ extern DoubleList *dlist_merge_two_by_condition (
 // the original dlists can be deleted after this operation
 // returns a newly allocated dlist with all the elements
 extern DoubleList *dlist_merge_many (DoubleList *many_dlists);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
