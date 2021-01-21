@@ -179,159 +179,153 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_cerver (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		PacketType packet_type = PACKET_TYPE_NONE;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->cerver->isRunning) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	PacketType packet_type = PACKET_TYPE_NONE;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->cerver->isRunning) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->cerver->isRunning) {
-				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-				handler->cerver->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+		if (handler->cerver->isRunning) {
+			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
+			handler->cerver->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
-					packet_type = packet->header.packet_type;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
+				packet_type = packet->header.packet_type;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
+				job_delete (job);
 
-					switch (packet_type) {
-						case PACKET_TYPE_APP: {
-							if (handler->cerver->app_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_APP_ERROR: {
-							if (handler->cerver->app_error_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_CUSTOM: {
-							if (handler->cerver->custom_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
+				switch (packet_type) {
+					case PACKET_TYPE_APP: {
+						if (handler->cerver->app_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_APP_ERROR: {
+						if (handler->cerver->app_error_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_CUSTOM: {
+						if (handler->cerver->custom_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
 
-						default: packet_delete (packet); break;
-					}
+					default: packet_delete (packet); break;
 				}
-
-				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-				handler->cerver->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
+			handler->cerver->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
 // while client is running, check for new jobs and handle them
 static void handler_do_while_client (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->client->running) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->client->running) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->client->running) {
-				(void) pthread_mutex_lock (handler->client->handlers_lock);
-				handler->client->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->client->handlers_lock);
+		if (handler->client->running) {
+			(void) pthread_mutex_lock (handler->client->handlers_lock);
+			handler->client->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->client->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
-					packet_delete (packet);
-				}
-
-				(void) pthread_mutex_lock (handler->client->handlers_lock);
-				handler->client->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->client->handlers_lock);
+				job_delete (job);
+				packet_delete (packet);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->client->handlers_lock);
+			handler->client->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->client->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_admin (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		PacketType packet_type = PACKET_TYPE_NONE;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->cerver->isRunning) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	PacketType packet_type = PACKET_TYPE_NONE;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->cerver->isRunning) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->cerver->isRunning) {
-				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-				handler->cerver->admin->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+		if (handler->cerver->isRunning) {
+			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+			handler->cerver->admin->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
-					packet_type = packet->header.packet_type;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
+				packet_type = packet->header.packet_type;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
+				job_delete (job);
 
-					switch (packet_type) {
-						case PACKET_TYPE_APP: {
-							if (handler->cerver->admin->app_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_APP_ERROR: {
-							if (handler->cerver->admin->app_error_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_CUSTOM: {
-							if (handler->cerver->admin->custom_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
+				switch (packet_type) {
+					case PACKET_TYPE_APP: {
+						if (handler->cerver->admin->app_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_APP_ERROR: {
+						if (handler->cerver->admin->app_error_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_CUSTOM: {
+						if (handler->cerver->admin->custom_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
 
-						default: packet_delete (packet); break;
-					}
+					default: packet_delete (packet); break;
 				}
-
-				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-				handler->cerver->admin->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+			handler->cerver->admin->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
@@ -432,17 +426,6 @@ int handler_start (Handler *handler) {
 
 	if (handler) {
 		if (handler->type != HANDLER_TYPE_NONE) {
-			// retval = pthread_create (
-			//     &handler->thread_id,
-			//     NULL,
-			//     (void *(*)(void *)) handler_do,
-			//     (void *) handler
-			// );
-
-
-			// 26/05/2020 -- 12:54
-			// handler's threads are not explicitly joined by pthread_join ()
-			// on cerver teardown
 			if (!thread_create_detachable (
 				&handler->thread_id,
 				(void *(*)(void *)) handler_do,
