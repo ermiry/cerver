@@ -16,16 +16,11 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
-struct _Cerver;
-struct _Client;
-struct _Handler;
-struct _Packet;
-
-struct _AdminCerver;
-
 #define ADMIN_CERVER_DEFAULT_MAX_ADMINS					1
 #define ADMIN_CERVER_DEFAULT_MAX_ADMIN_CONNECTIONS		2
 #define ADMIN_CERVER_DEFAULT_MAX_BAD_PACKETS			4
+
+#define ADMIN_CERVER_DEFAULT_RECEIVE_BUFFER_SIZE		4096
 
 #define ADMIN_CERVER_DEFAULT_POLL_FDS					4
 #define ADMIN_CERVER_DEFAULT_POLL_TIMEOUT				2000
@@ -35,24 +30,35 @@ struct _AdminCerver;
 #define ADMIN_CERVER_DEFAULT_UPDATE_TICKS				30
 #define ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS		1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+struct _Cerver;
+struct _Client;
+struct _Handler;
+struct _Packet;
+
+struct _AdminCerver;
+
 #pragma region stats
 
 struct _AdminCerverStats {
 
-	time_t threshold_time;                          // every time we want to reset cerver stats (like packets), defaults 24hrs
+	time_t threshold_time;				// every time we want to reset cerver stats (like packets), defaults 24hrs
 
-	u64 total_n_packets_received;                   // total number of packets received (packet header + data)
-	u64 total_n_receives_done;                      // total amount of actual calls to recv ()
-	u64 total_bytes_received;                       // total amount of bytes received in the cerver
+	u64 total_n_packets_received;		// total number of packets received (packet header + data)
+	u64 total_n_receives_done;			// total amount of actual calls to recv ()
+	u64 total_bytes_received;			// total amount of bytes received in the cerver
 
-	u64 total_n_packets_sent;                       // total number of packets that were sent
-	u64 total_bytes_sent;                           // total amount of bytes sent by the cerver
+	u64 total_n_packets_sent;			// total number of packets that were sent
+	u64 total_bytes_sent;				// total amount of bytes sent by the cerver
 
-	u64 current_connections;      					// all of the current active connections from all the admins (registered in the poll array)
-	u64 current_connected_admins;            		// the current number of auth admins connected (unique clients)
+	u64 current_connections;			// all of the current active connections from all the admins (registered in the poll array)
+	u64 current_connected_admins;		// the current number of auth admins connected (unique clients)
 
-	u64 total_admin_connections;                   	// the total amount of admin connections that have been done to the cerver
-	u64 total_n_admins;                            	// the total amount of admins that were registered to the cerver
+	u64 total_admin_connections;		// the total amount of admin connections that have been done to the cerver
+	u64 total_n_admins;					// the total amount of admins that were registered to the cerver
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -69,19 +75,41 @@ CERVER_PUBLIC void admin_cerver_stats_print (
 
 #pragma region admin
 
+#define ADMIN_CONNECTIONS_STATUS_MAP(XX)									\
+	XX(0,	NONE,		None, 		Undefined)								\
+	XX(1,	ERROR,		Error, 		Failed to remove connection)			\
+	XX(2,	ONE,		One,		At least one active connection)			\
+	XX(3,	DROPPED,	Dropped,	Removed due to no connections left)
+
+typedef enum AdminConnectionsStatus {
+
+	#define XX(num, name, string, description) ADMIN_CONNECTIONS_STATUS_##name = num,
+	ADMIN_CONNECTIONS_STATUS_MAP (XX)
+	#undef XX
+
+} AdminConnectionsStatus;
+
+CERVER_PUBLIC const char *admin_connections_status_to_string (
+	const AdminConnectionsStatus status
+);
+
+CERVER_PUBLIC const char *admin_connections_status_description (
+	const AdminConnectionsStatus status
+);
+
 struct _Admin {
 
 	struct _AdminCerver *admin_cerver;
 
-	String *id;						// unique admin identifier
+	String *id;					// unique admin identifier
 
-	struct _Client *client;				// network values for the admin
+	struct _Client *client;		// network values for the admin
 
 	// a place to store dedicated admin data
 	void *data;
 	Action delete_data;
 
-	u32 bad_packets;					// disconnect after a number of bad packets
+	u32 bad_packets;			// disconnect after a number of bad packets
 
 };
 
@@ -119,8 +147,9 @@ CERVER_PUBLIC Admin *admin_get_by_session_id (
 // removes the connection from the admin referred to by the sock fd
 // and also checks if there is another active connection in the admin, if not it will be dropped
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 admin_remove_connection_by_sock_fd (
-	struct _AdminCerver *admin_cerver, Admin *admin, const i32 sock_fd
+CERVER_PUBLIC AdminConnectionsStatus admin_remove_connection_by_sock_fd (
+	struct _AdminCerver *admin_cerver,
+	Admin *admin, const i32 sock_fd
 );
 
 // sends a packet to the first connection of the specified admin
@@ -152,13 +181,15 @@ struct _AdminCerver {
 
 	DoubleList *admins;					// connected admins to the cerver
 
-	delegate authenticate;              // authentication method
+	delegate authenticate;				// authentication method
 
 	u8 max_admins;						// the max numbers of admins allowed at any time
 	u8 max_admin_connections;			// the max number of connections allowed per admin
 
 	// number of bad packets before ending connection
 	u32 n_bad_packets_limit;
+
+	size_t receive_buffer_size;
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
@@ -229,6 +260,11 @@ CERVER_EXPORT void admin_cerver_set_max_admin_connections (
 // -1 to use defaults (5 and 20)
 CERVER_EXPORT void admin_cerver_set_bad_packets_limit (
 	AdminCerver *admin_cerver, i32 n_bad_packets_limit
+);
+
+// sets the admin cerver's receive buffer size used for recv ()
+CERVER_EXPORT void admin_cerver_set_receive_buffer_size (
+	AdminCerver *admin_cerver, const size_t buffer_size
 );
 
 // sets the max number of poll fds for the admin cerver
@@ -359,20 +395,50 @@ CERVER_PRIVATE u8 admin_cerver_drop_admin (
 
 #pragma region start
 
-CERVER_PRIVATE u8 admin_cerver_start (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_start (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region end
 
-CERVER_PRIVATE u8 admin_cerver_end (AdminCerver *admin_cerver);
+CERVER_PRIVATE u8 admin_cerver_end (
+	AdminCerver *admin_cerver
+);
 
 #pragma endregion
 
 #pragma region handler
 
+#define ADMIN_CERVER_HANDLER_ERROR_MAP(XX)										\
+	XX(0,	NONE,			None,				No handler error)				\
+	XX(1,	PACKET,			Bad Packet,			Packet check failed)			\
+	XX(2,	DROPPED,		Dropped Connection, The connection has been ended)
+
+typedef enum AdminCerverHandlerError {
+
+	#define XX(num, name, string, description) ADMIN_CERVER_HANDLER_ERROR_##name = num,
+	ADMIN_CERVER_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} AdminCerverHandlerError;
+
+CERVER_PUBLIC const char *admin_cerver_handler_error_to_string (
+	const AdminCerverHandlerError error
+);
+
+CERVER_PUBLIC const char *admin_cerver_handler_error_description (
+	const AdminCerverHandlerError error
+);
+
 // handles a packet from an admin
-CERVER_PRIVATE void admin_packet_handler (struct _Packet *packet);
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended
+// or removed from admin poll
+CERVER_PRIVATE u8 admin_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 
@@ -391,5 +457,9 @@ CERVER_PRIVATE u8 admin_cerver_poll_unregister_sock_fd (
 );
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
