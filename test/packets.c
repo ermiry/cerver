@@ -263,7 +263,7 @@ static void test_packets_create_ping (void) {
 	test_check_unsigned_eq (((PacketHeader *) ping->packet)->request_type, 0, NULL);
 	test_check_unsigned_eq (((PacketHeader *) ping->packet)->sock_fd, 0, NULL);
 
-	test_check_bool_eq (ping->packet_ref, false, NULL);
+	test_check_bool_eq (ping->packet_ref, true, NULL);
 
 }
 
