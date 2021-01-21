@@ -3,29 +3,35 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "cerver/config.h"
+
 #include <errno.h>
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <sys/prctl.h>
+#include <sys/poll.h>
 
 #include "cerver/types/types.h"
 
 #include "cerver/collections/htab.h"
 
+#include "cerver/admin.h"
 #include "cerver/auth.h"
-#include "cerver/balancer.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
 #include "cerver/events.h"
+#include "cerver/errors.h"
 #include "cerver/files.h"
 #include "cerver/handler.h"
+#include "cerver/network.h"
+#include "cerver/receive.h"
 #include "cerver/packets.h"
-#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
-
-#include "cerver/http/http.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
@@ -34,6 +40,8 @@
 #include "cerver/utils/log.h"
 
 #pragma region handler
+
+static int unique_handler_id = 0;
 
 static int unique_handler_id = 0;
 
@@ -180,15 +188,15 @@ static void handler_do_while_cerver (Handler *handler) {
 			bsem_wait (handler->job_queue->has_jobs);
 
 			if (handler->cerver->isRunning) {
-				pthread_mutex_lock (handler->cerver->handlers_lock);
+				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
 				handler->cerver->num_handlers_working += 1;
-				pthread_mutex_unlock (handler->cerver->handlers_lock);
+				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 
 				// read job from queue
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -199,17 +207,26 @@ static void handler_do_while_cerver (Handler *handler) {
 					job_delete (job);
 
 					switch (packet_type) {
-						case PACKET_TYPE_APP: if (handler->cerver->app_packet_handler_delete_packet) packet_delete (packet); break;
-						case PACKET_TYPE_APP_ERROR: if (handler->cerver->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-						case PACKET_TYPE_CUSTOM: if (handler->cerver->custom_packet_handler_delete_packet) packet_delete (packet); break;
+						case PACKET_TYPE_APP: {
+							if (handler->cerver->app_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
+						case PACKET_TYPE_APP_ERROR: {
+							if (handler->cerver->app_error_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
+						case PACKET_TYPE_CUSTOM: {
+							if (handler->cerver->custom_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
 
 						default: packet_delete (packet); break;
 					}
 				}
 
-				pthread_mutex_lock (handler->cerver->handlers_lock);
+				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
 				handler->cerver->num_handlers_working -= 1;
-				pthread_mutex_unlock (handler->cerver->handlers_lock);
+				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 			}
 		}
 
@@ -229,9 +246,9 @@ static void handler_do_while_client (Handler *handler) {
 			bsem_wait (handler->job_queue->has_jobs);
 
 			if (handler->client->running) {
-				pthread_mutex_lock (handler->client->handlers_lock);
+				(void) pthread_mutex_lock (handler->client->handlers_lock);
 				handler->client->num_handlers_working += 1;
-				pthread_mutex_unlock (handler->client->handlers_lock);
+				(void) pthread_mutex_unlock (handler->client->handlers_lock);
 
 				// read job from queue
 				job = job_queue_pull (handler->job_queue);
@@ -248,9 +265,9 @@ static void handler_do_while_client (Handler *handler) {
 					packet_delete (packet);
 				}
 
-				pthread_mutex_lock (handler->client->handlers_lock);
+				(void) pthread_mutex_lock (handler->client->handlers_lock);
 				handler->client->num_handlers_working -= 1;
-				pthread_mutex_unlock (handler->client->handlers_lock);
+				(void) pthread_mutex_unlock (handler->client->handlers_lock);
 			}
 		}
 
@@ -271,15 +288,15 @@ static void handler_do_while_admin (Handler *handler) {
 			bsem_wait (handler->job_queue->has_jobs);
 
 			if (handler->cerver->isRunning) {
-				pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
 				handler->cerver->admin->num_handlers_working += 1;
-				pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 
 				// read job from queue
 				job = job_queue_pull (handler->job_queue);
 				if (job) {
 					packet = (Packet *) job->args;
-					packet_type = packet->header->packet_type;
+					packet_type = packet->header.packet_type;
 
 					handler_data->handler_id = handler->id;
 					handler_data->data = handler->data;
@@ -290,17 +307,26 @@ static void handler_do_while_admin (Handler *handler) {
 					job_delete (job);
 
 					switch (packet_type) {
-						case PACKET_TYPE_APP: if (handler->cerver->admin->app_packet_handler_delete_packet) packet_delete (packet); break;
-						case PACKET_TYPE_APP_ERROR: if (handler->cerver->admin->app_error_packet_handler_delete_packet) packet_delete (packet); break;
-						case PACKET_TYPE_CUSTOM: if (handler->cerver->admin->custom_packet_handler_delete_packet) packet_delete (packet); break;
+						case PACKET_TYPE_APP: {
+							if (handler->cerver->admin->app_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
+						case PACKET_TYPE_APP_ERROR: {
+							if (handler->cerver->admin->app_error_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
+						case PACKET_TYPE_CUSTOM: {
+							if (handler->cerver->admin->custom_packet_handler_delete_packet)
+								packet_delete (packet);
+						} break;
 
 						default: packet_delete (packet); break;
 					}
 				}
 
-				pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
 				handler->cerver->admin->num_handlers_working -= 1;
-				pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 			}
 		}
 
@@ -316,25 +342,46 @@ static void *handler_do (void *handler_ptr) {
 
 		pthread_mutex_t *handlers_lock = NULL;
 		switch (handler->type) {
-			case HANDLER_TYPE_CERVER: handlers_lock = handler->cerver->handlers_lock; break;
-			case HANDLER_TYPE_CLIENT: handlers_lock = handler->client->handlers_lock; break;
-			case HANDLER_TYPE_ADMIN: handlers_lock = handler->cerver->admin->handlers_lock; break;
+			case HANDLER_TYPE_CERVER:
+				handlers_lock = handler->cerver->handlers_lock;
+				break;
+			case HANDLER_TYPE_CLIENT:
+				handlers_lock = handler->client->handlers_lock;
+				break;
+			case HANDLER_TYPE_ADMIN:
+				handlers_lock = handler->cerver->admin->handlers_lock;
+				break;
 			default: break;
 		}
 
 		// set the thread name
 		if (handler->id >= 0) {
-			char thread_name[128] = { 0 };
+			char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
 
 			switch (handler->type) {
-				case HANDLER_TYPE_CERVER: snprintf (thread_name, 128, "cerver-handler-%d", handler->unique_id); break;
-				case HANDLER_TYPE_CLIENT: snprintf (thread_name, 128, "client-handler-%d", handler->unique_id); break;
-				case HANDLER_TYPE_ADMIN: snprintf (thread_name, 128, "admin-handler-%d", handler->unique_id); break;
+				case HANDLER_TYPE_CERVER:
+					(void) snprintf (
+						thread_name, THREAD_NAME_BUFFER_LEN,
+						"cerver-handler-%d", handler->unique_id
+					);
+					break;
+				case HANDLER_TYPE_CLIENT:
+					(void) snprintf (
+						thread_name, THREAD_NAME_BUFFER_LEN,
+						"client-handler-%d", handler->unique_id
+					);
+					break;
+				case HANDLER_TYPE_ADMIN:
+					(void) snprintf (
+						thread_name, THREAD_NAME_BUFFER_LEN,
+						"admin-handler-%d", handler->unique_id
+					);
+					break;
 				default: break;
 			}
 
 			// printf ("%s\n", thread_name);
-			prctl (PR_SET_NAME, thread_name);
+			(void) prctl (PR_SET_NAME, thread_name);
 		}
 
 		// TODO: register to signals to handle multiple actions
@@ -343,14 +390,14 @@ static void *handler_do (void *handler_ptr) {
 			handler->data = handler->data_create (handler->data_create_args);
 
 		// mark the handler as alive and ready
-		pthread_mutex_lock (handlers_lock);
+		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {
 			case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive += 1; break;
 			case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive += 1; break;
 			case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive += 1; break;
 			default: break;
 		}
-		pthread_mutex_unlock (handlers_lock);
+		(void) pthread_mutex_unlock (handlers_lock);
 
 		// while cerver / client is running, check for new jobs and handle them
 		switch (handler->type) {
@@ -363,14 +410,14 @@ static void *handler_do (void *handler_ptr) {
 		if (handler->data_delete)
 			handler->data_delete (handler->data);
 
-		pthread_mutex_lock (handlers_lock);
+		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {
 			case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive -= 1; break;
 			case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive -= 1; break;
 			case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive -= 1; break;
 			default: break;
 		}
-		pthread_mutex_unlock (handlers_lock);
+		(void) pthread_mutex_unlock (handlers_lock);
 	}
 
 	return NULL;
@@ -404,7 +451,8 @@ int handler_start (Handler *handler) {
 				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
-					"Created handler %d thread!", handler->unique_id
+					"Created handler %d thread!",
+					handler->unique_id
 				);
 				#endif
 
