@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CERVER_VERSION=1.6.3
+CERVER_VERSION=1.6.4b-1
 
 # sudo apt-get update && sudo apt-get install -y make wget
 
