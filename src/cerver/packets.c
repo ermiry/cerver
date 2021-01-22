@@ -1540,9 +1540,13 @@ u8 packet_route_between_connections (
 					while (left > 0) {
 						if (buff_size > left) buff_size = left;
 
-						if (packet_route_between_connections_receive (from->socket->sock_fd, pipefds[1], buff_size, &received)) break;
+						if (packet_route_between_connections_receive (
+							from->socket->sock_fd, pipefds[1], buff_size, &received
+						)) break;
 
-						if (packet_route_between_connections_move (pipefds[0], to->socket->sock_fd, buff_size, &moved)) break;
+						if (packet_route_between_connections_move (
+							pipefds[0], to->socket->sock_fd, buff_size, &moved
+						)) break;
 
 						if (sent) *sent += moved;
 
@@ -1558,7 +1562,10 @@ u8 packet_route_between_connections (
 
 				else {
 					#ifdef PACKETS_DEBUG
-					cerver_log_error ("packet_route_between_connections () - pipe () failed!");
+					cerver_log_error (
+						"packet_route_between_connections () - "
+						"pipe () failed!"
+					);
 					perror ("Error");
 					#endif
 				}
