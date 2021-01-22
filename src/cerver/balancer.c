@@ -992,21 +992,32 @@ static u8 balancer_client_consume_from_service (
 			to_read = data_size >= SERVICE_CONSUME_BUFFER_SIZE ? SERVICE_CONSUME_BUFFER_SIZE : data_size;
 			rc = recv (bs->service->connection->socket->sock_fd, buffer, to_read, 0);
 			if (rc <= 0) {
-				// #ifdef SERVICE_DEBUG
-				snprintf (
-					buffer, SERVICE_CONSUME_BUFFER_SIZE, 
-					"balancer_client_consume_from_service () - rc <= 0 - service %s", 
-					bs->service->connection->name
-				);
-				cerver_log_warning (buffer);
-				// #endif
+				if (errno == EAGAIN) {
+					#ifdef SOCKET_DEBUG
+					cerver_log_debug (
+						"balancer_client_consume_from_service () - sock fd %d timed out",
+						bs->service->connection->socket->sock_fd
+					);
+					#endif
+				}
 
-				// end the connection & flag the service as unavailable
-				balancer_client_receive_handle_failed (
-					bs, 
-					bs->balancer->client, bs->service->connection
-				);
-				break;
+				else {
+					// #ifdef SERVICE_DEBUG
+					(void) snprintf (
+						buffer, SERVICE_CONSUME_BUFFER_SIZE, 
+						"balancer_client_consume_from_service () - rc <= 0 - service %s", 
+						bs->service->connection->name
+					);
+					cerver_log_warning (buffer);
+					// #endif
+
+					// end the connection & flag the service as unavailable
+					balancer_client_receive_handle_failed (
+						bs, 
+						bs->balancer->client, bs->service->connection
+					);
+					break;
+				}
 			}
 
 			else {
@@ -1015,7 +1026,7 @@ static u8 balancer_client_consume_from_service (
 			}
 
 			data_size -= to_read;
-		} while (data_size <= 0);
+		} while (data_size > 0);
 
 		if (!data_size) retval = 0;
 	}
