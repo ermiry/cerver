@@ -3580,24 +3580,21 @@ static void client_receive_handle_failed (
 
 }
 
-// receive data from connection's socket
-// this method does not perform any checks and expects a valid buffer
-// to handle incomming data
-// returns 0 on success, 1 on error
-unsigned int client_receive_internal (
+// performs the actual recv () method on the connection's sock fd
+// handles if the receive method failed
+// returns the amount of bytes read from the socket
+static size_t client_receive_actual (
 	Client *client, Connection *connection,
 	char *buffer, const size_t buffer_size
 ) {
 
-	unsigned int retval = 1;
-
-	ssize_t rc = recv (
+	ssize_t received = recv (
 		connection->socket->sock_fd,
 		buffer, buffer_size,
 		0
 	);
 
-	switch (rc) {
+	switch (received) {
 		case -1: {
 			if (errno == EAGAIN) {
 				#ifdef SOCKET_DEBUG
@@ -3607,8 +3604,6 @@ unsigned int client_receive_internal (
 					connection->name, connection->socket->sock_fd
 				);
 				#endif
-
-				retval = 0;
 			}
 
 			else {
@@ -3641,28 +3636,54 @@ unsigned int client_receive_internal (
 		} break;
 
 		default: {
-			// cerver_log (
-			// 	LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-			// 	"Connection %s rc: %ld",
-			// 	connection->name->str, rc
-			// );
-
-			client->stats->n_receives_done += 1;
-			client->stats->total_bytes_received += rc;
-
-			connection->stats->n_receives_done += 1;
-			connection->stats->total_bytes_received += rc;
-
-			connection->receive_handle.buffer = buffer;
-			connection->receive_handle.buffer_size = buffer_size;
-			connection->receive_handle.received_size = rc;
-
-			client_receive_handle_buffer (
-				&connection->receive_handle
+			// #ifdef CLIENT_RECEIVE_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+				"client_receive_actual () - received %ld from connection %s",
+				received, connection->name
 			);
-
-			retval = 0;
+			// #endif
 		} break;
+	}
+
+	return (size_t) ((received > 0) ? received : 0);
+
+}
+
+// receive data from connection's socket
+// this method does not perform any checks and expects a valid buffer
+// to handle incomming data
+// returns 0 on success, 1 on error
+unsigned int client_receive_internal (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+) {
+
+	unsigned int retval = 1;
+
+	size_t received = client_receive_actual (
+		client, connection,
+		buffer, buffer_size
+	);
+
+	if (received) {
+		client->stats->n_receives_done += 1;
+		client->stats->total_bytes_received += received;
+
+		#ifdef CONNECTION_STATS
+		connection->stats->n_receives_done += 1;
+		connection->stats->total_bytes_received += received;
+		#endif
+
+		connection->receive_handle.buffer = buffer;
+		connection->receive_handle.buffer_size = buffer_size;
+		connection->receive_handle.received_size = received;
+
+		client_receive_handle_buffer (
+			&connection->receive_handle
+		);
+
+		retval = 0;
 	}
 
 	return retval;
