@@ -186,7 +186,7 @@ ifeq ($(TYPE), development)
 endif
 
 ifeq ($(DEBUG), 1)
-	EXAPPFGS += -D TEST_APP_DEBUG
+	EXAPPFGS += -D EXAMPLE_APP_DEBUG
 endif
 
 # check which compiler we are using
