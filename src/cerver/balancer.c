@@ -1236,8 +1236,29 @@ static void balancer_client_route_response (
 
 #pragma GCC diagnostic pop
 
+// handles a PACKET_TYPE_CERVER packet from the service
+static void balancer_client_handle_cerver_packet (
+	BalancerService *bs,
+	Client *client, Connection *connection,
+	PacketHeader *header
+) {
+
+	if (!header->sock_fd) {
+		(void) balancer_client_consume_from_service (
+			bs, header
+		);
+	}
+
+	else {
+		balancer_client_route_response (
+			bs, client, connection, header
+		);
+	}
+
+}
+
 // handles a PACKET_TYPE_TEST packet from the service
-static void balancer_client_handle_test (
+static void balancer_client_handle_test_packet (
 	BalancerService *bs,
 	Client *client, Connection *connection,
 	PacketHeader *header
@@ -1276,6 +1297,14 @@ static void balancer_client_receive_success (
 	] += 1;
 
 	switch (header->packet_type) {
+		case PACKET_TYPE_CERVER:
+			balancer_client_handle_cerver_packet (
+				bs,
+				client, connection,
+				header
+			);
+			break;
+
 		case PACKET_TYPE_CLIENT:
 			balancer_client_consume_from_service (bs, header);
 			break;
@@ -1286,7 +1315,7 @@ static void balancer_client_receive_success (
 
 		// handle whether the response was sent by the handler or by a client
 		case PACKET_TYPE_TEST: {
-			balancer_client_handle_test (
+			balancer_client_handle_test_packet (
 				bs,
 				client, connection,
 				header
@@ -1294,7 +1323,6 @@ static void balancer_client_receive_success (
 		} break;
 
 		// only route packets of these types back to original client
-		case PACKET_TYPE_CERVER:
 		case PACKET_TYPE_ERROR:
 		case PACKET_TYPE_REQUEST:
 		case PACKET_TYPE_GAME:
@@ -1312,7 +1340,9 @@ static void balancer_client_receive_success (
 		default: {
 			#ifdef SERVICE_DEBUG
 			cerver_log_warning (
-				"balancer_client_receive () - got a packet of unknown type from service %s",
+				"balancer_client_receive () - "
+				"got a packet of unknown type %d from service %s",
+				header->packet_type,
 				connection->name
 			);
 			#endif
@@ -1332,7 +1362,7 @@ static void balancer_client_receive_handle_failed (
 
 	(void) client_connection_stop (client, connection);
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_warning (
 		"Balancer %s - service %s has disconnected!\n",
 		bs->balancer->name->str, bs->service->connection->name
@@ -1341,7 +1371,9 @@ static void balancer_client_receive_handle_failed (
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
 
 	pthread_t thread_id = 0;
-	if (thread_create_detachable (&thread_id, balancer_service_reconnect_thread, bs)) {
+	if (thread_create_detachable (
+		&thread_id, balancer_service_reconnect_thread, bs
+	)) {
 		cerver_log_error (
 			"Failed to create reconnect thread for balancer %s service %s",
 			bs->balancer->name->str, bs->service->connection->name
