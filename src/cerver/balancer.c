@@ -1359,14 +1359,30 @@ static u8 balancer_client_receive (
 
 	unsigned int retval = 1;
 
-	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) custom_data_ptr;
+	ConnectionCustomReceiveData *custom_data
+		= (ConnectionCustomReceiveData *) custom_data_ptr;
 
 	if (custom_data->client && custom_data->connection) {
-		ssize_t rc = recv (custom_data->connection->socket->sock_fd, buffer, buffer_size, 0);
+		ssize_t rc = recv (
+			custom_data->connection->socket->sock_fd,
+			buffer, buffer_size,
+			0
+		);
 
 		switch (rc) {
 			case -1: {
-				if (errno != EWOULDBLOCK) {
+				if (errno == EAGAIN) {
+					#ifdef SOCKET_DEBUG
+					cerver_log_debug (
+						"balancer_client_receive () - sock fd: %d timed out",
+						custom_data->connection->socket->sock_fd
+					);
+					#endif
+
+					retval = 0;
+				}
+
+				else {
 					#ifdef SERVICE_DEBUG
 					cerver_log (
 						LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
