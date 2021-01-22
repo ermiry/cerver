@@ -809,9 +809,18 @@ void cerver_test_packet_handler (Packet *packet) {
 	);
 	#endif
 
-	(void) packet_send_ping (
-		packet->cerver, packet->client, packet->connection, packet->lobby
-	);
+	Packet request = {
+		.cerver = packet->cerver,
+		.client = packet->client,
+		.connection = packet->connection,
+		.lobby = packet->lobby,
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true
+	};
+
+	(void) packet_send (&request, 0, NULL, false);
 
 }
 
@@ -2103,7 +2112,7 @@ static u8 balancer_receive (
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
-				#ifdef HANDLER_DEBUG
+				#ifdef SOCKET_DEBUG
 				cerver_log_debug (
 					"balancer_receive () - sock fd: %d timed out",
 					cr->socket->sock_fd
@@ -2596,7 +2605,7 @@ static u8 cerver_register_new_connection_normal_default (
 		if (!client_register_to_cerver (cerver, client)) {
 			connection->active = true;
 
-			(void) cerver_info_send_info_packet (cerver, client, connection);
+			// (void) cerver_info_send_info_packet (cerver, client, connection);
 
 			// TODO: better error handling
 			if (!cerver_register_new_connection_normal_default_select_handler (
