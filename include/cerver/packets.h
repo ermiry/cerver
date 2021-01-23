@@ -338,6 +338,13 @@ CERVER_EXPORT void packet_set_header_values (
 	u16 sock_fd
 );
 
+// allocates the packet's data with size data_size
+// data can be added using packet_add_data ()
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int packet_create_data (
+	Packet *packet, const size_t data_size
+);
+
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error

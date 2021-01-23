@@ -454,6 +454,30 @@ void packet_set_header_values (
 
 }
 
+// allocates the packet's data with size data_size
+// data can be added using packet_add_data ()
+// returns 0 on success, 1 on error
+unsigned int packet_create_data (
+	Packet *packet, const size_t data_size
+) {
+
+	unsigned int retval = 1;
+
+	if (packet && (data_size > 0)) {
+		packet->data = malloc (data_size);
+		if (packet->data) {
+			packet->data_size = data_size;
+			packet->data_end = packet->data;
+			packet->remaining_data = data_size;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
 // sets the data of the packet -> copies the data into the packet
 // if the packet had data before it is deleted and replaced with the new one
 // returns 0 on success, 1 on error
