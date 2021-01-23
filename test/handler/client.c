@@ -77,9 +77,93 @@ static u8 single_app_message (const char *msg) {
 
 }
 
+static void send_pings (void) {
+
+	unsigned int n_sent_packets = 0;
+	register size_t i = 0;
+	for (; i < 100; i++) {
+		n_sent_packets += !packet_send_ping (
+			NULL,
+			client, connection,
+			NULL
+		);
+	}
+
+	// wait for remaining packets
+	(void) sleep (4);
+
+	// check that we received matching responses
+	if (
+		client->stats->received_packets->n_test_packets
+		!= n_sent_packets
+	) {
+		(void) printf ("\n\n");
+		cerver_log_error (
+			"Responses %lu don't match n_sent_packets %lu!",
+			client->stats->received_packets->n_test_packets,
+			n_sent_packets
+		);
+		(void) printf ("\n\n");
+	}
+
+	else {
+		(void) printf ("\n\n");
+		cerver_log_success (
+			"Got %lu / %lu responses!",
+			client->stats->received_packets->n_test_packets,
+			n_sent_packets
+		);
+		(void) printf ("\n\n");
+	}
+
+}
+
+static void send_messages (void) {
+
+	unsigned int n_sent_packets = 0;
+	register size_t i = 0;
+	for (; i < 100; i++) {
+		n_sent_packets += !single_app_message (MESSAGE);
+	}
+
+	// wait for remaining packets
+	(void) sleep (4);
+
+	// check that we received matching responses
+	if (
+		client->stats->received_packets->n_app_packets
+		!= n_sent_packets
+	) {
+		(void) printf ("\n\n");
+		cerver_log_error (
+			"Responses %lu don't match n_sent_packets %lu!",
+			client->stats->received_packets->n_app_packets,
+			n_sent_packets
+		);
+		(void) printf ("\n\n");
+	}
+
+	else {
+		(void) printf ("\n\n");
+		cerver_log_success (
+			"Got %lu / %lu responses!",
+			client->stats->received_packets->n_app_packets,
+			n_sent_packets
+		);
+		(void) printf ("\n\n");
+	}
+
+}
+
 int main (int argc, const char **argv) {
 
 	cerver_log_init ();
+
+	// const char *curr_arg = NULL;
+	const char *type = NULL;
+	if (argc > 1) {
+		type = argv[1];
+	}
 
 	client = client_create ();
 	
@@ -96,41 +180,17 @@ int main (int argc, const char **argv) {
 	connection_set_max_sleep (connection, 30);
 
 	if (!client_connect_and_start (client, connection)) {
-		unsigned int n_sent_packets = 0;
-
 		/*** send **/
-		register size_t i = 0;
-		for (; i < 10000; i++) {
-			if (!single_app_message (MESSAGE)) {
-				n_sent_packets += 1;
-			}
+		if (!type || !strcmp ("ping", type)) {
+			send_pings ();
 		}
 
-		// wait for remaining packets
-		(void) sleep (4);
-
-		// check that we received matching responses
-		if (
-			client->stats->received_packets->n_app_packets
-			!= n_sent_packets
-		) {
-			(void) printf ("\n\n");
-			cerver_log_error (
-				"Responses %lu don't match n_sent_packets %lu!",
-				client->stats->received_packets->n_app_packets,
-				n_sent_packets
-			);
-			(void) printf ("\n\n");
+		else if (!strcmp ("app", type)) {
+			send_messages ();
 		}
 
 		else {
-			(void) printf ("\n\n");
-			cerver_log_success (
-				"Got %lu / %lu responses!",
-				client->stats->received_packets->n_app_packets,
-				n_sent_packets
-			);
-			(void) printf ("\n\n");
+			cerver_log_error ("Wrong type!");
 		}
 	}
 
