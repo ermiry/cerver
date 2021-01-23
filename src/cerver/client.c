@@ -2084,13 +2084,16 @@ unsigned int client_connect (
 			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
 			// connection->connected = true;
 			connection->active = true;
-			time (&connection->connected_timestamp);
+			(void) time (&connection->connected_timestamp);
 
 			retval = 0;     // success - connected to cerver
 		}
 
 		else {
-			client_event_trigger (CLIENT_EVENT_CONNECTION_FAILED, client, connection);
+			client_event_trigger (
+				CLIENT_EVENT_CONNECTION_FAILED,
+				client, connection
+			);
 		}
 	}
 
@@ -2109,7 +2112,10 @@ unsigned int client_connect_to_cerver (
 	unsigned int retval = 1;
 
 	if (!client_connect (client, connection)) {
-		client_receive (client, connection);
+		// we expect to handle a packet with the cerver's information
+		client_connection_get_next_packet (
+			client, connection
+		);
 
 		retval = 0;
 	}
@@ -2305,7 +2311,10 @@ unsigned int client_request_to_cerver (
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver () - failed to send request packet!");
+			cerver_log_error (
+				"client_request_to_cerver () - "
+				"failed to send request packet!"
+			);
 			#endif
 		}
 	}
@@ -2319,10 +2328,9 @@ static void *client_request_to_cerver_thread (void *cc_ptr) {
 	if (cc_ptr) {
 		ClientConnection *cc = (ClientConnection *) cc_ptr;
 
-		cc->connection->full_packet = false;
-		while (!cc->connection->full_packet) {
-			client_receive (cc->client, cc->connection);
-		}
+		(void) client_connection_get_next_packet (
+			cc->client, cc->connection
+		);
 
 		client_connection_aux_delete (cc);
 	}
@@ -2358,7 +2366,10 @@ unsigned int client_request_to_cerver_async (
 
 				else {
 					#ifdef CLIENT_DEBUG
-					cerver_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
+					cerver_log_error (
+						"Failed to create client_request_to_cerver_thread () "
+						"detachable thread!"
+					);
 					#endif
 				}
 			}
@@ -2366,7 +2377,10 @@ unsigned int client_request_to_cerver_async (
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver_async () - failed to send request packet!");
+			cerver_log_error (
+				"client_request_to_cerver_async () - "
+				"failed to send request packet!"
+			);
 			#endif
 		}
 	}
@@ -3664,7 +3678,7 @@ static void client_receive_handle_buffer (
 		&& (buffer_pos < receive_handle->received_size)
 		&& (
 			receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL
-			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
+			|| (receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER)
 		)
 	) {
 		client_receive_handle_buffer_actual (
