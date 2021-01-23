@@ -312,6 +312,7 @@ testapp:
 	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
 
 units: testout $(TESTOBJS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/balancer.o -o ./$(TESTTARGET)/balancer $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
