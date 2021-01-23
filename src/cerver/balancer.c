@@ -586,8 +586,9 @@ static u8 balancer_service_test (
 
 	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
 	if (packet) {
-		// packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
-		if (!client_request_to_cerver (balancer->client, service->connection, packet)) {
+		if (!client_request_to_cerver (
+			balancer->client, service->connection, packet
+		)) {
 			retval = 0;
 		}
 
@@ -658,7 +659,7 @@ static void *balancer_service_reconnect_thread (void *bs_ptr) {
 	(void) connection_init (service->connection);
 
 	do {
-		sleep (service->reconnect_wait_time);
+		(void) sleep (service->reconnect_wait_time);
 
 		cerver_log_debug (
 			"Attempting connection to balancer %s service %s",
@@ -1146,9 +1147,13 @@ static u8 balancer_client_route_actual (
 			while (left > 0) {
 				if (buff_size > left) buff_size = left;
 
-				if (balancer_client_route_receive (from->socket->sock_fd, service->receive_pipe_fds[1], buff_size, &received)) break;
+				if (balancer_client_route_receive (
+					from->socket->sock_fd, service->receive_pipe_fds[1], buff_size, &received
+				)) break;
 
-				if (balancer_client_route_move (service->receive_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
+				if (balancer_client_route_move (
+					service->receive_pipe_fds[0], to->socket->sock_fd, buff_size, &moved
+				)) break;
 
 				*sent += moved;
 
