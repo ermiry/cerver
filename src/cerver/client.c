@@ -39,7 +39,16 @@ static u8 client_file_receive (
 	char **saved_filename
 );
 
-unsigned int client_receive (Client *client, Connection *connection);
+static size_t client_receive_actual (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+);
+
+unsigned int client_receive (
+	Client *client, Connection *connection
+);
+
+static u8 client_packet_handler (Packet *packet);
 
 static u64 next_client_id = 0;
 
@@ -1925,29 +1934,133 @@ int client_connection_unregister (
 
 }
 
-// performs a receive in the connection's socket to get a complete packet & handle it
-void client_connection_get_next_packet (
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+static inline void client_connection_get_next_packet_handler (
+	const size_t received,
+	Client *client, Connection *connection,
+	Packet *packet
+) {
+
+	// update stats
+	client->stats->n_receives_done += 1;
+	client->stats->total_bytes_received += received;
+
+	#ifdef CONNECTION_STATS
+	connection->stats->n_receives_done += 1;
+	connection->stats->total_bytes_received += received;
+	#endif
+
+	// handle the actual packet
+	(void) client_packet_handler (packet);
+
+}
+
+#pragma GCC diagnostic pop
+
+static unsigned int client_connection_get_next_packet_actual (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+) {
+
+	unsigned int retval = 1;
+
+	size_t received = 0;
+
+	// TODO: use static packages
+	// we need a better way to delete packages in
+	// client_packet_handler_actual ()
+	// Packet packet = {
+	// 	.cerver = NULL,
+	// 	.client = client,
+	// 	.connection = connection,
+	// 	.lobby = NULL
+	// };
+
+	Packet *packet = packet_new ();
+	packet->cerver = NULL;
+	packet->client = client;
+	packet->connection = connection;
+	packet->lobby = NULL;
+
+	// first receive the packet header
+	received = client_receive_actual (
+		client, connection,
+		buffer, sizeof (PacketHeader)
+	);
+
+	if (received) {
+		(void) memcpy (
+			&packet->header,
+			buffer,
+			sizeof (PacketHeader)
+		);
+
+		#ifdef CLIENT_RECEIVE_DEBUG
+		packet_header_log (&packet->header);
+		#endif
+
+		// check if need more data to complete the packet
+		if (packet->header.packet_size > sizeof (PacketHeader)) {
+			// TODO: add ability to configure this value
+			// check that the packet is not to big
+			if (packet->header.packet_size <= MAX_UDP_PACKET_SIZE) {
+				(void) packet_create_data (
+					packet, packet->header.packet_size - sizeof (PacketHeader)
+				);
+
+				// TODO:
+				// keep receiving until we achieve the full packet
+				received = client_receive_actual (
+					client, connection,
+					buffer, packet->header.packet_size - sizeof (PacketHeader)
+				);
+			}
+
+			else {
+				// TODO: we received a bad packet
+			}
+		}
+
+		else {
+			client_connection_get_next_packet_handler (
+				received,
+				client, connection,
+				packet
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+// performs a receive in the connection's socket
+// to get a complete packet & handle it
+// returns 0 on success, 1 on error
+unsigned int client_connection_get_next_packet (
 	Client *client, Connection *connection
 ) {
 
-	if (client && connection) {
-		connection->full_packet = false;
+	unsigned int retval = 1;
 
+	if (client && connection) {
 		char *packet_buffer = (char *) calloc (
 			connection->receive_packet_buffer_size, sizeof (char)
 		);
-		
+
 		if (packet_buffer) {
-			while (!connection->full_packet) {
-				client_receive_internal (
-					client, connection,
-					packet_buffer, connection->receive_packet_buffer_size
-				);
-			}
+			retval = client_connection_get_next_packet_actual (
+				client, connection,
+				packet_buffer, connection->receive_packet_buffer_size
+			);
 
 			free (packet_buffer);
 		}
 	}
+
+	return retval;
 
 }
 
