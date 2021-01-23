@@ -987,7 +987,7 @@ static u8 balancer_client_consume_from_service (
 		size_t data_size = header->packet_size - sizeof (PacketHeader);
 
 		size_t to_read = 0;
-		size_t rc = 0;
+		ssize_t rc = 0;
 
 		do {
 			to_read = data_size >= SERVICE_CONSUME_BUFFER_SIZE ? SERVICE_CONSUME_BUFFER_SIZE : data_size;
@@ -1023,7 +1023,7 @@ static u8 balancer_client_consume_from_service (
 
 			else {
 				bs->service->stats->bad_receives_done += 1;
-				bs->service->stats->bad_bytes_received += rc;
+				bs->service->stats->bad_bytes_received += (size_t) rc;
 			}
 
 			data_size -= to_read;
