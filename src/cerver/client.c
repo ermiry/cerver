@@ -22,6 +22,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/sessions.h"
 
 #include "cerver/threads/thread.h"
@@ -39,9 +40,10 @@ static u8 client_file_receive (
 	char **saved_filename
 );
 
-static size_t client_receive_actual (
+static ReceiveError client_receive_actual (
 	Client *client, Connection *connection,
-	char *buffer, const size_t buffer_size
+	char *buffer, const size_t buffer_size,
+	size_t *rc
 );
 
 unsigned int client_receive (
@@ -1967,6 +1969,7 @@ static unsigned int client_connection_get_next_packet_actual (
 	unsigned int retval = 1;
 
 	size_t received = 0;
+	ReceiveError error = RECEIVE_ERROR_NONE;
 
 	// TODO: use static packages
 	// we need a better way to delete packages in
@@ -1985,12 +1988,14 @@ static unsigned int client_connection_get_next_packet_actual (
 	packet->lobby = NULL;
 
 	// first receive the packet header
-	received = client_receive_actual (
+	error = client_receive_actual (
 		client, connection,
-		buffer, sizeof (PacketHeader)
+		buffer, sizeof (PacketHeader),
+		&received
 	);
 
-	if (received) {
+	// TODO: handle timeout
+	if (error == RECEIVE_ERROR_NONE) {
 		(void) memcpy (
 			&packet->header,
 			buffer,
@@ -2012,9 +2017,10 @@ static unsigned int client_connection_get_next_packet_actual (
 
 				// TODO:
 				// keep receiving until we achieve the full packet
-				received = client_receive_actual (
+				error = client_receive_actual (
 					client, connection,
-					buffer, packet->header.packet_size - sizeof (PacketHeader)
+					buffer, packet->header.packet_size - sizeof (PacketHeader),
+					&received
 				);
 			}
 
