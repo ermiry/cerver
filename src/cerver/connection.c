@@ -159,8 +159,6 @@ Connection *connection_new (void) {
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
 
-		connection->full_packet = false;
-
 		connection->received_data = NULL;
 		connection->received_data_size = 0;
 		connection->received_data_delete = NULL;

@@ -104,9 +104,6 @@ struct _Connection {
 	pthread_t update_thread_id;
 	u32 update_timeout;
 
-	// used for direct requests to cerver
-	bool full_packet;
-
 	// a place to safely store the request response
 	// like when using client_connection_request_to_cerver ()
 	void *received_data;
