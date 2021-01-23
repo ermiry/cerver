@@ -185,6 +185,8 @@ int main (int argc, char **argv) {
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
 
+		cerver_set_reusable_address_flags (my_cerver, true);
+
 		Handler *app_packet_handler = handler_create (app_handler);
 		handler_set_direct_handle (app_packet_handler, true);
 		cerver_set_app_handlers (my_cerver, app_packet_handler, NULL);

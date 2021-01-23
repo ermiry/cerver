@@ -142,6 +142,8 @@ int main (void) {
 		cerver_set_handler_type (load_balancer->cerver, CERVER_HANDLER_TYPE_THREADS);
 		cerver_set_handle_detachable_threads (load_balancer->cerver, true);
 
+		cerver_set_reusable_address_flags (load_balancer->cerver, true);
+
 		/*** register services ***/
 		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {
 			cerver_log_error ("Failed to register FIRST service!");
