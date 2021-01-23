@@ -3,6 +3,20 @@
 
 #include "cerver/handler.h"
 
+const char *receive_error_to_string (
+	const ReceiveError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string) case RECEIVE_ERROR_##name: return #string;
+		RECEIVE_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return receive_error_to_string (RECEIVE_ERROR_NONE);
+
+}
+
 const char *receive_type_to_string (
 	const ReceiveType type
 ) {
