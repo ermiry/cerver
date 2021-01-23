@@ -80,13 +80,19 @@ int main (int argc, const char **argv) {
 
 	connection_set_max_sleep (connection, 30);
 
+	// (void) sock_set_timeout (
+	// 	connection->socket->sock_fd,
+	// 	CONNECTION_DEFAULT_UPDATE_TIMEOUT
+	// );
+
 	test_check_int_eq (
-		client_connect_and_start (client, connection), 0,
+		client_connect_to_cerver (client, connection), 0,
 		"Failed to connect to cerver!"
 	);
 
 	// send a bunch of requests to the cerver
 	for (unsigned int i = 0; i < REQUESTS; i++) {
+		// printf ("Requesting %d...\n", i);
 		send_request (client, connection);
 	}
 
