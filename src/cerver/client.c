@@ -46,6 +46,16 @@ static ReceiveError client_receive_actual (
 	size_t *rc
 );
 
+// request to read x amount of bytes from the connection's sock fd
+// into the specified buffer
+// this method will only return once the requested bytes
+// have been received or on any error
+static ReceiveError client_receive_data (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t requested_data
+);
+
 unsigned int client_receive (
 	Client *client, Connection *connection
 );
@@ -1962,25 +1972,12 @@ static inline void client_connection_get_next_packet_handler (
 #pragma GCC diagnostic pop
 
 static unsigned int client_connection_get_next_packet_actual (
-	Client *client, Connection *connection,
-	char *buffer, const size_t buffer_size
+	Client *client, Connection *connection
 ) {
 
 	unsigned int retval = 1;
 
-	size_t received = 0;
-	ReceiveError error = RECEIVE_ERROR_NONE;
-
-	// TODO: use static packages
-	// we need a better way to delete packages in
-	// client_packet_handler_actual ()
-	// Packet packet = {
-	// 	.cerver = NULL,
-	// 	.client = client,
-	// 	.connection = connection,
-	// 	.lobby = NULL
-	// };
-
+	// TODO: use a static packet
 	Packet *packet = packet_new ();
 	packet->cerver = NULL;
 	packet->client = client;
@@ -1988,20 +1985,15 @@ static unsigned int client_connection_get_next_packet_actual (
 	packet->lobby = NULL;
 
 	// first receive the packet header
-	error = client_receive_actual (
-		client, connection,
-		buffer, sizeof (PacketHeader),
-		&received
-	);
+	size_t data_size = sizeof (PacketHeader);
 
-	// TODO: handle timeout
-	if (error == RECEIVE_ERROR_NONE) {
-		(void) memcpy (
-			&packet->header,
-			buffer,
-			sizeof (PacketHeader)
-		);
-
+	if (
+		client_receive_data (
+			client, connection,
+			(char *) &packet->header, sizeof (PacketHeader),
+			data_size
+		) == RECEIVE_ERROR_NONE
+	) {
 		#ifdef CLIENT_RECEIVE_DEBUG
 		packet_header_log (&packet->header);
 		#endif
@@ -2015,26 +2007,41 @@ static unsigned int client_connection_get_next_packet_actual (
 					packet, packet->header.packet_size - sizeof (PacketHeader)
 				);
 
-				// TODO:
-				// keep receiving until we achieve the full packet
-				error = client_receive_actual (
-					client, connection,
-					buffer, packet->header.packet_size - sizeof (PacketHeader),
-					&received
-				);
+				data_size = packet->data_size;
+
+				if (
+					client_receive_data (
+						client, connection,
+						packet->data, packet->data_size,
+						data_size
+					) == RECEIVE_ERROR_NONE
+				) {
+					// we can safely handle the packet
+					client_connection_get_next_packet_handler (
+						packet->packet_size,
+						client, connection,
+						packet
+					);
+
+					retval = 0;
+				}
 			}
 
 			else {
-				// TODO: we received a bad packet
+				// we received a bad packet
+				packet_delete (packet);
 			}
 		}
 
 		else {
+			// we can safely handle the packet
 			client_connection_get_next_packet_handler (
-				received,
+				packet->packet_size,
 				client, connection,
 				packet
 			);
+
+			retval = 0;
 		}
 	}
 
@@ -2052,18 +2059,9 @@ unsigned int client_connection_get_next_packet (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		char *packet_buffer = (char *) calloc (
-			connection->receive_packet_buffer_size, sizeof (char)
+		retval = client_connection_get_next_packet_actual (
+			client, connection
 		);
-
-		if (packet_buffer) {
-			retval = client_connection_get_next_packet_actual (
-				client, connection,
-				packet_buffer, connection->receive_packet_buffer_size
-			);
-
-			free (packet_buffer);
-		}
 	}
 
 	return retval;
@@ -3793,6 +3791,58 @@ static ReceiveError client_receive_actual (
 	return error;
 
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+// request to read x amount of bytes from the connection's sock fd
+// into the specified buffer
+// this method will only return once the requested bytes
+// have been received or on any error
+static ReceiveError client_receive_data (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t requested_data
+) {
+
+	ReceiveError error = RECEIVE_ERROR_NONE;
+	size_t received = 0;
+
+	size_t data_size = requested_data;
+
+	char *buffer_end = buffer;
+	// size_t buffer_pos = 0;
+
+	do {
+		error = client_receive_actual (
+			client, connection,
+			buffer_end, data_size,
+			&received
+		);
+
+		if (error == RECEIVE_ERROR_NONE) {
+			// we got some data
+			data_size -= received;
+
+			buffer_end += received;
+		}
+
+		else if (RECEIVE_ERROR_TIMEOUT) {
+			// we are still waiting to get more data
+		}
+
+		else {
+			// an error has ocurred or we have been disconnected
+			// so end the loop
+			break;
+		}
+	} while (data_size > 0);
+
+	return (data_size > 0) ? RECEIVE_ERROR_FAILED : RECEIVE_ERROR_NONE;
+
+}
+
+#pragma GCC diagnostic pop
 
 // receive data from connection's socket
 // this method does not perform any checks and expects a valid buffer
