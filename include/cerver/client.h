@@ -600,8 +600,10 @@ CERVER_EXPORT int client_connection_unregister (
 	Client *client, struct _Connection *connection
 );
 
-// performs a receive in the connection's socket to get a complete packet & handle it
-CERVER_EXPORT void client_connection_get_next_packet (
+// performs a receive in the connection's socket
+// to get a complete packet & handle it
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int client_connection_get_next_packet (
 	Client *client, struct _Connection *connection
 );
 
