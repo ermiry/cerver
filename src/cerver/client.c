@@ -3931,6 +3931,9 @@ u8 client_teardown (Client *client) {
 	if (client) {
 		client->running = false;
 
+		// wait for all connections to end
+		(void) sleep (4);
+
 		client_teardown_internal (client);
 
 		retval = 0;
