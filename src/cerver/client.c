@@ -3709,11 +3709,14 @@ static void client_receive_handle_failed (
 
 // performs the actual recv () method on the connection's sock fd
 // handles if the receive method failed
-// returns the amount of bytes read from the socket
-static size_t client_receive_actual (
+// the amount of bytes read from the socket is placed in rc
+static ReceiveError client_receive_actual (
 	Client *client, Connection *connection,
-	char *buffer, const size_t buffer_size
+	char *buffer, const size_t buffer_size,
+	size_t *rc
 ) {
+
+	ReceiveError error = RECEIVE_ERROR_NONE;
 
 	ssize_t received = recv (
 		connection->socket->sock_fd,
@@ -3731,6 +3734,8 @@ static size_t client_receive_actual (
 					connection->name, connection->socket->sock_fd
 				);
 				#endif
+
+				error = RECEIVE_ERROR_TIMEOUT;
 			}
 
 			else {
@@ -3745,6 +3750,8 @@ static size_t client_receive_actual (
 				#endif
 
 				client_receive_handle_failed (client, connection);
+
+				error = RECEIVE_ERROR_FAILED;
 			}
 		} break;
 
@@ -3760,6 +3767,8 @@ static size_t client_receive_actual (
 			#endif
 
 			client_receive_handle_failed (client, connection);
+
+			error = RECEIVE_ERROR_EMPTY;
 		} break;
 
 		default: {
@@ -3773,7 +3782,9 @@ static size_t client_receive_actual (
 		} break;
 	}
 
-	return (size_t) ((received > 0) ? received : 0);
+	*rc = (size_t) ((received > 0) ? received : 0);
+
+	return error;
 
 }
 
@@ -3788,29 +3799,40 @@ unsigned int client_receive_internal (
 
 	unsigned int retval = 1;
 
-	size_t received = client_receive_actual (
+	size_t received = 0;
+	
+	ReceiveError error = client_receive_actual (
 		client, connection,
-		buffer, buffer_size
+		buffer, buffer_size,
+		&received
 	);
 
-	if (received) {
-		client->stats->n_receives_done += 1;
-		client->stats->total_bytes_received += received;
+	client->stats->n_receives_done += 1;
+	client->stats->total_bytes_received += received;
 
-		#ifdef CONNECTION_STATS
-		connection->stats->n_receives_done += 1;
-		connection->stats->total_bytes_received += received;
-		#endif
+	#ifdef CONNECTION_STATS
+	connection->stats->n_receives_done += 1;
+	connection->stats->total_bytes_received += received;
+	#endif
 
-		connection->receive_handle.buffer = buffer;
-		connection->receive_handle.buffer_size = buffer_size;
-		connection->receive_handle.received_size = received;
+	switch (error) {
+		case RECEIVE_ERROR_NONE: {
+			connection->receive_handle.buffer = buffer;
+			connection->receive_handle.buffer_size = buffer_size;
+			connection->receive_handle.received_size = received;
 
-		client_receive_handle_buffer (
-			&connection->receive_handle
-		);
+			client_receive_handle_buffer (
+				&connection->receive_handle
+			);
 
-		retval = 0;
+			retval = 0;
+		} break;
+
+		case RECEIVE_ERROR_TIMEOUT: {
+			retval = 0;
+		};
+
+		default: break;
 	}
 
 	return retval;
