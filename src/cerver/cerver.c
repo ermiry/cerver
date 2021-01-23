@@ -2214,12 +2214,12 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
+// #pragma GCC diagnostic push
+// #pragma GCC diagnostic ignored "-Wunused-function"
 
-static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
+// static void cerver_start_udp (Cerver *cerver) { /*** TODO: ***/ }
 
-#pragma GCC diagnostic pop
+// #pragma GCC diagnostic pop
 
 // tell the cerver to start listening for connections and packets
 // initializes cerver's structures like thpool (if any)
