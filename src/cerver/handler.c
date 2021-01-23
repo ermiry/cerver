@@ -1990,7 +1990,7 @@ void balancer_receive_consume_from_connection (
 		}
 
 		data_size -= to_read;
-	} while (data_size <= 0);
+	} while (data_size > 0);
 
 }
 
@@ -2605,7 +2605,7 @@ static u8 cerver_register_new_connection_normal_default (
 		if (!client_register_to_cerver (cerver, client)) {
 			connection->active = true;
 
-			// (void) cerver_info_send_info_packet (cerver, client, connection);
+			(void) cerver_info_send_info_packet (cerver, client, connection);
 
 			// TODO: better error handling
 			if (!cerver_register_new_connection_normal_default_select_handler (
