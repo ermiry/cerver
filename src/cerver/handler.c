@@ -1973,9 +1973,9 @@ void balancer_receive_consume_from_connection (
 ) {
 
 	size_t to_read = 0;
+	char buffer[BALANCER_CONSUME_BUFFER_SIZE] = { 0 };
 
 	do {
-		char buffer[BALANCER_CONSUME_BUFFER_SIZE] = { 0 };
 		to_read = data_size >= BALANCER_CONSUME_BUFFER_SIZE ? BALANCER_CONSUME_BUFFER_SIZE : data_size;
 		if (recv (cr->socket->sock_fd, buffer, to_read, 0) <= 0) {
 			#ifdef HANDLER_DEBUG
