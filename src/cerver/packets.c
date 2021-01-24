@@ -1574,7 +1574,7 @@ u8 packet_route_between_connections (
 
 						if (sent) *sent += moved;
 
-						left -= buff_size;
+						left -= received;
 					}
 
 					// we are done!
