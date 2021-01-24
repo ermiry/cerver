@@ -34,7 +34,7 @@ static void app_handler_test (const Packet *packet) {
 
 			.request_type = APP_REQUEST_TEST,
 
-			.sock_fd = 0,
+			.sock_fd = packet->header.sock_fd,
 		},
 
 		.version = (PacketVersion) {
@@ -73,6 +73,8 @@ static void app_handler_message (const Packet *packet) {
 	header->packet_size = packet_len;
 
 	header->request_type = APP_REQUEST_MESSAGE;
+
+	header->sock_fd = packet->header.sock_fd;
 
 	end += sizeof (PacketHeader);
 
