@@ -871,13 +871,17 @@ static u8 balancer_route_to_service_actual (
 			while (left > 0) {
 				if (buff_size > left) buff_size = left;
 
-				if (balancer_route_to_service_receive (from->socket->sock_fd, service->forward_pipe_fds[1], buff_size, &received)) break;
+				if (balancer_route_to_service_receive (
+					from->socket->sock_fd, service->forward_pipe_fds[1], buff_size, &received
+				)) break;
 
-				if (balancer_route_to_service_move (service->forward_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
+				if (balancer_route_to_service_move (
+					service->forward_pipe_fds[0], to->socket->sock_fd, buff_size, &moved
+				)) break;
 
 				*sent += moved;
 
-				left -= buff_size;
+				left -= received;
 			}
 
 			// we are done!
