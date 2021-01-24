@@ -5,6 +5,10 @@
 
 #include "cerver/config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Binary semaphore */
 typedef struct bsem {
 
@@ -32,5 +36,9 @@ CERVER_PUBLIC void bsem_post_all (bsem *bsem_p);
 
 // waits on semaphore until semaphore has value 0
 CERVER_PUBLIC void bsem_wait (bsem *bsem_p);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

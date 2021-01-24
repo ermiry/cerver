@@ -68,7 +68,7 @@ static void handler (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 		
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
@@ -83,7 +83,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_started (void *event_data_ptr) {
+static void *on_cever_started (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -96,11 +96,15 @@ static void on_cever_started (void *event_data_ptr) {
 		);
 
 		printf ("Test Message: %s\n\n", ((String *) event_data->action_args)->str);
+
+		cerver_event_data_delete (event_data);
 	}
+
+	return NULL;
 
 }
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -111,11 +115,15 @@ static void on_cever_teardown (void *event_data_ptr) {
 			"Cerver %s is going to be destroyed!\n", 
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
+
+	return NULL;
 
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -128,11 +136,15 @@ static void on_client_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
+
+	return NULL;
 
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -143,7 +155,11 @@ static void on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name->str
 		);
+
+		cerver_event_data_delete (event_data);
 	}
+
+	return NULL;
 
 }
 
@@ -181,21 +197,24 @@ static u16 get_port (int argc, char **argv) {
 
 int main (int argc, char **argv) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Simple Test Message Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Single app handler with direct handle option enabled");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -212,6 +231,8 @@ int main (int argc, char **argv) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_reusable_address_flags (my_cerver, true);
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);

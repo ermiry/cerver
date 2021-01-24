@@ -30,7 +30,7 @@ static u8 balancer_client_receive (
 
 #pragma region types
 
-const char *balancer_type_to_string (BalancerType type) {
+const char *balancer_type_to_string (const BalancerType type) {
 
 	switch (type) {
 		#define XX(num, name, string) case BALANCER_TYPE_##name: return #string;
@@ -63,7 +63,7 @@ static void balancer_stats_delete (BalancerStats *stats) {
 
 }
 
-void balancer_stats_print (Balancer *balancer) {
+void balancer_stats_print (const Balancer *balancer) {
 
 	if (balancer) {
 		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
@@ -218,7 +218,9 @@ typedef struct {
 
 } BalancerService;
 
-static BalancerService *balancer_service_aux_new (Balancer *balancer, Service *service) {
+static BalancerService *balancer_service_aux_new (
+	Balancer *balancer, Service *service
+) {
 
 	BalancerService *bs = (BalancerService *) malloc (sizeof (BalancerService));
 	if (bs) {
@@ -243,7 +245,9 @@ static void balancer_service_aux_delete (void *bs_ptr) {
 
 }
 
-const char *balancer_service_status_to_string (ServiceStatus status) {
+const char *balancer_service_status_to_string (
+	const ServiceStatus status
+) {
 
 	switch (status) {
 		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #string;
@@ -255,7 +259,9 @@ const char *balancer_service_status_to_string (ServiceStatus status) {
 
 }
 
-const char *balancer_service_status_description (ServiceStatus status) {
+const char *balancer_service_status_description (
+	const ServiceStatus status
+) {
 
 	switch (status) {
 		#define XX(num, name, string, description) case SERVICE_STATUS_##name: return #description;
@@ -271,7 +277,7 @@ static ServiceStats *balancer_service_stats_new (void) {
 
 	ServiceStats *stats = (ServiceStats *) malloc (sizeof (ServiceStats));
 	if (stats) {
-		memset (stats, 0, sizeof (ServiceStats));
+		(void) memset (stats, 0, sizeof (ServiceStats));
 	}
 
 	return stats;
@@ -288,9 +294,9 @@ void balancer_service_stats_print (Service *service) {
 
 	if (service) {
 		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
-			cerver_log_msg (LOG_COLOR_BLUE "Service: %s\n" LOG_COLOR_RESET, service->connection->name->str);
+			cerver_log_msg (LOG_COLOR_BLUE "Service: %s\n" LOG_COLOR_RESET, service->connection->name);
 
-		else cerver_log_msg ("Service: %s\n", service->connection->name->str);
+		else cerver_log_msg ("Service: %s\n", service->connection->name);
 
 		// routed packets to the service
 		cerver_log_msg ("Routed packets:              %ld", service->stats->n_packets_routed);
@@ -357,7 +363,9 @@ static Service *balancer_service_create (void) {
 
 }
 
-static void balancer_service_set_status (Service *service, ServiceStatus status) {
+static void balancer_service_set_status (
+	Service *service, ServiceStatus status
+) {
 
 	if (service) {
 		service->status = status;
@@ -365,7 +373,9 @@ static void balancer_service_set_status (Service *service, ServiceStatus status)
 
 }
 
-static u8 balancer_service_forward_pipe_create (Service *service) {
+static u8 balancer_service_forward_pipe_create (
+	Service *service
+) {
 
 	u8 retval = 1;
 
@@ -373,8 +383,9 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 		if (!pipe (service->forward_pipe_fds)) {
 			#ifdef SERVICE_DEBUG
 			cerver_log_debug (
-				"balancer_service_forward_pipe_create () - created %s FORWARD pipe",
-				service->connection->name->str
+				"balancer_service_forward_pipe_create () - "
+				"created %s FORWARD pipe",
+				service->connection->name
 			);
 			#endif
 
@@ -383,8 +394,9 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 
 		else {
 			cerver_log_error (
-				"balancer_service_forward_pipe_create () - %s FORWARD pipe () failed!",
-				service->connection->name->str
+				"balancer_service_forward_pipe_create () - "
+				"%s FORWARD pipe () failed!",
+				service->connection->name
 			);
 			perror ("Error");
 			printf ("\n");
@@ -395,7 +407,9 @@ static u8 balancer_service_forward_pipe_create (Service *service) {
 
 }
 
-static u8 balancer_service_receive_pipe_create (Service *service) {
+static u8 balancer_service_receive_pipe_create (
+	Service *service
+) {
 
 	u8 retval = 1;
 
@@ -403,8 +417,9 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 		if (!pipe (service->receive_pipe_fds)) {
 			#ifdef SERVICE_DEBUG
 			cerver_log_debug (
-				"balancer_service_receive_pipe_create () - created %s RECEIVE pipe",
-				service->connection->name->str
+				"balancer_service_receive_pipe_create () - "
+				"created %s RECEIVE pipe",
+				service->connection->name
 			);
 			#endif
 
@@ -413,8 +428,9 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 
 		else {
 			cerver_log_error (
-				"balancer_service_receive_pipe_create () - %s RECEIVE pipe () failed!",
-				service->connection->name->str
+				"balancer_service_receive_pipe_create () - "
+				"%s RECEIVE pipe () failed!",
+				service->connection->name
 			);
 			perror ("Error");
 			printf ("\n");
@@ -428,11 +444,11 @@ static u8 balancer_service_receive_pipe_create (Service *service) {
 static void balancer_service_pipe_destroy (Service *service) {
 
 	if (service) {
-		close (service->forward_pipe_fds[0]);
-		close (service->forward_pipe_fds[1]);
+		(void) close (service->forward_pipe_fds[0]);
+		(void) close (service->forward_pipe_fds[1]);
 
-		close (service->receive_pipe_fds[0]);
-		close (service->receive_pipe_fds[1]);
+		(void) close (service->receive_pipe_fds[0]);
+		(void) close (service->receive_pipe_fds[1]);
 	}
 
 }
@@ -449,7 +465,9 @@ static void balancer_service_pipe_destroy (Service *service) {
 
 // }
 
-static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
+static inline int balancer_get_next_service_round_robin (
+	Balancer *balancer
+) {
 
 	balancer->next_service += 1;
 	if (balancer->next_service >= balancer->n_services)
@@ -459,7 +477,9 @@ static inline int balancer_get_next_service_round_robin (Balancer *balancer) {
 
 }
 
-static int balancer_get_next_service (Balancer *balancer) {
+static int balancer_get_next_service (
+	Balancer *balancer
+) {
 
 	int retval = -1;
 
@@ -510,7 +530,7 @@ u8 balancer_service_register (
 					service->connection = connection;
 
 					char name[64] = { 0 };
-					snprintf (name, 64, "service-%d", balancer->next_service);
+					(void) snprintf (name, 64, "service-%d", balancer->next_service);
 
 					connection_set_name (connection, name);
 					connection_set_max_sleep (connection, 30);
@@ -537,7 +557,9 @@ u8 balancer_service_register (
 }
 
 // sets the service's name
-void balancer_service_set_name (Service *service, const char *name) {
+void balancer_service_set_name (
+	Service *service, const char *name
+) {
 
 	if (service && name) {
 		connection_set_name (service->connection, name);
@@ -547,28 +569,33 @@ void balancer_service_set_name (Service *service, const char *name) {
 
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
-void balancer_service_set_reconnect_wait_time (Service *service, unsigned int wait_time) {
+void balancer_service_set_reconnect_wait_time (
+	Service *service, unsigned int wait_time
+) {
 
 	if (service) service->reconnect_wait_time = wait_time;
 
 }
 
 // sends a test message to the service & waits for the request
-static u8 balancer_service_test (Balancer *balancer, Service *service) {
+static u8 balancer_service_test (
+	Balancer *balancer, Service *service
+) {
 
 	u8 retval = 1;
 
 	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
 	if (packet) {
-		// packet_set_network_values (packet, balancer->cerver, balancer->client, service, NULL);
-		if (!client_request_to_cerver (balancer->client, service->connection, packet)) {
+		if (!client_request_to_cerver (
+			balancer->client, service->connection, packet
+		)) {
 			retval = 0;
 		}
 
 		else {
 			cerver_log_error (
 				"Failed to send test request to %s",
-				service->connection->name->str
+				service->connection->name
 			);
 		}
 
@@ -581,7 +608,9 @@ static u8 balancer_service_test (Balancer *balancer, Service *service) {
 
 // connects to the service & sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
-static u8 balancer_service_connect (Balancer *balancer, Service *service) {
+static u8 balancer_service_connect (
+	Balancer *balancer, Service *service
+) {
 
 	u8 retval = 1;
 
@@ -590,7 +619,7 @@ static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 	if (!client_connect_to_cerver (balancer->client, service->connection)) {
 		cerver_log_success (
 			"Connected to %s",
-			service->connection->name->str
+			service->connection->name
 		);
 
 		// we are ready to test service handler
@@ -610,7 +639,7 @@ static u8 balancer_service_connect (Balancer *balancer, Service *service) {
 	else {
 		cerver_log_error (
 			"Failed to connect to %s",
-			service->connection->name->str
+			service->connection->name
 		);
 
 		balancer_service_set_status (service, SERVICE_STATUS_UNAVAILABLE);
@@ -630,11 +659,11 @@ static void *balancer_service_reconnect_thread (void *bs_ptr) {
 	(void) connection_init (service->connection);
 
 	do {
-		sleep (service->reconnect_wait_time);
+		(void) sleep (service->reconnect_wait_time);
 
 		cerver_log_debug (
 			"Attempting connection to balancer %s service %s",
-			balancer->name->str, service->connection->name->str
+			balancer->name->str, service->connection->name
 		);
 
 	} while (balancer_service_connect (balancer, service));
@@ -769,7 +798,10 @@ static inline u8 balancer_route_to_service_receive (
 
 		default: {
 			#ifdef BALANCER_DEBUG
-			cerver_log_debug ("balancer_route_to_service_receive () - spliced %ld bytes", *received);
+			cerver_log_debug (
+				"balancer_route_to_service_receive () - "
+				"spliced %ld bytes", *received
+			);
 			#endif
 
 			retval = 0;
@@ -810,7 +842,10 @@ static inline u8 balancer_route_to_service_move (
 
 		default: {
 			#ifdef BALANCER_DEBUG
-			cerver_log_debug ("balancer_route_to_service_move () - spliced %ld bytes", *moved);
+			cerver_log_debug (
+				"balancer_route_to_service_move () - "
+				"spliced %ld bytes", *moved
+			);
 			#endif
 
 			retval = 0;
@@ -842,13 +877,17 @@ static u8 balancer_route_to_service_actual (
 			while (left > 0) {
 				if (buff_size > left) buff_size = left;
 
-				if (balancer_route_to_service_receive (from->socket->sock_fd, service->forward_pipe_fds[1], buff_size, &received)) break;
+				if (balancer_route_to_service_receive (
+					from->socket->sock_fd, service->forward_pipe_fds[1], buff_size, &received
+				)) break;
 
-				if (balancer_route_to_service_move (service->forward_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
+				if (balancer_route_to_service_move (
+					service->forward_pipe_fds[0], to->socket->sock_fd, buff_size, &moved
+				)) break;
 
 				*sent += moved;
 
-				left -= buff_size;
+				left -= received;
 			}
 
 			// we are done!
@@ -900,7 +939,7 @@ void balancer_route_to_service (
 				"Routed %ld between %d (original) -> %d (%s)",
 				sent,
 				connection->socket->sock_fd, 
-				service->connection->socket->sock_fd, service->connection->name->str
+				service->connection->socket->sock_fd, service->connection->name
 			);
 			#endif
 		}
@@ -910,7 +949,7 @@ void balancer_route_to_service (
 			cerver_log_error (
 				"Packet routing between %d (original) -> %d (%s) has failed!",
 				connection->socket->sock_fd, 
-				service->connection->socket->sock_fd, service->connection->name->str
+				service->connection->socket->sock_fd, service->connection->name
 			);
 			#endif
 		}
@@ -926,7 +965,9 @@ void balancer_route_to_service (
 
 		if (header->packet_size > sizeof (PacketHeader)) {
 			// consume data from socket to get next packet
-			balancer_receive_consume_from_connection (cr, header->packet_size - sizeof (PacketHeader));
+			balancer_receive_consume_from_connection (
+				cr, header->packet_size - sizeof (PacketHeader)
+			);
 		}
 
 		balancer->stats->unhandled_packets += 1;
@@ -946,7 +987,9 @@ static void balancer_client_receive_handle_failed (
 
 // consume from the service's connection socket until the next packet header
 // returns 0 on success, 1 on error
-static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeader *header) {
+static u8 balancer_client_consume_from_service (
+	BalancerService *bs, PacketHeader *header
+) {
 
 	u8 retval = 1;
 
@@ -956,36 +999,47 @@ static u8 balancer_client_consume_from_service (BalancerService *bs, PacketHeade
 		size_t data_size = header->packet_size - sizeof (PacketHeader);
 
 		size_t to_read = 0;
-		size_t rc = 0;
+		ssize_t rc = 0;
 
 		do {
 			to_read = data_size >= SERVICE_CONSUME_BUFFER_SIZE ? SERVICE_CONSUME_BUFFER_SIZE : data_size;
 			rc = recv (bs->service->connection->socket->sock_fd, buffer, to_read, 0);
 			if (rc <= 0) {
-				// #ifdef SERVICE_DEBUG
-				snprintf (
-					buffer, SERVICE_CONSUME_BUFFER_SIZE, 
-					"balancer_client_consume_from_service () - rc <= 0 - service %s", 
-					bs->service->connection->name->str
-				);
-				cerver_log_warning (buffer);
-				// #endif
+				if (errno == EAGAIN) {
+					#ifdef SOCKET_DEBUG
+					cerver_log_debug (
+						"balancer_client_consume_from_service () - sock fd %d timed out",
+						bs->service->connection->socket->sock_fd
+					);
+					#endif
+				}
 
-				// end the connection & flag the service as unavailable
-				balancer_client_receive_handle_failed (
-					bs, 
-					bs->balancer->client, bs->service->connection
-				);
-				break;
+				else {
+					// #ifdef SERVICE_DEBUG
+					(void) snprintf (
+						buffer, SERVICE_CONSUME_BUFFER_SIZE, 
+						"balancer_client_consume_from_service () - rc <= 0 - service %s", 
+						bs->service->connection->name
+					);
+					cerver_log_warning (buffer);
+					// #endif
+
+					// end the connection & flag the service as unavailable
+					balancer_client_receive_handle_failed (
+						bs, 
+						bs->balancer->client, bs->service->connection
+					);
+					break;
+				}
 			}
 
 			else {
 				bs->service->stats->bad_receives_done += 1;
-				bs->service->stats->bad_bytes_received += rc;
+				bs->service->stats->bad_bytes_received += (size_t) rc;
 			}
 
 			data_size -= to_read;
-		} while (data_size <= 0);
+		} while (data_size > 0);
 
 		if (!data_size) retval = 0;
 	}
@@ -1026,7 +1080,10 @@ static inline u8 balancer_client_route_receive (
 
 		default: {
 			#ifdef SERVICE_DEBUG
-			cerver_log_debug ("balancer_client_route_receive () - spliced %ld bytes", *received);
+			cerver_log_debug (
+				"balancer_client_route_receive () - spliced %ld bytes",
+				*received
+			);
 			#endif
 
 			retval = 0;
@@ -1067,7 +1124,10 @@ static inline u8 balancer_client_route_move (
 
 		default: {
 			#ifdef SERVICE_DEBUG
-			cerver_log_debug ("balancer_client_route_move () - spliced %ld bytes", *moved);
+			cerver_log_debug (
+				"balancer_client_route_move () - spliced %ld bytes",
+				*moved
+			);
 			#endif
 
 			retval = 0;
@@ -1086,7 +1146,7 @@ static u8 balancer_client_route_actual (
 
 	u8 retval = 1;
 
-	pthread_mutex_lock (to->socket->write_mutex);
+	(void) pthread_mutex_lock (to->socket->write_mutex);
 
 	// first send the header
 	ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
@@ -1099,13 +1159,17 @@ static u8 balancer_client_route_actual (
 			while (left > 0) {
 				if (buff_size > left) buff_size = left;
 
-				if (balancer_client_route_receive (from->socket->sock_fd, service->receive_pipe_fds[1], buff_size, &received)) break;
+				if (balancer_client_route_receive (
+					from->socket->sock_fd, service->receive_pipe_fds[1], buff_size, &received
+				)) break;
 
-				if (balancer_client_route_move (service->receive_pipe_fds[0], to->socket->sock_fd, buff_size, &moved)) break;
+				if (balancer_client_route_move (
+					service->receive_pipe_fds[0], to->socket->sock_fd, buff_size, &moved
+				)) break;
 
 				*sent += moved;
 
-				left -= buff_size;
+				left -= received;
 			}
 
 			// we are done!
@@ -1119,12 +1183,14 @@ static u8 balancer_client_route_actual (
 		}
 	}
 
-	pthread_mutex_unlock (to->socket->write_mutex);
-
+	(void) pthread_mutex_unlock (to->socket->write_mutex);
 
 	return retval;
 
 }
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 // route the service's response back to the original client
 static void balancer_client_route_response (
@@ -1134,9 +1200,15 @@ static void balancer_client_route_response (
 ) {
 
 	// get the original connection by the sockfd from the packet header
-	Client *original_client = client_get_by_sock_fd (bs->balancer->cerver, header->sock_fd);
+	Client *original_client = client_get_by_sock_fd (
+		bs->balancer->cerver, header->sock_fd
+	);
+
 	if (original_client) {
-		Connection *original_connection = connection_get_by_sock_fd_from_client (original_client, header->sock_fd);
+		Connection *original_connection = connection_get_by_sock_fd_from_client (
+			original_client, header->sock_fd
+		);
+
 		if (original_connection) {
 			size_t sent = 0;
 			if (!balancer_client_route_actual (
@@ -1148,7 +1220,7 @@ static void balancer_client_route_response (
 				cerver_log_debug (
 					"Routed %ld between %d (%s) -> %d (original)",
 					sent,
-					connection->socket->sock_fd, connection->name->str,
+					connection->socket->sock_fd, connection->name,
 					original_connection->socket->sock_fd
 				);
 				#endif
@@ -1158,7 +1230,7 @@ static void balancer_client_route_response (
 				#ifdef SERVICE_DEBUG
 				cerver_log_error (
 					"Packet routing between %d (%s) -> %d (original) has failed!",
-					connection->socket->sock_fd, connection->name->str,
+					connection->socket->sock_fd, connection->name,
 					original_connection->socket->sock_fd
 				);
 				#endif
@@ -1167,7 +1239,8 @@ static void balancer_client_route_response (
 
 		else {
 			cerver_log_error (
-				"balancer_client_route_response () - unable to find CONNECTION with sock fd %d", 
+				"balancer_client_route_response () - "
+				"unable to find CONNECTION with sock fd %d", 
 				header->sock_fd
 			);
 
@@ -1178,7 +1251,8 @@ static void balancer_client_route_response (
 
 	else {
 		cerver_log_error (
-			"balancer_client_route_response () - unable to find CLIENT with sock fd %d", 
+			"balancer_client_route_response () - "
+			"unable to find CLIENT with sock fd %d", 
 			header->sock_fd
 		);
 
@@ -1188,8 +1262,31 @@ static void balancer_client_route_response (
 
 }
 
+#pragma GCC diagnostic pop
+
+// handles a PACKET_TYPE_CERVER packet from the service
+static void balancer_client_handle_cerver_packet (
+	BalancerService *bs,
+	Client *client, Connection *connection,
+	PacketHeader *header
+) {
+
+	if (!header->sock_fd) {
+		(void) balancer_client_consume_from_service (
+			bs, header
+		);
+	}
+
+	else {
+		balancer_client_route_response (
+			bs, client, connection, header
+		);
+	}
+
+}
+
 // handles a PACKET_TYPE_TEST packet from the service
-static void balancer_client_handle_test (
+static void balancer_client_handle_test_packet (
 	BalancerService *bs,
 	Client *client, Connection *connection,
 	PacketHeader *header
@@ -1199,12 +1296,14 @@ static void balancer_client_handle_test (
 		cerver_log (
 			LOG_TYPE_TEST, LOG_TYPE_HANDLER,
 			"Got a TEST packet from service %s",
-			connection->name->str
+			connection->name
 		);
 	}
 
 	else {
-		balancer_client_route_response (bs, client, connection, header);
+		balancer_client_route_response (
+			bs, client, connection, header
+		);
 	}
 
 }
@@ -1214,6 +1313,8 @@ static void balancer_client_receive_success (
 	Client *client, Connection *connection,
 	PacketHeader *header
 ) {
+
+	// packet_header_print (header);
 
 	bs->service->stats->receives_done += 1;
 	bs->service->stats->n_packets_received += 1;
@@ -1226,6 +1327,14 @@ static void balancer_client_receive_success (
 	] += 1;
 
 	switch (header->packet_type) {
+		case PACKET_TYPE_CERVER:
+			balancer_client_handle_cerver_packet (
+				bs,
+				client, connection,
+				header
+			);
+			break;
+
 		case PACKET_TYPE_CLIENT:
 			balancer_client_consume_from_service (bs, header);
 			break;
@@ -1236,7 +1345,7 @@ static void balancer_client_receive_success (
 
 		// handle whether the response was sent by the handler or by a client
 		case PACKET_TYPE_TEST: {
-			balancer_client_handle_test (
+			balancer_client_handle_test_packet (
 				bs,
 				client, connection,
 				header
@@ -1244,7 +1353,6 @@ static void balancer_client_receive_success (
 		} break;
 
 		// only route packets of these types back to original client
-		case PACKET_TYPE_CERVER:
 		case PACKET_TYPE_ERROR:
 		case PACKET_TYPE_REQUEST:
 		case PACKET_TYPE_GAME:
@@ -1262,8 +1370,10 @@ static void balancer_client_receive_success (
 		default: {
 			#ifdef SERVICE_DEBUG
 			cerver_log_warning (
-				"balancer_client_receive () - got a packet of unknown type from service %s",
-				connection->name->str
+				"balancer_client_receive () - "
+				"got a packet of unknown type %d from service %s",
+				header->packet_type,
+				connection->name
 			);
 			#endif
 
@@ -1282,19 +1392,21 @@ static void balancer_client_receive_handle_failed (
 
 	(void) client_connection_stop (client, connection);
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_warning (
 		"Balancer %s - service %s has disconnected!\n",
-		bs->balancer->name->str, bs->service->connection->name->str
+		bs->balancer->name->str, bs->service->connection->name
 	);
 
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
 
 	pthread_t thread_id = 0;
-	if (thread_create_detachable (&thread_id, balancer_service_reconnect_thread, bs)) {
+	if (thread_create_detachable (
+		&thread_id, balancer_service_reconnect_thread, bs
+	)) {
 		cerver_log_error (
 			"Failed to create reconnect thread for balancer %s service %s",
-			bs->balancer->name->str, bs->service->connection->name->str
+			bs->balancer->name->str, bs->service->connection->name
 		);
 	}
 
@@ -1309,14 +1421,30 @@ static u8 balancer_client_receive (
 
 	unsigned int retval = 1;
 
-	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) custom_data_ptr;
+	ConnectionCustomReceiveData *custom_data
+		= (ConnectionCustomReceiveData *) custom_data_ptr;
 
 	if (custom_data->client && custom_data->connection) {
-		ssize_t rc = recv (custom_data->connection->socket->sock_fd, buffer, buffer_size, 0);
+		ssize_t rc = recv (
+			custom_data->connection->socket->sock_fd,
+			buffer, buffer_size,
+			0
+		);
 
 		switch (rc) {
 			case -1: {
-				if (errno != EWOULDBLOCK) {
+				if (errno == EAGAIN) {
+					#ifdef SOCKET_DEBUG
+					cerver_log_debug (
+						"balancer_client_receive () - sock fd: %d timed out",
+						custom_data->connection->socket->sock_fd
+					);
+					#endif
+
+					retval = 0;
+				}
+
+				else {
 					#ifdef SERVICE_DEBUG
 					cerver_log (
 						LOG_TYPE_ERROR, LOG_TYPE_HANDLER,
@@ -1349,12 +1477,15 @@ static u8 balancer_client_receive (
 			} break;
 
 			default: {
+				#ifdef SERVICE_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"Connection %s rc: %ld",
-					custom_data->connection->name->str, rc
+					custom_data->connection->name, rc
 				);
+				#endif
 
+				// FIXME: check that we have receieved a complete packet header
 				balancer_client_receive_success (
 					(BalancerService *) custom_data->args,
 					custom_data->client, custom_data->connection,

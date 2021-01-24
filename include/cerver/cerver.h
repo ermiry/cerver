@@ -31,7 +31,11 @@
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				10
+
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
+
+#define CERVER_DEFAULT_REUSABLE_FLAGS				false
+
 #define CERVER_DEFAULT_POOL_THREADS					4
 
 #define CERVER_DEFAULT_SOCKETS_INIT					10
@@ -49,6 +53,7 @@
 #define CERVER_DEFAULT_ON_HOLD_TIMEOUT				2000
 #define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
 #define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
+#define CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE	4096
 
 #define CERVER_DEFAULT_USE_SESSIONS					false
 
@@ -58,6 +63,10 @@
 
 #define CERVER_DEFAULT_UPDATE_TICKS					30
 #define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct _AdminCerver;
 struct _Balancer;
@@ -98,7 +107,9 @@ typedef enum CerverType {
 
 } CerverType;
 
-CERVER_EXPORT const char *cerver_type_to_string (CerverType type);
+CERVER_EXPORT const char *cerver_type_to_string (
+	const CerverType type
+);
 
 #define CERVER_HANDLER_TYPE_MAP(XX)																\
 	XX(0,	NONE, 		None, 		None)														\
@@ -114,11 +125,11 @@ typedef enum CerverHandlerType {
 } CerverHandlerType;
 
 CERVER_EXPORT const char *cerver_handler_type_to_string (
-	CerverHandlerType type
+	const CerverHandlerType type
 );
 
 CERVER_EXPORT const char *cerver_handler_type_description (
-	CerverHandlerType type
+	const CerverHandlerType type
 );
 
 #pragma endregion
@@ -199,7 +210,6 @@ CERVER_EXPORT void cerver_stats_print (
 
 #pragma region main
 
-// this is the generic cerver struct, used to create different server types
 struct _Cerver {
 
 	CerverType type;
@@ -215,6 +225,7 @@ struct _Cerver {
 
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	bool blocking;                      // sokcet fd is blocking?
+	bool reusable;						// socket fd with reusable flags?
 
 	void *cerver_data;
 	Action delete_cerver_data;
@@ -269,6 +280,7 @@ struct _Cerver {
 	pthread_mutex_t *on_hold_poll_lock;
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
+	size_t on_hold_receive_buffer_size;
 
 	// allow the clients to use sessions (have multiple connections)
 	bool use_sessions;
@@ -333,7 +345,7 @@ typedef struct _Cerver Cerver;
 
 CERVER_PRIVATE Cerver *cerver_new (void);
 
-CERVER_PRIVATE void cerver_delete (void *ptr);
+CERVER_PRIVATE void cerver_delete (void *cerver_ptr);
 
 // sets the cerver main network values
 CERVER_EXPORT void cerver_set_network_values (
@@ -350,6 +362,13 @@ CERVER_EXPORT void cerver_set_connection_queue (
 // sets the cerver's receive buffer size used in recv method
 CERVER_EXPORT void cerver_set_receive_buffer_size (
 	Cerver *cerver, const u32 size
+);
+
+// sets the cerver's ability to use reusable flags in sock fd
+// if TRUE, this can prevent failing when trying to bind address
+// the default value is CERVER_DEFAULT_REUSABLE_FLAGS
+CERVER_EXPORT void cerver_set_reusable_address_flags (
+	Cerver *cerver, bool value
 );
 
 // sets the cerver's data and a way to free it
@@ -442,6 +461,12 @@ CERVER_EXPORT void cerver_set_on_hold_max_bad_packets (
 // any packet that fails the check will be considered as a bad packet
 CERVER_EXPORT void cerver_set_on_hold_check_packets (
 	Cerver *cerver, bool check
+);
+
+// sets the size of the buffer to be allocated
+// to receive packets from on hold connections
+CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
+	Cerver *cerver, const size_t on_hold_receive_buffer_size
 );
 
 // configures the cerver to use client sessions
@@ -684,5 +709,9 @@ CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
 CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
 
 #pragma endregion
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

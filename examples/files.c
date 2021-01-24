@@ -69,7 +69,7 @@ static void handler (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 		
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
@@ -84,7 +84,7 @@ static void handler (void *data) {
 
 #pragma region events
 
-static void on_cever_started (void *event_data_ptr) {
+static void *on_cever_started (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -97,9 +97,11 @@ static void on_cever_started (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_cever_teardown (void *event_data_ptr) {
+static void *on_cever_teardown (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -112,9 +114,11 @@ static void on_cever_teardown (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_connected (void *event_data_ptr) {
+static void *on_client_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -129,9 +133,11 @@ static void on_client_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_client_close_connection (void *event_data_ptr) {
+static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -144,6 +150,8 @@ static void on_client_close_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
 #pragma endregion
@@ -152,21 +160,24 @@ static void on_client_close_connection (void *event_data_ptr) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Simple File Cerver Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver is configured to accept & handle files requests");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_FILES,
@@ -183,12 +194,13 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		// cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_reusable_address_flags (my_cerver, true);
 		
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_THREADS);
 		cerver_set_handle_detachable_threads (my_cerver, true);
 
 		Handler *app_handler = handler_create (handler);
-		// 27/05/2020 - needed for this example!
 		handler_set_direct_handle (app_handler, true);
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 

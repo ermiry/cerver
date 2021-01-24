@@ -11,9 +11,15 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
+
+#define CONNECTION_NAME_SIZE						64
+#define CONNECTION_IP_SIZE							64
+
+#define CONNECTION_DEFAULT_NAME						"no-name"
 
 #define CONNECTION_DEFAULT_PROTOCOL					PROTOCOL_TCP
 #define CONNECTION_DEFAULT_USE_IPV6					false
@@ -30,13 +36,16 @@
 
 #define CONNECTION_DEFAULT_RECEIVE_PACKETS			true
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct _Socket;
 struct _Cerver;
 struct _CerverReport;
 struct _Client;
 struct _Connection;
 struct _PacketsPerType;
-struct _SockReceive;
 struct _AdminCerver;
 
 struct _ConnectionStats {
@@ -67,14 +76,14 @@ CERVER_PUBLIC void connection_stats_print (
 // a connection from a client
 struct _Connection {
 
-	String *name;
+	char name[CONNECTION_NAME_SIZE];
 
 	struct _Socket *socket;
 	u16 port;
 	Protocol protocol;
 	bool use_ipv6;
 
-	String *ip;
+	char ip[CONNECTION_IP_SIZE];
 	struct sockaddr_storage address;
 
 	time_t connected_timestamp;             // when the connection started
@@ -89,21 +98,20 @@ struct _Connection {
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
-	struct _SockReceive *sock_receive;      // used for inter-cerver communications
+	
+	ReceiveHandle receive_handle;
 
 	pthread_t update_thread_id;
 	u32 update_timeout;
 
-	// 16/06/2020 - used for direct requests to cerver
-	bool full_packet;
-
-	// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+	// a place to safely store the request response
+	// like when using client_connection_request_to_cerver ()
 	void *received_data;
 	size_t received_data_size;
 	Action received_data_delete;
 
 	bool receive_packets;                   // set if the connection will receive packets or not (default true)
-
+	
 	// custom receive method to handle incomming packets in the connection
 	u8 (*custom_receive) (
 		void *custom_data_ptr,
@@ -130,14 +138,14 @@ typedef struct _Connection Connection;
 
 CERVER_PUBLIC Connection *connection_new (void);
 
-CERVER_PUBLIC void connection_delete (void *ptr);
+CERVER_PUBLIC void connection_delete (void *connection_ptr);
 
 CERVER_PUBLIC Connection *connection_create_empty (void);
 
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
-	const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage *address,
+	const Protocol protocol
 );
 
 // compare two connections by their socket fds
@@ -203,7 +211,7 @@ typedef struct ConnectionCustomReceiveData {
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 CERVER_PUBLIC void connection_set_custom_receive (
-	Connection *connection,
+	Connection *connection, 
 	u8 (*custom_receive) (
 		void *custom_data_ptr,
 		char *buffer, const size_t buffer_size
@@ -320,6 +328,10 @@ CERVER_PRIVATE u8 connection_remove_from_cerver (
 );
 
 // starts listening and receiving data in the connection sock
-CERVER_PRIVATE void connection_update (void *ptr);
+CERVER_PRIVATE void *connection_update (void *ptr);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

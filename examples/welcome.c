@@ -28,19 +28,22 @@ static void end (int dummy) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Welcome Example");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,

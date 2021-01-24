@@ -6,7 +6,7 @@ RUN apt-get update && apt-get install -y cmake libssl-dev
 
 # cerver
 COPY . .
-RUN make DEVELOPMENT='' -j4
+RUN make TYPE=production -j4
 
 ############
 FROM ubuntu:bionic

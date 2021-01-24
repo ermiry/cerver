@@ -75,7 +75,7 @@ static void admin_handler (void *data) {
 
 	if (data) {
 		Packet *packet = (Packet *) data;
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default: 
@@ -186,7 +186,7 @@ static u8 my_auth_method (void *auth_method_ptr)  {
 
 #pragma region events
 
-static void on_hold_connected (void *event_data_ptr) {
+static void *on_hold_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -200,9 +200,11 @@ static void on_hold_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_hold_disconnected (void *event_data_ptr) {
+static void *on_hold_disconnected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -215,9 +217,11 @@ static void on_hold_disconnected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_hold_drop (void *event_data_ptr) {
+static void *on_hold_drop (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -230,9 +234,11 @@ static void on_hold_drop (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_failed_auth (void *event_data_ptr) {
+static void *on_admin_failed_auth (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -246,9 +252,11 @@ static void on_admin_failed_auth (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_connected (void *event_data_ptr) {
+static void *on_admin_connected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -263,9 +271,11 @@ static void on_admin_connected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_new_connection (void *event_data_ptr) {
+static void *on_admin_new_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -280,9 +290,11 @@ static void on_admin_new_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_close_connection (void *event_data_ptr) {
+static void *on_admin_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -295,9 +307,11 @@ static void on_admin_close_connection (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_disconnected (void *event_data_ptr) {
+static void *on_admin_disconnected (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -310,9 +324,11 @@ static void on_admin_disconnected (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
-static void on_admin_dropped (void *event_data_ptr) {
+static void *on_admin_dropped (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
@@ -325,6 +341,8 @@ static void on_admin_dropped (void *event_data_ptr) {
 		);
 	}
 
+	return NULL;
+
 }
 
 #pragma endregion
@@ -336,13 +354,13 @@ static void on_admin_dropped (void *event_data_ptr) {
 
 void admin_update_thread (void *data) {
 
-	printf ("Updating multiple times x second!\n");
+	cerver_log_msg ("Updating multiple times x second!\n");
 
 }
 
 void admin_update_internal_thread (void *data) {
 	
-	printf ("Updating every second!\n");
+	cerver_log_msg ("Updating every second!\n");
 
 }
 
@@ -354,21 +372,24 @@ void admin_update_internal_thread (void *data) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Admin Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver with admin capabilities");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	my_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -385,6 +406,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_thpool_n_threads (my_cerver, 4);
+
+		cerver_set_reusable_address_flags (my_cerver, true);
 
 		cerver_set_handler_type (my_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (my_cerver, 2000);
@@ -468,12 +491,10 @@ int main (void) {
 		);
 
 		if (cerver_start (my_cerver)) {
-			char *s = c_string_create ("Failed to start %s!",
-				my_cerver->info->name->str);
-			if (s) {
-				cerver_log_error (s);
-				free (s);
-			}
+			cerver_log_error (
+				"Failed to start %s!",
+				my_cerver->info->name->str
+			);
 
 			cerver_delete (my_cerver);
 		}

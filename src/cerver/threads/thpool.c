@@ -146,8 +146,7 @@ static void *thread_do (void *thread_ptr) {
 		if (thpool->name) {
 			char thread_name[64] = { 0 };
 			snprintf (thread_name, 64, "thpool-%s-%d", thpool->name, thread->id);
-			printf ("%s\n", thread_name);
-			prctl (PR_SET_NAME, thread_name);
+			(void) prctl (PR_SET_NAME, thread_name);
 		}
 
 		// mark thread as alive

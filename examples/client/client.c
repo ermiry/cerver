@@ -78,7 +78,7 @@ static void cerver_app_handler_direct (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: cerver_handle_test_request (packet); break;
 
 			default:
@@ -98,7 +98,7 @@ static void client_app_handler_direct (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 		if (packet) {
-			switch (packet->header->request_type) {
+			switch (packet->header.request_type) {
 				case TEST_MSG: cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from cerver!"); break;
 
 				case GET_MSG: {
@@ -124,7 +124,7 @@ static void client_app_handler (void *data) {
 
 		// AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: {
 				cerver_log_debug ("Got a test message from cerver!");
 			} break;
@@ -320,21 +320,24 @@ static void *cerver_client_connect_and_start (void *args) {
 
 int main (void) {
 
-	srand (time (NULL));
+	srand ((unsigned int) time (NULL));
 
-	// register to the quit signal
-	signal (SIGINT, end);
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
 
 	cerver_init ();
 
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_version_print_full ();
-	printf ("\n");
+	cerver_log_line_break ();
 
 	cerver_log_debug ("Cerver Client Example");
-	printf ("\n");
+	cerver_log_line_break ();
 	cerver_log_debug ("Cerver creates a new client that will use to make requests to another cerver");
-	printf ("\n");
+	cerver_log_line_break ();
 
 	client_cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
@@ -351,6 +354,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (client_cerver, 4096);
 		cerver_set_thpool_n_threads (client_cerver, 4);
+
+		cerver_set_reusable_address_flags (client_cerver, true);
 
 		cerver_set_handler_type (client_cerver, CERVER_HANDLER_TYPE_POLL);
 		cerver_set_poll_time_out (client_cerver, 2000);

@@ -19,143 +19,143 @@ ListElement *player_get_le_from_lobby (Lobby *lobby, Player *player);
 
 Player *player_new (void) {
 
-	Player *player = (Player *) malloc (sizeof (Player));
-	if (player) {
-		player->id = NULL;
-		player->client = NULL;
-		player->data = NULL;
-		player->data_delete = NULL;
-	}
+    Player *player = (Player *) malloc (sizeof (Player));
+    if (player) {
+        player->id = NULL;
+        player->client = NULL;
+        player->data = NULL;
+        player->data_delete = NULL;
+    }
 
-	return player;
+    return player;
 
 }
 
 void player_delete (void *player_ptr) {
 
-	if (player_ptr) {
-		Player *player = (Player *) player_ptr;
+    if (player_ptr) {
+        Player *player = (Player *) player_ptr;
 
-		str_delete (player->id);
+        str_delete (player->id);
 
-		player->client = NULL;
+        player->client = NULL;
 
-		if (player->data) {
-			if (player->data_delete)
-				player->data_delete (player->data);
-			else free (player->data);
-		}
+        if (player->data) {
+            if (player->data_delete)
+                player->data_delete (player->data);
+            else free (player->data);
+        }
 
-		free (player);
-	}
+        free (player);
+    }
 
 }
 
 // sets the player id
 void player_set_id (Player *player, const char *id) {
 
-	if (player) player->id = str_new (id);
+    if (player) player->id = str_new (id);
 
 }
 
 // sets player data and a way to delete it
 void player_set_data (Player *player, void *data, Action data_delete) {
 
-	if (player) {
-		player->data = data;
-		player->data_delete = data_delete;
-	}
+    if (player) {
+        player->data = data;
+        player->data_delete = data_delete;
+    }
 
 }
 
 int player_comparator_by_id (const void *a, const void *b) {
 
-	return str_compare (((Player *) a)->id, ((Player *) b)->id);
+    return str_compare (((Player *) a)->id, ((Player *) b)->id);
 
 }
 
 int player_comparator_client_id (const void *a, const void *b) {
 
-	return client_comparator_client_id (((Player *) a)->client, ((Player *) b)->client);
+    return client_comparator_client_id (((Player *) a)->client, ((Player *) b)->client);
 
 }
 
 // registers each of the player's client connections to the lobby poll structures
 u8 player_register_to_lobby_poll (Lobby *lobby, Player *player) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (lobby && player) {
-		Connection *connection = NULL;
-		for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
-			connection = (Connection *) le->data;
-			lobby_poll_register_connection (lobby, player, connection);
-		}
-	}
+    if (lobby && player) {
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
+            connection = (Connection *) le->data;
+            lobby_poll_register_connection (lobby, player, connection);
+        }
+    }
 
-	return retval;
+    return retval;
 
 }
 
 // registers a player to the lobby --> add him to lobby's structures
 u8 player_register_to_lobby (Lobby *lobby, Player *player) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (lobby && player) {
-		if (player->client) {
-			// bool failed = false;
+    if (lobby && player) {
+        if (player->client) {
+            // bool failed = false;
 
-			// // register all the player's client connections to the lobby poll
-			// Connection *connection = NULL;
-			// for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
-			//     connection = (Connection *) le->data;
-			//     failed = lobby_poll_register_connection (lobby, player, connection);
-			// }
+            // // register all the player's client connections to the lobby poll
+            // Connection *connection = NULL;
+            // for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
+            //     connection = (Connection *) le->data;
+            //     failed = lobby_poll_register_connection (lobby, player, connection);
+            // }
 
-			// if (!failed) {
-				dlist_insert_after (lobby->players, dlist_end (lobby->players), player);
+            // if (!failed) {
+                dlist_insert_after (lobby->players, dlist_end (lobby->players), player);
 
-				#ifdef CERVER_DEBUG
-				cerver_log (
-					LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
-					"Registered a new player to lobby %s.",
-					lobby->id->str
-				);
-				#endif
+                #ifdef CERVER_DEBUG
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
+                    "Registered a new player to lobby %s.",
+                    lobby->id->str
+                );
+                #endif
 
-				lobby->n_current_players++;
-				#ifdef CERVER_STATS
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Registered players to lobby %s: %i.",
-					lobby->id->str, lobby->n_current_players
-				);
-				#endif
+                lobby->n_current_players++;
+                #ifdef CERVER_STATS
+                cerver_log (
+                    LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                    "Registered players to lobby %s: %i.",
+                    lobby->id->str, lobby->n_current_players
+                );
+                #endif
 
-				retval = 0;
-			// }
-		}
-	}
+                retval = 0;
+            // }
+        }
+    }
 
-	return retval;
+    return retval;
 
 }
 
 // unregisters each of the player's client connections from the lobby poll structures
 u8 player_unregister_from_lobby_poll (Lobby *lobby, Player *player) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (lobby && player) {
-		Connection *connection = NULL;
-		for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
-			connection = (Connection *) le->data;
-			lobby_poll_unregister_connection (lobby, player, connection);
-		}
-	}
+    if (lobby && player) {
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (player->client->connections); le; le = le->next) {
+            connection = (Connection *) le->data;
+            lobby_poll_unregister_connection (lobby, player, connection);
+        }
+    }
 
-	return retval;
+    return retval;
 
 }
 
@@ -163,111 +163,111 @@ u8 player_unregister_from_lobby_poll (Lobby *lobby, Player *player) {
 // unregisters a player from a lobby --> removes him from lobby's structures
 u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
 
-	u8 retval = 1;
+    u8 retval = 1;
 
-	if (lobby && player) {
-		if (player->client) {
-			// printf ("\nplayer_unregister_from_lobby client id: %li\n", player->client->id);
-			if (lobby->default_handler) {
-				// unregister all the player's client connections from the lobby
-				player_unregister_from_lobby_poll (lobby, player);
-			}
+    if (lobby && player) {
+        if (player->client) {
+            // printf ("\nplayer_unregister_from_lobby client id: %li\n", player->client->id);
+            if (lobby->default_handler) {
+                // unregister all the player's client connections from the lobby
+                player_unregister_from_lobby_poll (lobby, player);
+            }
 
-			if (!dlist_remove (lobby->players, player, NULL)) {
-				lobby->n_current_players--;
+            if (!dlist_remove (lobby->players, player, NULL)) {
+                lobby->n_current_players--;
 
-				#ifdef CERVER_DEBUG
-				cerver_log (
-					LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
-					"Unregistered a player from lobby %s.",
-					lobby->id->str
-				);
-				#endif
+                #ifdef CERVER_DEBUG
+                cerver_log (
+                    LOG_TYPE_SUCCESS, LOG_TYPE_PLAYER,
+                    "Unregistered a player from lobby %s.",
+                    lobby->id->str
+                );
+                #endif
 
-				#ifdef CERVER_STATS
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Registered players to lobby %s: %i.",
-					lobby->id->str, lobby->n_current_players
-				);
-				#endif
+                #ifdef CERVER_STATS
+                cerver_log (
+                    LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                    "Registered players to lobby %s: %i.",
+                    lobby->id->str, lobby->n_current_players
+                );
+                #endif
 
-				// check if there are players left inside the lobby
-				if (lobby->n_current_players <= 0) {
-					// destroy the lobby
-					#ifdef CERVER_DEBUG
-					cerver_log (
-						LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-						"Destroying lobby %s -- it is empty.",
-						lobby->id->str
-					);
-					#endif
+                // check if there are players left inside the lobby
+                if (lobby->n_current_players <= 0) {
+                    // destroy the lobby
+                    #ifdef CERVER_DEBUG
+                    cerver_log (
+                        LOG_TYPE_DEBUG, LOG_TYPE_GAME,
+                        "Destroying lobby %s -- it is empty.",
+                        lobby->id->str
+                    );
+                    #endif
 
-					// teardown the cerver
-					Cerver *cerver = lobby->cerver;
-					GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
-					lobby_teardown (game_cerver, lobby);
-				}
+                    // teardown the cerver
+                    Cerver *cerver = lobby->cerver;
+                    GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
+                    lobby_teardown (game_cerver, lobby);
+                }
 
-				retval = 0;
-			}
-		}
-	}
+                retval = 0;
+            }
+        }
+    }
 
-	return retval;
+    return retval;
 
 }
 
 // gets a player from the lobby using the query
 Player *player_get_from_lobby (Lobby *lobby, Player *query) {
 
-	return (lobby ? (Player *) dlist_search (lobby->players, query, NULL) : NULL);
+    return (lobby ? (Player *) dlist_search (lobby->players, query, NULL) : NULL);
 
 }
 
 // get sthe list element associated with the player
 ListElement *player_get_le_from_lobby (Lobby *lobby, Player *player) {
 
-	return (lobby ? dlist_get_element (lobby->players, player, NULL) : NULL);
+    return (lobby ? dlist_get_element (lobby->players, player, NULL) : NULL);
 
 }
 
 // gets a player from the lobby player's list suing the sock fd
 Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
 
-	if (lobby) {
-		Player *player = NULL;
-		Connection *connection = NULL;
-		for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {
-			player = (Player *) le->data;
-			for (ListElement *le_sub = dlist_start (player->client->connections); le_sub; le_sub = le_sub->next) {
-				connection = (Connection *) le_sub->data;
-				if (connection->socket->sock_fd == sock_fd) return player;
-			}
-		}
-	}
+    if (lobby) {
+        Player *player = NULL;
+        Connection *connection = NULL;
+        for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {
+            player = (Player *) le->data;
+            for (ListElement *le_sub = dlist_start (player->client->connections); le_sub; le_sub = le_sub->next) {
+                connection = (Connection *) le_sub->data;
+                if (connection->socket->sock_fd == sock_fd) return player;
+            }
+        }
+    }
 
-	return NULL;
+    return NULL;
 
 }
 
 // broadcasts a packet to all the players in the lobby
 void player_broadcast_to_all (Cerver *cerver, const Lobby *lobby, Packet *packet, 
-	Protocol protocol, int flags) {
+    Protocol protocol, int flags) {
 
-	if (lobby && packet) {
-		Player *player = NULL;
-		for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {
-			player = (Player *) le->data;
+    if (lobby && packet) {
+        Player *player = NULL;
+        for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {
+            player = (Player *) le->data;
 
-			Connection *connection = NULL;
-			for (ListElement *le_sub = dlist_start (player->client->connections); le_sub; le_sub = le_sub->next) {
-				connection = (Connection *) le_sub->data;
-				packet_set_network_values (packet, cerver, player->client, connection, (Lobby *) lobby);
-				packet_send (packet, flags, NULL, false);
-			}
-		}
-	}
+            Connection *connection = NULL;
+            for (ListElement *le_sub = dlist_start (player->client->connections); le_sub; le_sub = le_sub->next) {
+                connection = (Connection *) le_sub->data;
+                packet_set_network_values (packet, cerver, player->client, connection, (Lobby *) lobby);
+                packet_send (packet, flags, NULL, false);
+            }
+        }
+    }
 
 }
 
