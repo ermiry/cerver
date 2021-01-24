@@ -798,7 +798,10 @@ static inline u8 balancer_route_to_service_receive (
 
 		default: {
 			#ifdef BALANCER_DEBUG
-			cerver_log_debug ("balancer_route_to_service_receive () - spliced %ld bytes", *received);
+			cerver_log_debug (
+				"balancer_route_to_service_receive () - "
+				"spliced %ld bytes", *received
+			);
 			#endif
 
 			retval = 0;
@@ -839,7 +842,10 @@ static inline u8 balancer_route_to_service_move (
 
 		default: {
 			#ifdef BALANCER_DEBUG
-			cerver_log_debug ("balancer_route_to_service_move () - spliced %ld bytes", *moved);
+			cerver_log_debug (
+				"balancer_route_to_service_move () - "
+				"spliced %ld bytes", *moved
+			);
 			#endif
 
 			retval = 0;
@@ -959,7 +965,9 @@ void balancer_route_to_service (
 
 		if (header->packet_size > sizeof (PacketHeader)) {
 			// consume data from socket to get next packet
-			balancer_receive_consume_from_connection (cr, header->packet_size - sizeof (PacketHeader));
+			balancer_receive_consume_from_connection (
+				cr, header->packet_size - sizeof (PacketHeader)
+			);
 		}
 
 		balancer->stats->unhandled_packets += 1;
@@ -1161,7 +1169,7 @@ static u8 balancer_client_route_actual (
 
 				*sent += moved;
 
-				left -= buff_size;
+				left -= received;
 			}
 
 			// we are done!
@@ -1305,6 +1313,8 @@ static void balancer_client_receive_success (
 	Client *client, Connection *connection,
 	PacketHeader *header
 ) {
+
+	// packet_header_print (header);
 
 	bs->service->stats->receives_done += 1;
 	bs->service->stats->n_packets_received += 1;
@@ -1473,6 +1483,7 @@ static u8 balancer_client_receive (
 					custom_data->connection->name, rc
 				);
 
+				// FIXME: check that we have receieved a complete packet header
 				balancer_client_receive_success (
 					(BalancerService *) custom_data->args,
 					custom_data->client, custom_data->connection,
