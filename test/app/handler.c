@@ -4,7 +4,16 @@
 
 #include <cerver/packets.h>
 
+#include <cerver/utils/log.h>
+
 #include "app.h"
+
+static const char *MESSAGE = { 
+	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+	"Ut enim ad minim veniam, quis nostrud exercitation ullamco "
+	"laboris nisi ut aliquip ex ea commodo consequat."
+};
 
 // send back a test message
 static void app_handler_test (const Packet *packet) {
@@ -79,9 +88,17 @@ static void app_handler_message (const Packet *packet) {
 	end += sizeof (PacketHeader);
 
 	// print the client's message
-	#ifdef TEST_APP_DEBUG
-	(void) printf ("|%s|\n", end);
-	#endif
+	// #ifdef EXAMPLE_APP_DEBUG
+	// (void) printf ("|%s|\n", end);
+	// #endif
+
+	AppMessage *original_app_message = (AppMessage *) end;
+	if (strcmp (MESSAGE, original_app_message->message)) {
+		cerver_log_error (
+			"Message [%lu] mismatch!",
+			original_app_message->id
+		);
+	}
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 
