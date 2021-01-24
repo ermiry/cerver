@@ -1477,11 +1477,13 @@ static u8 balancer_client_receive (
 			} break;
 
 			default: {
+				#ifdef SERVICE_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"Connection %s rc: %ld",
 					custom_data->connection->name, rc
 				);
+				#endif
 
 				// FIXME: check that we have receieved a complete packet header
 				balancer_client_receive_success (
