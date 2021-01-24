@@ -1610,9 +1610,6 @@ static void cerver_receive_handle_buffer_actual (
 						end += packet->data_size;
 						buffer_pos += packet->data_size;
 						remaining_buffer_size -= packet->data_size;
-
-						// set the newly created packet as spare
-						receive_handle->spare_packet = packet;
 					}
 
 					else {
@@ -1622,6 +1619,9 @@ static void cerver_receive_handle_buffer_actual (
 						);
 						#endif
 					}
+
+					// set the newly created packet as spare
+					receive_handle->spare_packet = packet;
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
