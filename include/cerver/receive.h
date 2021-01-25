@@ -14,6 +14,24 @@ struct _Admin;
 
 struct _Lobby;
 
+#define RECEIVE_ERROR_MAP(XX)			\
+	XX(0,	NONE,		None)			\
+	XX(1,	TIMEOUT,	Timeoout)		\
+	XX(2,	EMPTY,		Empty)			\
+	XX(3,	FAILED,		Failed)
+
+typedef enum ReceiveError {
+
+	#define XX(num, name, string) RECEIVE_ERROR_##name = num,
+	RECEIVE_ERROR_MAP (XX)
+	#undef XX
+
+} ReceiveError;
+
+CERVER_PUBLIC const char *receive_error_to_string (
+	const ReceiveError error
+);
+
 #define RECEIVE_TYPE_MAP(XX)			\
 	XX(0,	NONE,		None)			\
 	XX(1,	NORMAL,		Normal)			\
