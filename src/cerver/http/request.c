@@ -261,7 +261,7 @@ DoubleList *http_request_multi_parts_get_all_filenames (
 		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
 			mpart = (MultiPart *) le->data;
 
-			if (mpart->filename) {
+			if (mpart->filename_len > 0) {
 				dlist_insert_after (all, dlist_end (all), mpart->filename);
 			}
 		}
@@ -286,7 +286,7 @@ DoubleList *http_request_multi_parts_get_all_saved_filenames (
 		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
 			mpart = (MultiPart *) le->data;
 
-			if (mpart->saved_filename) {
+			if (mpart->saved_filename_len > 0) {
 				dlist_insert_after (all, dlist_end (all), mpart->saved_filename);
 			}
 		}
@@ -333,7 +333,7 @@ void http_request_multi_part_discard_files (
 		for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
 			mpart = (MultiPart *) le->data;
 
-			if (mpart->saved_filename) {
+			if (mpart->saved_filename_len > 0) {
 				(void) remove (mpart->saved_filename);
 			}
 		}
