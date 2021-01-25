@@ -43,11 +43,15 @@ struct _MultiPart {
 	// const String *filename;
 
 	// sanitized original filename
+	int filename_len;
 	char filename[HTTP_MULTI_PART_FILENAME_LEN];
+
+	int generated_filename_len;
 	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_LEN];
 
 	int fd;
 	// how the file got saved (uploads path + filename)
+	int saved_filename_len;
 	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_LEN];
 	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
 	u32 total_wrote;			// the total ammount of bytes wrote to the file

@@ -1836,19 +1836,26 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				files_sanitize_filename (multi_part->filename);
 
+				multi_part->filename_len = (int) strlen (multi_part->filename);
+
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path) {
 					if (http_receive->request->dirname) {
 						if (http_receive->http_cerver->uploads_filename_generator) {
+							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
 								http_receive->cr,
 								multi_part->filename,
 								multi_part->generated_filename
 							);
 
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->generated_filename_len =
+								(int) strlen (multi_part->generated_filename);
+
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								http_receive->request->dirname->str,
@@ -1857,8 +1864,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 
 						else {
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								http_receive->request->dirname->str,
@@ -1869,13 +1877,17 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 					else {
 						if (http_receive->http_cerver->uploads_filename_generator) {
+							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
 								http_receive->cr,
 								multi_part->filename,
 								multi_part->generated_filename
 							);
 
-							(void) snprintf (
+							multi_part->generated_filename_len =
+								(int) strlen (multi_part->generated_filename);
+
+							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s",
 								http_receive->http_cerver->uploads_path->str,
@@ -1884,8 +1896,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 
 						else {
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								multi_part->filename

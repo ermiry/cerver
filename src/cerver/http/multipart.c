@@ -26,10 +26,14 @@ MultiPart *http_multi_part_new (void) {
 		multi_part->name = NULL;
 		// multi_part->filename = NULL;
 
+		multi_part->filename_len = 0;
 		(void) memset (multi_part->filename, 0, HTTP_MULTI_PART_FILENAME_LEN);
+
+		multi_part->generated_filename_len = 0;
 		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_LEN);
 
 		multi_part->fd = -1;
+		multi_part->saved_filename_len = 0;
 		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_LEN);
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
@@ -155,12 +159,17 @@ enum state {
 	s_end
 };
 
-multipart_parser *multipart_parser_init (const char *boundary, const multipart_parser_settings* settings) {
+multipart_parser *multipart_parser_init (
+	const char *boundary, const multipart_parser_settings *settings
+) {
 
-	multipart_parser *p = (multipart_parser *) malloc (sizeof (multipart_parser) + strlen(boundary) + strlen(boundary) + 9);
+	multipart_parser *p = (multipart_parser *) malloc (
+		sizeof (multipart_parser) + strlen (boundary) + strlen (boundary) + 9
+	);
+
 	if (p) {
-		strcpy(p->multipart_boundary, boundary);
-		p->boundary_length = strlen(boundary);
+		(void) strcpy (p->multipart_boundary, boundary);
+		p->boundary_length = strlen (boundary);
 		
 		p->lookbehind = (p->multipart_boundary + p->boundary_length + 1);
 
@@ -173,9 +182,15 @@ multipart_parser *multipart_parser_init (const char *boundary, const multipart_p
 
 }
 
-void multipart_parser_free (multipart_parser *p) { if (p) free (p); }
+void multipart_parser_free (multipart_parser *p) {
+	
+	if (p) free (p);
+	
+}
 
-size_t multipart_parser_execute (multipart_parser *p, const char *buf, size_t len) {
+size_t multipart_parser_execute (
+	multipart_parser *p, const char *buf, size_t len
+) {
 
 	size_t i = 0;
 	size_t mark = 0;
