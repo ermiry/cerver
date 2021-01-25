@@ -238,6 +238,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->not_found = NULL;
 
 		http_cerver->uploads_path = NULL;
+		http_cerver->uploads_filename_generator = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
 
 		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
@@ -249,6 +250,9 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
+
+		http_cerver->n_incompleted_requests = 0;
+		http_cerver->n_unhandled_requests = 0;
 
 		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
@@ -1832,19 +1836,26 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				files_sanitize_filename (multi_part->filename);
 
+				multi_part->filename_len = (int) strlen (multi_part->filename);
+
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path) {
 					if (http_receive->request->dirname) {
 						if (http_receive->http_cerver->uploads_filename_generator) {
+							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
 								http_receive->cr,
 								multi_part->filename,
 								multi_part->generated_filename
 							);
 
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->generated_filename_len =
+								(int) strlen (multi_part->generated_filename);
+
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								http_receive->request->dirname->str,
@@ -1853,8 +1864,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 
 						else {
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								http_receive->request->dirname->str,
@@ -1865,13 +1877,17 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 					else {
 						if (http_receive->http_cerver->uploads_filename_generator) {
+							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
 								http_receive->cr,
 								multi_part->filename,
 								multi_part->generated_filename
 							);
 
-							(void) snprintf (
+							multi_part->generated_filename_len =
+								(int) strlen (multi_part->generated_filename);
+
+							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s",
 								http_receive->http_cerver->uploads_path->str,
@@ -1880,8 +1896,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 
 						else {
-							(void) snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+							multi_part->saved_filename_len = snprintf (
+								multi_part->saved_filename,
+								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
 								"%s/%s",
 								http_receive->http_cerver->uploads_path->str,
 								multi_part->filename
