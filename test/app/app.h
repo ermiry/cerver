@@ -1,5 +1,5 @@
-#ifndef _TEST_APP_H_
-#define _TEST_APP_H_
+#ifndef _EXAMPLE_APP_H_
+#define _EXAMPLE_APP_H_
 
 #include <time.h>
 
@@ -23,23 +23,26 @@ extern const char *app_request_to_string (AppRequest type);
 
 typedef struct AppMessage {
 
-	time_t timestamp;
+	size_t id;
 
 	size_t len;
 	char message[APP_MESSAGE_LEN];
 
 } AppMessage;
 
-extern AppMessage *app_data_new (void);
+extern AppMessage *app_message_new (void);
 
-extern void app_data_delete (void *app_data_ptr);
+extern void app_message_delete (void *app_message_ptr);
 
 extern void app_message_create_internal (
-	AppMessage *app_message, const char *message
+	AppMessage *app_message,
+	const size_t id, const char *message
 );
 
-extern AppMessage *app_data_create (const char *message);
+extern AppMessage *app_message_create (
+	const size_t id, const char *message
+);
 
-extern void app_data_print (AppMessage *app_message);
+extern void app_message_print (AppMessage *app_message);
 
 #endif

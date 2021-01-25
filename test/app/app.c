@@ -16,7 +16,7 @@ const char *app_request_to_string (AppRequest type) {
 
 }
 
-AppMessage *app_data_new (void) {
+AppMessage *app_message_new (void) {
 
 	AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 	if (app_message) {
@@ -27,17 +27,18 @@ AppMessage *app_data_new (void) {
 
 }
 
-void app_data_delete (void *app_data_ptr) {
+void app_message_delete (void *app_message_ptr) {
 
-	if (app_data_ptr) free (app_data_ptr);
+	if (app_message_ptr) free (app_message_ptr);
 
 }
 
 void app_message_create_internal (
-	AppMessage *app_message, const char *message
+	AppMessage *app_message,
+	const size_t id, const char *message
 ) {
 
-	(void) time (&app_message->timestamp);
+	app_message->id = id;
 
 	if (message) {
 		app_message->len = strlen (message);
@@ -50,12 +51,15 @@ void app_message_create_internal (
 
 }
 
-AppMessage *app_data_create (const char *message) {
+AppMessage *app_message_create (
+	const size_t id, const char *message
+) {
 
-	AppMessage *app_message = app_data_new ();
+	AppMessage *app_message = app_message_new ();
 	if (app_message) {
 		app_message_create_internal (
-			app_message, message
+			app_message,
+			id, message
 		);
 	}
 
@@ -63,11 +67,12 @@ AppMessage *app_data_create (const char *message) {
 
 }
 
-void app_data_print (AppMessage *app_message) {
+void app_message_print (AppMessage *app_message) {
 
 	if (app_message) {
 		(void) printf (
-			"Message (%lu): %s\n",
+			"Message [%lu] (%lu): %s\n",
+			app_message->id,
 			app_message->len, app_message->message
 		);
 	}
