@@ -1,11 +1,9 @@
 #ifndef _CERVER_PACKETS_H_
 #define _CERVER_PACKETS_H_
 
-#include <stdlib.h>
 #include <stdbool.h>
 
 #include "cerver/types/types.h"
-#include "cerver/types/string.h"
 
 #include "cerver/config.h"
 #include "cerver/network.h"
@@ -82,6 +80,9 @@ CERVER_PUBLIC void packet_version_print (
 
 #pragma region types
 
+#define PACKETS_MAX_TYPES					16
+#define PACKETS_CURRENT_TYPES				10
+
 #define PACKET_TYPE_MAP(XX)					\
 	XX(0, 	NONE)							\
 	XX(1, 	CERVER)							\
@@ -93,7 +94,8 @@ CERVER_PUBLIC void packet_version_print (
 	XX(7, 	APP)							\
 	XX(8, 	APP_ERROR)						\
 	XX(9, 	CUSTOM)							\
-	XX(10, 	TEST)
+	XX(10, 	TEST)							\
+	XX(11, 	BAD)
 
 // these indicate what type of packet we are sending/recieving
 typedef enum PacketType {
@@ -131,7 +133,11 @@ CERVER_PUBLIC void packets_per_type_delete (
 );
 
 CERVER_PUBLIC void packets_per_type_print (
-	PacketsPerType *packets_per_type
+	const PacketsPerType *packets_per_type
+);
+
+CERVER_PUBLIC void packets_per_type_array_print (
+	const u64 packets[PACKETS_MAX_TYPES]
 );
 
 #pragma endregion
@@ -280,7 +286,7 @@ struct _Packet {
 	// that don't fit inside a single buffer
 	size_t remaining_data;
 
-	PacketHeader header;	
+	PacketHeader header;
 
 	PacketVersion version;
 
@@ -322,7 +328,7 @@ CERVER_EXPORT void packet_set_network_values (
 // sets the packet's header
 // copies the header's values into the packet
 CERVER_EXPORT void packet_set_header (
-	Packet *packet, PacketHeader *header
+	Packet *packet, const PacketHeader *header
 );
 
 // sets the packet's header values
@@ -332,6 +338,13 @@ CERVER_EXPORT void packet_set_header_values (
 	PacketType packet_type, size_t packet_size,
 	u8 handler_id, u32 request_type,
 	u16 sock_fd
+);
+
+// allocates the packet's data with size data_size
+// data can be added using packet_add_data ()
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int packet_create_data (
+	Packet *packet, const size_t data_size
 );
 
 // sets the data of the packet -> copies the data into the packet
@@ -494,9 +507,19 @@ CERVER_EXPORT u8 packet_send_ping (
 	struct _Lobby *lobby
 );
 
+// routes a packet from one connection's sock fd to another connection's sock fd
+// the header is sent first and then the packet's body (if any) is handled directly between fds
+// by calling the splice method using a pipe as the middleman
+// this method is thread safe, since it will block the socket until the entire packet has been routed
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 packet_route_between_connections (
+	struct _Connection *from, struct _Connection *to,
+	PacketHeader *header, size_t *sent
+);
+
 // check if packet has a compatible protocol id and a version
 // returns false on a bad packet
-CERVER_EXPORT bool packet_check (Packet *packet);
+CERVER_EXPORT bool packet_check (const Packet *packet);
 
 #pragma endregion
 
