@@ -249,7 +249,9 @@ int main (int argc, const char **argv) {
 	(void) pthread_join (thread_id, NULL);
 
 	// wait for any missing response
-	(void) sleep (5);
+	(void) sleep (8);
+
+	(void) printf ("\n\nDone waiting!\n\n");
 
 	/*** check ***/
 	// check that we have received all the responses
