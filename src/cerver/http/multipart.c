@@ -85,7 +85,7 @@ void http_multi_part_headers_print (MultiPart *mpart) {
 void http_multi_part_print (MultiPart *mpart) {
 
 	if (mpart) {
-		if (mpart->filename) {
+		if (mpart->filename_len) {
 			(void) printf (
 				"FILE: %s - %s -> %s\n",
 				mpart->name->str, mpart->filename, mpart->saved_filename
