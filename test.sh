@@ -44,19 +44,19 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # requests
-# sudo docker run \
-# 	-d \
-# 	--name test --rm \
-# 	-p 7000:7000 \
-# 	ermiry/cerver:test ./bin/cerver/requests
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:test ./bin/cerver/requests
 
-# sleep 2
+sleep 2
 
-# sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
-# LD_LIBRARY_PATH=bin ./test/bin/client/requests
+./test/bin/client/requests
 
-# sudo docker kill $(sudo docker ps -q)
+sudo docker kill $(sudo docker ps -q)
 
 # auth
 sudo docker run \
