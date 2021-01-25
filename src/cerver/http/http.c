@@ -238,6 +238,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->not_found = NULL;
 
 		http_cerver->uploads_path = NULL;
+		http_cerver->uploads_filename_generator = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
 
 		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
@@ -249,6 +250,9 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
+
+		http_cerver->n_incompleted_requests = 0;
+		http_cerver->n_unhandled_requests = 0;
 
 		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
