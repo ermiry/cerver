@@ -174,6 +174,34 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+EXAPP		:= ./$(EXATARGET)/app/libapp.so
+EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
+
+EXAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	EXAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	EXAPPFGS += -D EXAMPLE_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	EXAPPFGS += -std=c++11 -fpermissive
+else
+	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+EXAPPFGS += $(COMMON)
+
+EXAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
+
+exapp:
+	@mkdir -p ./$(EXATARGET)/app
+	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
+
 base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
@@ -199,6 +227,7 @@ client: $(EXOBJS)
 examples:
 	@mkdir -p ./$(EXATARGET)
 	$(MAKE) $(EXOBJS)
+	$(MAKE) exapp
 	$(MAKE) base
 	$(MAKE) client
 
