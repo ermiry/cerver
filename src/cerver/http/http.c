@@ -1719,21 +1719,25 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 
 }
 
-static char *http_mpart_get_boundary (const char *content_type) {
+static char *http_mpart_get_boundary (
+	const char *content_type, const unsigned int content_type_len
+) {
 
 	char *retval = NULL;
 
-	char *end = (char *) content_type;
-	end += strlen ("multipart/form-data;");
+	if (content_type_len > multi_part_header_value_len) {
+		char *end = (char *) content_type;
+		end += strlen ("multipart/form-data;");
 
-	DoubleList *attributes = http_mpart_attributes_parse (end);
-	if (attributes) {
-		// key_value_pairs_print (attributes);
+		DoubleList *attributes = http_mpart_attributes_parse (end);
+		if (attributes) {
+			// key_value_pairs_print (attributes);
 
-		const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
-		if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
+			const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
+			if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
 
-		dlist_delete (attributes);
+			dlist_delete (attributes);
+		}
 	}
 
 	return retval;
