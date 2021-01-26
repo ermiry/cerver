@@ -38,6 +38,9 @@ static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
 
+static const char *multi_part_header_value = { "multipart/form-data" };
+static const size_t multi_part_header_value_len = 19;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
@@ -1677,9 +1680,12 @@ static int http_receive_handle_body (
 
 #pragma region mpart
 
-static inline bool is_multipart (const char *content, const char *type) {
+static inline bool is_multipart (const char *content) {
 
-	return !strncmp (content, type, strlen (type)) ? true : false;
+	return !strncmp (
+		content,
+		multi_part_header_value, multi_part_header_value_len
+	) ? true : false;
 
 }
 
@@ -2502,8 +2508,7 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
 		if (is_multipart (
-			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
-			"multipart/form-data"
+			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
 			char *boundary = http_mpart_get_boundary (
