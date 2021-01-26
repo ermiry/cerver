@@ -20,6 +20,8 @@
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
+#define HTTP_MULTI_PART_DIRNAME_LEN					1024
+
 #ifdef __cplusplus
 extern "C" {
 #endif
