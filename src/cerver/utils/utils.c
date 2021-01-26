@@ -479,6 +479,31 @@ bool c_string_starts_with (const char *str, const char *substr) {
 
 }
 
+// find a substring in another string with a max length
+char *c_string_find_sub_in_len (
+	const char *haystack, const char *needle, size_t len
+) {
+
+	int i = 0;
+	size_t needle_len = 0;
+
+	if (0 == (needle_len = strnlen (needle, len)))
+			return (char *) haystack;
+
+	for (i = 0; i <= (int) (len - needle_len); i++) {
+		if (
+			(haystack[0] == needle[0]) &&
+			(0 == strncmp(haystack, needle, needle_len))
+		)
+			return (char *) haystack;
+
+		haystack++;
+	}
+
+	return NULL;
+
+}
+
 // creates a newly allocated string using the data between the two pointers of the SAME string
 // returns a new string, NULL on error
 char *c_string_create_with_ptrs (char *first, char *last) {
