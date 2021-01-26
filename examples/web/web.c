@@ -228,6 +228,8 @@ int main (int argc, char **argv) {
 		cerver_set_thpool_n_threads (web_cerver, 4);
 		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
 
+		cerver_set_reusable_address_flags (web_cerver, true);
+
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
