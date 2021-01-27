@@ -46,7 +46,7 @@ HttpResponse *http_response_new (void) {
 
 }
 
-void http_respponse_delete (HttpResponse *res) {
+void http_response_delete (HttpResponse *res) {
 
 	if (res) {
 		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
@@ -397,7 +397,7 @@ u8 http_response_create_and_send (
 			retval = http_response_send (res, http_receive);
 		}
 		
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -672,7 +672,7 @@ u8 http_response_json_msg_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -704,7 +704,7 @@ u8 http_response_json_error_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -736,7 +736,7 @@ u8 http_response_json_key_value_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -803,7 +803,7 @@ u8 http_response_json_custom_send (
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
@@ -883,7 +883,7 @@ u8 http_response_json_custom_reference_send (
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 

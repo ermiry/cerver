@@ -41,7 +41,7 @@ typedef struct _HttpResponse HttpResponse;
 CERVER_PUBLIC HttpResponse *http_response_new (void);
 
 // correctly deletes the response and all of its data
-CERVER_PUBLIC void http_respponse_delete (HttpResponse *res);
+CERVER_PUBLIC void http_response_delete (HttpResponse *res);
 
 // sets the http response's status code to be set in the header when compilling
 CERVER_EXPORT void http_response_set_status (

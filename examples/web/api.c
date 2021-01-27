@@ -68,7 +68,7 @@ static void catch_all_handler (
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 }

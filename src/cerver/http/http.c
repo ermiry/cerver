@@ -489,10 +489,10 @@ void http_cerver_end (HttpCerver *http_cerver) {
 		pool_delete (http_jwt_pool);
 		http_jwt_pool = NULL;
 
-		http_respponse_delete (bad_auth_error);
-		http_respponse_delete (not_found_error);
-		http_respponse_delete (server_error);
-		http_respponse_delete (catch_all);
+		http_response_delete (bad_auth_error);
+		http_response_delete (not_found_error);
+		http_response_delete (server_error);
+		http_response_delete (catch_all);
 	}
 
 }

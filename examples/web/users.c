@@ -32,7 +32,7 @@ void main_users_handler (
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 }
@@ -74,7 +74,7 @@ void users_login_handler (
 						http_response_print (res);
 						#endif
 						http_response_send (res, http_receive);
-						http_respponse_delete (res);
+						http_response_delete (res);
 					}
 				}
 
@@ -87,7 +87,7 @@ void users_login_handler (
 						#ifdef EXAMPLES_DEBUG
 						http_response_send (res, http_receive);
 						#endif
-						http_respponse_delete (res);
+						http_response_delete (res);
 					}
 				}
 
@@ -103,7 +103,7 @@ void users_login_handler (
 					#ifdef EXAMPLES_DEBUG
 					http_response_send (res, http_receive);
 					#endif
-					http_respponse_delete (res);
+					http_response_delete (res);
 				}
 			}
 		}
@@ -117,7 +117,7 @@ void users_login_handler (
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
-				http_respponse_delete (res);
+				http_response_delete (res);
 			}
 		}
 	}
@@ -131,7 +131,7 @@ void users_login_handler (
 			http_response_print (res);
 			#endif
 			http_response_send (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
@@ -173,7 +173,7 @@ void users_register_handler (
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
-				http_respponse_delete (res);
+				http_response_delete (res);
 			}
 		}
 
@@ -186,7 +186,7 @@ void users_register_handler (
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
-				http_respponse_delete (res);
+				http_response_delete (res);
 			}
 		}
 	}
@@ -200,7 +200,7 @@ void users_register_handler (
 			http_response_print (res);
 			#endif
 			http_response_send (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
@@ -222,7 +222,7 @@ void users_profile_handler (
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	free (message);
