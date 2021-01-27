@@ -13,6 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Install Dependencies
+        run: sudo apt-get install libcurl4-openssl-dev
+
       - name: Build Docker Image
         run: docker build -t ermiry/cerver:test -f Dockerfile.test .
 
