@@ -57,7 +57,7 @@ void test_handler (
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 }
@@ -112,15 +112,25 @@ void upload_handler (
 		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
 	}
 
-	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Upload route works!"
-	);
+	const static char *json = { "{ \"msg\": \"Upload route works!\" }" };
+
+	char content_len[32] = { 0 };
+	(void) snprintf (content_len, 32, "%ld", strlen (json));
+
+	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, strlen (json));
 	if (res) {
+		http_response_add_header (res, HTTP_HEADER_CONTENT_TYPE, "application/json");
+		http_response_add_header (res, HTTP_HEADER_CONTENT_LENGTH, content_len);
+		// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+
+		http_response_compile (res);
+
 		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
 		#endif
+
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 }
@@ -145,7 +155,7 @@ void discard_handler (
 			http_response_print (res);
 			#endif
 			http_response_send (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
@@ -210,6 +220,8 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
 		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);
+
+		cerver_set_reusable_address_flags (web_cerver, true);
 
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
