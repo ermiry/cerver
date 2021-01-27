@@ -22,6 +22,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/sessions.h"
 
 #include "cerver/threads/thread.h"
@@ -39,7 +40,27 @@ static u8 client_file_receive (
 	char **saved_filename
 );
 
-unsigned int client_receive (Client *client, Connection *connection);
+static ReceiveError client_receive_actual (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t *rc
+);
+
+// request to read x amount of bytes from the connection's sock fd
+// into the specified buffer
+// this method will only return once the requested bytes
+// have been received or on any error
+static ReceiveError client_receive_data (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t requested_data
+);
+
+unsigned int client_receive (
+	Client *client, Connection *connection
+);
+
+static u8 client_packet_handler (Packet *packet);
 
 static u64 next_client_id = 0;
 
@@ -1925,29 +1946,125 @@ int client_connection_unregister (
 
 }
 
-// performs a receive in the connection's socket to get a complete packet & handle it
-void client_connection_get_next_packet (
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+static inline void client_connection_get_next_packet_handler (
+	const size_t received,
+	Client *client, Connection *connection,
+	Packet *packet
+) {
+
+	// update stats
+	client->stats->n_receives_done += 1;
+	client->stats->total_bytes_received += received;
+
+	#ifdef CONNECTION_STATS
+	connection->stats->n_receives_done += 1;
+	connection->stats->total_bytes_received += received;
+	#endif
+
+	// handle the actual packet
+	(void) client_packet_handler (packet);
+
+}
+
+#pragma GCC diagnostic pop
+
+static unsigned int client_connection_get_next_packet_actual (
 	Client *client, Connection *connection
 ) {
 
-	if (client && connection) {
-		connection->full_packet = false;
+	unsigned int retval = 1;
 
-		char *packet_buffer = (char *) calloc (
-			connection->receive_packet_buffer_size, sizeof (char)
-		);
-		
-		if (packet_buffer) {
-			while (!connection->full_packet) {
-				client_receive_internal (
-					client, connection,
-					packet_buffer, connection->receive_packet_buffer_size
+	// TODO: use a static packet
+	Packet *packet = packet_new ();
+	packet->cerver = NULL;
+	packet->client = client;
+	packet->connection = connection;
+	packet->lobby = NULL;
+
+	// first receive the packet header
+	size_t data_size = sizeof (PacketHeader);
+
+	if (
+		client_receive_data (
+			client, connection,
+			(char *) &packet->header, sizeof (PacketHeader),
+			data_size
+		) == RECEIVE_ERROR_NONE
+	) {
+		#ifdef CLIENT_RECEIVE_DEBUG
+		packet_header_log (&packet->header);
+		#endif
+
+		// check if need more data to complete the packet
+		if (packet->header.packet_size > sizeof (PacketHeader)) {
+			// TODO: add ability to configure this value
+			// check that the packet is not to big
+			if (packet->header.packet_size <= MAX_UDP_PACKET_SIZE) {
+				(void) packet_create_data (
+					packet, packet->header.packet_size - sizeof (PacketHeader)
 				);
+
+				data_size = packet->data_size;
+
+				if (
+					client_receive_data (
+						client, connection,
+						packet->data, packet->data_size,
+						data_size
+					) == RECEIVE_ERROR_NONE
+				) {
+					// we can safely handle the packet
+					client_connection_get_next_packet_handler (
+						packet->packet_size,
+						client, connection,
+						packet
+					);
+
+					retval = 0;
+				}
 			}
 
-			free (packet_buffer);
+			else {
+				// we received a bad packet
+				packet_delete (packet);
+			}
+		}
+
+		else {
+			// we can safely handle the packet
+			client_connection_get_next_packet_handler (
+				packet->packet_size,
+				client, connection,
+				packet
+			);
+
+			retval = 0;
 		}
 	}
+
+	return retval;
+
+}
+
+// performs a receive in the connection's socket
+// to get a complete packet & handle it
+// returns 0 on success, 1 on error
+unsigned int client_connection_get_next_packet (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		retval = client_connection_get_next_packet_actual (
+			client, connection
+		);
+	}
+
+	return retval;
 
 }
 
@@ -1971,13 +2088,16 @@ unsigned int client_connect (
 			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
 			// connection->connected = true;
 			connection->active = true;
-			time (&connection->connected_timestamp);
+			(void) time (&connection->connected_timestamp);
 
 			retval = 0;     // success - connected to cerver
 		}
 
 		else {
-			client_event_trigger (CLIENT_EVENT_CONNECTION_FAILED, client, connection);
+			client_event_trigger (
+				CLIENT_EVENT_CONNECTION_FAILED,
+				client, connection
+			);
 		}
 	}
 
@@ -1996,7 +2116,10 @@ unsigned int client_connect_to_cerver (
 	unsigned int retval = 1;
 
 	if (!client_connect (client, connection)) {
-		client_receive (client, connection);
+		// we expect to handle a packet with the cerver's information
+		client_connection_get_next_packet (
+			client, connection
+		);
 
 		retval = 0;
 	}
@@ -2192,7 +2315,10 @@ unsigned int client_request_to_cerver (
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver () - failed to send request packet!");
+			cerver_log_error (
+				"client_request_to_cerver () - "
+				"failed to send request packet!"
+			);
 			#endif
 		}
 	}
@@ -2206,10 +2332,9 @@ static void *client_request_to_cerver_thread (void *cc_ptr) {
 	if (cc_ptr) {
 		ClientConnection *cc = (ClientConnection *) cc_ptr;
 
-		cc->connection->full_packet = false;
-		while (!cc->connection->full_packet) {
-			client_receive (cc->client, cc->connection);
-		}
+		(void) client_connection_get_next_packet (
+			cc->client, cc->connection
+		);
 
 		client_connection_aux_delete (cc);
 	}
@@ -2245,7 +2370,10 @@ unsigned int client_request_to_cerver_async (
 
 				else {
 					#ifdef CLIENT_DEBUG
-					cerver_log_error ("Failed to create client_request_to_cerver_thread () detachable thread!");
+					cerver_log_error (
+						"Failed to create client_request_to_cerver_thread () "
+						"detachable thread!"
+					);
 					#endif
 				}
 			}
@@ -2253,7 +2381,10 @@ unsigned int client_request_to_cerver_async (
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log_error ("client_request_to_cerver_async () - failed to send request packet!");
+			cerver_log_error (
+				"client_request_to_cerver_async () - "
+				"failed to send request packet!"
+			);
 			#endif
 		}
 	}
@@ -3144,238 +3275,7 @@ static u8 client_packet_handler (Packet *packet) {
 
 }
 
-static void client_receive_handle_spare_packet (
-	Client *client, Connection *connection,
-	size_t buffer_size, char **end, size_t *buffer_pos
-) {
-
-	if (connection->sock_receive->header) {
-		// copy the remaining header size
-		memcpy (connection->sock_receive->header_end, (void *) *end, connection->sock_receive->remaining_header);
-
-		connection->sock_receive->complete_header = true;
-	}
-
-	else if (connection->sock_receive->spare_packet) {
-		size_t copy_to_spare = 0;
-		if (connection->sock_receive->missing_packet < buffer_size)
-			copy_to_spare = connection->sock_receive->missing_packet;
-
-		else copy_to_spare = buffer_size;
-
-		// append new data from buffer to the spare packet
-		if (copy_to_spare > 0) {
-			packet_append_data (connection->sock_receive->spare_packet, *end, copy_to_spare);
-
-			// check if we can handler the packet
-			size_t curr_packet_size = connection->sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (connection->sock_receive->spare_packet->header.packet_size == curr_packet_size) {
-				connection->sock_receive->spare_packet->client = client;
-				connection->sock_receive->spare_packet->connection = connection;
-
-				connection->full_packet = true;
-				client_packet_handler (connection->sock_receive->spare_packet);
-
-				connection->sock_receive->spare_packet = NULL;
-				connection->sock_receive->missing_packet = 0;
-			}
-
-			else connection->sock_receive->missing_packet -= copy_to_spare;
-
-			// offset for the buffer
-			if (copy_to_spare < buffer_size) *end += copy_to_spare;
-			*buffer_pos += copy_to_spare;
-		}
-	}
-
-}
-
-// splits the entry buffer in packets of the correct size
-static void client_receive_handle_buffer (
-	Client *client, Connection *connection,
-	char *buffer, size_t buffer_size
-) {
-
-	char *end = buffer;
-	packet_header_print ((PacketHeader *) end);
-
-	size_t buffer_pos = 0;
-
-	SockReceive *sock_receive = connection->sock_receive;
-
-	client_receive_handle_spare_packet (
-		client, connection,
-		buffer_size, &end,
-		&buffer_pos
-	);
-
-	PacketHeader *header = NULL;
-	size_t packet_size = 0;
-	// char *packet_data = NULL;
-
-	size_t remaining_buffer_size = 0;
-	size_t packet_real_size = 0;
-	size_t to_copy_size = 0;
-
-	bool spare_header = false;
-
-	while (buffer_pos < buffer_size) {
-		remaining_buffer_size = buffer_size - buffer_pos;
-
-		printf ("remaining_buffer_size: %lu\n", remaining_buffer_size);
-
-		if (sock_receive->complete_header) {
-			// FIXME:
-			packet_header_copy (header, (PacketHeader *) sock_receive->header);
-			// header = ((PacketHeader *) sock_receive->header);
-			// packet_header_print (header);
-
-			end += sock_receive->remaining_header;
-			buffer_pos += sock_receive->remaining_header;
-			// printf ("buffer pos after copy to header: %ld\n", buffer_pos);
-
-			// reset sock header values
-			free (sock_receive->header);
-			sock_receive->header = NULL;
-			sock_receive->header_end = NULL;
-			// sock_receive->curr_header_pos = 0;
-			// sock_receive->remaining_header = 0;
-			sock_receive->complete_header = false;
-
-			spare_header = true;
-		}
-
-		else if (remaining_buffer_size >= sizeof (PacketHeader)) {
-			header = (PacketHeader *) end;
-			
-
-			// packet_header_print (header);
-
-			// if (end) {
-			// 	printf ("kjzhckjhzlkfhjdskjhn\n\n\n");
-			// }
-
-			end += sizeof (PacketHeader);
-			buffer_pos += sizeof (PacketHeader);
-
-			spare_header = false;
-		}
-
-		if (header) {
-			// check the packet size
-			packet_size = header->packet_size;
-			if ((packet_size > 0) /* && (packet_size < 65536) */) {
-				// printf ("packet_size: %ld\n", packet_size);
-				// end += sizeof (PacketHeader);
-				// buffer_pos += sizeof (PacketHeader);
-				// printf ("first buffer pos: %ld\n", buffer_pos);
-
-				Packet *packet = packet_new ();
-				if (packet) {
-					printf ("packet_new ()\n");
-					printf ("header->packet_size: %lu\n", header->packet_size);
-					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
-					printf ("packet->header.packet_size %lu\n", packet->header.packet_size);
-					packet->packet_size = header->packet_size;
-					// packet->cerver = cerver;
-					// packet->lobby = lobby;
-					packet->client = client;
-					packet->connection = connection;
-
-					if (spare_header) {
-						free (header);
-						header = NULL;
-					}
-
-					printf ("packet_real_size: %lu\n", packet_real_size);
-					printf ("packet->header.packet_size: %lu\n", packet->header.packet_size);
-
-					// FIXME: problems if packet->header.packet_size is less than sizeof (PacketHeader)
-					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
-
-					printf ("2 packet_real_size: %lu\n", packet_real_size);
-					to_copy_size = 0;
-					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
-						sock_receive->spare_packet = packet;
-
-						if (spare_header) to_copy_size = buffer_size - sock_receive->remaining_header;
-						else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-
-						sock_receive->missing_packet = packet_real_size - to_copy_size;
-					}
-
-					else {
-						if ((header->packet_type == PACKET_TYPE_REQUEST) && (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)) {
-							to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-						}
-
-						else {
-							to_copy_size = packet_real_size;
-						}
-
-						packet_delete (sock_receive->spare_packet);
-						sock_receive->spare_packet = NULL;
-					}
-
-					printf ("to copy size: %lu\n", to_copy_size);
-					packet_set_data (packet, (void *) end, to_copy_size);
-
-					end += to_copy_size;
-					buffer_pos += to_copy_size;
-					// printf ("second buffer pos: %ld\n", buffer_pos);
-
-					if (!sock_receive->spare_packet) {
-						connection->full_packet = true;
-						client_packet_handler (packet);
-					}
-				}
-
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-						"Failed to create a new packet in cerver_handle_receive_buffer ()"
-					);
-				}
-			}
-
-			else {
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-					"Got a packet of invalid size: %ld", packet_size
-				);
-
-				break;
-			}
-		}
-
-		else {
-			if (sock_receive->spare_packet) packet_append_data (sock_receive->spare_packet, (void *) end, remaining_buffer_size);
-
-			else {
-				// copy the piece of possible header that was cut of between recv ()
-				sock_receive->header = malloc (sizeof (PacketHeader));
-				memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
-
-				sock_receive->header_end = (char *) sock_receive->header;
-				sock_receive->header_end += remaining_buffer_size;
-
-				// sock_receive->curr_header_pos = remaining_buffer_size;
-				sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
-
-				// printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
-				// printf ("remaining header: %d\n", sock_receive->remaining_header);
-
-				buffer_pos += remaining_buffer_size;
-			}
-		}
-
-		header = NULL;
-	}
-
-}
-
-static void client_receive_handle_buffer_new_actual (
+static void client_receive_handle_buffer_actual (
 	ReceiveHandle *receive_handle,
 	char *end, size_t buffer_pos,
 	size_t remaining_buffer_size
@@ -3580,9 +3480,6 @@ static void client_receive_handle_buffer_new_actual (
 						end += packet->data_size;
 						buffer_pos += packet->data_size;
 						remaining_buffer_size -= packet->data_size;
-
-						// set the newly created packet as spare
-						receive_handle->spare_packet = packet;
 					}
 
 					else {
@@ -3592,6 +3489,9 @@ static void client_receive_handle_buffer_new_actual (
 						);
 						#endif
 					}
+
+					// set the newly created packet as spare
+					receive_handle->spare_packet = packet;
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
@@ -3634,7 +3534,7 @@ static void client_receive_handle_buffer_new_actual (
 
 }
 
-static void client_receive_handle_buffer_new (
+static void client_receive_handle_buffer (
 	ReceiveHandle *receive_handle
 ) {
 
@@ -3782,10 +3682,10 @@ static void client_receive_handle_buffer_new (
 		&& (buffer_pos < receive_handle->received_size)
 		&& (
 			receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL
-			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
+			|| (receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER)
 		)
 	) {
-		client_receive_handle_buffer_new_actual (
+		client_receive_handle_buffer_actual (
 			receive_handle,
 			end, buffer_pos,
 			remaining_buffer_size
@@ -3811,24 +3711,24 @@ static void client_receive_handle_failed (
 
 }
 
-// receive data from connection's socket
-// this method does not perform any checks and expects a valid buffer
-// to handle incomming data
-// returns 0 on success, 1 on error
-unsigned int client_receive_internal (
+// performs the actual recv () method on the connection's sock fd
+// handles if the receive method failed
+// the amount of bytes read from the socket is placed in rc
+static ReceiveError client_receive_actual (
 	Client *client, Connection *connection,
-	char *buffer, const size_t buffer_size
+	char *buffer, const size_t buffer_size,
+	size_t *rc
 ) {
 
-	unsigned int retval = 1;
+	ReceiveError error = RECEIVE_ERROR_NONE;
 
-	ssize_t rc = recv (
+	ssize_t received = recv (
 		connection->socket->sock_fd,
 		buffer, buffer_size,
 		0
 	);
 
-	switch (rc) {
+	switch (received) {
 		case -1: {
 			if (errno == EAGAIN) {
 				#ifdef SOCKET_DEBUG
@@ -3839,7 +3739,7 @@ unsigned int client_receive_internal (
 				);
 				#endif
 
-				retval = 0;
+				error = RECEIVE_ERROR_TIMEOUT;
 			}
 
 			else {
@@ -3854,6 +3754,8 @@ unsigned int client_receive_internal (
 				#endif
 
 				client_receive_handle_failed (client, connection);
+
+				error = RECEIVE_ERROR_FAILED;
 			}
 		} break;
 
@@ -3869,41 +3771,124 @@ unsigned int client_receive_internal (
 			#endif
 
 			client_receive_handle_failed (client, connection);
+
+			error = RECEIVE_ERROR_EMPTY;
 		} break;
 
 		default: {
-			// cerver_log (
-			// 	LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-			// 	"Connection %s rc: %ld",
-			// 	connection->name->str, rc
-			// );
+			// #ifdef CLIENT_RECEIVE_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+				"client_receive_actual () - received %ld from connection %s",
+				received, connection->name
+			);
+			// #endif
+		} break;
+	}
 
-			client->stats->n_receives_done += 1;
-			client->stats->total_bytes_received += rc;
+	*rc = (size_t) ((received > 0) ? received : 0);
 
-			connection->stats->n_receives_done += 1;
-			connection->stats->total_bytes_received += rc;
+	return error;
 
-			// FIXME:
-			// handle the recived packet buffer
-			// split them in packets of the correct size
-			// client_receive_handle_buffer (
-			// 	client,
-			// 	connection,
-			// 	buffer,
-			// 	rc
-			// );
+}
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
+// request to read x amount of bytes from the connection's sock fd
+// into the specified buffer
+// this method will only return once the requested bytes
+// have been received or on any error
+static ReceiveError client_receive_data (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t requested_data
+) {
+
+	ReceiveError error = RECEIVE_ERROR_NONE;
+	size_t received = 0;
+
+	size_t data_size = requested_data;
+
+	char *buffer_end = buffer;
+	// size_t buffer_pos = 0;
+
+	do {
+		error = client_receive_actual (
+			client, connection,
+			buffer_end, data_size,
+			&received
+		);
+
+		if (error == RECEIVE_ERROR_NONE) {
+			// we got some data
+			data_size -= received;
+
+			buffer_end += received;
+		}
+
+		else if (RECEIVE_ERROR_TIMEOUT) {
+			// we are still waiting to get more data
+		}
+
+		else {
+			// an error has ocurred or we have been disconnected
+			// so end the loop
+			break;
+		}
+	} while (data_size > 0);
+
+	return (data_size > 0) ? RECEIVE_ERROR_FAILED : RECEIVE_ERROR_NONE;
+
+}
+
+#pragma GCC diagnostic pop
+
+// receive data from connection's socket
+// this method does not perform any checks and expects a valid buffer
+// to handle incomming data
+// returns 0 on success, 1 on error
+unsigned int client_receive_internal (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+) {
+
+	unsigned int retval = 1;
+
+	size_t received = 0;
+	
+	ReceiveError error = client_receive_actual (
+		client, connection,
+		buffer, buffer_size,
+		&received
+	);
+
+	client->stats->n_receives_done += 1;
+	client->stats->total_bytes_received += received;
+
+	#ifdef CONNECTION_STATS
+	connection->stats->n_receives_done += 1;
+	connection->stats->total_bytes_received += received;
+	#endif
+
+	switch (error) {
+		case RECEIVE_ERROR_NONE: {
 			connection->receive_handle.buffer = buffer;
 			connection->receive_handle.buffer_size = buffer_size;
-			connection->receive_handle.received_size = rc;
+			connection->receive_handle.received_size = received;
 
-			client_receive_handle_buffer_new (
+			client_receive_handle_buffer (
 				&connection->receive_handle
 			);
 
 			retval = 0;
 		} break;
+
+		case RECEIVE_ERROR_TIMEOUT: {
+			retval = 0;
+		};
+
+		default: break;
 	}
 
 	return retval;
@@ -4150,6 +4135,9 @@ u8 client_teardown (Client *client) {
 
 	if (client) {
 		client->running = false;
+
+		// wait for all connections to end
+		(void) sleep (4);
 
 		client_teardown_internal (client);
 

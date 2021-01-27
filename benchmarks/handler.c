@@ -79,7 +79,7 @@ int main (int argc, char **argv) {
 		} while (buffer_pos >= BUFFER_SIZE);
 		
 		// parse the packet
-		cerver_receive_handle_buffer_new (receive_handle);
+		cerver_receive_handle_buffer (receive_handle);
 
 		buffer_pos = 0;
 		buffer_end = buffer;

@@ -17,7 +17,6 @@ static Connection *test_connection_create (void) {
 	test_check_str_len (connection->name, strlen (CONNECTION_DEFAULT_NAME), NULL);
 	test_check_unsigned_eq (connection->connected_timestamp, 0, NULL);
 	test_check_ptr (connection->socket);
-	test_check_ptr (connection->sock_receive);
 	test_check_ptr (connection->stats);
 
 	return connection;

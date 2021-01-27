@@ -1,36 +1,20 @@
 ## General
-- Changed packet's header field from a pointer to a static value
-- Updated handler methods to use new packet header field
-- Refactored cerver_test_packet_handler () to send a ping packet
-- Changed packet version from a reference to a static field
-- Added SOCKET_DEBUG definition for extra receive information
+- Handling requests integration test in dedicated test script
+- Added request integration test in test workflow
+- Added CLIENT_STATS & CONNECTION_STATS compilation definitions
+- Updated & added more packets types & methods
 
-## Client
-- Added new base client_receive_handle_buffer () implementation
-- Added CLIENT_RECEIVE_DEBUG definition for extra client receive logs
-- Added base client handler error definitions & methods
-- Added client handler error return values to packet handlers
-- Split client_packet_handler () to better check for errors
-- Changed client name field from a String into a buffer
-- Removed unused method client_get_identifier ()
-
-## Connection
-- Added ReceiveHandle into connection structure
-- Refactored connection_update () to use receive handle structure
-- Changed connection's name & ip from a String into static buffers
+## Client / Connection
+- Removed sock receive & full packet fields from connection
+- Updated client get_next_packet () & receive related methods
 
 ## Handler
-- Added a new cerver_receive_handle_buffer () implementation
-- Added spare fields to ReceiveHandle structure
-- Added RECEIVE_DEBUG definition to enable extra logs in receive methods
-- Removed receive handle allocation from internal receive methods
-- Moved ReceiveHandle structure & state definitions to dedicated source
+- Added handler receive error definitions & methods
+- Refactored handler_do () related methods and removed extra checks
+- Removed SockReceive structure definition & methods
+- Refactored main cerver packet handler related methods
+- Removed old cerver_receive_handle_buffer () implementation
 
 ## Tests
-- Added base packet create & generate methods unit tests
-- Added base packet header methods unit tests
-- Added base cerver & client tests to test handler methods
-- Added more development flags when compiling test app
-
-## Benchmarks
-- Added base benchmark to test handler performance
+- Checking packet's data integrity in test app handlers
+- Updated send packet methods in client packets integration test

@@ -28,9 +28,9 @@ MATH		:= -lm
 DEFINES		:= -D _GNU_SOURCE
 
 BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
-				-D CLIENT_DEBUG								\
-				-D CONNECTION_DEBUG							\
-				-D PACKETS_DEBUG							\
+				-D CLIENT_DEBUG -D CLIENT_STATS 			\
+				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
+				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG
@@ -174,6 +174,34 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+EXAPP		:= ./$(EXATARGET)/app/libapp.so
+EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
+
+EXAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	EXAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	EXAPPFGS += -D EXAMPLE_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	EXAPPFGS += -std=c++11 -fpermissive
+else
+	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+EXAPPFGS += $(COMMON)
+
+EXAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
+
+exapp:
+	@mkdir -p ./$(EXATARGET)/app
+	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
+
 base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
@@ -199,6 +227,7 @@ client: $(EXOBJS)
 examples:
 	@mkdir -p ./$(EXATARGET)
 	$(MAKE) $(EXOBJS)
+	$(MAKE) exapp
 	$(MAKE) base
 	$(MAKE) client
 
@@ -293,6 +322,7 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/requests.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/requests $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
 
@@ -304,6 +334,7 @@ integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
 

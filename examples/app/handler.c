@@ -92,12 +92,13 @@ static void app_handler_message (const Packet *packet) {
 	// (void) printf ("|%s|\n", end);
 	// #endif
 
-	AppMessage *original_app_message = (AppMessage *) end;
-	if (strcmp (MESSAGE, original_app_message->message)) {
+	if (strcmp (MESSAGE, app_message->message)) {
 		cerver_log_error (
 			"Message [%lu] mismatch!",
-			original_app_message->id
+			app_message->id
 		);
+
+		(void) printf ("|%s|\n", app_message->message);
 	}
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));

@@ -46,7 +46,6 @@ struct _CerverReport;
 struct _Client;
 struct _Connection;
 struct _PacketsPerType;
-struct _SockReceive;
 struct _AdminCerver;
 
 struct _ConnectionStats {
@@ -100,14 +99,10 @@ struct _Connection {
 
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
 	
-	struct _SockReceive *sock_receive;      // used for inter-cerver communications
 	ReceiveHandle receive_handle;
 
 	pthread_t update_thread_id;
 	u32 update_timeout;
-
-	// used for direct requests to cerver
-	bool full_packet;
 
 	// a place to safely store the request response
 	// like when using client_connection_request_to_cerver ()

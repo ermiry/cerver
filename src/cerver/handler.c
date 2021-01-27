@@ -3,22 +3,32 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "cerver/config.h"
+
 #include <errno.h>
+#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
 
 #include <sys/prctl.h>
+#include <sys/poll.h>
 
 #include "cerver/types/types.h"
 
 #include "cerver/collections/htab.h"
 
+#include "cerver/admin.h"
 #include "cerver/auth.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
+#include "cerver/errors.h"
 #include "cerver/events.h"
 #include "cerver/files.h"
 #include "cerver/handler.h"
+#include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
@@ -168,159 +178,153 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_cerver (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		PacketType packet_type = PACKET_TYPE_NONE;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->cerver->isRunning) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	PacketType packet_type = PACKET_TYPE_NONE;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->cerver->isRunning) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->cerver->isRunning) {
-				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-				handler->cerver->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+		if (handler->cerver->isRunning) {
+			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
+			handler->cerver->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
-					packet_type = packet->header.packet_type;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
+				packet_type = packet->header.packet_type;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
+				job_delete (job);
 
-					switch (packet_type) {
-						case PACKET_TYPE_APP: {
-							if (handler->cerver->app_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_APP_ERROR: {
-							if (handler->cerver->app_error_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_CUSTOM: {
-							if (handler->cerver->custom_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
+				switch (packet_type) {
+					case PACKET_TYPE_APP: {
+						if (handler->cerver->app_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_APP_ERROR: {
+						if (handler->cerver->app_error_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_CUSTOM: {
+						if (handler->cerver->custom_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
 
-						default: packet_delete (packet); break;
-					}
+					default: packet_delete (packet); break;
 				}
-
-				(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-				handler->cerver->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
+			handler->cerver->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
 // while client is running, check for new jobs and handle them
 static void handler_do_while_client (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->client->running) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->client->running) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->client->running) {
-				(void) pthread_mutex_lock (handler->client->handlers_lock);
-				handler->client->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->client->handlers_lock);
+		if (handler->client->running) {
+			(void) pthread_mutex_lock (handler->client->handlers_lock);
+			handler->client->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->client->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
-					packet_delete (packet);
-				}
-
-				(void) pthread_mutex_lock (handler->client->handlers_lock);
-				handler->client->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->client->handlers_lock);
+				job_delete (job);
+				packet_delete (packet);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->client->handlers_lock);
+			handler->client->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->client->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_admin (Handler *handler) {
 
-	if (handler) {
-		Job *job = NULL;
-		Packet *packet = NULL;
-		PacketType packet_type = PACKET_TYPE_NONE;
-		HandlerData *handler_data = handler_data_new ();
-		while (handler->cerver->isRunning) {
-			bsem_wait (handler->job_queue->has_jobs);
+	Job *job = NULL;
+	Packet *packet = NULL;
+	PacketType packet_type = PACKET_TYPE_NONE;
+	HandlerData *handler_data = handler_data_new ();
+	while (handler->cerver->isRunning) {
+		bsem_wait (handler->job_queue->has_jobs);
 
-			if (handler->cerver->isRunning) {
-				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-				handler->cerver->admin->num_handlers_working += 1;
-				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+		if (handler->cerver->isRunning) {
+			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+			handler->cerver->admin->num_handlers_working += 1;
+			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 
-				// read job from queue
-				job = job_queue_pull (handler->job_queue);
-				if (job) {
-					packet = (Packet *) job->args;
-					packet_type = packet->header.packet_type;
+			// read job from queue
+			job = job_queue_pull (handler->job_queue);
+			if (job) {
+				packet = (Packet *) job->args;
+				packet_type = packet->header.packet_type;
 
-					handler_data->handler_id = handler->id;
-					handler_data->data = handler->data;
-					handler_data->packet = packet;
+				handler_data->handler_id = handler->id;
+				handler_data->data = handler->data;
+				handler_data->packet = packet;
 
-					handler->handler (handler_data);
+				handler->handler (handler_data);
 
-					job_delete (job);
+				job_delete (job);
 
-					switch (packet_type) {
-						case PACKET_TYPE_APP: {
-							if (handler->cerver->admin->app_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_APP_ERROR: {
-							if (handler->cerver->admin->app_error_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
-						case PACKET_TYPE_CUSTOM: {
-							if (handler->cerver->admin->custom_packet_handler_delete_packet)
-								packet_delete (packet);
-						} break;
+				switch (packet_type) {
+					case PACKET_TYPE_APP: {
+						if (handler->cerver->admin->app_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_APP_ERROR: {
+						if (handler->cerver->admin->app_error_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
+					case PACKET_TYPE_CUSTOM: {
+						if (handler->cerver->admin->custom_packet_handler_delete_packet)
+							packet_delete (packet);
+					} break;
 
-						default: packet_delete (packet); break;
-					}
+					default: packet_delete (packet); break;
 				}
-
-				(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-				handler->cerver->admin->num_handlers_working -= 1;
-				(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
 			}
-		}
 
-		handler_data_delete (handler_data);
+			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
+			handler->cerver->admin->num_handlers_working -= 1;
+			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+		}
 	}
+
+	handler_data_delete (handler_data);
 
 }
 
@@ -421,17 +425,6 @@ int handler_start (Handler *handler) {
 
 	if (handler) {
 		if (handler->type != HANDLER_TYPE_NONE) {
-			// retval = pthread_create (
-			//     &handler->thread_id,
-			//     NULL,
-			//     (void *(*)(void *)) handler_do,
-			//     (void *) handler
-			// );
-
-
-			// 26/05/2020 -- 12:54
-			// handler's threads are not explicitly joined by pthread_join ()
-			// on cerver teardown
 			if (!thread_create_detachable (
 				&handler->thread_id,
 				(void *(*)(void *)) handler_do,
@@ -458,41 +451,6 @@ int handler_start (Handler *handler) {
 	}
 
 	return retval;
-
-}
-
-#pragma endregion
-
-#pragma region sock receive
-
-SockReceive *sock_receive_new (void) {
-
-	SockReceive *sr = (SockReceive *) malloc (sizeof (SockReceive));
-	if (sr) {
-		sr->spare_packet = NULL;
-		sr->missing_packet = 0;
-
-		sr->header = NULL;
-		sr->header_end = NULL;
-		// sr->curr_header_pos = 0;
-		sr->remaining_header = 0;
-		sr->complete_header = false;
-	}
-
-	return sr;
-
-}
-
-void sock_receive_delete (void *sock_receive_ptr) {
-
-	if (sock_receive_ptr) {
-		SockReceive *sock_receive = (SockReceive *) sock_receive_ptr;
-
-		packet_delete (sock_receive->spare_packet);
-		if (sock_receive->header) free (sock_receive->header);
-
-		free (sock_receive_ptr);
-	}
 
 }
 
@@ -863,9 +821,18 @@ void cerver_test_packet_handler (Packet *packet) {
 	);
 	#endif
 
-	(void) packet_send_ping (
-		packet->cerver, packet->client, packet->connection, packet->lobby
-	);
+	Packet request = {
+		.cerver = packet->cerver,
+		.client = packet->client,
+		.connection = packet->connection,
+		.lobby = packet->lobby,
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true
+	};
+
+	(void) packet_send (&request, 0, NULL, false);
 
 }
 
@@ -1038,96 +1005,137 @@ static CerverHandlerError cerver_packet_handler_actual (
 
 		case PACKET_TYPE_CERVER: break;
 
-		case PACKET_TYPE_CLIENT:
+		case PACKET_TYPE_CLIENT: {
 			packet->cerver->stats->received_packets->n_client_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_client_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_client_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
 			error = cerver_client_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles an error from the client
-		case PACKET_TYPE_ERROR:
+		case PACKET_TYPE_ERROR: {
 			packet->cerver->stats->received_packets->n_error_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_error_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_error_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
 			cerver_error_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles a request made from the client
-		case PACKET_TYPE_REQUEST:
+		case PACKET_TYPE_REQUEST: {
 			packet->cerver->stats->received_packets->n_request_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_request_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_request_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
 			cerver_request_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles authentication packets
-		case PACKET_TYPE_AUTH:
+		case PACKET_TYPE_AUTH: {
 			packet->cerver->stats->received_packets->n_auth_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_auth_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_auth_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
 			/* TODO: */
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles a game packet sent from the client
-		case PACKET_TYPE_GAME:
+		case PACKET_TYPE_GAME: {
 			packet->cerver->stats->received_packets->n_game_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_game_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_game_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
 			game_packet_handler (packet);
-			break;
+		} break;
 
 		// user set handler to handle app specific packets
-		case PACKET_TYPE_APP:
+		case PACKET_TYPE_APP: {
 			packet->cerver->stats->received_packets->n_app_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_app_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_app_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
 			cerver_app_packet_handler (packet);
-			break;
+		} break;
 
 		// user set handler to handle app specific errors
-		case PACKET_TYPE_APP_ERROR:
+		case PACKET_TYPE_APP_ERROR: {
 			packet->cerver->stats->received_packets->n_app_error_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_app_error_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_app_error_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
 			cerver_app_error_packet_handler (packet);
-			break;
+		} break;
 
 		// custom packet hanlder
-		case PACKET_TYPE_CUSTOM:
+		case PACKET_TYPE_CUSTOM: {
 			packet->cerver->stats->received_packets->n_custom_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_custom_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_custom_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
 			cerver_custom_packet_handler (packet);
-			break;
+		} break;
 
 		// acknowledge the client we have received his test packet
-		case PACKET_TYPE_TEST:
+		case PACKET_TYPE_TEST: {
 			packet->cerver->stats->received_packets->n_test_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_test_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_test_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
 			cerver_test_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		default: {
 			packet->cerver->stats->received_packets->n_bad_packets += 1;
+			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_bad_packets += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_bad_packets += 1;
+			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
+
 			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
@@ -1135,6 +1143,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 				packet->cerver->info->name->str
 			);
 			#endif
+
 			packet_delete (packet);
 		} break;
 	}
@@ -1188,8 +1197,12 @@ static u8 cerver_packet_select_handler (
 			packet->cerver->stats->client_n_packets_received += 1;
 			packet->cerver->stats->total_n_packets_received += 1;
 
+			#ifdef CLIENT_STATS
 			packet->client->stats->n_packets_received += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->n_packets_received += 1;
+			#endif
 
 			if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
 
@@ -1402,271 +1415,7 @@ CerverReceive *cerver_receive_create_full (
 
 }
 
-static u8 cerver_receive_handle_spare_packet (
-	ReceiveHandle *receive_handle,
-	SockReceive *sock_receive,
-	size_t received_size,
-	char **end, size_t *buffer_pos
-) {
-
-	u8 errors = 0;
-
-	if (sock_receive->header) {
-		// copy the remaining header size
-		(void) memcpy (
-			sock_receive->header_end,
-			(void *) *end,
-			sock_receive->remaining_header
-		);
-		
-		// *end += sock_receive->remaining_header;
-		// *buffer_pos += sock_receive->remaining_header;
-
-		// printf ("size in new header: %ld\n", ((PacketHeader *) sock_receive->header)->packet_size);
-		// packet_header_print (((PacketHeader *) sock_receive->header));
-
-		sock_receive->complete_header = true;
-	}
-
-	else if (sock_receive->spare_packet) {
-		size_t copy_to_spare = 0;
-		if (sock_receive->missing_packet < received_size)
-			copy_to_spare = sock_receive->missing_packet;
-
-		else copy_to_spare = received_size;
-
-		// printf ("copy to spare: %ld\n", copy_to_spare);
-
-		// append new data from buffer to the spare packet
-		if (copy_to_spare > 0) {
-			(void) packet_append_data (
-				sock_receive->spare_packet, (void *) *end, copy_to_spare
-			);
-
-			// check if we can handle the packet
-			size_t curr_packet_size = sock_receive->spare_packet->data_size + sizeof (PacketHeader);
-			if (sock_receive->spare_packet->header.packet_size == curr_packet_size) {
-				errors = cerver_packet_select_handler (
-					receive_handle, sock_receive->spare_packet
-				);
-
-				sock_receive->spare_packet = NULL;
-				sock_receive->missing_packet = 0;
-			}
-
-			else {
-				sock_receive->missing_packet -= copy_to_spare;
-			}
-
-			// offset for the buffer
-			if (copy_to_spare < received_size) *end += copy_to_spare;
-			*buffer_pos += copy_to_spare;
-			// printf ("buffer pos after copy to spare: %ld\n", *buffer_pos);
-		}
-	}
-
-	return errors;
-
-}
-
-static void cerver_receive_handle_buffer_internal (
-	ReceiveHandle *receive_handle,
-	char *end, size_t buffer_pos
-) {
-
-	Cerver *cerver = receive_handle->cerver;
-	// char *buffer = receive_handle->buffer;
-	// size_t buffer_size = receive_handle->buffer_size;
-	size_t received_size = receive_handle->received_size;
-	Lobby *lobby = receive_handle->lobby;
-
-	SockReceive *sock_receive = receive_handle->connection->sock_receive;
-
-	PacketHeader *header = NULL;
-	size_t packet_size = 0;
-
-	size_t remaining_buffer_size = 0;
-	size_t packet_real_size = 0;
-	size_t to_copy_size = 0;
-
-	bool spare_header = false;
-
-	u8 stop_handler = 0;
-	do {
-		remaining_buffer_size = received_size - buffer_pos;
-
-		if (sock_receive->complete_header) {
-			// FIXME:
-			(void) packet_header_copy (header, (PacketHeader *) sock_receive->header);
-			// header = ((PacketHeader *) sock_receive->header);
-			// packet_header_print (header);
-
-			end += sock_receive->remaining_header;
-			buffer_pos += sock_receive->remaining_header;
-			// printf ("buffer pos after copy to header: %ld\n", buffer_pos);
-
-			// reset sock header values
-			free (sock_receive->header);
-			sock_receive->header = NULL;
-			sock_receive->header_end = NULL;
-			// sock_receive->curr_header_pos = 0;
-			// sock_receive->remaining_header = 0;
-			sock_receive->complete_header = false;
-
-			spare_header = true;
-		}
-
-		else if (remaining_buffer_size >= sizeof (PacketHeader)) {
-			header = (PacketHeader *) end;
-			end += sizeof (PacketHeader);
-			buffer_pos += sizeof (PacketHeader);
-
-			packet_header_print (header);
-
-			spare_header = false;
-		}
-
-		if (header) {
-			// TODO: add check for max packet size
-			// check the packet size
-			packet_size = header->packet_size;
-			if ((packet_size > 0) /* && (packet_size < 65536) */) {
-				// printf ("packet_size: %ld\n", packet_size);
-				// printf ("first buffer pos: %ld\n", buffer_pos);
-
-				Packet *packet = packet_new ();
-				if (packet) {
-					(void) memcpy (&packet->header, header, sizeof (PacketHeader));
-					packet->packet_size = header->packet_size;
-					packet->cerver = cerver;
-					packet->lobby = lobby;
-
-					if (spare_header) {
-						free (header);
-						header = NULL;
-					}
-
-					// check for packet size and only copy what is in the current buffer
-					packet_real_size = packet->header.packet_size - sizeof (PacketHeader);
-					to_copy_size = 0;
-					if ((remaining_buffer_size - sizeof (PacketHeader)) < packet_real_size) {
-						sock_receive->spare_packet = packet;
-
-						if (spare_header) to_copy_size = received_size - sock_receive->remaining_header;
-						else to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-
-						sock_receive->missing_packet = packet_real_size - to_copy_size;
-					}
-
-					else {
-						if (
-							(header->packet_type == PACKET_TYPE_REQUEST)
-							&& (header->request_type == REQUEST_PACKET_TYPE_SEND_FILE)
-						) {
-							to_copy_size = remaining_buffer_size - sizeof (PacketHeader);
-						}
-
-						else {
-							to_copy_size = packet_real_size;
-						}
-
-						packet_delete (sock_receive->spare_packet);
-						sock_receive->spare_packet = NULL;
-					}
-
-					// printf ("to copy size: %ld\n", to_copy_size);
-					(void) packet_set_data (packet, (void *) end, to_copy_size);
-
-					end += to_copy_size;
-					buffer_pos += to_copy_size;
-					// printf ("second buffer pos: %ld\n", buffer_pos);
-
-					if (!sock_receive->spare_packet) {
-						stop_handler = cerver_packet_select_handler (
-							receive_handle, packet
-						);
-					}
-
-				}
-
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_PACKET,
-						"Failed to create a new packet in cerver_handle_receive_buffer ()"
-					);
-				}
-			}
-
-			else {
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
-					"Got a packet of invalid size: %ld", packet_size
-				);
-
-				// FIXME: what to do next?
-
-				break;
-			}
-		}
-
-		else {
-			if (sock_receive->spare_packet) {
-				(void) packet_append_data (
-					sock_receive->spare_packet, (void *) end, remaining_buffer_size
-				);
-			}
-
-			else {
-				// handle part of a new header
-				// cerver_log_debug ("Handle part of a new header...");
-
-				// copy the piece of possible header that was cut of between recv ()
-				sock_receive->header = malloc (sizeof (PacketHeader));
-				(void) memcpy (sock_receive->header, (void *) end, remaining_buffer_size);
-
-				sock_receive->header_end = (char *) sock_receive->header;
-				sock_receive->header_end += remaining_buffer_size;
-
-				// sock_receive->curr_header_pos = remaining_buffer_size;
-				sock_receive->remaining_header = sizeof (PacketHeader) - remaining_buffer_size;
-
-				// printf ("curr header pos: %d\n", sock_receive->curr_header_pos);
-				// printf ("remaining header: %d\n", sock_receive->remaining_header);
-
-				buffer_pos += remaining_buffer_size;
-			}
-		}
-
-		header = NULL;
-	} while ((buffer_pos < received_size) && !stop_handler);
-
-}
-
-// default cerver receive handler
-void cerver_receive_handle_buffer (
-	void *receive_handle_ptr
-) {
-
-	ReceiveHandle *receive_handle = (ReceiveHandle *) receive_handle_ptr;
-	
-	char *end = receive_handle->buffer;
-	size_t buffer_pos = 0;
-
-	if (!cerver_receive_handle_spare_packet (
-		receive_handle,
-		receive_handle->connection->sock_receive,
-		receive_handle->received_size,
-		&end, &buffer_pos
-	)) {
-		cerver_receive_handle_buffer_internal (
-			receive_handle,
-			end, buffer_pos
-		);
-	}
-
-}
-
-static void cerver_receive_handle_buffer_new_actual (
+static void cerver_receive_handle_buffer_actual (
 	ReceiveHandle *receive_handle,
 	char *end, size_t buffer_pos,
 	size_t remaining_buffer_size
@@ -1875,9 +1624,6 @@ static void cerver_receive_handle_buffer_new_actual (
 						end += packet->data_size;
 						buffer_pos += packet->data_size;
 						remaining_buffer_size -= packet->data_size;
-
-						// set the newly created packet as spare
-						receive_handle->spare_packet = packet;
 					}
 
 					else {
@@ -1887,6 +1633,9 @@ static void cerver_receive_handle_buffer_new_actual (
 						);
 						#endif
 					}
+
+					// set the newly created packet as spare
+					receive_handle->spare_packet = packet;
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
@@ -1929,7 +1678,7 @@ static void cerver_receive_handle_buffer_new_actual (
 
 }
 
-void cerver_receive_handle_buffer_new (
+void cerver_receive_handle_buffer (
 	void *receive_handle_ptr
 ) {
 
@@ -2082,7 +1831,7 @@ void cerver_receive_handle_buffer_new (
 			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
 		)
 	) {
-		cerver_receive_handle_buffer_new_actual (
+		cerver_receive_handle_buffer_actual (
 			receive_handle,
 			end, buffer_pos,
 			remaining_buffer_size
@@ -2163,19 +1912,7 @@ static inline void cerver_receive_success_receive_handle (
 		receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 	}
 
-	switch (receive_handle->cerver->handler_type) {
-		case CERVER_HANDLER_TYPE_NONE: break;
-
-		case CERVER_HANDLER_TYPE_POLL: {
-			cr->cerver->handle_received_buffer (receive_handle);
-		} break;
-
-		case CERVER_HANDLER_TYPE_THREADS: {
-			cr->cerver->handle_received_buffer (receive_handle);
-		} break;
-
-		default: break;
-	}
+	cr->cerver->handle_received_buffer (receive_handle);
 
 }
 
@@ -2184,12 +1921,6 @@ static void cerver_receive_success (
 	const size_t received,
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
-
-	// cerver_log (
-	// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-	// 	"Cerver %s received: %ld for sock fd: %d",
-	//     cr->cerver->info->name->str, received, cr->socket->sock_fd
-	// );
 
 	cr->socket->packet_buffer_size = received;
 
@@ -2206,11 +1937,15 @@ static void cerver_receive_success (
 			cr->cerver->stats->client_receives_done += 1;
 			cr->cerver->stats->client_bytes_received += received;
 
+			#ifdef CLIENT_STATS
 			cr->client->stats->n_receives_done += 1;
 			cr->client->stats->total_bytes_received += received;
+			#endif
 
+			#ifdef CONNECTION_STATS
 			cr->connection->stats->n_receives_done += 1;
 			cr->connection->stats->total_bytes_received += received;
+			#endif
 		} break;
 
 		case RECEIVE_TYPE_ON_HOLD: {
@@ -2225,11 +1960,15 @@ static void cerver_receive_success (
 			cr->cerver->admin->stats->total_n_receives_done += 1;
 			cr->cerver->admin->stats->total_bytes_received += received;
 
+			#ifdef CLIENT_STATS
 			cr->client->stats->n_receives_done += 1;
 			cr->client->stats->total_bytes_received += received;
+			#endif
 
+			#ifdef CONNECTION_STATS
 			cr->connection->stats->n_receives_done += 1;
 			cr->connection->stats->total_bytes_received += received;
+			#endif
 		} break;
 
 		default: break;
@@ -2436,48 +2175,49 @@ static Connection *cerver_connection_create (
 	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	Connection *retval = NULL;
+	Connection *connection = NULL;
 
 	if (cerver->sockets_pool) {
 		// use a socket from the pool to create a new connection
 		Socket *socket = cerver_sockets_pool_pop (cerver);
 		if (socket) {
 			// manually create the connection
-			retval = connection_new ();
-			if (retval) {
+			connection = connection_new ();
+			if (connection) {
 				// from connection_create_empty ()
-				// retval->socket = (Socket *) socket_create_empty ();
-				retval->socket = socket;
+				// connection->socket = (Socket *) socket_create_empty ();
+				connection->socket = socket;
 
-				// FIXME:
-				retval->sock_receive = sock_receive_new ();
-
-				retval->stats = connection_stats_new ();
+				connection->stats = connection_stats_new ();
 
 				// from connection_create ()
-				retval->socket->sock_fd = new_fd;
+				connection->socket->sock_fd = new_fd;
 				(void) memcpy (
-					&retval->address,
+					&connection->address,
 					&client_address,
 					sizeof (struct sockaddr_storage)
 				);
 
-				retval->protocol = cerver->protocol;
+				connection->protocol = cerver->protocol;
 
-				connection_get_values (retval);
+				connection_get_values (connection);
 			}
 		}
 
 		else {
-			retval = connection_create (new_fd, client_address, cerver->protocol);
+			connection = connection_create (
+				new_fd, client_address, cerver->protocol
+			);
 		}
 	}
 
 	else {
-		retval = connection_create (new_fd, client_address, cerver->protocol);
+		connection = connection_create (
+			new_fd, client_address, cerver->protocol
+		);
 	}
 
-	return retval;
+	return connection;
 
 }
 
