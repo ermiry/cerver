@@ -2000,6 +2000,7 @@ static inline u8 cerver_receive_http_actual (
 	u8 retval = 1;
 
 	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
+
 	switch (rc) {
 		case -1: {
 			if (errno == EAGAIN) {
@@ -2039,11 +2040,22 @@ static inline u8 cerver_receive_http_actual (
 		} break;
 
 		default: {
-			// cerver_log (
-			// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-			// 	"Cerver %s rc: %ld for sock fd: %d",
-			//     cr->cerver->info->name->str, rc, cr->socket->sock_fd
-			// );
+			#ifdef RECEIVE_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"Cerver %s rc: %ld for sock fd: %d",
+			    cr->cerver->info->name->str, rc, cr->socket->sock_fd
+			);
+			#endif
+
+			#ifdef HTTP_RECEIVE_DEBUG
+			(void) printf ("\n\n");
+			for (int i = 0; i < rc; i++) {
+				(void) printf ("%c", buffer[i]);
+			}
+
+			(void) printf ("\n\n");
+			#endif
 
 			// update cerver stats
 			cr->socket->packet_buffer_size = rc;
