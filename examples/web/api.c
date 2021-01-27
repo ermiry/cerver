@@ -68,7 +68,7 @@ static void catch_all_handler (
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 }
@@ -108,6 +108,8 @@ int main (int argc, char **argv) {
 		cerver_set_receive_buffer_size (api_cerver, 4096);
 		cerver_set_thpool_n_threads (api_cerver, 4);
 		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);
+
+		cerver_set_reusable_address_flags (api_cerver, true);
 
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;

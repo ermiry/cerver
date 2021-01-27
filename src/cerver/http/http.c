@@ -38,6 +38,12 @@ static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
 
+static const char *multi_part_header_value = { "multipart/form-data" };
+static const size_t multi_part_header_value_len = 19;
+
+static const char *webkit_multi_part_boundary_value = { "------WebKitFormBoundary" };
+static const size_t webkit_multi_part_boundary_value_len = 24;
+
 static void http_static_path_delete (void *http_static_path_ptr);
 
 static int http_static_path_comparator (const void *a, const void *b);
@@ -50,6 +56,11 @@ static void http_receive_handle_default_route (
 
 static void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
+);
+
+static void http_receive_init_mpart_parser (
+	HttpReceive *http_receive,
+	const char *boundary
 );
 
 static void http_receive_handle (
@@ -478,10 +489,10 @@ void http_cerver_end (HttpCerver *http_cerver) {
 		pool_delete (http_jwt_pool);
 		http_jwt_pool = NULL;
 
-		http_respponse_delete (bad_auth_error);
-		http_respponse_delete (not_found_error);
-		http_respponse_delete (server_error);
-		http_respponse_delete (catch_all);
+		http_response_delete (bad_auth_error);
+		http_response_delete (not_found_error);
+		http_response_delete (server_error);
+		http_response_delete (catch_all);
 	}
 
 }
@@ -1677,9 +1688,12 @@ static int http_receive_handle_body (
 
 #pragma region mpart
 
-static inline bool is_multipart (const char *content, const char *type) {
+static inline bool is_multipart (const char *content) {
 
-	return !strncmp (content, type, strlen (type)) ? true : false;
+	return !strncmp (
+		content,
+		multi_part_header_value, multi_part_header_value_len
+	) ? true : false;
 
 }
 
@@ -1713,21 +1727,25 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 
 }
 
-static char *http_mpart_get_boundary (const char *content_type) {
+static char *http_mpart_get_boundary (
+	const char *content_type, const unsigned int content_type_len
+) {
 
 	char *retval = NULL;
 
-	char *end = (char *) content_type;
-	end += strlen ("multipart/form-data;");
+	if (content_type_len > multi_part_header_value_len) {
+		char *end = (char *) content_type;
+		end += strlen ("multipart/form-data;");
 
-	DoubleList *attributes = http_mpart_attributes_parse (end);
-	if (attributes) {
-		// key_value_pairs_print (attributes);
+		DoubleList *attributes = http_mpart_attributes_parse (end);
+		if (attributes) {
+			// key_value_pairs_print (attributes);
 
-		const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
-		if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
+			const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
+			if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
 
-		dlist_delete (attributes);
+			dlist_delete (attributes);
+		}
 	}
 
 	return retval;
@@ -2006,6 +2024,43 @@ static int http_receive_handle_mpart_body (
 
 }
 
+static int http_receive_handle_mpart_body_look_for_boundary (
+	http_parser *parser, const char *at, size_t length
+) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_LEN] = { 0 };
+
+	char *found = c_string_find_sub_in_len (at, webkit_multi_part_boundary_value, length);
+	if (found) {
+		#ifdef HTTP_MPART_DEBUG
+		cerver_log_success ("Found multi-part boundary in body!");
+		#endif
+
+		(void) snprintf (
+			boundary,
+			HTTP_MULTI_PART_BOUNDARY_MAX_LEN - 1,
+			"------WebKitFormBoundary%.*s",
+			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_LEN,
+			found + webkit_multi_part_boundary_value_len
+		);
+
+		#ifdef HTTP_MPART_DEBUG
+		cerver_log_debug ("Multi-part bundary from body is: %s", boundary);
+		#endif
+
+		// set mpart parser values
+		http_receive->settings.on_body = http_receive_handle_mpart_body;
+		http_receive_init_mpart_parser (http_receive, boundary);
+
+		// we can parse the current data
+		(void) multipart_parser_execute (http_receive->mpart_parser, at, length);
+	}
+
+	return 0;
+
+}
+
 #pragma endregion
 
 #pragma region handler
@@ -2204,7 +2259,10 @@ static void http_receive_handle_match (
 			// handle body based on header
 			if (request->body) {
 				if (request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
-					if (!strncmp ("application/x-www-form-urlencoded", request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, 33)) {
+					if (!strncmp (
+						"application/x-www-form-urlencoded",
+						request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, 33
+					)) {
 						char *real_body = http_url_decode (request->body->str);
 
 						if (real_body) {
@@ -2489,6 +2547,47 @@ static void http_receive_handle_select (
 
 }
 
+static void http_receive_init_mpart_parser (
+	HttpReceive *http_receive,
+	const char *boundary
+) {
+
+	char dirname[HTTP_MULTI_PART_DIRNAME_LEN] = { 0 };
+
+	http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
+	http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
+	http_receive->mpart_settings.on_part_data = http_receive_handle_mpart_data;
+
+	http_receive->mpart_settings.on_part_data_begin = http_receive_handle_mpart_part_data_begin;
+	http_receive->mpart_settings.on_headers_complete = http_receive_handle_mpart_headers_completed;
+	http_receive->mpart_settings.on_part_data_end = http_receive_handle_mpart_data_end;
+	http_receive->mpart_settings.on_body_end = NULL;
+
+	http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
+	http_receive->mpart_parser->data = http_receive;
+
+	http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
+
+	// TODO: handler errors
+	if (http_receive->http_cerver->uploads_dirname_generator) {
+		if (http_receive->http_cerver->uploads_path) {
+			http_receive->request->dirname =
+				http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
+			
+			(void) snprintf (
+				dirname,
+				HTTP_MULTI_PART_DIRNAME_LEN - 1,
+				"%s/%s",
+				http_receive->http_cerver->uploads_path->str,
+				http_receive->request->dirname->str
+			);
+
+			(void) files_create_dir (dirname, 0777);
+		}
+	}
+
+}
+
 static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -2502,52 +2601,33 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
 		if (is_multipart (
-			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
-			"multipart/form-data"
+			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
 			char *boundary = http_mpart_get_boundary (
-				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
+				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->len
 			);
 
 			if (boundary) {
 				// printf ("\n%s\n", boundary);
 				http_receive->settings.on_body = http_receive_handle_mpart_body;
 
-				http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
-				http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
-				http_receive->mpart_settings.on_part_data = http_receive_handle_mpart_data;
-
-				http_receive->mpart_settings.on_part_data_begin = http_receive_handle_mpart_part_data_begin;
-				http_receive->mpart_settings.on_headers_complete = http_receive_handle_mpart_headers_completed;
-				http_receive->mpart_settings.on_part_data_end = http_receive_handle_mpart_data_end;
-				http_receive->mpart_settings.on_body_end = NULL;
-
-				http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
-				http_receive->mpart_parser->data = http_receive;
-
-				http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
-
-				// TODO: handler errors
-				if (http_receive->http_cerver->uploads_dirname_generator) {
-					if (http_receive->http_cerver->uploads_path) {
-						http_receive->request->dirname = http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
-						char dirname[512] = { 0 };
-						(void) snprintf (
-							dirname, 512,
-							"%s/%s",
-							http_receive->http_cerver->uploads_path->str, http_receive->request->dirname->str
-						);
-
-						(void) files_create_dir (dirname, 0777);
-					}
-				}
+				http_receive_init_mpart_parser (http_receive, boundary);
 
 				free (boundary);
 			}
 
 			else {
-				cerver_log_error ("Failed to get multipart boundary!");
+				#ifdef HTTP_MPART_DEBUG
+				cerver_log_warning (
+					"Unable to find the multi-part boundary in the header, "
+					"searching for it in the body..."
+				);
+				#endif
+
+				// we need to search for the boundary in the response
+				http_receive->settings.on_body = http_receive_handle_mpart_body_look_for_boundary;
 			}
 		}
 	}

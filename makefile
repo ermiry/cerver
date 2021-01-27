@@ -2,6 +2,10 @@ TYPE		:= development
 
 NATIVE		:= 0
 
+COVERAGE	:= 0
+
+DEBUG		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -27,17 +31,27 @@ CURL		:= -l curl
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
+BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
 				-D HANDLER_DEBUG 							\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
-				-D FILES_DEBUG								\
-				-D HTTP_DEBUG -D HTTP_HEADERS_DEBUG			\
+				-D FILES_DEBUG
+
+HAND_DEBUG	:= -D HANDLER_DEBUG -D SOCKET_DEBUG
+RECV_DEBUG	:= -D RECEIVE_DEBUG -D CLIENT_RECEIVE_DEBUG
+
+EXTRA_DEBUG	:= $(HAND_DEBUG) $(RECV_DEBUG)
+
+HTTP_DEBUG	:= -D HTTP_DEBUG -D HTTP_HEADERS_DEBUG			\
 				-D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG		\
 				-D HTTP_RESPONSE_DEBUG
+
+HTTP_EXTRA_DEBUG = HTTP_RECEIVE_DEBUG
+
+DEVELOPMENT := $(BASE_DEBUG) $(HTTP_DEBUG)
 
 CC          := gcc
 
@@ -72,6 +86,9 @@ ifeq ($(TYPE), development)
 	CFLAGS += -g -fasynchronous-unwind-tables $(DEVELOPMENT)
 else ifeq ($(TYPE), test)
 	CFLAGS += -g -fasynchronous-unwind-tables -D_FORTIFY_SOURCE=2 -fstack-protector -O2
+	ifeq ($(COVERAGE), 1)
+		CFLAGS += -fprofile-arcs -ftest-coverage
+	endif
 else ifeq ($(TYPE), beta)
 	CFLAGS += -g -D_FORTIFY_SOURCE=2 -O2
 else
@@ -101,7 +118,9 @@ CFLAGS += -fPIC $(COMMON)
 LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL)
 
 ifeq ($(TYPE), test)
-	LIB += -lgcov --coverage
+	ifeq ($(COVERAGE), 1)
+		LIB += -lgcov --coverage
+	endif
 endif
 
 INC         := -I $(INCDIR) -I /usr/local/include
@@ -116,6 +135,7 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
 $(SLIB): $(OBJECTS)
+	$(MAKE) $(OBJECTS)
 	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
 
 # compile sources
@@ -159,16 +179,13 @@ endif
 # common flags
 EXAFLAGS += -Wall -Wno-unknown-pragmas
 
-EXALIBS		:= -L ./$(TARGETDIR) -l cerver
+EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
-examples: $(EXOBJS)
-	@mkdir -p ./$(EXATARGET)
-	@mkdir -p ./$(EXATARGET)/client
-	@mkdir -p ./$(EXATARGET)/web
+base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/handlers.o -o ./$(EXATARGET)/handlers $(EXALIBS)
@@ -183,12 +200,25 @@ examples: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/packets.o -o ./$(EXATARGET)/packets $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS)
+
+client: $(EXOBJS)
+	@mkdir -p ./$(EXATARGET)/client
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS)
+
+web: $(EXOBJS)
+	@mkdir -p ./$(EXATARGET)/web
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web $(EXALIBS)
+
+examples: $(EXOBJS)
+	@mkdir -p ./$(EXATARGET)
+	$(MAKE) $(EXOBJS)
+	$(MAKE) base
+	$(MAKE) client
+	$(MAKE) web
 
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
@@ -209,17 +239,23 @@ TESTCOVDIR	:= $(COVDIR)/test
 TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
 
 ifeq ($(TYPE), test)
-	TESTFLAGS += -fprofile-arcs -ftest-coverage
+	ifeq ($(COVERAGE), 1)
+		TESTFLAGS += -fprofile-arcs -ftest-coverage
+	endif
 endif
 
 ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
-TESTLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
+TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(CURL)
+
+TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 
 ifeq ($(TYPE), test)
-	TESTLIBS += -lgcov --coverage
+	ifeq ($(COVERAGE), 1)
+		TESTLIBS += -lgcov --coverage
+	endif
 endif
 
 TESTINC		:= -I $(INCDIR) -I ./$(TESTDIR)

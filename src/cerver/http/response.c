@@ -10,24 +10,14 @@
 #include "cerver/cerver.h"
 #include "cerver/files.h"
 
+#include "cerver/http/headers.h"
 #include "cerver/http/http.h"
-#include "cerver/http/status.h"
 #include "cerver/http/response.h"
+#include "cerver/http/status.h"
+
 #include "cerver/http/json/json.h"
 
 #include "cerver/utils/utils.h"
-
-const char *http_response_header_str (ResponseHeader header) {
-
-	switch (header) {
-		#define XX(num, name, string) case RESPONSE_HEADER_##name: return #string;
-		RESPONSE_HEADER_MAP(XX)
-		#undef XX
-
-		default: return "<unknown>";
-	}
-
-}
 
 #pragma region main
 
@@ -38,7 +28,7 @@ HttpResponse *http_response_new (void) {
 		res->status = HTTP_STATUS_OK;
 
 		res->n_headers = 0;
-		for (u8 i = 0; i < RESPONSE_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
 			res->headers[i] = NULL;
 
 		res->header = NULL;
@@ -56,10 +46,10 @@ HttpResponse *http_response_new (void) {
 
 }
 
-void http_respponse_delete (HttpResponse *res) {
+void http_response_delete (HttpResponse *res) {
 
 	if (res) {
-		for (u8 i = 0; i < RESPONSE_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
 			str_delete (res->headers[i]);
 
 		if (res->header) free (res->header);
@@ -106,16 +96,19 @@ void http_response_set_header (
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
-	HttpResponse *res, ResponseHeader type, const char *actual_header
+	HttpResponse *res, HttpHeader type, const char *actual_header
 ) {
 
 	u8 retval = 1;
 
-	if (res && actual_header && (type < RESPONSE_HEADERS_SIZE)) {
+	if (res && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
 		if (res->headers[type]) str_delete (res->headers[type]);
 		else res->n_headers += 1;
 		
-		res->headers[type] = str_create ("%s: %s\r\n", http_response_header_str (type), actual_header);
+		res->headers[type] = str_create (
+			"%s: %s\r\n",
+			http_header_string (type), actual_header
+		);
 	}
 
 	return retval;
@@ -207,7 +200,7 @@ void http_response_compile_header (HttpResponse *res) {
 		res->header_len = main_header_len;
 
 		u8 i = 0;
-		for (; i < RESPONSE_HEADERS_SIZE; i++) {
+		for (; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
 			if (res->headers[i]) res->header_len += res->headers[i]->len;
 		}
 
@@ -218,7 +211,7 @@ void http_response_compile_header (HttpResponse *res) {
 		char *end = (char *) res->header;
 		(void) memcpy (end, main_header, main_header_len);
 		end += main_header_len;
-		for (i = 0; i < RESPONSE_HEADERS_SIZE; i++) {
+		for (i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
 				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
 				end += res->headers[i]->len;
@@ -404,7 +397,7 @@ u8 http_response_create_and_send (
 			retval = http_response_send (res, http_receive);
 		}
 		
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -679,7 +672,7 @@ u8 http_response_json_msg_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -711,7 +704,7 @@ u8 http_response_json_error_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -743,7 +736,7 @@ u8 http_response_json_key_value_send (
 		http_response_print (res);
 		#endif
 		retval = http_response_send (res, http_receive);
-		http_respponse_delete (res);
+		http_response_delete (res);
 	}
 
 	return retval;
@@ -810,7 +803,7 @@ u8 http_response_json_custom_send (
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
@@ -890,7 +883,7 @@ u8 http_response_json_custom_reference_send (
 			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
-			http_respponse_delete (res);
+			http_response_delete (res);
 		}
 	}
 
