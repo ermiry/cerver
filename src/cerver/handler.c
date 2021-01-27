@@ -1197,8 +1197,12 @@ static u8 cerver_packet_select_handler (
 			packet->cerver->stats->client_n_packets_received += 1;
 			packet->cerver->stats->total_n_packets_received += 1;
 
+			#ifdef CLIENT_STATS
 			packet->client->stats->n_packets_received += 1;
+			#endif
+			#ifdef CONNECTION_STATS
 			packet->connection->stats->n_packets_received += 1;
+			#endif
 
 			if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
 
@@ -1620,9 +1624,6 @@ static void cerver_receive_handle_buffer_actual (
 						end += packet->data_size;
 						buffer_pos += packet->data_size;
 						remaining_buffer_size -= packet->data_size;
-
-						// set the newly created packet as spare
-						receive_handle->spare_packet = packet;
 					}
 
 					else {
@@ -1632,6 +1633,9 @@ static void cerver_receive_handle_buffer_actual (
 						);
 						#endif
 					}
+
+					// set the newly created packet as spare
+					receive_handle->spare_packet = packet;
 
 					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
 
@@ -1674,7 +1678,7 @@ static void cerver_receive_handle_buffer_actual (
 
 }
 
-void cerver_receive_handle_buffer_new (
+void cerver_receive_handle_buffer (
 	void *receive_handle_ptr
 ) {
 
@@ -1827,7 +1831,7 @@ void cerver_receive_handle_buffer_new (
 			|| receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER
 		)
 	) {
-		cerver_receive_handle_buffer_new_actual (
+		cerver_receive_handle_buffer_actual (
 			receive_handle,
 			end, buffer_pos,
 			remaining_buffer_size
@@ -1908,19 +1912,7 @@ static inline void cerver_receive_success_receive_handle (
 		receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 	}
 
-	switch (receive_handle->cerver->handler_type) {
-		case CERVER_HANDLER_TYPE_NONE: break;
-
-		case CERVER_HANDLER_TYPE_POLL: {
-			cr->cerver->handle_received_buffer (receive_handle);
-		} break;
-
-		case CERVER_HANDLER_TYPE_THREADS: {
-			cr->cerver->handle_received_buffer (receive_handle);
-		} break;
-
-		default: break;
-	}
+	cr->cerver->handle_received_buffer (receive_handle);
 
 }
 
@@ -1929,12 +1921,6 @@ static void cerver_receive_success (
 	const size_t received,
 	char *packet_buffer, const size_t packet_buffer_size
 ) {
-
-	// cerver_log (
-	// 	LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-	// 	"Cerver %s received: %ld for sock fd: %d",
-	//     cr->cerver->info->name->str, received, cr->socket->sock_fd
-	// );
 
 	cr->socket->packet_buffer_size = received;
 
@@ -1951,11 +1937,15 @@ static void cerver_receive_success (
 			cr->cerver->stats->client_receives_done += 1;
 			cr->cerver->stats->client_bytes_received += received;
 
+			#ifdef CLIENT_STATS
 			cr->client->stats->n_receives_done += 1;
 			cr->client->stats->total_bytes_received += received;
+			#endif
 
+			#ifdef CONNECTION_STATS
 			cr->connection->stats->n_receives_done += 1;
 			cr->connection->stats->total_bytes_received += received;
+			#endif
 		} break;
 
 		case RECEIVE_TYPE_ON_HOLD: {
@@ -1970,11 +1960,15 @@ static void cerver_receive_success (
 			cr->cerver->admin->stats->total_n_receives_done += 1;
 			cr->cerver->admin->stats->total_bytes_received += received;
 
+			#ifdef CLIENT_STATS
 			cr->client->stats->n_receives_done += 1;
 			cr->client->stats->total_bytes_received += received;
+			#endif
 
+			#ifdef CONNECTION_STATS
 			cr->connection->stats->n_receives_done += 1;
 			cr->connection->stats->total_bytes_received += received;
+			#endif
 		} break;
 
 		default: break;
