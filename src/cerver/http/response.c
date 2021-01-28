@@ -6,6 +6,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/collections/pool.h"
+
 #include "cerver/version.h"
 #include "cerver/cerver.h"
 #include "cerver/files.h"
@@ -20,9 +22,50 @@
 
 #include "cerver/utils/utils.h"
 
-#pragma region main
+typedef struct HttpResponseProducer {
 
-HttpResponse *http_response_new (void) {
+	Pool *pool;
+	const HttpCerver *http_cerver;
+
+} HttpResponseProducer;
+
+static HttpResponseProducer *producer = NULL;
+
+static HttpResponseProducer *http_response_producer_new (
+	const HttpCerver *http_cerver
+) {
+
+	HttpResponseProducer *producer = (HttpResponseProducer *) malloc (
+		sizeof (HttpResponseProducer)
+	);
+
+	if (producer) {
+		producer->pool = NULL;
+		producer->http_cerver = http_cerver;
+	}
+
+	return producer;
+
+}
+
+static void http_response_producer_delete (
+	HttpResponseProducer *producer
+) {
+
+	if (producer) {
+		pool_delete (producer->pool);
+		producer->pool = NULL;
+
+		producer->http_cerver = NULL;
+
+		free (producer);
+	}
+
+}
+
+#pragma region responses
+
+void *http_response_new (void) {
 
 	HttpResponse *res = (HttpResponse *) malloc (sizeof (HttpResponse));
 	if (res) {
@@ -47,27 +90,70 @@ HttpResponse *http_response_new (void) {
 
 }
 
-void http_response_delete (HttpResponse *res) {
+static void http_response_reset (HttpResponse *response) {
 
-	if (res) {
-		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
-			str_delete (res->headers[i]);
+	response->status = HTTP_STATUS_OK;
 
-		if (res->header) free (res->header);
+	response->n_headers = 0;
+	for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+		str_delete (response->headers[i]);
+		response->headers[i] = NULL;
+	}
 
-		if (!res->data_ref) {
-			if (res->data) free (res->data);
-		}
+	response->header_len = 0;
+	if (response->header) {
+		free (response->header);
+		response->header = NULL;
+	}
 
-		if (res->res) free (res->res);
+	if (!response->data_ref) {
+		if (response->data) free (response->data);
+	}
 
-		free (res);
+	response->data = NULL;
+	response->data_len = 0;
+	response->data_ref = false;
+
+	response->res_len = 0;
+	if (response->res) {
+		free (response->res);
+		response->res = NULL;
 	}
 
 }
 
-// sets the http response's status code to be set in the header when compilling
-void http_response_set_status (HttpResponse *res, http_status status) {
+void http_response_delete (void *res_ptr) {
+
+	if (res_ptr) {
+		http_response_reset ((HttpResponse *) res_ptr);
+
+		free (res_ptr);
+	}
+
+}
+
+// get a new HTTP response ready to be used
+HttpResponse *http_response_get (void) {
+
+	return (HttpResponse *) pool_pop (producer->pool);
+
+}
+
+// correctly disposes a HTTP response
+void http_response_return (HttpResponse *response) {
+
+	if (response) {
+		http_response_reset (response);
+
+		(void) pool_push (producer->pool, response);
+	}
+
+}
+
+// sets the HTTP response's status code to be used in the header
+void http_response_set_status (
+	HttpResponse *res, const http_status status
+) {
 
 	if (res) res->status = status;
 
@@ -926,6 +1012,59 @@ u8 http_response_json_custom_reference_send (
 	}
 
 	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region main
+
+static unsigned int http_responses_init_pool (void) {
+
+	unsigned int retval = 1;
+
+	producer->pool = pool_create (http_response_delete);
+	if (producer->pool) {
+		pool_set_create (producer->pool, http_response_new);
+		pool_set_produce_if_empty (producer->pool, true);
+		if (!pool_init (
+			producer->pool, http_response_new, HTTP_RESPONSE_POOL_INIT
+		)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error ("Failed to init HTTP responses pool!");
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create HTTP responses pool!");
+	}
+
+	return retval;
+
+}
+
+unsigned int http_responses_init (
+	const HttpCerver *http_cerver
+) {
+
+	unsigned int retval = 1;
+
+	producer = http_response_producer_new (http_cerver);
+	if (producer) {
+		retval = http_responses_init_pool ();
+	}
+
+	return retval;
+
+}
+
+void http_responses_end (void) {
+
+	http_response_producer_delete (producer);
+	producer = NULL;
 
 }
 
