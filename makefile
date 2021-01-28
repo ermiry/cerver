@@ -134,9 +134,9 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
-$(SLIB): $(OBJECTS)
+$(SLIB):
 	$(MAKE) $(OBJECTS)
-	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
+	$(CC) $(OBJECTS) $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
 
 # compile sources
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
