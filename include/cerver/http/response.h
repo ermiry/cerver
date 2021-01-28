@@ -6,8 +6,11 @@
 
 #include "cerver/handler.h"
 
+#include "cerver/http/content.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/status.h"
+
+#define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,7 +61,19 @@ CERVER_EXPORT void http_response_set_header (
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_header (
-	HttpResponse *res, HttpHeader type, const char *actual_header
+	HttpResponse *res, const HttpHeader type, const char *actual_header
+);
+
+// adds a HTTP_HEADER_CONTENT_TYPE header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_content_type_header (
+	HttpResponse *res, const ContentType type
+);
+
+// adds a HTTP_HEADER_CONTENT_LENGTH header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_content_length_header (
+	HttpResponse *res, const size_t length
 );
 
 // sets the response's data (body), it will replace the existing one

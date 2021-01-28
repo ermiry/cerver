@@ -10,6 +10,7 @@
 #include "cerver/cerver.h"
 #include "cerver/files.h"
 
+#include "cerver/http/content.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/response.h"
@@ -96,22 +97,59 @@ void http_response_set_header (
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
-	HttpResponse *res, HttpHeader type, const char *actual_header
+	HttpResponse *res, const HttpHeader type, const char *actual_header
 ) {
 
 	u8 retval = 1;
 
 	if (res && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
-		if (res->headers[type]) str_delete (res->headers[type]);
-		else res->n_headers += 1;
+		if (res->headers[type]) {
+			str_delete (res->headers[type]);
+		}
+
+		else {
+			res->n_headers += 1;
+		}
 		
 		res->headers[type] = str_create (
 			"%s: %s\r\n",
 			http_header_string (type), actual_header
 		);
+
+		retval = 0;
 	}
 
 	return retval;
+
+}
+
+// adds a HTTP_HEADER_CONTENT_TYPE header to the response
+// returns 0 on success, 1 on error
+u8 http_response_add_content_type_header (
+	HttpResponse *res, const ContentType type
+) {
+
+	return http_response_add_header (
+		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_description (type)
+	);
+
+}
+
+// adds a HTTP_HEADER_CONTENT_LENGTH header to the response
+// returns 0 on success, 1 on error
+u8 http_response_add_content_length_header (
+	HttpResponse *res, const size_t length
+) {
+
+	char buffer[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
+	(void) snprintf (
+		buffer, HTTP_RESPONSE_CONTENT_LENGTH_SIZE - 1,
+		"%lu", length
+	);
+
+	return http_response_add_header (
+		res, HTTP_HEADER_CONTENT_LENGTH, buffer
+	);
 
 }
 
