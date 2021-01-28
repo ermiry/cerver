@@ -248,7 +248,7 @@ ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
-TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(CURL)
+TESTLIBS	:= -L /usr/local/lib $(PTHREAD)
 
 TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 
@@ -306,7 +306,7 @@ units: testout $(TESTOBJS)
 
 INTCLIENTIN		:= ./$(TESTBUILD)/client
 INTCLIENTOUT	:= ./$(TESTTARGET)/client
-INTCLIENTLIBS	:= $(TESTLIBS) -l curl
+INTCLIENTLIBS	:= $(TESTLIBS) $(CURL)
 
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/api.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/api $(INTCLIENTLIBS)
