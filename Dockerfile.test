@@ -2,11 +2,11 @@ FROM gcc as builder
 
 WORKDIR /opt/cerver
 
-RUN apt-get update && apt-get install -y cmake libssl-dev
+RUN apt-get update && apt-get install -y libssl-dev
 
 # cerver
 COPY . .
-RUN make TYPE=test -j4 && make TYPE=test -j4 examples
+RUN make TYPE=test -j4 && make TYPE=test -j4 test
 
 ############
 FROM ubuntu:bionic
@@ -19,10 +19,14 @@ RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
 COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/
 COPY --from=builder /opt/cerver/include/cerver /usr/local/include/cerver
 
+# install test app
+COPY --from=builder /opt/cerver/test/bin/app/libapp.so /usr/local/lib/
+COPY --from=builder /opt/cerver/test/app/*.h /usr/local/include/app/
+
 RUN ldconfig
 
 # cerver
 WORKDIR /home/cerver
-COPY --from=builder /opt/cerver/examples/bin ./examples
+COPY --from=builder /opt/cerver/test/bin ./bin
 
-CMD ["./examples/test"]
+CMD ["./bin/web/web"]
