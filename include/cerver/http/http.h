@@ -11,10 +11,11 @@
 #include "cerver/config.h"
 #include "cerver/handler.h"
 
+#include "cerver/http/headers.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/multipart.h"
-#include "cerver/http/route.h"
 #include "cerver/http/request.h"
+#include "cerver/http/route.h"
 
 #include "cerver/http/jwt/alg.h"
 
@@ -140,6 +141,10 @@ struct _HttpCerver {
 
 	String *jwt_opt_pub_key_name;	// jwt public key filename
 	String *jwt_public_key;			// jwt actual public key
+
+	// responses
+	u8 n_response_headers;
+	String *response_headers[HTTP_REQUEST_HEADERS_SIZE];
 
 	// stats
 	size_t n_incompleted_requests;	// the request wasn't parsed completely
@@ -407,6 +412,20 @@ CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
 CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 	HttpCerver *http_cerver, const char *bearer_token,
 	void *(*decode_data)(void *), void **decoded_data
+);
+
+#pragma endregion
+
+#pragma region responses
+
+// adds a new global responses header
+// this header will be added to all the responses
+// if the response has the same header type,
+// it will be used instead of the global header
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 http_cerver_add_responses_header (
+	HttpCerver *http_cerver,
+	HttpHeader type, const char *actual_header
 );
 
 #pragma endregion

@@ -16,20 +16,21 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
-#include "cerver/http/multipart.h"
 #include "cerver/http/method.h"
-#include "cerver/http/route.h"
+#include "cerver/http/multipart.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
+#include "cerver/http/route.h"
 
-#include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/alg.h"
+#include "cerver/http/jwt/jwt.h"
 
-#include "cerver/utils/utils.h"
-#include "cerver/utils/log.h"
 #include "cerver/utils/base64.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 static HttpResponse *bad_auth_error = NULL;
 static HttpResponse *not_found_error = NULL;
@@ -262,6 +263,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->n_response_headers = 0;
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+			http_cerver->response_headers[i] = NULL;
+
 		http_cerver->n_incompleted_requests = 0;
 		http_cerver->n_unhandled_requests = 0;
 
@@ -291,6 +296,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
+
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+			str_delete (http_cerver->response_headers[i]);
 
 		pthread_mutex_delete (http_cerver->mutex);
 
@@ -1157,6 +1165,43 @@ bool http_cerver_auth_validate_jwt (
 		}
 
 		jwt_valid_free (jwt_valid);
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region responses
+
+// adds a new global responses header
+// this header will be added to all the responses
+// if the response has the same header type,
+// it will be used instead of the global header
+// returns 0 on success, 1 on error
+u8 http_cerver_add_responses_header (
+	HttpCerver *http_cerver,
+	HttpHeader type, const char *actual_header
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
+		if (http_cerver->response_headers[type]) {
+			str_delete (http_cerver->response_headers[type]);
+		}
+
+		else {
+			http_cerver->n_response_headers += 1;
+		}
+		
+		http_cerver->response_headers[type] = str_create (
+			"%s: %s\r\n",
+			http_header_string (type), actual_header
+		);
+
+		retval = 0;
 	}
 
 	return retval;
