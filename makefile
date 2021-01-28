@@ -265,18 +265,46 @@ TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
-test: $(TESTOBJS)
-	@mkdir -p ./$(TESTTARGET)
+units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/http $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/web.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/web $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/api.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/api $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/upload.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/upload $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
+
+INTCLIENTIN		:= ./$(TESTBUILD)/client
+INTCLIENTOUT	:= ./$(TESTTARGET)/client
+INTCLIENTLIBS	:= $(TESTLIBS) -l curl
+
+integration-client:
+	$(CC) $(TESTINC) $(INTCLIENTIN)/api.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/api $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/upload.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/upload $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/web.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/web $(INTCLIENTLIBS)
+
+INTWEBIN		:= ./$(TESTBUILD)/web
+INTWEBOUT		:= ./$(TESTTARGET)/web
+INTWEBLIBS		:= $(TESTLIBS)
+
+integration-web:
+	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(TESTLIBS)
+
+integration: testout $(TESTOBJS)
+	$(MAKE) integration-client
+	$(MAKE) integration-web
+
+testout:
+	@mkdir -p ./$(TESTTARGET)
+	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/web
+
+test: testout
+	$(MAKE) $(TESTOBJS)
+	$(MAKE) units
+	$(MAKE) integration
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
