@@ -432,35 +432,57 @@ static unsigned int http_cerver_init_load_jwt_keys (
 
 }
 
+static unsigned int http_cerver_init_internal (
+	HttpCerver *http_cerver
+) {
+
+	unsigned int errors = 0;
+
+	#ifdef HTTP_DEBUG
+	cerver_log_msg ("Initializing HTTP cerver...");
+	#endif
+
+	// init common responses
+	errors |= http_cerver_init_responses ();
+
+	// init HTTP jwt pool
+	errors |= http_jwt_init_pool ();
+
+	// load jwt keys
+	errors |= http_cerver_init_load_jwt_keys (http_cerver);
+
+	// init HTTP responses pool
+	errors |= http_responses_init (http_cerver);
+
+	return errors;
+
+}
+
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Initializing HTTP cerver...");
+		if (!http_cerver_init_internal (http_cerver)) {
+			#ifdef HTTP_DEBUG
+			cerver_log_msg ("Loading HTTP routes...");
+			#endif
 
-		// init common responses
-		(void) http_cerver_init_responses ();
+			// init top level routes
+			HttpRoute *route = NULL;
+			for (
+				ListElement *le = dlist_start (http_cerver->routes);
+				le; le = le->next
+			) {
+				route = (HttpRoute *) le->data;
+				
+				http_route_init (route);
+				http_route_print (route);
+			}
 
-		// init http jwt pool
-		(void) http_jwt_init_pool ();
-
-		cerver_log_msg ("Loading HTTP routes...");
-
-		// init top level routes
-		HttpRoute *route = NULL;
-		for (
-			ListElement *le = dlist_start (http_cerver->routes);
-			le; le = le->next
-		) {
-			route = (HttpRoute *) le->data;
 			
-			http_route_init (route);
-			http_route_print (route);
+			#ifdef HTTP_DEBUG
+			cerver_log_success ("Done loading HTTP routes!");
+			#endif
 		}
-
-		// load jwt keys
-		(void) http_cerver_init_load_jwt_keys (http_cerver);
-
-		cerver_log_success ("Done loading HTTP routes!");
 	}
 
 }
@@ -469,9 +491,13 @@ void http_cerver_init (HttpCerver *http_cerver) {
 void http_cerver_end (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
+		http_responses_end ();
+
 		pool_delete (http_jwt_pool);
 		http_jwt_pool = NULL;
 
+		http_response_delete (oki_doki);
+		http_response_delete (bad_request_error);
 		http_response_delete (bad_auth_error);
 		http_response_delete (not_found_error);
 		http_response_delete (server_error);
