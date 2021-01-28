@@ -313,7 +313,7 @@ HttpResponse *http_response_create (
 // ready to be sent from the request
 void http_response_compile_header (HttpResponse *res) {
 
-	if (res->n_headers) {
+	if (res->n_headers || producer->http_cerver->n_response_headers) {
 		char *main_header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
 			res->status, http_status_str (res->status),
@@ -325,7 +325,13 @@ void http_response_compile_header (HttpResponse *res) {
 
 		u8 i = 0;
 		for (; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
-			if (res->headers[i]) res->header_len += res->headers[i]->len;
+			if (res->headers[i]) {
+				res->header_len += res->headers[i]->len;
+			}
+
+			else if (producer->http_cerver->response_headers[i]) {
+				res->header_len += producer->http_cerver->response_headers[i]->len;
+			}
 		}
 
 		res->header_len += 2;	// \r\n
@@ -339,6 +345,16 @@ void http_response_compile_header (HttpResponse *res) {
 			if (res->headers[i]) {
 				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
 				end += res->headers[i]->len;
+			}
+
+			else if (producer->http_cerver->response_headers[i]) {
+				(void) memcpy (
+					end,
+					producer->http_cerver->response_headers[i]->str,
+					producer->http_cerver->response_headers[i]->len
+				);
+				
+				end += producer->http_cerver->response_headers[i]->len;
 			}
 		}
 
