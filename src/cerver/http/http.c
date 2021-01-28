@@ -89,44 +89,6 @@ static const char to_hex (const char code) {
 
 #pragma endregion
 
-#pragma region content
-
-const char *http_content_type_string (ContentType content_type) {
-
-	switch (content_type) {
-		#define XX(num, name, string, description) case CONTENT_TYPE_##name: return #string;
-		CONTENT_TYPE_MAP(XX)
-		#undef XX
-
-		default: return NULL;
-	}
-
-}
-
-const char *http_content_type_description (ContentType content_type) {
-
-	switch (content_type) {
-		#define XX(num, name, string, description) case CONTENT_TYPE_##name: return #description;
-		CONTENT_TYPE_MAP(XX)
-		#undef XX
-
-		default: return NULL;
-	}
-
-}
-
-const char *http_content_type_by_extension (const char *ext) {
-
-	#define XX(num, name, string, description) if (!strcmp (#string, ext)) return #description;
-	CONTENT_TYPE_MAP(XX)
-	#undef XX
-
-	return NULL;
-
-}
-
-#pragma endregion
-
 #pragma region kvp
 
 KeyValuePair *key_value_pair_new (void) {

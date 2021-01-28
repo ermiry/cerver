@@ -31,42 +31,9 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+struct _HttpResponse;
+
 struct jwt;
-
-#pragma region content
-
-#define CONTENT_TYPE_MAP(XX)								\
-	XX(0, HTML,		html,	text/html; charset=UTF-8)		\
-	XX(1, CSS,		css,	text/css)						\
-	XX(2, JS,		js,		application/javascript)			\
-	XX(3, JPG,		jpg,	image/jpg)						\
-	XX(4, PNG,		png,	image/png)						\
-	XX(5, MP3,		mp3,	audio/mp3)						\
-	XX(6, ICO,		ico,	image/x-icon)					\
-	XX(7, GIF,		gif,	image/gif)						\
-	XX(8, OCTET,	octet,	application/octet-stream)
-
-typedef enum ContentType {
-
-	#define XX(num, name, string, description) CONTENT_TYPE_##name = num,
-	CONTENT_TYPE_MAP(XX)
-	#undef XX
-
-} ContentType;
-
-CERVER_PUBLIC const char *http_content_type_string (
-	ContentType content_type
-);
-
-CERVER_PUBLIC const char *http_content_type_description (
-	ContentType content_type
-);
-
-CERVER_PUBLIC const char *http_content_type_by_extension (
-	const char *ext
-);
-
-#pragma endregion
 
 #pragma region kvp
 
