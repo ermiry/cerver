@@ -265,10 +265,40 @@ TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
+TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
+TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
+
+TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	TESTAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	TESTAPPFGS += -D TEST_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	TESTAPPFGS += -std=c++11 -fpermissive
+else
+	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+TESTAPPFGS += $(COMMON)
+
+TESTAPPLIBS := -L /usr/local/lib -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+
+TESTAPPLIB	:= -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+testapp:
+	@mkdir -p ./$(TESTTARGET)/app
+	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
+
 units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/http $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
@@ -285,12 +315,12 @@ integration-client:
 
 INTWEBIN		:= ./$(TESTBUILD)/web
 INTWEBOUT		:= ./$(TESTTARGET)/web
-INTWEBLIBS		:= $(TESTLIBS)
+INTWEBLIBS		:= $(TESTLIBS) $(TESTAPPLIB)
 
 integration-web:
-	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(TESTLIBS)
-	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(TESTLIBS)
-	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
 
 integration: testout $(TESTOBJS)
 	$(MAKE) integration-client
@@ -303,6 +333,7 @@ testout:
 
 test: testout
 	$(MAKE) $(TESTOBJS)
+	$(MAKE) testapp
 	$(MAKE) units
 	$(MAKE) integration
 
