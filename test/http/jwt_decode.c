@@ -10,9 +10,11 @@
 
 #include <cerver/http/jwt/alg.h>
 
+#include <app/users.h>
+
 #include "http.h"
+
 #include "../test.h"
-#include "../users.h"
 
 void http_tests_jwt_decode (void) {
 
