@@ -32,9 +32,12 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static HttpResponse *bad_auth_error = NULL;
-static HttpResponse *not_found_error = NULL;
-static HttpResponse *server_error = NULL;
+HttpResponse *oki_doki = NULL;
+HttpResponse *bad_request_error = NULL;
+HttpResponse *bad_auth_error = NULL;
+HttpResponse *not_found_error = NULL;
+HttpResponse *server_error = NULL;
+
 static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
@@ -298,24 +301,34 @@ static unsigned int http_cerver_init_responses (void) {
 
 	unsigned int retval = 1;
 
-	bad_auth_error = http_response_json_key_value (
+	oki_doki = http_response_create_json_key_value (
+		HTTP_STATUS_OK, "oki", "doki"
+	);
+
+	bad_request_error = http_response_create_json_key_value (
+		HTTP_STATUS_BAD_REQUEST, "error", "Bad request!"
+	);
+
+	bad_auth_error = http_response_create_json_key_value (
 		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
 	);
 
-	not_found_error = http_response_json_key_value (
+	not_found_error = http_response_create_json_key_value (
 		HTTP_STATUS_NOT_FOUND, "error", "Not found!"
 	);
 
-	server_error = http_response_json_key_value (
+	server_error = http_response_create_json_key_value (
 		HTTP_STATUS_INTERNAL_SERVER_ERROR, "error", "Internal error!"
 	);
 
-	catch_all = http_response_json_key_value (
+	catch_all = http_response_create_json_key_value (
 		HTTP_STATUS_OK, "msg", "HTTP Cerver!"
 	);
 
 	if (
-		bad_auth_error && not_found_error && server_error
+		oki_doki
+		&& bad_request_error && bad_auth_error && not_found_error
+		&& server_error
 		&& catch_all
 	) retval = 0;
 

@@ -385,6 +385,12 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 
 #pragma region responses
 
+CERVER_PUBLIC struct _HttpResponse *oki_doki;
+CERVER_PUBLIC struct _HttpResponse *bad_request_error;
+CERVER_PUBLIC struct _HttpResponse *bad_auth_error;
+CERVER_PUBLIC struct _HttpResponse *not_found_error;
+CERVER_PUBLIC struct _HttpResponse *server_error;
+
 // adds a new global responses header
 // this header will be added to all the responses
 // if the response has the same header type,
