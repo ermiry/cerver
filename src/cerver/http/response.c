@@ -424,6 +424,23 @@ u8 http_response_compile (HttpResponse *res) {
 
 }
 
+void http_response_print (const HttpResponse *res) {
+
+	if (res) {
+		if (res->res) {
+			(void) printf (
+				"\n%.*s\n\n",
+				(int) res->res_len, (char *) res->res
+			);
+		}
+	}
+
+}
+
+#pragma endregion
+
+#pragma region send
+
 static u8 http_response_send_actual (
 	Socket *socket, 
 	const char *data, size_t data_size
@@ -595,16 +612,6 @@ u8 http_response_send_file (
 	}
 
 	return retval;
-
-}
-
-void http_response_print (HttpResponse *res) {
-
-	if (res) {
-		if (res->res) {
-			printf ("\n%.*s\n\n", (int) res->res_len, (char *) res->res);
-		}
-	}
 
 }
 

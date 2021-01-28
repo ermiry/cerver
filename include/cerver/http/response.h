@@ -113,6 +113,12 @@ CERVER_PUBLIC void http_response_compile_header (HttpResponse *res);
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_compile (HttpResponse *res);
 
+CERVER_PUBLIC void http_response_print (const HttpResponse *res);
+
+#pragma endregion
+
+#pragma region send
+
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send (
@@ -144,8 +150,6 @@ CERVER_PRIVATE u8 http_response_send_file (
 	int file, const char *filename,
 	struct stat *filestatus
 );
-
-CERVER_PUBLIC void http_response_print (HttpResponse *res);
 
 #pragma endregion
 
