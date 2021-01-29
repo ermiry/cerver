@@ -756,6 +756,72 @@ u8 http_response_render_file (
 
 #pragma region json
 
+static void http_response_create_json_common (
+	HttpResponse *res, const http_status status,
+	const char *json, const size_t json_len
+) {
+
+	res->status = status;
+
+	// add headers
+	http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
+	http_response_add_content_length_header (res, json_len);
+
+	// add body
+	res->data = (char *) json;
+	res->data_len = json_len;
+	res->data_ref = true;
+
+	// generate response
+	(void) http_response_compile (res);
+
+}
+
+HttpResponse *http_response_create_json (
+	const http_status status, const char *json, const size_t json_len
+) {
+
+	HttpResponse *res = NULL;
+
+	if (json) {
+		res = http_response_new ();
+		if (res) {
+			http_response_create_json_common (
+				res, status,
+				json, json_len
+			);
+		}
+	}
+
+	return res;
+
+}
+
+HttpResponse *http_response_create_json_key_value (
+	const http_status status, const char *key, const char *value
+) {
+	
+	HttpResponse *res = NULL;
+
+	if (key && value) {
+		res = http_response_new ();
+		if (res) {
+			char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
+			if (json) {
+				http_response_create_json_common (
+					res, status,
+					json, strlen (json)
+				);
+
+				free (json);
+			}
+		}
+	}
+
+	return res;
+
+}
+
 static HttpResponse *http_response_json_internal (
 	http_status status, const char *key, const char *value
 ) {

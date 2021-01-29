@@ -183,6 +183,14 @@ CERVER_EXPORT u8 http_response_render_file (
 
 #pragma region json
 
+CERVER_EXPORT HttpResponse *http_response_create_json (
+	const http_status status, const char *json, const size_t json_len
+);
+
+CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
+	const http_status status, const char *key, const char *value
+);
+
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 CERVER_EXPORT HttpResponse *http_response_json_msg (
