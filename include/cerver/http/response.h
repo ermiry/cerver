@@ -18,6 +18,7 @@
 extern "C" {
 #endif
 
+struct _HttpCerver;
 struct _HttpReceive;
 
 #pragma region responses
@@ -44,6 +45,8 @@ struct _HttpResponse {
 typedef struct _HttpResponse HttpResponse;
 
 CERVER_PRIVATE void *http_response_new (void);
+
+CERVER_PRIVATE void http_response_reset (HttpResponse *response);
 
 // correctly deletes the response and all of its data
 CERVER_PRIVATE void http_response_delete (void *res_ptr);
@@ -262,7 +265,7 @@ CERVER_EXPORT u8 http_response_json_custom_reference_send (
 #pragma region main
 
 CERVER_PRIVATE unsigned int http_responses_init (
-	const HttpCerver *http_cerver
+	const struct _HttpCerver *http_cerver
 );
 
 CERVER_PRIVATE void http_responses_end (void);

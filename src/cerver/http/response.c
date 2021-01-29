@@ -90,7 +90,7 @@ void *http_response_new (void) {
 
 }
 
-static void http_response_reset (HttpResponse *response) {
+void http_response_reset (HttpResponse *response) {
 
 	response->status = HTTP_STATUS_OK;
 
