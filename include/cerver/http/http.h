@@ -11,10 +11,11 @@
 #include "cerver/config.h"
 #include "cerver/handler.h"
 
+#include "cerver/http/headers.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/multipart.h"
-#include "cerver/http/route.h"
 #include "cerver/http/request.h"
+#include "cerver/http/route.h"
 
 #include "cerver/http/jwt/alg.h"
 
@@ -30,42 +31,9 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+struct _HttpResponse;
+
 struct jwt;
-
-#pragma region content
-
-#define CONTENT_TYPE_MAP(XX)								\
-	XX(0, HTML,		html,	text/html; charset=UTF-8)		\
-	XX(1, CSS,		css,	text/css)						\
-	XX(2, JS,		js,		application/javascript)			\
-	XX(3, JPG,		jpg,	image/jpg)						\
-	XX(4, PNG,		png,	image/png)						\
-	XX(5, MP3,		mp3,	audio/mp3)						\
-	XX(6, ICO,		ico,	image/x-icon)					\
-	XX(7, GIF,		gif,	image/gif)						\
-	XX(8, OCTET,	octet,	application/octet-stream)
-
-typedef enum ContentType {
-
-	#define XX(num, name, string, description) CONTENT_TYPE_##name = num,
-	CONTENT_TYPE_MAP(XX)
-	#undef XX
-
-} ContentType;
-
-CERVER_PUBLIC const char *http_content_type_string (
-	ContentType content_type
-);
-
-CERVER_PUBLIC const char *http_content_type_description (
-	ContentType content_type
-);
-
-CERVER_PUBLIC const char *http_content_type_by_extension (
-	const char *ext
-);
-
-#pragma endregion
 
 #pragma region kvp
 
@@ -140,6 +108,10 @@ struct _HttpCerver {
 
 	String *jwt_opt_pub_key_name;	// jwt public key filename
 	String *jwt_public_key;			// jwt actual public key
+
+	// responses
+	u8 n_response_headers;
+	String *response_headers[HTTP_REQUEST_HEADERS_SIZE];
 
 	// stats
 	size_t n_incompleted_requests;	// the request wasn't parsed completely
@@ -407,6 +379,26 @@ CERVER_EXPORT u8 http_cerver_auth_generate_bearer_jwt_json_with_value (
 CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 	HttpCerver *http_cerver, const char *bearer_token,
 	void *(*decode_data)(void *), void **decoded_data
+);
+
+#pragma endregion
+
+#pragma region responses
+
+CERVER_PUBLIC struct _HttpResponse *oki_doki;
+CERVER_PUBLIC struct _HttpResponse *bad_request_error;
+CERVER_PUBLIC struct _HttpResponse *bad_auth_error;
+CERVER_PUBLIC struct _HttpResponse *not_found_error;
+CERVER_PUBLIC struct _HttpResponse *server_error;
+
+// adds a new global responses header
+// this header will be added to all the responses
+// if the response has the same header type,
+// it will be used instead of the global header
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 http_cerver_add_responses_header (
+	HttpCerver *http_cerver,
+	HttpHeader type, const char *actual_header
 );
 
 #pragma endregion

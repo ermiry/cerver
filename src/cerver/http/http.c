@@ -16,24 +16,28 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
-#include "cerver/http/multipart.h"
 #include "cerver/http/method.h"
-#include "cerver/http/route.h"
+#include "cerver/http/multipart.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
+#include "cerver/http/route.h"
 
-#include "cerver/http/jwt/jwt.h"
 #include "cerver/http/jwt/alg.h"
+#include "cerver/http/jwt/jwt.h"
 
-#include "cerver/utils/utils.h"
-#include "cerver/utils/log.h"
 #include "cerver/utils/base64.h"
+#include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
-static HttpResponse *bad_auth_error = NULL;
-static HttpResponse *not_found_error = NULL;
-static HttpResponse *server_error = NULL;
+HttpResponse *oki_doki = NULL;
+HttpResponse *bad_request_error = NULL;
+HttpResponse *bad_auth_error = NULL;
+HttpResponse *not_found_error = NULL;
+HttpResponse *server_error = NULL;
+
 static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
@@ -84,44 +88,6 @@ static const char to_hex (const char code) {
 	
 	return hex[code & 15];
 	
-}
-
-#pragma endregion
-
-#pragma region content
-
-const char *http_content_type_string (ContentType content_type) {
-
-	switch (content_type) {
-		#define XX(num, name, string, description) case CONTENT_TYPE_##name: return #string;
-		CONTENT_TYPE_MAP(XX)
-		#undef XX
-
-		default: return NULL;
-	}
-
-}
-
-const char *http_content_type_description (ContentType content_type) {
-
-	switch (content_type) {
-		#define XX(num, name, string, description) case CONTENT_TYPE_##name: return #description;
-		CONTENT_TYPE_MAP(XX)
-		#undef XX
-
-		default: return NULL;
-	}
-
-}
-
-const char *http_content_type_by_extension (const char *ext) {
-
-	#define XX(num, name, string, description) if (!strcmp (#string, ext)) return #description;
-	CONTENT_TYPE_MAP(XX)
-	#undef XX
-
-	return NULL;
-
 }
 
 #pragma endregion
@@ -262,6 +228,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->n_response_headers = 0;
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+			http_cerver->response_headers[i] = NULL;
+
 		http_cerver->n_incompleted_requests = 0;
 		http_cerver->n_unhandled_requests = 0;
 
@@ -291,6 +261,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
+
+		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+			str_delete (http_cerver->response_headers[i]);
 
 		pthread_mutex_delete (http_cerver->mutex);
 
@@ -328,24 +301,34 @@ static unsigned int http_cerver_init_responses (void) {
 
 	unsigned int retval = 1;
 
-	bad_auth_error = http_response_json_key_value (
+	oki_doki = http_response_create_json_key_value (
+		HTTP_STATUS_OK, "oki", "doki"
+	);
+
+	bad_request_error = http_response_create_json_key_value (
+		HTTP_STATUS_BAD_REQUEST, "error", "Bad request!"
+	);
+
+	bad_auth_error = http_response_create_json_key_value (
 		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
 	);
 
-	not_found_error = http_response_json_key_value (
+	not_found_error = http_response_create_json_key_value (
 		HTTP_STATUS_NOT_FOUND, "error", "Not found!"
 	);
 
-	server_error = http_response_json_key_value (
+	server_error = http_response_create_json_key_value (
 		HTTP_STATUS_INTERNAL_SERVER_ERROR, "error", "Internal error!"
 	);
 
-	catch_all = http_response_json_key_value (
+	catch_all = http_response_create_json_key_value (
 		HTTP_STATUS_OK, "msg", "HTTP Cerver!"
 	);
 
 	if (
-		bad_auth_error && not_found_error && server_error
+		oki_doki
+		&& bad_request_error && bad_auth_error && not_found_error
+		&& server_error
 		&& catch_all
 	) retval = 0;
 
@@ -449,35 +432,57 @@ static unsigned int http_cerver_init_load_jwt_keys (
 
 }
 
+static unsigned int http_cerver_init_internal (
+	HttpCerver *http_cerver
+) {
+
+	unsigned int errors = 0;
+
+	#ifdef HTTP_DEBUG
+	cerver_log_msg ("Initializing HTTP cerver...");
+	#endif
+
+	// init HTTP jwt pool
+	errors |= http_jwt_init_pool ();
+
+	// load jwt keys
+	errors |= http_cerver_init_load_jwt_keys (http_cerver);
+
+	// init HTTP responses pool
+	errors |= http_responses_init (http_cerver);
+
+	// init common responses
+	errors |= http_cerver_init_responses ();
+
+	return errors;
+
+}
+
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
-		cerver_log_msg ("Initializing HTTP cerver...");
+		if (!http_cerver_init_internal (http_cerver)) {
+			#ifdef HTTP_DEBUG
+			cerver_log_msg ("Loading HTTP routes...");
+			#endif
 
-		// init common responses
-		(void) http_cerver_init_responses ();
+			// init top level routes
+			HttpRoute *route = NULL;
+			for (
+				ListElement *le = dlist_start (http_cerver->routes);
+				le; le = le->next
+			) {
+				route = (HttpRoute *) le->data;
+				
+				http_route_init (route);
+				http_route_print (route);
+			}
 
-		// init http jwt pool
-		(void) http_jwt_init_pool ();
-
-		cerver_log_msg ("Loading HTTP routes...");
-
-		// init top level routes
-		HttpRoute *route = NULL;
-		for (
-			ListElement *le = dlist_start (http_cerver->routes);
-			le; le = le->next
-		) {
-			route = (HttpRoute *) le->data;
 			
-			http_route_init (route);
-			http_route_print (route);
+			#ifdef HTTP_DEBUG
+			cerver_log_success ("Done loading HTTP routes!");
+			#endif
 		}
-
-		// load jwt keys
-		(void) http_cerver_init_load_jwt_keys (http_cerver);
-
-		cerver_log_success ("Done loading HTTP routes!");
 	}
 
 }
@@ -486,9 +491,13 @@ void http_cerver_init (HttpCerver *http_cerver) {
 void http_cerver_end (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
+		http_responses_end ();
+
 		pool_delete (http_jwt_pool);
 		http_jwt_pool = NULL;
 
+		http_response_delete (oki_doki);
+		http_response_delete (bad_request_error);
 		http_response_delete (bad_auth_error);
 		http_response_delete (not_found_error);
 		http_response_delete (server_error);
@@ -1157,6 +1166,43 @@ bool http_cerver_auth_validate_jwt (
 		}
 
 		jwt_valid_free (jwt_valid);
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
+#pragma region responses
+
+// adds a new global responses header
+// this header will be added to all the responses
+// if the response has the same header type,
+// it will be used instead of the global header
+// returns 0 on success, 1 on error
+u8 http_cerver_add_responses_header (
+	HttpCerver *http_cerver,
+	HttpHeader type, const char *actual_header
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
+		if (http_cerver->response_headers[type]) {
+			str_delete (http_cerver->response_headers[type]);
+		}
+
+		else {
+			http_cerver->n_response_headers += 1;
+		}
+		
+		http_cerver->response_headers[type] = str_create (
+			"%s: %s\r\n",
+			http_header_string (type), actual_header
+		);
+
+		retval = 0;
 	}
 
 	return retval;

@@ -6,16 +6,22 @@
 
 #include "cerver/handler.h"
 
+#include "cerver/http/content.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/status.h"
+
+#define HTTP_RESPONSE_POOL_INIT					32
+
+#define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+struct _HttpCerver;
 struct _HttpReceive;
 
-#pragma region main
+#pragma region responses
 
 struct _HttpResponse {
 
@@ -38,10 +44,18 @@ struct _HttpResponse {
 
 typedef struct _HttpResponse HttpResponse;
 
-CERVER_PUBLIC HttpResponse *http_response_new (void);
+CERVER_PRIVATE void *http_response_new (void);
+
+CERVER_PRIVATE void http_response_reset (HttpResponse *response);
 
 // correctly deletes the response and all of its data
-CERVER_PUBLIC void http_response_delete (HttpResponse *res);
+CERVER_PRIVATE void http_response_delete (void *res_ptr);
+
+// get a new HTTP response ready to be used
+CERVER_EXPORT HttpResponse *http_response_get (void);
+
+// correctly disposes a HTTP response
+CERVER_EXPORT void http_response_return (HttpResponse *response);
 
 // sets the http response's status code to be set in the header when compilling
 CERVER_EXPORT void http_response_set_status (
@@ -58,7 +72,19 @@ CERVER_EXPORT void http_response_set_header (
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_header (
-	HttpResponse *res, HttpHeader type, const char *actual_header
+	HttpResponse *res, const HttpHeader type, const char *actual_header
+);
+
+// adds a HTTP_HEADER_CONTENT_TYPE header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_content_type_header (
+	HttpResponse *res, const ContentType type
+);
+
+// adds a HTTP_HEADER_CONTENT_LENGTH header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_content_length_header (
+	HttpResponse *res, const size_t length
 );
 
 // sets the response's data (body), it will replace the existing one
@@ -89,6 +115,12 @@ CERVER_PUBLIC void http_response_compile_header (HttpResponse *res);
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_compile (HttpResponse *res);
+
+CERVER_PUBLIC void http_response_print (const HttpResponse *res);
+
+#pragma endregion
+
+#pragma region send
 
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
@@ -122,8 +154,6 @@ CERVER_PRIVATE u8 http_response_send_file (
 	struct stat *filestatus
 );
 
-CERVER_PUBLIC void http_response_print (HttpResponse *res);
-
 #pragma endregion
 
 #pragma region render
@@ -155,6 +185,14 @@ CERVER_EXPORT u8 http_response_render_file (
 #pragma endregion
 
 #pragma region json
+
+CERVER_EXPORT HttpResponse *http_response_create_json (
+	const http_status status, const char *json, const size_t json_len
+);
+
+CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
+	const http_status status, const char *key, const char *value
+);
 
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
@@ -221,6 +259,16 @@ CERVER_EXPORT u8 http_response_json_custom_reference_send (
 	unsigned int status,
 	const char *json, const size_t json_len
 );
+
+#pragma endregion
+
+#pragma region main
+
+CERVER_PRIVATE unsigned int http_responses_init (
+	const struct _HttpCerver *http_cerver
+);
+
+CERVER_PRIVATE void http_responses_end (void);
 
 #pragma endregion
 

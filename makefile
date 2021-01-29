@@ -134,9 +134,9 @@ SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT)
 # pull in dependency info for *existing* .o files
 -include $(OBJECTS:.$(OBJEXT)=.$(DEPEXT))
 
-$(SLIB): $(OBJECTS)
+$(SLIB):
 	$(MAKE) $(OBJECTS)
-	$(CC) $^ $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
+	$(CC) $(OBJECTS) $(LIB) -shared -o $(TARGETDIR)/$(SLIB)
 
 # compile sources
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
@@ -248,7 +248,7 @@ ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
-TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(CURL)
+TESTLIBS	:= -L /usr/local/lib $(PTHREAD)
 
 TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 
@@ -265,18 +265,77 @@ TESTOBJS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(OBJEXT)
 
 TESTCOVS	:= $(patsubst $(TESTDIR)/%,$(TESTBUILD)/%,$(TESTS:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
 
-test: $(TESTOBJS)
-	@mkdir -p ./$(TESTTARGET)
+TESTAPP		:= ./$(TESTTARGET)/app/libapp.so
+TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
+
+TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	TESTAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	TESTAPPFGS += -D TEST_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	TESTAPPFGS += -std=c++11 -fpermissive
+else
+	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+TESTAPPFGS += $(COMMON)
+
+TESTAPPLIBS := -L /usr/local/lib -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+
+TESTAPPLIB	:= -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+testapp:
+	@mkdir -p ./$(TESTTARGET)/app
+	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
+
+units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o ./$(TESTBUILD)/users.o -o ./$(TESTTARGET)/http $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/web.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/web $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/api.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/api $(TESTLIBS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/web/upload.o ./$(TESTBUILD)/web/curl.o -o ./$(TESTTARGET)/upload $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
+
+INTCLIENTIN		:= ./$(TESTBUILD)/client
+INTCLIENTOUT	:= ./$(TESTTARGET)/client
+INTCLIENTLIBS	:= $(TESTLIBS) $(CURL)
+
+integration-client:
+	$(CC) $(TESTINC) $(INTCLIENTIN)/api.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/api $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/upload.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/upload $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/web.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/web $(INTCLIENTLIBS)
+
+INTWEBIN		:= ./$(TESTBUILD)/web
+INTWEBOUT		:= ./$(TESTTARGET)/web
+INTWEBLIBS		:= $(TESTLIBS) $(TESTAPPLIB)
+
+integration-web:
+	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
+
+integration: testout $(TESTOBJS)
+	$(MAKE) integration-client
+	$(MAKE) integration-web
+
+testout:
+	@mkdir -p ./$(TESTTARGET)
+	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/web
+
+test: testout
+	$(MAKE) $(TESTOBJS)
+	$(MAKE) testapp
+	$(MAKE) units
+	$(MAKE) integration
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)

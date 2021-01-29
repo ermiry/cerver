@@ -1,85 +1,166 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include <time.h>
+#include <signal.h>
+
+#include <cerver/types/string.h>
+
+#include <cerver/collections/dlist.h>
+
+#include <cerver/version.h>
+#include <cerver/cerver.h>
+#include <cerver/handler.h>
+
+#include <cerver/http/http.h>
+#include <cerver/http/route.h>
+#include <cerver/http/request.h>
+#include <cerver/http/response.h>
+#include <cerver/http/json/json.h>
+#include <cerver/http/jwt/alg.h>
+
+#include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-#include "curl.h"
+#include <app/routes.h>
+#include <app/users.h>
 
-static const char *address = { "localhost.com:8080" };
+static Cerver *api_cerver = NULL;
 
-static size_t api_request_all_data_handler (
-	void *contents, size_t size, size_t nmemb, void *storage
-) {
+#pragma region end
 
-	(void) strncpy ((char *) storage, (char *) contents, size * nmemb);
+// correctly closes any on-going server and process when quitting the appplication
+void end (int dummy) {
 
-	return size * nmemb;
-
-}
-
-static unsigned int api_request_all_actual (
-	CURL *curl
-) {
-
-	unsigned int errors = 0;
-
-	char data_buffer[4096] = { 0 };
-	// char actual_address[128] = { 0 };
-
-	// GET /api/users
-	errors |= curl_simple_handle_data (
-		curl, address,
-		api_request_all_data_handler, data_buffer
-	);
-
-	// GET /test
-	// (void) snprintf (actual_address, 128, "%s/test", address);
-	// errors |= curl_simple_handle_data (
-	// 	curl, actual_address,
-	// 	api_request_all_data_handler, data_buffer
-	// );
-
-	return errors;
-
-}
-
-// perform requests to every route
-static unsigned int api_request_all (void) {
-
-	unsigned int retval = 1;
-
-	CURL *curl = curl_easy_init ();
-	if (curl) {
-		if (!api_request_all_actual (curl)) {
-			cerver_log_line_break ();
-			cerver_log_line_break ();
-
-			cerver_log_success (
-				"api_request_all () - All requests succeeded!"
-			);
-
-			cerver_log_line_break ();
-			cerver_log_line_break ();
-
-			retval = 0;
-		}
+	if (api_cerver) {
+		cerver_stats_print (api_cerver, false, false);
+		cerver_log_msg ("\nHTTP Cerver stats:\n");
+		http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
+		cerver_log_line_break ();
+		cerver_teardown (api_cerver);
 	}
 
-	curl_easy_cleanup (curl);
+	cerver_end ();
 
-	return retval;
+	users_end ();
+
+	exit (0);
 
 }
+
+#pragma endregion
+
+#pragma region routes
+
+// *
+static void catch_all_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	HttpResponse *res = http_response_json_msg (
+		(http_status) 200, "Cerver API implementation!"
+	);
+
+	if (res) {
+		#ifdef EXAMPLES_DEBUG
+		http_response_print (res);
+		#endif
+		http_response_send (res, http_receive);
+		http_response_delete (res);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region start
 
 int main (int argc, char **argv) {
 
-	cerver_log_init ();
+	srand (time (NULL));
 
-	(void) api_request_all ();
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGPIPE, SIG_IGN);
 
-	cerver_log_end ();
+	cerver_init ();
+
+	cerver_version_print_full ();
+
+	cerver_log_debug ("Cerver Web API Example");
+	printf ("\n");
+
+	users_init ();
+
+	api_cerver = cerver_create (
+		CERVER_TYPE_WEB,
+		"api-cerver",
+		8080,
+		PROTOCOL_TCP,
+		false,
+		2
+	);
+	
+	if (api_cerver) {
+		/*** cerver configuration ***/
+		cerver_set_receive_buffer_size (api_cerver, 4096);
+		cerver_set_thpool_n_threads (api_cerver, 4);
+		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);
+
+		cerver_set_reusable_address_flags (api_cerver, true);
+
+		/*** web cerver configuration ***/
+		HttpCerver *http_cerver = (HttpCerver *) api_cerver->cerver_data;
+
+		http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+		http_cerver_auth_set_jwt_priv_key_filename (http_cerver, "keys/key.key");
+		http_cerver_auth_set_jwt_pub_key_filename (http_cerver, "keys/key.key.pub");
+
+		// register top level routes
+		// GET /api/users
+		HttpRoute *users_route = http_route_create (REQUEST_METHOD_GET, "api/users", main_users_handler);
+		http_cerver_route_register (http_cerver, users_route);
+
+		// register users child routes
+		// POST api/users/login
+		HttpRoute *users_login_route = http_route_create (REQUEST_METHOD_POST, "login", users_login_handler);
+		http_route_child_add (users_route, users_login_route);
+
+		// POST api/users/register
+		HttpRoute *users_register_route = http_route_create (REQUEST_METHOD_POST, "register", users_register_handler);
+		http_route_child_add (users_route, users_register_route);
+
+		// GET api/users/profile
+		HttpRoute *users_profile_route = http_route_create (REQUEST_METHOD_GET, "profile", users_profile_handler);
+		http_route_set_auth (users_profile_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+		http_route_set_decode_data (users_profile_route, user_parse_from_json, user_delete);
+		http_route_child_add (users_route, users_profile_route);
+
+		// add a catch all route
+		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
+
+		if (cerver_start (api_cerver)) {
+			cerver_log_error (
+				"Failed to start %s!",
+				api_cerver->info->name->str
+			);
+
+			cerver_delete (api_cerver);
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create cerver!");
+
+		cerver_delete (api_cerver);
+	}
+
+	cerver_end ();
 
 	return 0;
 
 }
+
+#pragma endregion
