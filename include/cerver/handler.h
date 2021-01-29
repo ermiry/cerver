@@ -20,12 +20,14 @@ extern "C" {
 #endif
 
 struct _Socket;
+
+struct _Admin;
 struct _Cerver;
 struct _Client;
 struct _Connection;
 struct _Lobby;
+
 struct _Packet;
-struct _Admin;
 
 #pragma region handler
 
@@ -40,21 +42,21 @@ typedef enum HandlerType {
 } HandlerType;
 
 // the strcuture that will be passed to the handler
-struct _HandlerData {
+typedef struct HandlerData {
 
 	int handler_id;
 
 	void *data;                     // handler's own data
 	struct _Packet *packet;         // the packet to handle
 
-};
-
-typedef struct _HandlerData HandlerData;
+} HandlerData;
 
 struct _Handler {
 
 	HandlerType type;
-	int unique_id;                  // added every time a new handler gets created
+
+	// added every time a new handler gets created
+	int unique_id;
 
 	int id;
 	pthread_t thread_id;
@@ -75,7 +77,7 @@ struct _Handler {
 	// the method that this handler will execute to handle packets
 	Action handler;
 
-	// 27/05/2020 - used to avoid pushing job to the queue and instead handle
+	// used to avoid pushing job to the queue and instead handle
 	// the packet directly in the same thread
 	// this option is set to false as default
 	// pros - inmediate handle with no delays
@@ -84,7 +86,8 @@ struct _Handler {
 	// cons - calling thread will be busy until handler method is done
 	bool direct_handle;
 
-	// the jobs (packets) that are waiting to be handled - passed as args to the handler method
+	// the jobs (packets) that are waiting to be handled
+	// passed as args to the handler method
 	JobQueue *job_queue;
 
 	struct _Cerver *cerver;     // the cerver this handler belongs to
@@ -98,13 +101,13 @@ CERVER_PRIVATE void handler_delete (void *handler_ptr);
 
 // creates a new handler
 // handler method is your actual app packet handler
-CERVER_EXPORT Handler *handler_create (
-	Action handler_method
-);
+CERVER_EXPORT Handler *handler_create (Action handler_method);
 
-// creates a new handler that will be used for cerver's multiple app handlers configuration
+// creates a new handler that will be used for
+// cerver's multiple app handlers configuration
 // it should be registered to the cerver before it starts
-// the user is responsible for setting the unique id, which will be used to match
+// the user is responsible for setting the unique id,
+// which will be used to match
 // incoming packets
 // handler method is your actual app packet handler
 CERVER_EXPORT Handler *handler_create_with_id (
@@ -112,7 +115,8 @@ CERVER_EXPORT Handler *handler_create_with_id (
 );
 
 // sets the handler's data directly
-// this data will be passed to the handler method using a HandlerData structure
+// this data will be passed to the handler method
+// using a HandlerData structure
 CERVER_EXPORT void handler_set_data (
 	Handler *handler, void *data
 );
@@ -147,6 +151,37 @@ CERVER_PRIVATE int handler_start (Handler *handler);
 
 #pragma region handlers
 
+#define CERVER_HANDLER_ERROR_MAP(XX)											\
+	XX(0,	NONE,			None,				No handler error)				\
+	XX(1,	PACKET,			Bad Packet,			Packet check failed)			\
+	XX(2,	DROPPED,		Dropped Connection, The connection has been ended)
+
+typedef enum CerverHandlerError {
+
+	#define XX(num, name, string, description) CERVER_HANDLER_ERROR_##name = num,
+	CERVER_HANDLER_ERROR_MAP (XX)
+	#undef XX
+
+} CerverHandlerError;
+
+CERVER_PUBLIC const char *cerver_handler_error_to_string (
+	const CerverHandlerError error
+);
+
+CERVER_PUBLIC const char *cerver_handler_error_description (
+	const CerverHandlerError error
+);
+
+// handles a request from a client to get a file
+CERVER_PRIVATE void cerver_request_get_file (
+	struct _Packet *packet
+);
+
+// handles a request from a client to upload a file
+CERVER_PRIVATE void cerver_request_send_file (
+	struct _Packet *packet
+);
+
 // sends back a test packet to the client!
 CERVER_PRIVATE void cerver_test_packet_handler (
 	struct _Packet *packet
@@ -154,60 +189,17 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 
 #pragma endregion
 
-#pragma region sock receive
-
-struct _SockReceive {
-
-	struct _Packet *spare_packet;
-	size_t missing_packet;
-
-	void *header;
-	char *header_end;
-	// unsigned int curr_header_pos;
-	unsigned int remaining_header;
-	bool complete_header;
-
-};
-
-typedef struct _SockReceive SockReceive;
-
-CERVER_PRIVATE SockReceive *sock_receive_new (void);
-
-CERVER_PRIVATE void sock_receive_delete (void *sock_receive_ptr);
-
-#pragma endregion
-
 #pragma region receive
 
 // the default timeout when handling a connection in dedicated thread
-#define DEFAULT_SOCKET_RECV_TIMEOUT         5
-
-struct _ReceiveHandle {
-
-	ReceiveType type;
-
-	struct _Cerver *cerver;
-
-	struct _Socket *socket;
-	struct _Connection *connection;
-	struct _Client *client;
-	struct _Admin *admin;
-
-	struct _Lobby *lobby;
-
-	char *buffer;
-	size_t buffer_size;
-
-};
-
-typedef struct _ReceiveHandle ReceiveHandle;
-
-CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
+#define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
 
 // default cerver receive handler
-CERVER_PRIVATE void cerver_receive_handle_buffer (void *receive_ptr);
+CERVER_PRIVATE void cerver_receive_handle_buffer (
+	void *receive_handle_ptr
+);
 
-struct _CerverReceive {
+typedef struct CerverReceive {
 
 	ReceiveType type;
 
@@ -220,14 +212,14 @@ struct _CerverReceive {
 
 	struct _Lobby *lobby;
 
-};
-
-typedef struct _CerverReceive CerverReceive;
+} CerverReceive;
 
 CERVER_PRIVATE void cerver_receive_delete (void *ptr);
 
 CERVER_PRIVATE CerverReceive *cerver_receive_create (
-	ReceiveType receive_type, struct _Cerver *cerver, const i32 sock_fd
+	ReceiveType receive_type,
+	struct _Cerver *cerver,
+	const i32 sock_fd
 );
 
 CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
@@ -236,12 +228,34 @@ CERVER_PRIVATE CerverReceive *cerver_receive_create_full (
 	struct _Client *client, struct _Connection *connection
 );
 
-CERVER_PRIVATE void cerver_switch_receive_handle_failed (
+// handles a failed receive from a connection associatd with a client
+// ends the connection to prevent seg faults or signals for bad sock fd
+CERVER_PRIVATE void cerver_receive_handle_failed (
 	CerverReceive *cr
 );
 
-// receive all incoming data from the socket
-CERVER_PRIVATE void cerver_receive (void *ptr);
+CERVER_PRIVATE void cerver_receive_internal (
+	CerverReceive *cr,
+	char *packet_buffer, const size_t packet_buffer_size
+);
+
+#pragma endregion
+
+#pragma region register
+
+// select how client connection will be handled based on cerver's handler type
+CERVER_PRIVATE u8 cerver_register_new_connection_normal_default_select_handler (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
+
+// select how a connection will be handled
+// based on cerver's handler type
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 cerver_handler_register_connection (
+	struct _Cerver *cerver,
+	struct _Client *client, struct _Connection *connection
+);
 
 #pragma endregion
 
@@ -283,18 +297,14 @@ CERVER_PRIVATE u8 cerver_poll_unregister_connection (
 );
 
 // server poll loop to handle events in the registered socket's fds
-CERVER_PRIVATE u8 cerver_poll (
-	struct _Cerver *cerver
-);
+CERVER_PRIVATE u8 cerver_poll (struct _Cerver *cerver);
 
 #pragma endregion
 
 #pragma region threads
 
 // handle new connections in dedicated threads
-CERVER_PRIVATE u8 cerver_threads (
-	struct _Cerver *cerver
-);
+CERVER_PRIVATE u8 cerver_threads (struct _Cerver *cerver);
 
 #pragma endregion
 
