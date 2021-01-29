@@ -7,6 +7,9 @@
 #include "../test.h"
 
 static const char *header = { "HTTP/1.1 200 OK\r\nServer: Cerver/2.0\r\nContent-Type: application/json\r\nContent-Length: 128\r\n\r\n" };
+static const char *content_type_header = { "Content-Type: application/json\r\n" };
+static const char *content_length_header = { "Content-Length: 128\r\n" };
+static const char *json_data = { "{ \"oki\": \"doki\" }" };
 
 static HttpResponse *test_http_response_new (void) {
 
@@ -89,9 +92,42 @@ static void test_http_response_set_header (void) {
 
 static void test_http_response_add_header (void) {
 
+	u8 result = 0;
 	HttpResponse *response = test_http_response_new ();
 
-	// TODO:
+	// add one header
+	result = http_response_add_header (
+		response, HTTP_HEADER_CONTENT_TYPE,
+		http_content_type_description (HTTP_CONTENT_TYPE_JSON)
+	);
+
+	test_check_unsigned_eq (result, 0, NULL);
+	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
+	test_check_unsigned_eq (response->n_headers, 1, NULL);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]->str);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, content_type_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, strlen (content_type_header), NULL);
+	test_check_null_ptr (response->header);
+	test_check_unsigned_eq (response->header_len, 0, NULL);
+
+	// add another header
+	result = http_response_add_header (
+		response, HTTP_HEADER_CONTENT_LENGTH, "128"
+	);
+
+	test_check_unsigned_eq (result, 0, NULL);
+	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
+	test_check_unsigned_eq (response->n_headers, 2, NULL);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, content_length_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, strlen (content_length_header), NULL);
+	test_check_null_ptr (response->header);
+	test_check_unsigned_eq (response->header_len, 0, NULL);
+
+	// TODO: compile header
+	// http_response_compile_header (response);
 
 	http_response_delete (response);
 
@@ -101,7 +137,19 @@ static void test_http_response_add_content_type_header (void) {
 
 	HttpResponse *response = test_http_response_new ();
 
-	// TODO:
+	u8 result = http_response_add_content_type_header (
+		response, HTTP_CONTENT_TYPE_JSON
+	);
+
+	test_check_unsigned_eq (result, 0, NULL);
+	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
+	test_check_unsigned_eq (response->n_headers, 1, NULL);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]->str);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, content_type_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, strlen (content_type_header), NULL);
+	test_check_null_ptr (response->header);
+	test_check_unsigned_eq (response->header_len, 0, NULL);
 
 	http_response_delete (response);
 
@@ -111,7 +159,19 @@ static void test_http_response_add_content_length_header (void) {
 
 	HttpResponse *response = test_http_response_new ();
 
-	// TODO:
+	u8 result = http_response_add_content_length_header (
+		response, 128
+	);
+
+	test_check_unsigned_eq (result, 0, NULL);
+	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
+	test_check_unsigned_eq (response->n_headers, 1, NULL);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]);
+	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, content_length_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, strlen (content_length_header), NULL);
+	test_check_null_ptr (response->header);
+	test_check_unsigned_eq (response->header_len, 0, NULL);
 
 	http_response_delete (response);
 
@@ -121,7 +181,10 @@ static void test_http_response_set_data (void) {
 
 	HttpResponse *response = test_http_response_new ();
 
-	// TODO:
+	http_response_set_data (response, strdup (json_data), strlen (json_data));
+	test_check_ptr (response->data);
+	test_check_unsigned_eq (response->data_len, strlen (json_data), NULL);
+	test_check_bool_eq (response->data_ref, false, NULL);
 
 	http_response_delete (response);
 
@@ -131,7 +194,10 @@ static void test_http_response_set_data_ref (void) {
 
 	HttpResponse *response = test_http_response_new ();
 
-	// TODO:
+	http_response_set_data_ref (response, (void *) json_data, strlen (json_data));
+	test_check_ptr (response->data);
+	test_check_unsigned_eq (response->data_len, strlen (json_data), NULL);
+	test_check_bool_eq (response->data_ref, true, NULL);
 
 	http_response_delete (response);
 
