@@ -92,9 +92,12 @@ typedef struct _AuthMethod AuthMethod;
 
 #pragma region handler
 
-// FIXME:
-// handles an packet from an on hold connection
-CERVER_PRIVATE void on_hold_packet_handler (void *packet_ptr);
+// handles a packet from an on hold connection
+// returns 0 if we can / need to handle more packets
+// returns 1 if the connection has been ended or removed from on hold
+CERVER_PRIVATE u8 on_hold_packet_handler (
+	struct _Packet *packet
+);
 
 #pragma endregion
 
