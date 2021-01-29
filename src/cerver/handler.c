@@ -1248,31 +1248,6 @@ static u8 cerver_packet_select_handler (
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 
-static ReceiveHandle *receive_handle_new (void) {
-
-	ReceiveHandle *receive_handle = (ReceiveHandle *) malloc (sizeof (ReceiveHandle));
-	if (receive_handle) {
-		receive_handle->type = RECEIVE_TYPE_NONE;
-
-		receive_handle->cerver = NULL;
-
-		receive_handle->socket = NULL;
-		receive_handle->connection = NULL;
-		receive_handle->client = NULL;
-		receive_handle->admin = NULL;
-
-		receive_handle->lobby = NULL;
-
-		receive_handle->buffer = NULL;
-		receive_handle->buffer_size = 0;
-	}
-
-	return receive_handle;
-
-}
-
-void receive_handle_delete (void *receive_ptr) { if (receive_ptr) free (receive_ptr); }
-
 CerverReceive *cerver_receive_new (void) {
 
 	CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
@@ -1295,96 +1270,102 @@ CerverReceive *cerver_receive_new (void) {
 
 void cerver_receive_delete (void *ptr) { if (ptr) free (ptr); }
 
-static inline void cerver_receive_create_normal (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_normal (
+	CerverReceive *cr,
+	Cerver *cerver, const i32 sock_fd
+) {
 
-	if (cr) {
-		cr->client = client_get_by_sock_fd (cerver, sock_fd);
-		if (cr->client) {
-			cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
-			if (cr->connection) {
-				cr->socket = cr->connection->socket;
-			}
-		}
-
-		// for what ever reason we have a rogue connection
-		else {
-			// #ifdef CERVER_DEBUG
-			cerver_log_error (
-				"cerver_receive_create () - RECEIVE_TYPE_NORMAL - no client with sock fd <%d>",
-				sock_fd
-			);
-			// #endif
-
-			// remove the sock fd from the cerver's main poll array
-			cerver_poll_unregister_sock_fd (cerver, sock_fd);
-
-			// try to remove the sock fd from the cerver's map
-			const void *key = &sock_fd;
-			htab_remove (cerver->client_sock_fd_map, key, sizeof (i32));
-
-			close (sock_fd);        // just close the socket
-		}
-	}
-
-}
-
-static inline void cerver_receive_create_on_hold (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
-
-	if (cr) {
-		cr->connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+	cr->client = client_get_by_sock_fd (cerver, sock_fd);
+	if (cr->client) {
+		cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
 		if (cr->connection) {
 			cr->socket = cr->connection->socket;
 		}
+	}
 
-		// for what ever reason we have a rogue connection
-		else {
-			// #ifdef CERVER_DEBUG
-			cerver_log_error (
-				"cerver_receive_create () - RECEIVE_TYPE_ON_HOLD - no connection with sock fd <%d>",
-				sock_fd
-			);
-			// #endif
+	// for what ever reason we have a rogue connection
+	else {
+		// #ifdef CERVER_DEBUG
+		cerver_log_error (
+			"cerver_receive_create () - RECEIVE_TYPE_NORMAL - no client with sock fd <%d>",
+			sock_fd
+		);
+		// #endif
 
-			// remove the sock fd from the cerver's on hold poll array
-			on_hold_poll_unregister_sock_fd (cerver, sock_fd);
+		// remove the sock fd from the cerver's main poll array
+		cerver_poll_unregister_sock_fd (cerver, sock_fd);
 
-			close (sock_fd);        // just close the socket
-		}
+		// try to remove the sock fd from the cerver's map
+		const void *key = &sock_fd;
+		htab_remove (cerver->client_sock_fd_map, key, sizeof (i32));
+
+		close (sock_fd);        // just close the socket
 	}
 
 }
 
-static inline void cerver_receive_create_admin (CerverReceive *cr, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_on_hold (
+	CerverReceive *cr,
+	Cerver *cerver, const i32 sock_fd
+) {
 
-	if (cr) {
-		cr->admin = admin_get_by_sock_fd (cerver->admin, sock_fd);
-		if (cr->admin) {
-			cr->client = cr->admin->client;
-			cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
-			if (cr->connection) {
-				cr->socket = cr->connection->socket;
-			}
-		}
+	cr->connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+	if (cr->connection) {
+		cr->socket = cr->connection->socket;
+	}
 
-		// for what ever reason we have a rogue connection
-		else {
-			// #ifdef ADMIN_DEBUG
-			cerver_log_error (
-				"cerver_receive_create () - RECEIVE_TYPE_ADMIN - no admin with sock fd <%d>",
-				sock_fd
-			);
-			// #endif
+	// for what ever reason we have a rogue connection
+	else {
+		// #ifdef CERVER_DEBUG
+		cerver_log_error (
+			"cerver_receive_create () - RECEIVE_TYPE_ON_HOLD - no connection with sock fd <%d>",
+			sock_fd
+		);
+		// #endif
 
-			// remove the sock fd from the cerver's admin poll array
-			admin_cerver_poll_unregister_sock_fd (cerver->admin, sock_fd);
+		// remove the sock fd from the cerver's on hold poll array
+		on_hold_poll_unregister_sock_fd (cerver, sock_fd);
 
-			close (sock_fd);        // just close the socket
-		}
+		close (sock_fd);        // just close the socket
 	}
 
 }
 
-CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, const i32 sock_fd) {
+static inline void cerver_receive_create_admin (
+	CerverReceive *cr,
+	Cerver *cerver, const i32 sock_fd
+) {
+
+	cr->admin = admin_get_by_sock_fd (cerver->admin, sock_fd);
+	if (cr->admin) {
+		cr->client = cr->admin->client;
+		cr->connection = connection_get_by_sock_fd_from_client (cr->client, sock_fd);
+		if (cr->connection) {
+			cr->socket = cr->connection->socket;
+		}
+	}
+
+	// for what ever reason we have a rogue connection
+	else {
+		// #ifdef ADMIN_DEBUG
+		cerver_log_error (
+			"cerver_receive_create () - RECEIVE_TYPE_ADMIN - no admin with sock fd <%d>",
+			sock_fd
+		);
+		// #endif
+
+		// remove the sock fd from the cerver's admin poll array
+		admin_cerver_poll_unregister_sock_fd (cerver->admin, sock_fd);
+
+		close (sock_fd);        // just close the socket
+	}
+
+}
+
+CerverReceive *cerver_receive_create (
+	ReceiveType receive_type,
+	Cerver *cerver, const i32 sock_fd
+) {
 
 	CerverReceive *cr = cerver_receive_new ();
 	if (cr) {
@@ -1395,11 +1376,17 @@ CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, 
 		switch (cr->type) {
 			case RECEIVE_TYPE_NONE: break;
 
-			case RECEIVE_TYPE_NORMAL: cerver_receive_create_normal (cr, cerver, sock_fd); break;
+			case RECEIVE_TYPE_NORMAL:
+				cerver_receive_create_normal (cr, cerver, sock_fd);
+				break;
 
-			case RECEIVE_TYPE_ON_HOLD: cerver_receive_create_on_hold (cr, cerver, sock_fd); break;
+			case RECEIVE_TYPE_ON_HOLD:
+				cerver_receive_create_on_hold (cr, cerver, sock_fd);
+				break;
 
-			case RECEIVE_TYPE_ADMIN: cerver_receive_create_admin (cr, cerver, sock_fd); break;
+			case RECEIVE_TYPE_ADMIN:
+				cerver_receive_create_admin (cr, cerver, sock_fd);
+				break;
 
 			default: break;
 		}
@@ -1409,7 +1396,8 @@ CerverReceive *cerver_receive_create (ReceiveType receive_type, Cerver *cerver, 
 
 }
 
-CerverReceive *cerver_receive_create_full (ReceiveType receive_type,
+CerverReceive *cerver_receive_create_full (
+	ReceiveType receive_type,
 	Cerver *cerver,
 	Client *client, Connection *connection
 ) {
