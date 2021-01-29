@@ -14,6 +14,7 @@ int main (int argc, char **argv) {
 	(void) printf ("Testing HTTP...\n");
 
 	// unit tests
+	http_tests_responses ();
 	http_tests_jwt ();
 
 	// integration tests
