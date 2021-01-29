@@ -49,10 +49,10 @@ void main_handler (
 ) {
 
 	if (http_response_render_file (
-		http_receive, "./examples/web/public/index.html"
+		http_receive, "./public/index.html"
 	)) {
 		cerver_log_error (
-			"Failed to send ./examples/web/public/index.html"
+			"Failed to send ./public/index.html"
 		);
 	}
 
@@ -233,7 +233,7 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
-		http_cerver_static_path_add (http_cerver, "./examples/web/public");
+		http_cerver_static_path_add (http_cerver, "./public");
 
 		// GET /
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
