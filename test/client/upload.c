@@ -6,7 +6,7 @@
 
 #include "curl.h"
 
-static const char *address = { "localhost.com:8080" };
+static const char *address = { "127.0.0.1:8080" };
 
 static size_t upload_request_all_data_handler (
 	void *contents, size_t size, size_t nmemb, void *storage
