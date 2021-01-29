@@ -26,9 +26,9 @@ static TimeSpec *timespec_new (void) {
 }
 
 void timespec_delete (void *timespec_ptr) {
-	
+
 	if (timespec_ptr) free (timespec_ptr);
-	
+
 }
 
 TimeSpec *timer_get_timespec (void) {

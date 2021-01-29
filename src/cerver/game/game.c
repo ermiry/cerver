@@ -606,27 +606,25 @@ static void game_lobby_start (Packet *packet) {
 void game_packet_handler (Packet *packet) {
 
 	if (packet) {
-		if (packet->header) {
-			switch (packet->header->request_type) {
-				// prepares lobby's game data structures
-				case GAME_PACKET_TYPE_GAME_INIT: game_lobby_init (packet); break;
+		switch (packet->header.request_type) {
+			// prepares lobby's game data structures
+			case GAME_PACKET_TYPE_GAME_INIT: game_lobby_init (packet); break;
 
-				// initializes the lobby's handler & update (starts the game)
-				case GAME_PACKET_TYPE_GAME_START: game_lobby_start (packet); break;
+			// initializes the lobby's handler & update (starts the game)
+			case GAME_PACKET_TYPE_GAME_START: game_lobby_start (packet); break;
 
-				case GAME_PACKET_TYPE_LOBBY_CREATE: game_lobby_create (packet); break;
-				case GAME_PACKET_TYPE_LOBBY_JOIN: game_lobby_join (packet); break;
-				case GAME_PACKET_TYPE_LOBBY_LEAVE: game_lobby_leave (packet); break;
-				case GAME_PACKET_TYPE_LOBBY_UPDATE: break;
-				case GAME_PACKET_TYPE_LOBBY_DESTROY: break;
+			case GAME_PACKET_TYPE_LOBBY_CREATE: game_lobby_create (packet); break;
+			case GAME_PACKET_TYPE_LOBBY_JOIN: game_lobby_join (packet); break;
+			case GAME_PACKET_TYPE_LOBBY_LEAVE: game_lobby_leave (packet); break;
+			case GAME_PACKET_TYPE_LOBBY_UPDATE: break;
+			case GAME_PACKET_TYPE_LOBBY_DESTROY: break;
 
-				default:
-					cerver_log (
-						LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
-						"Got a game packet of unknown type!"
-					);
-					break;
-			}
+			default:
+				cerver_log (
+					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
+					"Got a game packet of unknown type!"
+				);
+				break;
 		}
 	}
 
