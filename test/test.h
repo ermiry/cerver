@@ -33,10 +33,6 @@
 
 #define test_check_ptr_ne(X, Y) test_check (X != Y, NULL)
 
-#define test_check_int_ne(X, Y) test_check (X != Y, NULL)
-
-#define test_check_int_gt(X, Y) test_check (X > Y, NULL)
-
 #define																\
 	test_check_ptr(ptr)												\
 	({																\
@@ -109,6 +105,10 @@
 		}															\
 	})
 
+#define test_check_unsigned_ne(X, Y) test_check (X != Y, NULL)
+
+#define test_check_unsigned_gt(X, Y) test_check (X > Y, NULL)
+
 #define																\
 	test_check_int_eq(value, expected, msg)							\
 	({																\
@@ -124,6 +124,10 @@
 			exit (1);												\
 		}															\
 	})
+
+#define test_check_int_ne(X, Y) test_check (X != Y, NULL)
+
+#define test_check_int_gt(X, Y) test_check (X > Y, NULL)
 
 #define																\
 	test_check_long_int_eq(value, expected, msg)					\
