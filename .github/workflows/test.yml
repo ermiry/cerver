@@ -28,6 +28,14 @@ jobs:
       - name: Unit Tests
         run: bash test/run.sh
 
+      - name: Web Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/web
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Coverage
         run: make coverage
 
