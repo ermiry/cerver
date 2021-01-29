@@ -442,9 +442,6 @@ static unsigned int http_cerver_init_internal (
 	cerver_log_msg ("Initializing HTTP cerver...");
 	#endif
 
-	// init common responses
-	errors |= http_cerver_init_responses ();
-
 	// init HTTP jwt pool
 	errors |= http_jwt_init_pool ();
 
@@ -453,6 +450,9 @@ static unsigned int http_cerver_init_internal (
 
 	// init HTTP responses pool
 	errors |= http_responses_init (http_cerver);
+
+	// init common responses
+	errors |= http_cerver_init_responses ();
 
 	return errors;
 
