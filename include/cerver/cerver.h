@@ -53,6 +53,7 @@
 #define CERVER_DEFAULT_ON_HOLD_TIMEOUT				2000
 #define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
 #define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
+#define CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE	4096
 
 #define CERVER_DEFAULT_USE_SESSIONS					false
 
@@ -276,6 +277,7 @@ struct _Cerver {
 	pthread_mutex_t *on_hold_poll_lock;
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
+	size_t on_hold_receive_buffer_size;
 
 	// allow the clients to use sessions (have multiple connections)
 	bool use_sessions;
@@ -455,6 +457,12 @@ CERVER_EXPORT void cerver_set_on_hold_check_packets (
 	Cerver *cerver, bool check
 );
 
+// sets the size of the buffer to be allocated
+// to receive packets from on hold connections
+CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
+	Cerver *cerver, const size_t on_hold_receive_buffer_size
+);
+
 // configures the cerver to use client sessions
 // This will allow for multiple connections from the same client,
 // or you can use it to allow different connections from different devices using a token
@@ -475,7 +483,8 @@ CERVER_EXPORT void cerver_set_handle_recieved_buffer (
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
 CERVER_EXPORT void cerver_set_app_handlers (
 	Cerver *cerver,
-	struct _Handler *app_handler, struct _Handler *app_error_handler
+	struct _Handler *app_handler,
+	struct _Handler *app_error_handler
 );
 
 // sets option to automatically delete PACKET_TYPE_APP packets after use
@@ -526,7 +535,8 @@ CERVER_EXPORT void cerver_set_check_packets (
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update (
 	Cerver *cerver,
-	Action update, void *update_args, void (*delete_update_args)(void *),
+	Action update,
+	void *update_args, void (*delete_update_args)(void *),
 	const u8 fps
 );
 
@@ -536,7 +546,8 @@ CERVER_EXPORT void cerver_set_update (
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update_interval (
 	Cerver *cerver,
-	Action update, void *update_args, void (*delete_update_args)(void *),
+	Action update,
+	void *update_args, void (*delete_update_args)(void *),
 	const u32 interval
 );
 
@@ -552,7 +563,9 @@ CERVER_PRIVATE int cerver_sockets_pool_push (
 	Cerver *cerver, struct _Socket *socket
 );
 
-CERVER_PRIVATE struct _Socket *cerver_sockets_pool_pop (Cerver *cerver);
+CERVER_PRIVATE struct _Socket *cerver_sockets_pool_pop (
+	Cerver *cerver
+);
 
 #pragma endregion
 
@@ -612,7 +625,9 @@ struct _CerverUpdate {
 
 typedef struct _CerverUpdate CerverUpdate;
 
-CERVER_PRIVATE CerverUpdate *cerver_update_new (Cerver *cerver, void *args);
+CERVER_PRIVATE CerverUpdate *cerver_update_new (
+	Cerver *cerver, void *args
+);
 
 CERVER_PUBLIC void cerver_update_delete (void *cerver_update_ptr);
 
