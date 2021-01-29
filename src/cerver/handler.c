@@ -458,41 +458,6 @@ int handler_start (Handler *handler) {
 
 #pragma endregion
 
-#pragma region sock receive
-
-SockReceive *sock_receive_new (void) {
-
-	SockReceive *sr = (SockReceive *) malloc (sizeof (SockReceive));
-	if (sr) {
-		sr->spare_packet = NULL;
-		sr->missing_packet = 0;
-
-		sr->header = NULL;
-		sr->header_end = NULL;
-		// sr->curr_header_pos = 0;
-		sr->remaining_header = 0;
-		sr->complete_header = false;
-	}
-
-	return sr;
-
-}
-
-void sock_receive_delete (void *sock_receive_ptr) {
-
-	if (sock_receive_ptr) {
-		SockReceive *sock_receive = (SockReceive *) sock_receive_ptr;
-
-		packet_delete (sock_receive->spare_packet);
-		if (sock_receive->header) free (sock_receive->header);
-
-		free (sock_receive_ptr);
-	}
-
-}
-
-#pragma endregion
-
 #pragma region handlers
 
 // handles a packet of type PACKET_TYPE_CLIENT
