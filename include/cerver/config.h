@@ -46,17 +46,16 @@
 	#define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
 
+#ifndef MAX
+	#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#endif
+
 #ifndef ARRAY_SIZE
 	#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
 #ifndef ELEM_AT
 	#define ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
-#endif
-
-// On some platforms, max() may already be defined
-#ifndef max
-	#define max(a, b) ((a) > (b) ? (a) : (b))
 #endif
 
 // va_copy is a C99 feature. In C89 implementations, it's sometimes
