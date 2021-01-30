@@ -1,18 +1,20 @@
 ## General
-- Updated test Dockerfile to use tests instead of examples
-- Added simple web integration test to test workflow
+- Changed MAX macro in config header to avoid cpp errors
+- Updated admin & auth methods with latest sources
+- Updated packets methods & header field reference
+- Updated client & connection methods with latest implementations
+- Updated test workflow with more integration tests
 
-## HTTP
-- Added global responses headers in HTTP cerver structure
-- Moved HTTP content types definitions to dedicated sources
-- Added methods to add content related headers to responses
-- Added base HTTP responses pool & added related public methods
-- Handling global headers in http_response_compile_header ()
-- Added new methods to create HTTP responses with a json body
+## Handler
+- Updated main packet handler methods with latest implementations
+- Added new cerver_receive_handle_buffer () implementation
+
+## Examples
+- Updated examples to be compatible with latest types & methods
 
 ## Tests
-- Added base integration tests compilation rules in makefile
-- Added base test app definitions & methods
-- Refactored test users methods to be part of the test app sources
-- Added base web cerver integration tests in dedicated directory
-- Added base HTTP responses methods unit tests
+- Added more HTTP responses methods unit tests
+- Added latest packets & threads methods unit tests
+- Added cerver & client handlers integration tests
+- Added latest available cerver & client integration tests
+- Added cerver-client integration tests in dedicated test script
