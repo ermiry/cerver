@@ -2,6 +2,8 @@
 #include <string.h>
 
 #include "cerver/handler.h"
+#include "cerver/packets.h"
+#include "cerver/receive.h"
 
 const char *receive_error_to_string (
 	const ReceiveError error
