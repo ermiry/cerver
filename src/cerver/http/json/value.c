@@ -525,7 +525,7 @@ static json_t **json_array_grow(json_array_t *array, size_t amount, int copy) {
 
     old_table = array->table;
 
-    new_size = max(array->size + amount, array->size * 2);
+    new_size = MAX (array->size + amount, array->size * 2);
     new_table = (json_t **) jsonp_malloc(new_size * sizeof(json_t *));
     if (!new_table)
         return NULL;

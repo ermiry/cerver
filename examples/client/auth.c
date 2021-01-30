@@ -70,7 +70,7 @@ static void client_app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Got a test message from cerver!"); break;
 
 			default:
@@ -129,7 +129,7 @@ static void *client_event_connection_close (void *client_event_data_ptr) {
 		if (client_event_data->connection) {
 			cerver_log_warning (
 				"client_event_connection_close () - connection <%s> has been closed!",
-				client_event_data->connection->name->str
+				client_event_data->connection->name
 			);
 		}
 
@@ -148,7 +148,7 @@ static void *client_event_auth_sent (void *client_event_data_ptr) {
 		if (client_event_data->connection) {
 			cerver_log_debug (
 				"client_event_auth_sent () - sent connection <%s> auth data!",
-				client_event_data->connection->name->str
+				client_event_data->connection->name
 			);
 		}
 
@@ -167,7 +167,7 @@ static void *client_error_failed_auth (void *client_error_data_ptr) {
 		if (client_error_data->connection) {
 			cerver_log_error (
 				"client_error_failed_auth () - connection <%s> failed to authenticate!",
-				client_error_data->connection->name->str
+				client_error_data->connection->name
 			);
 		}
 
@@ -186,7 +186,7 @@ static void *client_event_success_auth (void *client_event_data_ptr) {
 		if (client_event_data->connection) {
 			cerver_log_success (
 				"client_event_success_auth () - connection <%s> has been authenticated!",
-				client_event_data->connection->name->str
+				client_event_data->connection->name
 			);
 		}
 
@@ -255,7 +255,7 @@ static void handler (void *data) {
 	if (data) {
 		Packet *packet = (Packet *) data;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case TEST_MSG: handle_test_request (packet); break;
 
 			default:

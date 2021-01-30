@@ -106,7 +106,7 @@ static CerverInfo *cerver_info_new (void) {
 
 	CerverInfo *cerver_info = (CerverInfo *) malloc (sizeof (CerverInfo));
 	if (cerver_info) {
-		memset (cerver_info, 0, sizeof (CerverInfo));
+		(void) memset (cerver_info, 0, sizeof (CerverInfo));
 		cerver_info->name = NULL;
 		cerver_info->welcome_msg = NULL;
 		cerver_info->cerver_info_packet = NULL;
@@ -149,8 +149,7 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
 u8 cerver_info_send_info_packet (
-	Cerver *cerver,
-	Client *client, Connection *connection
+	Cerver *cerver, Client *client, Connection *connection
 ) {
 
 	u8 retval = 1;
@@ -164,7 +163,9 @@ u8 cerver_info_send_info_packet (
 			NULL
 		);
 
-		if (!packet_send (cerver->info->cerver_info_packet, 0, NULL, false)) {
+		if (!packet_send (
+			cerver->info->cerver_info_packet, 0, NULL, false
+		)) {
 			retval = 0;
 		}
 
@@ -189,7 +190,7 @@ static CerverStats *cerver_stats_new (void) {
 
 	CerverStats *cerver_stats = (CerverStats *) malloc (sizeof (CerverStats));
 	if (cerver_stats) {
-		memset (cerver_stats, 0, sizeof (CerverStats));
+		(void) memset (cerver_stats, 0, sizeof (CerverStats));
 		cerver_stats->received_packets = packets_per_type_new ();
 		cerver_stats->sent_packets = packets_per_type_new ();
 	}
@@ -210,7 +211,9 @@ static void cerver_stats_delete (CerverStats *cerver_stats) {
 }
 
 // sets the cerver stats threshold time (how often the stats get reset)
-void cerver_stats_set_threshold_time (Cerver *cerver, time_t threshold_time) {
+void cerver_stats_set_threshold_time (
+	Cerver *cerver, time_t threshold_time
+) {
 
 	if (cerver) {
 		if (cerver->stats) cerver->stats->threshold_time = threshold_time;
@@ -346,6 +349,7 @@ Cerver *cerver_new (void) {
 		cerver->on_hold_poll_lock = NULL;
 		cerver->on_hold_max_bad_packets = CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS;
 		cerver->on_hold_check_packets = CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS;
+		cerver->on_hold_receive_buffer_size = CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE;
 
 		cerver->use_sessions = CERVER_DEFAULT_USE_SESSIONS;
 		cerver->session_id_generator = NULL;
@@ -484,14 +488,18 @@ void cerver_set_network_values (
 }
 
 // sets the cerver connection queue (how many connections to queue for accept)
-void cerver_set_connection_queue (Cerver *cerver, const u16 connection_queue) {
+void cerver_set_connection_queue (
+	Cerver *cerver, const u16 connection_queue
+) {
 
 	if (cerver) cerver->connection_queue = connection_queue;
 
 }
 
 // sets the cerver's receive buffer size used in recv method
-void cerver_set_receive_buffer_size (Cerver *cerver, const u32 size) {
+void cerver_set_receive_buffer_size (
+	Cerver *cerver, const u32 size
+) {
 
 	if (cerver) cerver->receive_buffer_size = size;
 
@@ -509,7 +517,9 @@ void cerver_set_reusable_address_flags (
 }
 
 // sets the cerver's data and a way to free it
-void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data) {
+void cerver_set_cerver_data (
+	Cerver *cerver, void *data, Action delete_data
+) {
 
 	if (cerver) {
 		cerver->cerver_data = data;
@@ -524,7 +534,9 @@ void cerver_set_cerver_data (Cerver *cerver, void *data, Action delete_data) {
 // but we aware that you need to make your structures and data thread safe, as they might be accessed
 // from multiple threads at the same time
 // by default, all received packets will be handle only in one thread
-void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
+void cerver_set_thpool_n_threads (
+	Cerver *cerver, u16 n_threads
+) {
 
 	if (cerver) cerver->n_thpool_threads = n_threads;
 
@@ -532,7 +544,9 @@ void cerver_set_thpool_n_threads (Cerver *cerver, u16 n_threads) {
 
 // sets the initial number of sockets to be created in the cerver's sockets pool
 // the defauult value is 10
-void cerver_set_sockets_pool_init (Cerver *cerver, unsigned int n_sockets) {
+void cerver_set_sockets_pool_init (
+	Cerver *cerver, unsigned int n_sockets
+) {
 
 	if (cerver) cerver->sockets_pool_init = n_sockets;
 
@@ -559,7 +573,9 @@ void cerver_set_inactive_clients (
 // sets the cerver handler type
 // the default type is to handle connections using the poll () which requires only one thread
 // if threads type is selected, a new thread will be created for each new connection
-void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type) {
+void cerver_set_handler_type (
+	Cerver *cerver, CerverHandlerType handler_type
+) {
 
 	if (cerver) cerver->handler_type = handler_type;
 
@@ -569,14 +585,18 @@ void cerver_set_handler_type (Cerver *cerver, CerverHandlerType handler_type) {
 // by only creating new detachable threads for each connection
 // by default, this option is turned off to also use the thpool
 // if cerver is of type CERVER_TYPE_WEB, the thpool will be used more often as connections have a shorter life
-void cerver_set_handle_detachable_threads (Cerver *cerver, bool active) {
+void cerver_set_handle_detachable_threads (
+	Cerver *cerver, bool active
+) {
 
 	if (cerver) cerver->handle_detachable_threads = active;
 
 }
 
 // sets the cerver poll timeout
-void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout) {
+void cerver_set_poll_time_out (
+	Cerver *cerver, const u32 poll_timeout
+) {
 
 	if (cerver) cerver->poll_timeout = poll_timeout;
 
@@ -585,7 +605,9 @@ void cerver_set_poll_time_out (Cerver *cerver, const u32 poll_timeout) {
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
 // retuns 0 on success, 1 on error
-u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate) {
+u8 cerver_set_auth (
+	Cerver *cerver, u8 max_auth_tries, delegate authenticate
+) {
 
 	u8 retval = 1;
 
@@ -601,8 +623,11 @@ u8 cerver_set_auth (Cerver *cerver, u8 max_auth_tries, delegate authenticate) {
 
 }
 
-// sets the max auth tries a new connection is allowed to have before it is dropped due to failure
-void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries) {
+// sets the max auth tries a new connection is allowed to have
+// before it is dropped due to failure
+void cerver_set_auth_max_tries (
+	Cerver *cerver, u8 max_auth_tries
+) {
 
 	if (cerver) cerver->max_auth_tries = max_auth_tries;
 
@@ -610,14 +635,18 @@ void cerver_set_auth_max_tries (Cerver *cerver, u8 max_auth_tries) {
 
 // sets the method to be used for client authentication
 // must return 0 on success authentication
-void cerver_set_auth_method (Cerver *cerver, delegate authenticate) {
+void cerver_set_auth_method (
+	Cerver *cerver, delegate authenticate
+) {
 
 	if (cerver && authenticate) cerver->authenticate = authenticate;
 
 }
 
 // sets the cerver on poll timeout in ms
-void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout) {
+void cerver_set_on_hold_poll_timeout (
+	Cerver *cerver, u32 on_hold_poll_timeout
+) {
 
 	if (cerver) cerver->on_hold_poll_timeout = on_hold_poll_timeout;
 
@@ -627,7 +656,9 @@ void cerver_set_on_hold_poll_timeout (Cerver *cerver, u32 on_hold_poll_timeout) 
 // the default is DEFAULT_ON_HOLD_MAX_BAD_PACKETS
 // a bad packet is anyone which can't be handle by the cerver because there is no handle,
 // or because it failed the packet_check () method
-void cerver_set_on_hold_max_bad_packets (Cerver *cerver, u8 on_hold_max_bad_packets) {
+void cerver_set_on_hold_max_bad_packets (
+	Cerver *cerver, u8 on_hold_max_bad_packets
+) {
 
 	if (cerver) cerver->on_hold_max_bad_packets = on_hold_max_bad_packets;
 
@@ -635,9 +666,23 @@ void cerver_set_on_hold_max_bad_packets (Cerver *cerver, u8 on_hold_max_bad_pack
 
 // sets whether to check for packets using the packet_check () method in ON HOLD handler or NOT
 // any packet that fails the check will be considered as a bad packet
-void cerver_set_on_hold_check_packets (Cerver *cerver, bool check) {
+void cerver_set_on_hold_check_packets (
+	Cerver *cerver, bool check
+) {
 
 	if (cerver) cerver->on_hold_check_packets = check;
+
+}
+
+// sets the size of the buffer to be allocated
+// to receive packets from on hold connections
+void cerver_set_on_hold_receive_buffer_size (
+	Cerver *cerver, const size_t on_hold_receive_buffer_size
+) {
+
+	if (cerver) {
+		cerver->on_hold_receive_buffer_size = on_hold_receive_buffer_size;
+	}
 
 }
 
@@ -672,7 +717,9 @@ void cerver_set_handle_recieved_buffer (
 }
 
 // sets customs PACKET_TYPE_APP and PACKET_TYPE_APP_ERROR packet types handlers
-void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app_error_handler) {
+void cerver_set_app_handlers (
+	Cerver *cerver, Handler *app_handler, Handler *app_error_handler
+) {
 
 	if (cerver) {
 		cerver->app_packet_handler = app_handler;
@@ -693,7 +740,9 @@ void cerver_set_app_handlers (Cerver *cerver, Handler *app_handler, Handler *app
 // sets option to automatically delete PACKET_TYPE_APP packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet) {
+void cerver_set_app_handler_delete (
+	Cerver *cerver, bool delete_packet
+) {
 
 	if (cerver) cerver->app_packet_handler_delete_packet = delete_packet;
 
@@ -702,14 +751,18 @@ void cerver_set_app_handler_delete (Cerver *cerver, bool delete_packet) {
 // sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-void cerver_set_app_error_handler_delete (Cerver *cerver, bool delete_packet) {
+void cerver_set_app_error_handler_delete (
+	Cerver *cerver, bool delete_packet
+) {
 
 	if (cerver) cerver->app_error_packet_handler_delete_packet = delete_packet;
 
 }
 
 // sets a PACKET_TYPE_CUSTOM packet type handler
-void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
+void cerver_set_custom_handler (
+	Cerver *cerver, Handler *custom_handler
+) {
 
 	if (cerver) {
 		cerver->custom_packet_handler = custom_handler;
@@ -724,7 +777,9 @@ void cerver_set_custom_handler (Cerver *cerver, Handler *custom_handler) {
 // sets option to automatically delete PACKET_TYPE_CUSTOM packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
-void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet) {
+void cerver_set_custom_handler_delete (
+	Cerver *cerver, bool delete_packet
+) {
 
 	if (cerver) cerver->custom_packet_handler_delete_packet = delete_packet;
 
@@ -732,7 +787,9 @@ void cerver_set_custom_handler_delete (Cerver *cerver, bool delete_packet) {
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
-int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
+int cerver_set_multiple_handlers (
+	Cerver *cerver, unsigned int n_handlers
+) {
 
 	int retval = 1;
 
@@ -762,7 +819,9 @@ int cerver_set_multiple_handlers (Cerver *cerver, unsigned int n_handlers) {
 // if packets do not pass the checks, won't be handled and will be inmediately destroyed
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
-void cerver_set_check_packets (Cerver *cerver, bool check_packets) {
+void cerver_set_check_packets (
+	Cerver *cerver, bool check_packets
+) {
 
 	if (cerver) {
 		cerver->check_packets = check_packets;
@@ -776,7 +835,8 @@ void cerver_set_check_packets (Cerver *cerver, bool check_packets) {
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 void cerver_set_update (
 	Cerver *cerver,
-	Action update, void *update_args, void (*delete_update_args)(void *),
+	Action update,
+	void *update_args, void (*delete_update_args)(void *),
 	const u8 fps
 ) {
 
@@ -795,7 +855,8 @@ void cerver_set_update (
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 void cerver_set_update_interval (
 	Cerver *cerver,
-	Action update, void *update_args, void (*delete_update_args)(void *),
+	Action update,
+	void *update_args, void (*delete_update_args)(void *),
 	const u32 interval
 ) {
 
@@ -934,9 +995,9 @@ unsigned int cerver_get_n_handlers (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->n_handlers;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -949,9 +1010,9 @@ unsigned int cerver_get_n_handlers_alive (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->num_handlers_alive;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -964,9 +1025,9 @@ unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
 	unsigned int retval = 0;
 
 	if (cerver) {
-		pthread_mutex_lock (cerver->handlers_lock);
+		(void) pthread_mutex_lock (cerver->handlers_lock);
 		retval = cerver->num_handlers_working;
-		pthread_mutex_unlock (cerver->handlers_lock);
+		(void) pthread_mutex_unlock (cerver->handlers_lock);
 	}
 
 	return retval;
@@ -1301,15 +1362,26 @@ static u8 cerver_network_init (Cerver *cerver) {
 	if (cerver) {
 		// init the cerver with the selected protocol
 		switch (cerver->protocol) {
-			case IPPROTO_TCP:
-				cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-				break;
+			case IPPROTO_TCP: {
+				cerver->sock = socket (
+					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+					SOCK_STREAM, 0
+				);
+			} break;
 
-			case IPPROTO_UDP:
-				cerver->sock = socket ((cerver->use_ipv6 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
-				break;
+			case IPPROTO_UDP: {
+				cerver->sock = socket (
+					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+					SOCK_DGRAM, 0
+				);
+			} break;
 
-			default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Unknown protocol type!"); break;
+			default: 
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"Unknown protocol type!"
+				);
+				break;
 		}
 
 		if (cerver->sock >= 0) {
@@ -1330,7 +1402,8 @@ static u8 cerver_network_init (Cerver *cerver) {
 		else {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-				"Failed to create cerver %s socket!", cerver->info->name->str
+				"Failed to create cerver %s socket!",
+				cerver->info->name->str
 			);
 		}
 	}
@@ -1605,7 +1678,7 @@ static u8 cerver_auth_start (Cerver *cerver) {
 	if (cerver) {
 		cerver->auth_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0);
 
-		cerver->max_on_hold_connections = CERVER_DEFAULT_ON_HOLD_POLL_FDS;
+		cerver->max_on_hold_connections = CERVER_DEFAULT_POLL_FDS / 2;
 		cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
 		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
 		if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
@@ -1931,9 +2004,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 }
 
-static void cerver_inactive_check (
-	AVLNode *node, Cerver *cerver, time_t current_time
-) {
+static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
 
 	cerver_inactive_check (node->right, cerver, current_time);
 
@@ -2126,7 +2197,7 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
-static u8 cerver_start_udp (Cerver *cerver) { 
+static u8 cerver_start_udp (Cerver *cerver) {
 
 	cerver_log_warning (
 		"Cerver %s - udp server is not yet implemented!",
@@ -2285,23 +2356,23 @@ static void *cerver_update (void *args) {
 		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
 		while (cerver->isRunning) {
-			clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
 
 			// do stuff
 			if (cerver->update) cerver->update (cu);
 
 			// limit the fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
 			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
 			// printf ("temp: %d\n", temp);
 			sleep_time = time_per_frame - temp;
 			// printf ("sleep time: %d\n", sleep_time);
 			if (sleep_time > 0) {
-				usleep (sleep_time);
+				(void) usleep (sleep_time);
 			}
 
 			// count fps
-			clock_gettime (CLOCK_MONOTONIC_RAW, &end);
+			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
 			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
 			delta_ticks += delta_time;
 			fps++;
@@ -2347,19 +2418,23 @@ static void *cerver_update_interval (void *args) {
 		);
 		#endif
 
-		CerverUpdate *cu = cerver_update_new (cerver, cerver->update_interval_args);
+		CerverUpdate *cu = cerver_update_new (
+			cerver, cerver->update_interval_args
+		);
 
 		while (cerver->isRunning) {
 			if (cerver->update_interval) cerver->update_interval (cu);
 
-			sleep (cerver->update_interval_secs);
+			(void) sleep (cerver->update_interval_secs);
 		}
 
 		cerver_update_delete (cu);
 
 		if (cerver->update_interval_args) {
 			if (cerver->delete_update_interval_args) {
-				cerver->delete_update_interval_args (cerver->update_interval_args);
+				cerver->delete_update_interval_args (
+					cerver->update_interval_args
+				);
 			}
 		}
 
@@ -2671,14 +2746,14 @@ static void cerver_report_check_info_handle_auth (
 					if (!connection_generate_auth_packet (connection)) {
 						cerver_log_success (
 							"cerver_check_info () - Generated connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to generate connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2695,7 +2770,7 @@ static void cerver_report_check_info_handle_auth (
 					if (!packet_send (connection->auth_packet, 0, NULL, false)) {
 						cerver_log_success (
 							"cerver_check_info () - Sent connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 
 						client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
@@ -2704,7 +2779,7 @@ static void cerver_report_check_info_handle_auth (
 					else {
 						cerver_log_error (
 							"cerver_check_info () - Failed to send connection %s auth packet!",
-							connection->name->str
+							connection->name
 						);
 					}
 				}
@@ -2717,14 +2792,17 @@ static void cerver_report_check_info_handle_auth (
 			else {
 				cerver_log_error (
 					"Connection %s does NOT have an auth packet!",
-					connection->name->str
+					connection->name
 				);
 			}
 		}
 
 		else {
 			#ifdef CLIENT_DEBUG
-			cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver does NOT require authentication.");
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_NONE,
+				"Cerver does NOT require authentication"
+			);
 			#endif
 		}
 	}
@@ -2811,7 +2889,11 @@ static inline SCerver *scerver_new (void) {
 
 }
 
-static inline void scerver_delete (void *ptr) { if (ptr) free (ptr); }
+static inline void scerver_delete (void *ptr) {
+	
+	if (ptr) free (ptr);
+	
+}
 
 // srealizes the cerver
 static SCerver *cerver_serliaze (Cerver *cerver) {
@@ -2823,10 +2905,19 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
 		if (scerver) {
 			scerver->type = cerver->type;
 
-			strncpy (scerver->name, cerver->info->name->str, S_CERVER_NAME_LENGTH);
+			(void) strncpy (
+				scerver->name,
+				cerver->info->name->str,
+				S_CERVER_NAME_LENGTH - 1
+			);
 
-			if (cerver->info->welcome_msg)
-				strncpy (scerver->welcome, cerver->info->welcome_msg->str, S_CERVER_WELCOME_LENGTH);
+			if (cerver->info->welcome_msg) {
+				(void) strncpy (
+					scerver->welcome,
+					cerver->info->welcome_msg->str,
+					S_CERVER_WELCOME_LENGTH - 1
+				);
+			}
 
 			scerver->use_ipv6 = cerver->use_ipv6;
 			scerver->protocol = cerver->protocol;
@@ -2851,7 +2942,9 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
 			cerver_report->type = scerver->type;
 
 			cerver_report->name = str_new (scerver->name);
-			if (strlen (scerver->welcome)) cerver_report->welcome = str_new (scerver->welcome);
+			if (strlen (scerver->welcome)) {
+				cerver_report->welcome = str_new (scerver->welcome);
+			}
 
 			cerver_report->use_ipv6 = scerver->use_ipv6;
 			cerver_report->protocol = scerver->protocol;
@@ -2874,7 +2967,11 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 	if (cerver) {
 		SCerver *scerver = cerver_serliaze (cerver);
 		if (scerver) {
-			packet = packet_generate_request (PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, scerver, sizeof (SCerver));
+			packet = packet_generate_request (
+				PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+				scerver, sizeof (SCerver)
+			);
+			
 			scerver_delete (scerver);
 		}
 	}

@@ -53,39 +53,56 @@ bool sock_set_blocking (int32_t fd, bool blocking) {
 
 }
 
+unsigned int sock_ip_to_string_actual (
+	const struct sockaddr *address,
+	char *ip_buffer
+) {
+
+	unsigned int retval = 1;
+
+	switch (address->sa_family) {
+		case AF_INET:
+			(void) inet_ntop (
+				AF_INET,
+				&((struct sockaddr_in *) address)->sin_addr,
+				ip_buffer, INET6_ADDRSTRLEN
+			);
+
+			retval = 0;
+			break;
+
+		case AF_INET6:
+			(void) inet_ntop (
+				AF_INET6,
+				&((struct sockaddr_in6 *) address)->sin6_addr,
+				ip_buffer, INET6_ADDRSTRLEN
+			);
+
+			retval = 0;
+			break;
+
+		default: break;
+	}
+
+	return retval;
+
+}
+
 char *sock_ip_to_string (const struct sockaddr *address) {
 
-	char *retval = NULL;
+	char *ip_buffer = NULL;
 
 	if (address) {
-		retval = (char *) calloc (INET6_ADDRSTRLEN, sizeof (char));
-		if (retval) {
-			switch (address->sa_family) {
-				case AF_INET:
-					inet_ntop (
-						AF_INET,
-						&((struct sockaddr_in *) address)->sin_addr,
-						retval, INET6_ADDRSTRLEN
-					);
-					break;
-
-				case AF_INET6:
-					inet_ntop (
-						AF_INET6,
-						&((struct sockaddr_in6 *) address)->sin6_addr,
-						retval, INET6_ADDRSTRLEN
-					);
-					break;
-
-				default: {
-					free (retval);
-					retval = NULL;
-				} break;
+		ip_buffer = (char *) calloc (INET6_ADDRSTRLEN, sizeof (char));
+		if (ip_buffer) {
+			if (sock_ip_to_string_actual (address, ip_buffer)) {
+				free (ip_buffer);
+				ip_buffer = NULL;
 			}
 		}
 	}
 
-	return retval;
+	return ip_buffer;
 
 }
 

@@ -638,7 +638,7 @@ static u8 file_send_header (
 		end += sizeof (PacketHeader);
 
 		FileHeader *file_header = (FileHeader *) end;
-		(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN);
+		(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
 		file_header->len = filelen;
 
 		packet_set_network_values (packet, cerver, client, connection, NULL);

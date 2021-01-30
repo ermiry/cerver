@@ -28,12 +28,60 @@ jobs:
       - name: Unit Tests
         run: bash test/run.sh
 
+      - name: Ping Integration Test
+        run: |
+          docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/ping
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Packets Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/packets
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/packets
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Requests Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/requests
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/requests
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Auth Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/auth
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Sessions Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/sessions
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/sessions
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Threads Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/threads
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/threads
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Web Integration Test
         run: |
           sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/web
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web
+          ./test/bin/client/web/web
           sudo docker kill $(sudo docker ps -q)
 
       - name: Coverage

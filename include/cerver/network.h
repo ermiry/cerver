@@ -41,6 +41,11 @@ CERVER_PUBLIC bool sock_set_blocking (
 	int32_t fd, bool blocking
 );
 
+CERVER_PUBLIC unsigned int sock_ip_to_string_actual (
+	const struct sockaddr *address,
+	char *ip_buffer
+);
+
 CERVER_PUBLIC char *sock_ip_to_string (
 	const struct sockaddr *address
 );

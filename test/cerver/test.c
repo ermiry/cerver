@@ -7,7 +7,7 @@
 
 #include <cerver/cerver.h>
 
-#include "test.h"
+#include "../test.h"
 
 static const char *cerver_name = "test-cerver";
 
@@ -16,10 +16,10 @@ static Cerver *test_cerver_create (void) {
 	Cerver *cerver = cerver_create (
 		CERVER_TYPE_CUSTOM,
 		cerver_name,
-		7000,
+		CERVER_DEFAULT_PORT,
 		PROTOCOL_TCP,
 		false,
-		10
+		CERVER_DEFAULT_CONNECTION_QUEUE
 	);
 
 	test_check_ptr (cerver);
@@ -28,10 +28,10 @@ static Cerver *test_cerver_create (void) {
 	test_check_ptr (cerver->info->name);
 	test_check_str_eq (cerver->info->name->str, cerver_name, NULL);
 	test_check_str_len (cerver->info->name->str, strlen (cerver_name), NULL);
-	test_check_int_eq (cerver->port, 7000, NULL);
+	test_check_int_eq (cerver->port, CERVER_DEFAULT_PORT, NULL);
 	test_check_int_eq (cerver->protocol, PROTOCOL_TCP, NULL);
 	test_check_bool_eq (cerver->use_ipv6, false, NULL);
-	test_check_int_eq (cerver->connection_queue, 10, NULL);
+	test_check_int_eq (cerver->connection_queue, CERVER_DEFAULT_CONNECTION_QUEUE, NULL);
 
 	return cerver;
 

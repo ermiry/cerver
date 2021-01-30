@@ -296,46 +296,88 @@ testapp:
 	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
 
 units: testout $(TESTOBJS)
-	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver.o -o ./$(TESTTARGET)/cerver $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/packets.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
+INTCERVERIN		:= ./$(TESTBUILD)/cerver
+INTCERVEROUT	:= ./$(TESTTARGET)/cerver
+INTCERVERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+integration-cerver:
+	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/requests.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/requests $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
+
 INTCLIENTIN		:= ./$(TESTBUILD)/client
 INTCLIENTOUT	:= ./$(TESTTARGET)/client
-INTCLIENTLIBS	:= $(TESTLIBS) $(CURL)
+INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
 
 integration-client:
-	$(CC) $(TESTINC) $(INTCLIENTIN)/api.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/api $(INTCLIENTLIBS)
-	$(CC) $(TESTINC) $(INTCLIENTIN)/upload.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/upload $(INTCLIENTLIBS)
-	$(CC) $(TESTINC) $(INTCLIENTIN)/web.o $(INTCLIENTIN)/curl.o -o $(INTCLIENTOUT)/web $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
 
 INTWEBIN		:= ./$(TESTBUILD)/web
 INTWEBOUT		:= ./$(TESTTARGET)/web
 INTWEBLIBS		:= $(TESTLIBS) $(TESTAPPLIB)
 
 integration-web:
+	@mkdir -p ./$(TESTTARGET)/web
 	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
 
+INTWEBCLIENTIN		:= ./$(TESTBUILD)/client/web
+INTWEBCLIENTOUT		:= ./$(TESTTARGET)/client/web
+INTWEBCLIENTLIBS	:= $(TESTLIBS) $(CURL)
+
+integration-web-client:
+	@mkdir -p ./$(TESTTARGET)/client/web
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/api.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/api $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/upload.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/upload $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/web.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/web $(INTWEBCLIENTLIBS)
+
 integration: testout $(TESTOBJS)
+	$(MAKE) integration-cerver
 	$(MAKE) integration-client
 	$(MAKE) integration-web
+	$(MAKE) integration-web-client
+
+TESTHANDLERIN	:= ./$(TESTBUILD)/handler
+TESTHANDLEROUT	:= ./$(TESTTARGET)/handler
+TESTHANDLERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+testhandler: testout $(TESTOBJS)
+	@mkdir -p ./$(TESTTARGET)/handler
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/cerver.o -o $(TESTHANDLEROUT)/cerver $(TESTHANDLERLIBS)
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/client.o -o $(TESTHANDLEROUT)/client $(TESTHANDLERLIBS)
 
 testout:
 	@mkdir -p ./$(TESTTARGET)
+	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
-	@mkdir -p ./$(TESTTARGET)/web
 
 test: testout
 	$(MAKE) $(TESTOBJS)
 	$(MAKE) testapp
 	$(MAKE) units
 	$(MAKE) integration
+	$(MAKE) testhandler
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)

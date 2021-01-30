@@ -136,19 +136,19 @@ int job_queue_push (JobQueue *job_queue, Job *job) {
 Job *job_queue_pull (JobQueue *job_queue) {
 
 	Job *retval = NULL;
-	
+
 	if (job_queue) {
 		pthread_mutex_lock (job_queue->rwmutex);
 
 		switch (job_queue->queue->size) {
 			case 0: break;
 
-			case 1: 
+			case 1:
 				// remove at the start of the list
 				retval = (Job *) dlist_remove_element (job_queue->queue, NULL);
 				break;
 
-			default: 
+			default:
 				// remove at the start of the list
 				retval = (Job *) dlist_remove_element (job_queue->queue, NULL);
 				bsem_post (job_queue->has_jobs);
