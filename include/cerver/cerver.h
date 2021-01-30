@@ -697,10 +697,14 @@ typedef struct SCerver {
 
 } SCerver;
 
-CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
+CERVER_PRIVATE CerverReport *cerver_deserialize (
+	SCerver *scerver
+);
 
 // creates a cerver info packet ready to be sent
-CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
+CERVER_PRIVATE struct _Packet *cerver_packet_generate (
+	Cerver *cerver
+);
 
 #pragma endregion
 
