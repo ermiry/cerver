@@ -81,7 +81,7 @@ jobs:
           sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/web
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web
+          ./test/bin/client/web/web
           sudo docker kill $(sudo docker ps -q)
 
       - name: Coverage

@@ -114,7 +114,7 @@ sleep 2
 
 sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
-./test/bin/client/web || { exit 1; }
+./test/bin/client/web/web || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
