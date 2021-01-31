@@ -8,6 +8,8 @@
 
 #include "cerver/config.h"
 
+#define CERVER_TIMER_BUFFER_SIZE		128
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,14 +30,29 @@ CERVER_EXPORT struct tm *timer_get_gmt_time (void);
 
 CERVER_EXPORT struct tm *timer_get_local_time (void);
 
+// 24h time representation
+CERVER_EXPORT void timer_time_to_string_actual (
+	const struct tm *timeinfo, char *buffer
+);
+
 // returns a string representing the 24h time
 CERVER_EXPORT String *timer_time_to_string (
 	const struct tm *timeinfo
 );
 
+// day/month/year time representation
+CERVER_EXPORT void timer_date_to_string_actual (
+	const struct tm *timeinfo, char *buffer
+);
+
 // returns a string with day/month/year
 CERVER_EXPORT String *timer_date_to_string (
 	const struct tm *timeinfo
+);
+
+// day/month/year - 24h time representation
+CERVER_EXPORT void timer_date_and_time_to_string_actual (
+	const struct tm *timeinfo, char *buffer
 );
 
 // returns a string with day/month/year - 24h time
