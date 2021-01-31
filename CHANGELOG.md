@@ -1,4 +1,9 @@
-- Changed MAX macro in config header to avoid cpp errors
-- Changed sockets sources indentation from spaces to tabs
-- Small organization changes in main cerver header
-- Added missing includes in receive sources
+## General
+- Refactored test Dockerfile to use external sources
+- Refactored tests to mount working directory into Dockerfile
+- Refactored cerver integration tests paths in test workflow
+- Split timer methods to create representations in custom buffer
+
+## Fixes
+- Fixed wrong address reference in cerver_connection_create ()
+- Fixed string related warnings in connection_update ()
