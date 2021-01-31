@@ -2194,7 +2194,7 @@ static Connection *cerver_connection_create (
 				connection->socket->sock_fd = new_fd;
 				(void) memcpy (
 					&connection->address,
-					&client_address,
+					client_address,
 					sizeof (struct sockaddr_storage)
 				);
 
