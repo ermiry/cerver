@@ -936,6 +936,9 @@ static u8 packet_send_split_tcp (
 // }
 // #pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 static void packet_send_update_stats (
 	PacketType packet_type, size_t sent,
 	Cerver *cerver,
@@ -1091,6 +1094,8 @@ static void packet_send_update_stats (
 	}
 
 }
+
+#pragma GCC diagnostic pop
 
 static inline u8 packet_send_internal (
 	const Packet *packet,
