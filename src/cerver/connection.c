@@ -867,13 +867,13 @@ void *connection_update (void *client_connection_ptr) {
 		);
 		#endif
 
-		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN - 1);
+		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN);
 
 		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
 			(void) strncpy (
 				connection_name,
 				cc->connection->name,
-				THREAD_NAME_BUFFER_LEN - 1
+				THREAD_NAME_BUFFER_LEN
 			);
 
 			(void) thread_set_name (connection_name);
