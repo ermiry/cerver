@@ -3414,7 +3414,7 @@ static void client_receive_handle_buffer_actual (
 			// check that we have a valid packet size
 			if (
 				(packet_size > 0)
-				&& (packet_size < receive_handle->client->max_received_packet_size)
+				&& (packet_size <= receive_handle->client->max_received_packet_size)
 			) {
 				// we can safely process the complete packet
 				packet = packet_create_with_data (
