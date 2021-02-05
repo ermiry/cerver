@@ -33,6 +33,7 @@
 #define CERVER_DEFAULT_CONNECTION_QUEUE				10
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
+#define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 
 #define CERVER_DEFAULT_REUSABLE_FLAGS				false
 
@@ -221,7 +222,6 @@ struct _Cerver {
 	Protocol protocol;                  // we only support either tcp or udp
 	bool use_ipv6;
 	u16 connection_queue;               // each server can handle connection differently
-	u32 receive_buffer_size;
 
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	bool blocking;                      // sokcet fd is blocking?
@@ -290,6 +290,9 @@ struct _Cerver {
 	// the admin can define a function to handle the recieve buffer if they are using a custom protocol
 	// otherwise, it will be set to the default one
 	Action handle_received_buffer;
+
+	u32 receive_buffer_size;
+	size_t max_received_packet_size;
 
 	// 27/05/2020 - changed form Action to Handler
 	// custom packet hanlders
@@ -483,6 +486,12 @@ CERVER_EXPORT u8 cerver_set_sessions (
 // sets a custom method to handle the raw received buffer from the socket
 CERVER_EXPORT void cerver_set_handle_recieved_buffer (
 	Cerver *cerver, Action handle_received_buffer
+);
+
+// only handle packets with size <= max_received_packet_size
+// if the packet is bigger it will be considered a bad packet 
+CERVER_EXPORT void cerver_set_max_received_packet_size (
+	Cerver *cerver, size_t max_received_packet_size
 );
 
 // 27/05/2020 - changed form Action to Handler
@@ -703,10 +712,14 @@ typedef struct SCerver {
 
 } SCerver;
 
-CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
+CERVER_PRIVATE CerverReport *cerver_deserialize (
+	SCerver *scerver
+);
 
 // creates a cerver info packet ready to be sent
-CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
+CERVER_PRIVATE struct _Packet *cerver_packet_generate (
+	Cerver *cerver
+);
 
 #pragma endregion
 
