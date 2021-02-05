@@ -11,8 +11,6 @@
 
 #include "cerver/timer.h"
 
-#define TIME_BUFFER_SIZE		128
-
 static TimeSpec *timespec_new (void) {
 
 	TimeSpec *t = (TimeSpec *) malloc (sizeof (TimeSpec));
@@ -91,20 +89,39 @@ struct tm *timer_get_local_time (void) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 
+// 24h time representation
+void timer_time_to_string_actual (
+	const struct tm *timeinfo, char *buffer
+) {
+
+	(void) strftime (buffer, CERVER_TIMER_BUFFER_SIZE, "%T", timeinfo);
+
+}
+
 // returns a string representing the 24h time
 String *timer_time_to_string (
 	const struct tm *timeinfo
 ) {
 
+	char buffer[CERVER_TIMER_BUFFER_SIZE] = { 0 };
+
 	String *retval = NULL;
 
 	if (timeinfo) {
-		char buffer[TIME_BUFFER_SIZE] = { 0 };
-		(void) strftime (buffer, TIME_BUFFER_SIZE, "%T", timeinfo);
+		timer_time_to_string_actual (timeinfo, buffer);
 		retval = str_new (buffer);
 	}
 
 	return retval;
+
+}
+
+// day/month/year time representation
+void timer_date_to_string_actual (
+	const struct tm *timeinfo, char *buffer
+) {
+
+	(void) strftime (buffer, CERVER_TIMER_BUFFER_SIZE, "%d/%m/%y", timeinfo);
 
 }
 
@@ -113,15 +130,26 @@ String *timer_date_to_string (
 	const struct tm *timeinfo
 ) {
 
+	char buffer[CERVER_TIMER_BUFFER_SIZE] = { 0 };
+
 	String *retval = NULL;
 
 	if (timeinfo) {
-		char buffer[TIME_BUFFER_SIZE] = { 0 };
-		(void) strftime (buffer, TIME_BUFFER_SIZE, "%d/%m/%y", timeinfo);
+		timer_date_to_string_actual (timeinfo, buffer);
+		
 		retval = str_new (buffer);
 	}
 
 	return retval;
+
+}
+
+// day/month/year - 24h time representation
+void timer_date_and_time_to_string_actual (
+	const struct tm *timeinfo, char *buffer
+) {
+
+	(void) strftime (buffer, CERVER_TIMER_BUFFER_SIZE, "%d/%m/%y - %T", timeinfo);
 
 }
 
@@ -130,11 +158,13 @@ String *timer_date_and_time_to_string (
 	const struct tm *timeinfo
 ) {
 
+	char buffer[CERVER_TIMER_BUFFER_SIZE] = { 0 };
+
 	String *retval = NULL;
 
 	if (timeinfo) {
-		char buffer[TIME_BUFFER_SIZE] = { 0 };
-		(void) strftime (buffer, TIME_BUFFER_SIZE, "%d/%m/%y - %T", timeinfo);
+		timer_date_and_time_to_string_actual (timeinfo, buffer);
+		
 		retval = str_new (buffer);
 	}
 
@@ -147,11 +177,12 @@ String *timer_time_to_string_custom (
 	const struct tm *timeinfo, const char *format
 ) {
 
+	char buffer[CERVER_TIMER_BUFFER_SIZE] = { 0 };
+
 	String *retval = NULL;
 
 	if (timeinfo) {
-		char buffer[TIME_BUFFER_SIZE] = { 0 };
-		(void) strftime (buffer, TIME_BUFFER_SIZE, format, timeinfo);
+		(void) strftime (buffer, CERVER_TIMER_BUFFER_SIZE, format, timeinfo);
 		retval = str_new (buffer);
 	}
 

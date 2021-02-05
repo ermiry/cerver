@@ -1525,9 +1525,11 @@ static void cerver_receive_handle_buffer_actual (
 			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
 			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
 		) {
-			// TODO: make max value a variable
 			// check that we have a valid packet size
-			if ((packet_size > 0) && (packet_size < 65536)) {
+			if (
+				(packet_size > 0)
+				&& (packet_size <= receive_handle->cerver->max_received_packet_size)
+			) {
 				// we can safely process the complete packet
 				packet = packet_create_with_data (
 					header->packet_size - sizeof (PacketHeader)
@@ -2383,7 +2385,7 @@ static Connection *cerver_connection_create (
 				connection->socket->sock_fd = new_fd;
 				(void) memcpy (
 					&connection->address,
-					&client_address,
+					client_address,
 					sizeof (struct sockaddr_storage)
 				);
 

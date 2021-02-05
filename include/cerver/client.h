@@ -20,10 +20,12 @@
 
 #include "cerver/utils/log.h"
 
-#define CLIENT_NAME_SIZE						64
-#define CLIENT_FILES_MAX_PATHS           		32
+#define CLIENT_NAME_SIZE							64
+#define CLIENT_FILES_MAX_PATHS       				32
 
-#define CLIENT_DEFAULT_NAME						"no-name"
+#define CLIENT_DEFAULT_NAME							"no-name"
+
+#define CLIENT_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 
 #ifdef __cplusplus
 extern "C" {
@@ -152,6 +154,8 @@ struct _Client {
 	struct _Handler *app_error_packet_handler;
 	struct _Handler *custom_packet_handler;
 
+	size_t max_received_packet_size;
+
 	bool check_packets;              // enable / disbale packet checking
 
 	// general client lock
@@ -233,6 +237,12 @@ CERVER_EXPORT void client_set_app_handlers (
 // sets a PACKET_TYPE_CUSTOM packet type handler
 CERVER_EXPORT void client_set_custom_handler (
 	Client *client, struct _Handler *custom_handler
+);
+
+// only handle packets with size <= max_received_packet_size
+// if the packet is bigger it will be considered a bad packet 
+CERVER_EXPORT void client_set_max_received_packet_size (
+	Client *client, size_t max_received_packet_size
 );
 
 // set whether to check or not incoming packets
