@@ -22,12 +22,15 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
 void connection_remove_auth_data (Connection *connection);
+
+static void *connection_send_thread (void *client_connection_ptr);
 
 #pragma region stats
 
@@ -61,13 +64,13 @@ void connection_stats_print (Connection *connection) {
 		if (connection->stats) {
 			cerver_log_msg ("Threshold time:            %ld", connection->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld", connection->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %lu", connection->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld", connection->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld", connection->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %lu", connection->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %lu", connection->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld", connection->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld", connection->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %lu", connection->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %lu", connection->stats->n_packets_sent);
 
 			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (connection->stats->received_packets);
@@ -169,6 +172,11 @@ Connection *connection_new (void) {
 		connection->custom_receive_args = NULL;
 		connection->custom_receive_args_delete = NULL;
 
+		connection->use_send_queue = CONNECTION_DEFAULT_USE_SEND_QUEUE;
+		connection->send_flags = CONNECTION_DEFAULT_SEND_FLAGS;
+		connection->send_thread_id = 0;
+		connection->send_queue = NULL;
+
 		connection->authenticated = false;
 		connection->auth_data = NULL;
 		connection->auth_data_size = 0;
@@ -205,6 +213,8 @@ void connection_delete (void *connection_ptr) {
 				connection->custom_receive_args_delete (connection->custom_receive_args);
 			}
 		}
+
+		job_queue_delete (connection->send_queue);
 
 		connection_remove_auth_data (connection);
 
@@ -351,7 +361,8 @@ void connection_set_update_timeout (Connection *connection, u32 timeout) {
 }
 
 // sets the connection received data
-// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+// a place to safely store the request response,
+// like when using client_connection_request_to_cerver ()
 void connection_set_received_data (
 	Connection *connection,
 	void *data, size_t data_size, Action data_delete
@@ -366,7 +377,8 @@ void connection_set_received_data (
 }
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
+// a reference to the client and connection will be passed to the action
+// as a ConnectionCustomReceiveData structure
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 void connection_set_custom_receive (
@@ -383,6 +395,19 @@ void connection_set_custom_receive (
 		connection->custom_receive_args = args;
 		connection->custom_receive_args_delete = args_delete;
 		if (connection->custom_receive) connection->receive_packets = true;
+	}
+
+}
+
+// enables the ability to send packets using the connection's queue
+// a dedicated thread will be created to send queued packets
+void connection_set_send_queue (
+	Connection *connection, int flags
+) {
+
+	if (connection) {
+		connection->use_send_queue = true;
+		connection->send_flags = flags;
 	}
 
 }
