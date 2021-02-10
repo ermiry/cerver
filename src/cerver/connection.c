@@ -987,6 +987,19 @@ void *connection_update (void *client_connection_ptr) {
 
 #pragma region send
 
+void connection_send_packet (
+	Connection *connection, Packet *packet
+) {
+
+	if (connection) {
+		(void) job_queue_push (
+			connection->send_queue,
+			job_create (NULL, packet)
+		);
+	}
+
+}
+
 void *connection_send_thread (void *client_connection_ptr) {
 
 	if (client_connection_ptr) {

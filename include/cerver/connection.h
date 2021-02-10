@@ -347,6 +347,10 @@ CERVER_PRIVATE void *connection_update (
 	void *client_connection_ptr
 );
 
+CERVER_PUBLIC void connection_send_packet (
+	Connection *connection, Packet *packet
+);
+
 CERVER_PRIVATE void *connection_send_thread (
 	void *client_connection_ptr
 );
