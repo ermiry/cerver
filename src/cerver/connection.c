@@ -30,7 +30,7 @@
 
 void connection_remove_auth_data (Connection *connection);
 
-static void *connection_send_thread (void *client_connection_ptr);
+void *connection_send_thread (void *client_connection_ptr);
 
 #pragma region stats
 
@@ -974,6 +974,69 @@ void *connection_update (void *client_connection_ptr) {
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
 			"Client %s - connection %s connection_update () thread has ended",
+			client_name, connection_name
+		);
+		#endif
+	}
+
+	return NULL;
+
+}
+
+#pragma endregion
+
+#pragma region send
+
+void *connection_send_thread (void *client_connection_ptr) {
+
+	if (client_connection_ptr) {
+		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+
+		char client_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char connection_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+
+		#ifdef CONNECTION_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+			"Client %s - connection %s connection_send () thread has started",
+			cc->client->name, cc->connection->name
+		);
+		#endif
+
+		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN);
+		(void) strncpy (connection_name, cc->connection->name, THREAD_NAME_BUFFER_LEN);
+
+		Job *job = NULL;
+		size_t sent = 0;
+		Packet *packet = NULL;
+		u8 failed = 0;
+		while (cc->connection->active && !failed) {
+			bsem_wait (cc->connection->send_queue->has_jobs);
+
+			if (cc->connection->active) {
+				job = job_queue_pull (cc->connection->send_queue);
+				if (job) {
+					packet = (Packet *) job->args;
+
+					failed = packet_send_actual (
+						packet,
+						cc->connection->send_flags, &sent,
+						cc->client, cc->connection
+					);
+
+					packet_delete (packet);
+
+					job_delete (job);
+				}
+			}
+		}
+
+		client_connection_aux_delete (cc);
+
+		#ifdef CONNECTION_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+			"Client %s - connection %s connection_send () thread has ended",
 			client_name, connection_name
 		);
 		#endif
