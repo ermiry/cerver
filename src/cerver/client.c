@@ -2200,36 +2200,84 @@ unsigned int client_connect_async (
 
 #pragma region start
 
+static int connection_start_update (
+	Client *client, Connection *connection
+) {
+
+	int retval = 1;
+
+	if (!thread_create_detachable (
+			&connection->update_thread_id,
+			connection_update,
+			client_connection_aux_new (client, connection)
+		)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"client_connection_start () - "
+				"Failed to create update thread for connection %s",
+				connection->name
+			);
+		}
+
+	return retval;
+
+}
+
+static int connection_start_send (
+	Client *client, Connection *connection
+) {
+
+	int retval = 1;
+
+	if (!thread_create_detachable (
+			&connection->send_thread_id,
+			connection_send_thread,
+			client_connection_aux_new (client, connection)
+		)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"client_connection_start () - "
+				"Failed to create send thread for connection %s",
+				connection->name
+			);
+		}
+
+	return retval;
+
+}
+
 // after a client connection successfully connects to a server,
 // it will start the connection's update thread to enable the connection to
 // receive & handle packets in a dedicated thread
 // returns 0 on success, 1 on error
-int client_connection_start (Client *client, Connection *connection) {
+int client_connection_start (
+	Client *client, Connection *connection
+) {
 
 	int retval = 1;
 
 	if (client && connection) {
 		if (connection->active) {
 			if (!client_start (client)) {
-				if (!thread_create_detachable (
-					&connection->update_thread_id,
-					connection_update,
-					client_connection_aux_new (client, connection)
-				)) {
-					retval = 0;         // success
-				}
+				int errors = 0;
 
-				else {
-					cerver_log_error (
-						"client_connection_start () - Failed to create update thread for client %s",
-						client->name
-					);
-				}
+				errors |= connection_start_update (client, connection);
+
+				errors |= connection_start_send (client, connection);
+
+				retval = errors;
 			}
 
 			else {
 				cerver_log_error (
-					"client_connection_start () - Failed to start client %s",
+					"client_connection_start () - "
+					"Failed to start client %s",
 					client->name
 				);
 			}
