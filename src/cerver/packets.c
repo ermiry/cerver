@@ -152,18 +152,18 @@ void packets_per_type_print (
 ) {
 
 	if (packets_per_type) {
-		cerver_log_msg ("Cerver:            %ld", packets_per_type->n_cerver_packets);
-		cerver_log_msg ("Client:            %ld", packets_per_type->n_client_packets);
-		cerver_log_msg ("Error:             %ld", packets_per_type->n_error_packets);
-		cerver_log_msg ("Request:           %ld", packets_per_type->n_request_packets);
-		cerver_log_msg ("Auth:              %ld", packets_per_type->n_auth_packets);
-		cerver_log_msg ("Game:              %ld", packets_per_type->n_game_packets);
-		cerver_log_msg ("App:               %ld", packets_per_type->n_app_packets);
-		cerver_log_msg ("App Error:         %ld", packets_per_type->n_app_error_packets);
-		cerver_log_msg ("Custom:            %ld", packets_per_type->n_custom_packets);
-		cerver_log_msg ("Test:              %ld", packets_per_type->n_test_packets);
-		cerver_log_msg ("Unknown:           %ld", packets_per_type->n_unknown_packets);
-		cerver_log_msg ("Bad:               %ld", packets_per_type->n_bad_packets);
+		cerver_log_msg ("Cerver:            %lu", packets_per_type->n_cerver_packets);
+		cerver_log_msg ("Client:            %lu", packets_per_type->n_client_packets);
+		cerver_log_msg ("Error:             %lu", packets_per_type->n_error_packets);
+		cerver_log_msg ("Request:           %lu", packets_per_type->n_request_packets);
+		cerver_log_msg ("Auth:              %lu", packets_per_type->n_auth_packets);
+		cerver_log_msg ("Game:              %lu", packets_per_type->n_game_packets);
+		cerver_log_msg ("App:               %lu", packets_per_type->n_app_packets);
+		cerver_log_msg ("App Error:         %lu", packets_per_type->n_app_error_packets);
+		cerver_log_msg ("Custom:            %lu", packets_per_type->n_custom_packets);
+		cerver_log_msg ("Test:              %lu", packets_per_type->n_test_packets);
+		cerver_log_msg ("Unknown:           %lu", packets_per_type->n_unknown_packets);
+		cerver_log_msg ("Bad:               %lu", packets_per_type->n_bad_packets);
 	}
 
 }
@@ -172,17 +172,17 @@ void packets_per_type_array_print (
 	const u64 packets[PACKETS_MAX_TYPES]
 ) {
 
-	cerver_log_msg ("\tCerver:              %ld", packets[PACKET_TYPE_CERVER]);
-	cerver_log_msg ("\tClient:              %ld", packets[PACKET_TYPE_CLIENT]);
-	cerver_log_msg ("\tError:               %ld", packets[PACKET_TYPE_ERROR]);
-	cerver_log_msg ("\tRequest:             %ld", packets[PACKET_TYPE_REQUEST]);
-	cerver_log_msg ("\tAuth:                %ld", packets[PACKET_TYPE_AUTH]);
-	cerver_log_msg ("\tGame:                %ld", packets[PACKET_TYPE_GAME]);
-	cerver_log_msg ("\tApp:                 %ld", packets[PACKET_TYPE_APP]);
-	cerver_log_msg ("\tApp Error:           %ld", packets[PACKET_TYPE_APP_ERROR]);
-	cerver_log_msg ("\tCustom:              %ld", packets[PACKET_TYPE_CUSTOM]);
-	cerver_log_msg ("\tTest:                %ld", packets[PACKET_TYPE_TEST]);
-	cerver_log_msg ("\tBad:                 %ld", packets[PACKET_TYPE_BAD]);
+	cerver_log_msg ("\tCerver:              %lu", packets[PACKET_TYPE_CERVER]);
+	cerver_log_msg ("\tClient:              %lu", packets[PACKET_TYPE_CLIENT]);
+	cerver_log_msg ("\tError:               %lu", packets[PACKET_TYPE_ERROR]);
+	cerver_log_msg ("\tRequest:             %lu", packets[PACKET_TYPE_REQUEST]);
+	cerver_log_msg ("\tAuth:                %lu", packets[PACKET_TYPE_AUTH]);
+	cerver_log_msg ("\tGame:                %lu", packets[PACKET_TYPE_GAME]);
+	cerver_log_msg ("\tApp:                 %lu", packets[PACKET_TYPE_APP]);
+	cerver_log_msg ("\tApp Error:           %lu", packets[PACKET_TYPE_APP_ERROR]);
+	cerver_log_msg ("\tCustom:              %lu", packets[PACKET_TYPE_CUSTOM]);
+	cerver_log_msg ("\tTest:                %lu", packets[PACKET_TYPE_TEST]);
+	cerver_log_msg ("\tBad:                 %lu", packets[PACKET_TYPE_BAD]);
 
 }
 
