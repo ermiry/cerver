@@ -422,6 +422,12 @@ CERVER_EXPORT Packet *packet_generate_request (
 	const void *data, const size_t data_size
 );
 
+CERVER_PRIVATE u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	struct _Client *client, struct _Connection *connection
+);
+
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error

@@ -1097,6 +1097,29 @@ static void packet_send_update_stats (
 
 #pragma GCC diagnostic pop
 
+u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	if (!packet_send_tcp_actual (
+		packet, connection, flags, total_sent, false
+	)) {
+		packet_send_update_stats (
+			packet->packet_type, *total_sent,
+			NULL, client, connection, NULL
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static inline u8 packet_send_internal (
 	const Packet *packet,
 	int flags, size_t *total_sent,
