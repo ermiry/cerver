@@ -2269,7 +2269,9 @@ int client_connection_start (
 
 				errors |= connection_start_update (client, connection);
 
-				errors |= connection_start_send (client, connection);
+				if (connection->use_send_queue) {
+					errors |= connection_start_send (client, connection);
+				}
 
 				retval = errors;
 			}

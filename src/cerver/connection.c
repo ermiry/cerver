@@ -30,8 +30,6 @@
 
 void connection_remove_auth_data (Connection *connection);
 
-void *connection_send_thread (void *client_connection_ptr);
-
 #pragma region stats
 
 ConnectionStats *connection_stats_new (void) {
@@ -408,6 +406,8 @@ void connection_set_send_queue (
 	if (connection) {
 		connection->use_send_queue = true;
 		connection->send_flags = flags;
+
+		connection->send_queue = job_queue_create ();
 	}
 
 }
