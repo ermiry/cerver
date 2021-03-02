@@ -732,6 +732,54 @@ u8 packet_generate (Packet *packet) {
 
 }
 
+void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	*packet = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
+
+		.packet_type = packet_type,
+		.req_type = request_type,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.header = (PacketHeader) {
+			.packet_type = packet_type,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = request_type,
+
+			.sock_fd = 0
+		},
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true
+	};
+
+}
+
+void packet_init_ping (Packet *packet) {
+
+	packet_init_request (
+		packet,
+		PACKET_TYPE_TEST, 0
+	);
+
+}
+
 // creates a request packet that is ready to be sent
 // returns a newly allocated packet
 Packet *packet_create_request (
@@ -741,36 +789,10 @@ Packet *packet_create_request (
 
 	Packet *packet = (Packet *) malloc (sizeof (Packet));
 	if (packet) {
-		*packet = (Packet) {
-			.cerver = NULL,
-			.client = NULL,
-			.connection = NULL,
-			.lobby = NULL,
-
-			.packet_type = packet_type,
-			.req_type = request_type,
-
-			.data_size = 0,
-			.data = NULL,
-			.data_ptr = NULL,
-			.data_end = NULL,
-			.data_ref = false,
-
-			.header = (PacketHeader) {
-				.packet_type = packet_type,
-				.packet_size = sizeof (PacketHeader),
-
-				.handler_id = 0,
-
-				.request_type = request_type,
-
-				.sock_fd = 0
-			},
-
-			.packet_size = sizeof (PacketHeader),
-			.packet = (void *) &packet->header,
-			.packet_ref = true
-		};
+		packet_init_request (
+			packet,
+			packet_type, request_type
+		);
 	}
 
 	return packet;

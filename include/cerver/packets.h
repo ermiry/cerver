@@ -403,6 +403,16 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
+// initializes a packet with request related values
+CERVER_EXPORT void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
+// initializes an already allocated packet as ping request
+CERVER_EXPORT void packet_init_ping (Packet *packet);
+
 // creates a request packet that is ready to be sent
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_request (
