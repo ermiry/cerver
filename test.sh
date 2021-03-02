@@ -11,14 +11,14 @@ make TYPE=test -j4 || { exit 1; }
 make TYPE=test -j4 test || { exit 1; }
 
 # compile docker
-sudo docker build -t ermiry/cerver:test -f Dockerfile.test . || { exit 1; }
+sudo docker build -t ermiry/cerver:local -f Dockerfile.local . || { exit 1; }
 
 # ping
 sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/ping
+	ermiry/cerver:local ./bin/cerver/ping
 
 sleep 2
 
@@ -33,7 +33,7 @@ sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/packets
+	ermiry/cerver:local ./bin/cerver/packets
 
 sleep 2
 
@@ -48,7 +48,7 @@ sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/requests
+	ermiry/cerver:local ./bin/cerver/requests
 
 sleep 2
 
@@ -63,7 +63,7 @@ sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/auth
+	ermiry/cerver:local ./bin/cerver/auth
 
 sleep 2
 
@@ -78,7 +78,7 @@ sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/sessions
+	ermiry/cerver:local ./bin/cerver/sessions
 
 sleep 2
 
@@ -93,7 +93,7 @@ sudo docker run \
 	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:test ./bin/cerver/threads
+	ermiry/cerver:local ./bin/cerver/threads
 
 sleep 2
 
