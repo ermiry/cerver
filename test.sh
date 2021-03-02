@@ -102,3 +102,18 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 ./test/bin/client/threads || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
+
+# queue
+sudo docker run \
+	-it \
+	--name test --rm \
+	-p 7000:7000 \
+	ermiry/cerver:local /bin/bash
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/queue || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
