@@ -561,7 +561,6 @@ u8 http_response_create_and_send (
 
 }
 
-// TODO: stats
 // sends a file directly to the connection
 // this method is used when serving files from static paths & by  http_response_render_file ()
 // returns 0 on success, 1 on error
@@ -591,16 +590,29 @@ u8 http_response_send_file (
 			cerver_log_msg ("\n%s\n", header);
 			#endif
 
+			size_t header_len = strlen (header);
 			if (!http_response_send_actual (
 				http_receive->cr->connection->socket,
-				header, strlen (header)
+				header, header_len
 			)) {
+				size_t total_size = header_len;
+
+				if (http_receive->cr->cerver)
+					http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+
+				http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
 				// send the actual file
-				sendfile (
+				if (!sendfile (
 					http_receive->cr->connection->socket->sock_fd, 
 					file, 
 					0, filestatus->st_size
-				);
+				)) {
+					total_size += (size_t) filestatus->st_size;
+				}
+
+				((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
+				((HttpReceive *) http_receive)->sent = total_size;
 
 				retval = 0;
 			}
