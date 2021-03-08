@@ -1213,7 +1213,7 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 Cerver *cerver_create (
 	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue
+	const u16 connection_queue
 ) {
 
 	Cerver *cerver = NULL;
@@ -1264,6 +1264,19 @@ Cerver *cerver_create (
 	}
 
 	return cerver;
+
+}
+
+// creates a new cerver of type CERVER_TYPE_WEB
+Cerver *cerver_create_web (
+	const char *name, const u16 port, const u16 connection_queue
+) {
+
+	return cerver_create (
+		CERVER_TYPE_WEB,
+		name, port, PROTOCOL_TCP, false,
+		connection_queue
+	);
 
 }
 

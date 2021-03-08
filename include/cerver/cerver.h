@@ -607,7 +607,12 @@ CERVER_EXPORT unsigned int cerver_get_n_handlers_working (Cerver *cerver);
 CERVER_EXPORT Cerver *cerver_create (
 	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue
+	const u16 connection_queue
+);
+
+// creates a new cerver of type CERVER_TYPE_WEB
+CERVER_EXPORT Cerver *cerver_create_web (
+	const char *name, const u16 port, const u16 connection_queue
 );
 
 #pragma endregion
