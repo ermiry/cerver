@@ -2157,7 +2157,9 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->request = NULL;
 
+		http_receive->type = HTTP_RECEIVE_TYPE_NONE;
 		http_receive->route = NULL;
+		http_receive->served_file = NULL;
 
 		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
@@ -2710,6 +2712,8 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 		// check if file exists
 		(void) memset (&filestatus, 0, sizeof (struct stat));
 		if (!stat (filename, &filestatus)) {
+			http_receive->served_file = http_receive->request->url->str;
+
 			// serve the file
 			int file = open (filename, O_RDONLY);
 			if (file) {
@@ -2717,7 +2721,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 					http_receive, file, filename, &filestatus
 				);
 
-				close (file);
+				(void) close (file);
 			}
 
 			found = true;
@@ -2766,21 +2770,25 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 				// check if we can serve file from static paths
 				if (http_receive->http_cerver->static_paths->size) {
 					http_receive_handle_serve_file (http_receive);
+					http_receive->type = HTTP_RECEIVE_TYPE_FILE;
 				}
 
 				// unable to serve a file, try for matching route
 				else {
 					http_receive_handle_select (http_receive, http_receive->request);
+					http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
 				}
 			}
 
 			else {
 				http_receive_handle_select (http_receive, http_receive->request);
+				http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
 			}
 		} break;
 
 		default:
 			http_receive_handle_select (http_receive, http_receive->request);
+			http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
 			break;
 	}
 

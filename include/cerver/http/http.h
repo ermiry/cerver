@@ -478,6 +478,14 @@ CERVER_PUBLIC const char *http_receive_status_str (
 	const HttpReceiveStatus status
 );
 
+typedef enum HttpReceiveType {
+
+	HTTP_RECEIVE_TYPE_NONE		= 0,
+	HTTP_RECEIVE_TYPE_FILE		= 1,
+	HTTP_RECEIVE_TYPE_ROUTE		= 2
+
+} HttpReceiveType;
+
 struct _HttpReceive {
 
 	HttpReceiveStatus receive_status;
@@ -502,7 +510,10 @@ struct _HttpReceive {
 
 	HttpRequest *request;
 
+	// found
+	HttpReceiveType type;
 	HttpRoute *route;
+	const char *served_file;
 
 	http_status status;
 	size_t sent;

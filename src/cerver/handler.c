@@ -2314,29 +2314,44 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	// log request summary
 	switch (http_receive->receive_status) {
 		case HTTP_RECEIVE_STATUS_COMPLETED: {
-			cerver_log_with_date (
-				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
-				cr->connection->ip,
-				http_request_method_str (http_receive->request->method),
-				http_receive->route->route->str,
-				total_received,
-				process_time,
-				http_receive->status, http_receive->sent
-			);
-
-			// update route stats
-			http_route_stats_update (
-				http_receive->route->stats[http_receive->request->method],
-				process_time,
-				total_received, http_receive->sent
-			);
-
-			if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-				http_route_file_stats_update (
-					http_receive->route->file_stats,
-					http_receive->file_stats
+			if (http_receive->type == HTTP_RECEIVE_TYPE_FILE) {
+				cerver_log_with_date (
+					LOG_TYPE_NONE, LOG_TYPE_NONE,
+					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+					cr->connection->ip,
+					http_request_method_str (http_receive->request->method),
+					http_receive->served_file,
+					total_received,
+					process_time,
+					http_receive->status, http_receive->sent
 				);
+			}
+
+			else {
+				cerver_log_with_date (
+					LOG_TYPE_NONE, LOG_TYPE_NONE,
+					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+					cr->connection->ip,
+					http_request_method_str (http_receive->request->method),
+					http_receive->route->route->str,
+					total_received,
+					process_time,
+					http_receive->status, http_receive->sent
+				);
+
+				// update route stats
+				http_route_stats_update (
+					http_receive->route->stats[http_receive->request->method],
+					process_time,
+					total_received, http_receive->sent
+				);
+
+				if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+					http_route_file_stats_update (
+						http_receive->route->file_stats,
+						http_receive->file_stats
+					);
+				}
 			}
 		} break;
 
