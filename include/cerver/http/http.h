@@ -133,6 +133,10 @@ CERVER_PRIVATE void http_cerver_delete (
 	void *http_cerver_ptr
 );
 
+CERVER_EXPORT HttpCerver *http_cerver_get (
+	struct _Cerver *cerver
+);
+
 CERVER_PRIVATE HttpCerver *http_cerver_create (
 	struct _Cerver *cerver
 );

@@ -272,6 +272,12 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 }
 
+HttpCerver *http_cerver_get (Cerver *cerver) {
+
+	return cerver ? (HttpCerver *) cerver->cerver_data : NULL;
+
+}
+
 HttpCerver *http_cerver_create (Cerver *cerver) {
 
 	HttpCerver *http_cerver = http_cerver_new ();
