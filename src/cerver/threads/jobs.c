@@ -2,17 +2,21 @@
 
 #include "cerver/collections/dlist.h"
 
-#include "cerver/threads/jobs.h"
 #include "cerver/threads/bsem.h"
+#include "cerver/threads/jobs.h"
+#include "cerver/threads/thread.h"
+
+#ifdef THREADS_DEBUG
+#include "cerver/utils/log.h"
+#endif
 
 void job_queue_clear (JobQueue *job_queue);
 
-Job *job_new (void) {
+void *job_new (void) {
 
 	Job *job = (Job *) malloc (sizeof (Job));
 	if (job) {
-		// job->prev = NULL;
-		job->method = NULL;
+		job->work = NULL;
 		job->args = NULL;
 	}
 
@@ -26,11 +30,11 @@ void job_delete (void *job_ptr) {
 
 }
 
-Job *job_create (void (*method) (void *args), void *args) {
+Job *job_create (void (*work) (void *args), void *args) {
 
 	Job *job = job_new ();
 	if (job) {
-		job->method = method;
+		job->work = work;
 		job->args = args;
 	}
 
@@ -38,19 +42,174 @@ Job *job_create (void (*method) (void *args), void *args) {
 
 }
 
+void job_reset (Job *job) {
+
+	job->work = NULL;
+	job->args = NULL;
+
+}
+
+void job_return (
+	JobQueue *job_queue, Job *job
+) {
+
+	if (job_queue && job) {
+		job_reset (job);
+		(void) pool_push (job_queue->pool, job);
+	}
+
+}
+
+void *job_handler_new (void) {
+
+	JobHandler *job_handler = (JobHandler *) malloc (sizeof (JobHandler));
+	if (job_handler) {
+		job_handler->cerver = NULL;
+		job_handler->connection = NULL;
+
+		job_handler->mutex = NULL;
+		job_handler->cond = NULL;
+
+		job_handler->done = false;
+
+		job_handler->data = NULL;
+		job_handler->data_delete = NULL;
+	}
+
+	return job_handler;
+
+}
+
+void job_handler_delete (void *job_handler_ptr) {
+
+	if (job_handler_ptr) {
+		JobHandler *job_handler = (JobHandler *) job_handler_ptr;
+
+		job_handler->cerver = NULL;
+		job_handler->connection = NULL;
+
+		pthread_mutex_delete (job_handler->mutex);
+		pthread_cond_delete (job_handler->cond);
+
+		if (job_handler->data_delete)
+			job_handler->data_delete (job_handler->data);
+
+		job_handler->data = NULL;
+		job_handler->data_delete = NULL;
+
+		free (job_handler);
+	}
+
+}
+
+void *job_handler_create (void) {
+
+	JobHandler *job_handler = (JobHandler *) job_handler_new ();
+	if (job_handler) {
+		job_handler->cond = pthread_cond_new ();
+		job_handler->mutex = pthread_mutex_new ();
+	}
+
+	return job_handler;
+
+}
+
+JobHandler *job_handler_get (JobQueue *job_queue) {
+
+	return (JobHandler *) pool_pop (job_queue->pool);
+
+}
+
+void job_handler_reset (JobHandler *job_handler) {
+
+	if (job_handler) {
+		job_handler->cerver = NULL;
+		job_handler->connection = NULL;
+
+		job_handler->done = false;
+
+		if (job_handler->data_delete)
+			job_handler->data_delete (job_handler->data);
+
+		job_handler->data = NULL;
+	}
+
+}
+
+// wake up waiting thread
+void job_handler_signal (JobHandler *handler) {
+
+	if (handler) {
+		(void) pthread_mutex_lock (handler->mutex);
+
+		handler->done = true;
+
+		(void) pthread_cond_signal (handler->cond);
+		(void) pthread_mutex_unlock (handler->mutex);
+	}
+
+}
+
+void job_handler_return (
+	JobQueue *job_queue, JobHandler *job_handler
+) {
+
+	if (job_queue && job_handler) {
+		job_handler_reset (job_handler);
+		(void) pool_push (job_queue->pool, job_handler);
+	}
+
+}
+
+void job_handler_wait (
+	JobQueue *job_queue,
+	void *data, void (*data_delete) (void *data_ptr),
+	void (*work) (void *data_ptr)
+) {
+
+	JobHandler *handler = (JobHandler *) pool_pop (job_queue->pool);
+	if (handler) {
+		handler->data = data;
+		handler->data_delete = data_delete;
+
+		// push handler to queue and wait for results
+		if (!job_queue_push (job_queue, handler)) {
+			// wait for response
+			(void) pthread_mutex_lock (handler->mutex);
+
+			while (!handler->done) {
+				#ifdef THREADS_DEBUG
+				cerver_log_debug ("job_handler_wait () waiting...");
+				#endif
+				(void) pthread_cond_wait (handler->cond, handler->mutex);
+			}
+
+			(void) pthread_mutex_unlock (handler->mutex);
+
+			// do work
+			work (data);
+		}
+
+		job_handler_return (job_queue, handler);
+	}
+
+}
+
 JobQueue *job_queue_new (void) {
 
 	JobQueue *job_queue = (JobQueue *) malloc (sizeof (JobQueue));
 	if (job_queue) {
-		// job_queue->front = NULL;
-		// job_queue->rear = NULL;
+		job_queue->type = JOB_QUEUE_TYPE_NONE;
 
-		// job_queue->size = 0;
+		job_queue->pool = NULL;
 
 		job_queue->queue = NULL;
 
 		job_queue->rwmutex = NULL;
 		job_queue->has_jobs = NULL;
+
+		job_queue->running = false;
+		job_queue->handler = NULL;
 	}
 
 	return job_queue;
