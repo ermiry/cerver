@@ -2874,10 +2874,19 @@ static void cerver_accept (void *cerver_ptr) {
 	}
 
 	else {
-		// if we get EWOULDBLOCK, we have accepted all connections
-		if (errno != EWOULDBLOCK) {
-			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
-			perror ("Error");
+		switch (errno) {
+			case EINTR: {
+				cerver_log_warning ("accept () - Interrupted system call");
+				cerver_log_warning ("Exiting...");
+				cerver->isRunning = false;
+			} break;
+
+			case EWOULDBLOCK: break;
+
+			default: {
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
+				perror ("Error");
+			} break;
 		}
 	}
 
