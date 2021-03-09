@@ -12,7 +12,13 @@ static void work_method (void *args) {
 
 }
 
-static Job *test_job_new (void) {
+static void handler_method (JobHandler *job_handler) {
+
+	(void) printf ("Custom job queue handler method!");
+
+}
+
+static void test_job_new (void) {
 
 	Job *job = job_new ();
 
@@ -20,7 +26,7 @@ static Job *test_job_new (void) {
 	test_check_null_ptr (job->work);
 	test_check_null_ptr (job->args);
 
-	return job;
+	job_delete (job);
 
 }
 
@@ -130,18 +136,100 @@ static void test_job_handler_done (void) {
 
 }
 
+static void test_job_queue_new (void) {
+
+	JobQueue *job_queue = job_queue_new ();
+
+	test_check_ptr (job_queue);
+	test_check_int_eq (job_queue->type, JOB_QUEUE_TYPE_NONE, NULL);
+	test_check_null_ptr (job_queue->pool);
+	test_check_null_ptr (job_queue->queue);
+	test_check_null_ptr (job_queue->rwmutex);
+	test_check_null_ptr (job_queue->has_jobs);
+	test_check_bool_eq (job_queue->running, false, NULL);
+	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
+	test_check_null_ptr (job_queue->handler);
+
+	job_queue_delete (job_queue);
+
+}
+
+static void test_job_queue_create_jobs (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+
+	test_check_ptr (job_queue);
+	test_check_int_eq (job_queue->type, JOB_QUEUE_TYPE_JOBS, NULL);
+	test_check_ptr (job_queue->pool);
+	test_check_ptr (job_queue->queue);
+	test_check_ptr (job_queue->rwmutex);
+	test_check_ptr (job_queue->has_jobs);
+	test_check_bool_eq (job_queue->running, false, NULL);
+	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
+	test_check_null_ptr (job_queue->handler);
+
+	job_queue_delete (job_queue);
+
+}
+
+static void test_job_queue_create_handlers (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);
+
+	test_check_ptr (job_queue);
+	test_check_int_eq (job_queue->type, JOB_QUEUE_TYPE_HANDLERS, NULL);
+	test_check_ptr (job_queue->pool);
+	test_check_ptr (job_queue->queue);
+	test_check_ptr (job_queue->rwmutex);
+	test_check_ptr (job_queue->has_jobs);
+	test_check_bool_eq (job_queue->running, false, NULL);
+	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
+	test_check_null_ptr (job_queue->handler);
+
+	job_queue_delete (job_queue);
+
+}
+
+static void test_job_queue_set_handler (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_HANDLERS);
+
+	test_check_ptr (job_queue);
+	test_check_int_eq (job_queue->type, JOB_QUEUE_TYPE_HANDLERS, NULL);
+	test_check_ptr (job_queue->pool);
+	test_check_ptr (job_queue->queue);
+	test_check_ptr (job_queue->rwmutex);
+	test_check_ptr (job_queue->has_jobs);
+	test_check_bool_eq (job_queue->running, false, NULL);
+	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
+	test_check_null_ptr (job_queue->handler);
+
+	job_queue_set_handler (job_queue, handler_method);
+	test_check_ptr (job_queue->handler);
+
+	job_queue_delete (job_queue);
+
+}
+
 void threads_tests_jobs (void) {
 
 	(void) printf ("Testing THREADS jobs...\n");
 
 	// jobs
+	test_job_new ();
 	test_job_create ();
 	test_job_reset ();
 
 	// handlers
-	test_job_handler_create ();
+	test_job_handler_new ();
 	test_job_handler_reset ();
 	test_job_handler_done ();
+
+	// queue
+	test_job_queue_new ();
+	test_job_queue_create_jobs ();
+	test_job_queue_create_handlers ();
+	test_job_queue_set_handler ();
 
 	(void) printf ("Done!\n");
 
