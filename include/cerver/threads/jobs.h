@@ -36,6 +36,8 @@ CERVER_PUBLIC Job *job_create (
 	void (*work) (void *args), void *args
 );
 
+CERVER_PUBLIC Job *job_get (struct _JobQueue *job_queue);
+
 CERVER_PUBLIC void job_reset (Job *job);
 
 CERVER_PUBLIC void job_return (
@@ -124,10 +126,26 @@ CERVER_PUBLIC void job_queue_set_handler (
 	JobQueue *queue, void (*handler) (JobHandler *job_handler)
 );
 
-// add a new job to the queue
+// adds a new job to the queue
 // returns 0 on success, 1 on error
 CERVER_PUBLIC int job_queue_push (
 	JobQueue *job_queue, void *job_ptr
+);
+
+// creates & adds a new job to the queue
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int job_queue_push_job (
+	JobQueue *job_queue,
+	void (*work) (void *args), void *args
+);
+
+// creates & adds a new handler to the queue
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int job_queue_push_handler (
+	JobQueue *job_queue,
+	struct _Cerver *cerver,
+	struct _Connection *connection,
+	void *data, void (*data_delete) (void *data_ptr)
 );
 
 // get the job at the start of the queue

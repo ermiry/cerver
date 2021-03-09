@@ -42,6 +42,12 @@ Job *job_create (void (*work) (void *args), void *args) {
 
 }
 
+Job *job_get (JobQueue *job_queue) {
+
+	return (Job *) pool_pop (job_queue->pool);
+
+}
+
 void job_reset (Job *job) {
 
 	job->work = NULL;
@@ -310,37 +316,99 @@ void job_queue_set_handler (
 
 }
 
+static int job_queue_push_internal (
+	JobQueue *job_queue, void *job_ptr
+) {
+
+	int retval = 1;
+
+	(void) pthread_mutex_lock (job_queue->rwmutex);
+
+	// job->prev = NULL;
+	// switch (job_queue->size) {
+	// 	case 0:
+	// 		job_queue->front = job;
+	// 		job_queue->rear = job;
+	// 		break;
+
+	// 	default:
+	// 		job->prev = job_queue->rear;
+	// 		job_queue->rear = job;
+	// 		break;
+	// }
+
+	retval = dlist_insert_after (
+		job_queue->queue,
+		dlist_end (job_queue->queue),
+		job_ptr
+	);
+
+	bsem_post (job_queue->has_jobs);
+
+	(void) pthread_mutex_unlock (job_queue->rwmutex);
+
+	return retval;
+
+}
+
 // add a new job to the queue
 // returns 0 on success, 1 on error
 int job_queue_push (JobQueue *job_queue, void *job_ptr) {
 
+	return (job_queue && job_ptr) ?
+		job_queue_push_internal (job_queue, job_ptr) : 1;
+
+}
+
+int job_queue_push_job (
+	JobQueue *job_queue,
+	void (*work) (void *args), void *args
+) {
+
 	int retval = 1;
 
-	if (job_queue && job_ptr) {
-		(void) pthread_mutex_lock (job_queue->rwmutex);
+	if (job_queue) {
+		Job *job = (Job *) pool_pop (job_queue->pool);
+		if (job) {
+			job->work = work;
+			job->args = args;
 
-		// job->prev = NULL;
-		// switch (job_queue->size) {
-		// 	case 0:
-		// 		job_queue->front = job;
-		// 		job_queue->rear = job;
-		// 		break;
+			if (!job_queue_push_internal (
+				job_queue, job
+			)) {
+				retval = 0;
+			}
+		}
+	}
 
-		// 	default:
-		// 		job->prev = job_queue->rear;
-		// 		job_queue->rear = job;
-		// 		break;
-		// }
+	return retval;
 
-		retval = dlist_insert_after (
-			job_queue->queue,
-			dlist_end (job_queue->queue),
-			job_ptr
-		);
+}
 
-		bsem_post (job_queue->has_jobs);
+int job_queue_push_handler (
+	JobQueue *job_queue,
+	struct _Cerver *cerver,
+	struct _Connection *connection,
+	void *data, void (*data_delete) (void *data_ptr)
+) {
 
-		(void) pthread_mutex_unlock (job_queue->rwmutex);
+	int retval = 1;
+
+	if (job_queue) {
+		JobHandler *job_handler = (JobHandler *) pool_pop (job_queue->pool);
+		if (job_handler) {
+			job_handler->cerver = cerver;
+			job_handler->connection = connection;
+
+			job_handler->data = data;
+			job_handler->data_delete = data_delete;
+
+			if (!job_queue_push_internal (
+				job_queue, job_handler
+			)) {
+				retval = 0;
+			}
+		}
 	}
 
 	return retval;
