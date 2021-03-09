@@ -34,6 +34,7 @@
 
 HttpResponse *oki_doki = NULL;
 HttpResponse *bad_request_error = NULL;
+HttpResponse *bad_user_error = NULL;
 HttpResponse *bad_auth_error = NULL;
 HttpResponse *not_found_error = NULL;
 HttpResponse *server_error = NULL;
@@ -315,6 +316,10 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_BAD_REQUEST, "error", "Bad request!"
 	);
 
+	bad_user_error = http_response_create_json_key_value (
+		HTTP_STATUS_BAD_REQUEST, "error", "Bad user!"
+	);
+
 	bad_auth_error = http_response_create_json_key_value (
 		HTTP_STATUS_UNAUTHORIZED, "error", "Failed to authenticate!"
 	);
@@ -333,7 +338,8 @@ static unsigned int http_cerver_init_responses (void) {
 
 	if (
 		oki_doki
-		&& bad_request_error && bad_auth_error && not_found_error
+		&& bad_request_error && bad_user_error
+		&& bad_auth_error && not_found_error
 		&& server_error
 		&& catch_all
 	) retval = 0;
@@ -504,6 +510,7 @@ void http_cerver_end (HttpCerver *http_cerver) {
 
 		http_response_delete (oki_doki);
 		http_response_delete (bad_request_error);
+		http_response_delete (bad_user_error);
 		http_response_delete (bad_auth_error);
 		http_response_delete (not_found_error);
 		http_response_delete (server_error);

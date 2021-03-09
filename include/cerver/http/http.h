@@ -391,6 +391,7 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 
 CERVER_PUBLIC struct _HttpResponse *oki_doki;
 CERVER_PUBLIC struct _HttpResponse *bad_request_error;
+CERVER_PUBLIC struct _HttpResponse *bad_user_error;
 CERVER_PUBLIC struct _HttpResponse *bad_auth_error;
 CERVER_PUBLIC struct _HttpResponse *not_found_error;
 CERVER_PUBLIC struct _HttpResponse *server_error;
