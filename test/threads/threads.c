@@ -4,6 +4,8 @@
 
 #include <cerver/threads/thread.h>
 
+#include "threads.h"
+
 #include "../test.h"
 
 static void *test_thread (void *data_ptr) {
@@ -92,6 +94,10 @@ int main (int argc, char **argv) {
 	(void) printf ("Testing THREADS...\n");
 
 	threads_tests_main ();
+
+	threads_tests_bsem ();
+
+	threads_tests_jobs ();
 
 	(void) printf ("\nDone with THREADS tests!\n\n");
 
