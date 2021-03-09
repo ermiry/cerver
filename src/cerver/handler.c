@@ -118,7 +118,7 @@ Handler *handler_create (Action handler_method) {
 
 		handler->handler = handler_method;
 
-		handler->job_queue = job_queue_create ();
+		handler->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 	}
 
 	return handler;
