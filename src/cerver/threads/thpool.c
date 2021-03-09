@@ -66,7 +66,9 @@ static unsigned int pool_thread_init (PoolThread *thread) {
 	unsigned int retval = 1;
 
 	if (thread) {
-		if (!pthread_create (&thread->thread_id, NULL, thread_do, thread)) {
+		if (!pthread_create (
+			&thread->thread_id, NULL, thread_do, thread
+		)) {
 			if (!pthread_detach (thread->thread_id)) {
 				retval = 0;
 			}
@@ -164,8 +166,8 @@ static void *thread_do (void *thread_ptr) {
 				// get job to execute
 				Job *job = job_queue_pull (thpool->job_queue);
 				if (job) {
-					if (job->method)
-						job->method (job->args);
+					if (job->work)
+						job->work (job->args);
 
 					job_delete (job);
 				}
@@ -208,7 +210,7 @@ Thpool *thpool_create (unsigned int n_threads) {
 			thpool->threads_all_idle = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
 			pthread_cond_init (thpool->threads_all_idle, NULL);
 
-			thpool->job_queue = job_queue_create ();
+			thpool->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 		}
 
 		else {
