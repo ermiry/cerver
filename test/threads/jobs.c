@@ -20,7 +20,7 @@ static void handler_method (JobHandler *job_handler) {
 
 static void test_job_new (void) {
 
-	Job *job = job_new ();
+	Job *job = (Job *) job_new ();
 
 	test_check_ptr (job);
 	test_check_null_ptr (job->work);
@@ -68,7 +68,7 @@ static void test_job_reset (void) {
 
 static void test_job_handler_new (void) {
 
-	JobHandler *handler = job_handler_new ();
+	JobHandler *handler = (JobHandler *) job_handler_new ();
 	
 	test_check_ptr (handler);
 	test_check_null_ptr (handler->cerver);
@@ -85,7 +85,7 @@ static void test_job_handler_new (void) {
 
 static JobHandler *test_job_handler_create (void) {
 
-	JobHandler *handler = job_handler_create ();
+	JobHandler *handler = (JobHandler *) job_handler_create ();
 
 	test_check_ptr (handler);
 	test_check_null_ptr (handler->cerver);
