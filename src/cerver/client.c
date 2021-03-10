@@ -247,6 +247,8 @@ Client *client_new (void) {
 		client->app_error_packet_handler = NULL;
 		client->custom_packet_handler = NULL;
 
+		client->max_received_packet_size = CLIENT_DEFAULT_MAX_RECEIVED_PACKET_SIZE;
+
 		client->check_packets = false;
 
 		client->lock = NULL;
@@ -467,6 +469,16 @@ void client_set_custom_handler (
 			client->custom_packet_handler->client = client;
 		}
 	}
+
+}
+
+// only handle packets with size <= max_received_packet_size
+// if the packet is bigger it will be considered a bad packet 
+void client_set_max_received_packet_size (
+	Client *client, size_t max_received_packet_size
+) {
+
+	if (client) client->max_received_packet_size = max_received_packet_size;
 
 }
 
@@ -3399,9 +3411,11 @@ static void client_receive_handle_buffer_actual (
 			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
 			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
 		) {
-			// TODO: make max value a variable
 			// check that we have a valid packet size
-			if ((packet_size > 0) && (packet_size < 65536)) {
+			if (
+				(packet_size > 0)
+				&& (packet_size <= receive_handle->client->max_received_packet_size)
+			) {
 				// we can safely process the complete packet
 				packet = packet_create_with_data (
 					header->packet_size - sizeof (PacketHeader)

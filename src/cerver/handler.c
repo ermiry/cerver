@@ -118,7 +118,7 @@ Handler *handler_create (Action handler_method) {
 
 		handler->handler = handler_method;
 
-		handler->job_queue = job_queue_create ();
+		handler->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 	}
 
 	return handler;
@@ -1542,9 +1542,11 @@ static void cerver_receive_handle_buffer_actual (
 			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
 			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
 		) {
-			// TODO: make max value a variable
 			// check that we have a valid packet size
-			if ((packet_size > 0) && (packet_size < 65536)) {
+			if (
+				(packet_size > 0)
+				&& (packet_size <= receive_handle->cerver->max_received_packet_size)
+			) {
 				// we can safely process the complete packet
 				packet = packet_create_with_data (
 					header->packet_size - sizeof (PacketHeader)
@@ -2312,29 +2314,44 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	// log request summary
 	switch (http_receive->receive_status) {
 		case HTTP_RECEIVE_STATUS_COMPLETED: {
-			cerver_log_with_date (
-				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
-				cr->connection->ip,
-				http_request_method_str (http_receive->request->method),
-				http_receive->route->route->str,
-				total_received,
-				process_time,
-				http_receive->status, http_receive->sent
-			);
-
-			// update route stats
-			http_route_stats_update (
-				http_receive->route->stats[http_receive->request->method],
-				process_time,
-				total_received, http_receive->sent
-			);
-
-			if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
-				http_route_file_stats_update (
-					http_receive->route->file_stats,
-					http_receive->file_stats
+			if (http_receive->type == HTTP_RECEIVE_TYPE_FILE) {
+				cerver_log_with_date (
+					LOG_TYPE_NONE, LOG_TYPE_NONE,
+					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+					cr->connection->ip,
+					http_request_method_str (http_receive->request->method),
+					http_receive->served_file,
+					total_received,
+					process_time,
+					http_receive->status, http_receive->sent
 				);
+			}
+
+			else {
+				cerver_log_with_date (
+					LOG_TYPE_NONE, LOG_TYPE_NONE,
+					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+					cr->connection->ip,
+					http_request_method_str (http_receive->request->method),
+					http_receive->route->route->str,
+					total_received,
+					process_time,
+					http_receive->status, http_receive->sent
+				);
+
+				// update route stats
+				http_route_stats_update (
+					http_receive->route->stats[http_receive->request->method],
+					process_time,
+					total_received, http_receive->sent
+				);
+
+				if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+					http_route_file_stats_update (
+						http_receive->route->file_stats,
+						http_receive->file_stats
+					);
+				}
 			}
 		} break;
 
@@ -2419,7 +2436,7 @@ static Connection *cerver_connection_create (
 				connection->socket->sock_fd = new_fd;
 				(void) memcpy (
 					&connection->address,
-					&client_address,
+					client_address,
 					sizeof (struct sockaddr_storage)
 				);
 
@@ -2857,10 +2874,19 @@ static void cerver_accept (void *cerver_ptr) {
 	}
 
 	else {
-		// if we get EWOULDBLOCK, we have accepted all connections
-		if (errno != EWOULDBLOCK) {
-			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
-			perror ("Error");
+		switch (errno) {
+			case EINTR: {
+				cerver_log_warning ("accept () - Interrupted system call");
+				cerver_log_warning ("Exiting...");
+				cerver->isRunning = false;
+			} break;
+
+			case EWOULDBLOCK: break;
+
+			default: {
+				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_CERVER, "Accept failed!");
+				perror ("Error");
+			} break;
 		}
 	}
 

@@ -301,7 +301,6 @@ Cerver *cerver_new (void) {
 		cerver->protocol = CERVER_DEFAULT_PROTOCOL;         // default protocol
 		cerver->use_ipv6 = CERVER_DEFAULT_USE_IPV6;
 		cerver->connection_queue = CERVER_DEFAULT_CONNECTION_QUEUE;
-		cerver->receive_buffer_size = CERVER_DEFAULT_RECEIVE_BUFFER_SIZE;
 
 		cerver->isRunning = false;
 		cerver->blocking = true;
@@ -355,6 +354,9 @@ Cerver *cerver_new (void) {
 		cerver->session_id_generator = NULL;
 
 		cerver->handle_received_buffer = NULL;
+
+		cerver->receive_buffer_size = CERVER_DEFAULT_RECEIVE_BUFFER_SIZE;
+		cerver->max_received_packet_size = CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE;
 
 		cerver->app_packet_handler = NULL;
 		cerver->app_error_packet_handler = NULL;
@@ -498,7 +500,7 @@ void cerver_set_connection_queue (
 
 // sets the cerver's receive buffer size used in recv method
 void cerver_set_receive_buffer_size (
-	Cerver *cerver, const u32 size
+	Cerver *cerver, const size_t size
 ) {
 
 	if (cerver) cerver->receive_buffer_size = size;
@@ -713,6 +715,16 @@ void cerver_set_handle_recieved_buffer (
 ) {
 
 	if (cerver) cerver->handle_received_buffer = handle_received_buffer;
+
+}
+
+// only handle packets with size <= max_received_packet_size
+// if the packet is bigger it will be considered a bad packet 
+void cerver_set_max_received_packet_size (
+	Cerver *cerver, size_t max_received_packet_size
+) {
+
+	if (cerver) cerver->max_received_packet_size = max_received_packet_size;
 
 }
 
@@ -1201,7 +1213,7 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 Cerver *cerver_create (
 	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue
+	const u16 connection_queue
 ) {
 
 	Cerver *cerver = NULL;
@@ -1252,6 +1264,19 @@ Cerver *cerver_create (
 	}
 
 	return cerver;
+
+}
+
+// creates a new cerver of type CERVER_TYPE_WEB
+Cerver *cerver_create_web (
+	const char *name, const u16 port, const u16 connection_queue
+) {
+
+	return cerver_create (
+		CERVER_TYPE_WEB,
+		name, port, PROTOCOL_TCP, false,
+		connection_queue
+	);
 
 }
 

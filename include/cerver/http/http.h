@@ -133,6 +133,10 @@ CERVER_PRIVATE void http_cerver_delete (
 	void *http_cerver_ptr
 );
 
+CERVER_EXPORT HttpCerver *http_cerver_get (
+	struct _Cerver *cerver
+);
+
 CERVER_PRIVATE HttpCerver *http_cerver_create (
 	struct _Cerver *cerver
 );
@@ -387,6 +391,7 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 
 CERVER_PUBLIC struct _HttpResponse *oki_doki;
 CERVER_PUBLIC struct _HttpResponse *bad_request_error;
+CERVER_PUBLIC struct _HttpResponse *bad_user_error;
 CERVER_PUBLIC struct _HttpResponse *bad_auth_error;
 CERVER_PUBLIC struct _HttpResponse *not_found_error;
 CERVER_PUBLIC struct _HttpResponse *server_error;
@@ -474,6 +479,14 @@ CERVER_PUBLIC const char *http_receive_status_str (
 	const HttpReceiveStatus status
 );
 
+typedef enum HttpReceiveType {
+
+	HTTP_RECEIVE_TYPE_NONE		= 0,
+	HTTP_RECEIVE_TYPE_FILE		= 1,
+	HTTP_RECEIVE_TYPE_ROUTE		= 2
+
+} HttpReceiveType;
+
 struct _HttpReceive {
 
 	HttpReceiveStatus receive_status;
@@ -498,7 +511,10 @@ struct _HttpReceive {
 
 	HttpRequest *request;
 
+	// found
+	HttpReceiveType type;
 	HttpRoute *route;
+	const char *served_file;
 
 	http_status status;
 	size_t sent;

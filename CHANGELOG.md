@@ -1,20 +1,29 @@
 ## General
-- Changed MAX macro in config header to avoid cpp errors
-- Updated admin & auth methods with latest sources
-- Updated packets methods & header field reference
-- Updated client & connection methods with latest implementations
-- Updated test workflow with more integration tests
+- Split timer methods to create representations in custom buffer
+- Added cerver_create_web () wrapper method
 
 ## Handler
-- Updated main packet handler methods with latest implementations
-- Added new cerver_receive_handle_buffer () implementation
+- Added receive related methods in dedicated sources
+- Added the ability to set a custom cerver max received packet size
+- Handling max received packet size in main handle_buffer ()
+- Added dedicated field for client max received packet size
+- Handling EINTR errno in cerver_accept ()
 
-## Examples
-- Updated examples to be compatible with latest types & methods
+## Threads
+- Added dedicated THREADS_DEBUG definition
+- Added base JobHandler structure definitions & methods
+- Added extra checks in bsem_delete () and refactored sources
+- Added dedicated methods to create & add to job queues
+- Refactored thread_set_name () to handle variable arguments
+
+## HTTP
+- Added dedicated method to get HttpCerver reference
+- Handling stats in http_response_send_file ()
+- Added HTTP receive types to handle files & routes
+- Added bad_user_error dedicated HTTP response
 
 ## Tests
-- Added more HTTP responses methods unit tests
-- Added latest packets & threads methods unit tests
-- Added cerver & client handlers integration tests
-- Added latest available cerver & client integration tests
-- Added cerver-client integration tests in dedicated test script
+- Added base bsem related methods unit tests
+- Added based jobs structures methods unit tests
+- Added base job queue methods unit tests
+- Added base thpool methods unit tests

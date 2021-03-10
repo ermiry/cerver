@@ -38,7 +38,8 @@ BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
-				-D FILES_DEBUG
+				-D FILES_DEBUG								\
+				-D THREADS_DEBUG
 
 HAND_DEBUG	:= -D HANDLER_DEBUG -D SOCKET_DEBUG
 RECV_DEBUG	:= -D RECEIVE_DEBUG -D CLIENT_RECEIVE_DEBUG
@@ -210,6 +211,7 @@ client: $(EXOBJS)
 web: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/web
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/jobs.o -o ./$(EXATARGET)/web/jobs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web $(EXALIBS)
 
