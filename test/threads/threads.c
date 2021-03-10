@@ -99,6 +99,8 @@ int main (int argc, char **argv) {
 
 	threads_tests_jobs ();
 
+	threads_tests_thpool ();
+
 	(void) printf ("\nDone with THREADS tests!\n\n");
 
 	return 0;
