@@ -12,9 +12,10 @@
 #include <sys/prctl.h>
 #endif
 
-#include "cerver/threads/thpool.h"
 #include "cerver/threads/bsem.h"
 #include "cerver/threads/jobs.h"
+#include "cerver/threads/thpool.h"
+#include "cerver/threads/thread.h"
 
 static void *thread_do (void *thread_ptr);
 
@@ -87,6 +88,7 @@ static Thpool *thpool_new (void) {
 
 	Thpool *thpool = (Thpool *) malloc (sizeof (Thpool));
 	if (thpool) {
+		thpool->namelen = 0;
 		(void) memset (thpool->name, 0, THPOOL_NAME_SIZE);
 
 		thpool->n_threads = 0;
@@ -147,10 +149,11 @@ static void *thread_do (void *thread_ptr) {
 		Thpool *thpool = thread->thpool;
 
 		// set name
-		if (thpool->name) {
-			char thread_name[64] = { 0 };
-			snprintf (thread_name, 64, "thpool-%s-%d", thpool->name, thread->id);
-			(void) prctl (PR_SET_NAME, thread_name);
+		if (thpool->namelen) {
+			(void) thread_set_name (
+				"thpool-%s-%d",
+				thpool->name, thread->id
+			);
 		}
 
 		// mark thread as alive
@@ -256,6 +259,7 @@ void thpool_set_name (Thpool *thpool, const char *name) {
 
 	if (thpool) {
 		(void) strncpy (thpool->name, name, THPOOL_NAME_SIZE - 1);
+		thpool->namelen = strlen (thpool->name);
 	}
 
 }

@@ -17,6 +17,7 @@ struct _PoolThread;
 
 typedef struct Thpool {
 
+	size_t namelen;
 	char name[THPOOL_NAME_SIZE];
 
 	unsigned int n_threads;
