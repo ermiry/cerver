@@ -169,8 +169,7 @@ void job_handler_return (
 
 void job_handler_wait (
 	JobQueue *job_queue,
-	void *data, void (*data_delete) (void *data_ptr),
-	void (*work) (void *data_ptr)
+	void *data, void (*data_delete) (void *data_ptr)
 ) {
 
 	JobHandler *handler = (JobHandler *) pool_pop (job_queue->pool);
@@ -191,9 +190,6 @@ void job_handler_wait (
 			}
 
 			(void) pthread_mutex_unlock (handler->mutex);
-
-			// do work
-			work (data);
 		}
 
 		job_handler_return (job_queue, handler);
@@ -271,12 +267,12 @@ static void job_queue_create_handlers (JobQueue *job_queue) {
 
 	job_queue->pool = pool_create (job_handler_delete);
 	if (job_queue->pool) {
-		pool_set_create (job_queue->pool, job_handler_new);
+		pool_set_create (job_queue->pool, job_handler_create);
 		pool_set_produce_if_empty (job_queue->pool, true);
 
 		(void) pool_init (
 			job_queue->pool,
-			job_handler_new,
+			job_handler_create,
 			JOB_QUEUE_POOL_INIT
 		);
 	}
@@ -562,6 +558,7 @@ unsigned int job_queue_stop (JobQueue *job_queue) {
 	if (job_queue) {
 		if (job_queue->running) {
 			job_queue->running = false;
+			bsem_post (job_queue->has_jobs);
 			retval = 0;
 		}
 	}

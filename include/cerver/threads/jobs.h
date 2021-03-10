@@ -78,8 +78,7 @@ CERVER_PUBLIC void job_handler_return (
 
 CERVER_PUBLIC void job_handler_wait (
 	struct _JobQueue *job_queue,
-	void *data, void (*data_delete) (void *data_ptr),
-	void (*work) (void *data_ptr)
+	void *data, void (*data_delete) (void *data_ptr)
 );
 
 #define JOB_QUEUE_TYPE_MAP(XX)				\
