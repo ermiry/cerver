@@ -153,6 +153,8 @@ CERVER_PUBLIC void *job_queue_pull (JobQueue *job_queue);
 
 CERVER_PUBLIC unsigned int job_queue_start (JobQueue *job_queue);
 
+CERVER_PUBLIC unsigned int job_queue_stop (JobQueue *job_queue);
+
 // clears the job queue -> destroys all jobs
 CERVER_PUBLIC void job_queue_clear (JobQueue *job_queue);
 

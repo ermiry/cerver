@@ -549,6 +549,21 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 
 }
 
+unsigned int job_queue_stop (JobQueue *job_queue) {
+
+	unsigned int retval = 1;
+
+	if (job_queue) {
+		if (job_queue->running) {
+			job_queue->running = false;
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
 // clears the job queue -> destroys all jobs
 void job_queue_clear (JobQueue *job_queue) {
 
