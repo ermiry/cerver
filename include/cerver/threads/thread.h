@@ -25,7 +25,9 @@ CERVER_PUBLIC u8 thread_create_detachable (
 );
 
 // sets thread name from inisde it
-CERVER_PUBLIC int thread_set_name (const char *name);
+CERVER_PUBLIC unsigned int thread_set_name (
+	const char *name, ...
+);
 
 #pragma endregion
 
