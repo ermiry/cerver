@@ -407,7 +407,7 @@ void connection_set_send_queue (
 		connection->use_send_queue = true;
 		connection->send_flags = flags;
 
-		connection->send_queue = job_queue_create ();
+		connection->send_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 	}
 
 }
