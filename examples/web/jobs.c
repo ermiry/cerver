@@ -49,10 +49,10 @@ void end (int dummy) {
 
 #pragma region handler
 
-static void custom_handler_method (JobHandler *job_handler) {
+static void custom_handler_method (void *data_ptr) {
 
 	cerver_log_debug ("custom_handler_method ()!");
-	cerver_log_msg ("Value: %s", ((String *) job_handler->data)->str);
+	cerver_log_msg ("Value: %s", ((String *) data_ptr)->str);
 
 	(void) sleep (1);
 
