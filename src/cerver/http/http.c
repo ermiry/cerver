@@ -2381,7 +2381,10 @@ static inline bool http_receive_handle_select_children (
 	char *start_sub = strstr (request->url->str, route->route->str);
 	if (start_sub) {
 		// match and still some path left
-		char *end_sub = request->url->str + route->route->len;
+		char *end_sub = request->url->str;
+		if (strcmp ("/", route->route->str)) {
+			end_sub += route->route->len;
+		}
 
 		// printf ("first end_sub: %s\n", end_sub);
 
