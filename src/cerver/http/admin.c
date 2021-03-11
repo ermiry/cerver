@@ -89,15 +89,9 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 
 }
 
-static json_t *http_cerver_admin_handler_single_route_stats (
+static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 	const HttpRoute *route
 ) {
-
-	json_t *route_object = json_object ();
-
-	(void) json_object_set_new (
-		route_object, "route", json_string (route->route->str)
-	);
 
 	json_t *handlers_array = json_array ();
 
@@ -116,14 +110,62 @@ static json_t *http_cerver_admin_handler_single_route_stats (
 		}
 	}
 
+	return handlers_array;
+
+}
+
+static json_t *http_cerver_admin_handler_single_child_stats (
+	const HttpRoute *child
+) {
+
+	json_t *child_object = json_object ();
+
+	(void) json_object_set_new (
+		child_object, "route", json_string (child->route->str)
+	);
+
+	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (child);
+	(void) json_object_set (
+		child_object, "handlers", handlers_array
+	);
+
+	return child_object;
+
+}
+
+static json_t *http_cerver_admin_handler_single_route_children_stats (
+	const HttpRoute *route
+) {
+
+	json_t *children_array = json_array ();
+
+	json_t *child_object = NULL;
+	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
+		child_object = http_cerver_admin_handler_single_child_stats ((HttpRoute *) le->data);
+
+		(void) json_array_append (children_array, child_object);
+	}
+
+	return children_array;
+
+}
+
+static json_t *http_cerver_admin_handler_single_route_stats (
+	const HttpRoute *route
+) {
+
+	json_t *route_object = json_object ();
+
+	(void) json_object_set_new (
+		route_object, "route", json_string (route->route->str)
+	);
+
+	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (route);
 	(void) json_object_set (
 		route_object, "handlers", handlers_array
 	);
 
-	json_t *children_array = json_array ();
-
-	// TODO:
-
+	json_t *children_array = http_cerver_admin_handler_single_route_children_stats (route);
 	(void) json_object_set (
 		route_object, "children", children_array
 	);
