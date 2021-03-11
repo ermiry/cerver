@@ -107,7 +107,7 @@ struct _JobQueue {
 
 	bool running;
 	pthread_t handler_thread_id;
-	void (*handler) (JobHandler *job_handler);
+	void (*handler) (void *data);
 
 };
 
@@ -122,7 +122,7 @@ CERVER_PUBLIC JobQueue *job_queue_create (
 );
 
 CERVER_PUBLIC void job_queue_set_handler (
-	JobQueue *queue, void (*handler) (JobHandler *job_handler)
+	JobQueue *queue, void (*handler) (void *data)
 );
 
 // adds a new job to the queue
