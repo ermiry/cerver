@@ -206,6 +206,8 @@ HttpRouteFileStats *http_route_file_stats_new (void) {
 	if (route_file_stats) {
 		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
 
+		route_file_stats->first = true;
+
 		route_file_stats->min_n_files = LONG_MAX;
 
 		route_file_stats->min_file_size = LONG_MAX;
