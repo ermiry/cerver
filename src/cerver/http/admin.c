@@ -278,6 +278,29 @@ static void http_cerver_admin_handler_requests_stats (
 
 }
 
+char *http_cerver_admin_generate_routes_stats_json (
+	const HttpCerver *http_cerver
+) {
+
+	char *json_string = NULL;
+
+	json_t *json = json_object ();
+	if (json) {
+		http_cerver_admin_handler_general_stats (http_cerver, json);
+
+		http_cerver_admin_handler_routes_stats (http_cerver, json);
+
+		http_cerver_admin_handler_requests_stats (http_cerver, json);
+
+		json_string = json_dumps (json, 0);
+
+		json_decref (json);
+	}
+
+	return json_string;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -289,24 +312,20 @@ static void http_cerver_admin_handler (
 
 	const HttpCerver *http_cerver = http_receive->http_cerver;
 
-	json_t *json = json_object ();
-	if (json) {
-		http_cerver_admin_handler_general_stats (http_cerver, json);
+	char *routes_json = http_cerver_admin_generate_routes_stats_json (
+		http_cerver
+	);
 
-		http_cerver_admin_handler_routes_stats (http_cerver, json);
+	if (routes_json) {
+		(void) http_response_render_json (
+			http_receive, routes_json, strlen (routes_json)
+		);
 
-		http_cerver_admin_handler_requests_stats (http_cerver, json);
+		free (routes_json);
+	}
 
-		char *json_string = json_dumps (json, 0);
-		if (json_string) {
-			(void) http_response_render_json (
-				http_receive, json_string, strlen (json_string)
-			);
-
-			free (json_string);
-		}
-
-		json_decref (json);
+	else {
+		(void) http_response_send (server_error, http_receive);
 	}
 
 }
