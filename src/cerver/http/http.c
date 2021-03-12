@@ -473,38 +473,48 @@ static unsigned int http_cerver_init_internal (
 
 }
 
+static void http_cerver_init_routes (
+	HttpCerver *http_cerver
+) {
+
+	#ifdef HTTP_DEBUG
+	cerver_log_msg ("Loading HTTP routes...");
+	#endif
+
+	if (!http_cerver->main_route) {
+		http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
+	}
+
+	if (http_cerver->enable_admin_routes) {
+		(void) http_cerver_admin_init ((HttpRoute *) http_cerver->main_route);
+	}
+
+	// init top level routes
+	HttpRoute *route = NULL;
+	for (
+		ListElement *le = dlist_start (http_cerver->routes);
+		le; le = le->next
+	) {
+		route = (HttpRoute *) le->data;
+		
+		http_route_init (route);
+		http_route_print (route);
+	}
+
+	
+	#ifdef HTTP_DEBUG
+	cerver_log_success ("Done loading HTTP routes!");
+	#endif
+
+}
+
 void http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		if (!http_cerver_init_internal (http_cerver)) {
-			#ifdef HTTP_DEBUG
-			cerver_log_msg ("Loading HTTP routes...");
-			#endif
-
-			if (!http_cerver->main_route) {
-				http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
+			if (dlist_size (http_cerver->routes)) {
+				http_cerver_init_routes (http_cerver);
 			}
-
-			if (http_cerver->enable_admin_routes) {
-				(void) http_cerver_admin_init ((HttpRoute *) http_cerver->main_route);
-			}
-
-			// init top level routes
-			HttpRoute *route = NULL;
-			for (
-				ListElement *le = dlist_start (http_cerver->routes);
-				le; le = le->next
-			) {
-				route = (HttpRoute *) le->data;
-				
-				http_route_init (route);
-				http_route_print (route);
-			}
-
-			
-			#ifdef HTTP_DEBUG
-			cerver_log_success ("Done loading HTTP routes!");
-			#endif
 		}
 	}
 
@@ -1338,7 +1348,7 @@ static void http_cerver_route_file_stats_print (
 
 	cerver_log_msg ("\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
 	cerver_log_msg ("\t\tMax file size: %ld", file_stats->max_file_size);
-	cerver_log_msg ("\t\tMean file size: %ld", file_stats->mean_file_size);
+	cerver_log_msg ("\t\tMean file size: %.2f", file_stats->mean_file_size);
 
 }
 
@@ -1378,7 +1388,7 @@ static void http_cerver_child_route_file_stats_print (
 
 	cerver_log_msg ("\t\t\tMin file size: %ld", file_stats->first ? 0 : file_stats->min_file_size);
 	cerver_log_msg ("\t\t\tMax file size: %ld", file_stats->max_file_size);
-	cerver_log_msg ("\t\t\tMean file size: %ld", file_stats->mean_file_size);
+	cerver_log_msg ("\t\t\tMean file size: %.2f", file_stats->mean_file_size);
 
 }
 
