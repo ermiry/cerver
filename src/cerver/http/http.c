@@ -500,7 +500,6 @@ static void http_cerver_init_routes (
 		http_route_init (route);
 		http_route_print (route);
 	}
-
 	
 	#ifdef HTTP_DEBUG
 	cerver_log_success ("Done loading HTTP routes!");
@@ -508,15 +507,21 @@ static void http_cerver_init_routes (
 
 }
 
-void http_cerver_init (HttpCerver *http_cerver) {
+u8 http_cerver_init (HttpCerver *http_cerver) {
+
+	u8 retval = 1;
 
 	if (http_cerver) {
 		if (!http_cerver_init_internal (http_cerver)) {
 			if (dlist_size (http_cerver->routes)) {
 				http_cerver_init_routes (http_cerver);
 			}
+
+			retval = 0;
 		}
 	}
+
+	return retval;
 
 }
 

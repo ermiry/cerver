@@ -147,7 +147,7 @@ CERVER_PRIVATE HttpCerver *http_cerver_create (
 	struct _Cerver *cerver
 );
 
-CERVER_PRIVATE void http_cerver_init (
+CERVER_PRIVATE u8 http_cerver_init (
 	HttpCerver *http_cerver
 );
 
