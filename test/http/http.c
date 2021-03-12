@@ -21,6 +21,8 @@ int main (int argc, char **argv) {
 	http_tests_jwt_encode ();
 	http_tests_jwt_decode ();
 
+	http_tests_admin ();
+
 	(void) printf ("\nDone with HTTP tests!\n\n");
 
 	return 0;
