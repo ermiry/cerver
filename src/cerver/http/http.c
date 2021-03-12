@@ -16,6 +16,7 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/http/admin.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
@@ -238,6 +239,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->n_catch_all_requests = 0;
 		http_cerver->n_failed_auth_requests = 0;
+
+		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
 
 		http_cerver->mutex = NULL;
 	}
@@ -478,6 +481,14 @@ void http_cerver_init (HttpCerver *http_cerver) {
 			cerver_log_msg ("Loading HTTP routes...");
 			#endif
 
+			if (!http_cerver->main_route) {
+				http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
+			}
+
+			if (http_cerver->enable_admin_routes) {
+				(void) http_cerver_admin_init ((HttpRoute *) http_cerver->main_route);
+			}
+
 			// init top level routes
 			HttpRoute *route = NULL;
 			for (
@@ -629,12 +640,26 @@ u8 http_receive_public_path_remove (
 
 #pragma region routes
 
+// sets the HTTP cerver's main route (top level route)
+// used to enable admin routes
+// if no route has been set, the first top level route
+// will be used
+void http_cerver_set_main_route (
+	HttpCerver *http_cerver, const HttpRoute *route
+) {
+
+	if (http_cerver) {
+		http_cerver->main_route = route;
+	}
+
+}
+
 void http_cerver_route_register (
 	HttpCerver *http_cerver, HttpRoute *route
 ) {
 
 	if (http_cerver && route) {
-		dlist_insert_after (
+		(void) dlist_insert_after (
 			http_cerver->routes,
 			dlist_end (http_cerver->routes),
 			route
@@ -1226,7 +1251,7 @@ u8 http_cerver_add_responses_header (
 
 #pragma region stats
 
-static size_t http_cerver_stats_get_children_routes (
+size_t http_cerver_stats_get_children_routes (
 	const HttpCerver *http_cerver, size_t *handlers
 ) {
 
@@ -1297,8 +1322,6 @@ static void http_cerver_route_handler_stats_print (
 	cerver_log_msg ("\t\tMin response size: %ld", stats->first ? 0 : stats->min_response_size);
 	cerver_log_msg ("\t\tMax response size: %ld", stats->max_response_size);
 	cerver_log_msg ("\t\tMean response size: %ld", stats->mean_response_size);
-
-	
 
 }
 
@@ -1447,6 +1470,22 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 		cerver_log_msg ("Catch requests: %ld", http_cerver->n_catch_all_requests);
 		cerver_log_msg ("Failed auth requests: %ld", http_cerver->n_failed_auth_requests);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region admin
+
+// enables the ability to have admin routes
+// to fetch cerver's HTTP stats
+void http_cerver_enable_admin_routes (
+	HttpCerver *http_cerver, bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes = enable;
 	}
 
 }
