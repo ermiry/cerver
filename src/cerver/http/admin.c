@@ -89,6 +89,44 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 
 }
 
+static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
+	const HttpRouteFileStats *file_stats
+) {
+
+	json_t *files_object = json_object ();
+
+	(void) json_object_set_new (
+		files_object, "n_uploaded_files", json_integer ((json_int_t) file_stats->n_uploaded_files)
+	);
+
+	(void) json_object_set_new (
+		files_object, "min_n_files", json_integer ((json_int_t) file_stats->first ? 0 : file_stats->min_n_files)
+	);
+
+	(void) json_object_set_new (
+		files_object, "max_n_files", json_integer ((json_int_t) file_stats->max_n_files)
+	);
+
+	(void) json_object_set_new (
+		files_object, "mean_n_files", json_real (file_stats->mean_n_files)
+	);
+
+	(void) json_object_set_new (
+		files_object, "min_file_size", json_integer ((json_int_t) file_stats->first ? 0 : file_stats->min_file_size)
+	);
+
+	(void) json_object_set_new (
+		files_object, "max_file_size", json_integer ((json_int_t) file_stats->max_file_size)
+	);
+
+	(void) json_object_set_new (
+		files_object, "mean_file_size", json_real (file_stats->mean_file_size)
+	);
+
+	return files_object;
+
+}
+
 static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 	const HttpRoute *route
 ) {
@@ -104,9 +142,18 @@ static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 				method, route->stats[i]
 			);
 
-			// TODO: multi part stats
+			if (
+				(route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+				&& (method == REQUEST_METHOD_POST)
+			) {
+				json_t *files_object = http_cerver_admin_handler_single_route_handler_files_stats (
+					route->file_stats
+				);
 
-			(void) json_array_append (handlers_array, handler_object);
+				(void) json_object_set_new (handler_object, "files", files_object);
+			}
+
+			(void) json_array_append_new (handlers_array, handler_object);
 		}
 	}
 
@@ -124,8 +171,15 @@ static json_t *http_cerver_admin_handler_single_child_stats (
 		child_object, "route", json_string (child->route->str)
 	);
 
+	if (child->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+		(void) json_object_set_new (
+			child_object, "modifier",
+			json_string (http_route_modifier_to_string (child->modifier))
+		);
+	}
+
 	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (child);
-	(void) json_object_set (
+	(void) json_object_set_new (
 		child_object, "handlers", handlers_array
 	);
 
@@ -143,7 +197,7 @@ static json_t *http_cerver_admin_handler_single_route_children_stats (
 	for (ListElement *le = dlist_start (route->children); le; le = le->next) {
 		child_object = http_cerver_admin_handler_single_child_stats ((HttpRoute *) le->data);
 
-		(void) json_array_append (children_array, child_object);
+		(void) json_array_append_new (children_array, child_object);
 	}
 
 	return children_array;
@@ -160,13 +214,20 @@ static json_t *http_cerver_admin_handler_single_route_stats (
 		route_object, "route", json_string (route->route->str)
 	);
 
+	if (route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+		(void) json_object_set_new (
+			route_object, "modifier",
+			json_string (http_route_modifier_to_string (route->modifier))
+		);
+	}
+
 	json_t *handlers_array = http_cerver_admin_handler_single_route_handlers_stats (route);
-	(void) json_object_set (
+	(void) json_object_set_new (
 		route_object, "handlers", handlers_array
 	);
 
 	json_t *children_array = http_cerver_admin_handler_single_route_children_stats (route);
-	(void) json_object_set (
+	(void) json_object_set_new (
 		route_object, "children", children_array
 	);
 
@@ -186,7 +247,7 @@ static void http_cerver_admin_handler_routes_stats (
 			(const HttpRoute *) le->data
 		);
 		
-		(void) json_array_append (routes_array, route_object);
+		(void) json_array_append_new (routes_array, route_object);
 	}
 
 	(void) json_object_set_new (
@@ -241,6 +302,8 @@ static void http_cerver_admin_handler (
 			(void) http_response_render_json (
 				http_receive, json_string, strlen (json_string)
 			);
+
+			free (json_string);
 		}
 
 		json_decref (json);
