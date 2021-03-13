@@ -249,7 +249,7 @@ int main (int argc, char **argv) {
 
 		// POST /discard
 		HttpRoute *discard_route = http_route_create (REQUEST_METHOD_POST, "discard", discard_handler);
-		http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
+		http_route_set_modifier (discard_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, discard_route);
 
 		if (cerver_start (web_cerver)) {
