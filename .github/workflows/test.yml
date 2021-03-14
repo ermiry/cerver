@@ -84,6 +84,30 @@ jobs:
           ./test/bin/client/web/web
           sudo docker kill $(sudo docker ps -q)
 
+      - name: Web API Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/api
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web/api
+          sudo docker kill $(sudo docker ps -q)
+      
+      - name: Web Upload Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/upload
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web/upload
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Web Admin Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/admin
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web/admin
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Coverage
         run: make coverage
 
