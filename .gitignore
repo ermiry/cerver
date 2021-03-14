@@ -9,6 +9,7 @@ keys
 
 !test/http/keys
 !test/jwt/keys
+!test/web/keys
 
 data
 uploads
