@@ -55,6 +55,7 @@ void users_login_handler (
 				// printf ("\nPasswords match!\n");
 
 				HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+				http_cerver_auth_jwt_add_value_int (http_jwt, "iat", time (NULL));
 				http_cerver_auth_jwt_add_value (http_jwt, "id", user->id->str);
 				http_cerver_auth_jwt_add_value (http_jwt, "name", user->name->str);
 				http_cerver_auth_jwt_add_value (http_jwt, "username", user->username->str);
