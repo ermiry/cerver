@@ -42,12 +42,19 @@ static unsigned int upload_request_all_actual (
 		"./test/web/img/ermiry.png"
 	);
 
-	// POST /discard
+	// POST /discard - keep
 	(void) snprintf (actual_address, 128, "%s/discard", address);
-	errors |= curl_upload_file (
+	errors |= curl_upload_file_with_extra_value (
 		curl, actual_address,
-		upload_request_all_data_handler, data_buffer,
-		"./test/web/img/ermiry.png"
+		"./test/web/img/ermiry.png",
+		"key", "value"
+	);
+
+	// POST /discard - discard
+	errors |= curl_upload_file_with_extra_value (
+		curl, actual_address,
+		"./test/web/img/ermiry.png",
+		"key", "discard"
 	);
 
 	return errors;
