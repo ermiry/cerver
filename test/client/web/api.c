@@ -58,8 +58,6 @@ static unsigned int api_request_login (
 	CURL *curl, const char *actual_address, char *data_buffer
 ) {
 
-	unsigned int retval = 1;
-
 	char data[4096] = { 0 };
 	(void) snprintf (data, 4096, "username=%s&password=%s", username, password);
 
@@ -97,7 +95,7 @@ static unsigned int api_request_login (
 		free (encoded_data);
 	}
 
-	return retval;
+	return token ? 0 : 1;
 
 }
 
