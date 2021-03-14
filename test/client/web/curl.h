@@ -23,11 +23,42 @@ extern unsigned int curl_simple (
 	CURL *curl, const char *address
 );
 
+// works like curl_simple () but adds a custom auth header
+// returns 0 on success, 1 on any error
+extern unsigned int curl_simple_with_auth (
+	CURL *curl, const char *address,
+	const char *authorization
+);
+
 // performs a simple curl request to the specified address
 // uses an already created CURL structure
 // returns 0 on success, 1 on any error
 extern unsigned int curl_simple_handle_data (
 	CURL *curl, const char *address,
+	curl_write_data_cb write_cb, char *buffer
+);
+
+// performs a POST with application/x-www-form-urlencoded data
+// uses an already created CURL structure
+// returns 0 on success, 1 on any error
+extern unsigned int curl_simple_post (
+	CURL *curl, const char *address,
+	const char *data, const size_t datalen
+);
+
+// works like curl_simple_post ()
+// but sets a custom Authorization header
+extern unsigned int curl_simple_post_with_auth (
+	CURL *curl, const char *address,
+	const char *data, const size_t datalen,
+	const char *authorization
+);
+
+// works as curl_simple_post ()
+// but has the option to handle the result data
+extern unsigned int curl_simple_post_handle_data (
+	CURL *curl, const char *address,
+	const char *data, const size_t datalen,
 	curl_write_data_cb write_cb, char *buffer
 );
 
