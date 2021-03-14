@@ -29,5 +29,6 @@ RUN ldconfig
 WORKDIR /home/cerver
 COPY --from=builder /opt/cerver/test/bin ./bin
 COPY ./test/web/public ./public
+COPY ./test/web/keys ./keys
 
 CMD ["./bin/web/web"]
