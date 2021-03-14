@@ -311,7 +311,7 @@ JobQueue *job_queue_create (const JobQueueType type) {
 }
 
 void job_queue_set_handler (
-	JobQueue *queue, void (*handler) (JobHandler *job_handler)
+	JobQueue *queue, void (*handler) (void *data)
 ) {
 
 	if (queue) queue->handler = handler;
@@ -488,7 +488,7 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 			#endif
 
 			// do work
-			job_queue->handler (job_handler);
+			job_queue->handler (job_handler->data);
 
 			// signal
 			#ifdef THREADS_DEBUG

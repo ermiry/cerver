@@ -12,7 +12,7 @@ static void work_method (void *args) {
 
 }
 
-static void handler_method (JobHandler *job_handler) {
+static void handler_method (void *job_handler) {
 
 	(void) printf ("Custom job queue handler method!");
 

@@ -107,8 +107,9 @@ void *user_parse_from_json (void *user_json_ptr) {
 		const char *role = NULL;
 		const char *username = NULL;
 
-		if (!json_unpack (
-			user_json,
+		json_error_t error = { 0 };
+		if (!json_unpack_ex (
+			user_json, &error, 0,
 			"{s:i, s:s, s:s, s:s, s:s}",
 			"iat", &user->iat,
 			"id", &id,
@@ -128,6 +129,8 @@ void *user_parse_from_json (void *user_json_ptr) {
 			cerver_log_error (
 				"user_parse_from_json () - json_unpack () has failed!"
 			);
+
+			cerver_log_error (error.text);
 
 			user_delete (user);
 			user = NULL;

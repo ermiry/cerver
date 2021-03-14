@@ -125,9 +125,11 @@ static unsigned int web_request_all (void) {
 
 int main (int argc, char **argv) {
 
+	int code = 0;
+
 	cerver_log_init ();
 
-	(void) web_request_all ();
+	code = (int) web_request_all ();
 
 	cerver_log_end ();
 

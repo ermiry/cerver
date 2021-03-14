@@ -20,6 +20,7 @@
 #include "cerver/http/jwt/alg.h"
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
 
 #define HTTP_MULTI_PART_DIRNAME_LEN					1024
 
@@ -74,6 +75,8 @@ struct _HttpCerver {
 	// list of top level routes
 	DoubleList *routes;
 
+	const HttpRoute *main_route;
+
 	// catch all route (/*)
 	void (*default_handler)(
 		const struct _HttpReceive *http_receive,
@@ -120,6 +123,9 @@ struct _HttpCerver {
 	size_t n_catch_all_requests;	// redirected to catch all route
 	size_t n_failed_auth_requests;	// failed to auth with private route 
 
+	// admins
+	bool enable_admin_routes;
+
 	// used to correctly update stats
 	pthread_mutex_t *mutex;
 
@@ -141,7 +147,7 @@ CERVER_PRIVATE HttpCerver *http_cerver_create (
 	struct _Cerver *cerver
 );
 
-CERVER_PRIVATE void http_cerver_init (
+CERVER_PRIVATE u8 http_cerver_init (
 	HttpCerver *http_cerver
 );
 
@@ -182,6 +188,14 @@ CERVER_EXPORT u8 http_receive_public_path_remove (
 #pragma endregion
 
 #pragma region routes
+
+// sets the HTTP cerver's main route (top level route)
+// used to enable admin routes
+// if no route has been set, the first top level route
+// will be used
+CERVER_EXPORT void http_cerver_set_main_route (
+	HttpCerver *http_cerver, const HttpRoute *route
+);
 
 // register a new http to the http cerver
 CERVER_EXPORT void http_cerver_route_register (
@@ -410,6 +424,10 @@ CERVER_PUBLIC u8 http_cerver_add_responses_header (
 
 #pragma region stats
 
+CERVER_PRIVATE size_t http_cerver_stats_get_children_routes (
+	const HttpCerver *http_cerver, size_t *handlers
+); 
+
 // print number of routes & handlers
 CERVER_PUBLIC void http_cerver_routes_stats_print (
 	const HttpCerver *http_cerver
@@ -423,6 +441,16 @@ CERVER_PUBLIC void http_cerver_route_stats_print (
 // print all http cerver stats, general & by route
 CERVER_PUBLIC void http_cerver_all_stats_print (
 	const HttpCerver *http_cerver
+);
+
+#pragma endregion
+
+#pragma region admin
+
+// enables the ability to have admin routes
+// to fetch cerver's HTTP stats
+CERVER_EXPORT void http_cerver_enable_admin_routes (
+	HttpCerver *http_cerver, bool enable
 );
 
 #pragma endregion

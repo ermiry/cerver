@@ -1653,7 +1653,7 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 				} break;
 
 				case CERVER_TYPE_WEB: {
-					http_cerver_init ((HttpCerver *) cerver->cerver_data);
+					errors |= http_cerver_init ((HttpCerver *) cerver->cerver_data);
 				} break;
 
 				case CERVER_TYPE_FILES: break;

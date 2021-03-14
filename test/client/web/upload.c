@@ -42,6 +42,21 @@ static unsigned int upload_request_all_actual (
 		"./test/web/img/ermiry.png"
 	);
 
+	// POST /discard - keep
+	(void) snprintf (actual_address, 128, "%s/discard", address);
+	errors |= curl_upload_file_with_extra_value (
+		curl, actual_address,
+		"./test/web/img/ermiry.png",
+		"key", "value"
+	);
+
+	// POST /discard - discard
+	errors |= curl_upload_file_with_extra_value (
+		curl, actual_address,
+		"./test/web/img/ermiry.png",
+		"key", "discard"
+	);
+
 	return errors;
 
 }
@@ -76,12 +91,14 @@ static unsigned int upload_request_all (void) {
 
 int main (int argc, char **argv) {
 
+	int code = 0;
+
 	cerver_log_init ();
 
-	(void) upload_request_all ();
+	code = upload_request_all ();
 
 	cerver_log_end ();
 
-	return 0;
+	return code;
 
 }

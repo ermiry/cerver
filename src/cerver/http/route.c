@@ -206,6 +206,8 @@ HttpRouteFileStats *http_route_file_stats_new (void) {
 	if (route_file_stats) {
 		(void) memset (route_file_stats, 0, sizeof (HttpRouteFileStats));
 
+		route_file_stats->first = true;
+
 		route_file_stats->min_n_files = LONG_MAX;
 
 		route_file_stats->min_file_size = LONG_MAX;
@@ -479,14 +481,21 @@ void http_route_init (HttpRoute *route) {
 void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 
 	if (parent && child) {
-		dlist_insert_after (parent->children, dlist_end (parent->children), child);
+		(void) dlist_insert_after (parent->children, dlist_end (parent->children), child);
 
 		// refactor child paths
 		str_delete (child->base);
 		child->base = str_new (parent->route->str);
 
 		str_delete (child->route);
-		child->route = str_create ("%s/%s", child->base->str, child->actual->str);
+
+		if (!strcmp ("/", child->base->str)) {
+			child->route = str_create ("/%s", child->actual->str);
+		}
+
+		else {
+			child->route = str_create ("%s/%s", child->base->str, child->actual->str);
+		}
 	}
 
 }
