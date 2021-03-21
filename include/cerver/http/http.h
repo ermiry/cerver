@@ -581,6 +581,10 @@ CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
 );
 
+CERVER_EXPORT const HttpCerver *http_receive_get_cerver (
+	const HttpReceive *http_receive
+);
+
 #pragma endregion
 
 #ifdef __cplusplus

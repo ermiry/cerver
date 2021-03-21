@@ -2316,6 +2316,14 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 }
 
+const HttpCerver *http_receive_get_cerver (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->http_cerver;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
