@@ -211,6 +211,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->routes = NULL;
 
+		http_cerver->main_route = NULL;
+
 		http_cerver->default_handler = NULL;
 
 		http_cerver->not_found_handler = false;
