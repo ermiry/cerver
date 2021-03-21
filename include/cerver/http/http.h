@@ -244,7 +244,7 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
 // with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
-extern void http_cerver_set_uploads_filename_generator (
+CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
 		const CerverReceive *,
