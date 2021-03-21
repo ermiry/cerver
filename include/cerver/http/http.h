@@ -302,7 +302,9 @@ typedef struct HttpJwt {
 	u8 n_values;
 	HttpJwtValue values[HTTP_JWT_VALUES_SIZE];
 
+	size_t bearer_len;
 	char bearer[HTTP_JWT_BEARER_SIZE];
+	size_t json_len;
 	char json[HTTP_JWT_TOKEN_SIZE];
 
 } HttpJwt;
@@ -310,6 +312,22 @@ typedef struct HttpJwt {
 CERVER_PRIVATE void *http_jwt_new (void);
 
 CERVER_PRIVATE void http_jwt_delete (void *http_jwt_ptr);
+
+CERVER_EXPORT const char *http_jwt_get_bearer (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const size_t http_jwt_get_bearer_len (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const char *http_jwt_get_json (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const size_t http_jwt_get_json_len (
+	const HttpJwt *http_jwt
+);
 
 // loads a key from a filename that can be used for jwt
 // returns a newly allocated c string on success, NULL on error

@@ -867,6 +867,30 @@ void http_jwt_delete (void *http_jwt_ptr) {
 
 }
 
+const char *http_jwt_get_bearer (const HttpJwt *http_jwt) {
+
+	return http_jwt->bearer;
+
+}
+
+const size_t http_jwt_get_bearer_len (const HttpJwt *http_jwt) {
+
+	return http_jwt->bearer_len;
+
+}
+
+const char *http_jwt_get_json (const HttpJwt *http_jwt) {
+
+	return http_jwt->json;
+
+}
+
+const size_t http_jwt_get_json_len (const HttpJwt *http_jwt) {
+
+	return http_jwt->json_len;
+
+}
+
 static unsigned int http_jwt_init_pool (void) {
 
 	unsigned int retval = 1;
@@ -1068,7 +1092,7 @@ u8 http_cerver_auth_generate_bearer_jwt_actual (
 	);
 
 	if (token) {
-		(void) snprintf (
+		http_jwt->bearer_len = snprintf (
 			http_jwt->bearer,
 			HTTP_JWT_BEARER_SIZE -1,
 			"Bearer %s",
@@ -1112,7 +1136,7 @@ u8 http_cerver_auth_generate_bearer_jwt_json (
 	if (!http_cerver_auth_generate_bearer_jwt (
 		http_cerver, http_jwt
 	)) {
-		(void) snprintf (
+		http_jwt->json_len = snprintf (
 			http_jwt->json,
 			HTTP_JWT_TOKEN_SIZE -1,
 			"{\"token\": \"%s\"}",
@@ -2538,7 +2562,11 @@ static void http_receive_handle_select_auth_bearer (
 		jwt_valid->hdr = 1;
 		jwt_valid->now = time (NULL);
 
-		if (!jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len)) {
+		if (!jwt_decode (
+			&jwt, token,
+			(unsigned char *) http_cerver->jwt_public_key->str,
+			http_cerver->jwt_public_key->len
+		)) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_debug ("JWT decoded successfully!");
 			#endif
