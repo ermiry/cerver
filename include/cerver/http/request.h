@@ -127,6 +127,46 @@ CERVER_PRIVATE void http_request_destroy (
 	HttpRequest *http_request
 );
 
+CERVER_EXPORT const RequestMethod http_request_get_method (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const String *http_request_get_url (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const String *http_request_get_query (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const DoubleList *http_request_get_query_params (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const unsigned int http_request_get_n_params (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const String *http_request_get_param_at_idx (
+	const HttpRequest *http_request, const unsigned int idx
+);
+
+CERVER_EXPORT const String *http_request_get_header (
+	const HttpRequest *http_request, const RequestHeader header
+);
+
+CERVER_EXPORT const void *http_request_get_decoded_data (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const String *http_request_get_body (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const DoubleList *http_request_get_body_values (
+	const HttpRequest *http_request
+);
+
 CERVER_PUBLIC void http_request_headers_print (
 	const HttpRequest *http_request
 );

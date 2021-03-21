@@ -134,6 +134,87 @@ void http_request_destroy (HttpRequest *http_request) {
 
 }
 
+const RequestMethod http_request_get_method (
+	const HttpRequest *http_request
+) {
+
+	return http_request->method;
+
+}
+
+const String *http_request_get_url (
+	const HttpRequest *http_request
+) {
+
+	return http_request->url;
+
+}
+
+const String *http_request_get_query (
+	const HttpRequest *http_request
+) {
+
+	return http_request->query;
+
+}
+
+const DoubleList *http_request_get_query_params (
+	const HttpRequest *http_request
+) {
+
+	return http_request->query_params;
+
+}
+
+const unsigned int http_request_get_n_params (
+	const HttpRequest *http_request
+) {
+
+	return http_request->n_params;
+
+}
+
+const String *http_request_get_param_at_idx (
+	const HttpRequest *http_request, const unsigned int idx
+) {
+
+	return (idx < http_request->n_params) ?
+		http_request->params[idx] : NULL;
+
+}
+
+const String *http_request_get_header (
+	const HttpRequest *http_request, const RequestHeader header
+) {
+
+	return http_request->headers[header];
+
+}
+
+const void *http_request_get_decoded_data (
+	const HttpRequest *http_request
+) {
+
+	return http_request->decoded_data;
+
+}
+
+const String *http_request_get_body (
+	const HttpRequest *http_request
+) {
+
+	return http_request->body;
+
+}
+
+const DoubleList *http_request_get_body_values (
+	const HttpRequest *http_request
+) {
+
+	return http_request->body_values;
+
+}
+
 void http_request_headers_print (const HttpRequest *http_request) {
 
 	if (http_request) {
@@ -303,7 +384,9 @@ DoubleList *http_request_multi_parts_get_all_saved_filenames (
 				mpart = (MultiPart *) le->data;
 
 				if (mpart->saved_filename_len > 0) {
-					dlist_insert_after (all, dlist_end (all), mpart->saved_filename);
+					(void) dlist_insert_at_end_unsafe (
+						all, mpart->saved_filename
+					);
 				}
 			}
 		}
