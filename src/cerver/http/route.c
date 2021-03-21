@@ -14,6 +14,8 @@
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
+#include "cerver/http/json/json.h"
+
 #include "cerver/utils/utils.h"
 
 const char *http_route_modifier_to_string (const HttpRouteModifier modifier) {
@@ -524,6 +526,24 @@ void http_route_set_decode_data (
 	if (route) {
 		route->decode_data = decode_data;
 		route->delete_decoded_data = delete_decoded_data;
+	}
+
+}
+
+static void *http_decode_data_into_json (void *json_ptr) {
+
+	return json_dumps ((json_t *) json_ptr, 0);
+
+}
+
+// sets a method to decode data from a jwt into a json string
+void http_route_set_decode_data_into_json (
+	HttpRoute *route
+) {
+
+	if (route) {
+		route->decode_data = http_decode_data_into_json;
+		route->delete_decoded_data = free;
 	}
 
 }
