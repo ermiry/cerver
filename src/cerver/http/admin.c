@@ -337,6 +337,80 @@ char *http_cerver_admin_generate_routes_stats_json (
 
 }
 
+static json_t *http_cerver_admin_handler_single_file_systems_stats (
+	const HttpAdminFileSystemStats *admin_file_system
+) {
+
+	(void) system_get_stats (
+		admin_file_system->path, (FileSystemStats *) &admin_file_system->stats
+	);
+
+	#ifdef HTTP_ADMIN_DEBUG
+	system_print_stats (&admin_file_system->stats);
+	#endif
+
+	json_t *file_system_object = json_object ();
+
+	(void) json_object_set_new (
+		file_system_object, "path", json_string (admin_file_system->path)
+	);
+
+	(void) json_object_set_new (
+		file_system_object, "total", json_real (admin_file_system->stats.total)
+	);
+
+	(void) json_object_set_new (
+		file_system_object, "available", json_real (admin_file_system->stats.available)
+	);
+
+	(void) json_object_set_new (
+		file_system_object, "used", json_real (admin_file_system->stats.used)
+	);
+
+	(void) json_object_set_new (
+		file_system_object, "used_percentage", json_real (admin_file_system->stats.used_percentage)
+	);
+
+	return file_system_object;
+
+}
+
+char *http_cerver_admin_generate_file_systems_stats_json (
+	const HttpCerver *http_cerver
+) {
+
+	char *json_string = NULL;
+
+	(void) pthread_mutex_lock ((pthread_mutex_t *) http_cerver->admin_mutex);
+
+	json_t *json = json_object ();
+	if (json) {
+		json_t *file_systems_array = json_array ();
+
+		json_t *file_system_object = NULL;
+		for (ListElement *le = dlist_start (http_cerver->admin_file_systems_stats); le; le = le->next) {
+			file_system_object = http_cerver_admin_handler_single_file_systems_stats (
+				(const HttpAdminFileSystemStats *) le->data
+			);
+			
+			(void) json_array_append_new (file_systems_array, file_system_object);
+		}
+
+		(void) json_object_set_new (
+			json, "filesystems", file_systems_array
+		);
+
+		json_string = json_dumps (json, 0);
+
+		json_decref (json);
+	}
+
+	(void) pthread_mutex_unlock ((pthread_mutex_t *) http_cerver->admin_mutex);
+
+	return json_string;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -366,6 +440,32 @@ static void http_cerver_admin_handler (
 
 }
 
+// GET [top level]/cerver/stats/filesystems
+static void http_cerver_admin_file_systems_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *file_systems_json = http_cerver_admin_generate_file_systems_stats_json (
+		http_cerver
+	);
+
+	if (file_systems_json) {
+		(void) http_response_render_json (
+			http_receive, file_systems_json, strlen (file_systems_json)
+		);
+
+		free (file_systems_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 #pragma GCC diagnostic pop
 
 u8 http_cerver_admin_init (HttpRoute *top_level_route) {
@@ -379,6 +479,13 @@ u8 http_cerver_admin_init (HttpRoute *top_level_route) {
 		);
 
 		http_route_child_add (top_level_route, admin_route);
+
+		// GET [top level]/cerver/stats/filesystems
+		HttpRoute *file_systems_route = http_route_create (
+			REQUEST_METHOD_GET, "cerver/stats/filesystems", http_cerver_admin_file_systems_handler
+		);
+
+		http_route_child_add (top_level_route, file_systems_route);
 
 		retval = 0;
 	}
