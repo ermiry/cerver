@@ -1,20 +1,22 @@
-## Threads
-- Passing data reference instead of handler in jobqueue
+## General
+- Added file-system methods in dedicated sources
+- Added HTTP_ADMIN_DEBUG definition in makefile
 
 ## HTTP
-- Added base HTTP admin methods in dedicated sources
-- Added extra check for base route in http_route_child_add ()
-- Checking for base route when searching children routes
-- Added option to enable admin routes in HTTP sources
-- Checking for HTTP routes size in http_cerver_init ()
+- Added http_route_set_decode_data_into_json ()
+- Added HttpRequest attributes dedicated getters
+- Added HttpJwt attributes getters & added len fields
+- Added base HTTP admin file systems stats structure
+- Added HTTP admin file systems dlist to HttpCerver
+- Added HTTP admin file systems handlers methods
 
 ## Examples
-- Handling json error in user_parse_from_json ()
-- Added dedicated HTTP example to enable admin routes
+- Added iat jwt value in users api example
+- Registered file system in HTTP admin example
 
 ## Tests
-- Added more methods in test client curl sources
-- Requesting to multiple endpoints in api integration test
-- Added dedicated jwt keys for web api integration test
-- Added an exit code in base web integration test
-- Added dedicated image to be used for upload tests
+- Added dedicated jobs web cerver test
+- Added dedicated jobs integration test client
+- Added curl_post_form_value () in curl tests
+- Added dedicated system methods unit tests
+- Added base HTTP requests unit tests methods
