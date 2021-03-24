@@ -211,6 +211,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->routes = NULL;
 
+		http_cerver->main_route = NULL;
+
 		http_cerver->default_handler = NULL;
 
 		http_cerver->not_found_handler = false;
@@ -241,6 +243,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->admin_file_systems_stats = NULL;
+		http_cerver->admin_mutex = NULL;
 
 		http_cerver->mutex = NULL;
 	}
@@ -268,6 +272,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
 			str_delete (http_cerver->response_headers[i]);
+
+		dlist_delete (http_cerver->admin_file_systems_stats);
+		pthread_mutex_delete (http_cerver->admin_mutex);
 
 		pthread_mutex_delete (http_cerver->mutex);
 
@@ -299,6 +306,12 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->not_found = http_receive_handle_not_found_route;
 
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+
+		http_cerver->admin_file_systems_stats = dlist_init (
+			http_admin_file_system_stats_delete, NULL
+		);
+
+		http_cerver->admin_mutex = pthread_mutex_new ();
 
 		http_cerver->mutex = pthread_mutex_new ();
 	}
@@ -867,6 +880,30 @@ void http_jwt_delete (void *http_jwt_ptr) {
 
 }
 
+const char *http_jwt_get_bearer (const HttpJwt *http_jwt) {
+
+	return http_jwt->bearer;
+
+}
+
+const size_t http_jwt_get_bearer_len (const HttpJwt *http_jwt) {
+
+	return http_jwt->bearer_len;
+
+}
+
+const char *http_jwt_get_json (const HttpJwt *http_jwt) {
+
+	return http_jwt->json;
+
+}
+
+const size_t http_jwt_get_json_len (const HttpJwt *http_jwt) {
+
+	return http_jwt->json_len;
+
+}
+
 static unsigned int http_jwt_init_pool (void) {
 
 	unsigned int retval = 1;
@@ -1068,7 +1105,7 @@ u8 http_cerver_auth_generate_bearer_jwt_actual (
 	);
 
 	if (token) {
-		(void) snprintf (
+		http_jwt->bearer_len = snprintf (
 			http_jwt->bearer,
 			HTTP_JWT_BEARER_SIZE -1,
 			"Bearer %s",
@@ -1112,7 +1149,7 @@ u8 http_cerver_auth_generate_bearer_jwt_json (
 	if (!http_cerver_auth_generate_bearer_jwt (
 		http_cerver, http_jwt
 	)) {
-		(void) snprintf (
+		http_jwt->json_len = snprintf (
 			http_jwt->json,
 			HTTP_JWT_TOKEN_SIZE -1,
 			"{\"token\": \"%s\"}",
@@ -1501,6 +1538,21 @@ void http_cerver_enable_admin_routes (
 
 	if (http_cerver) {
 		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// registers a new file system to be handled
+// when requesting for fs stats
+void http_cerver_register_admin_file_system (
+	HttpCerver *http_cerver, const char *path
+) {
+
+	if (http_cerver) {
+		(void) dlist_insert_at_end_unsafe (
+			http_cerver->admin_file_systems_stats,
+			http_admin_file_system_stats_create (path)
+		);
 	}
 
 }
@@ -2292,6 +2344,14 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 }
 
+const HttpCerver *http_receive_get_cerver (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->http_cerver;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -2538,7 +2598,11 @@ static void http_receive_handle_select_auth_bearer (
 		jwt_valid->hdr = 1;
 		jwt_valid->now = time (NULL);
 
-		if (!jwt_decode (&jwt, token, (unsigned char *) http_cerver->jwt_public_key->str, http_cerver->jwt_public_key->len)) {
+		if (!jwt_decode (
+			&jwt, token,
+			(unsigned char *) http_cerver->jwt_public_key->str,
+			http_cerver->jwt_public_key->len
+		)) {
 			#ifdef HTTP_AUTH_DEBUG
 			cerver_log_debug ("JWT decoded successfully!");
 			#endif

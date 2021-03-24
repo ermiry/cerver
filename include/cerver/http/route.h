@@ -231,6 +231,11 @@ CERVER_EXPORT void http_route_set_decode_data (
 	void (*delete_decoded_data)(void *)
 );
 
+// sets a method to decode data from a jwt into a json string
+CERVER_EXPORT void http_route_set_decode_data_into_json (
+	HttpRoute *route
+);
+
 CERVER_EXPORT void http_route_print (
 	const HttpRoute *route
 );

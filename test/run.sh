@@ -10,6 +10,8 @@
 
 ./test/bin/packets || { exit 1; }
 
+./test/bin/system || { exit 1; }
+
 ./test/bin/threads || { exit 1; }
 
 ./test/bin/utils || { exit 1; }

@@ -125,6 +125,8 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	DoubleList *admin_file_systems_stats;
+	pthread_mutex_t *admin_mutex;
 
 	// used to correctly update stats
 	pthread_mutex_t *mutex;
@@ -244,7 +246,7 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
 // with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
-extern void http_cerver_set_uploads_filename_generator (
+CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
 		const CerverReceive *,
@@ -302,7 +304,9 @@ typedef struct HttpJwt {
 	u8 n_values;
 	HttpJwtValue values[HTTP_JWT_VALUES_SIZE];
 
+	size_t bearer_len;
 	char bearer[HTTP_JWT_BEARER_SIZE];
+	size_t json_len;
 	char json[HTTP_JWT_TOKEN_SIZE];
 
 } HttpJwt;
@@ -310,6 +314,22 @@ typedef struct HttpJwt {
 CERVER_PRIVATE void *http_jwt_new (void);
 
 CERVER_PRIVATE void http_jwt_delete (void *http_jwt_ptr);
+
+CERVER_EXPORT const char *http_jwt_get_bearer (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const size_t http_jwt_get_bearer_len (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const char *http_jwt_get_json (
+	const HttpJwt *http_jwt
+);
+
+CERVER_EXPORT const size_t http_jwt_get_json_len (
+	const HttpJwt *http_jwt
+);
 
 // loads a key from a filename that can be used for jwt
 // returns a newly allocated c string on success, NULL on error
@@ -453,6 +473,12 @@ CERVER_EXPORT void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, bool enable
 );
 
+// registers a new file system to be handled
+// when requesting for fs stats
+CERVER_EXPORT void http_cerver_register_admin_file_system (
+	HttpCerver *http_cerver, const char *path
+);
+
 #pragma endregion
 
 #pragma region url
@@ -561,6 +587,10 @@ CERVER_PRIVATE HttpReceive *http_receive_create (
 
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
+);
+
+CERVER_EXPORT const HttpCerver *http_receive_get_cerver (
+	const HttpReceive *http_receive
 );
 
 #pragma endregion

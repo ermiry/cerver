@@ -62,6 +62,13 @@ extern unsigned int curl_simple_post_handle_data (
 	curl_write_data_cb write_cb, char *buffer
 );
 
+// performs a multi-part request with just one value
+// returns 0 on success, 1 on error
+extern unsigned int curl_post_form_value (
+	CURL *curl, const char *address,
+	const char *key, const char *value
+);
+
 // uploads a file to the requested route performing a multi-part request
 // returns 0 on success, 1 on error
 extern unsigned int curl_upload_file (

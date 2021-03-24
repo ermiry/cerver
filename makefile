@@ -48,7 +48,8 @@ EXTRA_DEBUG	:= $(HAND_DEBUG) $(RECV_DEBUG)
 
 HTTP_DEBUG	:= -D HTTP_DEBUG -D HTTP_HEADERS_DEBUG			\
 				-D HTTP_AUTH_DEBUG -D HTTP_MPART_DEBUG		\
-				-D HTTP_RESPONSE_DEBUG
+				-D HTTP_RESPONSE_DEBUG						\
+				-D HTTP_ADMIN_DEBUG
 
 HTTP_EXTRA_DEBUG = HTTP_RECEIVE_DEBUG
 
@@ -307,6 +308,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/json/*.o -o ./$(TESTTARGET)/json $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/jwt/*.o -o ./$(TESTTARGET)/jwt $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/packets.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/system.o -o ./$(TESTTARGET)/system $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
@@ -343,6 +345,7 @@ integration-web:
 	@mkdir -p ./$(TESTTARGET)/web
 	$(CC) $(TESTINC) $(INTWEBIN)/admin.o -o $(INTWEBOUT)/admin $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/jobs.o -o $(INTWEBOUT)/jobs $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
 
@@ -354,6 +357,7 @@ integration-web-client:
 	@mkdir -p ./$(TESTTARGET)/client/web
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/admin.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/admin $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/api.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/api $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/jobs.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/jobs $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/upload.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/upload $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/web.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/web $(INTWEBCLIENTLIBS)
 

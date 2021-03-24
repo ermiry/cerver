@@ -105,6 +105,9 @@ int main (int argc, char **argv) {
 
 		http_cerver_enable_admin_routes (http_cerver, true);
 
+		http_cerver_register_admin_file_system (http_cerver, "/");
+		// http_cerver_register_admin_file_system (http_cerver, "/var/uploads");
+
 		// GET /
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
 		http_cerver_route_register (http_cerver, main_route);
