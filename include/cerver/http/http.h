@@ -125,6 +125,8 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	DoubleList *admin_file_systems_stats;
+	pthread_mutex_t *admin_mutex;
 
 	// used to correctly update stats
 	pthread_mutex_t *mutex;
@@ -469,6 +471,12 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, bool enable
+);
+
+// registers a new file system to be handled
+// when requesting for fs stats
+CERVER_EXPORT void http_cerver_register_admin_file_system (
+	HttpCerver *http_cerver, const char *path
 );
 
 #pragma endregion

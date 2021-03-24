@@ -243,6 +243,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->admin_file_systems_stats = NULL;
+		http_cerver->admin_mutex = NULL;
 
 		http_cerver->mutex = NULL;
 	}
@@ -270,6 +272,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
 			str_delete (http_cerver->response_headers[i]);
+
+		dlist_delete (http_cerver->admin_file_systems_stats);
+		pthread_mutex_delete (http_cerver->admin_mutex);
 
 		pthread_mutex_delete (http_cerver->mutex);
 
@@ -301,6 +306,12 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->not_found = http_receive_handle_not_found_route;
 
 		http_cerver->jwt_alg = JWT_DEFAULT_ALG;
+
+		http_cerver->admin_file_systems_stats = dlist_init (
+			http_admin_file_system_stats_delete, NULL
+		);
+
+		http_cerver->admin_mutex = pthread_mutex_new ();
 
 		http_cerver->mutex = pthread_mutex_new ();
 	}
@@ -1527,6 +1538,21 @@ void http_cerver_enable_admin_routes (
 
 	if (http_cerver) {
 		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// registers a new file system to be handled
+// when requesting for fs stats
+void http_cerver_register_admin_file_system (
+	HttpCerver *http_cerver, const char *path
+) {
+
+	if (http_cerver) {
+		(void) dlist_insert_at_end_unsafe (
+			http_cerver->admin_file_systems_stats,
+			http_admin_file_system_stats_create (path)
+		);
 	}
 
 }
