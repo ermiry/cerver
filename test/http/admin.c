@@ -10,6 +10,37 @@
 
 #include "../test.h"
 
+static const char *uploads_file_system = { "/var/uploads" };
+
+#pragma region systems
+
+static void test_http_admin_file_system_stats_new (void) {
+
+	HttpAdminFileSystemStats *stats = http_admin_file_system_stats_new ();
+
+	test_check_unsigned_eq (stats->path_len, 0, NULL);
+
+	http_admin_file_system_stats_delete (stats);
+
+}
+
+static void test_http_admin_file_system_stats_create (void) {
+
+	HttpAdminFileSystemStats *stats = http_admin_file_system_stats_create (
+		uploads_file_system
+	);
+
+	test_check_unsigned_eq (stats->path_len, strlen (uploads_file_system), NULL);
+	test_check_str_eq (stats->path, uploads_file_system, NULL);
+
+	http_admin_file_system_stats_delete (stats);
+	
+}
+
+#pragma endregion
+
+#pragma region generate
+
 // GET /api/users
 void main_users_handler (
 	const struct _HttpReceive *http_receive,
@@ -50,11 +81,7 @@ void users_upload_handler (
 
 }
 
-void http_tests_admin (void) {
-
-	(void) printf ("Testing HTTP admin integration...\n");
-
-	srand ((unsigned int) time (NULL));
+static void test_http_admin_generate_jsons (void) {
 
 	Cerver *test_cerver = cerver_create (
 		CERVER_TYPE_WEB,
@@ -99,7 +126,26 @@ void http_tests_admin (void) {
 	test_check_ptr (json);
 	free (json);
 
+	json = http_cerver_admin_generate_file_systems_stats_json (http_cerver);
+	test_check_ptr (json);
+	free (json);
+
 	cerver_teardown (test_cerver);
+
+}
+
+#pragma endregion
+
+void http_tests_admin (void) {
+
+	(void) printf ("Testing HTTP admin integration...\n");
+
+	// systems
+	test_http_admin_file_system_stats_new ();
+	test_http_admin_file_system_stats_create ();
+
+	// generate
+	test_http_admin_generate_jsons ();
 
 	(void) printf ("Done!\n");
 
