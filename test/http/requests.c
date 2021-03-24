@@ -24,7 +24,7 @@ static HttpRequest *test_http_request_new (void) {
 	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 		test_check_null_ptr (request->params[i]);
 
-	test_check_unsigned_eq (request->next_header, REQUEST_METHOD_UNDEFINED, NULL);
+	test_check_unsigned_eq (request->next_header, REQUEST_HEADER_INVALID, NULL);
 	for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
 		test_check_null_ptr (request->headers[i]);
 
