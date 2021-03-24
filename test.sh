@@ -148,6 +148,21 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
+# jobs
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 8080:8080 \
+	ermiry/cerver:test ./bin/web/jobs
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/web/jobs || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
+
 # admin
 sudo docker run \
 	-d \
