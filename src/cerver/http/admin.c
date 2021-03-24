@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cerver/system.h"
+
+#include "cerver/http/admin.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
@@ -11,6 +14,39 @@
 #include "cerver/http/json/value.h"
 
 #include "cerver/utils/log.h"
+
+HttpAdminFileSystemStats *http_admin_file_system_stats_new (void) {
+
+	HttpAdminFileSystemStats *stats = (HttpAdminFileSystemStats *) malloc (sizeof (HttpAdminFileSystemStats));
+	if (stats) {
+		(void) memset (stats, 0, sizeof (HttpAdminFileSystemStats));
+	}
+
+	return stats;
+
+}
+
+void http_admin_file_system_stats_delete (void *stats_ptr) {
+
+	if (stats_ptr) {
+		free (stats_ptr);
+	}
+
+}
+
+HttpAdminFileSystemStats *http_admin_file_system_stats_create (
+	const char *path
+) {
+
+	HttpAdminFileSystemStats *stats = http_admin_file_system_stats_new ();
+	if (stats) {
+		(void) strncpy (stats->path, path, HTTP_ADMIN_FILE_SYSTEM_STATS_PATH_SIZE - 1);
+		stats->path_len = strlen (stats->path);
+	}
+
+	return stats;
+
+}
 
 static void http_cerver_admin_handler_general_stats (
 	const HttpCerver *http_cerver, json_t *json
