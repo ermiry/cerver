@@ -42,6 +42,13 @@ static unsigned int admin_request_all_actual (
 		admin_request_all_data_handler, data_buffer
 	);
 
+	// GET /cerver/stats/filesystems
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/cerver/stats/filesystems", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		admin_request_all_data_handler, data_buffer
+	);
+
 	return errors;
 
 }
