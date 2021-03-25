@@ -13,8 +13,6 @@
 
 static const char *address = { "127.0.0.1:8080" };
 
-static char *token = NULL;
-
 static size_t jobs_request_all_data_handler (
 	void *contents, size_t size, size_t nmemb, void *storage
 ) {
