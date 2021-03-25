@@ -653,6 +653,7 @@ static u8 http_response_render_send (
 
 			http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
+			((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
 			((HttpReceive *) http_receive)->sent = total_size;
 
 			retval = 0;
@@ -756,7 +757,7 @@ u8 http_response_render_file (
 				http_receive, file, filename, &filestatus
 			);
 
-			close (file);
+			(void) close (file);
 		}
 	}
 

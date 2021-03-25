@@ -133,6 +133,6 @@ int main (int argc, char **argv) {
 
 	cerver_log_end ();
 
-	return 0;
+	return code;
 
 }
