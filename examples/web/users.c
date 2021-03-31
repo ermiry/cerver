@@ -28,7 +28,7 @@ void main_users_handler (
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, "Users route works!");
+	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "Users route works!");
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
@@ -68,7 +68,7 @@ void users_login_handler (
 					http_jwt
 				)) {
 					HttpResponse *res = http_response_create (
-						200, http_jwt->json, strlen (http_jwt->json)
+						HTTP_STATUS_OK, http_jwt->json, strlen (http_jwt->json)
 					);
 
 					if (res) {
@@ -83,8 +83,9 @@ void users_login_handler (
 
 				else {
 					HttpResponse *res = http_response_json_error (
-						(http_status) 500, "Internal error!"
+						HTTP_STATUS_INTERNAL_SERVER_ERROR, "Internal error!"
 					);
+
 					if (res) {
 						http_response_print (res);
 						#ifdef EXAMPLES_DEBUG
@@ -99,8 +100,9 @@ void users_login_handler (
 
 			else {
 				HttpResponse *res = http_response_json_error (
-					(http_status) 400, "Password is incorrect!"
+					HTTP_STATUS_BAD_REQUEST, "Password is incorrect!"
 				);
+
 				if (res) {
 					http_response_print (res);
 					#ifdef EXAMPLES_DEBUG
@@ -113,8 +115,9 @@ void users_login_handler (
 
 		else {
 			HttpResponse *res = http_response_json_error (
-				(http_status) 404, "User not found!"
+				HTTP_STATUS_NOT_FOUND, "User not found!"
 			);
+
 			if (res) {
 				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
@@ -127,8 +130,9 @@ void users_login_handler (
 
 	else {
 		HttpResponse *res = http_response_json_error (
-			(http_status) 400, "Missing user values!"
+			HTTP_STATUS_BAD_REQUEST, "Missing user values!"
 		);
+
 		if (res) {
 			#ifdef EXAMPLES_DEBUG
 			http_response_print (res);
@@ -169,8 +173,9 @@ void users_register_handler (
 			printf ("\n");
 
 			HttpResponse *res = http_response_json_msg (
-				(http_status) 200, "Created a new user!"
+				HTTP_STATUS_OK, "Created a new user!"
 			);
+
 			if (res) {
 				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
@@ -182,8 +187,9 @@ void users_register_handler (
 
 		else {
 			HttpResponse *res = http_response_json_error (
-				(http_status) 500, "Internal error!"
+				HTTP_STATUS_INTERNAL_SERVER_ERROR, "Internal error!"
 			);
+
 			if (res) {
 				#ifdef EXAMPLES_DEBUG
 				http_response_print (res);
@@ -196,7 +202,7 @@ void users_register_handler (
 
 	else {
 		HttpResponse *res = http_response_json_error (
-			(http_status) 400, "Missing user values!"
+			HTTP_STATUS_BAD_REQUEST, "Missing user values!"
 		);
 		if (res) {
 			#ifdef EXAMPLES_DEBUG
@@ -219,7 +225,7 @@ void users_profile_handler (
 
 	char *message = c_string_create ("%s profile!", user->name->str);
 
-	HttpResponse *res = http_response_json_msg ((http_status) 200, message);
+	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, message);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);

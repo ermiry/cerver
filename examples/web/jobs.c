@@ -69,7 +69,7 @@ void main_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Test route works!"
+		HTTP_STATUS_OK, "Test route works!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
@@ -96,7 +96,7 @@ void jobs_handler (
 	);
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Jobs route works!"
+		HTTP_STATUS_OK, "Jobs route works!"
 	);
 
 	if (res) {
