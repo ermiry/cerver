@@ -49,7 +49,7 @@ void main_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Admin HTTP cerver!"
+		HTTP_STATUS_OK, "Admin HTTP cerver!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
