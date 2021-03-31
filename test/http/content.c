@@ -41,7 +41,7 @@ static void test_http_content_type_string (void) {
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_GIF), content_type_gif_string, NULL);
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_MP3), content_type_audio_string, NULL);
 
-	test_check_null_ptr (http_content_type_string (HTTP_CONTENT_TYPE_UNDEFINED));
+	test_check_null_ptr (http_content_type_string (HTTP_CONTENT_TYPE_NONE));
 
 }
 
@@ -58,7 +58,7 @@ static void test_http_content_type_description (void) {
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_GIF), content_type_gif_description, NULL);
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_MP3), content_type_audio_description, NULL);
 
-	test_check_null_ptr (http_content_type_description (HTTP_CONTENT_TYPE_UNDEFINED));
+	test_check_null_ptr (http_content_type_description (HTTP_CONTENT_TYPE_NONE));
 
 }
 
