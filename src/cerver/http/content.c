@@ -39,7 +39,7 @@ ContentType http_content_type_by_string (
 	HTTP_CONTENT_TYPE_MAP(XX)
 	#undef XX
 
-	return HTTP_CONTENT_TYPE_UNDEFINED;
+	return HTTP_CONTENT_TYPE_NONE;
 
 }
 
