@@ -7,6 +7,7 @@
 #include "../test.h"
 
 static const char *content_type_text_string = { "html" };
+static const char *content_type_undefined_string = { "undefined" };
 static const char *content_type_css_string = { "css" };
 static const char *content_type_js_string = { "js" };
 static const char *content_type_json_string = { "json" };
@@ -17,6 +18,7 @@ static const char *content_type_ico_string = { "ico" };
 static const char *content_type_gif_string = { "gif" };
 static const char *content_type_audio_string = { "mp3" };
 
+static const char *content_type_undefined_description = { "undefined" };
 static const char *content_type_text_description = { "text/html; charset=UTF-8" };
 static const char *content_type_css_description = { "text/css" };
 static const char *content_type_js_description = { "application/javascript" };
@@ -30,6 +32,8 @@ static const char *content_type_audio_description = { "audio/mp3" };
 
 static void test_http_content_type_string (void) {
 
+	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_NONE), content_type_undefined_string, NULL);
+
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_HTML), content_type_text_string, NULL);
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_CSS), content_type_css_string, NULL);
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_JS), content_type_js_string, NULL);
@@ -41,11 +45,13 @@ static void test_http_content_type_string (void) {
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_GIF), content_type_gif_string, NULL);
 	test_check_str_eq (http_content_type_string (HTTP_CONTENT_TYPE_MP3), content_type_audio_string, NULL);
 
-	test_check_null_ptr (http_content_type_string (HTTP_CONTENT_TYPE_NONE));
+	test_check_null_ptr (http_content_type_string ((const ContentType) 100));
 
 }
 
 static void test_http_content_type_description (void) {
+
+	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_NONE), content_type_undefined_description, NULL);
 
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_HTML), content_type_text_description, NULL);
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_CSS), content_type_css_description, NULL);
@@ -58,7 +64,7 @@ static void test_http_content_type_description (void) {
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_GIF), content_type_gif_description, NULL);
 	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_MP3), content_type_audio_description, NULL);
 
-	test_check_null_ptr (http_content_type_description (HTTP_CONTENT_TYPE_NONE));
+	test_check_null_ptr (http_content_type_description ((const ContentType) 100));
 
 }
 
