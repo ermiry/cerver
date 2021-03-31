@@ -1,11 +1,15 @@
 #ifndef _CERVER_HTTP_CONTENT_H_
 #define _CERVER_HTTP_CONTENT_H_
 
+#include <stdbool.h>
+
 #include "cerver/config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define HTTP_CONTENT_TYPE_UNDEFINED		10
 
 #define HTTP_CONTENT_TYPE_MAP(XX)							\
 	XX(0, HTML,		html,	text/html; charset=UTF-8)		\
@@ -35,8 +39,16 @@ CERVER_PUBLIC const char *http_content_type_description (
 	const ContentType content_type
 );
 
+CERVER_PUBLIC ContentType http_content_type_by_string (
+	const char *content_type_string
+);
+
 CERVER_PUBLIC const char *http_content_type_by_extension (
 	const char *extension
+);
+
+CERVER_PUBLIC bool http_content_type_is_json (
+	const char *description
 );
 
 #ifdef __cplusplus
