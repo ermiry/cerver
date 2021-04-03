@@ -65,6 +65,12 @@ static void test_http_request_create (void) {
 	for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_request_get_header (request, (const RequestHeader) i));
 	
+	test_check_unsigned_eq (http_request_get_content_tytpe (request), HTTP_CONTENT_TYPE_NONE, NULL);
+
+	test_check_null_ptr (http_request_get_content_type_string (request));
+
+	test_check_false (http_request_content_type_is_json (request));
+
 	test_check_null_ptr (http_request_get_decoded_data (request));
 
 	test_check_null_ptr (http_request_get_body (request));
