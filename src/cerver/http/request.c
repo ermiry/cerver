@@ -1,11 +1,13 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/config.h"
 
+#include "cerver/http/content.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
 
@@ -188,6 +190,36 @@ const String *http_request_get_header (
 ) {
 
 	return http_request->headers[header];
+
+}
+
+ContentType http_request_get_content_tytpe (
+	const HttpRequest *http_request
+) {
+
+	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE] ?
+		http_content_type_by_string (
+			http_request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+		) : HTTP_CONTENT_TYPE_NONE;
+
+}
+
+const String *http_request_get_content_type_string (
+	const HttpRequest *http_request
+) {
+
+	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE];
+
+}
+
+bool http_request_content_type_is_json (
+	const HttpRequest *http_request
+) {
+
+	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE] ?
+		http_content_type_is_json (
+			http_request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+		) : false;
 
 }
 
