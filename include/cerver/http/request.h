@@ -1,12 +1,15 @@
 #ifndef _CERVER_HTTP_REQUEST_H_
 #define _CERVER_HTTP_REQUEST_H_
 
+#include <stdbool.h>
+
 #include "cerver/types/string.h"
 
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
 
+#include "cerver/http/content.h"
 #include "cerver/http/multipart.h"
 
 #define REQUEST_METHOD_UNDEFINED		5
@@ -20,7 +23,7 @@ extern "C" {
 	XX(1,  GET,         GET)          	\
 	XX(2,  HEAD,        HEAD)         	\
 	XX(3,  POST,        POST)         	\
-	XX(4,  PUT,         PUT)          	\
+	XX(4,  PUT,         PUT)
 
 typedef enum RequestMethod {
 
@@ -153,6 +156,18 @@ CERVER_EXPORT const String *http_request_get_param_at_idx (
 
 CERVER_EXPORT const String *http_request_get_header (
 	const HttpRequest *http_request, const RequestHeader header
+);
+
+CERVER_EXPORT ContentType http_request_get_content_tytpe (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT const String *http_request_get_content_type_string (
+	const HttpRequest *http_request
+);
+
+CERVER_EXPORT bool http_request_content_type_is_json (
+	const HttpRequest *http_request
 );
 
 CERVER_EXPORT const void *http_request_get_decoded_data (

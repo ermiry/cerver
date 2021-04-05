@@ -10,6 +10,8 @@ extern const char *public_key;
 extern const char *base_token;
 extern const char *bearer_token;
 
+extern void http_tests_contents (void);
+
 extern void http_tests_requests (void);
 
 extern void http_tests_responses (void);

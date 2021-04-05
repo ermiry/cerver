@@ -224,6 +224,7 @@ int main (int argc, char **argv) {
 	http_tests_main ();
 
 	// unit tests
+	http_tests_contents ();
 	http_tests_requests ();
 	http_tests_responses ();
 	http_tests_jwt ();

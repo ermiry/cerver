@@ -60,7 +60,7 @@ static void catch_all_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Cerver API implementation!"
+		HTTP_STATUS_OK, "Cerver API implementation!"
 	);
 
 	if (res) {

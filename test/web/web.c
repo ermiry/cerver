@@ -65,7 +65,7 @@ void test_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Test route works!"
+		HTTP_STATUS_OK, "Test route works!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
@@ -114,7 +114,7 @@ void hola_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Hola route works!"
+		HTTP_STATUS_OK, "Hola route works!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
@@ -133,7 +133,7 @@ void adios_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Adios route works!"
+		HTTP_STATUS_OK, "Adios route works!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
@@ -153,7 +153,7 @@ void key_handler (
 
 	(void) http_response_json_key_value_send (
 		http_receive,
-		(http_status) 200, "key", "value"
+		HTTP_STATUS_OK, "key", "value"
 	);
 
 }
@@ -166,7 +166,7 @@ void custom_handler (
 
 	(void) http_response_json_custom_send (
 		http_receive,
-		(http_status) 200, "{\"oki\": \"doki\"}"
+		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
 	);
 
 }
@@ -183,7 +183,7 @@ void reference_handler (
 
 		(void) http_response_json_custom_reference_send (
 			http_receive,
-			(http_status) 200, json, strlen (json)
+			HTTP_STATUS_OK, json, strlen (json)
 		);
 
 		free (json);

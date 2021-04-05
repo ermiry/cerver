@@ -50,7 +50,7 @@ void test_handler (
 ) {
 
 	HttpResponse *res = http_response_json_msg (
-		(http_status) 200, "Test route works!"
+		HTTP_STATUS_OK, "Test route works!"
 	);
 	if (res) {
 		#ifdef EXAMPLES_DEBUG
@@ -148,7 +148,7 @@ void discard_handler (
 		cerver_log_success ("Success request, keeping multi part files...");
 
 		HttpResponse *res = http_response_json_msg (
-			(http_status) 200, "Success request!"
+			HTTP_STATUS_OK, "Success request!"
 		);
 		if (res) {
 			#ifdef EXAMPLES_DEBUG
@@ -163,7 +163,7 @@ void discard_handler (
 		cerver_log_error ("key != value");
 		cerver_log_debug ("Discarding multi part files...");
 		http_request_multi_part_discard_files (request);
-		http_response_json_error_send (http_receive, 400, "Bad request!");
+		http_response_json_error_send (http_receive, HTTP_STATUS_BAD_REQUEST, "Bad request!");
 	}
 
 }

@@ -289,12 +289,12 @@ u8 http_response_set_data_ref (
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted 
 HttpResponse *http_response_create (
-	unsigned int status, const void *data, size_t data_len
+	const http_status status, const void *data, size_t data_len
 ) {
 
 	HttpResponse *res = http_response_new ();
 	if (res) {
-		res->status = (http_status) status;
+		res->status = status;
 
 		if (data) {
 			res->data = malloc (data_len);
@@ -542,7 +542,7 @@ u8 http_response_send_split (
 // creates & sends a response to the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_create_and_send (
-	unsigned int status, const void *data, size_t data_len,
+	const http_status status, const void *data, size_t data_len,
 	const HttpReceive *http_receive
 ) {
 
@@ -836,7 +836,7 @@ HttpResponse *http_response_create_json_key_value (
 }
 
 static HttpResponse *http_response_json_internal (
-	http_status status, const char *key, const char *value
+	const http_status status, const char *key, const char *value
 ) {
 
 	HttpResponse *res = http_response_new ();
@@ -876,7 +876,7 @@ static HttpResponse *http_response_json_internal (
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 HttpResponse *http_response_json_msg (
-	http_status status, const char *msg
+	const http_status status, const char *msg
 ) {
 
 	return msg ? http_response_json_internal (status, "msg", msg) : NULL;
@@ -887,12 +887,12 @@ HttpResponse *http_response_json_msg (
 // returns 0 on success, 1 on error
 u8 http_response_json_msg_send (
 	const HttpReceive *http_receive,
-	unsigned int status, const char *msg
+	const http_status status, const char *msg
 ) {
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_msg ((http_status) status, msg);
+	HttpResponse *res = http_response_json_msg (status, msg);
 	if (res) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
@@ -908,7 +908,7 @@ u8 http_response_json_msg_send (
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { error: "your error message" }
 HttpResponse *http_response_json_error (
-	http_status status, const char *error_msg
+	const http_status status, const char *error_msg
 ) {
 
 	return error_msg ? http_response_json_internal (status, "error", error_msg) : NULL;
@@ -919,12 +919,12 @@ HttpResponse *http_response_json_error (
 // returns 0 on success, 1 on error
 u8 http_response_json_error_send (
 	const HttpReceive *http_receive,
-	unsigned int status, const char *error_msg
+	const http_status status, const char *error_msg
 ) {
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_error ((http_status) status, error_msg);
+	HttpResponse *res = http_response_json_error (status, error_msg);
 	if (res) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
@@ -940,7 +940,7 @@ u8 http_response_json_error_send (
 // creates a http response with the defined status code ready to be sent
 // and a data (body) with a json meesage of type { key: value }
 HttpResponse *http_response_json_key_value (
-	http_status status, const char *key, const char *value
+	const http_status status, const char *key, const char *value
 ) {
 
 	return (key && value) ? http_response_json_internal (status, key, value) : NULL;
@@ -951,12 +951,12 @@ HttpResponse *http_response_json_key_value (
 // returns 0 on success, 1 on error
 u8 http_response_json_key_value_send (
 	const HttpReceive *http_receive,
-	unsigned int status, const char *key, const char *value
+	const http_status status, const char *key, const char *value
 ) {
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_key_value ((http_status) status, key, value);
+	HttpResponse *res = http_response_json_key_value (status, key, value);
 	if (res) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (res);
@@ -970,7 +970,7 @@ u8 http_response_json_key_value_send (
 }
 
 static HttpResponse *http_response_json_custom_internal (
-	http_status status, const char *json
+	const http_status status, const char *json
 ) {
 
 	HttpResponse *res = http_response_new ();
@@ -998,7 +998,7 @@ static HttpResponse *http_response_json_custom_internal (
 
 // creates a http response with the defined status code and the body with the custom json
 HttpResponse *http_response_json_custom (
-	http_status status, const char *json
+	const http_status status, const char *json
 ) {
 
 	HttpResponse *res = NULL;
@@ -1016,13 +1016,13 @@ HttpResponse *http_response_json_custom (
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_send (
 	const HttpReceive *http_receive,
-	unsigned int status, const char *json
+	const http_status status, const char *json
 ) {
 
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		HttpResponse *res = http_response_json_custom_internal ((http_status) status, json);
+		HttpResponse *res = http_response_json_custom_internal (status, json);
 		if (res) {
 			#ifdef HTTP_RESPONSE_DEBUG
 			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
@@ -1038,7 +1038,7 @@ u8 http_response_json_custom_send (
 }
 
 static HttpResponse *http_response_json_custom_reference_internal (
-	http_status status,
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
@@ -1069,14 +1069,14 @@ static HttpResponse *http_response_json_custom_reference_internal (
 // creates a http response with the defined status code
 // and the body with a reference to a custom json
 HttpResponse *http_response_json_custom_reference (
-	http_status status,
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
 	HttpResponse *res = NULL;
 	if (json) {
 		res = http_response_json_custom_reference_internal (
-			(http_status) status,
+			status,
 			json, json_len
 		);
 		
@@ -1091,7 +1091,7 @@ HttpResponse *http_response_json_custom_reference (
 // returns 0 on success, 1 on error
 u8 http_response_json_custom_reference_send (
 	const HttpReceive *http_receive,
-	unsigned int status,
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
@@ -1099,7 +1099,7 @@ u8 http_response_json_custom_reference_send (
 
 	if (http_receive && json) {
 		HttpResponse *res = http_response_json_custom_reference_internal (
-			(http_status) status,
+			status,
 			json, json_len
 		);
 

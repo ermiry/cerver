@@ -59,7 +59,7 @@ CERVER_EXPORT void http_response_return (HttpResponse *response);
 
 // sets the http response's status code to be set in the header when compilling
 CERVER_EXPORT void http_response_set_status (
-	HttpResponse *res, http_status status
+	HttpResponse *res, const http_status status
 );
 
 // sets the response's header, it will replace the existing one
@@ -105,7 +105,7 @@ CERVER_EXPORT u8 http_response_set_data_ref (
 // ability to set the response's data (body); it will be copied to the response
 // and the original data can be safely deleted 
 CERVER_EXPORT HttpResponse *http_response_create (
-	unsigned int status, const void *data, size_t data_len
+	const http_status status, const void *data, size_t data_len
 );
 
 // uses the exiting response's values to correctly create a HTTP header in a continuos buffer
@@ -141,7 +141,7 @@ CERVER_EXPORT u8 http_response_send_split (
 // creates & sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_create_and_send (
-	unsigned int status, const void *data, size_t data_len,
+	const http_status status, const void *data, size_t data_len,
 	const struct _HttpReceive *http_receive
 );
 
@@ -197,58 +197,58 @@ CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { msg: "your message" }
 CERVER_EXPORT HttpResponse *http_response_json_msg (
-	http_status status, const char *msg
+	const http_status status, const char *msg
 );
 
 // creates and sends a http json message response with the defined status code & message
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_msg_send (
 	const struct _HttpReceive *http_receive,
-	unsigned int status, const char *msg
+	const http_status status, const char *msg
 );
 
 // creates a http response with the defined status code ready to be sent 
 // and a data (body) with a json message of type { error: "your error message" }
 CERVER_EXPORT HttpResponse *http_response_json_error (
-	http_status status, const char *error_msg
+	const http_status status, const char *error_msg
 );
 
 // creates and sends a http json error response with the defined status code & message
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_error_send (
 	const struct _HttpReceive *http_receive,
-	unsigned int status, const char *error_msg
+	const http_status status, const char *error_msg
 );
 
 // creates a http response with the defined status code ready to be sent
 // and a data (body) with a json meesage of type { key: value }
 CERVER_EXPORT HttpResponse *http_response_json_key_value (
-	http_status status, const char *key, const char *value
+	const http_status status, const char *key, const char *value
 );
 
 // creates and sends a http custom json response with the defined status code & key-value
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_key_value_send (
 	const struct _HttpReceive *http_receive,
-	unsigned int status, const char *key, const char *value
+	const http_status status, const char *key, const char *value
 );
 
 // creates a http response with the defined status code and the body with the custom json
 CERVER_EXPORT HttpResponse *http_response_json_custom (
-	http_status status, const char *json
+	const http_status status, const char *json
 );
 
 // creates and sends a http custom json response with the defined status code
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_custom_send (
 	const struct _HttpReceive *http_receive,
-	unsigned int status, const char *json
+	const http_status status, const char *json
 );
 
 // creates a http response with the defined status code
 // and the body with a reference to a custom json
 CERVER_EXPORT HttpResponse *http_response_json_custom_reference (
-	http_status status,
+	const http_status status,
 	const char *json, const size_t json_len
 );
 
@@ -256,7 +256,7 @@ CERVER_EXPORT HttpResponse *http_response_json_custom_reference (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_custom_reference_send (
 	const struct _HttpReceive *http_receive,
-	unsigned int status,
+	const http_status status,
 	const char *json, const size_t json_len
 );
 
