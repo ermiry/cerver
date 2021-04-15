@@ -105,10 +105,10 @@ sudo docker kill $(sudo docker ps -q)
 
 # queue
 sudo docker run \
-	-it \
+	-d \
 	--name test --rm \
 	-p 7000:7000 \
-	ermiry/cerver:local /bin/bash
+	ermiry/cerver:local ./bin/cerver/queue
 
 sleep 2
 
