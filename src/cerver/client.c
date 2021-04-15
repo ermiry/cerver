@@ -4075,14 +4075,21 @@ int client_connection_end (Client *client, Connection *connection) {
 
 		if (connection->updating) {
 			// wait until connection has finished updating
-			pthread_mutex_lock (connection->mutex);
+			(void) pthread_mutex_lock (connection->mutex);
 
 			while (connection->updating) {
 				// printf ("client_connection_end () waiting...\n");
-				pthread_cond_wait (connection->cond, connection->mutex);
+				(void) pthread_cond_wait (connection->cond, connection->mutex);
 			}
 
-			pthread_mutex_unlock (connection->mutex);
+			(void) pthread_mutex_unlock (connection->mutex);
+		}
+
+		if (connection->use_send_queue) {
+			if (connection->send_queue) {
+				bsem_post (connection->send_queue->has_jobs);
+				(void) sleep (1);
+			}
 		}
 
 		connection_delete (connection);
