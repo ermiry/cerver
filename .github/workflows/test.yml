@@ -13,21 +13,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Build Docker Image
+        run: docker build -t ermiry/cerver:test -f Dockerfile.test .
+
       - name: Compile Sources
         run: make TYPE=test COVERAGE=1
 
       - name: Compile Tests
         run: make TYPE=test COVERAGE=1 test
 
-      - name: Build Docker Image
-        run: docker build -t ermiry/cerver:test -f Dockerfile.test .
-
       - name: Unit Tests
         run: bash test/run.sh
 
       - name: Ping Integration Test
         run: |
-          docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/ping
+          docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/ping
@@ -35,7 +35,7 @@ jobs:
 
       - name: Packets Integration Test
         run: |
-          sudo docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/packets
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/packets
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/packets
@@ -43,7 +43,7 @@ jobs:
 
       - name: Requests Integration Test
         run: |
-          sudo docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/requests
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/requests
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/requests
@@ -51,7 +51,7 @@ jobs:
 
       - name: Auth Integration Test
         run: |
-          sudo docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/auth
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/auth
@@ -59,7 +59,7 @@ jobs:
 
       - name: Sessions Integration Test
         run: |
-          sudo docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/sessions
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/sessions
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/sessions
@@ -67,7 +67,7 @@ jobs:
 
       - name: Threads Integration Test
         run: |
-          sudo docker run -d --name test --rm -p 7000:7000 -v $PWD:/home/cerver ermiry/cerver:test ./test/bin/cerver/threads
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/threads
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/threads
