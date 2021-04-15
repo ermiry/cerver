@@ -152,18 +152,18 @@ void packets_per_type_print (
 ) {
 
 	if (packets_per_type) {
-		cerver_log_msg ("Cerver:            %ld", packets_per_type->n_cerver_packets);
-		cerver_log_msg ("Client:            %ld", packets_per_type->n_client_packets);
-		cerver_log_msg ("Error:             %ld", packets_per_type->n_error_packets);
-		cerver_log_msg ("Request:           %ld", packets_per_type->n_request_packets);
-		cerver_log_msg ("Auth:              %ld", packets_per_type->n_auth_packets);
-		cerver_log_msg ("Game:              %ld", packets_per_type->n_game_packets);
-		cerver_log_msg ("App:               %ld", packets_per_type->n_app_packets);
-		cerver_log_msg ("App Error:         %ld", packets_per_type->n_app_error_packets);
-		cerver_log_msg ("Custom:            %ld", packets_per_type->n_custom_packets);
-		cerver_log_msg ("Test:              %ld", packets_per_type->n_test_packets);
-		cerver_log_msg ("Unknown:           %ld", packets_per_type->n_unknown_packets);
-		cerver_log_msg ("Bad:               %ld", packets_per_type->n_bad_packets);
+		cerver_log_msg ("Cerver:            %lu", packets_per_type->n_cerver_packets);
+		cerver_log_msg ("Client:            %lu", packets_per_type->n_client_packets);
+		cerver_log_msg ("Error:             %lu", packets_per_type->n_error_packets);
+		cerver_log_msg ("Request:           %lu", packets_per_type->n_request_packets);
+		cerver_log_msg ("Auth:              %lu", packets_per_type->n_auth_packets);
+		cerver_log_msg ("Game:              %lu", packets_per_type->n_game_packets);
+		cerver_log_msg ("App:               %lu", packets_per_type->n_app_packets);
+		cerver_log_msg ("App Error:         %lu", packets_per_type->n_app_error_packets);
+		cerver_log_msg ("Custom:            %lu", packets_per_type->n_custom_packets);
+		cerver_log_msg ("Test:              %lu", packets_per_type->n_test_packets);
+		cerver_log_msg ("Unknown:           %lu", packets_per_type->n_unknown_packets);
+		cerver_log_msg ("Bad:               %lu", packets_per_type->n_bad_packets);
 	}
 
 }
@@ -172,17 +172,17 @@ void packets_per_type_array_print (
 	const u64 packets[PACKETS_MAX_TYPES]
 ) {
 
-	cerver_log_msg ("\tCerver:              %ld", packets[PACKET_TYPE_CERVER]);
-	cerver_log_msg ("\tClient:              %ld", packets[PACKET_TYPE_CLIENT]);
-	cerver_log_msg ("\tError:               %ld", packets[PACKET_TYPE_ERROR]);
-	cerver_log_msg ("\tRequest:             %ld", packets[PACKET_TYPE_REQUEST]);
-	cerver_log_msg ("\tAuth:                %ld", packets[PACKET_TYPE_AUTH]);
-	cerver_log_msg ("\tGame:                %ld", packets[PACKET_TYPE_GAME]);
-	cerver_log_msg ("\tApp:                 %ld", packets[PACKET_TYPE_APP]);
-	cerver_log_msg ("\tApp Error:           %ld", packets[PACKET_TYPE_APP_ERROR]);
-	cerver_log_msg ("\tCustom:              %ld", packets[PACKET_TYPE_CUSTOM]);
-	cerver_log_msg ("\tTest:                %ld", packets[PACKET_TYPE_TEST]);
-	cerver_log_msg ("\tBad:                 %ld", packets[PACKET_TYPE_BAD]);
+	cerver_log_msg ("\tCerver:              %lu", packets[PACKET_TYPE_CERVER]);
+	cerver_log_msg ("\tClient:              %lu", packets[PACKET_TYPE_CLIENT]);
+	cerver_log_msg ("\tError:               %lu", packets[PACKET_TYPE_ERROR]);
+	cerver_log_msg ("\tRequest:             %lu", packets[PACKET_TYPE_REQUEST]);
+	cerver_log_msg ("\tAuth:                %lu", packets[PACKET_TYPE_AUTH]);
+	cerver_log_msg ("\tGame:                %lu", packets[PACKET_TYPE_GAME]);
+	cerver_log_msg ("\tApp:                 %lu", packets[PACKET_TYPE_APP]);
+	cerver_log_msg ("\tApp Error:           %lu", packets[PACKET_TYPE_APP_ERROR]);
+	cerver_log_msg ("\tCustom:              %lu", packets[PACKET_TYPE_CUSTOM]);
+	cerver_log_msg ("\tTest:                %lu", packets[PACKET_TYPE_TEST]);
+	cerver_log_msg ("\tBad:                 %lu", packets[PACKET_TYPE_BAD]);
 
 }
 
@@ -732,6 +732,54 @@ u8 packet_generate (Packet *packet) {
 
 }
 
+void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	*packet = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
+
+		.packet_type = packet_type,
+		.req_type = request_type,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.header = (PacketHeader) {
+			.packet_type = packet_type,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = request_type,
+
+			.sock_fd = 0
+		},
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true
+	};
+
+}
+
+void packet_init_ping (Packet *packet) {
+
+	packet_init_request (
+		packet,
+		PACKET_TYPE_TEST, 0
+	);
+
+}
+
 // creates a request packet that is ready to be sent
 // returns a newly allocated packet
 Packet *packet_create_request (
@@ -741,36 +789,10 @@ Packet *packet_create_request (
 
 	Packet *packet = (Packet *) malloc (sizeof (Packet));
 	if (packet) {
-		*packet = (Packet) {
-			.cerver = NULL,
-			.client = NULL,
-			.connection = NULL,
-			.lobby = NULL,
-
-			.packet_type = packet_type,
-			.req_type = request_type,
-
-			.data_size = 0,
-			.data = NULL,
-			.data_ptr = NULL,
-			.data_end = NULL,
-			.data_ref = false,
-
-			.header = (PacketHeader) {
-				.packet_type = packet_type,
-				.packet_size = sizeof (PacketHeader),
-
-				.handler_id = 0,
-
-				.request_type = request_type,
-
-				.sock_fd = 0
-			},
-
-			.packet_size = sizeof (PacketHeader),
-			.packet = (void *) &packet->header,
-			.packet_ref = true
-		};
+		packet_init_request (
+			packet,
+			packet_type, request_type
+		);
 	}
 
 	return packet;
@@ -1096,6 +1118,29 @@ static void packet_send_update_stats (
 }
 
 #pragma GCC diagnostic pop
+
+u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	if (!packet_send_tcp_actual (
+		packet, connection, flags, total_sent, false
+	)) {
+		packet_send_update_stats (
+			packet->packet_type, *total_sent,
+			NULL, client, connection, NULL
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
 
 static inline u8 packet_send_internal (
 	const Packet *packet,

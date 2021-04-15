@@ -12,9 +12,10 @@
 #include <sys/prctl.h>
 #endif
 
-#include "cerver/threads/thpool.h"
 #include "cerver/threads/bsem.h"
 #include "cerver/threads/jobs.h"
+#include "cerver/threads/thpool.h"
+#include "cerver/threads/thread.h"
 
 static void *thread_do (void *thread_ptr);
 
@@ -66,7 +67,9 @@ static unsigned int pool_thread_init (PoolThread *thread) {
 	unsigned int retval = 1;
 
 	if (thread) {
-		if (!pthread_create (&thread->thread_id, NULL, thread_do, thread)) {
+		if (!pthread_create (
+			&thread->thread_id, NULL, thread_do, thread
+		)) {
 			if (!pthread_detach (thread->thread_id)) {
 				retval = 0;
 			}
@@ -85,7 +88,8 @@ static Thpool *thpool_new (void) {
 
 	Thpool *thpool = (Thpool *) malloc (sizeof (Thpool));
 	if (thpool) {
-		thpool->name = NULL;
+		thpool->namelen = 0;
+		(void) memset (thpool->name, 0, THPOOL_NAME_SIZE);
 
 		thpool->n_threads = 0;
 		thpool->threads = NULL;
@@ -109,8 +113,6 @@ static void thpool_delete (void *thpool_ptr) {
 	if (thpool_ptr) {
 		Thpool *thpool = (Thpool *) thpool_ptr;
 
-		if (thpool->name) free ((char *) thpool->name);
-
 		if (thpool->threads) {
 			for (unsigned int i = 0; i < thpool->n_threads; i++) {
 				pool_thread_delete (thpool->threads[i]);
@@ -119,11 +121,15 @@ static void thpool_delete (void *thpool_ptr) {
 			free (thpool->threads);
 		}
 
-		pthread_mutex_destroy (thpool->mutex);
-		free (thpool->mutex);
+		if (thpool->mutex) {
+			(void) pthread_mutex_destroy (thpool->mutex);
+			free (thpool->mutex);
+		}
 
-		pthread_cond_destroy (thpool->threads_all_idle);
-		free (thpool->threads_all_idle);
+		if (thpool->threads_all_idle) {
+			(void) pthread_cond_destroy (thpool->threads_all_idle);
+			free (thpool->threads_all_idle);
+		}
 
 		job_queue_delete (thpool->job_queue);
 
@@ -143,47 +149,48 @@ static void *thread_do (void *thread_ptr) {
 		Thpool *thpool = thread->thpool;
 
 		// set name
-		if (thpool->name) {
-			char thread_name[64] = { 0 };
-			snprintf (thread_name, 64, "thpool-%s-%d", thpool->name, thread->id);
-			(void) prctl (PR_SET_NAME, thread_name);
+		if (thpool->namelen) {
+			(void) thread_set_name (
+				"thpool-%s-%d",
+				thpool->name, thread->id
+			);
 		}
 
 		// mark thread as alive
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 		thpool->num_threads_alive += 1;
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 
 		while (thpool->keep_alive) {
 			bsem_wait (thpool->job_queue->has_jobs);
 			if (thpool->keep_alive) {
-				pthread_mutex_lock (thpool->mutex);
+				(void) pthread_mutex_lock (thpool->mutex);
 				thpool->num_threads_working += 1;
-				pthread_mutex_unlock (thpool->mutex);
+				(void) pthread_mutex_unlock (thpool->mutex);
 
 				// get job to execute
 				Job *job = job_queue_pull (thpool->job_queue);
 				if (job) {
-					if (job->method)
-						job->method (job->args);
+					if (job->work)
+						job->work (job->args);
 
 					job_delete (job);
 				}
 
-				pthread_mutex_lock (thpool->mutex);
+				(void) pthread_mutex_lock (thpool->mutex);
 
 				thpool->num_threads_working -= 1;
 
 				if (!thpool->num_threads_working)
-					pthread_cond_signal (thpool->threads_all_idle);
+					(void) pthread_cond_signal (thpool->threads_all_idle);
 
-				pthread_mutex_unlock (thpool->mutex);
+				(void) pthread_mutex_unlock (thpool->mutex);
 			}
 		}
 
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 		thpool->num_threads_alive -= 1;
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 	return NULL;
@@ -203,12 +210,12 @@ Thpool *thpool_create (unsigned int n_threads) {
 		thpool->threads = (PoolThread **) calloc (thpool->n_threads, sizeof (PoolThread));
 		if (thpool->threads) {
 			thpool->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-			pthread_mutex_init (thpool->mutex, NULL);
+			(void) pthread_mutex_init (thpool->mutex, NULL);
 
 			thpool->threads_all_idle = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
-			pthread_cond_init (thpool->threads_all_idle, NULL);
+			(void) pthread_cond_init (thpool->threads_all_idle, NULL);
 
-			thpool->job_queue = job_queue_create ();
+			thpool->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 		}
 
 		else {
@@ -234,7 +241,7 @@ unsigned int thpool_init (Thpool *thpool) {
 		thpool->keep_alive = true;
 		for (unsigned int i = 0; i < thpool->n_threads; i++) {
 			thpool->threads[i] = pool_thread_create (i, thpool);
-			pool_thread_init (thpool->threads[i]);
+			(void) pool_thread_init (thpool->threads[i]);
 		}
 
 		// wait for threads to initialize
@@ -251,14 +258,8 @@ unsigned int thpool_init (Thpool *thpool) {
 void thpool_set_name (Thpool *thpool, const char *name) {
 
 	if (thpool) {
-		size_t len = strlen (name);
-		thpool->name = (char *) calloc (len + 1, sizeof (char));
-
-		char *to = (char *) thpool->name;
-		char *from = (char *) name;
-
-		while (*from) *to++ = *from++;
-		*to = '\0';
+		(void) strncpy (thpool->name, name, THPOOL_NAME_SIZE - 1);
+		thpool->namelen = strlen (thpool->name);
 	}
 
 }
@@ -269,9 +270,9 @@ unsigned int thpool_get_num_threads_alive (Thpool *thpool) {
 	unsigned int retval = 0;
 
 	if (thpool) {
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 		retval = thpool->num_threads_alive;
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 	return retval;
@@ -284,9 +285,9 @@ unsigned int thpool_get_num_threads_working (Thpool *thpool) {
 	unsigned int retval = 0;
 
 	if (thpool) {
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 		retval = thpool->num_threads_working;
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 	return retval;
@@ -299,11 +300,11 @@ bool thpool_is_empty (Thpool *thpool) {
 	bool retval = false;
 
 	if (thpool) {
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 
 		retval = (thpool->num_threads_working == 0);
 
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 	return retval;
@@ -316,11 +317,11 @@ bool thpool_is_full (Thpool *thpool) {
 	bool retval = false;
 
 	if (thpool) {
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 
 		retval = (thpool->num_threads_working == thpool->num_threads_alive);
 
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 	return retval;
@@ -329,7 +330,9 @@ bool thpool_is_full (Thpool *thpool) {
 
 // adds a work to the thpool's job queue
 // it will be executed once it is the next in line and a thread is free
-int thpool_add_work (Thpool *thpool, void (*work) (void *), void *args) {
+int thpool_add_work (
+	Thpool *thpool, void (*work) (void *), void *args
+) {
 
 	int retval = 1;
 
@@ -346,13 +349,18 @@ int thpool_add_work (Thpool *thpool, void (*work) (void *), void *args) {
 void thpool_wait (Thpool *thpool) {
 
 	if (thpool) {
-		pthread_mutex_lock (thpool->mutex);
+		(void) pthread_mutex_lock (thpool->mutex);
 
-		while (thpool->job_queue->queue->size || thpool->num_threads_working) {
-			pthread_cond_wait (thpool->threads_all_idle, thpool->mutex);
+		while (
+			thpool->job_queue->queue->size
+			|| thpool->num_threads_working
+		) {
+			(void) pthread_cond_wait (
+				thpool->threads_all_idle, thpool->mutex
+			);
 		}
 
-		pthread_mutex_unlock (thpool->mutex);
+		(void) pthread_mutex_unlock (thpool->mutex);
 	}
 
 }
@@ -368,17 +376,17 @@ void thpool_destroy (Thpool *thpool) {
 		double timeout = 1.0;
 		time_t start, end;
 		double tpassed = 0.0;
-		time (&start);
+		(void) time (&start);
 		while ((tpassed < timeout) && thpool->num_threads_alive){
 			bsem_post_all (thpool->job_queue->has_jobs);
-			time (&end);
+			(void) time (&end);
 			tpassed = difftime (end,start);
 		}
 
 		// poll remaining threads
 		while (thpool->num_threads_alive){
 			bsem_post_all (thpool->job_queue->has_jobs);
-			sleep (1);
+			(void) sleep (1);
 		}
 
 		thpool_delete (thpool);

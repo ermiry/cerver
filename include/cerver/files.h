@@ -152,6 +152,11 @@ CERVER_EXPORT unsigned int files_create_dir (
 // NULL if no file extension
 CERVER_EXPORT char *files_get_file_extension (const char *filename);
 
+// returns a reference to the file's extension
+CERVER_EXPORT const char *files_get_file_extension_reference (
+	const char *filename, unsigned int *ext_len
+);
+
 // returns a list of strings containg the names of all the files in the directory
 CERVER_EXPORT DoubleList *files_get_from_dir (const char *dir);
 
