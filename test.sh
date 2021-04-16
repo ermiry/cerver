@@ -118,7 +118,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
-# load
+# load - Round Robin
 sudo docker network create cerver
 
 # service 1
@@ -140,7 +140,7 @@ sudo docker run \
 	-d \
 	--name load --rm \
 	-p 7000:7000 --net cerver \
-	ermiry/cerver:local ./bin/cerver/load
+	ermiry/cerver:local ./bin/cerver/load --type round_robin
 
 sleep 2
 
@@ -148,6 +148,38 @@ sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker inspect service-2 --format='{{.State.ExitCode}}' || { exit 1; }
 
-./test/bin/client/load || { exit 1; }
+./test/bin/client/load/simple || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
+
+# load - Handler ID
+# service 1
+sudo docker run \
+	-d \
+	--name service-1 --rm \
+	-p 7001:7001 --net cerver \
+	ermiry/cerver:local ./bin/cerver/service -p 7001
+
+# service 2
+sudo docker run \
+	-d \
+	--name service-2 --rm \
+	-p 7002:7002 --net cerver \
+	ermiry/cerver:local ./bin/cerver/service -p 7002
+
+# balancer
+sudo docker run \
+	-d \
+	--name load --rm \
+	-p 7000:7000 --net cerver \
+	ermiry/cerver:local ./bin/cerver/load --type handler_id
+
+sleep 2
+
+sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
+sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
+sudo docker inspect service-2 --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/load/id || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)

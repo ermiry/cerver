@@ -8,7 +8,7 @@
 
 #include <app/app.h>
 
-#include "../test.h"
+#include "../../test.h"
 
 #define REQUESTS			4096
 // #define REQUESTS			32768 * 2

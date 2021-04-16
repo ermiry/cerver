@@ -32,17 +32,42 @@ static void end (int dummy) {
 
 }
 
-int main (int argc, char **argv) {
+static BalancerType get_balancer_type (int argc, char **argv) {
 
-	srand ((unsigned int) time (NULL));
+	BalancerType type = BALANCER_TYPE_NONE;
+	if (argc > 1) {
+		int j = 0;
+		const char *curr_arg = NULL;
+		for (int i = 1; i < argc; i++) {
+			curr_arg = argv[i];
 
-	(void) signal (SIGINT, end);
-	(void) signal (SIGTERM, end);
-	(void) signal (SIGKILL, end);
+			// port
+			if (!strcmp (curr_arg, "--type")) {
+				j = i + 1;
+				if (j <= argc) {
+					if (!strcmp ("round_robin", argv[j]))
+						type = BALANCER_TYPE_ROUND_ROBIN;
 
-	(void) signal (SIGPIPE, SIG_IGN);
+					else if (!strcmp ("handler_id", argv[j]))
+						type = BALANCER_TYPE_HANDLER_ID;
 
-	cerver_init ();
+					i++;
+				}
+			}
+
+			else {
+				cerver_log_warning (
+					"Unknown argument: %s", curr_arg
+				);
+			}
+		}
+	}
+
+	return type;
+
+}
+
+static void start (const BalancerType type) {
 
 	/*** create ***/
 	load_balancer = balancer_create (
@@ -111,6 +136,24 @@ int main (int argc, char **argv) {
 	test_check_unsigned_eq (
 		balancer_start (load_balancer), 0, "Failed to start balancer!"
 	);
+
+}
+
+int main (int argc, char **argv) {
+
+	srand ((unsigned int) time (NULL));
+
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
+
+	cerver_init ();
+
+	if (argc > 1) {
+		start (get_balancer_type (argc, argv));
+	}
 
 	cerver_end ();
 
