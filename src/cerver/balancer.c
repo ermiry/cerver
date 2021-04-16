@@ -478,12 +478,12 @@ static inline int balancer_get_next_service_round_robin (
 }
 
 static int balancer_get_next_service (
-	Balancer *balancer
+	Balancer *balancer, const PacketHeader *header
 ) {
 
 	int retval = -1;
 
-	pthread_mutex_lock (balancer->mutex);
+	(void) pthread_mutex_lock (balancer->mutex);
 
 	switch (balancer->type) {
 		case BALANCER_TYPE_ROUND_ROBIN: {
@@ -497,10 +497,15 @@ static int balancer_get_next_service (
 			if (count >= balancer->n_services) retval = -1;
 		} break;
 
+		case BALANCER_TYPE_HANDLER_ID: {
+			retval = (balancer->services[header->handler_id]->status == SERVICE_STATUS_WORKING) ?
+				header->handler_id : -1;
+		} break;
+
 		default: break;
 	}
 
-	pthread_mutex_unlock (balancer->mutex);
+	(void) pthread_mutex_unlock (balancer->mutex);
 
 	return retval;
 
@@ -917,7 +922,7 @@ void balancer_route_to_service (
 	PacketHeader *header
 ) {
 
-	int selected_service = balancer_get_next_service (balancer);
+	int selected_service = balancer_get_next_service (balancer, header);
 	if (selected_service >= 0) {
 		Service *service = balancer->services[selected_service];
 

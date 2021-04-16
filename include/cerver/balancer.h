@@ -24,6 +24,7 @@ struct _Service;
 #define BALANCER_TYPE_MAP(XX)									\
 	XX(0, 	NONE, 				None)							\
 	XX(1, 	ROUND_ROBIN, 		Round-Robin)					\
+	XX(2, 	HANDLER_ID, 		Handler-ID)
 
 typedef enum BalancerType {
 
