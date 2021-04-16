@@ -345,7 +345,8 @@ INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
-	$(CC) $(TESTINC) $(INTCLIENTIN)/load.o -o $(INTCLIENTOUT)/load $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/simple.o -o $(INTCLIENTOUT)/load/simple $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/queue.o -o $(INTCLIENTOUT)/queue $(TESTLIBS)
@@ -369,6 +370,7 @@ testout:
 	@mkdir -p ./$(TESTTARGET)
 	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/client/load
 	@mkdir -p ./$(TESTTARGET)/handler
 
 test: testout
