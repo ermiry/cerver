@@ -86,7 +86,7 @@ jobs:
           sudo docker network create cerver || { exit 1; }
           sudo docker run -d --name service-1 --rm -p 7001:7001 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7001
           sudo docker run -d --name service-2 --rm -p 7002:7002 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7002
-          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:local ./bin/cerver/load --type round_robin
+          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:test ./bin/cerver/load --type round_robin
           sleep 2
           sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
           sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
@@ -98,7 +98,7 @@ jobs:
         run: |
           sudo docker run -d --name service-1 --rm -p 7001:7001 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7001
           sudo docker run -d --name service-2 --rm -p 7002:7002 --net cerver ermiry/cerver:test ./bin/cerver/service -p 7002
-          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:local ./bin/cerver/load --type handler_id
+          sudo docker run -d --name load --rm -p 7000:7000 --net cerver ermiry/cerver:test ./bin/cerver/load --type handler_id
           sleep 2
           sudo docker inspect load --format='{{.State.ExitCode}}' || { exit 1; }
           sudo docker inspect service-1 --format='{{.State.ExitCode}}' || { exit 1; }
