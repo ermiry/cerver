@@ -2,8 +2,9 @@
 #include <stdio.h>
 
 #include <errno.h>
-
 #include <pthread.h>
+#include <stdarg.h>
+
 #include <sys/prctl.h>
 
 #include "cerver/types/types.h"
@@ -48,10 +49,27 @@ u8 thread_create_detachable (
 }
 
 // sets thread name from inisde it
-int thread_set_name (const char *name) {
+unsigned int thread_set_name (const char *name, ...) {
 
-	// use prctl instead to prevent using _GNU_SOURCE flag and implicit declaration
-	return prctl (PR_SET_NAME, name);
+	unsigned int retval = 1;
+
+	if (name) {
+		va_list args;
+		va_start (args, name);
+
+		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		(void) vsnprintf (
+			thread_name, THREAD_NAME_BUFFER_LEN - 1, name, args
+		);
+
+		if (!prctl (PR_SET_NAME, thread_name)) {
+			retval = 0;
+		}
+
+		va_end (args);
+	}
+
+	return retval;
 
 }
 
