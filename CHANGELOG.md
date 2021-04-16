@@ -1,8 +1,23 @@
-- Changed MAX macro in config header to avoid cpp errors
-- Changed sockets sources indentation from spaces to tabs
-- Added missing includes in receive sources
-- Split timer methods to create representations
-- Added -Wunused-parameter suppression in packet_send_update_stats ()
-- Added the ability to set a custom cerver max received packet size
-- Handling max received packet size in main handle_buffer ()
-- Added dedicated field for client max received packet size
+## General
+- Added new packets init requests & send methods
+- Added base file-system methods in dedicated sources
+- Added dedicated Dockerfile to run local tests
+- Handling queue & requests integration tests in workflow
+- Added update apt cache in version workflow
+
+## Client / Connection
+- Added ability too send packets using a queue
+- Refactored client connection methods to handle queue
+
+## Threads
+- Added extra checks in bsem_delete () and refactored sources
+- Refactored JobQueue methods to handle different types
+- Refactored thpool methods organization in sources
+- Refactored thread_set_name () to handle variable arguments
+
+## Tests
+- Added dedicated client & cerver queue integration tests
+- Added base bsem related methods unit tests
+- Added based jobs structures methods unit tests
+- Added base job queue methods unit tests
+- Added base dedicated system methods unit tests
