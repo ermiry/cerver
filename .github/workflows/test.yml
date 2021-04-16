@@ -41,6 +41,14 @@ jobs:
           ./test/bin/client/packets
           sudo docker kill $(sudo docker ps -q)
 
+      - name: Requests Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/requests
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/requests
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Auth Integration Test
         run: |
           sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
@@ -63,6 +71,14 @@ jobs:
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/threads
+          sudo docker kill $(sudo docker ps -q)
+
+      - name: Queue Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/queue
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/queue
           sudo docker kill $(sudo docker ps -q)
 
       - name: Load Integration Test
