@@ -108,30 +108,46 @@ static void *on_client_close_connection (void *event_data_ptr) {
 
 #pragma region start
 
-int main (void) {
+static BalancerType get_balancer_type (int argc, char **argv) {
 
-	srand ((unsigned int) time (NULL));
+	BalancerType type = BALANCER_TYPE_NONE;
+	if (argc > 1) {
+		int j = 0;
+		const char *curr_arg = NULL;
+		for (int i = 1; i < argc; i++) {
+			curr_arg = argv[i];
 
-	(void) signal (SIGINT, end);
-	(void) signal (SIGTERM, end);
-	(void) signal (SIGKILL, end);
+			// port
+			if (!strcmp (curr_arg, "--type")) {
+				j = i + 1;
+				if (j <= argc) {
+					if (!strcmp ("round_robin", argv[j]))
+						type = BALANCER_TYPE_ROUND_ROBIN;
 
-	(void) signal (SIGPIPE, SIG_IGN);
+					else if (!strcmp ("handler_id", argv[j]))
+						type = BALANCER_TYPE_HANDLER_ID;
 
-	cerver_init ();
+					i++;
+				}
+			}
 
-	cerver_log_line_break ();
-	cerver_version_print_full ();
-	cerver_log_line_break ();
+			else {
+				cerver_log_warning (
+					"Unknown argument: %s", curr_arg
+				);
+			}
+		}
+	}
 
-	cerver_log_debug ("Load Balancer Example");
-	cerver_log_line_break ();
-	cerver_log_debug ("Simple Round Robin Load Balancer");
-	cerver_log_line_break ();
+	return type;
+
+}
+
+static void start (const BalancerType type) {
 
 	load_balancer = balancer_create (
 		"test-balancer",
-		BALANCER_TYPE_ROUND_ROBIN,
+		type,
 		7000,
 		10,
 		2
@@ -189,6 +205,50 @@ int main (void) {
 
 	else {
 		cerver_log_error ("Failed to create load balancer!");
+	}
+
+}
+
+int main (int argc, char **argv) {
+
+	srand ((unsigned int) time (NULL));
+
+	(void) signal (SIGINT, end);
+	(void) signal (SIGTERM, end);
+	(void) signal (SIGKILL, end);
+
+	(void) signal (SIGPIPE, SIG_IGN);
+
+	cerver_init ();
+
+	cerver_log_line_break ();
+	cerver_version_print_full ();
+	cerver_log_line_break ();
+
+	cerver_log_debug ("Load Balancer Example");
+	cerver_log_line_break ();
+
+	if (argc > 1) {
+		BalancerType type = get_balancer_type (argc, argv);
+		switch (type) {
+			case BALANCER_TYPE_ROUND_ROBIN:
+				cerver_log_debug ("Simple Round Robin Load Balancer");
+				cerver_log_line_break ();
+				break;
+
+			case BALANCER_TYPE_HANDLER_ID:
+				cerver_log_debug ("Simple Handler ID Load Balancer");
+				cerver_log_line_break ();
+				break;
+
+			default: break;
+		}
+
+		start (type);
+	}
+
+	else {
+		cerver_log_error ("Missing balancer type!");
 	}
 
 	cerver_end ();
