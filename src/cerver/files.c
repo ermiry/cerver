@@ -418,6 +418,29 @@ char *files_get_file_extension (const char *filename) {
 
 }
 
+// returns a reference to the file's extension
+const char *files_get_file_extension_reference (
+	const char *filename, unsigned int *ext_len
+) {
+
+	const char *retval = NULL;
+
+	if (filename) {
+		char *ptr = strrchr ((char *) filename, '.');
+		if (ptr) {
+			char *p = ptr;
+			while (*p++) *ext_len += 1;
+
+			if (ext_len) {
+				retval = ptr + 1;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
 // returns a list of strings containg the names of all the files in the directory
 DoubleList *files_get_from_dir (const char *dir) {
 
