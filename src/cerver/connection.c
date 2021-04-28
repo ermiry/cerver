@@ -629,29 +629,52 @@ u8 connection_init (Connection *connection) {
 }
 
 // try to connect a client to an address (server) with exponential backoff
-static u8 connection_try (
+static unsigned int connection_try (
 	Connection *connection, const struct sockaddr_storage address
 ) {
 
+	unsigned int retval = 1;
+
 	u32 numsec = 0;
 	for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
-		if (!connect (connection->socket->sock_fd,
+		if (!connect (
+			connection->socket->sock_fd,
 			(const struct sockaddr *) &address,
-			sizeof (struct sockaddr)))
-			return 0;
+			sizeof (struct sockaddr)
+		)) {
+			retval = 0;
+			break;
+		}
 
-		if (numsec <= connection->max_sleep / 2) sleep (numsec);
+		if (numsec <= connection->max_sleep / 2) (void) sleep (numsec);
 	}
 
-	return 1;
+	return retval;
 
 }
 
-// starts a connection -> connects to the specified ip and port
+// connects to the specified address (ip and port)
+// sets connection's state based on result
 // returns 0 on success, 1 on error
-int connection_connect (Connection *connection) {
+unsigned int connection_connect (Connection *connection) {
 
-	return (connection ? connection_try (connection, connection->address) : 1);
+	unsigned int retval = 1;
+
+	if (connection) {
+		connection_set_state (connection, CONNECTIONS_STATE_CONNECTING);
+
+		if (!connection_try (connection, connection->address)) {
+			connection_set_state (connection, CONNECTIONS_STATE_READY);
+
+			retval = 0;
+		}
+
+		else {
+			connection_set_state (connection, CONNECTIONS_STATE_UNAVAILABLE);
+		}
+	}
+
+	return retval;
 
 }
 

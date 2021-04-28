@@ -303,12 +303,20 @@ CERVER_PUBLIC u8 connection_generate_auth_packet (
 	Connection *connection
 );
 
+// sets the ability to attempt a reconnection
+// if the connection has been stopped
+// ability to set the default time (secs) to wait before connecting
+CERVER_PUBLIC void connection_set_attempt_reconnect (
+	Connection *connection, unsigned int wait_time
+);
+
 // sets up the new connection values
 CERVER_PRIVATE u8 connection_init (Connection *connection);
 
-// starts a connection -> connects to the specified ip and port
+// connects to the specified address (ip and port)
+// sets connection's state based on result
 // returns 0 on success, 1 on error
-CERVER_PRIVATE int connection_connect (Connection *connection);
+CERVER_PRIVATE unsigned int connection_connect (Connection *connection);
 
 // ends a client connection
 CERVER_PRIVATE void connection_end (Connection *connection);
