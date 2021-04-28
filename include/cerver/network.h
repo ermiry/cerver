@@ -12,8 +12,11 @@
 
 #include "cerver/config.h"
 
-#define IP_TO_STR_LEN       16
-#define IPV6_TO_STR_LEN     46
+#define IP_TO_STR_LEN					16
+#define IPV6_TO_STR_LEN					46
+
+#define MAX_PORT_NUM					65535
+#define MAX_UDP_PACKET_SIZE				65515
 
 #ifdef __cplusplus
 extern "C" {
