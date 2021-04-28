@@ -159,6 +159,7 @@ Connection *connection_new (void) {
 		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
 
+		connection->receive_flags = CONNECTION_DEFAULT_RECEIVE_FLAGS;
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
 
 		connection->receive_handle = (ReceiveHandle) {
@@ -412,6 +413,13 @@ void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 void connection_set_receive (Connection *connection, bool receive) {
 
 	if (connection) connection->receive_packets = receive;
+
+}
+
+// sets the flags to be passed to recv () when handling packets
+void connection_set_receive_flags (Connection *connection, int flags) {
+
+	if (connection) connection->receive_flags = flags;
 
 }
 

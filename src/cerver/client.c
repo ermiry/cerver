@@ -3733,7 +3733,7 @@ static ReceiveError client_receive_actual (
 	ssize_t received = recv (
 		connection->socket->sock_fd,
 		buffer, buffer_size,
-		0
+		connection->receive_flags
 	);
 
 	switch (received) {

@@ -31,6 +31,7 @@
 #define CONNECTION_DEFAULT_MAX_AUTH_TRIES			2
 #define CONNECTION_DEFAULT_BAD_PACKETS				4
 
+#define CONNECTION_DEFAULT_RECEIVE_FLAGS			0
 #define CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE		4096
 
 #define CONNECTION_DEFAULT_UPDATE_TIMEOUT			2
@@ -136,6 +137,7 @@ struct _Connection {
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
+	int receive_flags;						// flags passed to recv ()
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
 	
 	ReceiveHandle receive_handle;
@@ -231,6 +233,11 @@ CERVER_EXPORT void connection_set_max_sleep (
 // if true, a new thread is created that handled incoming packets
 CERVER_EXPORT void connection_set_receive (
 	Connection *connection, bool receive
+);
+
+// sets the flags to be passed to recv () when handling packets
+CERVER_EXPORT void connection_set_receive_flags (
+	Connection *connection, int flags
 );
 
 // read packets into a buffer of this size in client_receive ()
