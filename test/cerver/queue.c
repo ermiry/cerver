@@ -60,9 +60,8 @@ int main (int argc, char **argv) {
 
 	/*** configuration ***/
 	cerver_set_welcome_msg (cerver, welcome_message);
-	test_check_ptr (cerver->info->welcome_msg);
-	test_check_str_eq (cerver->info->welcome_msg->str, welcome_message, NULL);
-	test_check_str_len (cerver->info->welcome_msg->str, strlen (welcome_message), NULL);
+	test_check_str_eq (cerver->info->welcome, welcome_message, NULL);
+	test_check_str_len (cerver->info->welcome, strlen (welcome_message), NULL);
 
 	cerver_set_receive_buffer_size (cerver, 4096);
 	test_check_unsigned_eq (cerver->receive_buffer_size, 4096, NULL);
