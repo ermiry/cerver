@@ -118,6 +118,7 @@ struct _Connection {
 	struct sockaddr_storage address;
 
 	ConnectionState state;
+	pthread_mutex_t *state_mutex;
 
 	time_t connected_timestamp;             // when the connection started
 

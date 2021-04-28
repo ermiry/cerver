@@ -141,6 +141,7 @@ Connection *connection_new (void) {
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
 		connection->state = CONNECTIONS_STATE_NONE;
+		connection->state_mutex = NULL;
 
 		connection->connected_timestamp = 0;
 
@@ -229,6 +230,9 @@ void connection_delete (void *connection_ptr) {
 
 		socket_delete (connection->socket);
 
+		if (connection->state_mutex)
+			pthread_mutex_delete (connection->mutex);
+
 		if (connection->active) connection_end (connection);
 
 		cerver_report_delete (connection->cerver_report);
@@ -248,8 +252,11 @@ void connection_delete (void *connection_ptr) {
 
 		connection_stats_delete (connection->stats);
 
-		pthread_cond_delete (connection->cond);
-		pthread_mutex_delete (connection->mutex);
+		if (connection->cond)
+			pthread_cond_delete (connection->cond);
+
+		if (connection->mutex)
+			pthread_mutex_delete (connection->mutex);
 
 		free (connection);
 	}
@@ -358,7 +365,17 @@ void connection_set_values (
 
 ConnectionState connection_get_state (Connection *connection) {
 
-	return connection->state;
+	ConnectionState state = CONNECTIONS_STATE_NONE;
+
+	if (connection) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		state = connection->state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
+	}
+
+	return state;
 
 }
 
@@ -366,7 +383,13 @@ void connection_set_state (
 	Connection *connection, const ConnectionState state
 ) {
 
-	connection->state = state;
+	if (connection) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		connection->state = state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
+	}
 
 }
 
