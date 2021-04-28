@@ -30,6 +30,9 @@
 
 void connection_remove_auth_data (Connection *connection);
 
+static void *connection_update_thread (void *connection_ptr);
+static void *connection_send_thread (void *connection_ptr);
+
 const char *connection_state_string (
 	const ConnectionState state
 ) {
@@ -130,6 +133,8 @@ Connection *connection_new (void) {
 
 	Connection *connection = (Connection *) malloc (sizeof (Connection));
 	if (connection) {
+		connection->client = NULL;
+
 		(void) memset (connection->name, 0, CONNECTION_NAME_SIZE);
 
 		connection->socket = NULL;
@@ -228,10 +233,12 @@ void connection_delete (void *connection_ptr) {
 	if (connection_ptr) {
 		Connection *connection = (Connection *) connection_ptr;
 
+		connection->client = NULL;
+
 		socket_delete (connection->socket);
 
 		if (connection->state_mutex)
-			pthread_mutex_delete (connection->mutex);
+			pthread_mutex_delete (connection->state_mutex);
 
 		if (connection->active) connection_end (connection);
 
@@ -797,6 +804,8 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 	if (client && connection) {
 		if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
+			connection->client = client;
+			
 			#ifdef CERVER_DEBUG
 			if (client->session_id) {
 				cerver_log (
@@ -980,103 +989,100 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 #pragma GCC diagnostic pop
 
 // starts listening and receiving data in the connection sock
-void *connection_update (void *client_connection_ptr) {
+static void *connection_update_thread (void *connection_ptr) {
 
-	if (client_connection_ptr) {
-		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+	char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
-		char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
-		char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = (Client *) connection->client;
 
-		#ifdef CONNECTION_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_update () thread has started",
-			cc->client->name, cc->connection->name
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_update () thread has started",
+		client->name, connection->name
+	);
+	#endif
+
+	(void) strncpy (client_name, client->name, THREAD_NAME_BUFFER_SIZE - 1);
+	(void) strncpy (connection_name, connection->name, THREAD_NAME_BUFFER_SIZE - 1);
+
+	if (strcmp (CONNECTION_DEFAULT_NAME, connection->name)) {
+		(void) thread_set_name (connection_name);
+	}
+
+	connection->receive_handle.client = client;
+	connection->receive_handle.connection = connection;
+
+	connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
+
+	const size_t buffer_size = connection->receive_packet_buffer_size;
+	char *buffer = (char *) calloc (buffer_size, sizeof (char));
+	if (buffer) {
+		(void) sock_set_timeout (
+			connection->socket->sock_fd,
+			connection->update_timeout
 		);
-		#endif
 
-		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_SIZE - 1);
-		(void) strncpy (connection_name, cc->connection->name, THREAD_NAME_BUFFER_SIZE - 1);
+		connection->updating = true;
 
-		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
-			(void) thread_set_name (connection_name);
-		}
+		// check if we have a custom receive method
+		if (connection->custom_receive) {
+			ConnectionCustomReceiveData custom_data = {
+				.client = client,
+				.connection = connection,
+				.args = connection->custom_receive_args
+			};
 
-		cc->connection->receive_handle.client = cc->client;
-		cc->connection->receive_handle.connection = cc->connection;
-
-		cc->connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
-
-		const size_t buffer_size = cc->connection->receive_packet_buffer_size;
-		char *buffer = (char *) calloc (buffer_size, sizeof (char));
-		if (buffer) {
-			(void) sock_set_timeout (
-				cc->connection->socket->sock_fd,
-				cc->connection->update_timeout
+			while (
+				client->running
+				&& connection->active
+				&& !connection->custom_receive (
+					&custom_data,
+					buffer, buffer_size
+				)
 			);
-
-			cc->connection->updating = true;
-
-			// check if we have a custom receive method
-			if (cc->connection->custom_receive) {
-				ConnectionCustomReceiveData custom_data = {
-					.client = cc->client,
-					.connection = cc->connection,
-					.args = cc->connection->custom_receive_args
-				};
-
-				while (
-					cc->client->running
-					&& cc->connection->active
-					&& !cc->connection->custom_receive (
-						&custom_data,
-						buffer, buffer_size
-					)
-				);
-			}
-
-			// use the default receive method
-			// that handles cerver type packages
-			else {
-				while (
-					cc->client->running
-					&& cc->connection->active
-					&& !client_receive_internal (
-						cc->client, cc->connection,
-						buffer, buffer_size
-					)
-				);
-			}
-
-			free (buffer);
 		}
 
+		// use the default receive method
+		// that handles cerver type packages
 		else {
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
-				"connection_update () - "
-				"Failed to allocate buffer for client %s - connection %s!",
-				client_name, connection_name
+			while (
+				client->running
+				&& connection->active
+				&& !client_receive_internal (
+					client, connection,
+					buffer, buffer_size
+				)
 			);
 		}
 
-		// signal waiting thread
-		(void) pthread_mutex_lock (cc->connection->mutex);
-		cc->connection->updating = false;
-		(void) pthread_cond_signal (cc->connection->cond);
-		(void) pthread_mutex_unlock (cc->connection->mutex);
+		free (buffer);
+	}
 
-		client_connection_aux_delete (cc);
-
-		#ifdef CONNECTION_DEBUG
+	else {
 		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_update () thread has ended",
+			LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+			"connection_update () - "
+			"Failed to allocate buffer for client %s - connection %s!",
 			client_name, connection_name
 		);
-		#endif
 	}
+
+	// signal waiting thread
+	(void) pthread_mutex_lock (connection->mutex);
+	connection->updating = false;
+	(void) pthread_cond_signal (connection->cond);
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_update () thread has ended",
+		client_name, connection_name
+	);
+	#endif
 
 	return NULL;
 
@@ -1099,60 +1105,57 @@ void connection_send_packet (
 
 }
 
-void *connection_send_thread (void *client_connection_ptr) {
+static void *connection_send_thread (void *connection_ptr) {
 
-	if (client_connection_ptr) {
-		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+	char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
-		char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
-		char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = (Client *) connection->client;
 
-		#ifdef CONNECTION_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_send () thread has started",
-			cc->client->name, cc->connection->name
-		);
-		#endif
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_send () thread has started",
+		client->name, connection->name
+	);
+	#endif
 
-		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_SIZE - 1);
-		(void) strncpy (connection_name, cc->connection->name, THREAD_NAME_BUFFER_SIZE - 1);
+	(void) strncpy (client_name, client->name, THREAD_NAME_BUFFER_SIZE - 1);
+	(void) strncpy (connection_name, connection->name, THREAD_NAME_BUFFER_SIZE - 1);
 
-		Job *job = NULL;
-		size_t sent = 0;
-		Packet *packet = NULL;
-		u8 failed = 0;
-		while (cc->connection->active && !failed) {
-			bsem_wait (cc->connection->send_queue->has_jobs);
+	Job *job = NULL;
+	size_t sent = 0;
+	Packet *packet = NULL;
+	u8 failed = 0;
+	while (connection->active && !failed) {
+		bsem_wait (connection->send_queue->has_jobs);
 
-			if (cc->connection->active) {
-				job = job_queue_pull (cc->connection->send_queue);
-				if (job) {
-					packet = (Packet *) job->args;
+		if (connection->active) {
+			job = job_queue_pull (connection->send_queue);
+			if (job) {
+				packet = (Packet *) job->args;
 
-					failed = packet_send_actual (
-						packet,
-						cc->connection->send_flags, &sent,
-						cc->client, cc->connection
-					);
+				failed = packet_send_actual (
+					packet,
+					connection->send_flags, &sent,
+					client, connection
+				);
 
-					packet_delete (packet);
+				packet_delete (packet);
 
-					job_delete (job);
-				}
+				job_delete (job);
 			}
 		}
-
-		client_connection_aux_delete (cc);
-
-		#ifdef CONNECTION_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_send () thread has ended",
-			client_name, connection_name
-		);
-		#endif
 	}
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_send () thread has ended",
+		client_name, connection_name
+	);
+	#endif
 
 	return NULL;
 

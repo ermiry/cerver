@@ -110,6 +110,8 @@ CERVER_PUBLIC void connection_stats_print (
 // a connection from a client
 struct _Connection {
 
+	struct _Client *client;
+
 	char name[CONNECTION_NAME_SIZE];
 
 	struct _Socket *socket;
@@ -396,17 +398,8 @@ CERVER_PRIVATE u8 connection_remove_from_cerver (
 	struct _Cerver *cerver, Connection *connection
 );
 
-// starts listening and receiving data in the connection sock
-CERVER_PRIVATE void *connection_update (
-	void *client_connection_ptr
-);
-
 CERVER_PUBLIC void connection_send_packet (
 	Connection *connection, Packet *packet
-);
-
-CERVER_PRIVATE void *connection_send_thread (
-	void *client_connection_ptr
 );
 
 #ifdef __cplusplus
