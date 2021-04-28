@@ -545,6 +545,20 @@ u8 connection_generate_auth_packet (Connection *connection) {
 
 }
 
+// sets the ability to attempt a reconnection
+// if the connection has been stopped
+// ability to set the default time (secs) to wait before connecting
+void connection_set_attempt_reconnect (
+	Connection *connection, unsigned int wait_time
+) {
+
+	if (connection) {
+		connection->attempt_reconnect = true;
+		connection->reconnect_wait_time = wait_time;
+	}
+
+}
+
 // sets up the new connection values
 u8 connection_init (Connection *connection) {
 

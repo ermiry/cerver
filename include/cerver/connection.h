@@ -40,6 +40,9 @@
 #define CONNECTION_DEFAULT_USE_SEND_QUEUE			false
 #define CONNECTION_DEFAULT_SEND_FLAGS				0
 
+#define CONNECTION_DEFAULT_ATTEMPT_RECONNECT		false
+#define CONNECTION_DEFAULT_RECONNECT_WAIT_TIME		30
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -165,6 +168,9 @@ struct _Connection {
 	Action delete_auth_data;                // destroys the auth data when the connection ends
 	bool admin_auth;                        // attempt to connect as an admin
 	struct _Packet *auth_packet;
+
+	bool attempt_reconnect;
+	unsigned int reconnect_wait_time;
 
 	ConnectionStats *stats;
 
