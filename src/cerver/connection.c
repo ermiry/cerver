@@ -673,11 +673,93 @@ unsigned int connection_connect (Connection *connection) {
 		if (!connection_try (connection, connection->address)) {
 			connection_set_state (connection, CONNECTIONS_STATE_READY);
 
+			connection->connected_timestamp = time (NULL);
+
 			retval = 0;
 		}
 
 		else {
 			connection_set_state (connection, CONNECTIONS_STATE_UNAVAILABLE);
+		}
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_update (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (!thread_create_detachable (
+		&connection->update_thread_id,
+		connection_update_thread,
+		(void *) connection
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"connection_start () -"
+			"Failed to create update thread for connection %s",
+			connection->name
+		);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_send (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (!thread_create_detachable (
+		&connection->send_thread_id,
+		connection_send_thread,
+		(void *) connection
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"connection_start () - "
+			"Failed to create send thread for connection %s",
+			connection->name
+		);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_internal (Connection *connection) {
+
+	unsigned int errors = 0;
+
+	errors |= connection_start_update (connection);
+
+	if (connection->use_send_queue) {
+		errors |= connection_start_send (connection);
+	}
+
+	return errors;
+
+}
+
+// starts a connection
+// returns 0 on success, 1 on error
+unsigned int connection_start (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection) {
+		if (!connection_start_internal (connection)) {
+			connection_set_state (connection, CONNECTIONS_STATE_WORKING);
+			
+			retval = 0;
 		}
 	}
 

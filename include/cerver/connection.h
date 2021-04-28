@@ -320,6 +320,10 @@ CERVER_PRIVATE u8 connection_init (Connection *connection);
 // returns 0 on success, 1 on error
 CERVER_PRIVATE unsigned int connection_connect (Connection *connection);
 
+// starts a connection
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int connection_start (Connection *connection);
+
 // ends a client connection
 CERVER_PRIVATE void connection_end (Connection *connection);
 

@@ -1907,6 +1907,8 @@ Connection *client_connection_create (
 	if (client) {
 		connection = connection_create_empty ();
 		if (connection) {
+			connection->state_mutex = pthread_mutex_new ();
+
 			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
 			connection_init (connection);
 			connection_register_to_client (client, connection);
@@ -2200,58 +2202,6 @@ unsigned int client_connect_async (
 
 #pragma region start
 
-static int connection_start_update (
-	Client *client, Connection *connection
-) {
-
-	int retval = 1;
-
-	if (!thread_create_detachable (
-			&connection->update_thread_id,
-			connection_update,
-			client_connection_aux_new (client, connection)
-		)) {
-			retval = 0;
-		}
-
-		else {
-			cerver_log_error (
-				"client_connection_start () - "
-				"Failed to create update thread for connection %s",
-				connection->name
-			);
-		}
-
-	return retval;
-
-}
-
-static int connection_start_send (
-	Client *client, Connection *connection
-) {
-
-	int retval = 1;
-
-	if (!thread_create_detachable (
-			&connection->send_thread_id,
-			connection_send_thread,
-			client_connection_aux_new (client, connection)
-		)) {
-			retval = 0;
-		}
-
-		else {
-			cerver_log_error (
-				"client_connection_start () - "
-				"Failed to create send thread for connection %s",
-				connection->name
-			);
-		}
-
-	return retval;
-
-}
-
 // after a client connection successfully connects to a server,
 // it will start the connection's update thread to enable the connection to
 // receive & handle packets in a dedicated thread
@@ -2265,15 +2215,9 @@ int client_connection_start (
 	if (client && connection) {
 		if (connection->active) {
 			if (!client_start (client)) {
-				int errors = 0;
-
-				errors |= connection_start_update (client, connection);
-
-				if (connection->use_send_queue) {
-					errors |= connection_start_send (client, connection);
+				if (!connection_start (connection)) {
+					retval = 0;
 				}
-
-				retval = errors;
 			}
 
 			else {
