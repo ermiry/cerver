@@ -52,6 +52,33 @@ struct _Connection;
 struct _PacketsPerType;
 struct _AdminCerver;
 
+#define CONNECTIONS_STATE_MAP(XX)														\
+	XX(0,	NONE,			None, 			(Undefined))								\
+	XX(1,	CONNECTING,		Connecting, 	(Performing connection))					\
+	XX(2,	READY,			Ready, 			(Connected and ready))						\
+	XX(3,	IDLE,			Idle,			(Available for work))						\
+	XX(4,	WORKING,		Working,		(Currently working))						\
+	XX(5,	BUSY,			Busy,			(Busy to work))								\
+	XX(6,	UNAVAILABLE,	Unavailable,	(Not available for work))					\
+	XX(7,	DISCONNECTING,	Disconnecting,	(In the process of ending the connection))	\
+	XX(8,	DISCONNECTED,	Disconnected,	(Connection has been ended))
+
+typedef enum ConnectionState {
+
+	#define XX(num, name, string, description) CONNECTIONS_STATE_##name = num,
+	CONNECTIONS_STATE_MAP (XX)
+	#undef XX
+
+} ConnectionState;
+
+CERVER_PUBLIC const char *connection_state_string (
+	const ConnectionState state
+);
+
+CERVER_PUBLIC const char *connection_state_description (
+	const ConnectionState state
+);
+
 struct _ConnectionStats {
 
 	time_t threshold_time;                  // every time we want to reset the connection's stats
@@ -89,6 +116,8 @@ struct _Connection {
 
 	char ip[CONNECTION_IP_SIZE];
 	struct sockaddr_storage address;
+
+	ConnectionState state;
 
 	time_t connected_timestamp;             // when the connection started
 
@@ -176,6 +205,14 @@ CERVER_PUBLIC void connection_set_values (
 	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
 );
 
+CERVER_PUBLIC ConnectionState connection_get_state (
+	Connection *connection
+);
+
+CERVER_PRIVATE void connection_set_state (
+	Connection *connection, const ConnectionState state
+);
+
 // sets the connection max sleep (wait time) to try to connect to the cerver
 CERVER_EXPORT void connection_set_max_sleep (
 	Connection *connection, u32 max_sleep
@@ -194,7 +231,8 @@ CERVER_EXPORT void connection_set_receive_buffer_size (
 );
 
 // sets the connection received data
-// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+// a place to safely store the request response,
+// like when using client_connection_request_to_cerver ()
 CERVER_EXPORT void connection_set_received_data (
 	Connection *connection,
 	void *data, size_t data_size, Action data_delete
@@ -216,7 +254,8 @@ typedef struct ConnectionCustomReceiveData {
 } ConnectionCustomReceiveData;
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
+// a reference to the client and connection will be passed to the action
+// as a ConnectionCustomReceiveData structure
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 CERVER_PUBLIC void connection_set_custom_receive (

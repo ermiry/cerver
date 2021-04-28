@@ -30,6 +30,34 @@
 
 void connection_remove_auth_data (Connection *connection);
 
+const char *connection_state_string (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTIONS_STATE_##name: return #string;
+		CONNECTIONS_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_string (CONNECTIONS_STATE_NONE);
+
+}
+
+const char *connection_state_description (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTIONS_STATE_##name: return #description;
+		CONNECTIONS_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_description (CONNECTIONS_STATE_NONE);
+
+}
+
 #pragma region stats
 
 ConnectionStats *connection_stats_new (void) {
@@ -111,6 +139,8 @@ Connection *connection_new (void) {
 
 		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+		connection->state = CONNECTIONS_STATE_NONE;
 
 		connection->connected_timestamp = 0;
 
@@ -323,6 +353,20 @@ void connection_set_values (
 
 		connection->active = false;
 	}
+
+}
+
+ConnectionState connection_get_state (Connection *connection) {
+
+	return connection->state;
+
+}
+
+void connection_set_state (
+	Connection *connection, const ConnectionState state
+) {
+
+	connection->state = state;
 
 }
 
