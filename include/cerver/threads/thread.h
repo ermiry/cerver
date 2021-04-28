@@ -9,7 +9,7 @@
 
 #define THREAD_OK						0
 
-#define THREAD_NAME_BUFFER_LEN			64
+#define THREAD_NAME_BUFFER_SIZE			64
 
 #ifdef __cplusplus
 extern "C" {

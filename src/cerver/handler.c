@@ -349,24 +349,24 @@ static void *handler_do (void *handler_ptr) {
 
 		// set the thread name
 		if (handler->id >= 0) {
-			char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+			char thread_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
 			switch (handler->type) {
 				case HANDLER_TYPE_CERVER:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"cerver-handler-%d", handler->unique_id
 					);
 					break;
 				case HANDLER_TYPE_CLIENT:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"client-handler-%d", handler->unique_id
 					);
 					break;
 				case HANDLER_TYPE_ADMIN:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"admin-handler-%d", handler->unique_id
 					);
 					break;
