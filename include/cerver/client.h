@@ -404,7 +404,7 @@ CERVER_EXPORT const char *client_event_type_description (
 
 struct _ClientEvent {
 
-	ClientEventType type;         // the event we are waiting to happen
+	ClientEventType type;         		// the event we are waiting to happen
 	bool create_thread;                 // create a detachable thread to run action
 	bool drop_after_trigger;            // if we only want to trigger the event once
 
@@ -414,8 +414,8 @@ struct _ClientEvent {
 	void *response_data;                // data that came with the response
 	Action delete_response_data;
 
-	Work work;                      	// the action to be triggered
-	void *work_args;                  // the action arguments
+	Work work;							// the action to be triggered
+	void *work_args;					// the action arguments
 	Action delete_action_args;          // how to get rid of the data
 
 };
@@ -507,12 +507,12 @@ CERVER_EXPORT const char *client_error_type_description (
 struct _ClientError {
 
 	ClientErrorType type;
-	bool create_thread;                 // create a detachable thread to run action
-	bool drop_after_trigger;            // if we only want to trigger the event once
+	bool create_thread;					// create a detachable thread to run action
+	bool drop_after_trigger;			// if we only want to trigger the event once
 
-	Work work;                      	// the action to be triggered
-	void *work_args;                  // the action arguments
-	Action delete_action_args;          // how to get rid of the data
+	Work work;							// the action to be triggered
+	void *work_args;					// the action arguments
+	Action delete_action_args;			// how to get rid of the data
 
 };
 
@@ -551,7 +551,8 @@ typedef struct ClientErrorData {
 	const struct _Client *client;
 	const struct _Connection *connection;
 
-	void *action_args;                  // the action arguments set by the user
+	// the action arguments set by the user
+	void *action_args;
 
 	String *error_message;
 
@@ -620,53 +621,57 @@ CERVER_PUBLIC unsigned int client_connection_get_next_packet (
 /*** connect ***/
 
 // connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is a blocking method, as it will wait until the connection has been successfull or a timeout
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// this is a blocking method, as it will wait while attempting the connection
+// CLIENT_EVENT_CONNECTED will be triggered if the connection was successful
+// CLIENT_EVENT_CONNECTION_FAILED will be triggered if failed to connect
+// user must set how to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 CERVER_EXPORT unsigned int client_connect (
 	Client *client, struct _Connection *connection
 );
 
-// connects a client to the host with the specified values in the connection
+// works like client_connect ()
 // performs a first read to get the cerver info packet
-// this is a blocking method, and works exactly the same as if only calling client_connect ()
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 CERVER_EXPORT unsigned int client_connect_to_cerver (
 	Client *client, struct _Connection *connection
 );
 
-// connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 on success connection thread creation, 1 on error
+// works like client_connect ()
+// this is NOT a blocking method, a new thread will be created
+// returns 0 on success creating connection thread, 1 on error
 CERVER_EXPORT unsigned int client_connect_async (
+	Client *client, struct _Connection *connection
+);
+
+// works like client_connect_async ()
+// performs a first read to get the cerver info packet
+// returns 0 on success creating connection thread, 1 on error
+CERVER_EXPORT unsigned int client_connect_to_cerver_async (
 	Client *client, struct _Connection *connection
 );
 
 /*** start ***/
 
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
+// starts the connection's update thread to enable the connection to
 // receive & handle packets in a dedicated thread
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connection_start (
+CERVER_EXPORT unsigned int client_connection_start (
 	Client *client, struct _Connection *connection
 );
 
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
+// works like client_connect () & client_connection_start ()
+// starts the connection's threads after a success connection
 // this is a blocking method, returns only after a success or failed connection
 // returns 0 on success, 1 on error
-CERVER_EXPORT int client_connect_and_start (
+CERVER_EXPORT unsigned int client_connect_and_start (
 	Client *client, struct _Connection *connection
 );
 
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
+// works like client_connect_and_start ()
+// this is NOT a blocking method, a new thread will be created
 // returns 0 on success creating connection thread, 1 on error
-CERVER_EXPORT u8 client_connect_and_start_async (
+CERVER_EXPORT unsigned int client_connect_and_start_async (
 	Client *client, struct _Connection *connection
 );
 

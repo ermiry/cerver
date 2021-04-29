@@ -2084,11 +2084,38 @@ unsigned int client_connection_get_next_packet (
 
 #pragma region connect
 
+static unsigned int client_connect_internal (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!connection_connect (connection)) {
+		client_event_trigger (
+			CLIENT_EVENT_CONNECTED,
+			client, connection
+		);
+
+		retval = 0;
+	}
+
+	else {
+		client_event_trigger (
+			CLIENT_EVENT_CONNECTION_FAILED,
+			client, connection
+		);
+	}
+
+	return retval;
+
+}
+
 // connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is a blocking method, as it will wait until the connection has been successfull or a timeout
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// this is a blocking method, as it will wait while attempting the connection
+// CLIENT_EVENT_CONNECTED will be triggered if the connection was successful
+// CLIENT_EVENT_CONNECTION_FAILED will be triggered if failed to connect
+// user must set how to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 unsigned int client_connect (
 	Client *client, Connection *connection
 ) {
@@ -2096,77 +2123,53 @@ unsigned int client_connect (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		if (!connection_connect (connection)) {
-			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
-			// connection->connected = true;
-			connection->active = true;
-			(void) time (&connection->connected_timestamp);
-
-			retval = 0;     // success - connected to cerver
-		}
-
-		else {
-			client_event_trigger (
-				CLIENT_EVENT_CONNECTION_FAILED,
-				client, connection
-			);
-		}
+		retval = client_connect_internal (
+			client, connection
+		);
 	}
 
 	return retval;
 
 }
 
-// connects a client to the host with the specified values in the connection
+// works like client_connect ()
 // performs a first read to get the cerver info packet
-// this is a blocking method, and works exactly the same as if only calling client_connect ()
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 unsigned int client_connect_to_cerver (
 	Client *client, Connection *connection
 ) {
 
 	unsigned int retval = 1;
 
-	if (!client_connect (client, connection)) {
-		// we expect to handle a packet with the cerver's information
-		client_connection_get_next_packet (
-			client, connection
-		);
+	if (client && connection) {
+		if (!client_connect_internal (client, connection)) {
+			// we expect to handle a packet with the cerver's information
+			client_connection_get_next_packet (
+				client, connection
+			);
 
-		retval = 0;
+			retval = 0;
+		}
 	}
 
 	return retval;
 
 }
 
-static void *client_connect_thread (void *client_connection_ptr) {
+static void *client_connect_thread (void *connection_ptr) {
 
-	if (client_connection_ptr) {
-		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = connection->client;
 
-		if (!connection_connect (cc->connection)) {
-			// client_event_trigger (cc->client, EVENT_CONNECTED);
-			// cc->connection->connected = true;
-			cc->connection->active = true;
-			time (&cc->connection->connected_timestamp);
-
-			client_start (cc->client);
-		}
-
-		client_connection_aux_delete (cc);
-	}
+	(void) client_connect_internal (client, connection);
 
 	return NULL;
 
 }
 
-// connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
-// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 on success connection thread creation, 1 on error
+// works like client_connect ()
+// this is NOT a blocking method, a new thread will be created
+// returns 0 on success creating connection thread, 1 on error
 unsigned int client_connect_async (
 	Client *client, Connection *connection
 ) {
@@ -2174,22 +2177,72 @@ unsigned int client_connect_async (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		ClientConnection *cc = client_connection_aux_new (client, connection);
-		if (cc) {
-			if (!thread_create_detachable (
-				&cc->connection_thread_id, client_connect_thread, cc
-			)) {
-				retval = 0;         // success
-			}
-
-			else {
-				#ifdef CLIENT_DEBUG
-				cerver_log_error (
-					"Failed to create client_connect_thread () detachable thread!"
-				);
-				#endif
-			}
+		if (!thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_thread,
+			(void *) connection
+		)) {
+			retval = 0;
 		}
+
+		#ifdef CLIENT_DEBUG
+		else {
+			cerver_log_error (
+				"client_connect_async () - "
+				"Failed to create client_connect_thread () detachable thread!"
+			);
+		}
+		#endif
+	}
+
+	return retval;
+
+}
+
+static void *client_connect_to_cerver_thread (
+	void *connection_ptr
+) {
+
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = connection->client;
+
+	if (!client_connect_internal (client, connection)) {
+		// we expect to handle a packet with the cerver's information
+		client_connection_get_next_packet (
+			client, connection
+		);
+	}
+
+	return NULL;
+
+}
+
+// works like client_connect_async ()
+// performs a first read to get the cerver info packet
+// returns 0 on success creating connection thread, 1 on error
+unsigned int client_connect_to_cerver_async (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		if (!thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_to_cerver_thread,
+			(void *) connection
+		)) {
+			retval = 0;
+		}
+
+		#ifdef CLIENT_DEBUG
+		else {
+			cerver_log_error (
+				"client_connect_to_cerver_async () - "
+				"Failed to create client_connect_to_cerver_thread () detachable thread!"
+			);
+		}
+		#endif
 	}
 
 	return retval;
@@ -2200,56 +2253,23 @@ unsigned int client_connect_async (
 
 #pragma region start
 
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
-// receive & handle packets in a dedicated thread
-// returns 0 on success, 1 on error
-int client_connection_start (
+static unsigned int client_connection_start_internal (
 	Client *client, Connection *connection
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
-	if (client && connection) {
-		if (connection->active) {
-			if (!client_start (client)) {
-				if (!connection_start (connection)) {
-					retval = 0;
-				}
-			}
-
-			else {
-				cerver_log_error (
-					"client_connection_start () - "
-					"Failed to start client %s",
-					client->name
-				);
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// this is a blocking method, returns only after a success or failed connection
-// returns 0 on success, 1 on error
-int client_connect_and_start (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		if (!client_connect (client, connection)) {
-			if (!client_connection_start (client, connection)) {
+	if (connection->active) {
+		if (!client_start (client)) {
+			if (!connection_start (connection)) {
 				retval = 0;
 			}
 		}
 
 		else {
 			cerver_log_error (
-				"client_connect_and_start () - Client %s failed to connect",
+				"client_connection_start_internal () - "
+				"Failed to start client %s",
 				client->name
 			);
 		}
@@ -2259,30 +2279,95 @@ int client_connect_and_start (Client *client, Connection *connection) {
 
 }
 
-static void *client_connection_start_wrapper (void *data_ptr) {
+// starts the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
+// returns 0 on success, 1 on error
+unsigned int client_connection_start (
+	Client *client, Connection *connection
+) {
 
-	if (data_ptr) {
-		ClientConnection *cc = (ClientConnection *) data_ptr;
-		client_connect_and_start (cc->client, cc->connection);
-		client_connection_aux_delete (cc);
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		retval = client_connection_start_internal (
+			client, connection
+		);
 	}
+
+	return retval;
+
+}
+
+static unsigned int client_connect_and_start_internal (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!client_connect_internal (client, connection)) {
+		if (!client_connection_start_internal (
+			client, connection
+		)) {
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// works like client_connect () & client_connection_start ()
+// starts the connection's threads after a success connection
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+unsigned int client_connect_and_start (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		retval = client_connect_and_start_internal (
+			client, connection
+		);
+	}
+
+	return retval;
+
+}
+
+static void *client_connect_and_start_thread (
+	void *connection_ptr
+) {
+
+	Connection *connection = (Connection *) connection_ptr;
+
+	(void) client_connect_and_start_internal (
+		connection->client, connection
+	);
 
 	return NULL;
 
 }
 
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
+// works like client_connect_and_start ()
+// this is NOT a blocking method, a new thread will be created
 // returns 0 on success creating connection thread, 1 on error
-u8 client_connect_and_start_async (Client *client, Connection *connection) {
+unsigned int client_connect_and_start_async (
+	Client *client, Connection *connection
+) {
 
-	pthread_t thread_id = 0;
+	unsigned int retval = 1;
 
-	return (client && connection) ? thread_create_detachable (
-		&thread_id,
-		client_connection_start_wrapper,
-		client_connection_aux_new (client, connection)
-	) : 1;
+	if (client && connection) {
+		retval = thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_and_start_thread,
+			(void *) connection
+		);
+	}
+
+	return retval;
 
 }
 
