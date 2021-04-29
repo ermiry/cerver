@@ -671,6 +671,31 @@ static unsigned int connection_try (
 
 }
 
+static unsigned int connection_connect_internal (
+	Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	connection_set_state (connection, CONNECTIONS_STATE_CONNECTING);
+
+	if (!connection_try (connection, connection->address)) {
+		connection_set_state (connection, CONNECTIONS_STATE_READY);
+
+		connection->active = true;
+		connection->connected_timestamp = time (NULL);
+
+		retval = 0;
+	}
+
+	else {
+		connection_set_state (connection, CONNECTIONS_STATE_UNAVAILABLE);
+	}
+
+	return retval;
+
+}
+
 // connects to the specified address (ip and port)
 // sets connection's state based on result
 // returns 0 on success, 1 on error
@@ -679,18 +704,40 @@ unsigned int connection_connect (Connection *connection) {
 	unsigned int retval = 1;
 
 	if (connection) {
-		connection_set_state (connection, CONNECTIONS_STATE_CONNECTING);
+		switch (connection_get_state (connection)) {
+			case CONNECTIONS_STATE_NONE:
+				retval = connection_connect_internal (connection);
+				break;
 
-		if (!connection_try (connection, connection->address)) {
-			connection_set_state (connection, CONNECTIONS_STATE_READY);
-
-			connection->connected_timestamp = time (NULL);
-
-			retval = 0;
+			default: {
+				#ifdef CONNECTION_DEBUG
+				cerver_log_warning (
+					"connection_connect () - "
+					"Can't try connection with current state: %s",
+					connection_state_string (connection_get_state (connection))
+				);
+				#endif
+			} break;
 		}
+	}
 
-		else {
-			connection_set_state (connection, CONNECTIONS_STATE_UNAVAILABLE);
+	return retval;
+
+}
+
+// creates a detachable thread to attempt a reconnection
+// returns 0 on success, 1 on error
+unsigned int connection_reconnect (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection) {
+		if (!connection_init (connection)) {
+			retval = thread_create_detachable (
+				&connection->reconnect_thread_id,
+				connection_reconnect_thread,
+				connection
+			);
 		}
 	}
 
