@@ -1905,16 +1905,14 @@ Connection *client_connection_create (
 	Connection *connection = NULL;
 
 	if (client) {
-		connection = connection_create_empty ();
+		connection = connection_create_complete ();
 		if (connection) {
-			connection->state_mutex = pthread_mutex_new ();
+			connection_set_values (
+				connection,
+				ip_address, port, protocol, use_ipv6
+			);
 
-			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
-			connection_init (connection);
 			connection_register_to_client (client, connection);
-
-			connection->cond = pthread_cond_new ();
-			connection->mutex = pthread_mutex_new ();
 		}
 	}
 

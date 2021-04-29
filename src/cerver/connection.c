@@ -32,6 +32,7 @@ void connection_remove_auth_data (Connection *connection);
 
 static void *connection_update_thread (void *connection_ptr);
 static void *connection_send_thread (void *connection_ptr);
+static void *connection_reconnect_thread (void *connection_ptr);
 
 const char *connection_state_string (
 	const ConnectionState state
@@ -148,6 +149,7 @@ Connection *connection_new (void) {
 		connection->state = CONNECTIONS_STATE_NONE;
 		connection->state_mutex = NULL;
 
+		connection->connection_thread_id;
 		connection->connected_timestamp = 0;
 
 		connection->cerver_report = NULL;
@@ -219,6 +221,10 @@ Connection *connection_new (void) {
 		connection->admin_auth = false;
 		connection->auth_packet = NULL;
 
+		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
+		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
+		connection->reconnect_thread_id = 0;
+
 		connection->stats = NULL;
 
 		connection->cond = NULL;
@@ -284,6 +290,20 @@ Connection *connection_create_empty (void) {
 		connection->socket = (Socket *) socket_create_empty ();
 
 		connection->stats = connection_stats_new ();
+	}
+
+	return connection;
+
+}
+
+Connection *connection_create_complete (void) {
+
+	Connection *connection = connection_create_empty ();
+	if (connection) {
+		connection->state_mutex = pthread_mutex_new ();
+
+		connection->cond = pthread_cond_new ();
+		connection->mutex = pthread_mutex_new ();
 	}
 
 	return connection;
@@ -1296,6 +1316,18 @@ static void *connection_send_thread (void *connection_ptr) {
 		client_name, connection_name
 	);
 	#endif
+
+	return NULL;
+
+}
+
+#pragma endregion
+
+#pragma region reconnect
+
+static void *connection_reconnect_thread (void *connection_ptr) {
+
+	// TODO:
 
 	return NULL;
 

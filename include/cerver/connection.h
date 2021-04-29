@@ -191,6 +191,8 @@ CERVER_PUBLIC void connection_delete (void *connection_ptr);
 
 CERVER_PUBLIC Connection *connection_create_empty (void);
 
+CERVER_PUBLIC Connection *connection_create_complete (void);
+
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
 	const i32 sock_fd, const struct sockaddr_storage *address,
