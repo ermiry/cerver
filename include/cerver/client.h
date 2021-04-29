@@ -677,27 +677,22 @@ CERVER_EXPORT unsigned int client_connect_and_start_async (
 
 /*** requests ***/
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the response will be handled by the client's handlers
+// sends the packet to the cerver and waits until it has been handled
 // this is a blocking method, as it will wait until a complete cerver response has been received
 // the response will be handled using the client's packet handler
 // this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// neither the client nor the connection will be stopped after the request has ended
+// the request packet won't be deleted
 // retruns 0 when the response has been handled, 1 on error
 CERVER_EXPORT unsigned int client_request_to_cerver (
-	Client *client, struct _Connection *connection,
-	struct _Packet *request
+	Client *client, struct _Connection *connection, Packet *request
 );
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the response will be handled by the client's handlers
-// this method will NOT block
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// returns 0 on success request, 1 on error
+// works like client_request_to_cerver ()
+// this is NOT a blocking method, a new thread will be created
+// returns 0 on success creating connection thread, 1 on error
 CERVER_EXPORT unsigned int client_request_to_cerver_async (
-	Client *client, struct _Connection *connection,
-	struct _Packet *request
+	Client *client, struct _Connection *connection, Packet *request
 );
 
 /*** files ***/
