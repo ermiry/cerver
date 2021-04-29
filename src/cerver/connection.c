@@ -30,6 +30,8 @@
 
 void connection_remove_auth_data (Connection *connection);
 
+void connection_reset (Connection *connection);
+
 static void *connection_update_thread (void *connection_ptr);
 static void *connection_send_thread (void *connection_ptr);
 static void *connection_reconnect_thread (void *connection_ptr);
@@ -149,7 +151,7 @@ Connection *connection_new (void) {
 		connection->state = CONNECTIONS_STATE_NONE;
 		connection->state_mutex = NULL;
 
-		connection->connection_thread_id;
+		connection->connection_thread_id = 0;
 		connection->connected_timestamp = 0;
 
 		connection->cerver_report = NULL;
@@ -195,6 +197,8 @@ Connection *connection_new (void) {
 
 			.spare_packet = NULL
 		};
+
+		connection->request_thread_id = 0;
 
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
@@ -752,6 +756,8 @@ unsigned int connection_reconnect (Connection *connection) {
 	unsigned int retval = 1;
 
 	if (connection) {
+		connection_reset (connection);
+
 		if (!connection_init (connection)) {
 			retval = thread_create_detachable (
 				&connection->reconnect_thread_id,
@@ -842,6 +848,100 @@ unsigned int connection_start (Connection *connection) {
 	}
 
 	return retval;
+
+}
+
+static void connection_reset_received_data (Connection *connection) {
+
+	if (connection->received_data) {
+		if (connection->received_data_delete) {
+			connection->received_data_delete (
+				connection->received_data
+			);
+		}
+	}
+
+	connection->received_data = NULL;
+	connection->received_data_size = 0;
+
+}
+
+static void connection_reset_authentication (Connection *connection) {
+
+	connection->authenticated = false;
+	connection->admin_auth = false;
+
+	if (connection->auth_data) {
+		if (connection->delete_auth_data)
+			connection->delete_auth_data (connection->auth_data);
+	}
+
+	if (connection->auth_packet) {
+		packet_delete (connection->auth_packet);
+		connection->auth_packet = NULL;
+	}
+
+	connection->auth_data = NULL;
+	connection->auth_data_size = 0;
+
+}
+
+static void connection_reset_stats (Connection *connection) {
+
+	connection->stats->threshold_time = 0;
+
+	connection->stats->n_receives_done = 0;
+
+	connection->stats->total_bytes_received = 0;
+	connection->stats->total_bytes_sent = 0;
+	
+	connection->stats->n_packets_received = 0;
+	connection->stats->n_packets_sent = 0;
+
+	(void) memset (connection->stats->received_packets, 0, sizeof (PacketsPerType));
+	(void) memset (connection->stats->sent_packets, 0, sizeof (PacketsPerType));
+
+}
+
+// resets connection values
+void connection_reset (Connection *connection) {
+
+	if (connection) {
+		connection->socket->sock_fd = 0;
+
+		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+		connection_set_state (connection, CONNECTIONS_STATE_NONE);
+
+		connection->connection_thread_id = 0;
+		connection->connected_timestamp = 0;
+
+		cerver_report_delete (connection->cerver_report);
+		connection->cerver_report = NULL;
+
+		connection->active = false;
+		connection->updating = false;
+
+		connection->auth_tries = 0;
+		connection->bad_packets = 0;
+
+		receive_handle_reset (&connection->receive_handle);
+
+		connection->request_thread_id = 0;
+
+		connection->update_thread_id = 0;
+
+		connection_reset_received_data (connection);
+
+		connection->send_thread_id = 0;
+		job_queue_clear (connection->send_queue);
+
+		connection_reset_authentication (connection);
+
+		connection->reconnect_thread_id = 0;
+
+		connection_reset_stats (connection);
+	}
 
 }
 

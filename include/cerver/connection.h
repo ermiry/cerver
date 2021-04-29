@@ -126,6 +126,7 @@ struct _Connection {
 	ConnectionState state;
 	pthread_mutex_t *state_mutex;
 
+	pthread_t connection_thread_id;
 	time_t connected_timestamp;             // when the connection started
 
 	struct _CerverReport *cerver_report;    // info about the cerver we are connecting to
@@ -141,6 +142,8 @@ struct _Connection {
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
 	
 	ReceiveHandle receive_handle;
+
+	pthread_t request_thread_id;
 
 	pthread_t update_thread_id;
 	u32 update_timeout;
@@ -175,6 +178,7 @@ struct _Connection {
 
 	bool attempt_reconnect;
 	unsigned int reconnect_wait_time;
+	pthread_t reconnect_thread_id;
 
 	ConnectionStats *stats;
 
@@ -322,16 +326,23 @@ CERVER_PUBLIC void connection_set_attempt_reconnect (
 );
 
 // sets up the new connection values
-CERVER_PRIVATE u8 connection_init (Connection *connection);
+CERVER_PRIVATE unsigned int connection_init (Connection *connection);
 
 // connects to the specified address (ip and port)
 // sets connection's state based on result
 // returns 0 on success, 1 on error
 CERVER_PRIVATE unsigned int connection_connect (Connection *connection);
 
+// creates a detachable thread to attempt a reconnection
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int connection_reconnect (Connection *connection);
+
 // starts a connection
 // returns 0 on success, 1 on error
 CERVER_PRIVATE unsigned int connection_start (Connection *connection);
+
+// resets connection values
+CERVER_PRIVATE void connection_reset (Connection *connection);
 
 // ends a client connection
 CERVER_PRIVATE void connection_end (Connection *connection);
