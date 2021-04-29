@@ -41,12 +41,12 @@ const char *connection_state_string (
 ) {
 
 	switch (state) {
-		#define XX(num, name, string, description) case CONNECTIONS_STATE_##name: return #string;
-		CONNECTIONS_STATE_MAP(XX)
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #string;
+		CONNECTION_STATE_MAP(XX)
 		#undef XX
 	}
 
-	return connection_state_string (CONNECTIONS_STATE_NONE);
+	return connection_state_string (CONNECTION_STATE_NONE);
 
 }
 
@@ -55,12 +55,12 @@ const char *connection_state_description (
 ) {
 
 	switch (state) {
-		#define XX(num, name, string, description) case CONNECTIONS_STATE_##name: return #description;
-		CONNECTIONS_STATE_MAP(XX)
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #description;
+		CONNECTION_STATE_MAP(XX)
 		#undef XX
 	}
 
-	return connection_state_description (CONNECTIONS_STATE_NONE);
+	return connection_state_description (CONNECTION_STATE_NONE);
 
 }
 
@@ -148,7 +148,7 @@ Connection *connection_new (void) {
 		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
-		connection->state = CONNECTIONS_STATE_NONE;
+		connection->state = CONNECTION_STATE_NONE;
 		connection->state_mutex = NULL;
 
 		connection->connection_thread_id = 0;
@@ -397,7 +397,7 @@ void connection_set_values (
 
 ConnectionState connection_get_state (Connection *connection) {
 
-	ConnectionState state = CONNECTIONS_STATE_NONE;
+	ConnectionState state = CONNECTION_STATE_NONE;
 
 	if (connection) {
 		(void) pthread_mutex_lock (connection->state_mutex);
@@ -695,16 +695,16 @@ static unsigned int connection_try (
 
 }
 
-static unsigned int connection_connect_internal (
+static unsigned int connection_attempt (
 	Connection *connection
 ) {
 
 	unsigned int retval = 1;
 
-	connection_set_state (connection, CONNECTIONS_STATE_CONNECTING);
+	connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
 	if (!connection_try (connection, connection->address)) {
-		connection_set_state (connection, CONNECTIONS_STATE_READY);
+		connection_set_state (connection, CONNECTION_STATE_READY);
 
 		connection->active = true;
 		connection->connected_timestamp = time (NULL);
@@ -713,7 +713,21 @@ static unsigned int connection_connect_internal (
 	}
 
 	else {
-		connection_set_state (connection, CONNECTIONS_STATE_UNAVAILABLE);
+		connection_set_state (connection, CONNECTION_STATE_UNAVAILABLE);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_connect_internal (
+	Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!connection_init (connection)) {
+		retval = connection_attempt (connection);
 	}
 
 	return retval;
@@ -728,8 +742,9 @@ unsigned int connection_connect (Connection *connection) {
 	unsigned int retval = 1;
 
 	if (connection) {
-		switch (connection_get_state (connection)) {
-			case CONNECTIONS_STATE_NONE:
+		ConnectionState current_state = connection_get_state (connection);
+		switch (current_state) {
+			case CONNECTION_STATE_NONE:
 				retval = connection_connect_internal (connection);
 				break;
 
@@ -738,7 +753,7 @@ unsigned int connection_connect (Connection *connection) {
 				cerver_log_warning (
 					"connection_connect () - "
 					"Can't try connection with current state: %s",
-					connection_state_string (connection_get_state (connection))
+					connection_state_string (current_state)
 				);
 				#endif
 			} break;
@@ -841,7 +856,7 @@ unsigned int connection_start (Connection *connection) {
 
 	if (connection) {
 		if (!connection_start_internal (connection)) {
-			connection_set_state (connection, CONNECTIONS_STATE_WORKING);
+			connection_set_state (connection, CONNECTION_STATE_WORKING);
 			
 			retval = 0;
 		}
@@ -911,7 +926,7 @@ void connection_reset (Connection *connection) {
 
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
-		connection_set_state (connection, CONNECTIONS_STATE_NONE);
+		connection_set_state (connection, CONNECTION_STATE_NONE);
 
 		connection->connection_thread_id = 0;
 		connection->connected_timestamp = 0;

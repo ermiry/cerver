@@ -56,7 +56,7 @@ struct _Connection;
 struct _PacketsPerType;
 struct _AdminCerver;
 
-#define CONNECTIONS_STATE_MAP(XX)														\
+#define CONNECTION_STATE_MAP(XX)														\
 	XX(0,	NONE,			None, 			(Undefined))								\
 	XX(1,	CONNECTING,		Connecting, 	(Performing connection))					\
 	XX(2,	READY,			Ready, 			(Connected and ready))						\
@@ -69,8 +69,8 @@ struct _AdminCerver;
 
 typedef enum ConnectionState {
 
-	#define XX(num, name, string, description) CONNECTIONS_STATE_##name = num,
-	CONNECTIONS_STATE_MAP (XX)
+	#define XX(num, name, string, description) CONNECTION_STATE_##name = num,
+	CONNECTION_STATE_MAP (XX)
 	#undef XX
 
 } ConnectionState;
