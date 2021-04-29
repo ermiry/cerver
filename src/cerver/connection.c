@@ -574,69 +574,72 @@ void connection_set_attempt_reconnect (
 
 }
 
-// sets up the new connection values
-u8 connection_init (Connection *connection) {
+static bool connection_init_socket (Connection *connection) {
 
-	u8 retval = 1;
+	switch (connection->protocol) {
+		case IPPROTO_TCP:
+			connection->socket->sock_fd = socket (
+				(connection->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_STREAM, 0
+			);
+			break;
+		case IPPROTO_UDP:
+			connection->socket->sock_fd = socket (
+				(connection->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_DGRAM, 0
+			);
+			break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+				"connection_init () - Unkonw protocol type!"
+			);
+			break;
+	}
+
+	return (connection->socket->sock_fd > 0);
+
+}
+
+static void connection_init_address (Connection *connection) {
+
+	if (connection->use_ipv6) {
+		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
+		addr->sin6_family = AF_INET6;
+		addr->sin6_addr = in6addr_any;
+		addr->sin6_port = htons (connection->port);
+	}
+
+	else {
+		struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
+		addr->sin_family = AF_INET;
+		addr->sin_addr.s_addr = inet_addr (connection->ip);
+		addr->sin_port = htons (connection->port);
+	}
+
+}
+
+// sets up the new connection values
+unsigned int connection_init (Connection *connection) {
+
+	unsigned int retval = 1;
 
 	if (connection) {
 		if (!connection->active) {
-			// init the new connection socket
-			switch (connection->protocol) {
-				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_STREAM, 0
-					);
-					break;
-				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_DGRAM, 0
-					);
-					break;
+			if (connection_init_socket (connection)) {
+				connection_init_address (connection);
 
-				default:
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Unkonw protocol type!"
-					);
-					return 1;
-			}
-
-			if (connection->socket->sock_fd > 0) {
-				if (connection->use_ipv6) {
-					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-					addr->sin6_family = AF_INET6;
-					addr->sin6_addr = in6addr_any;
-					addr->sin6_port = htons (connection->port);
-				}
-
-				else {
-					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-					addr->sin_family = AF_INET;
-					addr->sin_addr.s_addr = inet_addr (connection->ip);
-					addr->sin_port = htons (connection->port);
-				}
-
-				retval = 0;     // connection setup was successfull
+				retval = 0;		// connection setup was successfull
 			}
 
 			else {
 				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					"Failed to create new socket!"
+					LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+					"connection_init () - Failed to create socket!"
 				);
 			}
 		}
-
-		else {
-			cerver_log (
-				LOG_TYPE_WARNING, LOG_TYPE_NONE,
-				"Failed to init connection -- it is already active!"
-			);
-		}
-
 	}
 
 	return retval;
