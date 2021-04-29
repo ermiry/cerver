@@ -5,6 +5,8 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 
+void receive_handle_reset (ReceiveHandle *receive_handle);
+
 const char *receive_error_to_string (
 	const ReceiveError error
 ) {
@@ -52,6 +54,20 @@ ReceiveHandle *receive_handle_new (void) {
 	ReceiveHandle *receive_handle =
 		(ReceiveHandle *) malloc (sizeof (ReceiveHandle));
 
+	receive_handle_reset (receive_handle);
+
+	return receive_handle;
+
+}
+
+void receive_handle_delete (void *receive_ptr) {
+	
+	if (receive_ptr) free (receive_ptr);
+	
+}
+
+void receive_handle_reset (ReceiveHandle *receive_handle) {
+
 	if (receive_handle) {
 		receive_handle->type = RECEIVE_TYPE_NONE;
 
@@ -66,6 +82,7 @@ ReceiveHandle *receive_handle_new (void) {
 
 		receive_handle->buffer = NULL;
 		receive_handle->buffer_size = 0;
+		receive_handle->received_size = 0;
 
 		receive_handle->state = RECEIVE_HANDLE_STATE_NONE;
 
@@ -76,12 +93,4 @@ ReceiveHandle *receive_handle_new (void) {
 		receive_handle->spare_packet = NULL;
 	}
 
-	return receive_handle;
-
-}
-
-void receive_handle_delete (void *receive_ptr) {
-	
-	if (receive_ptr) free (receive_ptr);
-	
 }
