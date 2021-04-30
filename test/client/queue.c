@@ -12,8 +12,6 @@ static const char *client_name = { "test-client" };
 
 int main (int argc, const char **argv) {
 
-	cerver_log_init ();
-
 	(void) printf ("Testing CLIENT queue...\n");
 
 	Client *client = client_create ();
@@ -70,8 +68,6 @@ int main (int argc, const char **argv) {
 	/*** end **/
 	client_connection_end (client, connection);
 	client_teardown (client);
-
-	cerver_log_end ();
 
 	(void) printf ("Done!\n\n");
 
