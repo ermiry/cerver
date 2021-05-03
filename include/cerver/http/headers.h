@@ -101,6 +101,10 @@ CERVER_PUBLIC const char *http_header_description (
 	const HttpHeader header
 );
 
+CERVER_PUBLIC const HttpHeader http_header_type_by_string (
+	const char *header_type_string
+);
+
 #ifdef __cplusplus
 }
 #endif
