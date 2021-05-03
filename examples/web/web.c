@@ -49,7 +49,7 @@ void main_handler (
 ) {
 
 	if (http_response_render_file (
-		http_receive, "./examples/web/public/index.html"
+		http_receive, HTTP_STATUS_OK, "./examples/web/public/index.html"
 	)) {
 		cerver_log_error (
 			"Failed to send ./examples/web/public/index.html"
@@ -86,7 +86,7 @@ void text_handler (
 	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
-	if (http_response_render_text (http_receive, text, text_len)) {
+	if (http_response_render_text (http_receive, HTTP_STATUS_OK, text, text_len)) {
 		cerver_log_error ("text_handler () has failed!");
 	}
 
@@ -101,7 +101,7 @@ void json_handler (
 	char const *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
-	if (http_response_render_json (http_receive, json, json_len)) {
+	if (http_response_render_json (http_receive, HTTP_STATUS_OK, json, json_len)) {
 		cerver_log_error ("json_handler () has failed!");
 	}
 
