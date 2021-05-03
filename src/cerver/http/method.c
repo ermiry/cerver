@@ -1,6 +1,6 @@
 #include "cerver/http/method.h"
 
-#include "cerver/config.h"
+static const char *http_method_none = { "NONE" };
 
 const char *method_strings[] = {
 
@@ -12,6 +12,12 @@ const char *method_strings[] = {
 
 const char *http_method_str (const enum http_method m) {
 
-  return ELEM_AT (method_strings, m, "<unknown>");
+	switch (m) {
+		#define XX(num, name, string) case HTTP_##name: return #string;
+		HTTP_METHOD_MAP(XX)
+		#undef XX
+	}
+
+	return http_method_none;
 
 }

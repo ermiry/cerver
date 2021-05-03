@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#define HTTP_METHOD_NONE			34
+
 #define HTTP_METHOD_MAP(XX)         \
 	XX(0,  DELETE,      DELETE)       \
 	XX(1,  GET,         GET)          \
@@ -61,7 +63,7 @@ enum http_method {
 
 typedef enum http_method http_method;
 
-CERVER_PUBLIC const char *method_strings[];
+CERVER_PRIVATE const char *method_strings[];
 
 // returns a string version of the HTTP method
 CERVER_PUBLIC const char *http_method_str (
