@@ -3,9 +3,9 @@
 
 #include "cerver/config.h"
 
-#define HTTP_REQUEST_HEADERS_MAX				54
+#define HTTP_HEADERS_MAX				55
 
-#define HTTP_REQUEST_HEADERS_SIZE				64
+#define HTTP_HEADERS_SIZE				64
 
 #ifdef __cplusplus
 extern "C" {
