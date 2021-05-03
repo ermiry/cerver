@@ -573,14 +573,19 @@ u8 http_response_send_file (
 	
 	u8 retval = 1;
 
-	// TODO:
-	char *ext = files_get_file_extension (filename);
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
 	if (ext) {
 		const char *content_type = http_content_type_by_extension (ext);
 
 		// prepare & send the header
-		char *header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
+		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
 			status,
 			http_status_str (status),
 			CERVER_VERSION,
@@ -588,42 +593,35 @@ u8 http_response_send_file (
 			filestatus->st_size
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			size_t header_len = strlen (header);
-			if (!http_response_send_actual (
-				http_receive->cr->connection->socket,
-				header, header_len
+		if (!http_response_send_actual (
+			http_receive->cr->connection->socket,
+			header, header_len
+		)) {
+			size_t total_size = header_len;
+
+			if (http_receive->cr->cerver)
+				http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+
+			http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
+			// send the actual file
+			if (!sendfile (
+				http_receive->cr->connection->socket->sock_fd, 
+				file, 
+				0, filestatus->st_size
 			)) {
-				size_t total_size = header_len;
-
-				if (http_receive->cr->cerver)
-					http_receive->cr->cerver->stats->total_bytes_sent += total_size;
-
-				http_receive->cr->connection->stats->total_bytes_sent += total_size;
-
-				// send the actual file
-				if (!sendfile (
-					http_receive->cr->connection->socket->sock_fd, 
-					file, 
-					0, filestatus->st_size
-				)) {
-					total_size += (size_t) filestatus->st_size;
-				}
-
-				((HttpReceive *) http_receive)->status = status;
-				((HttpReceive *) http_receive)->sent = total_size;
-
-				retval = 0;
+				total_size += (size_t) filestatus->st_size;
 			}
 
-			free (header);
-		}
+			((HttpReceive *) http_receive)->status = status;
+			((HttpReceive *) http_receive)->sent = total_size;
 
-		free (ext);
+			retval = 0;
+		}
 	}
 
 	return retval;
@@ -680,28 +678,26 @@ u8 http_response_render_text (
 	u8 retval = 1;
 
 	if (http_receive && text) {
-		char *header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
+		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n", 
 			status,
 			http_status_str (status),
 			CERVER_VERSION,
 			text_len
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			retval = http_response_render_send (
-				http_receive,
-				status,
-				header, strlen (header),
-				text, text_len
-			);
-
-			free (header);
-		}
+		retval = http_response_render_send (
+			http_receive,
+			status,
+			header, header_len,
+			text, text_len
+		);
 	}
 
 	return retval;
@@ -720,28 +716,26 @@ u8 http_response_render_json (
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		char *header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n", 
 			status,
 			http_status_str (status),
 			CERVER_VERSION,
 			json_len
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			retval = http_response_render_send (
-				http_receive,
-				status,
-				header, strlen (header),
-				json, json_len
-			);
-
-			free (header);
-		}
+		retval = http_response_render_send (
+			http_receive,
+			status,
+			header, header_len,
+			json, json_len
+		);
 	}
 
 	return retval;
