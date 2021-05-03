@@ -2846,7 +2846,8 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			int file = open (filename, O_RDONLY);
 			if (file) {
 				http_response_send_file (
-					http_receive, file, filename, &filestatus
+					http_receive, HTTP_STATUS_OK,
+					file, filename, &filestatus
 				);
 
 				(void) close (file);
