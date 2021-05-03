@@ -566,20 +566,23 @@ u8 http_response_create_and_send (
 // returns 0 on success, 1 on error
 u8 http_response_send_file (
 	const HttpReceive *http_receive,
+	const http_status status,
 	int file, const char *filename,
 	struct stat *filestatus
 ) {
 	
 	u8 retval = 1;
 
+	// TODO:
 	char *ext = files_get_file_extension (filename);
 	if (ext) {
 		const char *content_type = http_content_type_by_extension (ext);
 
 		// prepare & send the header
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			content_type,
 			filestatus->st_size
@@ -611,7 +614,7 @@ u8 http_response_send_file (
 					total_size += (size_t) filestatus->st_size;
 				}
 
-				((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
+				((HttpReceive *) http_receive)->status = status;
 				((HttpReceive *) http_receive)->sent = total_size;
 
 				retval = 0;
@@ -633,6 +636,7 @@ u8 http_response_send_file (
 
 static u8 http_response_render_send (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *header, const size_t header_len,
 	const char *data, const size_t data_len
 ) {
@@ -653,7 +657,7 @@ static u8 http_response_render_send (
 
 			http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
-			((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
+			((HttpReceive *) http_receive)->status = status;
 			((HttpReceive *) http_receive)->sent = total_size;
 
 			retval = 0;
@@ -669,6 +673,7 @@ static u8 http_response_render_send (
 // returns 0 on success, 1 on error
 u8 http_response_render_text (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *text, const size_t text_len
 ) {
 
@@ -676,8 +681,9 @@ u8 http_response_render_text (
 
 	if (http_receive && text) {
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			text_len
 		);
@@ -689,6 +695,7 @@ u8 http_response_render_text (
 
 			retval = http_response_render_send (
 				http_receive,
+				status,
 				header, strlen (header),
 				text, text_len
 			);
@@ -706,6 +713,7 @@ u8 http_response_render_text (
 // returns 0 on success, 1 on error
 u8 http_response_render_json (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
@@ -713,8 +721,9 @@ u8 http_response_render_json (
 
 	if (http_receive && json) {
 		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			json_len
 		);
@@ -726,6 +735,7 @@ u8 http_response_render_json (
 
 			retval = http_response_render_send (
 				http_receive,
+				status,
 				header, strlen (header),
 				json, json_len
 			);
@@ -743,6 +753,7 @@ u8 http_response_render_json (
 // returns 0 on success, 1 on error
 u8 http_response_render_file (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *filename
 ) {
 
@@ -754,7 +765,8 @@ u8 http_response_render_file (
 		int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
 		if (file > 0) {
 			retval = http_response_send_file (
-				http_receive, file, filename, &filestatus
+				http_receive, status,
+				file, filename, &filestatus
 			);
 
 			(void) close (file);

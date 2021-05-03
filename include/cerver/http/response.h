@@ -150,6 +150,7 @@ CERVER_EXPORT u8 http_response_create_and_send (
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 http_response_send_file (
 	const struct _HttpReceive *http_receive,
+	const http_status status,
 	int file, const char *filename,
 	struct stat *filestatus
 );
@@ -163,6 +164,7 @@ CERVER_PRIVATE u8 http_response_send_file (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_render_text (
 	const struct _HttpReceive *http_receive,
+	const http_status status,
 	const char *text, const size_t text_len
 );
 
@@ -171,6 +173,7 @@ CERVER_EXPORT u8 http_response_render_text (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_render_json (
 	const struct _HttpReceive *http_receive,
+	const http_status status,
 	const char *json, const size_t json_len
 );
 
@@ -179,6 +182,7 @@ CERVER_EXPORT u8 http_response_render_json (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_render_file (
 	const struct _HttpReceive *http_receive,
+	const http_status status,
 	const char *filename
 );
 
