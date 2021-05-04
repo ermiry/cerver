@@ -13,7 +13,7 @@ const char *method_strings[] = {
 const char *http_method_str (const enum http_method m) {
 
 	switch (m) {
-		#define XX(num, name, string) case HTTP_##name: return #string;
+		#define XX(num, name, string) case HTTP_METHOD_##name: return #string;
 		HTTP_METHOD_MAP(XX)
 		#undef XX
 	}
