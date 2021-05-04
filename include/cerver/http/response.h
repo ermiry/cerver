@@ -32,7 +32,7 @@ struct _HttpResponse {
 	http_status status;
 
 	u8 n_headers;
-	String *headers[HTTP_REQUEST_HEADERS_SIZE];
+	String *headers[HTTP_HEADERS_SIZE];
 
 	void *header;
 	size_t header_len;

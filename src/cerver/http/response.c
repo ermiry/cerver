@@ -72,7 +72,7 @@ void *http_response_new (void) {
 		res->status = HTTP_STATUS_OK;
 
 		res->n_headers = 0;
-		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			res->headers[i] = NULL;
 
 		res->header = NULL;
@@ -95,7 +95,7 @@ void http_response_reset (HttpResponse *response) {
 	response->status = HTTP_STATUS_OK;
 
 	response->n_headers = 0;
-	for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++) {
 		str_delete (response->headers[i]);
 		response->headers[i] = NULL;
 	}
@@ -188,7 +188,7 @@ u8 http_response_add_header (
 
 	u8 retval = 1;
 
-	if (res && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
+	if (res && actual_header && (type < HTTP_HEADERS_SIZE)) {
 		if (res->headers[type]) {
 			str_delete (res->headers[type]);
 		}
@@ -324,7 +324,7 @@ void http_response_compile_header (HttpResponse *res) {
 		res->header_len = main_header_len;
 
 		u8 i = 0;
-		for (; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+		for (; i < HTTP_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
 				res->header_len += res->headers[i]->len;
 			}
@@ -341,7 +341,7 @@ void http_response_compile_header (HttpResponse *res) {
 		char *end = (char *) res->header;
 		(void) memcpy (end, main_header, main_header_len);
 		end += main_header_len;
-		for (i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+		for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
 				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
 				end += res->headers[i]->len;
@@ -579,7 +579,7 @@ u8 http_response_send_file (
 	);
 
 	if (ext) {
-		const char *content_type = http_content_type_by_extension (ext);
+		const char *content_type = http_content_type_mime_by_extension (ext);
 
 		// prepare & send the header
 		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
