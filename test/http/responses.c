@@ -146,7 +146,7 @@ static void test_http_response_add_header (void) {
 	// add one header
 	result = http_response_add_header (
 		response, HTTP_HEADER_CONTENT_TYPE,
-		http_content_type_description (HTTP_CONTENT_TYPE_JSON)
+		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
 	);
 
 	test_check_unsigned_eq (result, 0, NULL);

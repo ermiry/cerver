@@ -24,11 +24,11 @@ static const char *content_type_css_description = { "text/css" };
 static const char *content_type_js_description = { "application/javascript" };
 static const char *content_type_json_description = { "application/json" };
 static const char *content_type_octet_description = { "application/octet-stream" };
-static const char *content_type_jpg_description = { "image/jpg" };
+static const char *content_type_jpg_description = { "image/jpeg" };
 static const char *content_type_png_description = { "image/png" };
 static const char *content_type_ico_description = { "image/x-icon" };
 static const char *content_type_gif_description = { "image/gif" };
-static const char *content_type_audio_description = { "audio/mp3" };
+static const char *content_type_audio_description = { "audio/mpeg" };
 
 static void test_http_content_type_string (void) {
 
@@ -45,26 +45,26 @@ static void test_http_content_type_string (void) {
 	test_check_str_eq (http_content_type_extension (HTTP_CONTENT_TYPE_GIF), content_type_gif_string, NULL);
 	test_check_str_eq (http_content_type_extension (HTTP_CONTENT_TYPE_MP3), content_type_audio_string, NULL);
 
-	test_check_null_ptr (http_content_type_extension ((const ContentType) 100));
+	test_check_str_eq (http_content_type_extension ((const ContentType) 100), content_type_undefined_string, NULL);
 
 }
 
 static void test_http_content_type_description (void) {
 
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_NONE), content_type_undefined_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_NONE), content_type_undefined_description, NULL);
 
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_HTML), content_type_text_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_CSS), content_type_css_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_JS), content_type_js_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_JSON), content_type_json_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_BIN), content_type_octet_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_JPG), content_type_jpg_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_PNG), content_type_png_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_ICO), content_type_ico_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_GIF), content_type_gif_description, NULL);
-	test_check_str_eq (http_content_type_description (HTTP_CONTENT_TYPE_MP3), content_type_audio_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_HTML), content_type_text_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_CSS), content_type_css_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_JS), content_type_js_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_JSON), content_type_json_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_BIN), content_type_octet_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_JPG), content_type_jpg_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_PNG), content_type_png_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_ICO), content_type_ico_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_GIF), content_type_gif_description, NULL);
+	test_check_str_eq (http_content_type_mime (HTTP_CONTENT_TYPE_MP3), content_type_audio_description, NULL);
 
-	test_check_null_ptr (http_content_type_description ((const ContentType) 100));
+	test_check_str_eq (http_content_type_mime ((const ContentType) 100), content_type_undefined_description, NULL);
 
 }
 
