@@ -428,7 +428,8 @@ static void http_cerver_admin_handler (
 
 	if (routes_json) {
 		(void) http_response_render_json (
-			http_receive, routes_json, strlen (routes_json)
+			http_receive, HTTP_STATUS_OK,
+			routes_json, strlen (routes_json)
 		);
 
 		free (routes_json);
@@ -454,7 +455,8 @@ static void http_cerver_admin_file_systems_handler (
 
 	if (file_systems_json) {
 		(void) http_response_render_json (
-			http_receive, file_systems_json, strlen (file_systems_json)
+			http_receive, HTTP_STATUS_OK,
+			file_systems_json, strlen (file_systems_json)
 		);
 
 		free (file_systems_json);

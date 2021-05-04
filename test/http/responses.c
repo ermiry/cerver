@@ -67,7 +67,7 @@ static HttpResponse *test_http_response_new (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 0, NULL);
 
-	for (unsigned int i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (response->headers[i]);
 	
 	test_check_null_ptr (response->header);
@@ -94,7 +94,7 @@ static void test_http_response_reset (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 0, NULL);
 
-	for (unsigned int i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (response->headers[i]);
 	
 	test_check_null_ptr (response->header);
@@ -146,7 +146,7 @@ static void test_http_response_add_header (void) {
 	// add one header
 	result = http_response_add_header (
 		response, HTTP_HEADER_CONTENT_TYPE,
-		http_content_type_description (HTTP_CONTENT_TYPE_JSON)
+		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
 	);
 
 	test_check_unsigned_eq (result, 0, NULL);

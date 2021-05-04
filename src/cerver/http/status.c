@@ -6,8 +6,8 @@ const char *http_status_str (const enum http_status s) {
 		#define XX(num, name, string) case HTTP_STATUS_##name: return #string;
 		HTTP_STATUS_MAP(XX)
 		#undef XX
-
-		default: return "<unknown>";
 	}
+
+	return http_status_str (HTTP_STATUS_NONE);
 
 }

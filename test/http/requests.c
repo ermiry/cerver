@@ -24,8 +24,8 @@ static HttpRequest *test_http_request_new (void) {
 	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 		test_check_null_ptr (request->params[i]);
 
-	test_check_unsigned_eq (request->next_header, REQUEST_HEADER_INVALID, NULL);
-	for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
+	test_check_unsigned_eq (request->next_header, HTTP_HEADER_INVALID, NULL);
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (request->headers[i]);
 
 	test_check_null_ptr (request->decoded_data);
@@ -62,8 +62,8 @@ static void test_http_request_create (void) {
 	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 		test_check_null_ptr (http_request_get_param_at_idx (request, i));
 
-	for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
-		test_check_null_ptr (http_request_get_header (request, (const RequestHeader) i));
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
+		test_check_null_ptr (http_request_get_header (request, (const HttpHeader) i));
 	
 	test_check_unsigned_eq (http_request_get_content_tytpe (request), HTTP_CONTENT_TYPE_NONE, NULL);
 

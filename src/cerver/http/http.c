@@ -233,7 +233,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_public_key = NULL;
 
 		http_cerver->n_response_headers = 0;
-		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_cerver->response_headers[i] = NULL;
 
 		http_cerver->n_incompleted_requests = 0;
@@ -270,7 +270,7 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
 
-		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			str_delete (http_cerver->response_headers[i]);
 
 		dlist_delete (http_cerver->admin_file_systems_stats);
@@ -1278,7 +1278,7 @@ u8 http_cerver_add_responses_header (
 
 	u8 retval = 1;
 
-	if (http_cerver && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
+	if (http_cerver && actual_header && (type < HTTP_HEADERS_SIZE)) {
 		if (http_cerver->response_headers[type]) {
 			str_delete (http_cerver->response_headers[type]);
 		}
@@ -1751,49 +1751,6 @@ static int http_receive_handle_url (
 
 }
 
-static inline RequestHeader http_receive_handle_header_field_handle (
-	const char *header
-) {
-
-	if (!strcasecmp ("Accept", header)) return REQUEST_HEADER_ACCEPT;
-	if (!strcasecmp ("Accept-Charset", header)) return REQUEST_HEADER_ACCEPT_CHARSET;
-	if (!strcasecmp ("Accept-Encoding", header)) return REQUEST_HEADER_ACCEPT_ENCODING;
-	if (!strcasecmp ("Accept-Language", header)) return REQUEST_HEADER_ACCEPT_LANGUAGE;
-
-	if (!strcasecmp ("Access-Control-Request-Headers", header)) return REQUEST_HEADER_ACCESS_CONTROL_REQUEST_HEADERS;
-
-	if (!strcasecmp ("Authorization", header)) return REQUEST_HEADER_AUTHORIZATION;
-
-	if (!strcasecmp ("Cache-Control", header)) return REQUEST_HEADER_CACHE_CONTROL;
-
-	if (!strcasecmp ("Connection", header)) return REQUEST_HEADER_CONNECTION;
-
-	if (!strcasecmp ("Content-Length", header)) return REQUEST_HEADER_CONTENT_LENGTH;
-	if (!strcasecmp ("Content-Type", header)) return REQUEST_HEADER_CONTENT_TYPE;
-
-	if (!strcasecmp ("Cookie", header)) return REQUEST_HEADER_COOKIE;
-
-	if (!strcasecmp ("Date", header)) return REQUEST_HEADER_DATE;
-
-	if (!strcasecmp ("Expect", header)) return REQUEST_HEADER_EXPECT;
-
-	if (!strcasecmp ("Host", header)) return REQUEST_HEADER_HOST;
-
-	if (!strcasecmp ("Origin", header)) return REQUEST_HEADER_ORIGIN;
-
-	if (!strcasecmp ("Proxy-Authorization", header)) return REQUEST_HEADER_PROXY_AUTHORIZATION;
-
-	if (!strcasecmp ("Upgrade", header)) return REQUEST_HEADER_UPGRADE;
-
-	if (!strcasecmp ("User-Agent", header)) return REQUEST_HEADER_USER_AGENT;
-
-	if (!strcasecmp ("Sec-WebSocket-Key", header)) return REQUEST_HEADER_WEB_SOCKET_KEY;
-	if (!strcasecmp ("Sec-WebSocket-Version", header)) return REQUEST_HEADER_WEB_SOCKET_VERSION;
-
-	return REQUEST_HEADER_INVALID;		// no known header
-
-}
-
 static int http_receive_handle_header_field (
 	http_parser *parser, const char *at, size_t length
 ) {
@@ -1803,7 +1760,7 @@ static int http_receive_handle_header_field (
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->next_header =
-		http_receive_handle_header_field_handle (header);
+		http_header_type_by_string (header);
 
 	return 0;
 
@@ -1816,7 +1773,7 @@ static int http_receive_handle_header_value (
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
-	if (request->next_header != REQUEST_HEADER_INVALID) {
+	if (request->next_header != HTTP_HEADER_INVALID) {
 		request->headers[request->next_header] = str_new (NULL);
 		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
 		request->headers[request->next_header]->len = length;
@@ -2433,10 +2390,10 @@ static void http_receive_handle_match (
 
 			// handle body based on header
 			if (request->body) {
-				if (request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
+				if (request->headers[HTTP_HEADER_CONTENT_TYPE]) {
 					if (!strncmp (
 						"application/x-www-form-urlencoded",
-						request->headers[REQUEST_HEADER_CONTENT_TYPE]->str, 33
+						request->headers[HTTP_HEADER_CONTENT_TYPE]->str, 33
 					)) {
 						char *real_body = http_url_decode (request->body->str);
 
@@ -2588,7 +2545,7 @@ static void http_receive_handle_select_auth_bearer (
 	// get the bearer token
 	// printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
 
-	char *token = request->headers[REQUEST_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
+	char *token = request->headers[HTTP_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
 
 	// printf ("\nToken -> %s\n", token);
 
@@ -2708,7 +2665,7 @@ static void http_receive_handle_select (
 
 			// handle authentication with bearer token
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
-				if (request->headers[REQUEST_HEADER_AUTHORIZATION]) {
+				if (request->headers[HTTP_HEADER_AUTHORIZATION]) {
 					http_receive_handle_select_auth_bearer (
 						http_cerver, http_receive, found, request
 					);
@@ -2781,14 +2738,14 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	#endif
 
 	// check if we are going to get any file(s)
-	if (http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]) {
+	if (http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]) {
 		if (is_multipart (
-			http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+			http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
 			char *boundary = http_mpart_get_boundary (
-				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->str,
-				http_receive->request->headers[REQUEST_HEADER_CONTENT_TYPE]->len
+				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str,
+				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->len
 			);
 
 			if (boundary) {
@@ -2846,7 +2803,8 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			int file = open (filename, O_RDONLY);
 			if (file) {
 				http_response_send_file (
-					http_receive, file, filename, &filestatus
+					http_receive, HTTP_STATUS_OK,
+					file, filename, &filestatus
 				);
 
 				(void) close (file);

@@ -72,7 +72,7 @@ void *http_response_new (void) {
 		res->status = HTTP_STATUS_OK;
 
 		res->n_headers = 0;
-		for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			res->headers[i] = NULL;
 
 		res->header = NULL;
@@ -95,7 +95,7 @@ void http_response_reset (HttpResponse *response) {
 	response->status = HTTP_STATUS_OK;
 
 	response->n_headers = 0;
-	for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++) {
 		str_delete (response->headers[i]);
 		response->headers[i] = NULL;
 	}
@@ -188,7 +188,7 @@ u8 http_response_add_header (
 
 	u8 retval = 1;
 
-	if (res && actual_header && (type < HTTP_REQUEST_HEADERS_SIZE)) {
+	if (res && actual_header && (type < HTTP_HEADERS_SIZE)) {
 		if (res->headers[type]) {
 			str_delete (res->headers[type]);
 		}
@@ -216,7 +216,7 @@ u8 http_response_add_content_type_header (
 ) {
 
 	return http_response_add_header (
-		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_description (type)
+		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
 	);
 
 }
@@ -324,7 +324,7 @@ void http_response_compile_header (HttpResponse *res) {
 		res->header_len = main_header_len;
 
 		u8 i = 0;
-		for (; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+		for (; i < HTTP_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
 				res->header_len += res->headers[i]->len;
 			}
@@ -341,7 +341,7 @@ void http_response_compile_header (HttpResponse *res) {
 		char *end = (char *) res->header;
 		(void) memcpy (end, main_header, main_header_len);
 		end += main_header_len;
-		for (i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++) {
+		for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
 			if (res->headers[i]) {
 				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
 				end += res->headers[i]->len;
@@ -566,61 +566,62 @@ u8 http_response_create_and_send (
 // returns 0 on success, 1 on error
 u8 http_response_send_file (
 	const HttpReceive *http_receive,
+	const http_status status,
 	int file, const char *filename,
 	struct stat *filestatus
 ) {
 	
 	u8 retval = 1;
 
-	char *ext = files_get_file_extension (filename);
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
 	if (ext) {
-		const char *content_type = http_content_type_by_extension (ext);
+		const char *content_type = http_content_type_mime_by_extension (ext);
 
 		// prepare & send the header
-		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			content_type,
 			filestatus->st_size
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			size_t header_len = strlen (header);
-			if (!http_response_send_actual (
-				http_receive->cr->connection->socket,
-				header, header_len
+		if (!http_response_send_actual (
+			http_receive->cr->connection->socket,
+			header, header_len
+		)) {
+			size_t total_size = header_len;
+
+			if (http_receive->cr->cerver)
+				http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+
+			http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
+			// send the actual file
+			if (!sendfile (
+				http_receive->cr->connection->socket->sock_fd, 
+				file, 
+				0, filestatus->st_size
 			)) {
-				size_t total_size = header_len;
-
-				if (http_receive->cr->cerver)
-					http_receive->cr->cerver->stats->total_bytes_sent += total_size;
-
-				http_receive->cr->connection->stats->total_bytes_sent += total_size;
-
-				// send the actual file
-				if (!sendfile (
-					http_receive->cr->connection->socket->sock_fd, 
-					file, 
-					0, filestatus->st_size
-				)) {
-					total_size += (size_t) filestatus->st_size;
-				}
-
-				((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
-				((HttpReceive *) http_receive)->sent = total_size;
-
-				retval = 0;
+				total_size += (size_t) filestatus->st_size;
 			}
 
-			free (header);
-		}
+			((HttpReceive *) http_receive)->status = status;
+			((HttpReceive *) http_receive)->sent = total_size;
 
-		free (ext);
+			retval = 0;
+		}
 	}
 
 	return retval;
@@ -633,6 +634,7 @@ u8 http_response_send_file (
 
 static u8 http_response_render_send (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *header, const size_t header_len,
 	const char *data, const size_t data_len
 ) {
@@ -653,7 +655,7 @@ static u8 http_response_render_send (
 
 			http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
-			((HttpReceive *) http_receive)->status = HTTP_STATUS_OK;
+			((HttpReceive *) http_receive)->status = status;
 			((HttpReceive *) http_receive)->sent = total_size;
 
 			retval = 0;
@@ -669,32 +671,33 @@ static u8 http_response_render_send (
 // returns 0 on success, 1 on error
 u8 http_response_render_text (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *text, const size_t text_len
 ) {
 
 	u8 retval = 1;
 
 	if (http_receive && text) {
-		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			text_len
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			retval = http_response_render_send (
-				http_receive,
-				header, strlen (header),
-				text, text_len
-			);
-
-			free (header);
-		}
+		retval = http_response_render_send (
+			http_receive,
+			status,
+			header, header_len,
+			text, text_len
+		);
 	}
 
 	return retval;
@@ -706,32 +709,33 @@ u8 http_response_render_text (
 // returns 0 on success, 1 on error
 u8 http_response_render_json (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		char *header = c_string_create (
-			"HTTP/1.1 200 %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			http_status_str ((enum http_status) 200),
+		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
+		size_t header_len = (size_t) snprintf (
+			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n", 
+			status,
+			http_status_str (status),
 			CERVER_VERSION,
 			json_len
 		);
 
-		if (header) {
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_msg ("\n%s\n", header);
-			#endif
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_msg ("\n%s\n", header);
+		#endif
 
-			retval = http_response_render_send (
-				http_receive,
-				header, strlen (header),
-				json, json_len
-			);
-
-			free (header);
-		}
+		retval = http_response_render_send (
+			http_receive,
+			status,
+			header, header_len,
+			json, json_len
+		);
 	}
 
 	return retval;
@@ -743,6 +747,7 @@ u8 http_response_render_json (
 // returns 0 on success, 1 on error
 u8 http_response_render_file (
 	const HttpReceive *http_receive,
+	const http_status status,
 	const char *filename
 ) {
 
@@ -754,7 +759,8 @@ u8 http_response_render_file (
 		int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
 		if (file > 0) {
 			retval = http_response_send_file (
-				http_receive, file, filename, &filestatus
+				http_receive, status,
+				file, filename, &filestatus
 			);
 
 			(void) close (file);

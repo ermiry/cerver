@@ -114,7 +114,7 @@ struct _HttpCerver {
 
 	// responses
 	u8 n_response_headers;
-	String *response_headers[HTTP_REQUEST_HEADERS_SIZE];
+	String *response_headers[HTTP_HEADERS_SIZE];
 
 	// stats
 	size_t n_incompleted_requests;	// the request wasn't parsed completely

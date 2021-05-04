@@ -2514,6 +2514,8 @@ static u8 cerver_register_new_connection_normal_web (
 
 	u8 retval = 1;
 
+	int sock_fd = connection->socket->sock_fd;
+
 	CerverReceive *cr = cerver_receive_create_full (
 		RECEIVE_TYPE_NORMAL,
 		cerver,
@@ -2527,7 +2529,7 @@ static u8 cerver_register_new_connection_normal_web (
 				LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 				"Cerver %s thpool is full! "
 				"Creating a detachable thread for sock fd <%d> connection...",
-				cerver->info->name->str, connection->socket->sock_fd
+				cerver->info->name->str, sock_fd
 			);
 			#endif
 
@@ -2559,7 +2561,7 @@ static u8 cerver_register_new_connection_normal_web (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 					"Added work for sock fd <%d> connection to the thpool!",
-					connection->socket->sock_fd
+					sock_fd
 				);
 
 				cerver_log (
