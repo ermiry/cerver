@@ -46,7 +46,7 @@ static void test_http_cerver_new (void) {
 	test_check_null_ptr (http_cerver->jwt_public_key);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
-	for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_cerver->response_headers[i]);
 
 	test_check_unsigned_eq (http_cerver->n_incompleted_requests, 0, NULL);
@@ -97,7 +97,7 @@ static void test_http_cerver_create (void) {
 	test_check_null_ptr (http_cerver->jwt_public_key);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
-	for (u8 i = 0; i < HTTP_REQUEST_HEADERS_SIZE; i++)
+	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_cerver->response_headers[i]);
 
 	test_check_unsigned_eq (http_cerver->n_incompleted_requests, 0, NULL);
@@ -224,6 +224,8 @@ int main (int argc, char **argv) {
 	http_tests_main ();
 
 	// unit tests
+	http_tests_headers ();
+	http_tests_methods ();
 	http_tests_contents ();
 	http_tests_requests ();
 	http_tests_responses ();
