@@ -10,6 +10,9 @@ sudo docker kill $(sudo docker ps -q)
 make TYPE=test -j4 || { exit 1; }
 make TYPE=test -j4 test || { exit 1; }
 
+# unit tests
+bash test/run.sh || { exit 1; }
+
 # compile docker
 sudo docker build -t ermiry/cerver:test -f Dockerfile.test . || { exit 1; }
 
