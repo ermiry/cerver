@@ -216,7 +216,7 @@ u8 http_response_add_content_type_header (
 ) {
 
 	return http_response_add_header (
-		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_description (type)
+		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
 	);
 
 }
