@@ -8,6 +8,7 @@
 #include "cerver/config.h"
 
 #include "cerver/http/content.h"
+#include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
 
@@ -33,20 +34,6 @@ const char *http_request_method_str (
 
 }
 
-const char *http_request_header_str (
-	const RequestHeader header
-) {
-
-	switch (header) {
-		#define XX(num, name, string) case REQUEST_HEADER_##name: return #string;
-		REQUEST_HEADER_MAP(XX)
-		#undef XX
-	}
-
-	return http_request_header_str (REQUEST_HEADER_INVALID);
-
-}
-
 HttpRequest *http_request_new (void) {
 
 	HttpRequest *http_request = (HttpRequest *) malloc (sizeof (HttpRequest));
@@ -63,9 +50,9 @@ HttpRequest *http_request_new (void) {
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 			http_request->params[i] = NULL;
 
-		http_request->next_header = REQUEST_HEADER_INVALID;
+		http_request->next_header = HTTP_HEADER_INVALID;
 
-		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;
 
 		http_request->decoded_data = NULL;
@@ -99,7 +86,7 @@ void http_request_delete (HttpRequest *http_request) {
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 			str_delete (http_request->params[i]);
 
-		for (u8 i = 0; i < REQUEST_HEADERS_SIZE; i++)
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			str_delete (http_request->headers[i]);
 
 		if (http_request->decoded_data) {
@@ -186,7 +173,7 @@ const String *http_request_get_param_at_idx (
 }
 
 const String *http_request_get_header (
-	const HttpRequest *http_request, const RequestHeader header
+	const HttpRequest *http_request, const HttpHeader header
 ) {
 
 	return http_request->headers[header];
@@ -197,9 +184,9 @@ ContentType http_request_get_content_tytpe (
 	const HttpRequest *http_request
 ) {
 
-	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE] ?
-		http_content_type_by_string (
-			http_request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+	return http_request->headers[HTTP_HEADER_CONTENT_TYPE] ?
+		http_content_type_by_mime (
+			http_request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		) : HTTP_CONTENT_TYPE_NONE;
 
 }
@@ -208,7 +195,7 @@ const String *http_request_get_content_type_string (
 	const HttpRequest *http_request
 ) {
 
-	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE];
+	return http_request->headers[HTTP_HEADER_CONTENT_TYPE];
 
 }
 
@@ -216,9 +203,9 @@ bool http_request_content_type_is_json (
 	const HttpRequest *http_request
 ) {
 
-	return http_request->headers[REQUEST_HEADER_CONTENT_TYPE] ?
+	return http_request->headers[HTTP_HEADER_CONTENT_TYPE] ?
 		http_content_type_is_json (
-			http_request->headers[REQUEST_HEADER_CONTENT_TYPE]->str
+			http_request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		) : false;
 
 }
@@ -252,12 +239,12 @@ void http_request_headers_print (const HttpRequest *http_request) {
 	if (http_request) {
 		const char *null = "NULL";
 		String *header = NULL;
-		for (u8 i = 0; i < REQUEST_HEADERS_MAX; i++) {
+		for (u8 i = 0; i < HTTP_HEADERS_MAX; i++) {
 			header = http_request->headers[i];
 
 			cerver_log_msg (
 				"%s: %s",
-				http_request_header_str ((const RequestHeader) i),
+				http_header_string ((const HttpHeader) i),
 				header ? header->str : null
 			);
 		}
@@ -385,7 +372,9 @@ DoubleList *http_request_multi_parts_get_all_filenames (
 				mpart = (MultiPart *) le->data;
 
 				if (mpart->filename_len > 0) {
-					dlist_insert_after (all, dlist_end (all), mpart->filename);
+					(void) dlist_insert_at_end_unsafe (
+						all, mpart->filename
+					);
 				}
 			}
 		}

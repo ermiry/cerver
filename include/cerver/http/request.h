@@ -10,6 +10,7 @@
 #include "cerver/config.h"
 
 #include "cerver/http/content.h"
+#include "cerver/http/headers.h"
 #include "cerver/http/multipart.h"
 
 #define REQUEST_METHOD_UNDEFINED		5
@@ -38,45 +39,6 @@ CERVER_PUBLIC const char *http_request_method_str (
 	const RequestMethod request_method
 );
 
-#define REQUEST_HEADER_MAP(XX)													\
-	XX(0,  ACCEPT,      					Accept)								\
-	XX(1,  ACCEPT_CHARSET,					Accept-Charset)						\
-	XX(2,  ACCEPT_ENCODING,      			Accept-Encoding)					\
-	XX(3,  ACCEPT_LANGUAGE,      			Accept-Language)					\
-	XX(4,  ACCESS_CONTROL_REQUEST_HEADERS,	Access-Control-Request-Headers)		\
-	XX(5,  AUTHORIZATION,					Authorization)						\
-	XX(6,  CACHE_CONTROL,					Cache-Control)						\
-	XX(7,  CONNECTION,						Connection)							\
-	XX(8,  CONTENT_LENGTH,					Content-Length)						\
-	XX(9,  CONTENT_TYPE,					Content-Type)						\
-	XX(10,  COOKIE,							Cookie)								\
-	XX(11,  DATE,							Date)								\
-	XX(12,  EXPECT,							Expect)								\
-	XX(13,  HOST,							Host)								\
-	XX(14,  ORIGIN,							Origin)								\
-	XX(15,  PROXY_AUTHORIZATION,			Proxy-Authorization)				\
-	XX(16,  UPGRADE,						Upgrade)							\
-	XX(17,  USER_AGENT,						User-Agent)							\
-	XX(18,  WEB_SOCKET_KEY,					Sec-WebSocket-Key)					\
-	XX(19,  WEB_SOCKET_VERSION,				Sec-WebSocket-Version)				\
-	XX(32,  INVALID,      					Undefined)
-
-typedef enum RequestHeader {
-
-	#define XX(num, name, string) REQUEST_HEADER_##name = num,
-	REQUEST_HEADER_MAP(XX)
-	#undef XX
-
-} RequestHeader;
-
-CERVER_PUBLIC const char *http_request_header_str (
-	const RequestHeader header
-);
-
-#define REQUEST_HEADERS_MAX				19
-
-#define REQUEST_HEADERS_SIZE			32
-
 #define REQUEST_PARAMS_SIZE				8
 
 struct _HttpRequest {
@@ -92,8 +54,8 @@ struct _HttpRequest {
 	unsigned int n_params;
 	String *params[REQUEST_PARAMS_SIZE];
 
-	RequestHeader next_header;
-	String *headers[REQUEST_HEADERS_SIZE];
+	HttpHeader next_header;
+	String *headers[HTTP_HEADERS_SIZE];
 
 	// decoded data from jwt
 	void *decoded_data;
@@ -155,7 +117,7 @@ CERVER_EXPORT const String *http_request_get_param_at_idx (
 );
 
 CERVER_EXPORT const String *http_request_get_header (
-	const HttpRequest *http_request, const RequestHeader header
+	const HttpRequest *http_request, const HttpHeader header
 );
 
 CERVER_EXPORT ContentType http_request_get_content_tytpe (
