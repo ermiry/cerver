@@ -37,9 +37,11 @@ CERVER_PUBLIC float random_float (float abs);
 /*** converters ***/
 
 // convert a string representing a hex to a string
-CERVER_PUBLIC int xtoi (char *hexString);
+CERVER_PUBLIC int xtoi (char *hex_string);
 
 CERVER_PUBLIC char *itoa (int i, char *b);
+
+CERVER_PUBLIC bool bool_value_from_string (const char *string_value);
 
 /*** c strings ***/
 

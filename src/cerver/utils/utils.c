@@ -82,14 +82,14 @@ float random_float (float abs) {
 /*** converters ***/
 
 // convert a string representing a hex to a string
-int xtoi (char *hexString) {
+int xtoi (char *hex_string) {
 
 	int i = 0;
 
-	if ((*hexString == '0') && (*(hexString + 1) == 'x')) hexString += 2;
+	if ((*hex_string == '0') && (*(hex_string + 1) == 'x')) hex_string += 2;
 
-	while (*hexString) {
-		char c = toupper (*hexString++);
+	while (*hex_string) {
+		char c = toupper (*hex_string++);
 		if ((c < '0') || (c > 'F') || ((c > '9') && (c < 'A'))) break;
 		c -= '0';
 		if (c > 9) c-= 7;
@@ -123,6 +123,13 @@ char *itoa (int i, char *b) {
 	} while (i);
 
 	return b;
+
+}
+
+bool bool_value_from_string (const char *string_value) {
+
+	if (!strcasecmp ("true", string_value)) return true;
+	return false;
 
 }
 
