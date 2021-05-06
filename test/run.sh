@@ -8,6 +8,8 @@
 
 ./test/bin/collections --quiet || { exit 1; }
 
+./test/bin/files || { exit 1; }
+
 ./test/bin/packets || { exit 1; }
 
 ./test/bin/system || { exit 1; }

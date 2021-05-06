@@ -187,6 +187,44 @@ CERVER_EXPORT int file_open_as_fd (
 
 #pragma endregion
 
+#pragma region images
+
+#define IMAGE_TYPE_MAP(XX)			\
+	XX(0,	NONE, 		None)		\
+	XX(1,	PNG, 		PNG)		\
+	XX(2,	JPEG, 		JPEG)		\
+	XX(3,	GIF, 		GIF)		\
+	XX(4,	BMP, 		BMP)
+
+typedef enum ImageType {
+
+	#define XX(num, name, string) IMAGE_TYPE_##name = num,
+	IMAGE_TYPE_MAP (XX)
+	#undef XX
+
+} ImageType;
+
+CERVER_EXPORT const char *files_image_type_to_string (const ImageType type);
+
+// reads the file's contents to find matching magic bytes
+CERVER_EXPORT ImageType files_image_get_type_from_file (const void *file);
+
+// opens the file and returns the file's image type
+CERVER_EXPORT ImageType files_image_get_type (const char *filename);
+
+// returns the correct image type based on the filename's extension
+CERVER_EXPORT ImageType files_image_get_type_by_extension (
+	const char *filename
+);
+
+// returns true if the filename's extension is jpg or jpeg
+CERVER_EXPORT bool files_image_extension_is_jpeg (const char *filename);
+
+// returns true if the filename's extension is png
+CERVER_EXPORT bool files_image_extension_is_png (const char *filename);
+
+#pragma endregion
+
 #pragma region send
 
 struct _FileHeader {
