@@ -27,8 +27,8 @@
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 bool file_exists (const char *filename);
 
@@ -427,7 +427,7 @@ const char *files_get_file_extension_reference (
 	if (filename) {
 		char *ptr = strrchr ((char *) filename, '.');
 		if (ptr) {
-			char *p = ptr;
+			char *p = ptr + 1;
 			while (*p++) *ext_len += 1;
 
 			if (ext_len) {
