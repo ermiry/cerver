@@ -120,7 +120,7 @@ CERVER_EXPORT const String *http_request_get_header (
 	const HttpRequest *http_request, const HttpHeader header
 );
 
-CERVER_EXPORT ContentType http_request_get_content_tytpe (
+CERVER_EXPORT ContentType http_request_get_content_type (
 	const HttpRequest *http_request
 );
 

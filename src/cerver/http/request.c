@@ -180,7 +180,7 @@ const String *http_request_get_header (
 
 }
 
-ContentType http_request_get_content_tytpe (
+ContentType http_request_get_content_type (
 	const HttpRequest *http_request
 ) {
 
