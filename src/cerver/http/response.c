@@ -466,7 +466,7 @@ static u8 http_response_send_actual (
 
 }
 
-// sends a response to the connection's socket
+// sends a response through the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_send (
 	HttpResponse *res,
@@ -499,7 +499,7 @@ u8 http_response_send (
 }
 
 // expects a response with an already created header and data
-// as this method will send both parts withput the need of a continuos response buffer
+// as this method will send both parts without the need of a continuos response buffer
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 u8 http_response_send_split (
@@ -539,7 +539,7 @@ u8 http_response_send_split (
 
 }
 
-// creates & sends a response to the connection's socket
+// creates & sends a response through the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_create_and_send (
 	const http_status status, const void *data, size_t data_len,

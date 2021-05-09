@@ -134,7 +134,7 @@ CERVER_EXPORT u8 http_response_send (
 );
 
 // expects a response with an already created header and data
-// as this method will send both parts withput the need of a continuos response buffer
+// as this method will send both parts without the need of a continuos response buffer
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send_split (
@@ -142,14 +142,14 @@ CERVER_EXPORT u8 http_response_send_split (
 	const struct _HttpReceive *http_receive
 );
 
-// creates & sends a response to the connection's socket
+// creates & sends a response through the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_create_and_send (
 	const http_status status, const void *data, size_t data_len,
 	const struct _HttpReceive *http_receive
 );
 
-// sends a file directly to the connection
+// sends a file directly through the connection
 // this method is used when serving files from static paths & by  http_response_render_file ()
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 http_response_send_file (
