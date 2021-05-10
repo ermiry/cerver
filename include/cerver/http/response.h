@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_RESPONSE_H_
 #define _CERVER_HTTP_RESPONSE_H_
 
+#include <sys/stat.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -194,47 +196,57 @@ CERVER_EXPORT u8 http_response_render_file (
 
 #pragma region json
 
+// creates a HTTP response with the defined status code and a json data (body)
+// that accepts additional configuration and needs to be compiled to be sent
+// returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_create_json (
 	const http_status status, const char *json, const size_t json_len
 );
 
+// creates a HTTP response with the defined status code and a data (body)
+// with a json message of type { key: value } that accepts additional configuration
+// and needs to be compiled to be sent
+// returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
 	const http_status status, const char *key, const char *value
 );
 
-// creates a http response with the defined status code ready to be sent 
-// and a data (body) with a json message of type { msg: "your message" }
+// creates a HTTP response with the defined status code and a data (body)
+// with a json message of type { msg: "your message" } ready to be sent
+// returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_json_msg (
 	const http_status status, const char *msg
 );
 
-// creates and sends a http json message response with the defined status code & message
+// creates and sends a HTTP json message response with the defined status code & message
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_msg_send (
 	const struct _HttpReceive *http_receive,
 	const http_status status, const char *msg
 );
 
-// creates a http response with the defined status code ready to be sent 
-// and a data (body) with a json message of type { error: "your error message" }
+// creates a HTTP response with the defined status code and a data (body)
+// with a json message of type { error: "your error message" } ready to be sent
+// returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_json_error (
 	const http_status status, const char *error_msg
 );
 
-// creates and sends a http json error response with the defined status code & message
+// creates and sends a HTTP json error response with the defined status code & message
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_error_send (
 	const struct _HttpReceive *http_receive,
 	const http_status status, const char *error_msg
 );
 
-// creates a http response with the defined status code ready to be sent
-// and a data (body) with a json meesage of type { key: value }
+// creates a HTTP response with the defined status code and a data (body)
+// with a json meesage of type { key: value } ready to be sent
+// returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_json_key_value (
 	const http_status status, const char *key, const char *value
 );
 
-// creates and sends a http custom json response with the defined status code & key-value
+// creates and sends a HTTP custom json response with the defined status code & key-value
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_key_value_send (
 	const struct _HttpReceive *http_receive,
