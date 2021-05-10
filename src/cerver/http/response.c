@@ -2,15 +2,16 @@
 #include <string.h>
 
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
 #include "cerver/collections/pool.h"
 
-#include "cerver/version.h"
 #include "cerver/cerver.h"
 #include "cerver/files.h"
+#include "cerver/version.h"
 
 #include "cerver/http/content.h"
 #include "cerver/http/headers.h"
@@ -316,7 +317,7 @@ void http_response_compile_header (HttpResponse *res) {
 	if (res->n_headers || producer->http_cerver->n_response_headers) {
 		char *main_header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
-			res->status, http_status_str (res->status),
+			res->status, http_status_string (res->status),
 			CERVER_VERSION
 		);
 
@@ -370,7 +371,7 @@ void http_response_compile_header (HttpResponse *res) {
 	else {
 		res->header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			res->status, http_status_str (res->status),
+			res->status, http_status_string (res->status),
 			CERVER_VERSION
 		);
 
@@ -389,7 +390,7 @@ u8 http_response_compile (HttpResponse *res) {
 		if (!res->header) {
 			// res->header = c_string_create (
 			// 	"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			// 	res->status, http_status_str (res->status),
+			// 	res->status, http_status_string (res->status),
 			// 	CERVER_VERSION
 			// );
 
@@ -587,7 +588,7 @@ u8 http_response_send_file (
 			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
 			status,
-			http_status_str (status),
+			http_status_string (status),
 			CERVER_VERSION,
 			content_type,
 			filestatus->st_size
@@ -683,7 +684,7 @@ u8 http_response_render_text (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n", 
 			status,
-			http_status_str (status),
+			http_status_string (status),
 			CERVER_VERSION,
 			text_len
 		);
@@ -721,7 +722,7 @@ u8 http_response_render_json (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n", 
 			status,
-			http_status_str (status),
+			http_status_string (status),
 			CERVER_VERSION,
 			json_len
 		);
@@ -865,7 +866,7 @@ static HttpResponse *http_response_json_internal (
 
 		res->header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_str (res->status),
+			res->status, http_status_string (res->status),
 			CERVER_VERSION,
 			res->data_len
 		);
@@ -990,7 +991,7 @@ static HttpResponse *http_response_json_custom_internal (
 		// header
 		res->header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_str (res->status),
+			res->status, http_status_string (res->status),
 			CERVER_VERSION,
 			res->data_len
 		);
@@ -1060,7 +1061,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 		// header
 		res->header = c_string_create (
 			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_str (res->status),
+			res->status, http_status_string (res->status),
 			CERVER_VERSION,
 			res->data_len
 		);
