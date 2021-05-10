@@ -175,7 +175,7 @@ CERVER_EXPORT void http_static_path_set_auth (
 	HttpStaticPath *static_path, HttpRouteAuthType auth_type
 );
 
-// add a new static path where static files can be served upon request
+// adds a new static path where static files can be served upon request
 // it is recomened to set absoulute paths
 CERVER_EXPORT HttpStaticPath *http_cerver_static_path_add (
 	HttpCerver *http_cerver, const char *static_path
@@ -199,12 +199,12 @@ CERVER_EXPORT void http_cerver_set_main_route (
 	HttpCerver *http_cerver, const HttpRoute *route
 );
 
-// register a new http to the http cerver
+// registers a new HTTP route to the HTTP cerver
 CERVER_EXPORT void http_cerver_route_register (
 	HttpCerver *http_cerver, HttpRoute *route
 );
 
-// set a route to catch any requet
+// sets a route to catch any requet
 // that didn't match any registered route
 CERVER_EXPORT void http_cerver_set_catch_all_route (
 	HttpCerver *http_cerver, 
@@ -255,7 +255,8 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	)
 );
 
-// sets a method to be called on every new request & that will be used to generate a new directory
+// sets a method to be called on every new request
+// that will be used to generate a new directory
 // inside the uploads path to save all the files from each request
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
@@ -458,7 +459,7 @@ CERVER_PUBLIC void http_cerver_route_stats_print (
 	const HttpRoute *route
 );
 
-// print all http cerver stats, general & by route
+// prints all HTTP cerver stats, general & by route
 CERVER_PUBLIC void http_cerver_all_stats_print (
 	const HttpCerver *http_cerver
 );
