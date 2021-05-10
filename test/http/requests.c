@@ -65,7 +65,7 @@ static void test_http_request_create (void) {
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_request_get_header (request, (const HttpHeader) i));
 	
-	test_check_unsigned_eq (http_request_get_content_tytpe (request), HTTP_CONTENT_TYPE_NONE, NULL);
+	test_check_unsigned_eq (http_request_get_content_type (request), HTTP_CONTENT_TYPE_NONE, NULL);
 
 	test_check_null_ptr (http_request_get_content_type_string (request));
 
