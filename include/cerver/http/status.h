@@ -67,7 +67,7 @@ extern "C" {
 	XX(507, INSUFFICIENT_STORAGE,            Insufficient Storage)            \
 	XX(508, LOOP_DETECTED,                   Loop Detected)                   \
 	XX(510, NOT_EXTENDED,                    Not Extended)                    \
-	XX(511, NETWORK_AUTHENTICATION_REQUIRED, Network Authentication Required) \
+	XX(511, NETWORK_AUTHENTICATION_REQUIRED, Network Authentication Required)
 
 enum http_status {
 
@@ -80,8 +80,8 @@ enum http_status {
 typedef enum http_status http_status;
 
 // returns a string version of the HTTP status code
-CERVER_PUBLIC const char *http_status_str (
-	const enum http_status s
+CERVER_PUBLIC const char *http_status_string (
+	const http_status status
 );
 
 #ifdef __cplusplus

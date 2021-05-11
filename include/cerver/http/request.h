@@ -92,62 +92,79 @@ CERVER_PRIVATE void http_request_destroy (
 	HttpRequest *http_request
 );
 
+// gets the HTTP request's method (GET, POST, ...)
 CERVER_EXPORT const RequestMethod http_request_get_method (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's url string value
 CERVER_EXPORT const String *http_request_get_url (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's query string value
 CERVER_EXPORT const String *http_request_get_query (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's query params list
 CERVER_EXPORT const DoubleList *http_request_get_query_params (
 	const HttpRequest *http_request
 );
 
+// gets how many query params are in the HTTP request
 CERVER_EXPORT const unsigned int http_request_get_n_params (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's x query param
 CERVER_EXPORT const String *http_request_get_param_at_idx (
 	const HttpRequest *http_request, const unsigned int idx
 );
 
+// gets the specified HTTP header value from the HTTP request
 CERVER_EXPORT const String *http_request_get_header (
 	const HttpRequest *http_request, const HttpHeader header
 );
 
-CERVER_EXPORT ContentType http_request_get_content_tytpe (
+// gets the HTTP request's content type value from the request's headers
+CERVER_EXPORT ContentType http_request_get_content_type (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's HTTP_HEADER_CONTENT_TYPE String reference
 CERVER_EXPORT const String *http_request_get_content_type_string (
 	const HttpRequest *http_request
 );
 
+// checks if the HTTP request's content type is application/json
 CERVER_EXPORT bool http_request_content_type_is_json (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's decoded data
+// this data was created by the HTTP route's decode_data method
+// configured by http_route_set_decode_data ()
 CERVER_EXPORT const void *http_request_get_decoded_data (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's body
 CERVER_EXPORT const String *http_request_get_body (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's body values
 CERVER_EXPORT const DoubleList *http_request_get_body_values (
 	const HttpRequest *http_request
 );
 
+// prints the HTTP request's headers values
 CERVER_PUBLIC void http_request_headers_print (
 	const HttpRequest *http_request
 );
 
+// prints the request's query params values
 CERVER_PUBLIC void http_request_query_params_print (
 	const HttpRequest *http_request
 );

@@ -17,12 +17,12 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-Cerver *web_cerver = NULL;
+static Cerver *web_cerver = NULL;
 
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
-void end (int dummy) {
+static void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
@@ -42,9 +42,9 @@ void end (int dummy) {
 
 #pragma region routes
 
-// GET /
-void main_handler (
-	const struct _HttpReceive *http_receive,
+// GET /render
+static void main_render_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -58,32 +58,14 @@ void main_handler (
 
 }
 
-// GET /test
-void test_handler (
-	const struct _HttpReceive *http_receive,
+// GET /render/text
+// test http_response_render_text ()
+static void text_render_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
-	);
-	if (res) {
-		#ifdef EXAMPLES_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
-
-}
-
-// GET /text
-void text_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
+	const char *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
 	if (http_response_render_text (http_receive, HTTP_STATUS_OK, text, text_len)) {
@@ -92,13 +74,14 @@ void text_handler (
 
 }
 
-// GET /json
-void json_handler (
-	const struct _HttpReceive *http_receive,
+// GET /render/json
+// test http_response_render_json ()
+static void json_render_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	char const *json = "{\"msg\": \"okay\"}";
+	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
 	if (http_response_render_json (http_receive, HTTP_STATUS_OK, json, json_len)) {
@@ -107,60 +90,149 @@ void json_handler (
 
 }
 
-// GET /hola
-void hola_handler (
-	const struct _HttpReceive *http_receive,
+// GET /json/create
+// test http_response_create_json ()
+static void json_create_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Hola route works!"
+	const char *json = "{\"msg\": \"okay\"}";
+	size_t json_len = strlen (json);
+
+	HttpResponse *res = http_response_create_json (
+		HTTP_STATUS_OK, json, json_len
 	);
+
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
+
 		http_response_send (res, http_receive);
 		http_response_delete (res);
 	}
 
 }
 
-// GET /adios
-void adios_handler (
-	const struct _HttpReceive *http_receive,
+// GET /json/create/key
+// test http_response_create_json_key_value ()
+static void json_create_key_value_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Adios route works!"
+	HttpResponse *res = http_response_create_json_key_value (
+		HTTP_STATUS_OK, "msg", "okay"
 	);
+
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
+		
 		http_response_send (res, http_receive);
 		http_response_delete (res);
 	}
 
 }
 
-// GET /key
-void key_handler (
-	const struct _HttpReceive *http_receive,
+// GET /json/create/message
+// test http_response_json_msg ()
+static void json_create_message_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
-	(void) http_response_json_key_value_send (
-		http_receive,
-		HTTP_STATUS_OK, "key", "value"
+	HttpResponse *res = http_response_json_msg (
+		HTTP_STATUS_OK, "okay"
+	);
+
+	if (res) {
+		#ifdef TEST_DEBUG
+		http_response_print (res);
+		#endif
+		
+		http_response_send (res, http_receive);
+		http_response_delete (res);
+	}
+
+}
+
+// GET /json/send/message
+// test http_response_json_msg_send ()
+static void json_send_message_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	(void) http_response_json_msg_send (
+		http_receive, HTTP_STATUS_OK, "okay"
 	);
 
 }
 
-// GET /custom
-void custom_handler (
-	const struct _HttpReceive *http_receive,
+// GET /json/create/error
+// test http_response_json_error ()
+static void json_create_error_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	HttpResponse *res = http_response_json_error (
+		HTTP_STATUS_BAD_REQUEST, "bad request"
+	);
+
+	if (res) {
+		#ifdef TEST_DEBUG
+		http_response_print (res);
+		#endif
+		
+		http_response_send (res, http_receive);
+		http_response_delete (res);
+	}
+
+}
+
+// GET /json/send/error
+// test http_response_json_msg_send ()
+static void json_send_error_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	(void) http_response_json_error_send (
+		http_receive, HTTP_STATUS_BAD_REQUEST, "bad request"
+	);
+
+}
+
+// GET /json/create/custom
+// test http_response_json_custom ()
+static void json_create_custom_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	HttpResponse *res = http_response_json_custom (
+		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
+	);
+
+	if (res) {
+		#ifdef TEST_DEBUG
+		http_response_print (res);
+		#endif
+		
+		http_response_send (res, http_receive);
+		http_response_delete (res);
+	}
+
+}
+
+// GET /json/send/custom
+// test http_response_json_custom_send ()
+static void json_send_custom_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -171,15 +243,45 @@ void custom_handler (
 
 }
 
-// GET /reference
-void reference_handler (
-	const struct _HttpReceive *http_receive,
+// GET /json/create/reference
+// test http_response_json_custom_reference ()
+static void json_create_reference_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
-		strncpy (json, "{\"oki\": \"doki\"}", 256);
+		(void) strncpy (json, "{\"oki\": \"doki\"}", 256);
+
+		HttpResponse *res = http_response_json_custom_reference (
+			HTTP_STATUS_OK, json, strlen (json)
+		);
+
+		if (res) {
+			#ifdef TEST_DEBUG
+			http_response_print (res);
+			#endif
+			
+			http_response_send (res, http_receive);
+			http_response_delete (res);
+		}
+
+		free (json);
+	}
+
+}
+
+// GET /json/send/reference
+// test http_response_json_custom_reference_send ()
+static void json_send_reference_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	char *json = (char *) calloc (256, sizeof (char));
+	if (json) {
+		(void) strncpy (json, "{\"oki\": \"doki\"}", 256);
 
 		(void) http_response_json_custom_reference_send (
 			http_receive,
@@ -235,41 +337,57 @@ int main (int argc, char **argv) {
 
 		http_cerver_static_path_add (http_cerver, "./public");
 
-		// GET /
-		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
-		http_cerver_route_register (http_cerver, main_route);
+		// GET /render
+		HttpRoute *render_route = http_route_create (REQUEST_METHOD_GET, "render", main_render_handler);
+		http_cerver_route_register (http_cerver, render_route);
 
-		// GET /test
-		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
-		http_cerver_route_register (http_cerver, test_route);
+		// GET /render/text
+		HttpRoute *render_text_route = http_route_create (REQUEST_METHOD_GET, "render/text", text_render_handler);
+		http_cerver_route_register (http_cerver, render_text_route);
 
-		// GET /text
-		HttpRoute *text_route = http_route_create (REQUEST_METHOD_GET, "text", text_handler);
-		http_cerver_route_register (http_cerver, text_route);
+		// GET /render/json
+		HttpRoute *render_json_route = http_route_create (REQUEST_METHOD_GET, "render/json", json_render_handler);
+		http_cerver_route_register (http_cerver, render_json_route);
 
-		// GET /json
-		HttpRoute *json_route = http_route_create (REQUEST_METHOD_GET, "json", json_handler);
-		http_cerver_route_register (http_cerver, json_route);
+		// GET /json/create
+		HttpRoute *json_create_route = http_route_create (REQUEST_METHOD_GET, "json/create", json_create_handler);
+		http_cerver_route_register (http_cerver, json_create_route);
 
-		// GET /hola
-		HttpRoute *hola_route = http_route_create (REQUEST_METHOD_GET, "hola", hola_handler);
-		http_cerver_route_register (http_cerver, hola_route);
+		// GET /json/create/key
+		HttpRoute *json_create_key_value_route = http_route_create (REQUEST_METHOD_GET, "json/create/key", json_create_key_value_handler);
+		http_cerver_route_register (http_cerver, json_create_key_value_route);
 
-		// GET /adios
-		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
-		http_cerver_route_register (http_cerver, adios_route);
+		// GET /json/create/message
+		HttpRoute *json_create_message_route = http_route_create (REQUEST_METHOD_GET, "json/create/message", json_create_message_handler);
+		http_cerver_route_register (http_cerver, json_create_message_route);
 
-		// GET /key
-		HttpRoute *key_route = http_route_create (REQUEST_METHOD_GET, "key", key_handler);
-		http_cerver_route_register (http_cerver, key_route);
+		// GET /json/send/message
+		HttpRoute *json_send_message_route = http_route_create (REQUEST_METHOD_GET, "json/send/message", json_send_message_handler);
+		http_cerver_route_register (http_cerver, json_send_message_route);
 
-		// GET /custom
-		HttpRoute *custom_route = http_route_create (REQUEST_METHOD_GET, "custom", custom_handler);
-		http_cerver_route_register (http_cerver, custom_route);
+		// GET /json/create/error
+		HttpRoute *json_create_error_route = http_route_create (REQUEST_METHOD_GET, "json/create/error", json_create_error_handler);
+		http_cerver_route_register (http_cerver, json_create_error_route);
 
-		// GET /reference
-		HttpRoute *reference_route = http_route_create (REQUEST_METHOD_GET, "reference", reference_handler);
-		http_cerver_route_register (http_cerver, reference_route);
+		// GET /json/send/error
+		HttpRoute *json_send_error_route = http_route_create (REQUEST_METHOD_GET, "json/send/error", json_send_error_handler);
+		http_cerver_route_register (http_cerver, json_send_error_route);
+
+		// GET /json/create/custom
+		HttpRoute *json_create_custom_route = http_route_create (REQUEST_METHOD_GET, "json/create/custom", json_create_custom_handler);
+		http_cerver_route_register (http_cerver, json_create_custom_route);
+
+		// GET /json/send/custom
+		HttpRoute *json_send_custom_route = http_route_create (REQUEST_METHOD_GET, "json/send/custom", json_send_custom_handler);
+		http_cerver_route_register (http_cerver, json_send_custom_route);
+
+		// GET /json/create/reference
+		HttpRoute *json_create_reference_route = http_route_create (REQUEST_METHOD_GET, "json/create/reference", json_create_reference_handler);
+		http_cerver_route_register (http_cerver, json_create_reference_route);
+
+		// GET /json/send/reference
+		HttpRoute *json_send_reference_route = http_route_create (REQUEST_METHOD_GET, "json/send/reference", json_send_reference_handler);
+		http_cerver_route_register (http_cerver, json_send_reference_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
