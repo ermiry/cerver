@@ -43,7 +43,7 @@ static void end (int dummy) {
 #pragma region routes
 
 // GET /render
-static void main_handler_handler (
+static void main_render_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -60,7 +60,7 @@ static void main_handler_handler (
 
 // GET /render/text
 // test http_response_render_text ()
-static void text_handler_handler (
+static void text_render_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -76,7 +76,7 @@ static void text_handler_handler (
 
 // GET /render/json
 // test http_response_render_json ()
-static void json_handler_handler (
+static void json_render_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -338,15 +338,15 @@ int main (int argc, char **argv) {
 		http_cerver_static_path_add (http_cerver, "./public");
 
 		// GET /render
-		HttpRoute *render_route = http_route_create (REQUEST_METHOD_GET, "render", main_handler_handler);
+		HttpRoute *render_route = http_route_create (REQUEST_METHOD_GET, "render", main_render_handler);
 		http_cerver_route_register (http_cerver, render_route);
 
 		// GET /render/text
-		HttpRoute *render_text_route = http_route_create (REQUEST_METHOD_GET, "render/text", text_handler_handler);
+		HttpRoute *render_text_route = http_route_create (REQUEST_METHOD_GET, "render/text", text_render_handler);
 		http_cerver_route_register (http_cerver, render_text_route);
 
 		// GET /render/json
-		HttpRoute *render_json_route = http_route_create (REQUEST_METHOD_GET, "render/json", json_handler_handler);
+		HttpRoute *render_json_route = http_route_create (REQUEST_METHOD_GET, "render/json", json_render_handler);
 		http_cerver_route_register (http_cerver, render_json_route);
 
 		// GET /json/create
