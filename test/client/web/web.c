@@ -29,63 +29,92 @@ static unsigned int web_request_all_actual (
 	char data_buffer[4096] = { 0 };
 	char actual_address[ADDRESS_SIZE] = { 0 };
 
-	// GET /
-	errors |= curl_simple_handle_data (
-		curl, address,
-		web_request_all_data_handler, data_buffer
-	);
-
-	// GET /test
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/test", address);
+	// GET /render
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /text
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/text", address);
+	// GET /render/text
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render/text", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /json
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json", address);
+	// GET /render/json
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render/json", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /hola
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/hola", address);
+	// GET /json/create
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /adios
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/adios", address);
+	// GET /json/create/key
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/key", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /key
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/key", address);
+	// GET /json/create/message
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/message", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /custom
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/custom", address);
+	// GET /json/send/message
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/message", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
 	);
 
-	// GET /reference
-	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/reference", address);
+	// GET /json/create/error
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/error", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		web_request_all_data_handler, data_buffer
+	);
+
+	// GET /json/send/error
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/error", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		web_request_all_data_handler, data_buffer
+	);
+
+	// GET /json/create/custom
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/custom", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		web_request_all_data_handler, data_buffer
+	);
+
+	// GET /json/send/custom
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/custom", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		web_request_all_data_handler, data_buffer
+	);
+
+	// GET /json/create/reference
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/reference", address);
+	errors |= curl_simple_handle_data (
+		curl, actual_address,
+		web_request_all_data_handler, data_buffer
+	);
+
+	// GET /json/send/reference
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/reference", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		web_request_all_data_handler, data_buffer
