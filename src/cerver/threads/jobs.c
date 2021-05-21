@@ -339,11 +339,11 @@ void job_queue_set_handler (
 
 }
 
-static int job_queue_push_internal (
+static unsigned int job_queue_push_internal (
 	JobQueue *job_queue, void *job_ptr
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	(void) pthread_mutex_lock (job_queue->rwmutex);
 
@@ -363,19 +363,19 @@ static int job_queue_push_internal (
 
 // add a new job to the queue
 // returns 0 on success, 1 on error
-int job_queue_push (JobQueue *job_queue, void *job_ptr) {
+unsigned int job_queue_push (JobQueue *job_queue, void *job_ptr) {
 
 	return (job_queue && job_ptr) ?
 		job_queue_push_internal (job_queue, job_ptr) : 1;
 
 }
 
-int job_queue_push_job (
+unsigned int job_queue_push_job (
 	JobQueue *job_queue,
 	void (*work) (void *args), void *args
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	if (job_queue) {
 		Job *job = (Job *) pool_pop (job_queue->pool);
@@ -450,14 +450,14 @@ unsigned int job_queue_push_job_with_id (
 
 }
 
-int job_queue_push_handler (
+unsigned int job_queue_push_handler (
 	JobQueue *job_queue,
 	struct _Cerver *cerver,
 	struct _Connection *connection,
 	void *data, void (*data_delete) (void *data_ptr)
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	if (job_queue) {
 		JobHandler *job_handler = (JobHandler *) pool_pop (job_queue->pool);

@@ -138,13 +138,13 @@ CERVER_PUBLIC void job_queue_set_handler (
 
 // adds a new job to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push (
+CERVER_PUBLIC unsigned int job_queue_push (
 	JobQueue *job_queue, void *job_ptr
 );
 
 // creates & adds a new job to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push_job (
+CERVER_PUBLIC unsigned int job_queue_push_job (
 	JobQueue *job_queue,
 	void (*work) (void *args), void *args
 );
@@ -157,7 +157,7 @@ CERVER_PUBLIC unsigned int job_queue_push_job_with_id (
 
 // creates & adds a new handler to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push_handler (
+CERVER_PUBLIC unsigned int job_queue_push_handler (
 	JobQueue *job_queue,
 	struct _Cerver *cerver,
 	struct _Connection *connection,
