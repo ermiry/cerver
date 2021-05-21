@@ -1,26 +1,33 @@
 ## General
-- Added base file-system methods in dedicated sources
+- Moved port & udp related definitions to network header
+- Refactored cerver's name & welcome fields definitions
+- Updated sources to handle new cerver name value
+- Added cerver info alias definition & method
+- Refactored THREAD_NAME_BUFFER_SIZE definition
+- Refactored sources to use new thread_set_name ()
 
 ## Client
-- Split client_connection_start () into dedicated connection methods
+- Refactored client connect & start related methods
+- Refactored client request to cerver methods
 
 ## Connection
-- Added base methods to send packets using connection's queue
-- Added dedicated method to en-queue a packet in connection
-
-## Packets
-- Refactored packets stats methods to use the correct types
-- Added base packet_send_actual () to send a tcp packet
-- Added dedicated packets init requests methods
+- Added base connection state definitions & methods
+- Added dedicated connection state mutex
+- Added base connection attempt reconnect fields
+- Refactored connection_connect () to update state
+- Added client reference directly inside connection
+- Moved connection start methods to connection sources
+- Added ability to set connection's receive flags
+- Added dedicated methods to reset connection values
 
 ## Threads
-- Added dedicated THREADS_DEBUG definition
-- Refactored JobQueue methods to handle different types
-- Refactored thread_set_name () to handle variable arguments
+- Added ability to request jobs from queue by id
+- Changed jobs methods return values types
+
+## Examples
+- Updated examples to handle new cerver fields
 
 ## Tests
-- Added dedicated client & cerver queue integration tests
-- Added base bsem related methods unit tests
-- Added based jobs structures methods unit tests
-- Added base job queue methods unit tests
-- Added base dedicated system methods unit tests
+- Updated cerver integration tests name checks
+- Updated integration tests to handle welcome meesage
+- Updated jobs unit tests with new fields
