@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdarg.h>
+
 #include <ctype.h>
 #include <time.h>
 
@@ -218,7 +220,9 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->not_found_handler = false;
 		http_cerver->not_found = NULL;
 
-		http_cerver->uploads_path = NULL;
+		http_cerver->uploads_path_len = 0;
+		(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
+
 		http_cerver->uploads_filename_generator = NULL;
 		http_cerver->uploads_dirname_generator = NULL;
 
@@ -261,8 +265,6 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		dlist_delete (http_cerver->static_paths);
 
 		dlist_delete (http_cerver->routes);
-
-		str_delete (http_cerver->uploads_path);
 
 		str_delete (http_cerver->jwt_opt_key_name);
 		str_delete (http_cerver->jwt_private_key);
@@ -747,12 +749,19 @@ void http_cerver_set_not_found_route (
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
 void http_cerver_set_uploads_path (
-	HttpCerver *http_cerver, const char *uploads_path
+	HttpCerver *http_cerver, const char *format, ...
 ) {
 
-	if (http_cerver) {
-		if (http_cerver->uploads_path) str_delete (http_cerver->uploads_path);
-		http_cerver->uploads_path = uploads_path ? str_new (uploads_path) : NULL;
+	if (http_cerver && format) {
+		va_list args;
+		va_start (args, format);
+
+		http_cerver->uploads_path_len = vsnprintf (
+			http_cerver->uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE - 1,
+			format, args
+		);
+
+		va_end (args);
 	}
 
 }
@@ -1984,7 +1993,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				http_receive->request->n_files += 1;
 
-				if (http_receive->http_cerver->uploads_path) {
+				if (http_receive->http_cerver->uploads_path_len > 0) {
 					if (http_receive->request->dirname) {
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
@@ -1999,10 +2008,10 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path->str,
-								http_receive->request->dirname->str,
+								http_receive->http_cerver->uploads_path,
+								http_receive->request->dirname,
 								multi_part->generated_filename
 							);
 						}
@@ -2010,10 +2019,10 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path->str,
-								http_receive->request->dirname->str,
+								http_receive->http_cerver->uploads_path,
+								http_receive->request->dirname,
 								multi_part->filename
 							);
 						}
@@ -2032,9 +2041,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 								(int) strlen (multi_part->generated_filename);
 
 							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s",
-								http_receive->http_cerver->uploads_path->str,
+								http_receive->http_cerver->uploads_path,
 								multi_part->generated_filename
 							);
 						}
@@ -2042,9 +2051,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s",
-								http_receive->http_cerver->uploads_path->str,
+								http_receive->http_cerver->uploads_path,
 								multi_part->filename
 							);
 						}

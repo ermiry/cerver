@@ -19,10 +19,10 @@
 
 #include "cerver/http/jwt/alg.h"
 
+#define HTTP_CERVER_UPLOADS_PATH_SIZE				256
+
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
-
-#define HTTP_MULTI_PART_DIRNAME_LEN					1024
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +32,7 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+struct _HttpReceive;
 struct _HttpResponse;
 
 struct jwt;
@@ -91,7 +92,9 @@ struct _HttpCerver {
 	);
 
 	// uploads
-	String *uploads_path;              // default uploads path
+	int uploads_path_len;
+	char uploads_path[HTTP_CERVER_UPLOADS_PATH_SIZE];
+
 	void (*uploads_filename_generator)(
 		const CerverReceive *,
 		const char *original_filename,
@@ -242,7 +245,7 @@ CERVER_EXPORT void http_cerver_set_not_found_route (
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
 CERVER_EXPORT void http_cerver_set_uploads_path (
-	HttpCerver *http_cerver, const char *uploads_path
+	HttpCerver *http_cerver, const char *format, ...
 );
 
 // sets a method that should generate a c string to be used
