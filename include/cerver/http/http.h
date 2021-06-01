@@ -21,6 +21,9 @@
 
 #define HTTP_CERVER_UPLOADS_PATH_SIZE				256
 
+#define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0777
+#define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0777
+
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
 
@@ -95,12 +98,14 @@ struct _HttpCerver {
 	int uploads_path_len;
 	char uploads_path[HTTP_CERVER_UPLOADS_PATH_SIZE];
 
+	unsigned int uploads_file_mode;
 	void (*uploads_filename_generator)(
 		const CerverReceive *,
 		const char *original_filename,
 		char *generated_filename
 	);
 
+	unsigned int uploads_dir_mode;
 	void (*uploads_dirname_generator)(
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
@@ -248,6 +253,12 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 );
 
+// sets the mode_t to be used when creating uploads files
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
+CERVER_EXPORT void http_cerver_set_uploads_file_mode (
+	HttpCerver *http_cerver, const unsigned int file_mode
+);
+
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
@@ -259,6 +270,12 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 		const char *original_filename,
 		char *generated_filename
 	)
+);
+
+// sets the mode_t value to be used when creating uploads dirs
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
+CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
+	HttpCerver *http_cerver, const unsigned int dir_mode
 );
 
 // sets a method to be called on every new multi-part request

@@ -223,7 +223,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->uploads_path_len = 0;
 		(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
 
+		http_cerver->uploads_file_mode = HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE;
 		http_cerver->uploads_filename_generator = NULL;
+
+		http_cerver->uploads_dir_mode = HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE;
 		http_cerver->uploads_dirname_generator = NULL;
 
 		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
@@ -766,6 +769,18 @@ void http_cerver_set_uploads_path (
 
 }
 
+// sets the mode_t to be used when creating uploads files
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
+void http_cerver_set_uploads_file_mode (
+	HttpCerver *http_cerver, const unsigned int file_mode
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_file_mode = file_mode;
+	}
+
+}
+
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
@@ -781,6 +796,18 @@ void http_cerver_set_uploads_filename_generator (
 
 	if (http_cerver) {
 		http_cerver->uploads_filename_generator = uploads_filename_generator;
+	}
+
+}
+
+// sets the mode_t value to be used when creating uploads dirs
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
+void http_cerver_set_uploads_dir_mode (
+	HttpCerver *http_cerver, const unsigned int dir_mode
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_dir_mode = dir_mode;
 	}
 
 }
@@ -2059,7 +2086,12 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 					}
 
-					multi_part->fd = open (multi_part->saved_filename, O_CREAT | O_WRONLY, 0777);
+					multi_part->fd = open (
+						multi_part->saved_filename,
+						O_CREAT | O_WRONLY,
+						http_receive->http_cerver->uploads_file_mode
+					);
+
 					switch (multi_part->fd) {
 						case -1: {
 							cerver_log_error (
@@ -2752,7 +2784,9 @@ static void http_receive_init_mpart_parser (
 					http_receive->request->dirname
 				);
 
-				(void) files_create_recursive_dir (dirname, 0777);
+				(void) files_create_recursive_dir (
+					dirname, http_receive->http_cerver->uploads_dir_mode
+				);
 			}
 		}
 	}
