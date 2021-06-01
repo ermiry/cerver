@@ -98,7 +98,10 @@ struct _HttpCerver {
 		char *generated_filename
 	);
 
-	String *(*uploads_dirname_generator)(const CerverReceive *);
+	void (*uploads_dirname_generator)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
 
 	// delete uploaded files when the request ends
 	bool uploads_delete_when_done;
@@ -255,12 +258,15 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	)
 );
 
-// sets a method to be called on every new request
+// sets a method to be called on every new multi-part request
 // that will be used to generate a new directory
-// inside the uploads path to save all the files from each request
+// inside the uploads path to save all the files from the request
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
-	String *(*dirname_generator)(const CerverReceive *)
+	void (*uploads_dirname_generator)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 // specifies whether uploads are deleted after the requested has ended

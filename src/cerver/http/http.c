@@ -776,15 +776,19 @@ void http_cerver_set_uploads_filename_generator (
 
 }
 
-// sets a method to be called on every new request & that will be used to generate a new directory
-// inside the uploads path to save all the files from each request
+// sets a method to be called on every new multi-part request
+// that will be used to generate a new directory
+// inside the uploads path to save all the files from the request
 void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
-	String *(*dirname_generator)(const CerverReceive *)
+	void (*uploads_dirname_generator)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 ) {
 
 	if (http_cerver) {
-		http_cerver->uploads_dirname_generator = dirname_generator;
+		http_cerver->uploads_dirname_generator = uploads_dirname_generator;
 	}
 
 }
@@ -2691,7 +2695,7 @@ static void http_receive_init_mpart_parser (
 	const char *boundary
 ) {
 
-	char dirname[HTTP_MULTI_PART_DIRNAME_LEN] = { 0 };
+	char dirname[HTTP_MULTI_PART_DIRNAME_SIZE] = { 0 };
 
 	http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
 	http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
@@ -2710,18 +2714,21 @@ static void http_receive_init_mpart_parser (
 	// TODO: handler errors
 	if (http_receive->http_cerver->uploads_dirname_generator) {
 		if (http_receive->http_cerver->uploads_path) {
-			http_receive->request->dirname =
-				http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
-			
-			(void) snprintf (
-				dirname,
-				HTTP_MULTI_PART_DIRNAME_LEN - 1,
-				"%s/%s",
-				http_receive->http_cerver->uploads_path->str,
-				http_receive->request->dirname->str
+			http_receive->http_cerver->uploads_dirname_generator (
+				http_receive, http_receive->request
 			);
 
-			(void) files_create_dir (dirname, 0777);
+			if (http_receive->request->dirname_len > 0) {
+				(void) snprintf (
+					dirname,
+					HTTP_MULTI_PART_DIRNAME_SIZE - 1,
+					"%s/%s",
+					http_receive->http_cerver->uploads_path,
+					http_receive->request->dirname
+				);
+
+				(void) files_create_recursive_dir (dirname, 0777);
+			}
 		}
 	}
 
