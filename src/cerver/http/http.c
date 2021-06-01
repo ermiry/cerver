@@ -784,7 +784,7 @@ void http_cerver_set_uploads_file_mode (
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
-// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_SIZE
 void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
@@ -2011,7 +2011,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				// sanitize file
 				(void) strncpy (
-					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
+					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_SIZE
 				);
 
 				files_sanitize_filename (multi_part->filename);
@@ -2196,7 +2196,7 @@ static int http_receive_handle_mpart_body_look_for_boundary (
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
-	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_LEN] = { 0 };
+	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
 
 	char *found = c_string_find_sub_in_len (at, webkit_multi_part_boundary_value, length);
 	if (found) {
@@ -2206,9 +2206,9 @@ static int http_receive_handle_mpart_body_look_for_boundary (
 
 		(void) snprintf (
 			boundary,
-			HTTP_MULTI_PART_BOUNDARY_MAX_LEN - 1,
+			HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
 			"------WebKitFormBoundary%.*s",
-			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_LEN,
+			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE,
 			found + webkit_multi_part_boundary_value_len
 		);
 

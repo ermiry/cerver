@@ -9,12 +9,13 @@
 
 #include "cerver/config.h"
 
-#define HTTP_MULTI_PART_BOUNDARY_MAX_LEN				128
-#define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_LEN			16
+#define HTTP_MULTI_PART_BOUNDARY_MAX_SIZE				128
+#define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE			16
 
-#define HTTP_MULTI_PART_FILENAME_LEN					256
-#define HTTP_MULTI_PART_GENERATED_FILENAME_LEN			512
-#define HTTP_MULTI_PART_SAVED_FILENAME_LEN				1024
+#define HTTP_MULTI_PART_DIRNAME_SIZE					1024
+#define HTTP_MULTI_PART_FILENAME_SIZE					256
+#define HTTP_MULTI_PART_GENERATED_FILENAME_SIZE			512
+#define HTTP_MULTI_PART_SAVED_FILENAME_SIZE				1024
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,7 +33,7 @@ typedef enum MultiPartHeader {
 
 } MultiPartHeader;
 
-#define MULTI_PART_HEADERS_SIZE				4
+#define MULTI_PART_HEADERS_SIZE							4
 
 struct _MultiPart {
 
@@ -47,15 +48,15 @@ struct _MultiPart {
 
 	// sanitized original filename
 	int filename_len;
-	char filename[HTTP_MULTI_PART_FILENAME_LEN];
+	char filename[HTTP_MULTI_PART_FILENAME_SIZE];
 
 	int generated_filename_len;
-	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_LEN];
+	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_SIZE];
 
 	int fd;
 	// how the file got saved (uploads path + filename)
 	int saved_filename_len;
-	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_LEN];
+	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_SIZE];
 	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
 	u32 total_wrote;			// the total ammount of bytes wrote to the file
 
@@ -67,11 +68,17 @@ typedef struct _MultiPart MultiPart;
 
 CERVER_PUBLIC MultiPart *http_multi_part_new (void);
 
-CERVER_PUBLIC void http_multi_part_delete (void *multi_part_ptr);
+CERVER_PUBLIC void http_multi_part_delete (
+	void *multi_part_ptr
+);
 
-CERVER_PUBLIC void http_multi_part_headers_print (MultiPart *mpart);
+CERVER_PUBLIC void http_multi_part_headers_print (
+	const MultiPart *mpart
+);
 
-CERVER_PUBLIC void http_multi_part_print (MultiPart *mpart);
+CERVER_PUBLIC void http_multi_part_print (
+	const MultiPart *mpart
+);
 
 #pragma endregion
 

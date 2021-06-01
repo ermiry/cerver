@@ -262,7 +262,7 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
-// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_SIZE
 CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
