@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <stdarg.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -64,7 +66,9 @@ HttpRequest *http_request_new (void) {
 		http_request->multi_parts = NULL;
 		http_request->n_files = 0;
 		http_request->n_values = 0;
-		http_request->dirname = NULL;
+
+		http_request->dirname_len = 0;
+		(void) memset (http_request->dirname, 0, REQUEST_DIRNAME_SIZE);
 		
 		http_request->body_values = NULL;
 
@@ -97,7 +101,6 @@ void http_request_delete (HttpRequest *http_request) {
 		str_delete (http_request->body);
 
 		dlist_delete (http_request->multi_parts);
-		str_delete (http_request->dirname);
 
 		dlist_delete (http_request->body_values);
 
@@ -223,6 +226,58 @@ const String *http_request_get_body (
 ) {
 
 	return http_request->body;
+
+}
+
+const u8 http_request_get_n_files (
+	const HttpRequest *http_request
+) {
+
+	return http_request->n_files;
+
+}
+
+const u8 http_request_get_n_values (
+	const HttpRequest *http_request
+) {
+
+	return http_request->n_values;
+
+}
+
+const int http_request_get_dirname_len (
+	const HttpRequest *http_request
+) {
+
+	return http_request->dirname_len;
+
+}
+
+const char *http_request_get_dirname (
+	const HttpRequest *http_request
+) {
+
+	return http_request->dirname;
+
+}
+
+void http_request_set_dirname (
+	const HttpRequest *http_request, const char *format, ...
+) {
+
+	if (http_request && format) {
+		va_list args;
+		va_start (args, format);
+
+		HttpRequest *request = (HttpRequest *) http_request;
+
+		request->dirname_len = vsnprintf (
+			request->dirname, REQUEST_DIRNAME_SIZE - 1,
+			format, args
+		);
+
+		va_end (args);
+	}
 
 }
 
