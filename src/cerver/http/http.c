@@ -2305,6 +2305,22 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 }
 
+const CerverReceive *http_receive_get_cerver_receive (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->cr;
+
+}
+
+const int http_receive_get_sock_fd (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->cr->connection->socket->sock_fd;
+
+}
+
 const HttpCerver *http_receive_get_cerver (
 	const HttpReceive *http_receive
 ) {

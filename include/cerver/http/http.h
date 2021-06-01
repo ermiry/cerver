@@ -596,6 +596,14 @@ CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
 );
 
+CERVER_EXPORT const CerverReceive *http_receive_get_cerver_receive (
+	const HttpReceive *http_receive
+);
+
+CERVER_EXPORT const int http_receive_get_sock_fd (
+	const HttpReceive *http_receive
+);
+
 CERVER_EXPORT const HttpCerver *http_receive_get_cerver (
 	const HttpReceive *http_receive
 );
