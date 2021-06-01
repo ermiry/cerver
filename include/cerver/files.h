@@ -3,7 +3,10 @@
 
 #include <stdio.h>
 
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -12,7 +15,8 @@
 
 #include "cerver/config.h"
 
-#define DEFAULT_FILENAME_LEN			1024
+#define DIRNAME_DEFAULT_SIZE			1024
+#define FILENAME_DEFAULT_SIZE			1024
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,9 +144,19 @@ CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 // alphabet, numbers, '-', '_' and  '.'
 CERVER_EXPORT void files_sanitize_filename (char *filename);
 
+// works like files_sanitize_filename ()
+// but also keeps '/' characters
+CERVER_EXPORT void files_sanitize_complete_filename (char *filename);
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_dir (
+	const char *dir_path, mode_t mode
+);
+
+// recursively creates all directories in dir path
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
 );
 
@@ -229,7 +243,7 @@ CERVER_EXPORT bool files_image_extension_is_png (const char *filename);
 
 struct _FileHeader {
 
-	char filename[DEFAULT_FILENAME_LEN];
+	char filename[FILENAME_DEFAULT_SIZE];
 	size_t len;
 
 };
