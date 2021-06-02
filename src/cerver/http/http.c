@@ -1922,7 +1922,7 @@ static int http_receive_handle_mpart_part_data_begin (
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 
 	request->current_part = http_multi_part_new ();
-	dlist_insert_after (
+	(void) dlist_insert_after (
 		request->multi_parts, 
 		dlist_end (request->multi_parts), 
 		request->current_part
@@ -2153,7 +2153,12 @@ static int http_receive_handle_mpart_data (
 
 	else {
 		// printf ("|%.*s|\n", (int) length, at);
-		multi_part->value = str_create ("%.*s", (int) length, at);
+		// multi_part->value = str_create ("%.*s", (int) length, at);
+
+		multi_part->value_len = snprintf (
+			multi_part->value, HTTP_MULTI_PART_VALUE_SIZE - 1,
+			"%.*s", (int) length, at
+		);
 	}
 
 	return 0;
