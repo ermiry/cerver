@@ -42,6 +42,33 @@ static unsigned int upload_request_all_actual (
 		"./test/web/img/ermiry.png"
 	);
 
+	// POST /multiple
+	(void) snprintf (actual_address, 128, "%s/multiple", address);
+	errors |= curl_upload_two_files (
+		curl, actual_address,
+		upload_request_all_data_handler, data_buffer,
+		"./test/web/img/ermiry.png",
+		"./test/web/img/github.jpeg"
+	);
+
+	// POST /iter/good
+	(void) snprintf (actual_address, 128, "%s/iter/good", address);
+	errors |= curl_upload_file_with_extra_value (
+		curl, actual_address,
+		"./test/web/img/ermiry.png",
+		"key", "value"
+	);
+
+	// POST /iter/empty
+	static const char *json = { "{ \"key\": \"value\" }" };
+	const size_t json_len = strlen (json);
+
+	(void) snprintf (actual_address, 128, "%s/iter/empty", address);
+	errors |= curl_simple_post (
+		curl, actual_address,
+		json, json_len
+	);
+
 	// POST /discard - keep
 	(void) snprintf (actual_address, 128, "%s/discard", address);
 	errors |= curl_upload_file_with_extra_value (
