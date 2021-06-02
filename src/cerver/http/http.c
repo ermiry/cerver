@@ -788,9 +788,8 @@ void http_cerver_set_uploads_file_mode (
 void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const HttpReceive *http_receive,
+		const HttpRequest *request
 	)
 ) {
 
@@ -818,7 +817,7 @@ void http_cerver_set_uploads_dir_mode (
 void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_dirname_generator)(
-		const struct _HttpReceive *http_receive,
+		const HttpReceive *http_receive,
 		const HttpRequest *request
 	)
 ) {

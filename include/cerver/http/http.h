@@ -100,9 +100,8 @@ struct _HttpCerver {
 
 	unsigned int uploads_file_mode;
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
 	);
 
 	unsigned int uploads_dir_mode;
@@ -266,9 +265,8 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
 	)
 );
 
