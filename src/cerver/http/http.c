@@ -46,8 +46,13 @@ static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
 
-static const char *multi_part_header_value = { "multipart/form-data" };
-static const size_t multi_part_header_value_len = 19;
+static Pool *multi_parts_pool = NULL;
+
+static const char *multi_part_header_value = { "multipart/form-data;" };
+static const size_t multi_part_header_value_len = 20;
+
+static const char *multi_part_form_data = { "form-data;" };
+static const size_t multi_part_form_data_len = 10;
 
 static const char *webkit_multi_part_boundary_value = { "------WebKitFormBoundary" };
 static const size_t webkit_multi_part_boundary_value_len = 24;
@@ -65,6 +70,8 @@ static void http_receive_handle_default_route (
 static void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
+
+static unsigned int http_multi_parts_init_pool (void);
 
 static void http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
@@ -486,6 +493,9 @@ static unsigned int http_cerver_init_internal (
 
 	// init common responses
 	errors |= http_cerver_init_responses ();
+
+	// init multi-parts pool
+	errors |= http_multi_parts_init_pool ();
 
 	return errors;
 
@@ -956,12 +966,12 @@ static unsigned int http_jwt_init_pool (void) {
 		}
 
 		else {
-			cerver_log_error ("Failed to init http jwt pool!");
+			cerver_log_error ("Failed to init HTTP JWT pool!");
 		}
 	}
 
 	else {
-		cerver_log_error ("Failed to create http jwt pool!");
+		cerver_log_error ("Failed to create HTTP JWT pool!");
 	}
 
 	return retval;
@@ -1849,6 +1859,51 @@ static int http_receive_handle_body (
 
 #pragma region mpart
 
+static unsigned int http_multi_parts_init_pool (void) {
+
+	unsigned int retval = 1;
+
+	multi_parts_pool = pool_create (http_multi_part_delete);
+	if (multi_parts_pool) {
+		pool_set_create (multi_parts_pool, http_multi_part_new);
+		pool_set_produce_if_empty (multi_parts_pool, true);
+		if (!pool_init (
+			multi_parts_pool,
+			http_multi_part_new,
+			HTTP_CERVER_MULTI_PARTS_POOL_INIT
+		)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error ("Failed to init HTTP multi-parts pool!");
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create HTTP multi-parts pool!");
+	}
+
+	return retval;
+
+}
+
+static inline MultiPart *http_multi_parts_get (void) {
+
+	return (MultiPart *) pool_pop (multi_parts_pool);
+
+}
+
+static void http_multi_parts_return (void *multi_part_ptr) {
+
+	if (multi_part_ptr) {
+		http_multi_part_reset ((MultiPart *) multi_part_ptr);
+
+		(void) pool_push (multi_parts_pool, multi_part_ptr);
+	}
+
+}
+
 static inline bool is_multipart (const char *content) {
 
 	return !strncmp (
@@ -1896,7 +1951,8 @@ static char *http_mpart_get_boundary (
 
 	if (content_type_len > multi_part_header_value_len) {
 		char *end = (char *) content_type;
-		end += strlen ("multipart/form-data;");
+		// end += strlen ("multipart/form-data;");
+		end += multi_part_header_value_len;
 
 		DoubleList *attributes = http_mpart_attributes_parse (end);
 		if (attributes) {
@@ -1920,7 +1976,7 @@ static int http_receive_handle_mpart_part_data_begin (
 	// create a new multipart structure to handle new data
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 
-	request->current_part = http_multi_part_new ();
+	request->current_part = http_multi_parts_get ();
 	(void) dlist_insert_after (
 		request->multi_parts, 
 		dlist_end (request->multi_parts), 
@@ -1996,10 +2052,12 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].len > 0) {
 		if (c_string_starts_with (
-			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value, "form-data;")
-		) {
+			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value,
+			multi_part_form_data
+		)) {
 			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value;
-			end += strlen ("form-data;");
+			// end += strlen ("form-data;");
+			end += multi_part_form_data_len;
 
 			multi_part->params = http_mpart_attributes_parse (end);
 			// key_value_pairs_print (multi_part->params);
@@ -2032,13 +2090,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
-								http_receive->cr,
-								multi_part->filename,
-								multi_part->generated_filename
+								http_receive, http_receive->request
 							);
-
-							multi_part->generated_filename_len =
-								(int) strlen (multi_part->generated_filename);
 
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
@@ -2053,7 +2106,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
 								"%s/%s/%s",
 								http_receive->http_cerver->uploads_path,
 								http_receive->request->dirname,
@@ -2066,13 +2119,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
-								http_receive->cr,
-								multi_part->filename,
-								multi_part->generated_filename
+								http_receive, http_receive->request
 							);
-
-							multi_part->generated_filename_len =
-								(int) strlen (multi_part->generated_filename);
 
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
@@ -2085,7 +2133,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
 								"%s/%s",
 								http_receive->http_cerver->uploads_path,
 								multi_part->filename
@@ -2780,7 +2828,7 @@ static void http_receive_init_mpart_parser (
 	http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
 	http_receive->mpart_parser->data = http_receive;
 
-	http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
+	http_receive->request->multi_parts = dlist_init (http_multi_parts_return, NULL);
 
 	// TODO: handler errors
 	if (http_receive->http_cerver->uploads_dirname_generator) {

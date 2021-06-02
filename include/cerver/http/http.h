@@ -19,6 +19,8 @@
 
 #include "cerver/http/jwt/alg.h"
 
+#define HTTP_CERVER_MULTI_PARTS_POOL_INIT			32
+
 #define HTTP_CERVER_UPLOADS_PATH_SIZE				256
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0777
