@@ -81,10 +81,10 @@ static void test_http_headers_get_string (void) {
 	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
 
 	test_check_str_eq (http_header_string (HTTP_HEADER_INVALID), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const HttpHeader) 73), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const HttpHeader) 85), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const HttpHeader) 100), HEADER_OTHER, NULL);
-	test_check_str_eq (http_header_string ((const HttpHeader) 1024), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
 
 }
 
