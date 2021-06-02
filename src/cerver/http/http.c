@@ -1804,8 +1804,12 @@ static int http_receive_handle_header_field (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	char header[32] = { 0 };
-	(void) snprintf (header, 32, "%.*s", (int) length, at);
+	char header[HTTP_HEADER_TEMP_SIZE] = { 0 };
+	(void) snprintf (
+		header, HTTP_HEADER_TEMP_SIZE - 1,
+		"%.*s", (int) length, at
+	);
+
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->next_header =

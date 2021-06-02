@@ -8,6 +8,8 @@
 
 #define HTTP_HEADER_VALUE_SIZE			256
 
+#define HTTP_HEADER_TEMP_SIZE			64
+
 #ifdef __cplusplus
 extern "C" {
 #endif
