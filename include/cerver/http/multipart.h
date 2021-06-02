@@ -9,8 +9,12 @@
 
 #include "cerver/config.h"
 
+#include "cerver/http/headers.h"
+
 #define HTTP_MULTI_PART_BOUNDARY_MAX_SIZE				128
 #define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE			16
+
+#define HTTP_MULTI_PART_TEMP_HEADER_SIZE				32
 
 #define HTTP_MULTI_PART_DIRNAME_SIZE					1024
 #define HTTP_MULTI_PART_FILENAME_SIZE					256
@@ -26,20 +30,20 @@ extern "C" {
 
 typedef enum MultiPartHeader {
 
-	MULTI_PART_HEADER_CONTENT_DISPOSITION				= 0,
-	MULTI_PART_HEADER_CONTENT_LENGTH					= 1,
-	MULTI_PART_HEADER_CONTENT_TYPE						= 2,
+	MULTI_PART_HEADER_CONTENT_DISPOSITION		= 0,
+	MULTI_PART_HEADER_CONTENT_LENGTH			= 1,
+	MULTI_PART_HEADER_CONTENT_TYPE				= 2,
 
-	MULTI_PART_HEADER_INVALID							= 4
+	MULTI_PART_HEADER_INVALID					= 4
 
 } MultiPartHeader;
 
-#define MULTI_PART_HEADERS_SIZE							4
+#define MULTI_PART_HEADERS_SIZE					4
 
 struct _MultiPart {
 
 	MultiPartHeader next_header;
-	String *headers[MULTI_PART_HEADERS_SIZE];
+	HttpHeader headers[MULTI_PART_HEADERS_SIZE];
 
 	DoubleList *params;
 
@@ -144,8 +148,15 @@ CERVER_PUBLIC void http_multi_part_print (
 
 struct multipart_parser;
 
-typedef int (*multipart_data_cb) (struct multipart_parser *, const char *at, size_t length);
-typedef int (*multipart_notify_cb) (struct multipart_parser *);
+typedef int (*multipart_data_cb) (
+	struct multipart_parser *,
+	const char *at,
+	size_t length
+);
+
+typedef int (*multipart_notify_cb) (
+	struct multipart_parser *
+);
 
 struct multipart_parser_settings {
 

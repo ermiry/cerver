@@ -15,8 +15,10 @@ MultiPart *http_multi_part_new (void) {
 	MultiPart *multi_part = (MultiPart *) malloc (sizeof (MultiPart));
 	if (multi_part) {
 		multi_part->next_header = MULTI_PART_HEADER_INVALID;
-		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
-			multi_part->headers[i] = NULL;
+
+		(void) memset (
+			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
+		);
 
 		multi_part->params = dlist_init (key_value_pair_delete, NULL);
 
@@ -136,12 +138,7 @@ void http_multi_part_delete (void *multi_part_ptr) {
 	if (multi_part_ptr) {
 		MultiPart *multi_part = (MultiPart *) multi_part_ptr;
 
-		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++)
-			str_delete (multi_part->headers[i]);
-
 		dlist_delete (multi_part->params);
-
-		str_delete (multi_part->value);
 
 		free (multi_part_ptr);
 	}
@@ -152,19 +149,19 @@ void http_multi_part_headers_print (const MultiPart *mpart) {
 
 	if (mpart) {
 		const char *null = "NULL";
-		String *header = NULL;
+		const HttpHeader *header = NULL;
 		for (u8 i = 0; i < MULTI_PART_HEADERS_SIZE; i++) {
-			header = mpart->headers[i];
+			header = &mpart->headers[i];
 
 			switch (i) {
 				case MULTI_PART_HEADER_CONTENT_DISPOSITION:
-					cerver_log_msg ("Content-Disposition: %s", header ? header->str : null);
+					cerver_log_msg ("Content-Disposition: %s", (header->len > 0) ? header->value : null);
 					break;
 				case MULTI_PART_HEADER_CONTENT_LENGTH:
-					cerver_log_msg ("Content-Length: %s", header ? header->str : null);
+					cerver_log_msg ("Content-Length: %s", (header->len > 0) ? header->value : null);
 					break;
 				case MULTI_PART_HEADER_CONTENT_TYPE:
-					cerver_log_msg ("Content-Type: %s", header ? header->str : null);
+					cerver_log_msg ("Content-Type: %s", (header->len > 0) ? header->value : null);
 					break;
 
 				default: break;
