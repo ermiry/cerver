@@ -52,7 +52,7 @@ void main_handler (
 		HTTP_STATUS_OK, "Admin HTTP cerver!"
 	);
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
