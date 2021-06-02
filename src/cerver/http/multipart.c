@@ -113,6 +113,27 @@ const int http_multi_part_get_generated_filename_len (
 
 }
 
+void http_multi_part_set_generated_filename (
+	const MultiPart *multi_part, const char *format, ...
+) {
+
+	if (multi_part && format) {
+		va_list args;
+		va_start (args, format);
+
+		MultiPart *mpart = (MultiPart *) multi_part;
+
+		mpart->generated_filename_len = vsnprintf (
+			mpart->generated_filename,
+			HTTP_MULTI_PART_GENERATED_FILENAME_SIZE - 1,
+			format, args
+		);
+
+		va_end (args);
+	}
+
+}
+
 const char *http_multi_part_get_saved_filename (
 	const MultiPart *multi_part
 ) {

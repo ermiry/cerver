@@ -129,6 +129,11 @@ CERVER_PUBLIC const int http_multi_part_get_generated_filename_len (
 	const MultiPart *multi_part
 );
 
+// sets the HTTP request's multi-part generated filename
+CERVER_PUBLIC void http_multi_part_set_generated_filename (
+	const MultiPart *multi_part, const char *format, ...
+);
+
 // returns the multi-part's saved filename
 CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
 	const MultiPart *multi_part
