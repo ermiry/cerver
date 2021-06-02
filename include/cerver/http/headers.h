@@ -4,8 +4,9 @@
 #include "cerver/config.h"
 
 #define HTTP_HEADERS_MAX				55
-
 #define HTTP_HEADERS_SIZE				64
+
+#define HTTP_HEADER_VALUE_SIZE			256
 
 #ifdef __cplusplus
 extern "C" {
@@ -104,6 +105,15 @@ CERVER_PUBLIC const char *http_header_description (
 CERVER_PUBLIC const http_header http_header_type_by_string (
 	const char *header_type_string
 );
+
+struct _HttpHeader {
+
+	int len;
+	char value[HTTP_HEADER_VALUE_SIZE];
+
+};
+
+typedef struct _HttpHeader HttpHeader;
 
 #ifdef __cplusplus
 }
