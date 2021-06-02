@@ -83,10 +83,14 @@ struct _MultiPart {
 
 typedef struct _MultiPart MultiPart;
 
-CERVER_PUBLIC MultiPart *http_multi_part_new (void);
+CERVER_PRIVATE void *http_multi_part_new (void);
 
-CERVER_PUBLIC void http_multi_part_delete (
+CERVER_PRIVATE void http_multi_part_delete (
 	void *multi_part_ptr
+);
+
+CERVER_PRIVATE void http_multi_part_reset (
+	MultiPart *multi_part
 );
 
 // returns the multi-part's type

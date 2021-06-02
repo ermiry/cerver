@@ -12,7 +12,7 @@
 
 #pragma region parts
 
-MultiPart *http_multi_part_new (void) {
+void *http_multi_part_new (void) {
 
 	MultiPart *multi_part = (MultiPart *) malloc (sizeof (MultiPart));
 	if (multi_part) {
@@ -46,6 +46,52 @@ MultiPart *http_multi_part_new (void) {
 	}
 
 	return multi_part;
+
+}
+
+void http_multi_part_delete (void *multi_part_ptr) {
+
+	if (multi_part_ptr) {
+		MultiPart *multi_part = (MultiPart *) multi_part_ptr;
+
+		dlist_delete (multi_part->params);
+
+		free (multi_part_ptr);
+	}
+
+}
+
+void http_multi_part_reset (MultiPart *multi_part) {
+
+	if (multi_part) {
+		multi_part->type = MULTI_PART_TYPE_NONE;
+
+		multi_part->next_header = MULTI_PART_HEADER_INVALID;
+
+		(void) memset (
+			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
+		);
+
+		dlist_reset (multi_part->params);
+
+		multi_part->name = NULL;
+		// multi_part->filename = NULL;
+
+		multi_part->filename_len = 0;
+		(void) memset (multi_part->filename, 0, HTTP_MULTI_PART_FILENAME_SIZE);
+
+		multi_part->generated_filename_len = 0;
+		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_SIZE);
+
+		multi_part->fd = -1;
+		multi_part->saved_filename_len = 0;
+		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
+		multi_part->n_reads = 0;
+		multi_part->total_wrote = 0;
+
+		multi_part->value_len = 0;
+		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
+	}
 
 }
 
@@ -179,18 +225,6 @@ const int http_multi_part_get_value_len (
 ) {
 
 	return multi_part->value_len;
-
-}
-
-void http_multi_part_delete (void *multi_part_ptr) {
-
-	if (multi_part_ptr) {
-		MultiPart *multi_part = (MultiPart *) multi_part_ptr;
-
-		dlist_delete (multi_part->params);
-
-		free (multi_part_ptr);
-	}
 
 }
 
