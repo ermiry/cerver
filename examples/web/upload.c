@@ -133,6 +133,63 @@ void upload_handler (
 
 }
 
+// POST /multiple
+void multiple_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	DoubleList *all_filenames = http_request_multi_parts_get_all_filenames (request);
+	if (all_filenames) {
+		(void) printf ("\nAll filenames: \n");
+		int count = 0;
+		char *filename = NULL;
+		for (ListElement *le = dlist_start (all_filenames); le; le = le->next) {
+			filename = (char *) le->data;
+
+			(void) printf ("[%d]: %s\n", count, filename);
+			count += 1;
+		}
+
+		http_request_multi_parts_all_filenames_delete (all_filenames);
+	}
+
+	DoubleList *all_saved_filenames = http_request_multi_parts_get_all_saved_filenames (request);
+	if (all_saved_filenames) {
+		(void) printf ("\nAll saved filenames: \n");
+		int count = 0;
+		char *filename = NULL;
+		for (ListElement *le = dlist_start (all_saved_filenames); le; le = le->next) {
+			filename = (char *) le->data;
+
+			(void) printf ("[%d]: %s\n", count, filename);
+			count += 1;
+		}
+
+		http_request_multi_parts_all_filenames_delete (all_saved_filenames);
+	}
+
+	const static char *json = { "{ \"msg\": \"Multiple route works!\" }" };
+	const size_t json_len = strlen (json);
+
+	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
+	if (res) {
+		(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
+		(void) http_response_add_content_length_header (res, json_len);
+		// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+
+		(void) http_response_compile (res);
+
+		#ifdef EXAMPLES_DEBUG
+		http_response_print (res);
+		#endif
+
+		(void) http_response_send (res, http_receive);
+		http_response_delete (res);
+	}
+
+}
+
 // POST /iter/good
 void iter_good_handler (
 	const HttpReceive *http_receive,
@@ -323,6 +380,11 @@ int main (int argc, char **argv) {
 		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
 		http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, upload_route);
+
+		// POST /multiple
+		HttpRoute *multiple_route = http_route_create (REQUEST_METHOD_POST, "multiple", multiple_handler);
+		http_route_set_modifier (multiple_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
+		http_cerver_route_register (http_cerver, multiple_route);
 
 		// POST /iter/good
 		HttpRoute *iter_good_route = http_route_create (REQUEST_METHOD_POST, "iter/good", iter_good_handler);
