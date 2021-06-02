@@ -362,8 +362,8 @@ const MultiPart *http_request_multi_parts_get (
 }
 
 // searches the request's multi parts values for a value with matching key
-// returns a constant String that should not be deleted if found, NULL if not match
-const String *http_request_multi_parts_get_value (
+// returns a constant c string that should not be deleted if found, NULL if not match
+const char *http_request_multi_parts_get_value (
 	const HttpRequest *http_request, const char *key
 ) {
 
@@ -403,6 +403,47 @@ const char *http_request_multi_parts_get_saved_filename (
 	}
 
 	return NULL;
+
+}
+
+// starts the HTTP request's multi-parts internal iterator
+// returns true on success, false on error
+bool http_request_multi_parts_iter_start (
+	const HttpRequest *http_request
+) {
+
+	bool retval = false;
+
+	if (http_request) {
+		if (http_request->multi_parts) {
+			if (dlist_start (http_request->multi_parts)) {
+				((HttpRequest *) http_request)->next_part = dlist_start (
+					http_request->multi_parts
+				);
+
+				retval = true;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// gets the next request's multi-part using the iterator
+// returns NULL if at the end of the list or error
+const MultiPart *http_request_multi_parts_iter_get_next (
+	const HttpRequest *http_request
+) {
+
+	const MultiPart *mpart = NULL;
+
+	if (http_request->next_part) {
+		mpart = (const MultiPart *) http_request->next_part->data;
+		((HttpRequest *) http_request)->next_part = http_request->next_part->next;
+	}
+
+	return mpart;
 
 }
 
