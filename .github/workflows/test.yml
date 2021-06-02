@@ -100,6 +100,14 @@ jobs:
           ./test/bin/client/web/upload
           sudo docker kill $(sudo docker ps -q)
 
+      - name: Web Multiple Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/multiple
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web/multiple
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Web Jobs Integration Test
         run: |
           sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/jobs
