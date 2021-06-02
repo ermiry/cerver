@@ -1947,11 +1947,12 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 
 }
 
-static char *http_mpart_get_boundary (
+static unsigned int http_mpart_get_boundary (
+	char *boundary,
 	const char *content_type, const unsigned int content_type_len
 ) {
 
-	char *retval = NULL;
+	unsigned int retval = 1;
 
 	if (content_type_len > multi_part_header_value_len) {
 		char *end = (char *) content_type;
@@ -1963,7 +1964,14 @@ static char *http_mpart_get_boundary (
 			// key_value_pairs_print (attributes);
 
 			const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
-			if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
+			if (original_boundary) {
+				(void) snprintf (
+					boundary, HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
+					"--%s", original_boundary->str
+				);
+
+				retval = 0;
+			}
 
 			dlist_delete (attributes);
 		}
@@ -2001,7 +2009,7 @@ static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (
 	if (!strcasecmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
 	if (!strcasecmp ("Content-Type", header)) return MULTI_PART_HEADER_CONTENT_TYPE;
 
-	return MULTI_PART_HEADER_INVALID;		// no known header
+	return MULTI_PART_HEADER_INVALID;		// unknown header
 
 }
 
@@ -2875,18 +2883,17 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 			http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
-			char *boundary = http_mpart_get_boundary (
+			char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
+
+			if (!http_mpart_get_boundary (
+				boundary,
 				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str,
 				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->len
-			);
-
-			if (boundary) {
+			)) {
 				// printf ("\n%s\n", boundary);
 				http_receive->settings.on_body = http_receive_handle_mpart_body;
 
 				http_receive_init_mpart_parser (http_receive, boundary);
-
-				free (boundary);
 			}
 
 			else {
