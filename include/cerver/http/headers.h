@@ -85,23 +85,23 @@ extern "C" {
 	XX(54,  UPGRADE,							Upgrade,							(The standard establishes rules for upgrading or changing to a different protocol on the current client, server, transport protocol connection.))															\
 	XX(63,  INVALID,							Undefined,							(Invalid Header))																																															\
 
-typedef enum HttpHeader {
+typedef enum http_header {
 
 	#define XX(num, name, string, description) HTTP_HEADER_##name = num,
 	HTTP_HEADERS_MAP(XX)
 	#undef XX
 
-} HttpHeader;
+} http_header;
 
 CERVER_PUBLIC const char *http_header_string (
-	const HttpHeader header
+	const http_header header
 );
 
 CERVER_PUBLIC const char *http_header_description (
-	const HttpHeader header
+	const http_header header
 );
 
-CERVER_PUBLIC const HttpHeader http_header_type_by_string (
+CERVER_PUBLIC const http_header http_header_type_by_string (
 	const char *header_type_string
 );
 

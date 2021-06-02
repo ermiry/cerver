@@ -78,7 +78,7 @@ CERVER_EXPORT void http_response_set_header (
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_header (
-	HttpResponse *res, const HttpHeader type, const char *actual_header
+	HttpResponse *res, const http_header type, const char *actual_header
 );
 
 // adds a HTTP_HEADER_CONTENT_TYPE header to the response

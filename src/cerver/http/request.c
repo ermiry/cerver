@@ -176,7 +176,7 @@ const String *http_request_get_param_at_idx (
 }
 
 const String *http_request_get_header (
-	const HttpRequest *http_request, const HttpHeader header
+	const HttpRequest *http_request, const http_header header
 ) {
 
 	return http_request->headers[header];
@@ -299,7 +299,7 @@ void http_request_headers_print (const HttpRequest *http_request) {
 
 			cerver_log_msg (
 				"%s: %s",
-				http_header_string ((const HttpHeader) i),
+				http_header_string ((const http_header) i),
 				header ? header->str : null
 			);
 		}

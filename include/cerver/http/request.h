@@ -56,7 +56,7 @@ struct _HttpRequest {
 	unsigned int n_params;
 	String *params[REQUEST_PARAMS_SIZE];
 
-	HttpHeader next_header;
+	http_header next_header;
 	String *headers[HTTP_HEADERS_SIZE];
 
 	// decoded data from jwt
@@ -130,7 +130,7 @@ CERVER_EXPORT const String *http_request_get_param_at_idx (
 
 // gets the specified HTTP header value from the HTTP request
 CERVER_EXPORT const String *http_request_get_header (
-	const HttpRequest *http_request, const HttpHeader header
+	const HttpRequest *http_request, const http_header header
 );
 
 // gets the HTTP request's content type value from the request's headers

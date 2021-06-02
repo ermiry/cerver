@@ -464,7 +464,7 @@ CERVER_PUBLIC struct _HttpResponse *server_error;
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
-	HttpHeader type, const char *actual_header
+	http_header type, const char *actual_header
 );
 
 #pragma endregion
