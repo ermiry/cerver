@@ -16,6 +16,7 @@
 #define HTTP_MULTI_PART_FILENAME_SIZE					256
 #define HTTP_MULTI_PART_GENERATED_FILENAME_SIZE			512
 #define HTTP_MULTI_PART_SAVED_FILENAME_SIZE				1024
+#define HTTP_MULTI_PART_VALUE_SIZE						256
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,10 +58,11 @@ struct _MultiPart {
 	// how the file got saved (uploads path + filename)
 	int saved_filename_len;
 	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_SIZE];
-	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
-	u32 total_wrote;			// the total ammount of bytes wrote to the file
+	u32 n_reads;				// amount of loops it took to read the file - based on cerver receive value
+	u32 total_wrote;			// the total ammount of bytes written to the file
 
-	String *value;
+	int value_len;
+	char value[HTTP_MULTI_PART_VALUE_SIZE];
 
 };
 
@@ -70,6 +72,62 @@ CERVER_PUBLIC MultiPart *http_multi_part_new (void);
 
 CERVER_PUBLIC void http_multi_part_delete (
 	void *multi_part_ptr
+);
+
+// returns the multi-part's name
+CERVER_PUBLIC const String *http_multi_part_get_name (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's sanitized original filename
+CERVER_PUBLIC const char *http_multi_part_get_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's sanitized original filename length
+CERVER_PUBLIC const int http_multi_part_get_filename_len (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's generated filename
+CERVER_PUBLIC const char *http_multi_part_get_generated_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's generated filename length
+CERVER_PUBLIC const int http_multi_part_get_generated_filename_len (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's saved filename
+CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's saved filename length
+CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's number of reads value
+// the amount of loops it took to read the file
+CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's total ammount of bytes written to the file
+CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's value
+CERVER_PUBLIC const char *http_multi_part_get_value (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's value length
+CERVER_PUBLIC const int http_multi_part_get_value_len (
+	const MultiPart *multi_part
 );
 
 CERVER_PUBLIC void http_multi_part_headers_print (

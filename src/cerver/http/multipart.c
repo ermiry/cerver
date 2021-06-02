@@ -35,10 +35,99 @@ MultiPart *http_multi_part_new (void) {
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
 
-		multi_part->value = NULL;
+		multi_part->value_len = 0;
+		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
 	}
 
 	return multi_part;
+
+}
+
+const String *http_multi_part_get_name (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->name;
+
+}
+
+const char *http_multi_part_get_filename (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->filename;
+
+}
+
+const int http_multi_part_get_filename_len (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->filename_len;
+
+}
+
+const char *http_multi_part_get_generated_filename (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->generated_filename;
+
+}
+
+const int http_multi_part_get_generated_filename_len (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->generated_filename_len;
+
+}
+
+const char *http_multi_part_get_saved_filename (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->saved_filename;
+
+}
+
+const int http_multi_part_get_saved_filename_len (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->saved_filename_len;
+
+}
+
+const u32 http_multi_part_get_n_reads (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->n_reads;
+
+}
+
+const u32 http_multi_part_get_total_wrote (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->total_wrote;
+
+}
+
+const char *http_multi_part_get_value (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->value;
+
+}
+
+const int http_multi_part_get_value_len (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->value_len;
 
 }
 
@@ -98,7 +187,7 @@ void http_multi_part_print (const MultiPart *mpart) {
 		else {
 			(void) printf (
 				"VALUE: %s - %s\n",
-				mpart->name->str, mpart->value->str
+				mpart->name->str, mpart->value
 			);
 		}
 	}
