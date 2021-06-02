@@ -18,12 +18,12 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
-Cerver *web_cerver = NULL;
+static Cerver *web_cerver = NULL;
 
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
-void end (int dummy) {
+static void end (int dummy) {
 
 	if (web_cerver) {
 		cerver_stats_print (web_cerver, false, false);
@@ -43,44 +43,13 @@ void end (int dummy) {
 
 #pragma region routes
 
-// GET /test
-void test_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	HttpResponse *res = http_response_json_msg (
-		HTTP_STATUS_OK, "Test route works!"
-	);
-	if (res) {
-		#ifdef TEST_DEBUG
-		http_response_print (res);
-		#endif
-		http_response_send (res, http_receive);
-		http_response_delete (res);
-	}
-
-}
-
 // POST /upload
-void upload_handler (
-	const struct _HttpReceive *http_receive,
+static void upload_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
 	http_request_multi_parts_print (request);
-
-	const char *filename = http_request_multi_parts_get_filename (
-		request, "file"
-	);
-
-	if (filename) (void) printf ("filename: %s\n", filename);
-
-	const char *saved_filename = http_request_multi_parts_get_saved_filename (
-		request, "file"
-	);
-
-	if (saved_filename) (void) printf ("saved filename: %s\n", saved_filename);
 
 	DoubleList *all_filenames = http_request_multi_parts_get_all_filenames (request);
 	if (all_filenames) {
@@ -134,7 +103,7 @@ void upload_handler (
 }
 
 // POST /multiple
-void multiple_handler (
+static void multiple_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -191,7 +160,7 @@ void multiple_handler (
 }
 
 // POST /iter/good
-void iter_good_handler (
+static void iter_good_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -245,7 +214,7 @@ void iter_good_handler (
 }
 
 // POST /iter/empty
-void iter_empty_handler (
+static void iter_empty_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -274,8 +243,8 @@ void iter_empty_handler (
 }
 
 // POST /discard
-void discard_handler (
-	const struct _HttpReceive *http_receive,
+static void discard_handler (
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -310,7 +279,21 @@ void discard_handler (
 
 #pragma region start
 
-void custom_uploads_filename_generator (
+static void custom_uploads_dirname_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	http_request_set_dirname (
+		request,
+		"%d-%ld",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL)
+	);
+
+}
+
+static void custom_uploads_filename_generator (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -372,9 +355,9 @@ int main (int argc, char **argv) {
 			http_cerver, custom_uploads_filename_generator
 		);
 
-		// GET /test
-		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
-		http_cerver_route_register (http_cerver, test_route);
+		http_cerver_set_uploads_dirname_generator (
+			http_cerver, custom_uploads_dirname_generator
+		);
 
 		// POST /upload
 		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);

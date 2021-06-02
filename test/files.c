@@ -7,6 +7,10 @@
 
 #include "test.h"
 
+static const char *sanitize_complete_one = { "hola/adios/1234567890-hola.png" };
+static const char *sanitize_complete_two = { "1234567890-hola/adios/hola.png.res" };
+static const char *sanitize_complete_three = { "12345!67`890-ho#la@/ad$^ios&/h*o)l)a.p+=ng.res" };
+
 static const char *bmp_extension = { "bmp" };
 static const char *gif_extension = { "gif" };
 static const char *png_extension = { "png" };
@@ -29,6 +33,61 @@ static const char *png_file_bad = { "test" };
 static const char *png_file_wrong = { "/home/ermiry/Pictures/test" };
 
 #pragma region main
+
+static void test_files_sanitize_complete_filename (void) {
+
+	char buffer[FILENAME_DEFAULT_SIZE] = { 0 };
+
+	(void) strncpy (buffer, sanitize_complete_one, FILENAME_DEFAULT_SIZE - 1);
+	files_sanitize_complete_filename (buffer);
+	test_check_str_eq (buffer, sanitize_complete_one, NULL);
+	
+	(void) strncpy (buffer, sanitize_complete_two, FILENAME_DEFAULT_SIZE - 1);
+	files_sanitize_complete_filename (buffer);
+	test_check_str_eq (buffer, sanitize_complete_two, NULL);
+
+	(void) strncpy (buffer, sanitize_complete_three, FILENAME_DEFAULT_SIZE - 1);
+	files_sanitize_complete_filename (buffer);
+	test_check_str_eq (buffer, sanitize_complete_two, NULL);
+
+}
+
+static void test_files_create_dir (void) {
+
+	(void) system ("rm -r hola");
+
+	test_check_unsigned_eq (files_create_dir ("hola", 0777), 0, NULL);
+	test_check_true (file_exists ("hola"));
+
+	test_check_unsigned_eq (files_create_dir ("test", 0777), 1, NULL);
+	test_check_true (file_exists ("test"));
+
+}
+
+static void test_files_create_recursive_dir (void) {
+
+	(void) system ("rm -r hola");
+
+	test_check_unsigned_eq (files_create_recursive_dir ("hola", 0777), 0, NULL);
+	test_check_true (file_exists ("hola"));
+
+	test_check_unsigned_eq (files_create_recursive_dir ("hola/adios/hola", 0777), 0, NULL);
+	test_check_true (file_exists ("hola/adios/hola"));
+
+	(void) system ("rm -r hola");
+
+	test_check_unsigned_eq (files_create_recursive_dir ("test/client", 0777), 1, NULL);
+	test_check_true (file_exists ("test/client"));
+
+	(void) rmdir ("test/client/hola");
+
+	test_check_unsigned_eq (files_create_recursive_dir ("test/client/hola", 0777), 0, NULL);
+	test_check_true (file_exists ("test/client/hola"));
+
+	test_check_unsigned_eq (files_create_recursive_dir ("test/client/client.c", 0777), 1, NULL);
+	test_check_true (file_exists ("test/client/client.c"));
+
+}
 
 static void test_files_get_file_extension_reference_jpg (void) {
 
@@ -171,6 +230,9 @@ int main (int argc, char **argv) {
 	(void) printf ("Testing FILES...\n");
 
 	// main
+	test_files_sanitize_complete_filename ();
+	test_files_create_dir ();
+	test_files_create_recursive_dir ();
 	test_files_get_file_extension_reference ();
 
 	// images

@@ -31,8 +31,12 @@ static void test_http_cerver_new (void) {
 	test_check_false (http_cerver->not_found_handler);
 	test_check_null_ptr (http_cerver->not_found);
 
-	test_check_null_ptr (http_cerver->uploads_path);
+	test_check_int_eq (http_cerver->uploads_path_len, 0, NULL);
+
+	test_check_unsigned_eq (http_cerver->uploads_file_mode, HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE, NULL);
 	test_check_null_ptr (http_cerver->uploads_filename_generator);
+
+	test_check_unsigned_eq (http_cerver->uploads_dir_mode, HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE, NULL);
 	test_check_null_ptr (http_cerver->uploads_dirname_generator);
 
 	test_check (http_cerver->uploads_delete_when_done == HTTP_CERVER_DEFAULT_UPLOADS_DELETE, NULL);
@@ -82,8 +86,12 @@ static void test_http_cerver_create (void) {
 	test_check_false (http_cerver->not_found_handler);
 	test_check_ptr (http_cerver->not_found);
 
-	test_check_null_ptr (http_cerver->uploads_path);
+	test_check_int_eq (http_cerver->uploads_path_len, 0, NULL);
+
+	test_check_unsigned_eq (http_cerver->uploads_file_mode, HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE, NULL);
 	test_check_null_ptr (http_cerver->uploads_filename_generator);
+
+	test_check_unsigned_eq (http_cerver->uploads_dir_mode, HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE, NULL);
 	test_check_null_ptr (http_cerver->uploads_dirname_generator);
 
 	test_check (http_cerver->uploads_delete_when_done == HTTP_CERVER_DEFAULT_UPLOADS_DELETE, NULL);
@@ -229,6 +237,7 @@ int main (int argc, char **argv) {
 	http_tests_contents ();
 	http_tests_requests ();
 	http_tests_responses ();
+	http_tests_multiparts ();
 	http_tests_jwt ();
 
 	// integration tests

@@ -64,7 +64,7 @@ static void catch_all_handler (
 	);
 
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);

@@ -28,7 +28,7 @@ void main_users_handler (
 
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, "Users route works!");
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
@@ -71,7 +71,7 @@ void users_login_handler (
 
 					if (res) {
 						http_response_compile (res);
-						#ifdef EXAMPLES_DEBUG
+						#ifdef TEST_DEBUG
 						http_response_print (res);
 						#endif
 						http_response_send (res, http_receive);
@@ -86,7 +86,7 @@ void users_login_handler (
 
 					if (res) {
 						http_response_print (res);
-						#ifdef EXAMPLES_DEBUG
+						#ifdef TEST_DEBUG
 						http_response_send (res, http_receive);
 						#endif
 						http_response_delete (res);
@@ -103,7 +103,7 @@ void users_login_handler (
 
 				if (res) {
 					http_response_print (res);
-					#ifdef EXAMPLES_DEBUG
+					#ifdef TEST_DEBUG
 					http_response_send (res, http_receive);
 					#endif
 					http_response_delete (res);
@@ -117,7 +117,7 @@ void users_login_handler (
 			);
 
 			if (res) {
-				#ifdef EXAMPLES_DEBUG
+				#ifdef TEST_DEBUG
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
@@ -132,7 +132,7 @@ void users_login_handler (
 		);
 
 		if (res) {
-			#ifdef EXAMPLES_DEBUG
+			#ifdef TEST_DEBUG
 			http_response_print (res);
 			#endif
 			http_response_send (res, http_receive);
@@ -175,7 +175,7 @@ void users_register_handler (
 			);
 
 			if (res) {
-				#ifdef EXAMPLES_DEBUG
+				#ifdef TEST_DEBUG
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
@@ -188,7 +188,7 @@ void users_register_handler (
 				HTTP_STATUS_INTERNAL_SERVER_ERROR, "Internal error!"
 			);
 			if (res) {
-				#ifdef EXAMPLES_DEBUG
+				#ifdef TEST_DEBUG
 				http_response_print (res);
 				#endif
 				http_response_send (res, http_receive);
@@ -203,7 +203,7 @@ void users_register_handler (
 		);
 
 		if (res) {
-			#ifdef EXAMPLES_DEBUG
+			#ifdef TEST_DEBUG
 			http_response_print (res);
 			#endif
 			http_response_send (res, http_receive);
@@ -225,7 +225,7 @@ void users_profile_handler (
 
 	HttpResponse *res = http_response_json_msg (HTTP_STATUS_OK, message);
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);

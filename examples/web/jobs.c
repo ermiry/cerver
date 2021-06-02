@@ -52,7 +52,7 @@ void end (int dummy) {
 static void custom_handler_method (void *data_ptr) {
 
 	cerver_log_debug ("custom_handler_method ()!");
-	cerver_log_msg ("Value: %s", ((String *) data_ptr)->str);
+	cerver_log_msg ("Value: %s", ((const char *) data_ptr));
 
 	(void) sleep (1);
 
@@ -89,7 +89,7 @@ void jobs_handler (
 
 	http_request_multi_parts_print (request);
 
-	const String *value = http_request_multi_parts_get_value (request, "value");
+	const char *value = http_request_multi_parts_get_value (request, "value");
 
 	job_handler_wait (
 		job_queue, (void *) value, NULL

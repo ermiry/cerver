@@ -3,7 +3,7 @@
 #include "cerver/http/headers.h"
 
 const char *http_header_string (
-	const HttpHeader header
+	const http_header header
 ) {
 
 	switch (header) {
@@ -17,7 +17,7 @@ const char *http_header_string (
 }
 
 const char *http_header_description (
-	const HttpHeader header
+	const http_header header
 ) {
 
 	switch (header) {
@@ -30,7 +30,7 @@ const char *http_header_description (
 
 }
 
-const HttpHeader http_header_type_by_string (
+const http_header http_header_type_by_string (
 	const char *header_type_string
 ) {
 

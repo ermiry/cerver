@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <stdarg.h>
+
 #include <ctype.h>
 #include <time.h>
 
@@ -44,8 +46,13 @@ static HttpResponse *catch_all = NULL;
 
 static Pool *http_jwt_pool = NULL;
 
-static const char *multi_part_header_value = { "multipart/form-data" };
-static const size_t multi_part_header_value_len = 19;
+static Pool *multi_parts_pool = NULL;
+
+static const char *multi_part_header_value = { "multipart/form-data;" };
+static const size_t multi_part_header_value_len = 20;
+
+static const char *multi_part_form_data = { "form-data;" };
+static const size_t multi_part_form_data_len = 10;
 
 static const char *webkit_multi_part_boundary_value = { "------WebKitFormBoundary" };
 static const size_t webkit_multi_part_boundary_value_len = 24;
@@ -63,6 +70,8 @@ static void http_receive_handle_default_route (
 static void http_receive_handle_not_found_route (
 	const HttpReceive *http_receive, const HttpRequest *request
 );
+
+static unsigned int http_multi_parts_init_pool (void);
 
 static void http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
@@ -218,8 +227,13 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->not_found_handler = false;
 		http_cerver->not_found = NULL;
 
-		http_cerver->uploads_path = NULL;
+		http_cerver->uploads_path_len = 0;
+		(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
+
+		http_cerver->uploads_file_mode = HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE;
 		http_cerver->uploads_filename_generator = NULL;
+
+		http_cerver->uploads_dir_mode = HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE;
 		http_cerver->uploads_dirname_generator = NULL;
 
 		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
@@ -261,8 +275,6 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		dlist_delete (http_cerver->static_paths);
 
 		dlist_delete (http_cerver->routes);
-
-		str_delete (http_cerver->uploads_path);
 
 		str_delete (http_cerver->jwt_opt_key_name);
 		str_delete (http_cerver->jwt_private_key);
@@ -481,6 +493,9 @@ static unsigned int http_cerver_init_internal (
 
 	// init common responses
 	errors |= http_cerver_init_responses ();
+
+	// init multi-parts pool
+	errors |= http_multi_parts_init_pool ();
 
 	return errors;
 
@@ -747,12 +762,31 @@ void http_cerver_set_not_found_route (
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
 void http_cerver_set_uploads_path (
-	HttpCerver *http_cerver, const char *uploads_path
+	HttpCerver *http_cerver, const char *format, ...
+) {
+
+	if (http_cerver && format) {
+		va_list args;
+		va_start (args, format);
+
+		http_cerver->uploads_path_len = vsnprintf (
+			http_cerver->uploads_path, HTTP_CERVER_UPLOADS_PATH_SIZE - 1,
+			format, args
+		);
+
+		va_end (args);
+	}
+
+}
+
+// sets the mode_t to be used when creating uploads files
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
+void http_cerver_set_uploads_file_mode (
+	HttpCerver *http_cerver, const unsigned int file_mode
 ) {
 
 	if (http_cerver) {
-		if (http_cerver->uploads_path) str_delete (http_cerver->uploads_path);
-		http_cerver->uploads_path = uploads_path ? str_new (uploads_path) : NULL;
+		http_cerver->uploads_file_mode = file_mode;
 	}
 
 }
@@ -760,13 +794,12 @@ void http_cerver_set_uploads_path (
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
-// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_SIZE
 void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const HttpReceive *http_receive,
+		const HttpRequest *request
 	)
 ) {
 
@@ -776,15 +809,31 @@ void http_cerver_set_uploads_filename_generator (
 
 }
 
-// sets a method to be called on every new request & that will be used to generate a new directory
-// inside the uploads path to save all the files from each request
-void http_cerver_set_uploads_dirname_generator (
-	HttpCerver *http_cerver,
-	String *(*dirname_generator)(const CerverReceive *)
+// sets the mode_t value to be used when creating uploads dirs
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
+void http_cerver_set_uploads_dir_mode (
+	HttpCerver *http_cerver, const unsigned int dir_mode
 ) {
 
 	if (http_cerver) {
-		http_cerver->uploads_dirname_generator = dirname_generator;
+		http_cerver->uploads_dir_mode = dir_mode;
+	}
+
+}
+
+// sets a method to be called on every new multi-part request
+// that will be used to generate a new directory
+// inside the uploads path to save all the files from the request
+void http_cerver_set_uploads_dirname_generator (
+	HttpCerver *http_cerver,
+	void (*uploads_dirname_generator)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_dirname_generator = uploads_dirname_generator;
 	}
 
 }
@@ -917,12 +966,12 @@ static unsigned int http_jwt_init_pool (void) {
 		}
 
 		else {
-			cerver_log_error ("Failed to init http jwt pool!");
+			cerver_log_error ("Failed to init HTTP JWT pool!");
 		}
 	}
 
 	else {
-		cerver_log_error ("Failed to create http jwt pool!");
+		cerver_log_error ("Failed to create HTTP JWT pool!");
 	}
 
 	return retval;
@@ -1273,7 +1322,7 @@ bool http_cerver_auth_validate_jwt (
 // returns 0 on success, 1 on error
 u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
-	HttpHeader type, const char *actual_header
+	http_header type, const char *actual_header
 ) {
 
 	u8 retval = 1;
@@ -1668,7 +1717,7 @@ DoubleList *http_parse_query_into_pairs (
 					if (value_first != NULL) value_after = walk;
 					else key_after = walk;
 
-					dlist_insert_after (
+					(void) dlist_insert_after (
 						pairs, 
 						dlist_end (pairs), 
 						key_value_pair_create_pieces (
@@ -1702,7 +1751,7 @@ DoubleList *http_parse_query_into_pairs (
 		if (value_first != NULL) value_after = walk;
 		else key_after = walk;
 
-		dlist_insert_after (
+		(void) dlist_insert_after (
 			pairs, 
 			dlist_end (pairs),
 			key_value_pair_create_pieces (
@@ -1755,8 +1804,12 @@ static int http_receive_handle_header_field (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	char header[32] = { 0 };
-	(void) snprintf (header, 32, "%.*s", (int) length, at);
+	char header[HTTP_HEADER_TEMP_SIZE] = { 0 };
+	(void) snprintf (
+		header, HTTP_HEADER_TEMP_SIZE - 1,
+		"%.*s", (int) length, at
+	);
+
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->next_header =
@@ -1810,6 +1863,51 @@ static int http_receive_handle_body (
 
 #pragma region mpart
 
+static unsigned int http_multi_parts_init_pool (void) {
+
+	unsigned int retval = 1;
+
+	multi_parts_pool = pool_create (http_multi_part_delete);
+	if (multi_parts_pool) {
+		pool_set_create (multi_parts_pool, http_multi_part_new);
+		pool_set_produce_if_empty (multi_parts_pool, true);
+		if (!pool_init (
+			multi_parts_pool,
+			http_multi_part_new,
+			HTTP_CERVER_MULTI_PARTS_POOL_INIT
+		)) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error ("Failed to init HTTP multi-parts pool!");
+		}
+	}
+
+	else {
+		cerver_log_error ("Failed to create HTTP multi-parts pool!");
+	}
+
+	return retval;
+
+}
+
+static inline MultiPart *http_multi_parts_get (void) {
+
+	return (MultiPart *) pool_pop (multi_parts_pool);
+
+}
+
+static void http_multi_parts_return (void *multi_part_ptr) {
+
+	if (multi_part_ptr) {
+		http_multi_part_reset ((MultiPart *) multi_part_ptr);
+
+		(void) pool_push (multi_parts_pool, multi_part_ptr);
+	}
+
+}
+
 static inline bool is_multipart (const char *content) {
 
 	return !strncmp (
@@ -1833,7 +1931,7 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 		name = strsep (&pair, "=");
 		value = strsep (&pair, "=");
 
-		dlist_insert_after (
+		(void) dlist_insert_after (
 			attributes, 
 			dlist_end (attributes), 
 			key_value_pair_create (
@@ -1849,22 +1947,31 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 
 }
 
-static char *http_mpart_get_boundary (
+static unsigned int http_mpart_get_boundary (
+	char *boundary,
 	const char *content_type, const unsigned int content_type_len
 ) {
 
-	char *retval = NULL;
+	unsigned int retval = 1;
 
 	if (content_type_len > multi_part_header_value_len) {
 		char *end = (char *) content_type;
-		end += strlen ("multipart/form-data;");
+		// end += strlen ("multipart/form-data;");
+		end += multi_part_header_value_len;
 
 		DoubleList *attributes = http_mpart_attributes_parse (end);
 		if (attributes) {
 			// key_value_pairs_print (attributes);
 
 			const String *original_boundary = http_query_pairs_get_value (attributes, "boundary");
-			if (original_boundary) retval = c_string_create ("--%s", original_boundary->str);
+			if (original_boundary) {
+				(void) snprintf (
+					boundary, HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
+					"--%s", original_boundary->str
+				);
+
+				retval = 0;
+			}
 
 			dlist_delete (attributes);
 		}
@@ -1881,8 +1988,8 @@ static int http_receive_handle_mpart_part_data_begin (
 	// create a new multipart structure to handle new data
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
 
-	request->current_part = http_multi_part_new ();
-	dlist_insert_after (
+	request->current_part = http_multi_parts_get ();
+	(void) dlist_insert_after (
 		request->multi_parts, 
 		dlist_end (request->multi_parts), 
 		request->current_part
@@ -1902,7 +2009,7 @@ static inline MultiPartHeader http_receive_handle_mpart_header_field_handle (
 	if (!strcasecmp ("Content-Length", header)) return MULTI_PART_HEADER_CONTENT_LENGTH;
 	if (!strcasecmp ("Content-Type", header)) return MULTI_PART_HEADER_CONTENT_TYPE;
 
-	return MULTI_PART_HEADER_INVALID;		// no known header
+	return MULTI_PART_HEADER_INVALID;		// unknown header
 
 }
 
@@ -1910,8 +2017,12 @@ static int http_receive_handle_mpart_header_field (
 	multipart_parser *parser, const char *at, size_t length
 ) {
 
-	char header[32] = { 0 };
-	(void) snprintf (header, 32, "%.*s", (int) length, at);
+	char header[HTTP_MULTI_PART_TEMP_HEADER_SIZE] = { 0 };
+	(void) snprintf (
+		header, HTTP_MULTI_PART_TEMP_HEADER_SIZE - 1,
+		"%.*s", (int) length, at
+	);
+
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->current_part->next_header =
@@ -1929,9 +2040,11 @@ static int http_receive_handle_mpart_header_value (
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
-		multi_part->headers[multi_part->next_header] = str_new (NULL);
-		multi_part->headers[multi_part->next_header]->str = c_string_create ("%.*s", (int) length, at);
-		multi_part->headers[multi_part->next_header]->len = length;
+		multi_part->headers[multi_part->next_header].len = snprintf (
+			multi_part->headers[multi_part->next_header].value,
+			HTTP_HEADER_VALUE_SIZE - 1,
+			"%.*s", (int) length, at
+		);
 	}
 
 	// multi_part->next_header = MULTI_PART_HEADER_INVALID;
@@ -1949,12 +2062,14 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	http_multi_part_headers_print (multi_part);
 	#endif
 
-	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
+	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].len > 0) {
 		if (c_string_starts_with (
-			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")
-		) {
-			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
-			end += strlen ("form-data;");
+			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value,
+			multi_part_form_data
+		)) {
+			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value;
+			// end += strlen ("form-data;");
+			end += multi_part_form_data_len;
 
 			multi_part->params = http_mpart_attributes_parse (end);
 			// key_value_pairs_print (multi_part->params);
@@ -1966,12 +2081,14 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			);
 
 			if (original_filename) {
+				multi_part->type = MULTI_PART_TYPE_FILE;
+
 				// stats
 				http_receive->file_stats->n_uploaded_files += 1;
 
 				// sanitize file
 				(void) strncpy (
-					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_LEN
+					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_SIZE
 				);
 
 				files_sanitize_filename (multi_part->filename);
@@ -1980,25 +2097,20 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 
 				http_receive->request->n_files += 1;
 
-				if (http_receive->http_cerver->uploads_path) {
-					if (http_receive->request->dirname) {
+				if (http_receive->http_cerver->uploads_path_len > 0) {
+					if (http_receive->request->dirname_len > 0) {
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
-								http_receive->cr,
-								multi_part->filename,
-								multi_part->generated_filename
+								http_receive, http_receive->request
 							);
-
-							multi_part->generated_filename_len =
-								(int) strlen (multi_part->generated_filename);
 
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path->str,
-								http_receive->request->dirname->str,
+								http_receive->http_cerver->uploads_path,
+								http_receive->request->dirname,
 								multi_part->generated_filename
 							);
 						}
@@ -2006,10 +2118,10 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
 								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path->str,
-								http_receive->request->dirname->str,
+								http_receive->http_cerver->uploads_path,
+								http_receive->request->dirname,
 								multi_part->filename
 							);
 						}
@@ -2019,18 +2131,13 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
-								http_receive->cr,
-								multi_part->filename,
-								multi_part->generated_filename
+								http_receive, http_receive->request
 							);
 
-							multi_part->generated_filename_len =
-								(int) strlen (multi_part->generated_filename);
-
 							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
 								"%s/%s",
-								http_receive->http_cerver->uploads_path->str,
+								http_receive->http_cerver->uploads_path,
 								multi_part->generated_filename
 							);
 						}
@@ -2038,15 +2145,20 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						else {
 							multi_part->saved_filename_len = snprintf (
 								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_LEN,
+								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
 								"%s/%s",
-								http_receive->http_cerver->uploads_path->str,
+								http_receive->http_cerver->uploads_path,
 								multi_part->filename
 							);
 						}
 					}
 
-					multi_part->fd = open (multi_part->saved_filename, O_CREAT | O_WRONLY, 0777);
+					multi_part->fd = open (
+						multi_part->saved_filename,
+						O_CREAT | O_WRONLY,
+						http_receive->http_cerver->uploads_file_mode
+					);
+
 					switch (multi_part->fd) {
 						case -1: {
 							cerver_log_error (
@@ -2073,6 +2185,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			}
 
 			else {
+				multi_part->type = MULTI_PART_TYPE_VALUE;
+
 				http_receive->request->n_values += 1;
 			}
 		}
@@ -2108,7 +2222,12 @@ static int http_receive_handle_mpart_data (
 
 	else {
 		// printf ("|%.*s|\n", (int) length, at);
-		multi_part->value = str_create ("%.*s", (int) length, at);
+		// multi_part->value = str_create ("%.*s", (int) length, at);
+
+		multi_part->value_len = snprintf (
+			multi_part->value, HTTP_MULTI_PART_VALUE_SIZE - 1,
+			"%.*s", (int) length, at
+		);
 	}
 
 	return 0;
@@ -2151,7 +2270,7 @@ static int http_receive_handle_mpart_body_look_for_boundary (
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
-	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_LEN] = { 0 };
+	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
 
 	char *found = c_string_find_sub_in_len (at, webkit_multi_part_boundary_value, length);
 	if (found) {
@@ -2161,9 +2280,9 @@ static int http_receive_handle_mpart_body_look_for_boundary (
 
 		(void) snprintf (
 			boundary,
-			HTTP_MULTI_PART_BOUNDARY_MAX_LEN - 1,
+			HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
 			"------WebKitFormBoundary%.*s",
-			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_LEN,
+			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE,
 			found + webkit_multi_part_boundary_value_len
 		);
 
@@ -2234,6 +2353,7 @@ HttpReceive *http_receive_new (void) {
 		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
 
+		http_receive->is_multi_part = false;
 		http_receive->file_stats = NULL;
 	}
 
@@ -2298,6 +2418,22 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		free (http_receive);
 	}
+
+}
+
+const CerverReceive *http_receive_get_cerver_receive (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->cr;
+
+}
+
+const int http_receive_get_sock_fd (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive->cr->connection->socket->sock_fd;
 
 }
 
@@ -2691,7 +2827,7 @@ static void http_receive_init_mpart_parser (
 	const char *boundary
 ) {
 
-	char dirname[HTTP_MULTI_PART_DIRNAME_LEN] = { 0 };
+	char dirname[HTTP_MULTI_PART_DIRNAME_SIZE] = { 0 };
 
 	http_receive->mpart_settings.on_header_field = http_receive_handle_mpart_header_field;
 	http_receive->mpart_settings.on_header_value = http_receive_handle_mpart_header_value;
@@ -2705,23 +2841,28 @@ static void http_receive_init_mpart_parser (
 	http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
 	http_receive->mpart_parser->data = http_receive;
 
-	http_receive->request->multi_parts = dlist_init (http_multi_part_delete, NULL);
+	http_receive->request->multi_parts = dlist_init (http_multi_parts_return, NULL);
 
 	// TODO: handler errors
 	if (http_receive->http_cerver->uploads_dirname_generator) {
 		if (http_receive->http_cerver->uploads_path) {
-			http_receive->request->dirname =
-				http_receive->http_cerver->uploads_dirname_generator (http_receive->cr);
-			
-			(void) snprintf (
-				dirname,
-				HTTP_MULTI_PART_DIRNAME_LEN - 1,
-				"%s/%s",
-				http_receive->http_cerver->uploads_path->str,
-				http_receive->request->dirname->str
+			http_receive->http_cerver->uploads_dirname_generator (
+				http_receive, http_receive->request
 			);
 
-			(void) files_create_dir (dirname, 0777);
+			if (http_receive->request->dirname_len > 0) {
+				(void) snprintf (
+					dirname,
+					HTTP_MULTI_PART_DIRNAME_SIZE - 1,
+					"%s/%s",
+					http_receive->http_cerver->uploads_path,
+					http_receive->request->dirname
+				);
+
+				(void) files_create_recursive_dir (
+					dirname, http_receive->http_cerver->uploads_dir_mode
+				);
+			}
 		}
 	}
 
@@ -2743,18 +2884,19 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 			http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
-			char *boundary = http_mpart_get_boundary (
+			http_receive->is_multi_part = true;
+
+			char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
+
+			if (!http_mpart_get_boundary (
+				boundary,
 				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str,
 				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->len
-			);
-
-			if (boundary) {
+			)) {
 				// printf ("\n%s\n", boundary);
 				http_receive->settings.on_body = http_receive_handle_mpart_body;
 
 				http_receive_init_mpart_parser (http_receive, boundary);
-
-				free (boundary);
 			}
 
 			else {

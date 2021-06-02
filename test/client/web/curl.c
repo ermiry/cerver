@@ -338,6 +338,54 @@ unsigned int curl_upload_file (
 
 }
 
+// uploads two files in the same multi-part request
+// returns 0 on success, 1 on error
+unsigned int curl_upload_two_files (
+	CURL *curl, const char *address,
+	curl_write_data_cb write_cb, char *buffer,
+	const char *filename_one, const char *filename_two
+) {
+
+	unsigned int retval = 1;
+
+	// create the form
+	curl_mime *form = curl_mime_init (curl);
+
+	curl_mimepart *field = NULL;
+
+	field = curl_mime_addpart (form);
+	(void) curl_mime_name (field, "one");
+	(void) curl_mime_filedata (field, filename_one);
+
+	field = curl_mime_addpart (form);
+	(void) curl_mime_name (field, "two");
+	(void) curl_mime_filedata (field, filename_two);
+
+	/* what URL that receives this POST */
+	(void) curl_easy_setopt (curl, CURLOPT_URL, address);
+
+	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
+
+	(void) curl_easy_setopt (curl, CURLOPT_MIMEPOST, form);
+
+	/* Perform the request, res will get the return code */
+	CURLcode res = curl_easy_perform (curl);
+
+	if (res == CURLE_OK) retval = 0;
+	else {
+		cerver_log_error (
+			"curl_upload_file () failed: %s\n",
+			curl_easy_strerror (res)
+		);
+	}
+
+	curl_mime_free (form);
+
+	return retval;
+
+}
+
 // uploads a file to the requested route performing a multi-part request
 // and also adds another value to the request
 // returns 0 on success, 1 on error

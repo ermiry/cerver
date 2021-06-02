@@ -9,9 +9,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -215,10 +215,10 @@ String *file_cerver_search_file (
 	String *retval = NULL;
 
 	if (file_cerver && filename) {
-		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		char filename_query[FILENAME_DEFAULT_SIZE * 2] = { 0 };
 		for (unsigned int i = 0; i < file_cerver->n_paths; i++) {
 			(void) snprintf (
-				filename_query, DEFAULT_FILENAME_LEN * 2,
+				filename_query, FILENAME_DEFAULT_SIZE * 2,
 				"%s/%s",
 				file_cerver->paths[i]->str, filename
 			);
@@ -351,6 +351,32 @@ void files_sanitize_filename (char *filename) {
 
 }
 
+// works like files_sanitize_filename ()
+// but also keeps '/' characters
+void files_sanitize_complete_filename (char *filename) {
+
+	if (filename) {
+		for (int i = 0, j; filename[i] != '\0'; ++i) {
+			while (
+				!(filename[i] >= 'a' && filename[i] <= 'z') && !(filename[i] >= 'A' && filename[i] <= 'Z')	// alphabet
+				&& !(filename[i] >= 48 && filename[i] <= 57)												// numbers
+				&& !(filename[i] == '/')																	// path related
+				&& !(filename[i] == '-') && !(filename[i] == '_') && !(filename[i] == '.')					// clean characters
+				&& !(filename[i] == '\0')
+			) {
+				for (j = i; filename[j] != '\0'; ++j) {
+					filename[j] = filename[j + 1];
+				}
+
+				filename[j] = '\0';
+			}
+		}
+
+		c_string_remove_spaces (filename);
+	}
+
+}
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 unsigned int files_create_dir (
@@ -383,6 +409,71 @@ unsigned int files_create_dir (
 			default: break;
 		}
 	}
+
+	return retval;
+
+}
+
+// recursively creates all directories in dir path
+// returns 0 on success, 1 on error
+unsigned int files_create_recursive_dir (
+	const char *dir_path, mode_t mode
+) {
+
+	unsigned int retval = 1;
+
+	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
+	char *p = NULL;
+	struct stat sb = { 0 };
+
+	// check if the path already exists
+	if (stat (dir_path, &sb)) {
+		size_t len = strlen (dir_path);
+		(void) strncpy (tmp, dir_path, DIRNAME_DEFAULT_SIZE - 1);
+
+		// remove trailing slash
+		if (tmp[len - 1] == '/') {
+			tmp[len - 1] = '\0';
+		}
+
+		// recursive mkdir
+		for (p = tmp + 1; *p; p++) {
+			if (*p == '/') {
+				*p = 0;
+
+				if (stat (tmp, &sb)) {
+					// create directory
+					if (mkdir (tmp, mode)) {
+						break;
+					}
+				}
+
+				else if (!S_ISDIR (sb.st_mode)) {
+					// not a directory
+					break;
+				}
+
+				*p = '/';
+			}
+		}
+
+		// create final dir
+		if (stat (tmp, &sb)) {
+			// create directory
+			if (!mkdir (tmp, mode)) {
+				retval = 0;
+			}
+		}
+	}
+
+	#ifdef FILES_DEBUG
+	else {
+		cerver_log (
+			LOG_TYPE_WARNING, LOG_TYPE_FILE,
+			"files_create_recursive_dir () - dir %s exists!", dir_path
+		);
+	}
+	#endif
 
 	return retval;
 
@@ -508,7 +599,7 @@ DoubleList *file_get_lines (
 			char *buffer = (char *) calloc (buffer_size, sizeof (char));
 			if (buffer) {
 				String *line = NULL;
-			
+
 				while ((line = file_get_line (file, buffer, buffer_size))) {
 					(void) dlist_insert_at_end_unsafe (lines, line);
 				}
@@ -556,14 +647,15 @@ FILE *file_open_as_file (
 		if (!stat (filename, filestatus))
 			fp = fopen (filename, modes);
 
+		#ifdef FILES_DEBUG
 		else {
-			#ifdef FILES_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_FILE,
 				"File %s not found!", filename
 			);
-			#endif
+
 		}
+		#endif
 	}
 
 	return fp;
@@ -807,7 +899,7 @@ static u8 file_send_header (
 		end += sizeof (PacketHeader);
 
 		FileHeader *file_header = (FileHeader *) end;
-		(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
+		(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
 		file_header->len = filelen;
 
 		packet_set_network_values (packet, cerver, client, connection, NULL);

@@ -19,10 +19,15 @@
 
 #include "cerver/http/jwt/alg.h"
 
+#define HTTP_CERVER_MULTI_PARTS_POOL_INIT			32
+
+#define HTTP_CERVER_UPLOADS_PATH_SIZE				256
+
+#define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0777
+#define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0777
+
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
-
-#define HTTP_MULTI_PART_DIRNAME_LEN					1024
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +37,7 @@ struct _Cerver;
 
 struct _HttpRouteFileStats;
 
+struct _HttpReceive;
 struct _HttpResponse;
 
 struct jwt;
@@ -91,14 +97,20 @@ struct _HttpCerver {
 	);
 
 	// uploads
-	String *uploads_path;              // default uploads path
+	int uploads_path_len;
+	char uploads_path[HTTP_CERVER_UPLOADS_PATH_SIZE];
+
+	unsigned int uploads_file_mode;
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
 	);
 
-	String *(*uploads_dirname_generator)(const CerverReceive *);
+	unsigned int uploads_dir_mode;
+	void (*uploads_dirname_generator)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
 
 	// delete uploaded files when the request ends
 	bool uploads_delete_when_done;
@@ -239,28 +251,42 @@ CERVER_EXPORT void http_cerver_set_not_found_route (
 // sets the default uploads path where any multipart file request will be saved
 // this method will replace the previous value with the new one
 CERVER_EXPORT void http_cerver_set_uploads_path (
-	HttpCerver *http_cerver, const char *uploads_path
+	HttpCerver *http_cerver, const char *format, ...
+);
+
+// sets the mode_t to be used when creating uploads files
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
+CERVER_EXPORT void http_cerver_set_uploads_file_mode (
+	HttpCerver *http_cerver, const unsigned int file_mode
 );
 
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
-// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_LEN
+// with a max size of HTTP_MULTI_PART_GENERATED_FILENAME_SIZE
 CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	HttpCerver *http_cerver,
 	void (*uploads_filename_generator)(
-		const CerverReceive *,
-		const char *original_filename,
-		char *generated_filename
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
 	)
 );
 
-// sets a method to be called on every new request
+// sets the mode_t value to be used when creating uploads dirs
+// the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
+CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
+	HttpCerver *http_cerver, const unsigned int dir_mode
+);
+
+// sets a method to be called on every new multi-part request
 // that will be used to generate a new directory
-// inside the uploads path to save all the files from each request
+// inside the uploads path to save all the files from the request
 CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 	HttpCerver *http_cerver,
-	String *(*dirname_generator)(const CerverReceive *)
+	void (*uploads_dirname_generator)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 // specifies whether uploads are deleted after the requested has ended
@@ -438,7 +464,7 @@ CERVER_PUBLIC struct _HttpResponse *server_error;
 // returns 0 on success, 1 on error
 CERVER_PUBLIC u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
-	HttpHeader type, const char *actual_header
+	http_header type, const char *actual_header
 );
 
 #pragma endregion
@@ -574,6 +600,7 @@ struct _HttpReceive {
 	http_status status;
 	size_t sent;
 
+	bool is_multi_part;
 	struct _HttpRouteFileStats *file_stats;
 
 };
@@ -588,6 +615,14 @@ CERVER_PRIVATE HttpReceive *http_receive_create (
 
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
+);
+
+CERVER_EXPORT const CerverReceive *http_receive_get_cerver_receive (
+	const HttpReceive *http_receive
+);
+
+CERVER_EXPORT const int http_receive_get_sock_fd (
+	const HttpReceive *http_receive
 );
 
 CERVER_EXPORT const HttpCerver *http_receive_get_cerver (

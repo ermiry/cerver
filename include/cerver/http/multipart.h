@@ -2,6 +2,7 @@
 #define _CERVER_HTTP_MULTIPART_H_
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "cerver/types/string.h"
 
@@ -9,12 +10,18 @@
 
 #include "cerver/config.h"
 
-#define HTTP_MULTI_PART_BOUNDARY_MAX_LEN				128
-#define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_LEN			16
+#include "cerver/http/headers.h"
 
-#define HTTP_MULTI_PART_FILENAME_LEN					256
-#define HTTP_MULTI_PART_GENERATED_FILENAME_LEN			512
-#define HTTP_MULTI_PART_SAVED_FILENAME_LEN				1024
+#define HTTP_MULTI_PART_BOUNDARY_MAX_SIZE				128
+#define HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE			16
+
+#define HTTP_MULTI_PART_TEMP_HEADER_SIZE				32
+
+#define HTTP_MULTI_PART_DIRNAME_SIZE					1024
+#define HTTP_MULTI_PART_FILENAME_SIZE					256
+#define HTTP_MULTI_PART_GENERATED_FILENAME_SIZE			512
+#define HTTP_MULTI_PART_SAVED_FILENAME_SIZE				1024
+#define HTTP_MULTI_PART_VALUE_SIZE						256
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,22 +29,32 @@ extern "C" {
 
 #pragma region parts
 
+typedef enum MultiPartType {
+
+	MULTI_PART_TYPE_NONE						= 0,
+	MULTI_PART_TYPE_FILE						= 1,
+	MULTI_PART_TYPE_VALUE						= 2
+
+} MultiPartType;
+
 typedef enum MultiPartHeader {
 
-	MULTI_PART_HEADER_CONTENT_DISPOSITION				= 0,
-	MULTI_PART_HEADER_CONTENT_LENGTH					= 1,
-	MULTI_PART_HEADER_CONTENT_TYPE						= 2,
+	MULTI_PART_HEADER_CONTENT_DISPOSITION		= 0,
+	MULTI_PART_HEADER_CONTENT_LENGTH			= 1,
+	MULTI_PART_HEADER_CONTENT_TYPE				= 2,
 
-	MULTI_PART_HEADER_INVALID							= 4
+	MULTI_PART_HEADER_INVALID					= 4
 
 } MultiPartHeader;
 
-#define MULTI_PART_HEADERS_SIZE				4
+#define MULTI_PART_HEADERS_SIZE					4
 
 struct _MultiPart {
 
+	MultiPartType type;
+
 	MultiPartHeader next_header;
-	String *headers[MULTI_PART_HEADERS_SIZE];
+	HttpHeader headers[MULTI_PART_HEADERS_SIZE];
 
 	DoubleList *params;
 
@@ -47,31 +64,118 @@ struct _MultiPart {
 
 	// sanitized original filename
 	int filename_len;
-	char filename[HTTP_MULTI_PART_FILENAME_LEN];
+	char filename[HTTP_MULTI_PART_FILENAME_SIZE];
 
 	int generated_filename_len;
-	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_LEN];
+	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_SIZE];
 
 	int fd;
 	// how the file got saved (uploads path + filename)
 	int saved_filename_len;
-	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_LEN];
-	u32 n_reads;				// amount to loops it took to read the file - based on cerver receive value
-	u32 total_wrote;			// the total ammount of bytes wrote to the file
+	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_SIZE];
+	u32 n_reads;				// amount of loops it took to read the file - based on cerver receive value
+	u32 total_wrote;			// the total ammount of bytes written to the file
 
-	String *value;
+	int value_len;
+	char value[HTTP_MULTI_PART_VALUE_SIZE];
 
 };
 
 typedef struct _MultiPart MultiPart;
 
-CERVER_PUBLIC MultiPart *http_multi_part_new (void);
+CERVER_PRIVATE void *http_multi_part_new (void);
 
-CERVER_PUBLIC void http_multi_part_delete (void *multi_part_ptr);
+CERVER_PRIVATE void http_multi_part_delete (
+	void *multi_part_ptr
+);
 
-CERVER_PUBLIC void http_multi_part_headers_print (MultiPart *mpart);
+CERVER_PRIVATE void http_multi_part_reset (
+	MultiPart *multi_part
+);
 
-CERVER_PUBLIC void http_multi_part_print (MultiPart *mpart);
+// returns the multi-part's type
+CERVER_PUBLIC const MultiPartType http_multi_part_get_type (
+	const MultiPart *multi_part
+);
+
+// returns true if the multi-part's type is MULTI_PART_TYPE_FILE
+CERVER_PUBLIC bool http_multi_part_is_file (
+	const MultiPart *multi_part
+);
+
+// returns true if the multi-part's type is MULTI_PART_TYPE_VALUE
+CERVER_PUBLIC bool http_multi_part_is_value (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's name
+CERVER_PUBLIC const String *http_multi_part_get_name (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's sanitized original filename
+CERVER_PUBLIC const char *http_multi_part_get_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's sanitized original filename length
+CERVER_PUBLIC const int http_multi_part_get_filename_len (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's generated filename
+CERVER_PUBLIC const char *http_multi_part_get_generated_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's generated filename length
+CERVER_PUBLIC const int http_multi_part_get_generated_filename_len (
+	const MultiPart *multi_part
+);
+
+// sets the HTTP request's multi-part generated filename
+CERVER_PUBLIC void http_multi_part_set_generated_filename (
+	const MultiPart *multi_part, const char *format, ...
+);
+
+// returns the multi-part's saved filename
+CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's saved filename length
+CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's number of reads value
+// the amount of loops it took to read the file
+CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's total ammount of bytes written to the file
+CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's value
+CERVER_PUBLIC const char *http_multi_part_get_value (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's value length
+CERVER_PUBLIC const int http_multi_part_get_value_len (
+	const MultiPart *multi_part
+);
+
+CERVER_PUBLIC void http_multi_part_headers_print (
+	const MultiPart *mpart
+);
+
+CERVER_PUBLIC void http_multi_part_print (
+	const MultiPart *mpart
+);
 
 #pragma endregion
 
@@ -79,8 +183,15 @@ CERVER_PUBLIC void http_multi_part_print (MultiPart *mpart);
 
 struct multipart_parser;
 
-typedef int (*multipart_data_cb) (struct multipart_parser *, const char *at, size_t length);
-typedef int (*multipart_notify_cb) (struct multipart_parser *);
+typedef int (*multipart_data_cb) (
+	struct multipart_parser *,
+	const char *at,
+	size_t length
+);
+
+typedef int (*multipart_notify_cb) (
+	struct multipart_parser *
+);
 
 struct multipart_parser_settings {
 

@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include <stdarg.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -64,7 +66,9 @@ HttpRequest *http_request_new (void) {
 		http_request->multi_parts = NULL;
 		http_request->n_files = 0;
 		http_request->n_values = 0;
-		http_request->dirname = NULL;
+
+		http_request->dirname_len = 0;
+		(void) memset (http_request->dirname, 0, REQUEST_DIRNAME_SIZE);
 		
 		http_request->body_values = NULL;
 
@@ -97,7 +101,6 @@ void http_request_delete (HttpRequest *http_request) {
 		str_delete (http_request->body);
 
 		dlist_delete (http_request->multi_parts);
-		str_delete (http_request->dirname);
 
 		dlist_delete (http_request->body_values);
 
@@ -173,7 +176,7 @@ const String *http_request_get_param_at_idx (
 }
 
 const String *http_request_get_header (
-	const HttpRequest *http_request, const HttpHeader header
+	const HttpRequest *http_request, const http_header header
 ) {
 
 	return http_request->headers[header];
@@ -226,6 +229,66 @@ const String *http_request_get_body (
 
 }
 
+const MultiPart *http_request_get_current_mpart (
+	const HttpRequest *http_request
+) {
+
+	return http_request->current_part;
+
+}
+
+const u8 http_request_get_n_files (
+	const HttpRequest *http_request
+) {
+
+	return http_request->n_files;
+
+}
+
+const u8 http_request_get_n_values (
+	const HttpRequest *http_request
+) {
+
+	return http_request->n_values;
+
+}
+
+const int http_request_get_dirname_len (
+	const HttpRequest *http_request
+) {
+
+	return http_request->dirname_len;
+
+}
+
+const char *http_request_get_dirname (
+	const HttpRequest *http_request
+) {
+
+	return http_request->dirname;
+
+}
+
+void http_request_set_dirname (
+	const HttpRequest *http_request, const char *format, ...
+) {
+
+	if (http_request && format) {
+		va_list args;
+		va_start (args, format);
+
+		HttpRequest *request = (HttpRequest *) http_request;
+
+		request->dirname_len = vsnprintf (
+			request->dirname, REQUEST_DIRNAME_SIZE - 1,
+			format, args
+		);
+
+		va_end (args);
+	}
+
+}
+
 const DoubleList *http_request_get_body_values (
 	const HttpRequest *http_request
 ) {
@@ -244,7 +307,7 @@ void http_request_headers_print (const HttpRequest *http_request) {
 
 			cerver_log_msg (
 				"%s: %s",
-				http_header_string ((const HttpHeader) i),
+				http_header_string ((const http_header) i),
 				header ? header->str : null
 			);
 		}
@@ -307,8 +370,8 @@ const MultiPart *http_request_multi_parts_get (
 }
 
 // searches the request's multi parts values for a value with matching key
-// returns a constant String that should not be deleted if found, NULL if not match
-const String *http_request_multi_parts_get_value (
+// returns a constant c string that should not be deleted if found, NULL if not match
+const char *http_request_multi_parts_get_value (
 	const HttpRequest *http_request, const char *key
 ) {
 
@@ -348,6 +411,47 @@ const char *http_request_multi_parts_get_saved_filename (
 	}
 
 	return NULL;
+
+}
+
+// starts the HTTP request's multi-parts internal iterator
+// returns true on success, false on error
+bool http_request_multi_parts_iter_start (
+	const HttpRequest *http_request
+) {
+
+	bool retval = false;
+
+	if (http_request) {
+		if (http_request->multi_parts) {
+			if (dlist_start (http_request->multi_parts)) {
+				((HttpRequest *) http_request)->next_part = dlist_start (
+					http_request->multi_parts
+				);
+
+				retval = true;
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// gets the next request's multi-part using the iterator
+// returns NULL if at the end of the list or error
+const MultiPart *http_request_multi_parts_iter_get_next (
+	const HttpRequest *http_request
+) {
+
+	const MultiPart *mpart = NULL;
+
+	if (http_request->next_part) {
+		mpart = (const MultiPart *) http_request->next_part->data;
+		((HttpRequest *) http_request)->next_part = http_request->next_part->next;
+	}
+
+	return mpart;
 
 }
 

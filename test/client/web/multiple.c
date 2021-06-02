@@ -8,7 +8,7 @@
 
 static const char *address = { "127.0.0.1:8080" };
 
-static size_t upload_request_all_data_handler (
+static size_t multiple_request_all_data_handler (
 	void *contents, size_t size, size_t nmemb, void *storage
 ) {
 
@@ -18,7 +18,7 @@ static size_t upload_request_all_data_handler (
 
 }
 
-static unsigned int upload_request_all_actual (
+static unsigned int multiple_request_all_actual (
 	CURL *curl
 ) {
 
@@ -27,18 +27,11 @@ static unsigned int upload_request_all_actual (
 	char data_buffer[4096] = { 0 };
 	char actual_address[128] = { 0 };
 
-	// GET /test
-	(void) snprintf (actual_address, 128, "%s/test", address);
-	errors |= curl_simple_handle_data (
-		curl, actual_address,
-		upload_request_all_data_handler, data_buffer
-	);
-
 	// POST /upload
 	(void) snprintf (actual_address, 128, "%s/upload", address);
 	errors |= curl_upload_file (
 		curl, actual_address,
-		upload_request_all_data_handler, data_buffer,
+		multiple_request_all_data_handler, data_buffer,
 		"./test/web/img/ermiry.png"
 	);
 
@@ -46,7 +39,7 @@ static unsigned int upload_request_all_actual (
 	(void) snprintf (actual_address, 128, "%s/multiple", address);
 	errors |= curl_upload_two_files (
 		curl, actual_address,
-		upload_request_all_data_handler, data_buffer,
+		multiple_request_all_data_handler, data_buffer,
 		"./test/web/img/ermiry.png",
 		"./test/web/img/github.jpeg"
 	);
@@ -89,18 +82,18 @@ static unsigned int upload_request_all_actual (
 }
 
 // perform requests to every route
-static unsigned int upload_request_all (void) {
+static unsigned int multiple_request_all (void) {
 
 	unsigned int retval = 1;
 
 	CURL *curl = curl_easy_init ();
 	if (curl) {
-		if (!upload_request_all_actual (curl)) {
+		if (!multiple_request_all_actual (curl)) {
 			cerver_log_line_break ();
 			cerver_log_line_break ();
 
 			cerver_log_success (
-				"upload_request_all () - All requests succeeded!"
+				"multiple_request_all () - All requests succeeded!"
 			);
 
 			cerver_log_line_break ();
@@ -122,7 +115,7 @@ int main (int argc, char **argv) {
 
 	cerver_log_init ();
 
-	code = upload_request_all ();
+	code = multiple_request_all ();
 
 	cerver_log_end ();
 

@@ -9,6 +9,10 @@
 
 #include "../test.h"
 
+static const char *base_dir = { "/var/uploads" };
+static const char *basic_dir = { "hola" };
+static const char *full_dir = { "/var/uploads/hola" };
+
 static HttpRequest *test_http_request_new (void) {
 
 	HttpRequest *request = (HttpRequest *) http_request_new ();
@@ -37,7 +41,8 @@ static HttpRequest *test_http_request_new (void) {
 	test_check_null_ptr (request->multi_parts);
 	test_check_unsigned_eq (request->n_files, 0, NULL);
 	test_check_unsigned_eq (request->n_values, 0, NULL);
-	test_check_null_ptr (request->dirname);
+
+	test_check_int_eq (request->dirname_len, 0, NULL);
 
 	test_check_null_ptr (request->body_values);
 
@@ -63,7 +68,7 @@ static void test_http_request_create (void) {
 		test_check_null_ptr (http_request_get_param_at_idx (request, i));
 
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (http_request_get_header (request, (const HttpHeader) i));
+		test_check_null_ptr (http_request_get_header (request, (const http_header) i));
 	
 	test_check_unsigned_eq (http_request_get_content_type (request), HTTP_CONTENT_TYPE_NONE, NULL);
 
@@ -81,11 +86,56 @@ static void test_http_request_create (void) {
 
 }
 
+static void test_http_request_set_base_dirname (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_dirname (request, "%s", base_dir);
+	
+	test_check_str_eq (http_request_get_dirname (request), base_dir, NULL);
+	test_check_str_len (http_request_get_dirname (request), strlen (base_dir), NULL);
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_set_basic_dirname (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_dirname (request, "%s", basic_dir);
+	
+	test_check_str_eq (http_request_get_dirname (request), basic_dir, NULL);
+	test_check_str_len (http_request_get_dirname (request), strlen (basic_dir), NULL);
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_set_full_dirname (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_dirname (request, "%s/%s", base_dir, basic_dir);
+	
+	test_check_str_eq (http_request_get_dirname (request), full_dir, NULL);
+	test_check_str_len (http_request_get_dirname (request), strlen (full_dir), NULL);
+
+	http_request_delete (request);
+
+}
+
 void http_tests_requests (void) {
 
 	(void) printf ("Testing HTTP requests...\n");
 
+	// main
 	test_http_request_create ();
+
+	// dirname
+	test_http_request_set_base_dirname ();
+	test_http_request_set_basic_dirname ();
+	test_http_request_set_full_dirname ();
 
 	(void) printf ("Done!\n");
 
