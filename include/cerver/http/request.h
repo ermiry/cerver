@@ -160,6 +160,11 @@ CERVER_EXPORT const String *http_request_get_body (
 	const HttpRequest *http_request
 );
 
+// gets the HTTP request's current multi-part structure
+CERVER_EXPORT const MultiPart *http_request_get_current_mpart (
+	const HttpRequest *http_request
+);
+
 // gets the HTTP request's multi-part files count
 CERVER_EXPORT const u8 http_request_get_n_files (
 	const HttpRequest *http_request
@@ -181,6 +186,7 @@ CERVER_EXPORT const char *http_request_get_dirname (
 	const HttpRequest *http_request
 );
 
+// sets the HTTP request's multi-part files directory
 CERVER_PUBLIC void http_request_set_dirname (
 	const HttpRequest *http_request, const char *format, ...
 );

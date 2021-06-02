@@ -229,6 +229,14 @@ const String *http_request_get_body (
 
 }
 
+const MultiPart *http_request_get_current_mpart (
+	const HttpRequest *http_request
+) {
+
+	return http_request->current_part;
+
+}
+
 const u8 http_request_get_n_files (
 	const HttpRequest *http_request
 ) {
