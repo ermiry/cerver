@@ -9,7 +9,7 @@
 
 static MultiPart *test_http_multi_part_new (void) {
 
-	MultiPart *mpart = http_multi_part_new ();
+	MultiPart *mpart = (MultiPart *) http_multi_part_new ();
 
 	test_check_ptr (mpart);
 
