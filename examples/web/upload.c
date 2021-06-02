@@ -45,7 +45,7 @@ void end (int dummy) {
 
 // GET /test
 void test_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -64,7 +64,7 @@ void test_handler (
 
 // POST /upload
 void upload_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -113,38 +113,119 @@ void upload_handler (
 	}
 
 	const static char *json = { "{ \"msg\": \"Upload route works!\" }" };
+	const size_t json_len = strlen (json);
 
-	char content_len[32] = { 0 };
-	(void) snprintf (content_len, 32, "%ld", strlen (json));
-
-	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, strlen (json));
+	HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
 	if (res) {
-		http_response_add_header (res, HTTP_HEADER_CONTENT_TYPE, "application/json");
-		http_response_add_header (res, HTTP_HEADER_CONTENT_LENGTH, content_len);
+		(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
+		(void) http_response_add_content_length_header (res, json_len);
 		// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
 
-		http_response_compile (res);
+		(void) http_response_compile (res);
 
 		#ifdef EXAMPLES_DEBUG
 		http_response_print (res);
 		#endif
 
-		http_response_send (res, http_receive);
+		(void) http_response_send (res, http_receive);
 		http_response_delete (res);
+	}
+
+}
+
+// POST /iter/good
+void iter_good_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	if (http_request_multi_parts_iter_start (request)) {
+		const MultiPart *mpart = http_request_multi_parts_iter_get_next (request);
+		while (mpart) {
+			if (http_multi_part_is_file (mpart)) {
+				(void) printf (
+					"FILE: %s - [%d] %s -> [%d] %s\n",
+					http_multi_part_get_name (mpart)->str,
+					http_multi_part_get_filename_len (mpart),
+					http_multi_part_get_filename (mpart),
+					http_multi_part_get_generated_filename_len (mpart),
+					http_multi_part_get_saved_filename (mpart)
+				);
+			}
+
+			else if (http_multi_part_is_value (mpart)) {
+				(void) printf (
+					"VALUE: %s - [%d] %s\n",
+					http_multi_part_get_name (mpart)->str,
+					http_multi_part_get_value_len (mpart),
+					http_multi_part_get_value (mpart)
+				);
+			}
+
+			mpart = http_request_multi_parts_iter_get_next (request);
+		}
+
+		const static char *json = { "{ \"msg\": \"Iter good route works!\" }" };
+		const size_t json_len = strlen (json);
+
+		HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
+		if (res) {
+			(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
+			(void) http_response_add_content_length_header (res, json_len);
+			// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+
+			(void) http_response_compile (res);
+
+			#ifdef EXAMPLES_DEBUG
+			http_response_print (res);
+			#endif
+
+			(void) http_response_send (res, http_receive);
+			http_response_delete (res);
+		}
+	}
+
+}
+
+// POST /iter/empty
+void iter_empty_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	if (!http_request_multi_parts_iter_start (request)) {
+		const static char *json = { "{ \"msg\": \"Iter empty route works!\" }" };
+		const size_t json_len = strlen (json);
+
+		HttpResponse *res = http_response_create (HTTP_STATUS_OK, json, json_len);
+		if (res) {
+			(void) http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
+			(void) http_response_add_content_length_header (res, json_len);
+			// http_response_add_header (res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+
+			(void) http_response_compile (res);
+
+			#ifdef EXAMPLES_DEBUG
+			http_response_print (res);
+			#endif
+
+			(void) http_response_send (res, http_receive);
+			http_response_delete (res);
+		}
 	}
 
 }
 
 // POST /discard
 void discard_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
 	http_request_multi_parts_print (request);
 
-	const String *key = http_request_multi_parts_get_value (request, "key");
-	if (!strcmp (key->str, "value")) {
+	const char *key = http_request_multi_parts_get_value (request, "key");
+	if (!strcmp (key, "value")) {
 		cerver_log_success ("Success request, keeping multi part files...");
 
 		HttpResponse *res = http_response_json_msg (
@@ -173,17 +254,18 @@ void discard_handler (
 #pragma region start
 
 void custom_uploads_filename_generator (
-	const CerverReceive *cr,
-	const char *original_filename,
-	char *generated_filename
+	const HttpReceive *http_receive,
+	const HttpRequest *request
 ) {
 
-	(void) snprintf (
-		generated_filename, HTTP_MULTI_PART_GENERATED_FILENAME_LEN,
+	const MultiPart *mpart = http_request_get_current_mpart (request);
+
+	http_multi_part_set_generated_filename (
+		mpart,
 		"%d-%ld-%s",
-		cr->connection->socket->sock_fd,
+		http_receive->cr->connection->socket->sock_fd,
 		time (NULL),
-		original_filename
+		http_multi_part_get_filename (mpart)
 	);
 
 }
@@ -233,11 +315,6 @@ int main (int argc, char **argv) {
 			http_cerver, custom_uploads_filename_generator
 		);
 
-		// char filename[256] = { "\n p2'\nr-o@g_ram \t84iz./te{st_20191\n11814}233\n3030>.png\n" };
-		// (void) printf ("\nTesting filename sanitize method: \n");
-		// files_sanitize_filename (filename);
-		// (void) printf ("Filename: <%s>\n\n", filename);
-
 		// GET /test
 		HttpRoute *test_route = http_route_create (REQUEST_METHOD_GET, "test", test_handler);
 		http_cerver_route_register (http_cerver, test_route);
@@ -246,6 +323,16 @@ int main (int argc, char **argv) {
 		HttpRoute *upload_route = http_route_create (REQUEST_METHOD_POST, "upload", upload_handler);
 		http_route_set_modifier (upload_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, upload_route);
+
+		// POST /iter/good
+		HttpRoute *iter_good_route = http_route_create (REQUEST_METHOD_POST, "iter/good", iter_good_handler);
+		http_route_set_modifier (iter_good_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
+		http_cerver_route_register (http_cerver, iter_good_route);
+
+		// POST /iter/empty
+		HttpRoute *iter_empty_route = http_route_create (REQUEST_METHOD_POST, "iter/empty", iter_empty_handler);
+		http_route_set_modifier (iter_empty_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
+		http_cerver_route_register (http_cerver, iter_empty_route);
 
 		// POST /discard
 		HttpRoute *discard_route = http_route_create (REQUEST_METHOD_POST, "discard", discard_handler);
