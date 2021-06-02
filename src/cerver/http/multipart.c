@@ -1,5 +1,7 @@
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdarg.h>
 
@@ -14,6 +16,8 @@ MultiPart *http_multi_part_new (void) {
 
 	MultiPart *multi_part = (MultiPart *) malloc (sizeof (MultiPart));
 	if (multi_part) {
+		multi_part->type = MULTI_PART_TYPE_NONE;
+
 		multi_part->next_header = MULTI_PART_HEADER_INVALID;
 
 		(void) memset (
@@ -42,6 +46,30 @@ MultiPart *http_multi_part_new (void) {
 	}
 
 	return multi_part;
+
+}
+
+const MultiPartType http_multi_part_get_type (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->type;
+
+}
+
+bool http_multi_part_is_file (
+	const MultiPart *multi_part
+) {
+
+	return (multi_part->type == MULTI_PART_TYPE_FILE);
+
+}
+
+bool http_multi_part_is_value (
+	const MultiPart *multi_part
+) {
+
+	return (multi_part->type == MULTI_PART_TYPE_VALUE);
 
 }
 
@@ -174,14 +202,14 @@ void http_multi_part_headers_print (const MultiPart *mpart) {
 void http_multi_part_print (const MultiPart *mpart) {
 
 	if (mpart) {
-		if (mpart->filename_len) {
+		if (mpart->type == MULTI_PART_TYPE_FILE) {
 			(void) printf (
 				"FILE: %s - %s -> %s\n",
 				mpart->name->str, mpart->filename, mpart->saved_filename
 			);
 		}
 
-		else {
+		else if (mpart->type == MULTI_PART_TYPE_VALUE) {
 			(void) printf (
 				"VALUE: %s - %s\n",
 				mpart->name->str, mpart->value

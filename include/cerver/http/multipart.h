@@ -2,6 +2,7 @@
 #define _CERVER_HTTP_MULTIPART_H_
 
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "cerver/types/string.h"
 
@@ -28,6 +29,14 @@ extern "C" {
 
 #pragma region parts
 
+typedef enum MultiPartType {
+
+	MULTI_PART_TYPE_NONE						= 0,
+	MULTI_PART_TYPE_FILE						= 1,
+	MULTI_PART_TYPE_VALUE						= 2
+
+} MultiPartType;
+
 typedef enum MultiPartHeader {
 
 	MULTI_PART_HEADER_CONTENT_DISPOSITION		= 0,
@@ -41,6 +50,8 @@ typedef enum MultiPartHeader {
 #define MULTI_PART_HEADERS_SIZE					4
 
 struct _MultiPart {
+
+	MultiPartType type;
 
 	MultiPartHeader next_header;
 	HttpHeader headers[MULTI_PART_HEADERS_SIZE];
@@ -76,6 +87,21 @@ CERVER_PUBLIC MultiPart *http_multi_part_new (void);
 
 CERVER_PUBLIC void http_multi_part_delete (
 	void *multi_part_ptr
+);
+
+// returns the multi-part's type
+CERVER_PUBLIC const MultiPartType http_multi_part_get_type (
+	const MultiPart *multi_part
+);
+
+// returns true if the multi-part's type is MULTI_PART_TYPE_FILE
+CERVER_PUBLIC bool http_multi_part_is_file (
+	const MultiPart *multi_part
+);
+
+// returns true if the multi-part's type is MULTI_PART_TYPE_VALUE
+CERVER_PUBLIC bool http_multi_part_is_value (
+	const MultiPart *multi_part
 );
 
 // returns the multi-part's name
