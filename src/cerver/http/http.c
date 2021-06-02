@@ -1708,7 +1708,7 @@ DoubleList *http_parse_query_into_pairs (
 					if (value_first != NULL) value_after = walk;
 					else key_after = walk;
 
-					dlist_insert_after (
+					(void) dlist_insert_after (
 						pairs, 
 						dlist_end (pairs), 
 						key_value_pair_create_pieces (
@@ -1742,7 +1742,7 @@ DoubleList *http_parse_query_into_pairs (
 		if (value_first != NULL) value_after = walk;
 		else key_after = walk;
 
-		dlist_insert_after (
+		(void) dlist_insert_after (
 			pairs, 
 			dlist_end (pairs),
 			key_value_pair_create_pieces (
@@ -1873,7 +1873,7 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 		name = strsep (&pair, "=");
 		value = strsep (&pair, "=");
 
-		dlist_insert_after (
+		(void) dlist_insert_after (
 			attributes, 
 			dlist_end (attributes), 
 			key_value_pair_create (
@@ -1950,8 +1950,12 @@ static int http_receive_handle_mpart_header_field (
 	multipart_parser *parser, const char *at, size_t length
 ) {
 
-	char header[32] = { 0 };
-	(void) snprintf (header, 32, "%.*s", (int) length, at);
+	char header[HTTP_MULTI_PART_TEMP_HEADER_SIZE] = { 0 };
+	(void) snprintf (
+		header, HTTP_MULTI_PART_TEMP_HEADER_SIZE - 1,
+		"%.*s", (int) length, at
+	);
+
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
 	(((HttpReceive *) parser->data)->request)->current_part->next_header =
@@ -1969,9 +1973,11 @@ static int http_receive_handle_mpart_header_value (
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
-		multi_part->headers[multi_part->next_header] = str_new (NULL);
-		multi_part->headers[multi_part->next_header]->str = c_string_create ("%.*s", (int) length, at);
-		multi_part->headers[multi_part->next_header]->len = length;
+		multi_part->headers[multi_part->next_header].len = snprintf (
+			multi_part->headers[multi_part->next_header].value,
+			HTTP_HEADER_VALUE_SIZE - 1,
+			"%.*s", (int) length, at
+		);
 	}
 
 	// multi_part->next_header = MULTI_PART_HEADER_INVALID;
@@ -1989,11 +1995,11 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 	http_multi_part_headers_print (multi_part);
 	#endif
 
-	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]) {
+	if (multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].len > 0) {
 		if (c_string_starts_with (
-			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str, "form-data;")
+			multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value, "form-data;")
 		) {
-			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION]->str;
+			char *end = (char *) multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].value;
 			end += strlen ("form-data;");
 
 			multi_part->params = http_mpart_attributes_parse (end);
@@ -2006,6 +2012,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			);
 
 			if (original_filename) {
+				multi_part->type = MULTI_PART_TYPE_FILE;
+
 				// stats
 				http_receive->file_stats->n_uploaded_files += 1;
 
@@ -2021,7 +2029,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path_len > 0) {
-					if (http_receive->request->dirname) {
+					if (http_receive->request->dirname_len > 0) {
 						if (http_receive->http_cerver->uploads_filename_generator) {
 							// TODO: check for errors
 							http_receive->http_cerver->uploads_filename_generator (
@@ -2118,6 +2126,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			}
 
 			else {
+				multi_part->type = MULTI_PART_TYPE_VALUE;
+
 				http_receive->request->n_values += 1;
 			}
 		}
