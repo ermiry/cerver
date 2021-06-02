@@ -600,6 +600,7 @@ struct _HttpReceive {
 	http_status status;
 	size_t sent;
 
+	bool is_multi_part;
 	struct _HttpRouteFileStats *file_stats;
 
 };

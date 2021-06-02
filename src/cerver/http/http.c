@@ -2353,6 +2353,7 @@ HttpReceive *http_receive_new (void) {
 		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
 
+		http_receive->is_multi_part = false;
 		http_receive->file_stats = NULL;
 	}
 
@@ -2883,6 +2884,8 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 			http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str
 		)) {
 			// printf ("\nis multipart!\n");
+			http_receive->is_multi_part = true;
+
 			char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
 
 			if (!http_mpart_get_boundary (

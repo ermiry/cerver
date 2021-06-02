@@ -2346,7 +2346,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 					total_received, http_receive->sent
 				);
 
-				if (http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+				if (
+					(http_receive->route->modifier == HTTP_ROUTE_MODIFIER_MULTI_PART)
+					&& http_receive->is_multi_part
+				) {
 					http_route_file_stats_update (
 						http_receive->route->file_stats,
 						http_receive->file_stats
