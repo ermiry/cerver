@@ -77,6 +77,14 @@ extern unsigned int curl_upload_file (
 	const char *filename
 );
 
+// uploads two files in the same multi-part request
+// returns 0 on success, 1 on error
+extern unsigned int curl_upload_two_files (
+	CURL *curl, const char *address,
+	curl_write_data_cb write_cb, char *buffer,
+	const char *filename_one, const char *filename_two
+);
+
 // uploads a file to the requested route performing a multi-part request
 // and also adds another value to the request
 // returns 0 on success, 1 on error
