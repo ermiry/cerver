@@ -2168,13 +2168,7 @@ static void *admin_poll (void *cerver_ptr) {
 			cerver->info->name
 		);
 
-		char thread_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
-		(void) snprintf (
-			thread_name, THREAD_NAME_BUFFER_SIZE,
-			"%s-admin", cerver->info->name
-		);
-
-		(void) thread_set_name (thread_name);
+		(void) thread_set_name ("%s-admin", cerver->info->alias);
 
 		char *packet_buffer = (char *) calloc (
 			admin_cerver->receive_buffer_size, sizeof (char)
