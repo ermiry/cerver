@@ -24,9 +24,6 @@
 
 #include "cerver/game/game.h"
 
-#define MAX_PORT_NUM								65535
-#define MAX_UDP_PACKET_SIZE							65515
-
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
