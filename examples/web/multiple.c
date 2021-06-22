@@ -387,7 +387,7 @@ int main (int argc, char **argv) {
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				web_cerver->info->name->str
+				web_cerver->info->name
 			);
 
 			cerver_delete (web_cerver);
