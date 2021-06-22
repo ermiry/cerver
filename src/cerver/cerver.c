@@ -107,8 +107,7 @@ static CerverInfo *cerver_info_new (void) {
 	CerverInfo *cerver_info = (CerverInfo *) malloc (sizeof (CerverInfo));
 	if (cerver_info) {
 		(void) memset (cerver_info, 0, sizeof (CerverInfo));
-		cerver_info->name = NULL;
-		cerver_info->welcome_msg = NULL;
+		
 		cerver_info->cerver_info_packet = NULL;
 	}
 
@@ -119,12 +118,20 @@ static CerverInfo *cerver_info_new (void) {
 static void cerver_info_delete (CerverInfo *cerver_info) {
 
 	if (cerver_info) {
-		str_delete (cerver_info->name);
-		str_delete (cerver_info->welcome_msg);
 		packet_delete (cerver_info->cerver_info_packet);
 
 		free (cerver_info);
 	}
+
+}
+
+static void cerver_set_name (Cerver *cerver, const char *name) {
+
+	(void) strncpy (
+		cerver->info->name, name, CERVER_INFO_NAME_SIZE - 1
+	);
+
+	cerver->info->name_len = strlen (cerver->info->name);
 
 }
 
@@ -136,8 +143,12 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 	if (cerver) {
 		if (cerver->info) {
-			str_delete (cerver->info->welcome_msg);
-			cerver->info->welcome_msg = msg ? str_new (msg) : NULL;
+			(void) strncpy (
+				cerver->info->welcome, msg, CERVER_INFO_WELCOME_SIZE - 1
+			);
+
+			cerver->info->welcome_len = strlen (cerver->info->welcome);
+
 			retval = 0;
 		}
 	}
@@ -1250,7 +1261,7 @@ Cerver *cerver_create (
 			cerver_set_handle_recieved_buffer (cerver, cerver_receive_handle_buffer);
 
 			cerver->info = cerver_info_new ();
-			cerver->info->name = str_new (name);
+			cerver_set_name (cerver, name);
 
 			cerver->stats = cerver_stats_new ();
 		}
