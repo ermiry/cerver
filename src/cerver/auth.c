@@ -1335,9 +1335,9 @@ void *on_hold_poll (void *cerver_ptr) {
 			cerver->info->name
 		);
 
-		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char thread_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 		(void) snprintf (
-			thread_name, THREAD_NAME_BUFFER_LEN,
+			thread_name, THREAD_NAME_BUFFER_SIZE,
 			"%s-on-hold", cerver->info->name
 		);
 

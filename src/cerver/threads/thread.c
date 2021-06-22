@@ -57,9 +57,9 @@ unsigned int thread_set_name (const char *name, ...) {
 		va_list args;
 		va_start (args, name);
 
-		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char thread_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 		(void) vsnprintf (
-			thread_name, THREAD_NAME_BUFFER_LEN - 1, name, args
+			thread_name, THREAD_NAME_BUFFER_SIZE - 1, name, args
 		);
 
 		if (!prctl (PR_SET_NAME, thread_name)) {
