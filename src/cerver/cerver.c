@@ -107,7 +107,15 @@ static CerverInfo *cerver_info_new (void) {
 	CerverInfo *cerver_info = (CerverInfo *) malloc (sizeof (CerverInfo));
 	if (cerver_info) {
 		(void) memset (cerver_info, 0, sizeof (CerverInfo));
-		
+
+		(void) strncpy (
+			cerver_info->alias,
+			CERVER_DEFAULT_ALIAS,
+			CERVER_INFO_ALIAS_SIZE - 1
+		);
+
+		cerver_info->alias_len = strlen (cerver_info->alias);
+
 		cerver_info->cerver_info_packet = NULL;
 	}
 
@@ -132,6 +140,21 @@ static void cerver_set_name (Cerver *cerver, const char *name) {
 	);
 
 	cerver->info->name_len = strlen (cerver->info->name);
+
+}
+
+// sets the cerver's alias
+// to be used primarily to handle cerver's related threads names
+// as they must not exceed a certain size
+void cerver_set_alias (Cerver *cerver, const char *alias) {
+
+	if (cerver && alias) {
+		(void) strncpy (
+			cerver->info->alias, alias, CERVER_INFO_ALIAS_SIZE - 1
+		);
+
+		cerver->info->alias_len = strlen (cerver->info->alias);
+	}
 
 }
 
