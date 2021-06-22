@@ -3,6 +3,8 @@
 
 #include <pthread.h>
 
+#include "cerver/types/types.h"
+
 #include "cerver/collections/dlist.h"
 #include "cerver/collections/pool.h"
 
@@ -23,6 +25,7 @@ struct _JobQueue;
 
 typedef struct Job {
 
+	u64 id;
 	void (*work) (void *args);
 	void *args;
 
@@ -31,6 +34,10 @@ typedef struct Job {
 CERVER_PUBLIC void *job_new (void);
 
 CERVER_PUBLIC void job_delete (void *job_ptr);
+
+CERVER_PUBLIC int job_comparator (
+	const void *a, const void *b
+);
 
 CERVER_PUBLIC Job *job_create (
 	void (*work) (void *args), void *args
@@ -105,6 +112,10 @@ struct _JobQueue {
 	pthread_mutex_t *rwmutex;		// used for queue r/w access
 	bsem *has_jobs;
 
+	bool waiting;
+	u64 requested_id;
+	void *requested_job;
+
 	bool running;
 	pthread_t handler_thread_id;
 	void (*handler) (void *data);
@@ -127,20 +138,26 @@ CERVER_PUBLIC void job_queue_set_handler (
 
 // adds a new job to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push (
+CERVER_PUBLIC unsigned int job_queue_push (
 	JobQueue *job_queue, void *job_ptr
 );
 
 // creates & adds a new job to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push_job (
+CERVER_PUBLIC unsigned int job_queue_push_job (
 	JobQueue *job_queue,
+	void (*work) (void *args), void *args
+);
+
+CERVER_PUBLIC unsigned int job_queue_push_job_with_id (
+	JobQueue *job_queue,
+	const u64 job_id,
 	void (*work) (void *args), void *args
 );
 
 // creates & adds a new handler to the queue
 // returns 0 on success, 1 on error
-CERVER_PUBLIC int job_queue_push_handler (
+CERVER_PUBLIC unsigned int job_queue_push_handler (
 	JobQueue *job_queue,
 	struct _Cerver *cerver,
 	struct _Connection *connection,
@@ -149,6 +166,12 @@ CERVER_PUBLIC int job_queue_push_handler (
 
 // get the job at the start of the queue
 CERVER_PUBLIC void *job_queue_pull (JobQueue *job_queue);
+
+// requests to get an specific job from the queue by matching id
+// blocks and waits until the requested job is available
+CERVER_PUBLIC void *job_queue_request (
+	JobQueue *job_queue, const u64 job_id
+);
 
 CERVER_PUBLIC unsigned int job_queue_start (JobQueue *job_queue);
 
