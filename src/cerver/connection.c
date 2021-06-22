@@ -727,7 +727,7 @@ u8 connection_unregister_from_cerver (
 		if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
 			// cerver_log_success (
 			// 	"Removed sock fd %d from cerver's %s client sock map.",
-			//     connection->socket->sock_fd, cerver->info->name->str
+			//     connection->socket->sock_fd, cerver->info->name
 			// );
 
 			retval = 0;
@@ -738,7 +738,7 @@ u8 connection_unregister_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Failed to remove sock fd %d from cerver's %s client sock map.",
-				connection->socket->sock_fd, cerver->info->name->str
+				connection->socket->sock_fd, cerver->info->name
 			);
 			#endif
 		}

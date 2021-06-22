@@ -777,7 +777,7 @@ u8 client_register_connections_to_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to register all the connections for client %ld (id) to cerver %s",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -815,7 +815,7 @@ u8 client_unregister_connections_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to unregister all the connections for client %ld (id) from cerver %s",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -854,7 +854,7 @@ u8 client_register_connections_to_cerver_poll (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to register all the connections for client %ld (id) to cerver %s poll",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -893,7 +893,7 @@ u8 client_unregister_connections_from_cerver_poll (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to unregister all the connections for client %ld (id) from cerver %s poll",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -922,7 +922,7 @@ Client *client_remove_from_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
-				"Unregistered a client from cerver %s.", cerver->info->name->str
+				"Unregistered a client from cerver %s.", cerver->info->name
 			);
 			#endif
 
@@ -931,7 +931,7 @@ Client *client_remove_from_cerver (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Connected clients to cerver %s: %i.",
-				cerver->info->name->str, cerver->stats->current_n_connected_clients
+				cerver->info->name, cerver->stats->current_n_connected_clients
 			);
 			#endif
 		}
@@ -941,7 +941,7 @@ Client *client_remove_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Received NULL ptr when attempting to remove a client from cerver's %s client tree.",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 		}
@@ -961,7 +961,7 @@ static void client_register_to_cerver_internal (
 	cerver_log (
 		LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
 		"Registered a new client to cerver %s.",
-		cerver->info->name->str
+		cerver->info->name
 	);
 	#endif
 
@@ -972,7 +972,7 @@ static void client_register_to_cerver_internal (
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 		"Connected clients to cerver %s: %i.",
-		cerver->info->name->str,
+		cerver->info->name,
 		cerver->stats->current_n_connected_clients
 	);
 	#endif

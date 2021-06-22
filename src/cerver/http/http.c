@@ -396,7 +396,7 @@ static unsigned int http_cerver_init_load_jwt_private_key (
 
 		cerver_log_success (
 			"Loaded cerver's %s http jwt PRIVATE key (size %ld)!",
-			http_cerver->cerver->info->name->str,
+			http_cerver->cerver->info->name,
 			http_cerver->jwt_private_key->len
 		);
 
@@ -406,7 +406,7 @@ static unsigned int http_cerver_init_load_jwt_private_key (
 	else {
 		cerver_log_error (
 			"Failed to load cerver's %s http jwt PRIVATE key!",
-			http_cerver->cerver->info->name->str
+			http_cerver->cerver->info->name
 		);
 	}
 
@@ -434,7 +434,7 @@ static unsigned int http_cerver_init_load_jwt_public_key (
 
 		cerver_log_success (
 			"Loaded cerver's %s http jwt PUBLIC key (size %ld)!",
-			http_cerver->cerver->info->name->str,
+			http_cerver->cerver->info->name,
 			http_cerver->jwt_public_key->len
 		);
 
@@ -444,7 +444,7 @@ static unsigned int http_cerver_init_load_jwt_public_key (
 	else {
 		cerver_log_error (
 			"Failed to load cerver's %s http jwt PUBLIC key!",
-			http_cerver->cerver->info->name->str
+			http_cerver->cerver->info->name
 		);
 	}
 
