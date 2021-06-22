@@ -57,7 +57,7 @@ void game_cerver_stats_print (Cerver *cerver) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 				"Can't print game stats of cerver %s -- it is not a game cerver.",
-				cerver->info->name->str
+				cerver->info->name
 			);
 		}
 	}
@@ -174,7 +174,7 @@ void game_cerver_register_lobby (GameCerver *game_cerver, Lobby *lobby) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_NONE,
 				"Lobby %s was registered to cerver %s.",
-				lobby->id->str, game_cerver->cerver->info->name->str
+				lobby->id->str, game_cerver->cerver->info->name
 			);
 			#endif
 		}
@@ -183,7 +183,7 @@ void game_cerver_register_lobby (GameCerver *game_cerver, Lobby *lobby) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_NONE,
 				"Lobby %s is already registered to cerver %s.",
-				lobby->id->str, game_cerver->cerver->info->name->str
+				lobby->id->str, game_cerver->cerver->info->name
 			);
 		}
 	}
@@ -203,7 +203,7 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 				"Unregistered lobby %s from cerver %s",
-				l->id->str, game_cerver->cerver->info->name->str
+				l->id->str, game_cerver->cerver->info->name
 			);
 			#endif
 
@@ -213,7 +213,7 @@ void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 				"Current active lobbys in cerver %s: %d.",
-				game_cerver->cerver->info->name->str, game_cerver->stats->current_active_lobbys
+				game_cerver->cerver->info->name, game_cerver->stats->current_active_lobbys
 			);
 			#endif
 		}
@@ -238,7 +238,7 @@ static void game_lobby_create (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 				"Client %ld requested to create a new lobby in cerver %s of type: %s",
-				packet->client->id, packet->cerver->info->name->str, stype->str
+				packet->client->id, packet->cerver->info->name, stype->str
 			);
 			#endif
 
@@ -273,7 +273,7 @@ static void game_lobby_create (Packet *packet) {
 					cerver_log (
 						LOG_TYPE_ERROR, LOG_TYPE_GAME,
 						"Failed to create a new lobby in cerver %s!",
-						packet->cerver->info->name->str
+						packet->cerver->info->name
 					);
 					#endif
 					// send error packet to client
@@ -292,7 +292,7 @@ static void game_lobby_create (Packet *packet) {
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_GAME,
 					"Failed to find %s game type in cerver %s!",
-					stype->str, packet->cerver->info->name->str
+					stype->str, packet->cerver->info->name
 				);
 				#endif
 				Packet *error_packet = error_packet_generate (CERVER_ERROR_CREATE_LOBBY, "Bad game type!");
@@ -330,7 +330,7 @@ static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 			"Client %ld requested to join lobby with id ""%s"" in cerver %s.",
-			packet->client->id, lj->lobby_id.str, packet->cerver->info->name->str
+			packet->client->id, lj->lobby_id.str, packet->cerver->info->name
 		);
 		#endif
 
@@ -413,7 +413,7 @@ static void game_lobby_join_specific (Packet *packet, LobbyJoin *lj) {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_GAME,
 				"Failed to get lobby with id: <%s> in cerver %s!",
-				lj->lobby_id.str, packet->cerver->info->name->str
+				lj->lobby_id.str, packet->cerver->info->name
 			);
 			#endif
 
@@ -439,7 +439,7 @@ static void game_lobby_join_search (Packet *packet, LobbyJoin *lj) {
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 			"Client %ld request to join a lobby of type: %s in cerver %s",
-			packet->client->id, lj->game_type.str, packet->cerver->info->name->str
+			packet->client->id, lj->game_type.str, packet->cerver->info->name
 		);
 		#endif
 	}
@@ -506,7 +506,7 @@ static void game_lobby_start (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_GAME,
 				"Client %ld requested to start lobby with id ""%s"" in cerver %s.",
-				packet->client->id, lobby_id->str, packet->cerver->info->name->str
+				packet->client->id, lobby_id->str, packet->cerver->info->name
 			);
 			#endif
 
@@ -521,7 +521,7 @@ static void game_lobby_start (Packet *packet) {
 						cerver_log (
 							LOG_TYPE_SUCCESS, LOG_TYPE_GAME,
 							"Lobby %s has started in cerver %s!",
-							lobby->id->str, packet->cerver->info->name->str
+							lobby->id->str, packet->cerver->info->name
 						);
 						#endif
 
@@ -575,7 +575,7 @@ static void game_lobby_start (Packet *packet) {
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_GAME,
 					"Failed to get lobby with id: ""%s"" in cerver %s!",
-					lobby_id->str, packet->cerver->info->name->str
+					lobby_id->str, packet->cerver->info->name
 				);
 				#endif
 

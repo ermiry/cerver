@@ -125,7 +125,7 @@ int main (void) {
 
 			if (cerver_start (my_cerver)) {
 				char *s = c_string_create ("Failed to start %s!",
-					my_cerver->info->name->str);
+					my_cerver->info->name);
 				if (s) {
 					cerver_log_error (s);
 					free (s);

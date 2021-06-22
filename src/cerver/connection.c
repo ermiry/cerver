@@ -727,7 +727,7 @@ u8 connection_unregister_from_cerver (
 		if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
 			// cerver_log_success (
 			// 	"Removed sock fd %d from cerver's %s client sock map.",
-			//     connection->socket->sock_fd, cerver->info->name->str
+			//     connection->socket->sock_fd, cerver->info->name
 			// );
 
 			retval = 0;
@@ -738,7 +738,7 @@ u8 connection_unregister_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Failed to remove sock fd %d from cerver's %s client sock map.",
-				connection->socket->sock_fd, cerver->info->name->str
+				connection->socket->sock_fd, cerver->info->name
 			);
 			#endif
 		}
@@ -856,8 +856,8 @@ void *connection_update (void *client_connection_ptr) {
 	if (client_connection_ptr) {
 		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
 
-		char client_name[THREAD_NAME_BUFFER_LEN] = { 0 };
-		char connection_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+		char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+		char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
@@ -867,13 +867,13 @@ void *connection_update (void *client_connection_ptr) {
 		);
 		#endif
 
-		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_LEN - 1);
+		(void) strncpy (client_name, cc->client->name, THREAD_NAME_BUFFER_SIZE - 1);
 
 		if (strcmp (CONNECTION_DEFAULT_NAME, cc->connection->name)) {
 			(void) strncpy (
 				connection_name,
 				cc->connection->name,
-				THREAD_NAME_BUFFER_LEN - 1
+				THREAD_NAME_BUFFER_SIZE - 1
 			);
 
 			(void) thread_set_name (connection_name);

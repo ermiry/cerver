@@ -187,7 +187,7 @@ static void auth_send_success_packet (
 			#ifdef AUTH_DEBUG
 			cerver_log_error (
 				"Failed to create success auth packet in cerver %s",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 		}
@@ -307,7 +307,7 @@ static CerverAuthError auth_with_token_admin (
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"Found an ADMIN with session id <%s> in cerver %s.",
-			auth_data->token->str, packet->cerver->info->name->str
+			auth_data->token->str, packet->cerver->info->name
 		);
 		#endif
 
@@ -319,7 +319,7 @@ static CerverAuthError auth_with_token_admin (
 	else {
 		cerver_log_error (
 			"Failed to get ADMIN with matching session id <%s> in cerver %s",
-			auth_data->token->str, packet->cerver->info->name->str
+			auth_data->token->str, packet->cerver->info->name
 		);
 
 		// if not, the token is invalid!
@@ -357,7 +357,7 @@ static CerverAuthError auth_with_token_normal (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"Found a CLIENT with session id <%s> in cerver %s.",
-				auth_data->token->str, packet->cerver->info->name->str
+				auth_data->token->str, packet->cerver->info->name
 			);
 			#endif
 
@@ -371,7 +371,7 @@ static CerverAuthError auth_with_token_normal (
 		else {
 			cerver_log_error (
 				"Failed to get CLIENT with matching session id <%s> in cerver %s",
-				auth_data->token->str, packet->cerver->info->name->str
+				auth_data->token->str, packet->cerver->info->name
 			);
 
 			// if not, the token is invalid!
@@ -423,7 +423,7 @@ static CerverAuthError auth_with_defined_method (
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
 				"Client authenticated successfully to cerver %s",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -436,7 +436,7 @@ static CerverAuthError auth_with_defined_method (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"Client failed to authenticate to cerver %s",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -538,7 +538,7 @@ static CerverAuthError auth_try_common (
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 			"Failed to get auth data from packet in cerver %s",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 		#endif
 
@@ -634,7 +634,7 @@ static CerverAuthError auth_try (Packet *packet) {
 					cerver_log (
 						LOG_TYPE_ERROR, LOG_TYPE_ADMIN,
 						"admin_auth_try () - failed to register a new admin to cerver %s",
-						packet->cerver->info->name->str
+						packet->cerver->info->name
 					);
 
 					// send an error packet to the client
@@ -689,7 +689,7 @@ static CerverAuthError auth_try (Packet *packet) {
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 			"Cerver %s does not have an authenticate method!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 
 		// close the on hold connection assocaited with sock fd
@@ -754,7 +754,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 						cerver_log (
 							LOG_TYPE_ERROR, LOG_TYPE_ADMIN,
 							"admin_auth_try () - failed to register a new admin to cerver %s",
-							packet->cerver->info->name->str
+							packet->cerver->info->name
 						);
 
 						// send an error packet to the client
@@ -807,7 +807,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Cerver %s ADMIN does not have an authenticate method!",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 
 			// close the on hold connection assocaited with sock fd
@@ -821,7 +821,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"admin_auth_try () - Cerver %s does NOT support ADMINS!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 
 		on_hold_connection_drop (packet->cerver, packet->connection);
@@ -927,7 +927,7 @@ static CerverAuthError on_hold_packet_handler_actual (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
 				"Got an ON HOLD packet of unknown type in cerver %s.",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -1188,7 +1188,7 @@ static u8 on_hold_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Added sock fd <%d> to cerver %s ON HOLD poll, idx: %i",
-				connection->socket->sock_fd, cerver->info->name->str, idx
+				connection->socket->sock_fd, cerver->info->name, idx
 			);
 			#endif
 
@@ -1196,7 +1196,7 @@ static u8 on_hold_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_CERVER,
 				"Cerver %s current ON HOLD connections: %ld",
-				cerver->info->name->str, cerver->stats->current_n_hold_connections
+				cerver->info->name, cerver->stats->current_n_hold_connections
 			);
 			#endif
 
@@ -1208,7 +1208,7 @@ static u8 on_hold_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 				"Cerver %s ON HOLD poll is full!",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 		}
@@ -1244,7 +1244,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Removed sock fd <%d> from cerver %s ON HOLD poll, idx: %d",
-				sock_fd, cerver->info->name->str, idx
+				sock_fd, cerver->info->name, idx
 			);
 			#endif
 
@@ -1252,7 +1252,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_CERVER,
 				"Cerver %s current ON HOLD connections: %ld",
-				cerver->info->name->str,
+				cerver->info->name,
 				cerver->stats->current_n_hold_connections
 			);
 			#endif
@@ -1265,7 +1265,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 				"Sock fd <%d> was NOT found in cerver %s ON HOLD poll!",
-				sock_fd, cerver->info->name->str
+				sock_fd, cerver->info->name
 			);
 			// #endif
 		}
@@ -1332,16 +1332,10 @@ void *on_hold_poll (void *cerver_ptr) {
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 			"Cerver %s ON HOLD poll has started!",
-			cerver->info->name->str
+			cerver->info->name
 		);
 
-		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
-		(void) snprintf (
-			thread_name, THREAD_NAME_BUFFER_LEN,
-			"%s-on-hold", cerver->info->name->str
-		);
-
-		(void) thread_set_name (thread_name);
+		(void) thread_set_name ("%s-on-hold", cerver->info->alias);
 
 		char *packet_buffer = (char *) calloc (
 			cerver->on_hold_receive_buffer_size, sizeof (char)
@@ -1368,7 +1362,7 @@ void *on_hold_poll (void *cerver_ptr) {
 						cerver_log (
 							LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 							"Cerver %s ON HOLD poll has failed!",
-							cerver->info->name->str
+							cerver->info->name
 						);
 
 						perror ("Error");
@@ -1380,7 +1374,7 @@ void *on_hold_poll (void *cerver_ptr) {
 						// cerver_log (
 						//     LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 						//     "Cerver %s ON HOLD poll timeout",
-						// 	cerver->info->name->str
+						// 	cerver->info->name
 						// );
 						// #endif
 					} break;
@@ -1400,7 +1394,7 @@ void *on_hold_poll (void *cerver_ptr) {
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
 				"Cerver %s ON HOLD poll has stopped!",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 

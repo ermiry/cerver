@@ -144,7 +144,7 @@ int main (int argc, char **argv) {
 		if (cerver_start (api_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				api_cerver->info->name->str
+				api_cerver->info->name
 			);
 
 			cerver_delete (api_cerver);

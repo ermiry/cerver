@@ -23,6 +23,7 @@ static void test_job_new (void) {
 	Job *job = (Job *) job_new ();
 
 	test_check_ptr (job);
+	test_check_unsigned_eq (job->id, 0, NULL);
 	test_check_null_ptr (job->work);
 	test_check_null_ptr (job->args);
 
@@ -146,6 +147,9 @@ static void test_job_queue_new (void) {
 	test_check_null_ptr (job_queue->queue);
 	test_check_null_ptr (job_queue->rwmutex);
 	test_check_null_ptr (job_queue->has_jobs);
+	test_check_bool_eq (job_queue->waiting, false, NULL);
+	test_check_unsigned_eq (job_queue->requested_id, 0, NULL);
+	test_check_null_ptr (job_queue->requested_job);
 	test_check_bool_eq (job_queue->running, false, NULL);
 	test_check_unsigned_eq (job_queue->handler_thread_id, 0, NULL);
 	test_check_null_ptr (job_queue->handler);

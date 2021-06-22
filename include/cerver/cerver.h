@@ -24,8 +24,7 @@
 
 #include "cerver/game/game.h"
 
-#define MAX_PORT_NUM								65535
-#define MAX_UDP_PACKET_SIZE							65515
+#define CERVER_DEFAULT_ALIAS						"my-cerver"
 
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
@@ -133,16 +132,34 @@ CERVER_EXPORT const char *cerver_handler_type_description (
 
 #pragma region info
 
+#define CERVER_INFO_NAME_SIZE				128
+#define CERVER_INFO_ALIAS_SIZE				32
+#define CERVER_INFO_WELCOME_SIZE			512
+
 typedef struct CerverInfo {
 
-	String *name;
-	String *welcome_msg;                  // this msg is sent to the client when it first connects
-	struct _Packet *cerver_info_packet;    // useful info that we can send to clients
+	size_t name_len;
+	char name[CERVER_INFO_NAME_SIZE];
 
-	time_t time_started;                   // the actual time the cerver was started
-	u64 uptime;                            // the seconds the cerver has been up
+	size_t alias_len;
+	char alias[CERVER_INFO_ALIAS_SIZE];
+
+	// this message is sent to the client when it first connects
+	size_t welcome_len;
+	char welcome[CERVER_INFO_WELCOME_SIZE];
+	struct _Packet *cerver_info_packet;
+
+	time_t time_started;					// the actual time the cerver was started
+	u64 uptime;								// the seconds the cerver has been up
 
 } CerverInfo;
+
+// sets the cerver's alias
+// to be used primarily to handle cerver's related threads names
+// as they must not exceed a certain size
+CERVER_EXPORT void cerver_set_alias (
+	struct _Cerver *cerver, const char *alias
+);
 
 // sets the cerver msg to be sent when a client connects
 // retuns 0 on success, 1 on error
@@ -691,8 +708,8 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                64
-#define S_CERVER_WELCOME_LENGTH             128
+#define S_CERVER_NAME_LENGTH                128
+#define S_CERVER_WELCOME_LENGTH             512
 
 // serialized cerver structure
 typedef struct SCerver {
