@@ -14,9 +14,11 @@ make TYPE=test -j4 test || { exit 1; }
 bash test/run.sh || { exit 1; }
 
 # compile docker
+echo "Building test docker image..."
 sudo docker build -t ermiry/cerver:test -f Dockerfile.test . || { exit 1; }
 
 # ping
+echo "Ping integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -32,6 +34,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # packets
+echo "Packets integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -47,6 +50,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # requests
+echo "Requests integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -62,6 +66,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # auth
+echo "Auth integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -77,6 +82,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # sessions
+echo "Sessions integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -92,6 +98,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # threads
+echo "Threads integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -107,6 +114,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # web
+echo "Web integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -121,7 +129,24 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
+# auth
+echo "Web Auth integration test..."
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 8080:8080 \
+	ermiry/cerver:test ./bin/web/auth
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/web/auth || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
+
 # api
+echo "API integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -137,6 +162,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # upload
+echo "Upload integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -152,6 +178,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # multiple
+echo "Multiple integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -167,6 +194,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # jobs
+echo "Jobs integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -182,6 +210,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # admin
+echo "Admin integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -195,3 +224,5 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 ./test/bin/client/web/admin || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
+
+printf "\n\nDone\n\n"
