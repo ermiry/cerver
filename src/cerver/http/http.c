@@ -854,6 +854,18 @@ void http_cerver_set_uploads_filename_generator (
 
 }
 
+// sets the HTTP cerver's uploads filename generator
+// to be http_cerver_default_uploads_filename_generator ()
+void http_cerver_set_default_uploads_filename_generator (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_filename_generator = http_cerver_default_uploads_filename_generator;
+	}
+
+}
+
 // sets the mode_t value to be used when creating uploads dirs
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 void http_cerver_set_uploads_dir_mode (
@@ -895,6 +907,18 @@ void http_cerver_set_uploads_dirname_generator (
 
 	if (http_cerver) {
 		http_cerver->uploads_dirname_generator = uploads_dirname_generator;
+	}
+
+}
+
+// sets the HTTP cerver's uploads dirname generator
+// to be http_cerver_default_uploads_dirname_generator ()
+void http_cerver_set_default_uploads_dirname_generator (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_dirname_generator = http_cerver_default_uploads_dirname_generator;
 	}
 
 }

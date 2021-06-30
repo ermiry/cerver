@@ -290,6 +290,12 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	)
 );
 
+// sets the HTTP cerver's uploads filename generator
+// to be http_cerver_default_uploads_filename_generator ()
+CERVER_EXPORT void http_cerver_set_default_uploads_filename_generator (
+	HttpCerver *http_cerver
+);
+
 // sets the mode_t value to be used when creating uploads dirs
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
@@ -312,6 +318,12 @@ CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
+);
+
+// sets the HTTP cerver's uploads dirname generator
+// to be http_cerver_default_uploads_dirname_generator ()
+CERVER_EXPORT void http_cerver_set_default_uploads_dirname_generator (
+	HttpCerver *http_cerver
 );
 
 // specifies whether uploads are deleted after the requested has ended
