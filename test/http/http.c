@@ -60,6 +60,9 @@ static void test_http_cerver_new (void) {
 	test_check_unsigned_eq (http_cerver->n_failed_auth_requests, 0, NULL);
 
 	test_check (http_cerver->enable_admin_routes == HTTP_CERVER_DEFAULT_ENABLE_ADMIN, NULL);
+	test_check (http_cerver->enable_admin_routes_auth == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH, NULL);
+	test_check_null_ptr (http_cerver->admin_decode_data);
+	test_check_null_ptr (http_cerver->admin_delete_decoded_data);
 	test_check_null_ptr (http_cerver->admin_file_systems_stats);
 	test_check_null_ptr (http_cerver->admin_mutex);
 
@@ -115,6 +118,9 @@ static void test_http_cerver_create (void) {
 	test_check_unsigned_eq (http_cerver->n_failed_auth_requests, 0, NULL);
 
 	test_check (http_cerver->enable_admin_routes == HTTP_CERVER_DEFAULT_ENABLE_ADMIN, NULL);
+	test_check (http_cerver->enable_admin_routes_auth == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH, NULL);
+	test_check_null_ptr (http_cerver->admin_decode_data);
+	test_check_null_ptr (http_cerver->admin_delete_decoded_data);
 	test_check_ptr (http_cerver->admin_file_systems_stats);
 	test_check_ptr (http_cerver->admin_mutex);
 
