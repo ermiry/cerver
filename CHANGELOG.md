@@ -1,16 +1,21 @@
 ## General
-- Mover port & udp related definitions to network header
-- Refactored cerver's name & welcome fields definitions
-- Updated sources to handle new cerver name value
-- Added cerver info alias definition & method
-- Small changes in test workflow instructions
+- Added script to clean and compile sources
+- Added dedicated script to compile & install cerver
+- Removed dedicated script to install libmongoc
 
-## Threads
-- Refactored THREAD_NAME_BUFFER_SIZE definition
-- Refactored sources to use new thread_set_name ()
-- Added ability to request jobs from queue by id
+## HTTP
+- Added method to generate HTTP uploads paths
+- Changed http_cerver_set_uploads_path () to only take a static path
+- Added default HTTP dirnames & filenames generators
+- Added ability to set route custom auth handler
+- Added ability to enable auth in admin routes
+
+## Examples
+- Added dedicated HTTP routes authentication example
 
 ## Tests
-- Updated cerver integration tests info checks
-- Updated cerver names in HTTP integration tests
-- Updated jobs unit tests with new fields
+- Updated curl methods used for integration tests
+- Added dedicated HTTP routes methods unit tests
+- Updated curl_post_form_value () to handle data
+- Added base curl_perform_request () to better handle responses status codes
+- Added base dedicated HTTP auth integration test
