@@ -266,6 +266,13 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 	HttpCerver *http_cerver, const unsigned int file_mode
 );
 
+// method that can be used to generate multi-part uploads filenames
+// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+);
+
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
@@ -282,6 +289,13 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
 	HttpCerver *http_cerver, const unsigned int dir_mode
+);
+
+// method that can be used to generate multi-part uploads dirnames
+// with format "%d-%ld" using "sock_fd-time (NULL)"
+CERVER_EXPORT void http_cerver_default_uploads_dirname_generator (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
 );
 
 // sets a method to be called on every new multi-part request

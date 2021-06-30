@@ -811,6 +811,25 @@ void http_cerver_set_uploads_file_mode (
 
 }
 
+// method that can be used to generate multi-part uploads filenames
+// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+void http_cerver_default_uploads_filename_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const MultiPart *mpart = http_request_get_current_mpart (request);
+
+	http_multi_part_set_generated_filename (
+		mpart,
+		"%d-%ld-%s",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL),
+		http_multi_part_get_filename (mpart)
+	);
+
+}
+
 // sets a method that should generate a c string to be used
 // to save each incoming file of any multipart request
 // the new filename should be placed in generated_filename
@@ -838,6 +857,22 @@ void http_cerver_set_uploads_dir_mode (
 	if (http_cerver) {
 		http_cerver->uploads_dir_mode = dir_mode;
 	}
+
+}
+
+// method that can be used to generate multi-part uploads dirnames
+// with format "%d-%ld" using "sock_fd-time (NULL)"
+void http_cerver_default_uploads_dirname_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	http_request_set_dirname (
+		request,
+		"%d-%ld",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL)
+	);
 
 }
 
