@@ -759,9 +759,29 @@ void http_cerver_set_not_found_route (
 
 #pragma region uploads
 
-// sets the default uploads path where any multipart file request will be saved
+// sets the default uploads path where any multipart file will be saved
 // this method will replace the previous value with the new one
 void http_cerver_set_uploads_path (
+	HttpCerver *http_cerver, const char *uploads_path
+) {
+
+	if (http_cerver && uploads_path) {
+		(void) strncpy (
+			http_cerver->uploads_path,
+			uploads_path,
+			HTTP_CERVER_UPLOADS_PATH_SIZE - 1
+		);
+
+		http_cerver->uploads_path_len = (int) strlen (
+			http_cerver->uploads_path
+		);
+	}
+
+}
+
+// works like http_cerver_set_uploads_path () but can generate
+// a custom path on the fly using variable arguments
+void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 ) {
 
@@ -2788,6 +2808,7 @@ static void http_receive_handle_select (
 	if (match) {
 		http_receive->route = found;
 
+		// TODO: handle custom authentication
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {

@@ -248,9 +248,15 @@ CERVER_EXPORT void http_cerver_set_not_found_route (
 
 #pragma region uploads
 
-// sets the default uploads path where any multipart file request will be saved
+// sets the default uploads path where any multipart file will be saved
 // this method will replace the previous value with the new one
 CERVER_EXPORT void http_cerver_set_uploads_path (
+	HttpCerver *http_cerver, const char *uploads_path
+);
+
+// works like http_cerver_set_uploads_path () but can generate
+// a custom path on the fly using variable arguments
+CERVER_EXPORT void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 );
 
