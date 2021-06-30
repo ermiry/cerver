@@ -16,6 +16,8 @@ extern void http_tests_methods (void);
 
 extern void http_tests_contents (void);
 
+extern void http_tests_routes (void);
+
 extern void http_tests_requests (void);
 
 extern void http_tests_responses (void);

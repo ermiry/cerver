@@ -235,6 +235,7 @@ int main (int argc, char **argv) {
 	http_tests_headers ();
 	http_tests_methods ();
 	http_tests_contents ();
+	http_tests_routes ();
 	http_tests_requests ();
 	http_tests_responses ();
 	http_tests_multiparts ();
