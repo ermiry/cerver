@@ -5,6 +5,14 @@
 
 #include <curl/curl.h>
 
+typedef enum CurlResult {
+
+	CURL_RESULT_NONE			= 0,
+	CURL_RESULT_FAILED			= 1,
+	CURL_RESULT_BAD_STATUS		= 2
+
+} CurlResult;
+
 typedef size_t (*curl_write_data_cb)(
 	void *contents, size_t size, size_t nmemb, void *storage
 );
@@ -66,7 +74,9 @@ extern unsigned int curl_simple_post_handle_data (
 // returns 0 on success, 1 on error
 extern unsigned int curl_post_form_value (
 	CURL *curl, const char *address,
-	const char *key, const char *value
+	curl_write_data_cb write_cb, char *buffer,
+	const char *key, const char *value,
+	const unsigned int expected_status
 );
 
 // uploads a file to the requested route performing a multi-part request
