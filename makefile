@@ -213,6 +213,7 @@ web: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/web
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/admin.o -o ./$(EXATARGET)/web/admin $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/api.o ./$(EXABUILD)/users.o ./$(EXABUILD)/web/users.o -o ./$(EXATARGET)/web/api $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/auth.o ./$(EXABUILD)/users.o -o ./$(EXATARGET)/web/auth $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/jobs.o -o ./$(EXATARGET)/web/jobs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/multiple.o -o ./$(EXATARGET)/web/multiple $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
