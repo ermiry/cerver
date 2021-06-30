@@ -546,6 +546,12 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
 
+// works like http_cerver_enable_admin_routes_authentication ()
+// but sets a method to decode data from a JWT into a json string
+CERVER_EXPORT void http_cerver_admin_routes_auth_decode_to_json (
+	HttpCerver *http_cerver
+);
+
 // registers a new file system to be handled
 // when requesting for fs stats
 CERVER_EXPORT void http_cerver_register_admin_file_system (
@@ -592,7 +598,7 @@ CERVER_PUBLIC void http_query_pairs_print (
 	XX(2,  BODY,			Body)			\
 	XX(3,  COMPLETED,		Completed)		\
 	XX(4,  INCOMPLETED,		Incompleted)	\
-	XX(5,  UNHANDLED,		Unhandled)	\
+	XX(5,  UNHANDLED,		Unhandled)
 
 typedef enum HttpReceiveStatus {
 

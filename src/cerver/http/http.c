@@ -1699,6 +1699,20 @@ void http_cerver_enable_admin_routes_authentication (
 
 }
 
+// works like http_cerver_enable_admin_routes_authentication ()
+// but sets a method to decode data from a JWT into a json string
+void http_cerver_admin_routes_auth_decode_to_json (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_decode_data = http_decode_data_into_json;
+		http_cerver->admin_delete_decoded_data = free;
+	}
+
+}
+
 // registers a new file system to be handled
 // when requesting for fs stats
 void http_cerver_register_admin_file_system (
