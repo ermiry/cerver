@@ -8,6 +8,39 @@
 
 #define AUTH_HEADER_SIZE		1024
 
+static CurlResult curl_perform_request (
+	CURL *curl, const unsigned int expected_status
+) {
+
+	CurlResult result = CURL_RESULT_NONE;
+
+	CURLcode res = curl_easy_perform (curl);
+
+	long http_code = 0;
+	curl_easy_getinfo (curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+	if (res != CURLE_OK) {
+		cerver_log_error (
+			"curl_perform_request () failed: %s\n",
+			curl_easy_strerror (res)
+		);
+
+		result = CURL_RESULT_FAILED;
+	}
+
+	else if (expected_status != (unsigned int) http_code) {
+		cerver_log_error (
+			"curl_perform_request () expected status %u but got %u instead!",
+			expected_status, (unsigned int) http_code
+		);
+
+		result = CURL_RESULT_BAD_STATUS;
+	}
+
+	return result;
+
+}
+
 // performs a simple curl request to the specified address
 // creates an destroy a local CURL structure
 // returns 0 on success, 1 on any error
@@ -101,7 +134,7 @@ unsigned int curl_simple_with_auth (
 
 	else {
 		cerver_log_error (
-			"curl_simple () failed: %s\n",
+			"curl_simple_with_auth () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -209,7 +242,7 @@ unsigned int curl_simple_post_with_auth (
 
 	else {
 		cerver_log_error (
-			"curl_simple_post () failed: %s\n",
+			"curl_simple_post_with_auth () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -246,7 +279,7 @@ unsigned int curl_simple_post_handle_data (
 
 	else {
 		cerver_log_error (
-			"curl_simple_post () failed: %s\n",
+			"curl_simple_post_handle_data () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -259,7 +292,9 @@ unsigned int curl_simple_post_handle_data (
 // returns 0 on success, 1 on error
 unsigned int curl_post_form_value (
 	CURL *curl, const char *address,
-	const char *key, const char *value
+	curl_write_data_cb write_cb, char *buffer,
+	const char *key, const char *value,
+	const unsigned int expected_status
 ) {
 
 	unsigned int retval = 1;
@@ -276,18 +311,12 @@ unsigned int curl_post_form_value (
 	/* what URL that receives this POST */
 	(void) curl_easy_setopt (curl, CURLOPT_URL, address);
 
+	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
+
 	(void) curl_easy_setopt (curl, CURLOPT_MIMEPOST, form);
 
-	/* Perform the request, res will get the return code */
-	CURLcode res = curl_easy_perform (curl);
-
-	if (res == CURLE_OK) retval = 0;
-	else {
-		cerver_log_error (
-			"curl_upload_file_with_extra_value () failed: %s\n",
-			curl_easy_strerror (res)
-		);
-	}
+	retval = curl_perform_request (curl, expected_status);
 
 	curl_mime_free (form);
 
@@ -375,7 +404,7 @@ unsigned int curl_upload_two_files (
 	if (res == CURLE_OK) retval = 0;
 	else {
 		cerver_log_error (
-			"curl_upload_file () failed: %s\n",
+			"curl_upload_two_files () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}

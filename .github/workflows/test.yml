@@ -84,6 +84,14 @@ jobs:
           ./test/bin/client/web/web
           sudo docker kill $(sudo docker ps -q)
 
+      - name: Web Auth Integration Test
+        run: |
+          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/auth
+          sleep 2
+          sudo docker inspect test --format='{{.State.ExitCode}}'
+          ./test/bin/client/web/auth
+          sudo docker kill $(sudo docker ps -q)
+
       - name: Web API Integration Test
         run: |
           sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/api

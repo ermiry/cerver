@@ -27,7 +27,9 @@
 #define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0777
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
 
 #ifdef __cplusplus
 extern "C" {
@@ -137,6 +139,9 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	bool enable_admin_routes_auth;
+	void *(*admin_decode_data)(void *);
+	void (*admin_delete_decoded_data)(void *);
 	DoubleList *admin_file_systems_stats;
 	pthread_mutex_t *admin_mutex;
 
@@ -248,9 +253,15 @@ CERVER_EXPORT void http_cerver_set_not_found_route (
 
 #pragma region uploads
 
-// sets the default uploads path where any multipart file request will be saved
+// sets the default uploads path where any multipart file will be saved
 // this method will replace the previous value with the new one
 CERVER_EXPORT void http_cerver_set_uploads_path (
+	HttpCerver *http_cerver, const char *uploads_path
+);
+
+// works like http_cerver_set_uploads_path () but can generate
+// a custom path on the fly using variable arguments
+CERVER_EXPORT void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 );
 
@@ -258,6 +269,13 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
 CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 	HttpCerver *http_cerver, const unsigned int file_mode
+);
+
+// method that can be used to generate multi-part uploads filenames
+// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
 );
 
 // sets a method that should generate a c string to be used
@@ -276,6 +294,13 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
 	HttpCerver *http_cerver, const unsigned int dir_mode
+);
+
+// method that can be used to generate multi-part uploads dirnames
+// with format "%d-%ld" using "sock_fd-time (NULL)"
+CERVER_EXPORT void http_cerver_default_uploads_dirname_generator (
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
 );
 
 // sets a method to be called on every new multi-part request
@@ -498,6 +523,13 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, bool enable
+);
+
+// enables authentication in admin routes
+// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
+CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver,
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
 
 // registers a new file system to be handled

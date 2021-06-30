@@ -257,6 +257,9 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
+		http_cerver->admin_decode_data = NULL;
+		http_cerver->admin_delete_decoded_data = NULL;
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_mutex = NULL;
 
@@ -514,7 +517,10 @@ static void http_cerver_init_routes (
 	}
 
 	if (http_cerver->enable_admin_routes) {
-		(void) http_cerver_admin_init ((HttpRoute *) http_cerver->main_route);
+		(void) http_cerver_admin_init (
+			http_cerver,
+			(HttpRoute *) http_cerver->main_route
+		);
 	}
 
 	// init top level routes
@@ -759,9 +765,29 @@ void http_cerver_set_not_found_route (
 
 #pragma region uploads
 
-// sets the default uploads path where any multipart file request will be saved
+// sets the default uploads path where any multipart file will be saved
 // this method will replace the previous value with the new one
 void http_cerver_set_uploads_path (
+	HttpCerver *http_cerver, const char *uploads_path
+) {
+
+	if (http_cerver && uploads_path) {
+		(void) strncpy (
+			http_cerver->uploads_path,
+			uploads_path,
+			HTTP_CERVER_UPLOADS_PATH_SIZE - 1
+		);
+
+		http_cerver->uploads_path_len = (int) strlen (
+			http_cerver->uploads_path
+		);
+	}
+
+}
+
+// works like http_cerver_set_uploads_path () but can generate
+// a custom path on the fly using variable arguments
+void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
 ) {
 
@@ -788,6 +814,25 @@ void http_cerver_set_uploads_file_mode (
 	if (http_cerver) {
 		http_cerver->uploads_file_mode = file_mode;
 	}
+
+}
+
+// method that can be used to generate multi-part uploads filenames
+// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+void http_cerver_default_uploads_filename_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const MultiPart *mpart = http_request_get_current_mpart (request);
+
+	http_multi_part_set_generated_filename (
+		mpart,
+		"%d-%ld-%s",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL),
+		http_multi_part_get_filename (mpart)
+	);
 
 }
 
@@ -818,6 +863,22 @@ void http_cerver_set_uploads_dir_mode (
 	if (http_cerver) {
 		http_cerver->uploads_dir_mode = dir_mode;
 	}
+
+}
+
+// method that can be used to generate multi-part uploads dirnames
+// with format "%d-%ld" using "sock_fd-time (NULL)"
+void http_cerver_default_uploads_dirname_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	http_request_set_dirname (
+		request,
+		"%d-%ld",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL)
+	);
 
 }
 
@@ -1587,6 +1648,21 @@ void http_cerver_enable_admin_routes (
 
 	if (http_cerver) {
 		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// enables authentication in admin routes
+// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
+void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver,
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_decode_data = decode_data;
+		http_cerver->admin_delete_decoded_data = delete_decoded_data;
 	}
 
 }
@@ -2748,6 +2824,50 @@ static void http_receive_handle_select_auth_bearer (
 
 }
 
+static void http_receive_handle_select_auth_custom (
+	HttpCerver *http_cerver, 
+	HttpReceive *http_receive,
+	HttpRoute *found, HttpRequest *request
+) {
+
+	if (found->authentication_handler) {
+		if (!found->authentication_handler (
+			http_receive, request
+		)) {
+			#ifdef HTTP_AUTH_DEBUG
+			cerver_log_success ("Success authentication with custom method!");
+			#endif
+
+			http_receive_handle_match (
+				http_cerver,
+				http_receive,
+				request,
+				found
+			);
+		}
+
+		else {
+			#ifdef HTTP_AUTH_DEBUG
+			cerver_log_error ("Failed authentication with custom method!");
+			#endif
+
+			http_receive_handle_select_failed_auth (http_receive);
+			http_cerver->n_failed_auth_requests += 1;
+		}
+	}
+
+	// no authentication method was provided
+	else {
+		#ifdef HTTP_AUTH_DEBUG
+		cerver_log_error ("No authentication method was provided!");
+		#endif
+
+		http_receive_handle_select_failed_auth (http_receive);
+		http_cerver->n_failed_auth_requests += 1;
+	}
+
+}
+
 // select the route that will handle the request
 static void http_receive_handle_select (
 	HttpReceive *http_receive, HttpRequest *request
@@ -2799,7 +2919,7 @@ static void http_receive_handle_select (
 				);
 			} break;
 
-			// handle authentication with bearer token
+			// a bearer JWT is expected in the authorization header
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[HTTP_HEADER_AUTHORIZATION]) {
 					http_receive_handle_select_auth_bearer (
@@ -2813,6 +2933,15 @@ static void http_receive_handle_select (
 					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
+
+			// a custom method is used to handle authentication
+			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
+				http_receive_handle_select_auth_custom (
+					http_cerver, http_receive, found, request
+				);
+			} break;
+
+			default: break;
 		}
 	}
 

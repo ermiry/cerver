@@ -44,7 +44,8 @@ CERVER_PUBLIC const char *http_route_modifier_description (
 
 #define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
 	XX(0,	NONE, 			None,		Undefined)													\
-	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)
+	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)		\
+	XX(2,	CUSTOM, 		Custom,		A custom method is used to handle authentication)
 
 typedef enum HttpRouteAuthType {
 
@@ -115,8 +116,8 @@ CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
 // updates process times & request & response sizes
 CERVER_PRIVATE void http_route_stats_update (
 	HttpRouteStats *route_stats,
-	double process_time,
-	size_t request_size, size_t response_size
+	const double process_time,
+	const size_t request_size, const size_t response_size
 );
 
 struct _HttpRouteFileStats {
@@ -145,14 +146,16 @@ typedef struct _HttpRouteFileStats HttpRouteFileStats;
 
 CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_new (void);
 
-CERVER_PRIVATE void http_route_file_stats_delete (void *route_file_stats_ptr);
+CERVER_PRIVATE void http_route_file_stats_delete (
+	void *route_file_stats_ptr
+);
 
 CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_create (void);
 
 // updates route's file stats with http receive file stats
 CERVER_PRIVATE void http_route_file_stats_update (
 	HttpRouteFileStats *file_stats,
-	HttpRouteFileStats *new_file_stats
+	const HttpRouteFileStats *new_file_stats
 );
 
 struct _HttpRoute {
@@ -171,11 +174,18 @@ struct _HttpRoute {
 
 	HttpRouteModifier modifier;
 
+	// auth
 	HttpRouteAuthType auth_type;
 
 	void *(*decode_data)(void *);
 	void (*delete_decoded_data)(void *);
 
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
+	// handler
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
 
 	// stats
@@ -196,14 +206,16 @@ CERVER_PUBLIC int http_route_comparator_by_n_tokens (
 
 // creates a new route that can be registered to be sued by an http cerver
 CERVER_EXPORT HttpRoute *http_route_create ( 
-	RequestMethod method, 
+	const RequestMethod method, 
 	const char *actual_route, 
-	HttpHandler handler
+	const HttpHandler handler
 );
 
 // sets the route's handler for the selected http method
 CERVER_EXPORT void http_route_set_handler (
-	HttpRoute *route, RequestMethod method, HttpHandler handler
+	HttpRoute *route,
+	const RequestMethod method,
+	const HttpHandler handler
 );
 
 CERVER_PRIVATE void http_route_init (HttpRoute *route);
@@ -215,12 +227,12 @@ CERVER_EXPORT void http_route_child_add (
 
 // sets a modifier for the selected route
 CERVER_EXPORT void http_route_set_modifier (
-	HttpRoute *route, HttpRouteModifier modifier
+	HttpRoute *route, const HttpRouteModifier modifier
 );
 
 // enables authentication for the selected route
 CERVER_EXPORT void http_route_set_auth (
-	HttpRoute *route, HttpRouteAuthType auth_type
+	HttpRoute *route, const HttpRouteAuthType auth_type
 );
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
@@ -234,6 +246,17 @@ CERVER_EXPORT void http_route_set_decode_data (
 // sets a method to decode data from a jwt into a json string
 CERVER_EXPORT void http_route_set_decode_data_into_json (
 	HttpRoute *route
+);
+
+// sets a method to be used to handle auth in a private route
+// that has been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+CERVER_EXPORT void http_route_set_authentication_handler (
+	HttpRoute *route,
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 CERVER_EXPORT void http_route_print (
