@@ -205,7 +205,7 @@ void iter_good_handler (
 					http_multi_part_get_name (mpart)->str,
 					http_multi_part_get_filename_len (mpart),
 					http_multi_part_get_filename (mpart),
-					http_multi_part_get_generated_filename_len (mpart),
+					http_multi_part_get_saved_filename_len (mpart),
 					http_multi_part_get_saved_filename (mpart)
 				);
 			}
