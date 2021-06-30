@@ -28,6 +28,8 @@
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
 
+#include "cerver/http/json/json.h"
+
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 
@@ -854,6 +856,18 @@ void http_cerver_set_uploads_filename_generator (
 
 }
 
+// sets the HTTP cerver's uploads filename generator
+// to be http_cerver_default_uploads_filename_generator ()
+void http_cerver_set_default_uploads_filename_generator (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_filename_generator = http_cerver_default_uploads_filename_generator;
+	}
+
+}
+
 // sets the mode_t value to be used when creating uploads dirs
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 void http_cerver_set_uploads_dir_mode (
@@ -895,6 +909,18 @@ void http_cerver_set_uploads_dirname_generator (
 
 	if (http_cerver) {
 		http_cerver->uploads_dirname_generator = uploads_dirname_generator;
+	}
+
+}
+
+// sets the HTTP cerver's uploads dirname generator
+// to be http_cerver_default_uploads_dirname_generator ()
+void http_cerver_set_default_uploads_dirname_generator (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->uploads_dirname_generator = http_cerver_default_uploads_dirname_generator;
 	}
 
 }
@@ -1372,6 +1398,12 @@ bool http_cerver_auth_validate_jwt (
 
 }
 
+void *http_decode_data_into_json (void *json_ptr) {
+
+	return json_dumps ((json_t *) json_ptr, 0);
+
+}
+
 #pragma endregion
 
 #pragma region responses
@@ -1663,6 +1695,20 @@ void http_cerver_enable_admin_routes_authentication (
 		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = decode_data;
 		http_cerver->admin_delete_decoded_data = delete_decoded_data;
+	}
+
+}
+
+// works like http_cerver_enable_admin_routes_authentication ()
+// but sets a method to decode data from a JWT into a json string
+void http_cerver_admin_routes_auth_decode_to_json (
+	HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_decode_data = http_decode_data_into_json;
+		http_cerver->admin_delete_decoded_data = free;
 	}
 
 }

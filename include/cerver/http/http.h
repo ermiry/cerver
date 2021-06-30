@@ -290,6 +290,12 @@ CERVER_EXPORT void http_cerver_set_uploads_filename_generator (
 	)
 );
 
+// sets the HTTP cerver's uploads filename generator
+// to be http_cerver_default_uploads_filename_generator ()
+CERVER_EXPORT void http_cerver_set_default_uploads_filename_generator (
+	HttpCerver *http_cerver
+);
+
 // sets the mode_t value to be used when creating uploads dirs
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE
 CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
@@ -312,6 +318,12 @@ CERVER_EXPORT void http_cerver_set_uploads_dirname_generator (
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
+);
+
+// sets the HTTP cerver's uploads dirname generator
+// to be http_cerver_default_uploads_dirname_generator ()
+CERVER_EXPORT void http_cerver_set_default_uploads_dirname_generator (
+	HttpCerver *http_cerver
 );
 
 // specifies whether uploads are deleted after the requested has ended
@@ -471,6 +483,8 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 	void *(*decode_data)(void *), void **decoded_data
 );
 
+CERVER_PRIVATE void *http_decode_data_into_json (void *json_ptr);
+
 #pragma endregion
 
 #pragma region responses
@@ -532,6 +546,12 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
 
+// works like http_cerver_enable_admin_routes_authentication ()
+// but sets a method to decode data from a JWT into a json string
+CERVER_EXPORT void http_cerver_admin_routes_auth_decode_to_json (
+	HttpCerver *http_cerver
+);
+
 // registers a new file system to be handled
 // when requesting for fs stats
 CERVER_EXPORT void http_cerver_register_admin_file_system (
@@ -578,7 +598,7 @@ CERVER_PUBLIC void http_query_pairs_print (
 	XX(2,  BODY,			Body)			\
 	XX(3,  COMPLETED,		Completed)		\
 	XX(4,  INCOMPLETED,		Incompleted)	\
-	XX(5,  UNHANDLED,		Unhandled)	\
+	XX(5,  UNHANDLED,		Unhandled)
 
 typedef enum HttpReceiveStatus {
 

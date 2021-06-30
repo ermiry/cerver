@@ -7,4 +7,4 @@ make clean
 make TYPE=test -j8
 
 # install cerver
-make TYPE=test install
+sudo make TYPE=test install
