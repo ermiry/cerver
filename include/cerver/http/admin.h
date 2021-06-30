@@ -43,6 +43,7 @@ CERVER_PRIVATE char *http_cerver_admin_generate_file_systems_stats_json (
 );
 
 CERVER_PRIVATE u8 http_cerver_admin_init (
+	const struct _HttpCerver *http_cerver,
 	struct _HttpRoute *top_level_route
 );
 

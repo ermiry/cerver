@@ -257,6 +257,9 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
+		http_cerver->admin_decode_data = NULL;
+		http_cerver->admin_delete_decoded_data = NULL;
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_mutex = NULL;
 
@@ -514,7 +517,10 @@ static void http_cerver_init_routes (
 	}
 
 	if (http_cerver->enable_admin_routes) {
-		(void) http_cerver_admin_init ((HttpRoute *) http_cerver->main_route);
+		(void) http_cerver_admin_init (
+			http_cerver,
+			(HttpRoute *) http_cerver->main_route
+		);
 	}
 
 	// init top level routes
@@ -1642,6 +1648,21 @@ void http_cerver_enable_admin_routes (
 
 	if (http_cerver) {
 		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// enables authentication in admin routes
+// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
+void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver,
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_decode_data = decode_data;
+		http_cerver->admin_delete_decoded_data = delete_decoded_data;
 	}
 
 }

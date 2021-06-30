@@ -27,7 +27,9 @@
 #define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0777
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
+
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
 
 #ifdef __cplusplus
 extern "C" {
@@ -137,6 +139,9 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	bool enable_admin_routes_auth;
+	void *(*admin_decode_data)(void *);
+	void (*admin_delete_decoded_data)(void *);
 	DoubleList *admin_file_systems_stats;
 	pthread_mutex_t *admin_mutex;
 
@@ -518,6 +523,13 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, bool enable
+);
+
+// enables authentication in admin routes
+// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
+CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver,
+	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
 
 // registers a new file system to be handled

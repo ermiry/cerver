@@ -470,7 +470,10 @@ static void http_cerver_admin_file_systems_handler (
 
 #pragma GCC diagnostic pop
 
-u8 http_cerver_admin_init (HttpRoute *top_level_route) {
+u8 http_cerver_admin_init (
+	const HttpCerver *http_cerver,
+	HttpRoute *top_level_route
+) {
 
 	u8 retval = 1;
 
@@ -480,12 +483,30 @@ u8 http_cerver_admin_init (HttpRoute *top_level_route) {
 			REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_handler
 		);
 
+		if (http_cerver->enable_admin_routes_auth) {
+			http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+			http_route_set_decode_data (
+				admin_route,
+				http_cerver->admin_decode_data,
+				http_cerver->admin_delete_decoded_data
+			);
+		}
+
 		http_route_child_add (top_level_route, admin_route);
 
 		// GET [top level]/cerver/stats/filesystems
 		HttpRoute *file_systems_route = http_route_create (
 			REQUEST_METHOD_GET, "cerver/stats/filesystems", http_cerver_admin_file_systems_handler
 		);
+
+		if (http_cerver->enable_admin_routes_auth) {
+			http_route_set_auth (file_systems_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+			http_route_set_decode_data (
+				file_systems_route,
+				http_cerver->admin_decode_data,
+				http_cerver->admin_delete_decoded_data
+			);
+		}
 
 		http_route_child_add (top_level_route, file_systems_route);
 
