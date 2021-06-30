@@ -483,6 +483,8 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 	void *(*decode_data)(void *), void **decoded_data
 );
 
+CERVER_PRIVATE void *http_decode_data_into_json (void *json_ptr);
+
 #pragma endregion
 
 #pragma region responses

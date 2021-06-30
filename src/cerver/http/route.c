@@ -11,10 +11,9 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/http/http.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
-
-#include "cerver/http/json/json.h"
 
 #include "cerver/utils/utils.h"
 
@@ -543,12 +542,6 @@ void http_route_set_decode_data (
 		route->decode_data = decode_data;
 		route->delete_decoded_data = delete_decoded_data;
 	}
-
-}
-
-static void *http_decode_data_into_json (void *json_ptr) {
-
-	return json_dumps ((json_t *) json_ptr, 0);
 
 }
 

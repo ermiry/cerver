@@ -28,6 +28,8 @@
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
 
+#include "cerver/http/json/json.h"
+
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
 
@@ -1393,6 +1395,12 @@ bool http_cerver_auth_validate_jwt (
 	}
 
 	return retval;
+
+}
+
+void *http_decode_data_into_json (void *json_ptr) {
+
+	return json_dumps ((json_t *) json_ptr, 0);
 
 }
 
