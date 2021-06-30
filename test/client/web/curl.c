@@ -101,7 +101,7 @@ unsigned int curl_simple_with_auth (
 
 	else {
 		cerver_log_error (
-			"curl_simple () failed: %s\n",
+			"curl_simple_with_auth () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -209,7 +209,7 @@ unsigned int curl_simple_post_with_auth (
 
 	else {
 		cerver_log_error (
-			"curl_simple_post () failed: %s\n",
+			"curl_simple_post_with_auth () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -246,7 +246,7 @@ unsigned int curl_simple_post_handle_data (
 
 	else {
 		cerver_log_error (
-			"curl_simple_post () failed: %s\n",
+			"curl_simple_post_handle_data () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -284,7 +284,7 @@ unsigned int curl_post_form_value (
 	if (res == CURLE_OK) retval = 0;
 	else {
 		cerver_log_error (
-			"curl_upload_file_with_extra_value () failed: %s\n",
+			"curl_post_form_value () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
@@ -375,7 +375,7 @@ unsigned int curl_upload_two_files (
 	if (res == CURLE_OK) retval = 0;
 	else {
 		cerver_log_error (
-			"curl_upload_file () failed: %s\n",
+			"curl_upload_two_files () failed: %s\n",
 			curl_easy_strerror (res)
 		);
 	}
