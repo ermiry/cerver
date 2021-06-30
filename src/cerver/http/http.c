@@ -2803,6 +2803,50 @@ static void http_receive_handle_select_auth_bearer (
 
 }
 
+static void http_receive_handle_select_auth_custom (
+	HttpCerver *http_cerver, 
+	HttpReceive *http_receive,
+	HttpRoute *found, HttpRequest *request
+) {
+
+	if (found->authentication_handler) {
+		if (!found->authentication_handler (
+			http_receive, request
+		)) {
+			#ifdef HTTP_AUTH_DEBUG
+			cerver_log_success ("Success authentication with custom method!");
+			#endif
+
+			http_receive_handle_match (
+				http_cerver,
+				http_receive,
+				request,
+				found
+			);
+		}
+
+		else {
+			#ifdef HTTP_AUTH_DEBUG
+			cerver_log_error ("Failed authentication with custom method!");
+			#endif
+
+			http_receive_handle_select_failed_auth (http_receive);
+			http_cerver->n_failed_auth_requests += 1;
+		}
+	}
+
+	// no authentication method was provided
+	else {
+		#ifdef HTTP_AUTH_DEBUG
+		cerver_log_error ("No authentication method was provided!");
+		#endif
+
+		http_receive_handle_select_failed_auth (http_receive);
+		http_cerver->n_failed_auth_requests += 1;
+	}
+
+}
+
 // select the route that will handle the request
 static void http_receive_handle_select (
 	HttpReceive *http_receive, HttpRequest *request
@@ -2843,7 +2887,6 @@ static void http_receive_handle_select (
 	if (match) {
 		http_receive->route = found;
 
-		// TODO: handle custom authentication
 		switch (found->auth_type) {
 			// no authentication, handle the request directly
 			case HTTP_ROUTE_AUTH_TYPE_NONE: {
@@ -2855,7 +2898,7 @@ static void http_receive_handle_select (
 				);
 			} break;
 
-			// handle authentication with bearer token
+			// a bearer JWT is expected in the authorization header
 			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
 				if (request->headers[HTTP_HEADER_AUTHORIZATION]) {
 					http_receive_handle_select_auth_bearer (
@@ -2869,6 +2912,15 @@ static void http_receive_handle_select (
 					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
+
+			// a custom method is used to handle authentication
+			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
+				http_receive_handle_select_auth_custom (
+					http_cerver, http_receive, found, request
+				);
+			} break;
+
+			default: break;
 		}
 	}
 
