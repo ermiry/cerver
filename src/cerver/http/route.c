@@ -322,6 +322,8 @@ HttpRoute *http_route_new (void) {
 		route->decode_data = NULL;
 		route->delete_decoded_data = NULL;
 
+		route->authentication_handler = NULL;
+
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
 			route->stats[i] = NULL;
@@ -558,6 +560,23 @@ void http_route_set_decode_data_into_json (
 	if (route) {
 		route->decode_data = http_decode_data_into_json;
 		route->delete_decoded_data = free;
+	}
+
+}
+
+// sets a method to be used to handle auth in a private route
+// that has been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+void http_route_set_authentication_handler (
+	HttpRoute *route,
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (route) {
+		route->authentication_handler = authentication_handler;
 	}
 
 }

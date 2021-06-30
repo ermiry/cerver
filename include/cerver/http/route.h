@@ -44,7 +44,8 @@ CERVER_PUBLIC const char *http_route_modifier_description (
 
 #define HTTP_ROUTE_AUTH_TYPE_MAP(XX)																\
 	XX(0,	NONE, 			None,		Undefined)													\
-	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)
+	XX(1,	BEARER, 		Bearer,		A bearer token is expected in the authorization header)		\
+	XX(2,	CUSTOM, 		Custom,		A custom method is used to handle authentication)
 
 typedef enum HttpRouteAuthType {
 
@@ -173,11 +174,18 @@ struct _HttpRoute {
 
 	HttpRouteModifier modifier;
 
+	// auth
 	HttpRouteAuthType auth_type;
 
 	void *(*decode_data)(void *);
 	void (*delete_decoded_data)(void *);
 
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
+	// handler
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
 
 	// stats
@@ -238,6 +246,17 @@ CERVER_EXPORT void http_route_set_decode_data (
 // sets a method to decode data from a jwt into a json string
 CERVER_EXPORT void http_route_set_decode_data_into_json (
 	HttpRoute *route
+);
+
+// sets a method to be used to handle auth in a private route
+// that has been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+CERVER_EXPORT void http_route_set_authentication_handler (
+	HttpRoute *route,
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 CERVER_EXPORT void http_route_print (
