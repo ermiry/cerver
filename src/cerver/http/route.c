@@ -18,7 +18,9 @@
 
 #include "cerver/utils/utils.h"
 
-const char *http_route_modifier_to_string (const HttpRouteModifier modifier) {
+const char *http_route_modifier_to_string (
+	const HttpRouteModifier modifier
+) {
 
 	switch (modifier) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #string;
@@ -30,7 +32,9 @@ const char *http_route_modifier_to_string (const HttpRouteModifier modifier) {
 
 }
 
-const char *http_route_modifier_description (const HttpRouteModifier modifier) {
+const char *http_route_modifier_description (
+	const HttpRouteModifier modifier
+) {
 
 	switch (modifier) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_MODIFIER_##name: return #description;
@@ -42,7 +46,9 @@ const char *http_route_modifier_description (const HttpRouteModifier modifier) {
 
 }
 
-const char *http_route_auth_type_to_string (const HttpRouteAuthType type) {
+const char *http_route_auth_type_to_string (
+	const HttpRouteAuthType type
+) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #string;
@@ -54,7 +60,9 @@ const char *http_route_auth_type_to_string (const HttpRouteAuthType type) {
 
 }
 
-const char *http_route_auth_type_description (const HttpRouteAuthType type) {
+const char *http_route_auth_type_description (
+	const HttpRouteAuthType type
+) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case HTTP_ROUTE_AUTH_TYPE_##name: return #description;
@@ -150,8 +158,8 @@ void http_route_stats_delete (void *route_stats_ptr) {
 // updates process times & request & response sizes
 void http_route_stats_update (
 	HttpRouteStats *route_stats,
-	double process_time,
-	size_t request_size, size_t response_size
+	const double process_time,
+	const size_t request_size, const size_t response_size
 ) {
 
 	if (route_stats) {
@@ -247,7 +255,7 @@ HttpRouteFileStats *http_route_file_stats_create (void) {
 // updates route's file stats with http receive file stats
 void http_route_file_stats_update (
 	HttpRouteFileStats *file_stats,
-	HttpRouteFileStats *new_file_stats
+	const HttpRouteFileStats *new_file_stats
 ) {
 
 	if (file_stats && new_file_stats) {
@@ -367,9 +375,9 @@ int http_route_comparator_by_n_tokens (const void *a, const void *b) {
 
 // creates a new route that can be registered to be sued by an http cerver
 HttpRoute *http_route_create ( 
-	RequestMethod method, 
+	const RequestMethod method, 
 	const char *actual_route, 
-	HttpHandler handler
+	const HttpHandler handler
 ) {
 
 	HttpRoute *route = NULL;
@@ -403,7 +411,9 @@ HttpRoute *http_route_create (
 
 // sets the route's handler for the selected http method
 void http_route_set_handler (
-	HttpRoute *route, RequestMethod method, HttpHandler handler
+	HttpRoute *route,
+	const RequestMethod method,
+	const HttpHandler handler
 ) {
 
 	if (route) {
@@ -503,14 +513,18 @@ void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 }
 
 // sets a modifier for the selected route
-void http_route_set_modifier (HttpRoute *route, HttpRouteModifier modifier) {
+void http_route_set_modifier (
+	HttpRoute *route, const HttpRouteModifier modifier
+) {
 
 	if (route) route->modifier = modifier;
 
 }
 
 // enables authentication for the selected route
-void http_route_set_auth (HttpRoute *route, HttpRouteAuthType auth_type) {
+void http_route_set_auth (
+	HttpRoute *route, const HttpRouteAuthType auth_type
+) {
 
 	if (route) route->auth_type = auth_type;
 

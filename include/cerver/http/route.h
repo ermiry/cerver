@@ -115,8 +115,8 @@ CERVER_PRIVATE void http_route_stats_delete (void *route_stats_ptr);
 // updates process times & request & response sizes
 CERVER_PRIVATE void http_route_stats_update (
 	HttpRouteStats *route_stats,
-	double process_time,
-	size_t request_size, size_t response_size
+	const double process_time,
+	const size_t request_size, const size_t response_size
 );
 
 struct _HttpRouteFileStats {
@@ -145,14 +145,16 @@ typedef struct _HttpRouteFileStats HttpRouteFileStats;
 
 CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_new (void);
 
-CERVER_PRIVATE void http_route_file_stats_delete (void *route_file_stats_ptr);
+CERVER_PRIVATE void http_route_file_stats_delete (
+	void *route_file_stats_ptr
+);
 
 CERVER_PRIVATE HttpRouteFileStats *http_route_file_stats_create (void);
 
 // updates route's file stats with http receive file stats
 CERVER_PRIVATE void http_route_file_stats_update (
 	HttpRouteFileStats *file_stats,
-	HttpRouteFileStats *new_file_stats
+	const HttpRouteFileStats *new_file_stats
 );
 
 struct _HttpRoute {
@@ -196,14 +198,16 @@ CERVER_PUBLIC int http_route_comparator_by_n_tokens (
 
 // creates a new route that can be registered to be sued by an http cerver
 CERVER_EXPORT HttpRoute *http_route_create ( 
-	RequestMethod method, 
+	const RequestMethod method, 
 	const char *actual_route, 
-	HttpHandler handler
+	const HttpHandler handler
 );
 
 // sets the route's handler for the selected http method
 CERVER_EXPORT void http_route_set_handler (
-	HttpRoute *route, RequestMethod method, HttpHandler handler
+	HttpRoute *route,
+	const RequestMethod method,
+	const HttpHandler handler
 );
 
 CERVER_PRIVATE void http_route_init (HttpRoute *route);
@@ -215,12 +219,12 @@ CERVER_EXPORT void http_route_child_add (
 
 // sets a modifier for the selected route
 CERVER_EXPORT void http_route_set_modifier (
-	HttpRoute *route, HttpRouteModifier modifier
+	HttpRoute *route, const HttpRouteModifier modifier
 );
 
 // enables authentication for the selected route
 CERVER_EXPORT void http_route_set_auth (
-	HttpRoute *route, HttpRouteAuthType auth_type
+	HttpRoute *route, const HttpRouteAuthType auth_type
 );
 
 // sets the method to be used to decode incoming data from jwt & a method to delete it after use
