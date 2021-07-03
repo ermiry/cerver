@@ -414,6 +414,43 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+static inline void http_cerver_admin_handler_send_response (
+	const HttpReceive *http_receive,
+	const HttpRequest *request,
+	const char *json, const size_t json_len
+) {
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		http_response_set_status (response, HTTP_STATUS_OK);
+		http_response_add_json_headers (response, json_len);
+
+		if (http_receive->http_cerver->enable_admin_cors_headers) {
+			if (http_receive->http_cerver->admin_origin.len) {
+				(void) http_response_add_cors_header (
+					response,
+					http_receive->http_cerver->admin_origin.value
+				);
+			}
+
+			else {
+				(void) http_response_add_whitelist_cors_header_from_request (
+					http_receive, response
+				);
+			}
+		}
+
+		(void) http_response_set_data_ref (response, (void *) json, json_len);
+
+		(void) http_response_compile (response);
+
+		(void) http_response_send (response, http_receive);
+
+		http_response_return (response);
+	}
+
+}
+
 // GET [top level]/cerver/stats
 static void http_cerver_admin_handler (
 	const HttpReceive *http_receive,
@@ -427,8 +464,8 @@ static void http_cerver_admin_handler (
 	);
 
 	if (routes_json) {
-		(void) http_response_render_json (
-			http_receive, HTTP_STATUS_OK,
+		http_cerver_admin_handler_send_response (
+			http_receive, request,
 			routes_json, strlen (routes_json)
 		);
 
@@ -454,8 +491,8 @@ static void http_cerver_admin_file_systems_handler (
 	);
 
 	if (file_systems_json) {
-		(void) http_response_render_json (
-			http_receive, HTTP_STATUS_OK,
+		http_cerver_admin_handler_send_response (
+			http_receive, request,
 			file_systems_json, strlen (file_systems_json)
 		);
 
