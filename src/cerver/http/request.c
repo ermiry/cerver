@@ -577,7 +577,7 @@ void http_request_multi_parts_print (
 ) {
 
 	if (http_request) {
-		(void) printf ("\nHTTP request multi part values: \n");
+		(void) printf ("HTTP request multi part values: \n");
 		(void) printf ("n files: %d\n", http_request->n_files);
 		(void) printf ("n values: %d\n", http_request->n_values);
 
@@ -587,6 +587,48 @@ void http_request_multi_parts_print (
 			}
 
 			(void) printf ("\n");
+		}
+	}
+
+}
+
+void http_request_multi_parts_files_print (
+	const HttpRequest *http_request
+) {
+
+	if (http_request) {
+		if (http_request->multi_parts && http_request->n_files) {
+			(void) printf (
+				"HTTP request multi part files (%u): \n",
+				http_request->n_files
+			);
+
+			const MultiPart *mpart = NULL;
+			for (ListElement *le = dlist_start (http_request->multi_parts); le; le = le->next) {
+				mpart = (const MultiPart *) le->data;
+
+				if (http_multi_part_is_file (mpart)) {
+					if (mpart->moved_file) {
+						(void) printf (
+							"MOVED %s - %s -> %s\n",
+							mpart->name->str, mpart->filename, mpart->saved_filename
+						);
+					}
+
+					else {
+						(void) printf (
+							"%s - %s -> %s\n",
+							mpart->name->str, mpart->filename, mpart->saved_filename
+						);
+					}
+				}
+			}
+		}
+
+		else {
+			(void) printf (
+				"HTTP request does NOT have multi part files\n"
+			);
 		}
 	}
 
