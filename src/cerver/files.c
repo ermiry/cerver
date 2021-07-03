@@ -479,6 +479,28 @@ unsigned int files_create_recursive_dir (
 
 }
 
+// moves one file from one location to another
+// returns 0 on success
+int file_move_to (
+	const char *actual_path, const char *saved_path
+) {
+
+	char move_command[FILES_MOVE_SIZE] = { 0 };
+
+	(void) snprintf (
+		move_command, FILES_MOVE_SIZE - 1,
+		"mv %s \"%s/%s\"",
+		actual_path, saved_path
+	);
+
+	#ifdef FILES_DEBUG
+	(void) printf ("COMMAND: %s\n", move_command);
+	#endif
+
+	return system (move_command);
+
+}
+
 // returns an allocated string with the file extension
 // NULL if no file extension
 char *files_get_file_extension (const char *filename) {
