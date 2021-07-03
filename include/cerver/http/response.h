@@ -74,23 +74,25 @@ CERVER_EXPORT void http_response_set_header (
 	HttpResponse *res, void *header, size_t header_len
 );
 
-// adds a new header to the response, the headers will be handled when calling 
+// adds a new header to the response
+// the headers will be handled when calling 
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_header (
-	HttpResponse *res, const http_header type, const char *actual_header
+	HttpResponse *response,
+	const http_header type, const char *actual_header
 );
 
 // adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_content_type_header (
-	HttpResponse *res, const ContentType type
+	HttpResponse *response, const ContentType type
 );
 
 // adds a "Content-Length" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_content_length_header (
-	HttpResponse *res, const size_t length
+	HttpResponse *response, const size_t length
 );
 
 // adds a "Content-Type" with value "application/json"
@@ -102,7 +104,13 @@ CERVER_EXPORT void http_response_add_json_headers (
 // adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_cors_header (
-	HttpResponse *res, const char *origin
+	HttpResponse *response, const char *origin
+);
+
+// works like http_response_add_cors_header ()
+// but takes a HttpOrigin instead of a c string
+CERVER_EXPORT u8 http_response_add_cors_header_from_origin (
+	HttpResponse *response, const HttpOrigin *origin
 );
 
 // works like http_response_add_cors_header () but first
@@ -110,6 +118,12 @@ CERVER_EXPORT u8 http_response_add_cors_header (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_whitelist_cors_header (
 	HttpResponse *response, const char *domain
+);
+
+// works like http_response_add_whitelist_cors_header ()
+// but takes a HttpOrigin instead of a c string
+CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_origin (
+	HttpResponse *response, const HttpOrigin *origin
 );
 
 // checks if the HTTP request's origin matches any domain in the whitelist

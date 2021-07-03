@@ -16,6 +16,7 @@
 #include "cerver/http/content.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
+#include "cerver/http/origin.h"
 #include "cerver/http/response.h"
 #include "cerver/http/status.h"
 
@@ -180,25 +181,27 @@ void http_response_set_header (
 
 }
 
-// adds a new header to the response, the headers will be handled when calling 
+// adds a new header to the response
+// the headers will be handled when calling 
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
-	HttpResponse *res, const http_header type, const char *actual_header
+	HttpResponse *response,
+	const http_header type, const char *actual_header
 ) {
 
 	u8 retval = 1;
 
-	if (res && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (res->headers[type]) {
-			str_delete (res->headers[type]);
+	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
+		if (response->headers[type]) {
+			str_delete (response->headers[type]);
 		}
 
 		else {
-			res->n_headers += 1;
+			response->n_headers += 1;
 		}
 		
-		res->headers[type] = str_create (
+		response->headers[type] = str_create (
 			"%s: %s\r\n",
 			http_header_string (type), actual_header
 		);
@@ -213,11 +216,11 @@ u8 http_response_add_header (
 // adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_content_type_header (
-	HttpResponse *res, const ContentType type
+	HttpResponse *response, const ContentType type
 ) {
 
 	return http_response_add_header (
-		res, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
+		response, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
 	);
 
 }
@@ -225,7 +228,7 @@ u8 http_response_add_content_type_header (
 // adds a "Content-Length" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_content_length_header (
-	HttpResponse *res, const size_t length
+	HttpResponse *response, const size_t length
 ) {
 
 	char buffer[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
@@ -235,7 +238,7 @@ u8 http_response_add_content_length_header (
 	);
 
 	return http_response_add_header (
-		res, HTTP_HEADER_CONTENT_LENGTH, buffer
+		response, HTTP_HEADER_CONTENT_LENGTH, buffer
 	);
 
 }
@@ -266,11 +269,23 @@ void http_response_add_json_headers (
 // adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_cors_header (
-	HttpResponse *res, const char *origin
+	HttpResponse *response, const char *origin
 ) {
 
 	return http_response_add_header (
-		res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin
+		response, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin
+	);
+
+}
+
+// works like http_response_add_cors_header ()
+// but takes a HttpOrigin instead of a c string
+u8 http_response_add_cors_header_from_origin (
+	HttpResponse *response, const HttpOrigin *origin
+) {
+
+	return http_response_add_header (
+		response, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin->value
 	);
 
 }
@@ -298,6 +313,18 @@ u8 http_response_add_whitelist_cors_header (
 	}
 
 	return retval;
+
+}
+
+// works like http_response_add_whitelist_cors_header ()
+// but takes a HttpOrigin instead of a c string
+u8 http_response_add_whitelist_cors_header_from_origin (
+	HttpResponse *response, const HttpOrigin *origin
+) {
+
+	return http_response_add_whitelist_cors_header (
+		response, origin->value
+	);
 
 }
 
