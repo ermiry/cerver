@@ -144,11 +144,19 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+
 	bool enable_admin_routes_auth;
-	bool enable_admin_cors_headers;
-	HttpOrigin admin_origin;
+	HttpRouteAuthType admin_auth_type;
 	void *(*admin_decode_data)(void *);
 	void (*admin_delete_decoded_data)(void *);
+	unsigned int (*admin_auth_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
+	bool enable_admin_cors_headers;
+	HttpOrigin admin_origin;
+	
 	DoubleList *admin_file_systems_stats;
 	pthread_mutex_t *admin_mutex;
 
@@ -561,8 +569,14 @@ CERVER_EXPORT void http_cerver_enable_admin_routes (
 );
 
 // enables authentication in admin routes
-// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
 CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+);
+
+// sets the method to be used to decode incoming data from JWT
+// and sets a method to delete it after use
+// if no delete method is set, data won't be freed
+CERVER_EXPORT void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
@@ -571,6 +585,17 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 // but sets a method to decode data from a JWT into a json string
 CERVER_EXPORT void http_cerver_admin_routes_auth_decode_to_json (
 	HttpCerver *http_cerver
+);
+
+// sets a method to be used to handle auth in admin routes
+// HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+CERVER_EXPORT void http_cerver_admin_routes_set_authentication_handler (
+	HttpCerver *http_cerver,
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
 );
 
 // enables CORS headers in admin routes responses

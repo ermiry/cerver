@@ -507,6 +507,37 @@ static void http_cerver_admin_file_systems_handler (
 
 #pragma GCC diagnostic pop
 
+static void http_cerver_admin_route_set_auth (
+	const HttpCerver *http_cerver,
+	HttpRoute *admin_route
+) {
+
+	if (http_cerver->enable_admin_routes_auth) {
+		switch (http_cerver->admin_auth_type) {
+			case HTTP_ROUTE_AUTH_TYPE_NONE: break;
+
+			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
+				http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+				http_route_set_decode_data (
+					admin_route,
+					http_cerver->admin_decode_data,
+					http_cerver->admin_delete_decoded_data
+				);
+			} break;
+
+			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
+				http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+				http_route_set_authentication_handler (
+					admin_route, http_cerver->admin_auth_handler
+				);
+			} break;
+
+			default: break;
+		}
+	}
+
+}
+
 u8 http_cerver_admin_init (
 	const HttpCerver *http_cerver,
 	HttpRoute *top_level_route
@@ -520,14 +551,7 @@ u8 http_cerver_admin_init (
 			REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_handler
 		);
 
-		if (http_cerver->enable_admin_routes_auth) {
-			http_route_set_auth (admin_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-			http_route_set_decode_data (
-				admin_route,
-				http_cerver->admin_decode_data,
-				http_cerver->admin_delete_decoded_data
-			);
-		}
+		http_cerver_admin_route_set_auth (http_cerver, admin_route);
 
 		http_route_child_add (top_level_route, admin_route);
 
@@ -536,14 +560,7 @@ u8 http_cerver_admin_init (
 			REQUEST_METHOD_GET, "cerver/stats/filesystems", http_cerver_admin_file_systems_handler
 		);
 
-		if (http_cerver->enable_admin_routes_auth) {
-			http_route_set_auth (file_systems_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
-			http_route_set_decode_data (
-				file_systems_route,
-				http_cerver->admin_decode_data,
-				http_cerver->admin_delete_decoded_data
-			);
-		}
+		http_cerver_admin_route_set_auth (http_cerver, file_systems_route);
 
 		http_route_child_add (top_level_route, file_systems_route);
 

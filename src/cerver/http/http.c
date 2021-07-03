@@ -263,11 +263,16 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+
 		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
-		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
-		http_origin_reset (&http_cerver->admin_origin);
+		http_cerver->admin_auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
 		http_cerver->admin_decode_data = NULL;
 		http_cerver->admin_delete_decoded_data = NULL;
+		http_cerver->admin_auth_handler = NULL;
+
+		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
+		http_origin_reset (&http_cerver->admin_origin);
+		
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_mutex = NULL;
 
@@ -1746,14 +1751,26 @@ void http_cerver_enable_admin_routes (
 }
 
 // enables authentication in admin routes
-// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
 void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_auth_type = auth_type;
+	}
+
+}
+
+// sets the method to be used to decode incoming data from JWT
+// and sets a method to delete it after use
+// if no delete method is set, data won't be freed
+void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 ) {
 
 	if (http_cerver) {
-		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = decode_data;
 		http_cerver->admin_delete_decoded_data = delete_decoded_data;
 	}
@@ -1767,9 +1784,25 @@ void http_cerver_admin_routes_auth_decode_to_json (
 ) {
 
 	if (http_cerver) {
-		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = http_decode_data_into_json;
 		http_cerver->admin_delete_decoded_data = free;
+	}
+
+}
+
+// sets a method to be used to handle auth in admin routes
+// HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+void http_cerver_admin_routes_set_authentication_handler (
+	HttpCerver *http_cerver,
+	unsigned int (*authentication_handler)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_auth_handler = authentication_handler;
 	}
 
 }
