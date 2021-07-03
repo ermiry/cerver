@@ -31,6 +31,7 @@
 
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS		false
 
 #ifdef __cplusplus
 extern "C" {
@@ -144,6 +145,8 @@ struct _HttpCerver {
 	// admins
 	bool enable_admin_routes;
 	bool enable_admin_routes_auth;
+	bool enable_admin_cors_headers;
+	HttpOrigin admin_origin;
 	void *(*admin_decode_data)(void *);
 	void (*admin_delete_decoded_data)(void *);
 	DoubleList *admin_file_systems_stats;
@@ -554,7 +557,7 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
-	HttpCerver *http_cerver, bool enable
+	HttpCerver *http_cerver, const bool enable
 );
 
 // enables authentication in admin routes
@@ -568,6 +571,20 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 // but sets a method to decode data from a JWT into a json string
 CERVER_EXPORT void http_cerver_admin_routes_auth_decode_to_json (
 	HttpCerver *http_cerver
+);
+
+// enables CORS headers in admin routes responses
+// always uses admin origin's value
+// if there is no dedicated origin, it will dynamically
+// set the header based on the origins whitelist
+CERVER_EXPORT void http_cerver_enable_admin_cors_headers (
+	HttpCerver *http_cerver, const bool enable
+);
+
+// sets the dedicated domain that will be walways set
+// in the admin responses CORS headers
+CERVER_EXPORT void http_cerver_admin_set_origin (
+	HttpCerver *http_cerver, const char *domain
 );
 
 // registers a new file system to be handled

@@ -248,6 +248,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->n_origins = 0;
+		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
+			http_origin_reset (&http_cerver->origins_whitelist[i]);
+
 		http_cerver->n_response_headers = 0;
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_cerver->response_headers[i] = NULL;
@@ -260,6 +264,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
 		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
+		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
+		http_origin_reset (&http_cerver->admin_origin);
 		http_cerver->admin_decode_data = NULL;
 		http_cerver->admin_delete_decoded_data = NULL;
 		http_cerver->admin_file_systems_stats = NULL;
@@ -1447,7 +1453,7 @@ void http_cerver_print_origins_whitelist (
 
 				(void) printf (
 					"[%u]: (%d) - %s",
-					(idx + 1), origin->len, origin->value
+					idx, origin->len, origin->value
 				);
 			}
 		}
@@ -1730,7 +1736,7 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
 void http_cerver_enable_admin_routes (
-	HttpCerver *http_cerver, bool enable
+	HttpCerver *http_cerver, const bool enable
 ) {
 
 	if (http_cerver) {
@@ -1764,6 +1770,35 @@ void http_cerver_admin_routes_auth_decode_to_json (
 		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = http_decode_data_into_json;
 		http_cerver->admin_delete_decoded_data = free;
+	}
+
+}
+
+// enables CORS headers in admin routes responses
+// always uses admin origin's value
+// if there is no dedicated origin, it will dynamically
+// set the header based on the origins whitelist
+void http_cerver_enable_admin_cors_headers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_cors_headers = enable;
+	}
+
+}
+
+// sets the dedicated domain that will be walways set
+// in the admin responses CORS headers
+void http_cerver_admin_set_origin (
+	HttpCerver *http_cerver, const char *domain
+) {
+
+	if (http_cerver) {
+		http_origin_init (
+			&http_cerver->admin_origin,
+			domain
+		);
 	}
 
 }
