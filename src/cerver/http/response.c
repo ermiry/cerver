@@ -263,6 +263,66 @@ void http_response_add_json_headers (
 
 }
 
+// adds an "Access-Control-Allow-Origin" header to the response
+// returns 0 on success, 1 on error
+u8 http_response_add_cors_header (
+	HttpResponse *res, const char *origin
+) {
+
+	return http_response_add_header (
+		res, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, origin
+	);
+
+}
+
+// works like http_response_add_cors_header () but first
+// checks if the domain matches any entry in the whitelist
+// returns 0 on success, 1 on error
+u8 http_response_add_whitelist_cors_header (
+	HttpResponse *response, const char *domain
+) {
+
+	u8 retval = 1;
+
+	for (u8 idx = 0; idx < producer->http_cerver->n_origins; idx++) {
+		if (!strcmp (
+			producer->http_cerver->origins_whitelist[idx].value,
+			domain
+		)) {
+			retval = http_response_add_header (
+				response, HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN, domain
+			);
+
+			break;
+		}
+	}
+
+	return retval;
+
+}
+
+// checks if the HTTP request's origin matches any domain in the whitelist
+// then adds an "Access-Control-Allow-Origin" header to the response
+// returns 0 on success, 1 on error
+u8 http_response_add_whitelist_cors_header_from_request (
+	const HttpReceive *http_receive,
+	HttpResponse *response
+) {
+
+	u8 retval = 1;
+
+	if (http_receive->request->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]) {
+		retval = http_response_add_whitelist_cors_header (
+			response, http_receive->request->headers[
+				HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN
+			]->str
+		);
+	}
+
+	return retval;
+
+}
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 void http_response_set_data (

@@ -99,6 +99,27 @@ CERVER_EXPORT void http_response_add_json_headers (
 	HttpResponse *response, const size_t json_len
 );
 
+// adds an "Access-Control-Allow-Origin" header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_cors_header (
+	HttpResponse *res, const char *origin
+);
+
+// works like http_response_add_cors_header () but first
+// checks if the domain matches any entry in the whitelist
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_whitelist_cors_header (
+	HttpResponse *response, const char *domain
+);
+
+// checks if the HTTP request's origin matches any domain in the whitelist
+// then adds an "Access-Control-Allow-Origin" header to the response
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_request (
+	const HttpReceive *http_receive,
+	HttpResponse *response
+);
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (
