@@ -20,6 +20,9 @@
 
 #include "users.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+
 // GET /api/users
 void main_users_handler (
 	const HttpReceive *http_receive,
@@ -36,6 +39,8 @@ void main_users_handler (
 	}
 
 }
+
+#pragma GCC diagnostic pop
 
 // POST /api/users/login
 void users_login_handler (
