@@ -32,10 +32,13 @@ static MultiPart *test_http_multi_part_new (void) {
 	test_check_str_empty (mpart->generated_filename);
 
 	test_check_int_eq (mpart->fd, -1, NULL);
-	test_check_int_eq (mpart->saved_filename_len, 0, NULL);
-	test_check_str_empty (mpart->saved_filename);
 	test_check_unsigned_eq (mpart->n_reads, 0, NULL);
 	test_check_unsigned_eq (mpart->total_wrote, 0, NULL);
+
+	test_check_int_eq (mpart->saved_filename_len, 0, NULL);
+	test_check_str_empty (mpart->saved_filename);
+
+	test_check_false (mpart->moved_file);
 
 	test_check_int_eq (mpart->value_len, 0, NULL);
 	test_check_str_empty (mpart->value);
@@ -65,12 +68,14 @@ static void test_http_multi_part_create (void) {
 	test_check_str_empty (http_multi_part_get_generated_filename (mpart));
 	test_check_int_eq (http_multi_part_get_generated_filename_len (mpart), 0, NULL);
 
+	test_check_int_eq (http_multi_part_get_n_reads (mpart), 0, NULL);
+	test_check_int_eq (http_multi_part_get_total_wrote (mpart), 0, NULL);
+
 	test_check_ptr (http_multi_part_get_saved_filename (mpart));
 	test_check_str_empty (http_multi_part_get_saved_filename (mpart));
 	test_check_int_eq (http_multi_part_get_saved_filename_len (mpart), 0, NULL);
 
-	test_check_int_eq (http_multi_part_get_n_reads (mpart), 0, NULL);
-	test_check_int_eq (http_multi_part_get_total_wrote (mpart), 0, NULL);
+	test_check_false (http_multi_part_get_moved_file (mpart));
 
 	test_check_ptr (http_multi_part_get_value (mpart));
 	test_check_str_empty (http_multi_part_get_value (mpart));
