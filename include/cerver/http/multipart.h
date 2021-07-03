@@ -23,6 +23,8 @@
 #define HTTP_MULTI_PART_SAVED_FILENAME_SIZE				1024
 #define HTTP_MULTI_PART_VALUE_SIZE						256
 
+#define HTTP_MULTI_PART_GENERATED_DESTINATION_SIZE		512
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -70,11 +72,14 @@ struct _MultiPart {
 	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_SIZE];
 
 	int fd;
+	u32 n_reads;				// amount of loops it took to read the file - based on cerver receive value
+	u32 total_wrote;			// the total ammount of bytes written to the file
+
 	// how the file got saved (uploads path + filename)
 	int saved_filename_len;
 	char saved_filename[HTTP_MULTI_PART_SAVED_FILENAME_SIZE];
-	u32 n_reads;				// amount of loops it took to read the file - based on cerver receive value
-	u32 total_wrote;			// the total ammount of bytes written to the file
+
+	bool moved_file;
 
 	int value_len;
 	char value[HTTP_MULTI_PART_VALUE_SIZE];
@@ -138,16 +143,6 @@ CERVER_PUBLIC void http_multi_part_set_generated_filename (
 	const MultiPart *multi_part, const char *format, ...
 );
 
-// returns the multi-part's saved filename
-CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
-	const MultiPart *multi_part
-);
-
-// returns the multi-part's saved filename length
-CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
-	const MultiPart *multi_part
-);
-
 // returns the multi-part's number of reads value
 // the amount of loops it took to read the file
 CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
@@ -159,6 +154,20 @@ CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
 	const MultiPart *multi_part
 );
 
+// returns the multi-part's saved filename
+CERVER_PUBLIC const char *http_multi_part_get_saved_filename (
+	const MultiPart *multi_part
+);
+
+// returns the multi-part's saved filename length
+CERVER_PUBLIC const int http_multi_part_get_saved_filename_len (
+	const MultiPart *multi_part
+);
+
+CERVER_PUBLIC const bool http_multi_part_get_moved_file (
+	const MultiPart *multi_part
+);
+
 // returns the multi-part's value
 CERVER_PUBLIC const char *http_multi_part_get_value (
 	const MultiPart *multi_part
@@ -167,6 +176,18 @@ CERVER_PUBLIC const char *http_multi_part_get_value (
 // returns the multi-part's value length
 CERVER_PUBLIC const int http_multi_part_get_value_len (
 	const MultiPart *multi_part
+);
+
+// moves multi-part's saved file to the destination path
+// returns 0 on success, 1 on error
+CERVER_PUBLIC unsigned int http_multi_part_move_file (
+	MultiPart *mpart, const char *destination_path
+);
+
+// works like http_multi_part_move_file ()
+// but with the ability to generate dest on the fly
+CERVER_PUBLIC unsigned int http_multi_part_move_file_generate_destination (
+	MultiPart *mpart, const char *format, ...
 );
 
 CERVER_PUBLIC void http_multi_part_headers_print (
