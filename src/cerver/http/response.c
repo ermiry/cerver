@@ -210,7 +210,7 @@ u8 http_response_add_header (
 
 }
 
-// adds a HTTP_HEADER_CONTENT_TYPE header to the response
+// adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_content_type_header (
 	HttpResponse *res, const ContentType type
@@ -222,7 +222,7 @@ u8 http_response_add_content_type_header (
 
 }
 
-// adds a HTTP_HEADER_CONTENT_LENGTH header to the response
+// adds a "Content-Length" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_content_length_header (
 	HttpResponse *res, const size_t length
@@ -236,6 +236,29 @@ u8 http_response_add_content_length_header (
 
 	return http_response_add_header (
 		res, HTTP_HEADER_CONTENT_LENGTH, buffer
+	);
+
+}
+
+// adds a "Content-Type" with value "application/json"
+// adds a "Content-Length" header to the response
+void http_response_add_json_headers (
+	HttpResponse *response, const size_t json_len
+) {
+
+	char buffer[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
+	(void) snprintf (
+		buffer, HTTP_RESPONSE_CONTENT_LENGTH_SIZE - 1,
+		"%lu", json_len
+	);
+
+	(void) http_response_add_header (
+		response, HTTP_HEADER_CONTENT_TYPE,
+		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
+	);
+
+	(void) http_response_add_header (
+		response, HTTP_HEADER_CONTENT_LENGTH, buffer
 	);
 
 }

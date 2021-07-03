@@ -81,16 +81,22 @@ CERVER_EXPORT u8 http_response_add_header (
 	HttpResponse *res, const http_header type, const char *actual_header
 );
 
-// adds a HTTP_HEADER_CONTENT_TYPE header to the response
+// adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_content_type_header (
 	HttpResponse *res, const ContentType type
 );
 
-// adds a HTTP_HEADER_CONTENT_LENGTH header to the response
+// adds a "Content-Length" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_content_length_header (
 	HttpResponse *res, const size_t length
+);
+
+// adds a "Content-Type" with value "application/json"
+// adds a "Content-Length" header to the response
+CERVER_EXPORT void http_response_add_json_headers (
+	HttpResponse *response, const size_t json_len
 );
 
 // sets the response's data (body), it will replace the existing one
