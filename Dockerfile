@@ -1,4 +1,4 @@
-ARG CERVER_VERSION=2.0b-40
+ARG CERVER_VERSION=2.0b-41
 
 FROM gcc as builder
 
