@@ -10,11 +10,15 @@ extern const char *public_key;
 extern const char *base_token;
 extern const char *bearer_token;
 
+/*** units ***/
+
 extern void http_tests_headers (void);
 
 extern void http_tests_methods (void);
 
 extern void http_tests_contents (void);
+
+extern void http_tests_origins (void);
 
 extern void http_tests_routes (void);
 
@@ -23,6 +27,10 @@ extern void http_tests_requests (void);
 extern void http_tests_responses (void);
 
 extern void http_tests_multiparts (void);
+
+/*** integration ***/
+
+extern void http_tests_origins_whitelist (void);
 
 extern void http_tests_jwt (void);
 
