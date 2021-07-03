@@ -21,6 +21,22 @@ void http_origin_delete (void *origin_ptr) {
 
 }
 
+const int http_origin_get_len (
+	const HttpOrigin *origin
+) {
+
+	return origin->len;
+
+}
+
+const char *http_origin_get_value (
+	const HttpOrigin *origin
+) {
+
+	return origin->value;
+
+}
+
 void http_origin_init (
 	HttpOrigin *origin, const char *value
 ) {
@@ -33,6 +49,14 @@ void http_origin_init (
 		);
 
 		origin->len = (int) strlen (origin->value);
+	}
+
+}
+
+void http_origin_reset (HttpOrigin *origin) {
+
+	if (origin) {
+		(void) memset (origin, 0, sizeof (HttpOrigin));
 	}
 
 }

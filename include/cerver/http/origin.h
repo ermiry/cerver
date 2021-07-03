@@ -20,13 +20,23 @@ struct _HttpOrigin {
 
 typedef struct _HttpOrigin HttpOrigin;
 
-CERVER_PRIVATE HttpOrigin *http_origin_new (void);
+CERVER_PUBLIC HttpOrigin *http_origin_new (void);
 
-CERVER_PRIVATE void http_origin_delete (void *origin_ptr);
+CERVER_PUBLIC void http_origin_delete (void *origin_ptr);
 
-CERVER_PRIVATE void http_origin_init (
+CERVER_PUBLIC const int http_origin_get_len (
+	const HttpOrigin *origin
+);
+
+CERVER_PUBLIC const char *http_origin_get_value (
+	const HttpOrigin *origin
+);
+
+CERVER_PUBLIC void http_origin_init (
 	HttpOrigin *origin, const char *value
 );
+
+CERVER_PUBLIC void http_origin_reset (HttpOrigin *origin);
 
 CERVER_PUBLIC void http_origin_print (
 	const HttpOrigin *origin
