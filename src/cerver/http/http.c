@@ -1406,6 +1406,61 @@ void *http_decode_data_into_json (void *json_ptr) {
 
 #pragma endregion
 
+#pragma region origins
+
+// adds a new domain to the HTTP cerver's origins whitelist
+// returns 0 on success, 1 on error
+u8 http_cerver_add_origin_to_whitelist (
+	HttpCerver *http_cerver, const char *domain
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && domain) {
+		if (http_cerver->n_origins < HTTP_ORIGINS_SIZE) {
+			http_origin_init (
+				&http_cerver->origins_whitelist[http_cerver->n_origins],
+				domain
+			);
+
+			http_cerver->n_origins += 1;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+void http_cerver_print_origins_whitelist (
+	const HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		if (http_cerver->n_origins) {
+			(void) printf ("Origins whitelist (%u): \n", http_cerver->n_origins);
+
+			const HttpOrigin *origin = NULL;
+			for (u8 idx = 0; idx < http_cerver->n_origins; idx++) {
+				origin = &http_cerver->origins_whitelist[idx];
+
+				(void) printf (
+					"[%u]: (%d) - %s",
+					(idx + 1), origin->len, origin->value
+				);
+			}
+		}
+
+		else {
+			(void) printf ("Origins whitelist is empty!\n");
+		}
+	}
+
+}
+
+#pragma endregion
+
 #pragma region responses
 
 // adds a new global responses header

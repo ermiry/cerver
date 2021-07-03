@@ -14,6 +14,7 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/multipart.h"
+#include "cerver/http/origin.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
 
@@ -125,6 +126,9 @@ struct _HttpCerver {
 
 	String *jwt_opt_pub_key_name;	// jwt public key filename
 	String *jwt_public_key;			// jwt actual public key
+
+	u8 n_origins;
+	HttpOrigin origins_whitelist[HTTP_ORIGINS_SIZE];
 
 	// responses
 	u8 n_response_headers;
@@ -484,6 +488,20 @@ CERVER_EXPORT bool http_cerver_auth_validate_jwt (
 );
 
 CERVER_PRIVATE void *http_decode_data_into_json (void *json_ptr);
+
+#pragma endregion
+
+#pragma region origins
+
+// adds a new domain to the HTTP cerver's origins whitelist
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_add_origin_to_whitelist (
+	HttpCerver *http_cerver, const char *domain
+);
+
+CERVER_EXPORT void http_cerver_print_origins_whitelist (
+	const HttpCerver *http_cerver
+);
 
 #pragma endregion
 
