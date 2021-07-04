@@ -18,6 +18,8 @@
 #define DIRNAME_DEFAULT_SIZE			1024
 #define FILENAME_DEFAULT_SIZE			1024
 
+#define FILES_MOVE_SIZE					2048
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -158,6 +160,12 @@ CERVER_EXPORT unsigned int files_create_dir (
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
+);
+
+// moves one file from one location to another
+// returns 0 on success
+CERVER_EXPORT int file_move_to (
+	const char *actual_path, const char *saved_path
 );
 
 // returns an allocated string with the file extension

@@ -14,6 +14,7 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/multipart.h"
+#include "cerver/http/origin.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
 
@@ -30,6 +31,7 @@
 
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS		false
 
 #ifdef __cplusplus
 extern "C" {
@@ -126,6 +128,9 @@ struct _HttpCerver {
 	String *jwt_opt_pub_key_name;	// jwt public key filename
 	String *jwt_public_key;			// jwt actual public key
 
+	u8 n_origins;
+	HttpOrigin origins_whitelist[HTTP_ORIGINS_SIZE];
+
 	// responses
 	u8 n_response_headers;
 	String *response_headers[HTTP_HEADERS_SIZE];
@@ -139,9 +144,19 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+
 	bool enable_admin_routes_auth;
+	HttpRouteAuthType admin_auth_type;
 	void *(*admin_decode_data)(void *);
 	void (*admin_delete_decoded_data)(void *);
+	unsigned int (*admin_auth_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	);
+
+	bool enable_admin_cors_headers;
+	HttpOrigin admin_origin;
+	
 	DoubleList *admin_file_systems_stats;
 	pthread_mutex_t *admin_mutex;
 
@@ -487,6 +502,20 @@ CERVER_PRIVATE void *http_decode_data_into_json (void *json_ptr);
 
 #pragma endregion
 
+#pragma region origins
+
+// adds a new domain to the HTTP cerver's origins whitelist
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_add_origin_to_whitelist (
+	HttpCerver *http_cerver, const char *domain
+);
+
+CERVER_EXPORT void http_cerver_print_origins_whitelist (
+	const HttpCerver *http_cerver
+);
+
+#pragma endregion
+
 #pragma region responses
 
 CERVER_PUBLIC struct _HttpResponse *oki_doki;
@@ -536,12 +565,18 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
-	HttpCerver *http_cerver, bool enable
+	HttpCerver *http_cerver, const bool enable
 );
 
 // enables authentication in admin routes
-// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
 CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+);
+
+// sets the method to be used to decode incoming data from JWT
+// and sets a method to delete it after use
+// if no delete method is set, data won't be freed
+CERVER_EXPORT void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 );
@@ -550,6 +585,31 @@ CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 // but sets a method to decode data from a JWT into a json string
 CERVER_EXPORT void http_cerver_admin_routes_auth_decode_to_json (
 	HttpCerver *http_cerver
+);
+
+// sets a method to be used to handle auth in admin routes
+// HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+CERVER_EXPORT void http_cerver_admin_routes_set_authentication_handler (
+	HttpCerver *http_cerver,
+	unsigned int (*authentication_handler)(
+		const struct _HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+);
+
+// enables CORS headers in admin routes responses
+// always uses admin origin's value
+// if there is no dedicated origin, it will dynamically
+// set the header based on the origins whitelist
+CERVER_EXPORT void http_cerver_enable_admin_cors_headers (
+	HttpCerver *http_cerver, const bool enable
+);
+
+// sets the dedicated domain that will be walways set
+// in the admin responses CORS headers
+CERVER_EXPORT void http_cerver_admin_set_origin (
+	HttpCerver *http_cerver, const char *domain
 );
 
 // registers a new file system to be handled

@@ -286,6 +286,10 @@ CERVER_PUBLIC void http_request_multi_parts_print (
 	const HttpRequest *http_request
 );
 
+CERVER_PUBLIC void http_request_multi_parts_files_print (
+	const HttpRequest *http_request
+);
+
 // search request's body values for matching value by key
 // returns a constant String that should not be deleted if match
 // returns NULL if not found

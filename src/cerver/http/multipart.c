@@ -7,6 +7,8 @@
 
 #include <ctype.h>
 
+#include "cerver/files.h"
+
 #include "cerver/http/http.h"
 #include "cerver/http/multipart.h"
 
@@ -36,10 +38,13 @@ void *http_multi_part_new (void) {
 		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_SIZE);
 
 		multi_part->fd = -1;
-		multi_part->saved_filename_len = 0;
-		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
+
+		multi_part->saved_filename_len = 0;
+		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
+
+		multi_part->moved_file = false;
 
 		multi_part->value_len = 0;
 		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
@@ -84,10 +89,13 @@ void http_multi_part_reset (MultiPart *multi_part) {
 		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_SIZE);
 
 		multi_part->fd = -1;
-		multi_part->saved_filename_len = 0;
-		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
+
+		multi_part->saved_filename_len = 0;
+		(void) memset (multi_part->saved_filename, 0, HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
+
+		multi_part->moved_file = false;
 
 		multi_part->value_len = 0;
 		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
@@ -180,22 +188,6 @@ void http_multi_part_set_generated_filename (
 
 }
 
-const char *http_multi_part_get_saved_filename (
-	const MultiPart *multi_part
-) {
-
-	return multi_part->saved_filename;
-
-}
-
-const int http_multi_part_get_saved_filename_len (
-	const MultiPart *multi_part
-) {
-
-	return multi_part->saved_filename_len;
-
-}
-
 const u32 http_multi_part_get_n_reads (
 	const MultiPart *multi_part
 ) {
@@ -212,6 +204,30 @@ const u32 http_multi_part_get_total_wrote (
 
 }
 
+const char *http_multi_part_get_saved_filename (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->saved_filename;
+
+}
+
+const int http_multi_part_get_saved_filename_len (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->saved_filename_len;
+
+}
+
+const bool http_multi_part_get_moved_file (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->moved_file;
+
+}
+
 const char *http_multi_part_get_value (
 	const MultiPart *multi_part
 ) {
@@ -225,6 +241,58 @@ const int http_multi_part_get_value_len (
 ) {
 
 	return multi_part->value_len;
+
+}
+
+// moves multi-part's saved file to the destination path
+// returns 0 on success, 1 on error
+unsigned int http_multi_part_move_file (
+	MultiPart *mpart, const char *destination_path
+) {
+
+	unsigned int retval = 1;
+
+	if (mpart && destination_path) {
+		if (!file_move_to (mpart->saved_filename, destination_path)) {
+			mpart->moved_file = true;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// works like http_multi_part_move_file ()
+// but with the ability to generate dest on the fly
+unsigned int http_multi_part_move_file_generate_destination (
+	MultiPart *mpart, const char *format, ...
+) {
+
+	unsigned int retval = 1;
+
+	if (mpart && format) {
+		va_list args;
+		va_start (args, format);
+
+		char destination[HTTP_MULTI_PART_GENERATED_DESTINATION_SIZE] = { 0 };
+		(void) vsnprintf (
+			destination,
+			HTTP_MULTI_PART_GENERATED_DESTINATION_SIZE - 1,
+			format, args
+		);
+
+		if (!file_move_to (mpart->saved_filename, destination)) {
+			mpart->moved_file = true;
+
+			retval = 0;
+		}
+
+		va_end (args);
+	}
+
+	return retval;
 
 }
 
@@ -309,7 +377,6 @@ do {                                                       \
 		}                                                  \
 	}                                                      \
 } while (0)
-
 
 enum state {
 	s_uninitialized = 1,

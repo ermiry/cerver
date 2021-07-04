@@ -248,6 +248,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->jwt_opt_pub_key_name = NULL;
 		http_cerver->jwt_public_key = NULL;
 
+		http_cerver->n_origins = 0;
+		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
+			http_origin_reset (&http_cerver->origins_whitelist[i]);
+
 		http_cerver->n_response_headers = 0;
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_cerver->response_headers[i] = NULL;
@@ -259,9 +263,16 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+
 		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
+		http_cerver->admin_auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
 		http_cerver->admin_decode_data = NULL;
 		http_cerver->admin_delete_decoded_data = NULL;
+		http_cerver->admin_auth_handler = NULL;
+
+		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
+		http_origin_reset (&http_cerver->admin_origin);
+		
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_mutex = NULL;
 
@@ -1406,6 +1417,61 @@ void *http_decode_data_into_json (void *json_ptr) {
 
 #pragma endregion
 
+#pragma region origins
+
+// adds a new domain to the HTTP cerver's origins whitelist
+// returns 0 on success, 1 on error
+u8 http_cerver_add_origin_to_whitelist (
+	HttpCerver *http_cerver, const char *domain
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver && domain) {
+		if (http_cerver->n_origins < HTTP_ORIGINS_SIZE) {
+			http_origin_init (
+				&http_cerver->origins_whitelist[http_cerver->n_origins],
+				domain
+			);
+
+			http_cerver->n_origins += 1;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+void http_cerver_print_origins_whitelist (
+	const HttpCerver *http_cerver
+) {
+
+	if (http_cerver) {
+		if (http_cerver->n_origins) {
+			(void) printf ("Origins whitelist (%u): \n", http_cerver->n_origins);
+
+			const HttpOrigin *origin = NULL;
+			for (u8 idx = 0; idx < http_cerver->n_origins; idx++) {
+				origin = &http_cerver->origins_whitelist[idx];
+
+				(void) printf (
+					"[%u]: (%d) - %s",
+					idx, origin->len, origin->value
+				);
+			}
+		}
+
+		else {
+			(void) printf ("Origins whitelist is empty!\n");
+		}
+	}
+
+}
+
+#pragma endregion
+
 #pragma region responses
 
 // adds a new global responses header
@@ -1675,7 +1741,7 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
 void http_cerver_enable_admin_routes (
-	HttpCerver *http_cerver, bool enable
+	HttpCerver *http_cerver, const bool enable
 ) {
 
 	if (http_cerver) {
@@ -1685,14 +1751,26 @@ void http_cerver_enable_admin_routes (
 }
 
 // enables authentication in admin routes
-// using HTTP_ROUTE_AUTH_TYPE_BEARER by default
 void http_cerver_enable_admin_routes_authentication (
+	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_routes_auth = true;
+		http_cerver->admin_auth_type = auth_type;
+	}
+
+}
+
+// sets the method to be used to decode incoming data from JWT
+// and sets a method to delete it after use
+// if no delete method is set, data won't be freed
+void http_cerver_admin_routes_auth_set_decode_data (
 	HttpCerver *http_cerver,
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 ) {
 
 	if (http_cerver) {
-		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = decode_data;
 		http_cerver->admin_delete_decoded_data = delete_decoded_data;
 	}
@@ -1706,9 +1784,54 @@ void http_cerver_admin_routes_auth_decode_to_json (
 ) {
 
 	if (http_cerver) {
-		http_cerver->enable_admin_routes_auth = true;
 		http_cerver->admin_decode_data = http_decode_data_into_json;
 		http_cerver->admin_delete_decoded_data = free;
+	}
+
+}
+
+// sets a method to be used to handle auth in admin routes
+// HTTP cerver must had been configured with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// method must return 0 on success and 1 on error
+void http_cerver_admin_routes_set_authentication_handler (
+	HttpCerver *http_cerver,
+	unsigned int (*authentication_handler)(
+		const HttpReceive *http_receive,
+		const HttpRequest *request
+	)
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_auth_handler = authentication_handler;
+	}
+
+}
+
+// enables CORS headers in admin routes responses
+// always uses admin origin's value
+// if there is no dedicated origin, it will dynamically
+// set the header based on the origins whitelist
+void http_cerver_enable_admin_cors_headers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_cors_headers = enable;
+	}
+
+}
+
+// sets the dedicated domain that will be walways set
+// in the admin responses CORS headers
+void http_cerver_admin_set_origin (
+	HttpCerver *http_cerver, const char *domain
+) {
+
+	if (http_cerver) {
+		http_origin_init (
+			&http_cerver->admin_origin,
+			domain
+		);
 	}
 
 }
