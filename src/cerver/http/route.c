@@ -531,7 +531,8 @@ void http_route_set_auth (
 
 }
 
-// sets the method to be used to decode incoming data from jwt & a method to delete it after use
+// sets the method to be used to decode incoming data from JWT
+// also sets a method to delete it after use
 // if no delete method is set, data won't be freed
 void http_route_set_decode_data (
 	HttpRoute *route, 

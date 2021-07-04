@@ -263,6 +263,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->enable_admin_head_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS;
+		http_cerver->enable_admin_options_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS;
 
 		http_cerver->enable_admin_routes_auth = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH;
 		http_cerver->admin_auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
@@ -1746,6 +1748,28 @@ void http_cerver_enable_admin_routes (
 
 	if (http_cerver) {
 		http_cerver->enable_admin_routes = enable;
+	}
+
+}
+
+// enables HTTP admin routes to handle HEAD requests
+void http_cerver_enable_admin_head_handlers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_head_handlers = enable;
+	}
+
+}
+
+// enables HTTP admin routes to handle OPTIONS requests
+void http_cerver_enable_admin_options_handlers (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_options_handlers = enable;
 	}
 
 }

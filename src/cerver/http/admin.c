@@ -414,7 +414,97 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-static inline void http_cerver_admin_handler_send_response (
+static inline void http_cerver_admin_response_set_cors_headers (
+	const HttpReceive *http_receive, HttpResponse *response
+) {
+
+	if (http_receive->http_cerver->enable_admin_cors_headers) {
+		if (http_receive->http_cerver->admin_origin.len) {
+			(void) http_response_add_cors_header (
+				response,
+				http_receive->http_cerver->admin_origin.value
+			);
+		}
+
+		else {
+			(void) http_response_add_whitelist_cors_header_from_request (
+				http_receive, response
+			);
+		}
+	}
+
+}
+
+// sends back a matching response to an OPTIONS preflight request
+// that is generally sent to fetch CORS information
+static inline void http_cerver_admin_send_options (
+	const HttpReceive *http_receive
+) {
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		// sets response's status to be 204 No Content
+		http_response_set_status (response, HTTP_STATUS_NO_CONTENT);
+
+		// sets "Access-Control-Allow-Origin" header
+		http_cerver_admin_response_set_cors_headers (
+			http_receive, response
+		);
+
+		// set "Access-Control-Allow-Methods" header based on config
+		if (http_receive->http_cerver->enable_admin_head_handlers) {
+			(void) http_response_add_header (
+				response,
+				HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+				"GET, HEAD, OPTIONS"
+			);
+		}
+
+		else {
+			(void) http_response_add_header (
+				response,
+				HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+				"GET, OPTIONS"
+			);
+		}
+
+		(void) http_response_compile (response);
+
+		(void) http_response_send (response, http_receive);
+
+		http_response_return (response);
+	}
+
+}
+
+// sends back a response to a HEAD request
+// that only includes the headers that would be returned
+// if the HEAD request's URL was instead requested with GET
+static inline void http_cerver_admin_send_head (
+	const HttpReceive *http_receive,
+	const size_t json_len
+) {
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		http_response_set_status (response, HTTP_STATUS_OK);
+		http_response_add_json_headers (response, json_len);
+
+		// sets "Access-Control-Allow-Origin" header
+		http_cerver_admin_response_set_cors_headers (
+			http_receive, response
+		);
+
+		(void) http_response_compile (response);
+
+		(void) http_response_send (response, http_receive);
+
+		http_response_return (response);
+	}
+
+}
+
+static inline void http_cerver_admin_send_response (
 	const HttpReceive *http_receive,
 	const HttpRequest *request,
 	const char *json, const size_t json_len
@@ -425,28 +515,57 @@ static inline void http_cerver_admin_handler_send_response (
 		http_response_set_status (response, HTTP_STATUS_OK);
 		http_response_add_json_headers (response, json_len);
 
-		if (http_receive->http_cerver->enable_admin_cors_headers) {
-			if (http_receive->http_cerver->admin_origin.len) {
-				(void) http_response_add_cors_header (
-					response,
-					http_receive->http_cerver->admin_origin.value
-				);
-			}
+		// sets "Access-Control-Allow-Origin" header
+		http_cerver_admin_response_set_cors_headers (
+			http_receive, response
+		);
 
-			else {
-				(void) http_response_add_whitelist_cors_header_from_request (
-					http_receive, response
-				);
-			}
-		}
-
-		(void) http_response_set_data_ref (response, (void *) json, json_len);
+		(void) http_response_set_data_ref (
+			response, (void *) json, json_len
+		);
 
 		(void) http_response_compile (response);
 
 		(void) http_response_send (response, http_receive);
 
 		http_response_return (response);
+	}
+
+}
+
+// OPTIONS [top level]/cerver/stats
+// OPTIONS [top level]/cerver/stats/filesystems
+static void http_cerver_admin_options_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	http_cerver_admin_send_options (http_receive);
+
+}
+
+// HEAD [top level]/cerver/stats
+static void http_cerver_admin_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *routes_json = http_cerver_admin_generate_routes_stats_json (
+		http_cerver
+	);
+
+	if (routes_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (routes_json)
+		);
+
+		free (routes_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
 	}
 
 }
@@ -464,12 +583,38 @@ static void http_cerver_admin_handler (
 	);
 
 	if (routes_json) {
-		http_cerver_admin_handler_send_response (
+		http_cerver_admin_send_response (
 			http_receive, request,
 			routes_json, strlen (routes_json)
 		);
 
 		free (routes_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
+// HEAD [top level]/cerver/stats/filesystems
+static void http_cerver_admin_file_systems_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *file_systems_json = http_cerver_admin_generate_file_systems_stats_json (
+		http_cerver
+	);
+
+	if (file_systems_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (file_systems_json)
+		);
+
+		free (file_systems_json);
 	}
 
 	else {
@@ -491,7 +636,7 @@ static void http_cerver_admin_file_systems_handler (
 	);
 
 	if (file_systems_json) {
-		http_cerver_admin_handler_send_response (
+		http_cerver_admin_send_response (
 			http_receive, request,
 			file_systems_json, strlen (file_systems_json)
 		);
@@ -538,6 +683,70 @@ static void http_cerver_admin_route_set_auth (
 
 }
 
+static void http_cerver_admin_set_main_route (
+	const HttpCerver *http_cerver, HttpRoute *top_level_route
+) {
+
+	// GET [top level]/cerver/stats
+	HttpRoute *admin_route = http_route_create (
+		REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_route_set_handler (
+			admin_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_head_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_route_set_handler (
+			admin_route,
+			REQUEST_METHOD_OPTIONS,
+			http_cerver_admin_options_handler
+		);
+	}
+
+	http_cerver_admin_route_set_auth (http_cerver, admin_route);
+
+	http_route_child_add (top_level_route, admin_route);
+
+}
+
+static void http_cerver_admin_set_file_systems_route (
+	const HttpCerver *http_cerver, HttpRoute *top_level_route
+) {
+	
+	// GET [top level]/cerver/stats/filesystems
+	HttpRoute *file_systems_route = http_route_create (
+		REQUEST_METHOD_GET,
+		"cerver/stats/filesystems",
+		http_cerver_admin_file_systems_handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_route_set_handler (
+			file_systems_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_file_systems_head_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_route_set_handler (
+			file_systems_route,
+			REQUEST_METHOD_OPTIONS,
+			http_cerver_admin_options_handler
+		);
+	}
+
+	http_cerver_admin_route_set_auth (http_cerver, file_systems_route);
+
+	http_route_child_add (top_level_route, file_systems_route);
+
+}
+
 u8 http_cerver_admin_init (
 	const HttpCerver *http_cerver,
 	HttpRoute *top_level_route
@@ -547,22 +756,14 @@ u8 http_cerver_admin_init (
 
 	if (top_level_route) {
 		// GET [top level]/cerver/stats
-		HttpRoute *admin_route = http_route_create (
-			REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_handler
+		http_cerver_admin_set_main_route (
+			http_cerver, top_level_route
 		);
-
-		http_cerver_admin_route_set_auth (http_cerver, admin_route);
-
-		http_route_child_add (top_level_route, admin_route);
 
 		// GET [top level]/cerver/stats/filesystems
-		HttpRoute *file_systems_route = http_route_create (
-			REQUEST_METHOD_GET, "cerver/stats/filesystems", http_cerver_admin_file_systems_handler
+		http_cerver_admin_set_file_systems_route (
+			http_cerver, top_level_route
 		);
-
-		http_cerver_admin_route_set_auth (http_cerver, file_systems_route);
-
-		http_route_child_add (top_level_route, file_systems_route);
 
 		retval = 0;
 	}

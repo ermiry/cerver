@@ -30,6 +30,8 @@
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS		false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS	false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS		false
 
@@ -144,6 +146,8 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	bool enable_admin_head_handlers;
+	bool enable_admin_options_handlers;
 
 	bool enable_admin_routes_auth;
 	HttpRouteAuthType admin_auth_type;
@@ -565,6 +569,16 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
 CERVER_EXPORT void http_cerver_enable_admin_routes (
+	HttpCerver *http_cerver, const bool enable
+);
+
+// enables HTTP admin routes to handle HEAD requests
+CERVER_EXPORT void http_cerver_enable_admin_head_handlers (
+	HttpCerver *http_cerver, const bool enable
+);
+
+// enables HTTP admin routes to handle OPTIONS requests
+CERVER_EXPORT void http_cerver_enable_admin_options_handlers (
 	HttpCerver *http_cerver, const bool enable
 );
 
