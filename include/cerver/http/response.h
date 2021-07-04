@@ -10,6 +10,7 @@
 
 #include "cerver/http/content.h"
 #include "cerver/http/headers.h"
+#include "cerver/http/origin.h"
 #include "cerver/http/status.h"
 
 #define HTTP_RESPONSE_POOL_INIT					32
@@ -130,7 +131,7 @@ CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_origin (
 // then adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_request (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	HttpResponse *response
 );
 
