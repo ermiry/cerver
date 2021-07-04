@@ -163,6 +163,97 @@ static HttpCerver *test_http_cerver_create (void) {
 
 #pragma endregion
 
+#pragma region uploads
+
+static void custom_uploads_filename_generator (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const MultiPart *mpart = http_request_get_current_mpart (request);
+
+	http_multi_part_set_generated_filename (
+		mpart,
+		"%d-%ld-%s",
+		http_receive->cr->connection->socket->sock_fd,
+		time (NULL),
+		http_multi_part_get_filename (mpart)
+	);
+
+}
+
+static void test_http_cerver_set_uploads_path (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	const char *uploads_path = { "/home/uploads" };
+
+	http_cerver_set_uploads_path (http_cerver, uploads_path);
+
+	test_check_str_eq (http_cerver->uploads_path, uploads_path, NULL);
+	test_check_int_eq (http_cerver->uploads_path_len, (int) strlen (uploads_path), NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_generate_uploads_path (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	const char *base_path = { "/home/ermiry" };
+	const char *uploads_path = { "uploads" };
+	const char *complete_uploads_path = { "/home/ermiry/uploads" };
+
+	http_cerver_generate_uploads_path (http_cerver, "%s/%s", base_path, uploads_path);
+
+	test_check_str_eq (http_cerver->uploads_path, complete_uploads_path, NULL);
+	test_check_int_eq (http_cerver->uploads_path_len, (int) strlen (complete_uploads_path), NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_uploads_file_mode (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	const unsigned int file_mode = 0600;
+
+	http_cerver_set_uploads_file_mode (http_cerver, file_mode);
+
+	test_check_unsigned_eq (http_cerver->uploads_file_mode, file_mode, NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_uploads_filename_generator (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	http_cerver_set_uploads_filename_generator (http_cerver, custom_uploads_filename_generator);
+
+	test_check_ptr_eq (http_cerver->uploads_filename_generator, custom_uploads_filename_generator);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_default_uploads_filename_generator (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	http_cerver_set_default_uploads_filename_generator (http_cerver);
+
+	test_check_ptr_eq (http_cerver->uploads_filename_generator, http_cerver_default_uploads_filename_generator);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+#pragma endregion
+
 #pragma region admin
 
 static void test_http_cerver_enable_admin_routes (void) {
@@ -424,6 +515,13 @@ static void http_tests_main (void) {
 
 	// main
 	test_http_cerver_new ();
+
+	// uploads
+	test_http_cerver_set_uploads_path ();
+	test_http_cerver_generate_uploads_path ();
+	test_http_cerver_set_uploads_file_mode ();
+	test_http_cerver_set_uploads_filename_generator ();
+	test_http_cerver_set_default_uploads_filename_generator ();
 
 	// admin
 	test_http_cerver_enable_admin_routes ();
