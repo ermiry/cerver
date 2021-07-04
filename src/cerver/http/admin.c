@@ -435,7 +435,7 @@ static inline void http_cerver_admin_response_set_cors_headers (
 
 }
 
-// send back a matching response to an OPTIONS preflight request
+// sends back a matching response to an OPTIONS preflight request
 // that is generally sent to fetch CORS information
 static inline void http_cerver_admin_send_options (
 	const HttpReceive *http_receive
@@ -467,6 +467,33 @@ static inline void http_cerver_admin_send_options (
 				"GET, OPTIONS"
 			);
 		}
+
+		(void) http_response_compile (response);
+
+		(void) http_response_send (response, http_receive);
+
+		http_response_return (response);
+	}
+
+}
+
+// sends back a response to a HEAD request
+// that only includes the headers that would be returned
+// if the HEAD request's URL was instead requested with GET
+static inline void http_cerver_admin_send_head (
+	const HttpReceive *http_receive,
+	const size_t json_len
+) {
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		http_response_set_status (response, HTTP_STATUS_OK);
+		http_response_add_json_headers (response, json_len);
+
+		// sets "Access-Control-Allow-Origin" header
+		http_cerver_admin_response_set_cors_headers (
+			http_receive, response
+		);
 
 		(void) http_response_compile (response);
 
@@ -517,6 +544,32 @@ static void http_cerver_admin_options_handler (
 
 }
 
+// HEAD [top level]/cerver/stats
+static void http_cerver_admin_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *routes_json = http_cerver_admin_generate_routes_stats_json (
+		http_cerver
+	);
+
+	if (routes_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (routes_json)
+		);
+
+		free (routes_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 // GET [top level]/cerver/stats
 static void http_cerver_admin_handler (
 	const HttpReceive *http_receive,
@@ -536,6 +589,32 @@ static void http_cerver_admin_handler (
 		);
 
 		free (routes_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
+// HEAD [top level]/cerver/stats/filesystems
+static void http_cerver_admin_file_systems_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *file_systems_json = http_cerver_admin_generate_file_systems_stats_json (
+		http_cerver
+	);
+
+	if (file_systems_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (file_systems_json)
+		);
+
+		free (file_systems_json);
 	}
 
 	else {
@@ -614,7 +693,11 @@ static void http_cerver_admin_set_main_route (
 	);
 
 	if (http_cerver->enable_admin_head_handlers) {
-		// TODO:
+		http_route_set_handler (
+			admin_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_head_handler
+		);
 	}
 
 	if (http_cerver->enable_admin_options_handlers) {
@@ -643,7 +726,11 @@ static void http_cerver_admin_set_file_systems_route (
 	);
 
 	if (http_cerver->enable_admin_head_handlers) {
-		// TODO:
+		http_route_set_handler (
+			file_systems_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_file_systems_head_handler
+		);
 	}
 
 	if (http_cerver->enable_admin_options_handlers) {
