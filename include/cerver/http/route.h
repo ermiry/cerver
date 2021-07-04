@@ -74,7 +74,7 @@ struct _HttpRoutesTokens {
 
 typedef struct _HttpRoutesTokens HttpRoutesTokens;
 
-#define HTTP_HANDLERS_COUNT					5
+#define HTTP_HANDLERS_COUNT					8
 
 typedef void (*HttpHandler)(
 	const struct _HttpReceive *http_receive,
@@ -235,7 +235,8 @@ CERVER_EXPORT void http_route_set_auth (
 	HttpRoute *route, const HttpRouteAuthType auth_type
 );
 
-// sets the method to be used to decode incoming data from jwt & a method to delete it after use
+// sets the method to be used to decode incoming data from JWT
+// also sets a method to delete it after use
 // if no delete method is set, data won't be freed
 CERVER_EXPORT void http_route_set_decode_data (
 	HttpRoute *route, 
