@@ -15,18 +15,21 @@
 
 #define REQUEST_DIRNAME_SIZE			512
 
-#define REQUEST_METHOD_UNDEFINED		5
+#define REQUEST_METHOD_UNDEFINED		8
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define REQUEST_METHOD_MAP(XX)			\
-	XX(0,  DELETE,      DELETE)       	\
-	XX(1,  GET,         GET)          	\
-	XX(2,  HEAD,        HEAD)         	\
-	XX(3,  POST,        POST)         	\
-	XX(4,  PUT,         PUT)
+	XX(0,  DELETE,      DELETE)			\
+	XX(1,  GET,         GET)			\
+	XX(2,  HEAD,        HEAD)			\
+	XX(3,  POST,        POST)			\
+	XX(4,  PUT,         PUT)			\
+	XX(5,  CONNECT,     CONNECT)		\
+	XX(6,  OPTIONS,     OPTIONS)		\
+	XX(7,  TRACE,       TRACE)
 
 typedef enum RequestMethod {
 
