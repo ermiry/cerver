@@ -351,6 +351,35 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 }
 
+// sets CORS related header "Access-Control-Allow-Credentials"
+// this header is needed when a CORS request has an "Authorization" header
+u8 http_response_add_cors_allow_credentials_header (
+	HttpResponse *response
+) {
+
+	return http_response_add_header (
+		response,
+		HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS,
+		"true"
+	);
+
+}
+
+// sets CORS related header "Access-Control-Allow-Methods"
+// to be a list of available methods like "GET, HEAD, OPTIONS"
+// this header is needed in preflight OPTIONS request's responses
+u8 http_response_add_cors_allow_methods_header (
+	HttpResponse *response, const char *methods
+) {
+
+	return http_response_add_header (
+		response,
+		HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+		methods
+	);
+
+}
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 void http_response_set_data (

@@ -136,6 +136,19 @@ CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_request (
 	HttpResponse *response
 );
 
+// sets CORS related header "Access-Control-Allow-Credentials"
+// this header is needed when a CORS request has an "Authorization" header
+CERVER_EXPORT u8 http_response_add_cors_allow_credentials_header (
+	HttpResponse *response
+);
+
+// sets CORS related header "Access-Control-Allow-Methods"
+// to be a list of available methods like "GET, HEAD, OPTIONS"
+// this header is needed in preflight OPTIONS request's responses
+CERVER_EXPORT u8 http_response_add_cors_allow_methods_header (
+	HttpResponse *response, const char *methods
+);
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (
