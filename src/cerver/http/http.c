@@ -1459,7 +1459,7 @@ void http_cerver_print_origins_whitelist (
 				origin = &http_cerver->origins_whitelist[idx];
 
 				(void) printf (
-					"[%u]: (%d) - %s",
+					"[%u]: (%d) - %s\n",
 					idx, origin->len, origin->value
 				);
 			}
