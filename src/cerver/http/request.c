@@ -60,10 +60,15 @@ HttpRequest *http_request_new (void) {
 		http_request->decoded_data = NULL;
 		http_request->delete_decoded_data = NULL;
 		
+		http_request->custom_data = NULL;
+		http_request->delete_custom_data = NULL;
+
 		http_request->body = NULL;
 
-		http_request->current_part = NULL;
 		http_request->multi_parts = NULL;
+		http_request->current_part = NULL;
+		http_request->next_part = NULL;
+
 		http_request->n_files = 0;
 		http_request->n_values = 0;
 
@@ -96,6 +101,11 @@ void http_request_delete (HttpRequest *http_request) {
 		if (http_request->decoded_data) {
 			if (http_request->delete_decoded_data) 
 				http_request->delete_decoded_data (http_request->decoded_data);
+		}
+
+		if (http_request->custom_data) {
+			if (http_request->delete_custom_data)
+				http_request->delete_custom_data (http_request->custom_data);
 		}
 
 		str_delete (http_request->body);
@@ -218,6 +228,62 @@ const void *http_request_get_decoded_data (
 ) {
 
 	return http_request->decoded_data;
+
+}
+
+void http_request_set_decoded_data (
+	HttpRequest *http_request, void *decoded_data
+) {
+
+	http_request->decoded_data = decoded_data;
+
+}
+
+void http_request_set_delete_decoded_data (
+	HttpRequest *http_request, void (*delete_decoded_data)(void *)
+) {
+
+	http_request->delete_decoded_data = delete_decoded_data;
+
+}
+
+void http_request_set_default_delete_decoded_data (
+	HttpRequest *http_request
+) {
+
+	http_request->delete_decoded_data = free;
+
+}
+
+const void *http_request_get_custom_data (
+	const HttpRequest *http_request
+) {
+
+	return http_request->custom_data;
+
+}
+
+void http_request_set_custom_data (
+	HttpRequest *http_request, void *custom_data
+) {
+
+	http_request->custom_data = custom_data;
+
+}
+
+void http_request_set_delete_custom_data (
+	HttpRequest *http_request, void (*delete_custom_data)(void *)
+) {
+
+	http_request->delete_custom_data = delete_custom_data;
+
+}
+
+void http_request_set_default_delete_custom_data (
+	HttpRequest *http_request
+) {
+
+	http_request->delete_custom_data = free;
 
 }
 
