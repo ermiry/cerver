@@ -1,10 +1,13 @@
 ## HTTP
-- Added CONNECT, OPTIONS, TRACE request methods
-- Updated HTTP_HANDLERS_COUNT definition
-- Added methods to enable OPTIONS admin handlers
-- Added HTTP admin OPTIONS internal methods
-- Added dedicated HTTP admin HEAD methods
+- Refactored http_cerver_print_origins_whitelist ()
+- Added more responses CORS related headers methods
+- Handling "Access-Control-Allow-Credentials" header in admin responses
+- Added ability to set custom data in HTTP request
+- Added HTTP requests data related get and set methods
+
+## Fixes
+- Fixed error when adding CORS based on request
 
 ## Tests
-- Added admin heads & options methods unit tests
-- Added base HTTP uploads filenames unit tests
+- Added HTTP request data methods unit tests
+- Added HTTP response CORS methods unit tests

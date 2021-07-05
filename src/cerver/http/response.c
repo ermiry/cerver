@@ -328,7 +328,8 @@ u8 http_response_add_whitelist_cors_header_from_origin (
 
 }
 
-// checks if the HTTP request's origin matches any domain in the whitelist
+// checks if the HTTP request's "Origin" header value
+// matches any domain in the whitelist
 // then adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_whitelist_cors_header_from_request (
@@ -338,15 +339,44 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 	u8 retval = 1;
 
-	if (http_receive->request->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]) {
+	if (http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
 		retval = http_response_add_whitelist_cors_header (
 			response, http_receive->request->headers[
-				HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN
+				HTTP_HEADER_ORIGIN
 			]->str
 		);
 	}
 
 	return retval;
+
+}
+
+// sets CORS related header "Access-Control-Allow-Credentials"
+// this header is needed when a CORS request has an "Authorization" header
+u8 http_response_add_cors_allow_credentials_header (
+	HttpResponse *response
+) {
+
+	return http_response_add_header (
+		response,
+		HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS,
+		"true"
+	);
+
+}
+
+// sets CORS related header "Access-Control-Allow-Methods"
+// to be a list of available methods like "GET, HEAD, OPTIONS"
+// this header is needed in preflight OPTIONS request's responses
+u8 http_response_add_cors_allow_methods_header (
+	HttpResponse *response, const char *methods
+) {
+
+	return http_response_add_header (
+		response,
+		HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+		methods
+	);
 
 }
 

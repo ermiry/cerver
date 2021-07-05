@@ -414,23 +414,84 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
+// sets "Access-Control-Allow-Origin" header
+static inline void http_cerver_admin_response_set_allow_origin_header (
+	const HttpReceive *http_receive, HttpResponse *response
+) {
+
+	if (http_receive->http_cerver->admin_origin.len) {
+		(void) http_response_add_cors_header (
+			response,
+			http_receive->http_cerver->admin_origin.value
+		);
+	}
+
+	else {
+		(void) http_response_add_whitelist_cors_header_from_request (
+			http_receive, response
+		);
+	}
+
+}
+
+// sets "Access-Control-Allow-Methods" header based on config
+static inline void http_cerver_admin_response_set_allow_methods_header (
+	const HttpReceive *http_receive, HttpResponse *response
+) {
+
+	if (http_receive->http_cerver->enable_admin_head_handlers) {
+		(void) http_response_add_header (
+			response,
+			HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+			"GET, HEAD, OPTIONS"
+		);
+	}
+
+	else {
+		(void) http_response_add_header (
+			response,
+			HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
+			"GET, OPTIONS"
+		);
+	}
+
+}
+
+// sets "Access-Control-Allow-Credentials" header
+static inline void http_cerver_admin_response_set_allow_credentials (
+	const HttpReceive *http_receive, HttpResponse *response
+) {
+
+	if (http_receive->http_cerver->enable_admin_routes_auth) {
+		(void) http_response_add_header (
+			response,
+			HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS,
+			"true"
+		);
+	}
+
+}
+
+// set CORS related headers based on HTTP config
 static inline void http_cerver_admin_response_set_cors_headers (
 	const HttpReceive *http_receive, HttpResponse *response
 ) {
 
 	if (http_receive->http_cerver->enable_admin_cors_headers) {
-		if (http_receive->http_cerver->admin_origin.len) {
-			(void) http_response_add_cors_header (
-				response,
-				http_receive->http_cerver->admin_origin.value
-			);
-		}
+		// set "Access-Control-Allow-Origin" header
+		http_cerver_admin_response_set_allow_origin_header (
+			http_receive, response
+		);
 
-		else {
-			(void) http_response_add_whitelist_cors_header_from_request (
-				http_receive, response
-			);
-		}
+		// set "Access-Control-Allow-Methods" header based on config
+		http_cerver_admin_response_set_allow_methods_header (
+			http_receive, response
+		);
+
+		// set "Access-Control-Allow-Credentials" header
+		http_cerver_admin_response_set_allow_credentials (
+			http_receive, response
+		);
 	}
 
 }
@@ -446,27 +507,10 @@ static inline void http_cerver_admin_send_options (
 		// sets response's status to be 204 No Content
 		http_response_set_status (response, HTTP_STATUS_NO_CONTENT);
 
-		// sets "Access-Control-Allow-Origin" header
+		// set CORS related headers based on HTTP config
 		http_cerver_admin_response_set_cors_headers (
 			http_receive, response
 		);
-
-		// set "Access-Control-Allow-Methods" header based on config
-		if (http_receive->http_cerver->enable_admin_head_handlers) {
-			(void) http_response_add_header (
-				response,
-				HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
-				"GET, HEAD, OPTIONS"
-			);
-		}
-
-		else {
-			(void) http_response_add_header (
-				response,
-				HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
-				"GET, OPTIONS"
-			);
-		}
 
 		(void) http_response_compile (response);
 
@@ -490,7 +534,7 @@ static inline void http_cerver_admin_send_head (
 		http_response_set_status (response, HTTP_STATUS_OK);
 		http_response_add_json_headers (response, json_len);
 
-		// sets "Access-Control-Allow-Origin" header
+		// set CORS related headers based on HTTP config
 		http_cerver_admin_response_set_cors_headers (
 			http_receive, response
 		);
@@ -515,7 +559,7 @@ static inline void http_cerver_admin_send_response (
 		http_response_set_status (response, HTTP_STATUS_OK);
 		http_response_add_json_headers (response, json_len);
 
-		// sets "Access-Control-Allow-Origin" header
+		// set CORS related headers based on HTTP config
 		http_cerver_admin_response_set_cors_headers (
 			http_receive, response
 		);

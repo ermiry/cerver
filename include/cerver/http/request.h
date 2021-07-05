@@ -62,10 +62,14 @@ struct _HttpRequest {
 	http_header next_header;
 	String *headers[HTTP_HEADERS_SIZE];
 
-	// decoded data from jwt
+	// JWT decoded data
 	void *decoded_data;
 	void (*delete_decoded_data)(void *);
 	
+	// custom auth handler data
+	void *custom_data;
+	void (*delete_custom_data)(void *);
+
 	String *body;
 
 	DoubleList *multi_parts;
@@ -156,6 +160,42 @@ CERVER_EXPORT bool http_request_content_type_is_json (
 // configured by http_route_set_decode_data ()
 CERVER_EXPORT const void *http_request_get_decoded_data (
 	const HttpRequest *http_request
+);
+
+// sets the HTTP request's decoded data
+CERVER_EXPORT void http_request_set_decoded_data (
+	HttpRequest *http_request, void *decoded_data
+);
+
+// sets a custom method to delete the HTTP request's decoded data
+CERVER_EXPORT void http_request_set_delete_decoded_data (
+	HttpRequest *http_request, void (*delete_decoded_data)(void *)
+);
+
+// sets free () as the method to delete the HTTP request's decoded data
+CERVER_EXPORT void http_request_set_default_delete_decoded_data (
+	HttpRequest *http_request
+);
+
+// gets the HTTP request's custom data
+// this data can be safely set by the user and accessed at any time
+CERVER_EXPORT const void *http_request_get_custom_data (
+	const HttpRequest *http_request
+);
+
+// sets the HTTP request's custom data
+CERVER_EXPORT void http_request_set_custom_data (
+	HttpRequest *http_request, void *custom_data
+);
+
+// sets a custom method to delete the HTTP request's custom data
+CERVER_EXPORT void http_request_set_delete_custom_data (
+	HttpRequest *http_request, void (*delete_custom_data)(void *)
+);
+
+// sets free () as the method to delete the HTTP request's custom data
+CERVER_EXPORT void http_request_set_default_delete_custom_data (
+	HttpRequest *http_request
 );
 
 // gets the HTTP request's body
