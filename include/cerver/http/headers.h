@@ -16,18 +16,18 @@ extern "C" {
 
 #define HTTP_HEADERS_MAP(XX)																																																																	\
 	/* Authentication */																																																																		\
-	XX(0,  AUTHENTICATE,      					WWW-Authenticate,					(Defines the authentication method that should be used to access a resource.))																																\
-	XX(1,  AUTHORIZATION,      					Authorization,						(Contains the credentials to authenticate a user-agent with a server.))																																		\
-	XX(2,  PROXY_AUTHENTICATE,      			Proxy-Authenticate,					(Defines the authentication method that should be used to access a resource behind a proxy server.))																										\
-	XX(3,  PROXY_AUTHORIZATION,      			Proxy-Authorization,				(Contains the credentials to authenticate a user agent with a proxy server.))																																\
+	XX(0,	AUTHENTICATE,      					WWW-Authenticate,					(Defines the authentication method that should be used to access a resource.))																																\
+	XX(1,	AUTHORIZATION,      				Authorization,						(Contains the credentials to authenticate a user-agent with a server.))																																		\
+	XX(2,	PROXY_AUTHENTICATE,      			Proxy-Authenticate,					(Defines the authentication method that should be used to access a resource behind a proxy server.))																										\
+	XX(3,	PROXY_AUTHORIZATION,      			Proxy-Authorization,				(Contains the credentials to authenticate a user agent with a proxy server.))																																\
 	/* Caching */																																																																				\
-	XX(4,  AGE,									Age,								(The time (in seconds) that the object has been in a proxy cache.))																																			\
-	XX(5,  CACHE_CONTROL,						Cache-Control,						(Directives for caching mechanisms in both requests and responses.))																																		\
-	XX(6,  CLEAR_SITE_DATA,						Clear-Site-Data,					(Clears browsing data (e.g. cookies, storage, cache) associated with the requesting website.))																												\
-	XX(7,  EXPIRES,								Expires,							(The date/time after which the response is considered stale.))																																				\
-	XX(8,  WARNING,								Warning,							(General warning information about possible problems.))																																						\
+	XX(4,	AGE,								Age,								(The time (in seconds) that the object has been in a proxy cache.))																																			\
+	XX(5,	CACHE_CONTROL,						Cache-Control,						(Directives for caching mechanisms in both requests and responses.))																																		\
+	XX(6,	CLEAR_SITE_DATA,					Clear-Site-Data,					(Clears browsing data (e.g. cookies, storage, cache) associated with the requesting website.))																												\
+	XX(7,	EXPIRES,							Expires,							(The date/time after which the response is considered stale.))																																				\
+	XX(8,	WARNING,							Warning,							(General warning information about possible problems.))																																						\
 	/* Connection management */																																																																	\
-	XX(9,  CONNECTION,							Connection,							(Controls whether the network connection stays open after the current transaction finishes.))																												\
+	XX(9,	CONNECTION,							Connection,							(Controls whether the network connection stays open after the current transaction finishes.))																												\
 	XX(10,  KEEP_ALIVE,							Keep-Alive,							(Controls how long a persistent connection should stay open.))																																				\
 	/* Content negotiation */																																																																	\
 	XX(11,  ACCEPT,								Accept,								(Informs the server about the types of data that can be sent back.))																																		\
