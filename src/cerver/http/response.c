@@ -328,7 +328,8 @@ u8 http_response_add_whitelist_cors_header_from_origin (
 
 }
 
-// checks if the HTTP request's origin matches any domain in the whitelist
+// checks if the HTTP request's "Origin" header value
+// matches any domain in the whitelist
 // then adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 u8 http_response_add_whitelist_cors_header_from_request (
@@ -338,10 +339,10 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 	u8 retval = 1;
 
-	if (http_receive->request->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]) {
+	if (http_receive->request->headers[HTTP_HEADER_ORIGIN]) {
 		retval = http_response_add_whitelist_cors_header (
 			response, http_receive->request->headers[
-				HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN
+				HTTP_HEADER_ORIGIN
 			]->str
 		);
 	}

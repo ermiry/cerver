@@ -127,7 +127,8 @@ CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_origin (
 	HttpResponse *response, const HttpOrigin *origin
 );
 
-// checks if the HTTP request's origin matches any domain in the whitelist
+// checks if the HTTP request's "Origin" header value
+// matches any domain in the whitelist
 // then adds an "Access-Control-Allow-Origin" header to the response
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_add_whitelist_cors_header_from_request (
