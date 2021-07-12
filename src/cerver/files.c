@@ -489,7 +489,7 @@ int file_move_to (
 
 	(void) snprintf (
 		move_command, FILES_MOVE_SIZE - 1,
-		"mv %s \"%s/%s\"",
+		"mv \"%s\" \"%s\"",
 		actual_path, saved_path
 	);
 

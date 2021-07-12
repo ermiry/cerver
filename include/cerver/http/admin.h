@@ -34,6 +34,10 @@ CERVER_PRIVATE HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 	const char *path
 );
 
+CERVER_PRIVATE char *http_cerver_admin_generate_info_json (
+	const struct _HttpCerver *http_cerver
+);
+
 CERVER_PRIVATE char *http_cerver_admin_generate_routes_stats_json (
 	const struct _HttpCerver *http_cerver
 );

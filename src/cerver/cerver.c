@@ -180,6 +180,14 @@ u8 cerver_set_welcome_msg (Cerver *cerver, const char *msg) {
 
 }
 
+void cerver_update_uptime (Cerver *cerver) {
+
+	if (cerver) {
+		cerver->info->uptime = time (NULL) - cerver->info->time_started;
+	}
+
+}
+
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
 u8 cerver_info_send_info_packet (

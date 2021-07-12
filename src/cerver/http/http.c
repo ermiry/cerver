@@ -81,7 +81,7 @@ static void http_receive_init_mpart_parser (
 );
 
 static void http_receive_handle (
-	HttpReceive *http_receive, 
+	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 );
 
@@ -91,16 +91,16 @@ static const char hex[] = "0123456789abcdef";
 
 // converts a hex character to its integer value
 static const char from_hex (const char ch) {
-	
+
 	return isdigit (ch) ? ch - '0' : tolower (ch) - 'a' + 10;
-	
+
 }
 
 // converts an integer value to its hex character
 static const char to_hex (const char code) {
-	
+
 	return hex[code & 15];
-	
+
 }
 
 #pragma endregion
@@ -143,7 +143,7 @@ KeyValuePair *key_value_pair_create (
 }
 
 static KeyValuePair *key_value_pair_create_pieces (
-	const char *key_first, const char *key_after, 
+	const char *key_first, const char *key_after,
 	const char *value_first, const char *value_after
 ) {
 
@@ -252,6 +252,9 @@ HttpCerver *http_cerver_new (void) {
 		for (u8 i = 0; i < HTTP_ORIGINS_SIZE; i++)
 			http_origin_reset (&http_cerver->origins_whitelist[i]);
 
+		http_cerver->custom_data = NULL;
+		http_cerver->delete_custom_data = NULL;
+
 		http_cerver->n_response_headers = 0;
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_cerver->response_headers[i] = NULL;
@@ -263,6 +266,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->enable_admin_info_route = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO;
 		http_cerver->enable_admin_head_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS;
 		http_cerver->enable_admin_options_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS;
 
@@ -274,7 +278,7 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
 		http_origin_reset (&http_cerver->admin_origin);
-		
+
 		http_cerver->admin_file_systems_stats = NULL;
 		http_cerver->admin_mutex = NULL;
 
@@ -299,6 +303,14 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		str_delete (http_cerver->jwt_opt_pub_key_name);
 		str_delete (http_cerver->jwt_public_key);
+
+		if (http_cerver->custom_data) {
+			if (http_cerver->delete_custom_data) {
+				http_cerver->delete_custom_data (
+					http_cerver->custom_data
+				);
+			}
+		}
 
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			str_delete (http_cerver->response_headers[i]);
@@ -545,11 +557,11 @@ static void http_cerver_init_routes (
 		le; le = le->next
 	) {
 		route = (HttpRoute *) le->data;
-		
+
 		http_route_init (route);
 		http_route_print (route);
 	}
-	
+
 	#ifdef HTTP_DEBUG
 	cerver_log_success ("Done loading HTTP routes!");
 	#endif
@@ -733,7 +745,7 @@ void http_cerver_route_register (
 }
 
 void http_cerver_set_catch_all_route (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	void (*catch_all_route)(
 		const HttpReceive *http_receive,
 		const HttpRequest *request
@@ -762,7 +774,7 @@ void http_cerver_set_not_found_handler (
 // sets a custom handler to be executed on no matching routes
 // it should return status 404
 void http_cerver_set_not_found_route (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	void (*not_found)(
 		const HttpReceive *http_receive,
 		const HttpRequest *request
@@ -1111,7 +1123,7 @@ static inline u8 http_cerver_auth_jwt_add_value_internal (
 				key,
 				HTTP_JWT_VALUE_KEY_SIZE - 1
 			);
-			
+
 			http_jwt->n_values += 1;
 
 			retval = 0;
@@ -1209,7 +1221,7 @@ char *http_cerver_auth_generate_jwt_actual (
 
 		// sign
 		if (!jwt_set_alg (
-			http_jwt->jwt, 
+			http_jwt->jwt,
 			alg, key, keylen
 		)) {
 			token = jwt_encode_str (http_jwt->jwt);
@@ -1231,8 +1243,8 @@ char *http_cerver_auth_generate_jwt (
 	if (http_cerver && http_jwt) {
 		token = http_cerver_auth_generate_jwt_actual (
 			http_jwt,
-			http_cerver->jwt_alg, 
-			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_alg,
+			(const unsigned char *) http_cerver->jwt_private_key->str,
 			http_cerver->jwt_private_key->len
 		);
 	}
@@ -1279,8 +1291,8 @@ u8 http_cerver_auth_generate_bearer_jwt (
 	return (http_cerver && http_jwt) ?
 		http_cerver_auth_generate_bearer_jwt_actual (
 			http_jwt,
-			http_cerver->jwt_alg, 
-			(const unsigned char *) http_cerver->jwt_private_key->str, 
+			http_cerver->jwt_alg,
+			(const unsigned char *) http_cerver->jwt_private_key->str,
 			http_cerver->jwt_private_key->len
 		) : 1;
 
@@ -1388,7 +1400,7 @@ bool http_cerver_auth_validate_jwt (
 				else {
 					#ifdef HTTP_AUTH_DEBUG
 					cerver_log_error (
-						"Failed to validate JWT: %08x", 
+						"Failed to validate JWT: %08x",
 						jwt_valid_get_status(jwt_valid)
 					);
 					#endif
@@ -1474,6 +1486,42 @@ void http_cerver_print_origins_whitelist (
 
 #pragma endregion
 
+#pragma region data
+
+const void *http_cerver_get_custom_data (
+	const HttpCerver *http_cerver
+) {
+
+	return http_cerver->custom_data;
+
+}
+
+void http_cerver_set_custom_data (
+	HttpCerver *http_cerver, void *custom_data
+) {
+
+	http_cerver->custom_data = custom_data;
+
+}
+
+void http_cerver_set_delete_custom_data (
+	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
+) {
+
+	http_cerver->delete_custom_data = delete_custom_data;
+
+}
+
+void http_cerver_set_default_delete_custom_data (
+	HttpCerver *http_cerver
+) {
+
+	http_cerver->delete_custom_data = free;
+
+}
+
+#pragma endregion
+
 #pragma region responses
 
 // adds a new global responses header
@@ -1496,7 +1544,7 @@ u8 http_cerver_add_responses_header (
 		else {
 			http_cerver->n_response_headers += 1;
 		}
-		
+
 		http_cerver->response_headers[type] = str_create (
 			"%s: %s\r\n",
 			http_header_string (type), actual_header
@@ -1523,7 +1571,7 @@ size_t http_cerver_stats_get_children_routes (
 	HttpRoute *route = NULL;
 	for (ListElement *le = dlist_start (http_cerver->routes); le; le = le->next) {
 		route = (HttpRoute *) le->data;
-		
+
 		// main route handlers
 		for (i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (route->handlers[i]) *handlers += 1;
@@ -1684,7 +1732,7 @@ void http_cerver_route_stats_print (const HttpRoute *route) {
 
 	if (route) {
 		cerver_log_msg ("\t%s:", route->route->str);
-		
+
 		RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			if (route->handlers[i]) {
@@ -1742,6 +1790,7 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN
 void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, const bool enable
 ) {
@@ -1752,7 +1801,21 @@ void http_cerver_enable_admin_routes (
 
 }
 
+// enables the ability to have an admin info route
+// to fetch cerver's information
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO
+void http_cerver_enable_admin_info_route (
+	HttpCerver *http_cerver, const bool enable
+) {
+
+	if (http_cerver) {
+		http_cerver->enable_admin_info_route = enable;
+	}
+
+}
+
 // enables HTTP admin routes to handle HEAD requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS
 void http_cerver_enable_admin_head_handlers (
 	HttpCerver *http_cerver, const bool enable
 ) {
@@ -1764,6 +1827,7 @@ void http_cerver_enable_admin_head_handlers (
 }
 
 // enables HTTP admin routes to handle OPTIONS requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS
 void http_cerver_enable_admin_options_handlers (
 	HttpCerver *http_cerver, const bool enable
 ) {
@@ -1775,6 +1839,7 @@ void http_cerver_enable_admin_options_handlers (
 }
 
 // enables authentication in admin routes
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH
 void http_cerver_enable_admin_routes_authentication (
 	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
 ) {
@@ -1835,6 +1900,7 @@ void http_cerver_admin_routes_set_authentication_handler (
 // always uses admin origin's value
 // if there is no dedicated origin, it will dynamically
 // set the header based on the origins whitelist
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS
 void http_cerver_enable_admin_cors_headers (
 	HttpCerver *http_cerver, const bool enable
 ) {
@@ -1886,7 +1952,7 @@ char *http_url_encode (const char *str) {
 
 	if (buf) {
 		while (*pstr) {
-			if (isalnum (*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
+			if (isalnum (*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
 				*pbuf++ = *pstr;
 
 			else if (*pstr == ' ') *pbuf++ = '+';
@@ -1916,9 +1982,9 @@ char *http_url_decode (const char *str) {
 					pstr += 2;
 				}
 			}
-			
+
 			else if (*pstr == '+') *pbuf++ = ' ';
-			
+
 			else *pbuf++ = *pstr;
 
 			pstr++;
@@ -1987,17 +2053,17 @@ DoubleList *http_parse_query_into_pairs (
 					else key_after = walk;
 
 					(void) dlist_insert_after (
-						pairs, 
-						dlist_end (pairs), 
+						pairs,
+						dlist_end (pairs),
 						key_value_pair_create_pieces (
-							key_first, key_after, 
+							key_first, key_after,
 							value_first, value_after
 						)
 					);
-				
+
 					if (walk + 1 < last) key_first = walk + 1;
 					else key_first = NULL;
-					
+
 					key_after = NULL;
 					value_first = NULL;
 					value_after = NULL;
@@ -2021,10 +2087,10 @@ DoubleList *http_parse_query_into_pairs (
 		else key_after = walk;
 
 		(void) dlist_insert_after (
-			pairs, 
+			pairs,
 			dlist_end (pairs),
 			key_value_pair_create_pieces (
-				key_first, key_after, 
+				key_first, key_after,
 				value_first, value_after
 			)
 		);
@@ -2058,7 +2124,7 @@ static int http_receive_handle_url (
 
 	request->query = http_strip_path_from_query (at, length);
 	// if (request->query) printf ("query: %s\n", request->query->str);
-	
+
 	request->url = str_new (NULL);
 	request->url->len = request->query ? length - request->query->len : length;
 	request->url->str = c_string_create ("%.*s", (int) request->url->len, at);
@@ -2201,8 +2267,8 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 		value = strsep (&pair, "=");
 
 		(void) dlist_insert_after (
-			attributes, 
-			dlist_end (attributes), 
+			attributes,
+			dlist_end (attributes),
 			key_value_pair_create (
 				c_string_trim (name),
 				c_string_trim (c_string_strip_quotes (value))
@@ -2259,8 +2325,8 @@ static int http_receive_handle_mpart_part_data_begin (
 
 	request->current_part = http_multi_parts_get ();
 	(void) dlist_insert_after (
-		request->multi_parts, 
-		dlist_end (request->multi_parts), 
+		request->multi_parts,
+		dlist_end (request->multi_parts),
 		request->current_part
 	);
 
@@ -2767,9 +2833,9 @@ static void http_receive_handle_catch_all (
 // handles an actual route match
 // selects the right handler based on the request's method
 static void http_receive_handle_match (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
-	HttpRequest *request, 
+	HttpRequest *request,
 	HttpRoute *found
 ) {
 
@@ -2781,7 +2847,7 @@ static void http_receive_handle_match (
 
 				if (real_query) {
 					request->query_params = http_parse_query_into_pairs (
-						real_query, 
+						real_query,
 						real_query + request->query->len
 					);
 
@@ -2825,7 +2891,7 @@ static void http_receive_handle_match (
 					break;
 
 				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-					
+
 					break;
 			}
 
@@ -2942,7 +3008,7 @@ static void http_receive_handle_select_failed_auth (
 }
 
 static void http_receive_handle_select_auth_bearer (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
@@ -2990,7 +3056,7 @@ static void http_receive_handle_select_auth_bearer (
 			else {
 				#ifdef HTTP_AUTH_DEBUG
 				cerver_log_error (
-					"Failed to validate JWT: %08x", 
+					"Failed to validate JWT: %08x",
 					jwt_valid_get_status(jwt_valid)
 				);
 				#endif
@@ -3018,7 +3084,7 @@ static void http_receive_handle_select_auth_bearer (
 }
 
 static void http_receive_handle_select_auth_custom (
-	HttpCerver *http_cerver, 
+	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
@@ -3254,7 +3320,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 		static_path = (HttpStaticPath *) le->data;
 
 		(void) c_string_concat_safe (
-			static_path->path->str, http_receive->request->url->str, 
+			static_path->path->str, http_receive->request->url->str,
 			filename, 256
 		);
 
@@ -3351,7 +3417,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 }
 
 static void http_receive_handle (
-	HttpReceive *http_receive, 
+	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 ) {
 

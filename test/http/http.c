@@ -4,6 +4,7 @@
 
 #include <cerver/http/http.h>
 
+#include "data.h"
 #include "http.h"
 
 #include "../test.h"
@@ -61,6 +62,9 @@ static void test_http_cerver_new (void) {
 		test_check_str_empty (origin->value);
 	}
 
+	test_check_null_ptr (http_cerver->custom_data);
+	test_check_null_ptr (http_cerver->delete_custom_data);
+
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_cerver->response_headers[i]);
@@ -74,6 +78,7 @@ static void test_http_cerver_new (void) {
 	test_check (http_cerver->enable_admin_routes == HTTP_CERVER_DEFAULT_ENABLE_ADMIN, NULL);
 	
 	test_check (http_cerver->enable_admin_routes_auth == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH, NULL);
+	test_check (http_cerver->enable_admin_info_route == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO, NULL);
 	test_check (http_cerver->enable_admin_head_handlers == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS, NULL);
 	test_check (http_cerver->enable_admin_options_handlers == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS, NULL);
 
@@ -129,6 +134,9 @@ static HttpCerver *test_http_cerver_create (void) {
 
 	test_check_null_ptr (http_cerver->jwt_opt_pub_key_name);
 	test_check_null_ptr (http_cerver->jwt_public_key);
+
+	test_check_null_ptr (http_cerver->custom_data);
+	test_check_null_ptr (http_cerver->delete_custom_data);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
@@ -254,6 +262,62 @@ static void test_http_cerver_set_default_uploads_filename_generator (void) {
 
 #pragma endregion
 
+#pragma region data
+
+static void http_delete_custom_data (void *data_ptr) {
+
+	if (data_ptr) free (data_ptr);
+
+}
+
+static void test_http_cerver_get_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	test_check_null_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	CustomData *custom_data = (CustomData *) malloc (sizeof (CustomData));
+
+	http_cerver_set_custom_data (http_cerver, custom_data);
+
+	test_check_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_set_delete_custom_data (http_cerver, http_delete_custom_data);
+
+	test_check_ptr_eq (http_cerver->delete_custom_data, http_delete_custom_data);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_default_delete_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	CustomData *custom_data = (CustomData *) malloc (sizeof (CustomData));
+
+	http_cerver_set_custom_data (http_cerver, custom_data);
+
+	test_check_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_set_default_delete_custom_data (http_cerver);
+
+	test_check_ptr_eq (http_cerver->delete_custom_data, free);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+#pragma endregion
+
 #pragma region admin
 
 static void test_http_cerver_enable_admin_routes (void) {
@@ -263,6 +327,18 @@ static void test_http_cerver_enable_admin_routes (void) {
 	http_cerver_enable_admin_routes (http_cerver, true);
 
 	test_check_bool_eq (http_cerver->enable_admin_routes, true, NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_enable_admin_info_route (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	http_cerver_enable_admin_info_route (http_cerver, true);
+
+	test_check_bool_eq (http_cerver->enable_admin_info_route, true, NULL);
 
 	http_cerver_delete (http_cerver);
 
@@ -523,8 +599,14 @@ static void http_tests_main (void) {
 	test_http_cerver_set_uploads_filename_generator ();
 	test_http_cerver_set_default_uploads_filename_generator ();
 
+	// data
+	test_http_cerver_get_custom_data ();
+	test_http_cerver_set_custom_data ();
+	test_http_cerver_set_default_delete_custom_data ();
+
 	// admin
 	test_http_cerver_enable_admin_routes ();
+	test_http_cerver_enable_admin_info_route ();
 	test_http_cerver_enable_admin_head_handlers ();
 	test_http_cerver_enable_admin_options_handlers ();
 	test_http_cerver_admin_bearer_auth_set_decode ();
