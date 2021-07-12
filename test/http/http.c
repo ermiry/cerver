@@ -4,6 +4,7 @@
 
 #include <cerver/http/http.h>
 
+#include "data.h"
 #include "http.h"
 
 #include "../test.h"
@@ -60,6 +61,9 @@ static void test_http_cerver_new (void) {
 		test_check_int_eq (origin->len, 0, NULL);
 		test_check_str_empty (origin->value);
 	}
+
+	test_check_null_ptr (http_cerver->custom_data);
+	test_check_null_ptr (http_cerver->delete_custom_data);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
@@ -129,6 +133,9 @@ static HttpCerver *test_http_cerver_create (void) {
 
 	test_check_null_ptr (http_cerver->jwt_opt_pub_key_name);
 	test_check_null_ptr (http_cerver->jwt_public_key);
+
+	test_check_null_ptr (http_cerver->custom_data);
+	test_check_null_ptr (http_cerver->delete_custom_data);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
@@ -247,6 +254,62 @@ static void test_http_cerver_set_default_uploads_filename_generator (void) {
 	http_cerver_set_default_uploads_filename_generator (http_cerver);
 
 	test_check_ptr_eq (http_cerver->uploads_filename_generator, http_cerver_default_uploads_filename_generator);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+#pragma endregion
+
+#pragma region data
+
+static void http_delete_custom_data (void *data_ptr) {
+
+	if (data_ptr) free (data_ptr);
+
+}
+
+static void test_http_cerver_get_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	test_check_null_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	CustomData *custom_data = (CustomData *) malloc (sizeof (CustomData));
+
+	http_cerver_set_custom_data (http_cerver, custom_data);
+
+	test_check_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_set_delete_custom_data (http_cerver, http_delete_custom_data);
+
+	test_check_ptr_eq (http_cerver->delete_custom_data, http_delete_custom_data);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_set_default_delete_custom_data (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	CustomData *custom_data = (CustomData *) malloc (sizeof (CustomData));
+
+	http_cerver_set_custom_data (http_cerver, custom_data);
+
+	test_check_ptr (http_cerver_get_custom_data (http_cerver));
+
+	http_cerver_set_default_delete_custom_data (http_cerver);
+
+	test_check_ptr_eq (http_cerver->delete_custom_data, free);
 
 	http_cerver_delete (http_cerver);
 
@@ -522,6 +585,11 @@ static void http_tests_main (void) {
 	test_http_cerver_set_uploads_file_mode ();
 	test_http_cerver_set_uploads_filename_generator ();
 	test_http_cerver_set_default_uploads_filename_generator ();
+
+	// data
+	test_http_cerver_get_custom_data ();
+	test_http_cerver_set_custom_data ();
+	test_http_cerver_set_default_delete_custom_data ();
 
 	// admin
 	test_http_cerver_enable_admin_routes ();
