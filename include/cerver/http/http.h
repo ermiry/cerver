@@ -133,6 +133,10 @@ struct _HttpCerver {
 	u8 n_origins;
 	HttpOrigin origins_whitelist[HTTP_ORIGINS_SIZE];
 
+	// data
+	void *custom_data;
+	void (*delete_custom_data)(void *);
+
 	// responses
 	u8 n_response_headers;
 	String *response_headers[HTTP_HEADERS_SIZE];
@@ -516,6 +520,31 @@ CERVER_EXPORT u8 http_cerver_add_origin_to_whitelist (
 
 CERVER_EXPORT void http_cerver_print_origins_whitelist (
 	const HttpCerver *http_cerver
+);
+
+#pragma endregion
+
+#pragma region data
+
+// gets the HTTP cerver's custom data
+// this data can be safely set by the user and accessed at any time
+CERVER_EXPORT const void *http_cerver_get_custom_data (
+	const HttpCerver *http_cerver
+);
+
+// sets the HTTP cerver's custom data
+CERVER_EXPORT void http_cerver_set_custom_data (
+	HttpCerver *http_cerver, void *custom_data
+);
+
+// sets a custom method to delete the HTTP cerver's custom data
+CERVER_EXPORT void http_cerver_set_delete_custom_data (
+	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
+);
+
+// sets free () as the method to delete the HTTP cerver's custom data
+CERVER_EXPORT void http_cerver_set_default_delete_custom_data (
+	HttpCerver *http_cerver
 );
 
 #pragma endregion
