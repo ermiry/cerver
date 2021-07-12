@@ -9,24 +9,9 @@
 
 #include <cerver/http/json/json.h>
 
+#include "data.h"
+
 #include "../test.h"
-
-#define DECODED_DATA_VALUE_SIZE			256
-#define CUSTOM_DATA_VALUE_SIZE			256
-
-typedef struct DecodedData {
-
-	int len;
-	char value[DECODED_DATA_VALUE_SIZE];
-
-} DecodedData;
-
-typedef struct CustomData {
-
-	int len;
-	char value[CUSTOM_DATA_VALUE_SIZE];
-
-} CustomData;
 
 static const char *base_dir = { "/var/uploads" };
 static const char *basic_dir = { "hola" };
