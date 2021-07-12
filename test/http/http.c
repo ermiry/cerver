@@ -78,6 +78,7 @@ static void test_http_cerver_new (void) {
 	test_check (http_cerver->enable_admin_routes == HTTP_CERVER_DEFAULT_ENABLE_ADMIN, NULL);
 	
 	test_check (http_cerver->enable_admin_routes_auth == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH, NULL);
+	test_check (http_cerver->enable_admin_info_route == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO, NULL);
 	test_check (http_cerver->enable_admin_head_handlers == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS, NULL);
 	test_check (http_cerver->enable_admin_options_handlers == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS, NULL);
 
@@ -326,6 +327,18 @@ static void test_http_cerver_enable_admin_routes (void) {
 	http_cerver_enable_admin_routes (http_cerver, true);
 
 	test_check_bool_eq (http_cerver->enable_admin_routes, true, NULL);
+
+	http_cerver_delete (http_cerver);
+
+}
+
+static void test_http_cerver_enable_admin_info_route (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	http_cerver_enable_admin_info_route (http_cerver, true);
+
+	test_check_bool_eq (http_cerver->enable_admin_info_route, true, NULL);
 
 	http_cerver_delete (http_cerver);
 
@@ -593,6 +606,7 @@ static void http_tests_main (void) {
 
 	// admin
 	test_http_cerver_enable_admin_routes ();
+	test_http_cerver_enable_admin_info_route ();
 	test_http_cerver_enable_admin_head_handlers ();
 	test_http_cerver_enable_admin_options_handlers ();
 	test_http_cerver_admin_bearer_auth_set_decode ();

@@ -122,7 +122,11 @@ static void test_http_admin_generate_jsons (void) {
 	test_check_unsigned_eq (result, 0, NULL);
 
 	/*** test ***/
-	char *json = http_cerver_admin_generate_routes_stats_json (http_cerver);
+	char *json = http_cerver_admin_generate_info_json (http_cerver);
+	test_check_ptr (json);
+	free (json);
+
+	json = http_cerver_admin_generate_routes_stats_json (http_cerver);
 	test_check_ptr (json);
 	free (json);
 
