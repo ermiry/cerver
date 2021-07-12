@@ -30,6 +30,7 @@
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN			false
+#define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO		true
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS		false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS	false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
@@ -150,6 +151,7 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	bool enable_admin_info_route;
 	bool enable_admin_head_handlers;
 	bool enable_admin_options_handlers;
 
@@ -597,21 +599,32 @@ CERVER_PUBLIC void http_cerver_all_stats_print (
 
 // enables the ability to have admin routes
 // to fetch cerver's HTTP stats
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN
 CERVER_EXPORT void http_cerver_enable_admin_routes (
 	HttpCerver *http_cerver, const bool enable
 );
 
+// enables the ability to have an admin info route
+// to fetch cerver's information
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO
+CERVER_EXPORT void http_cerver_enable_admin_info_route (
+	HttpCerver *http_cerver, const bool enable
+);
+
 // enables HTTP admin routes to handle HEAD requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS
 CERVER_EXPORT void http_cerver_enable_admin_head_handlers (
 	HttpCerver *http_cerver, const bool enable
 );
 
 // enables HTTP admin routes to handle OPTIONS requests
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS
 CERVER_EXPORT void http_cerver_enable_admin_options_handlers (
 	HttpCerver *http_cerver, const bool enable
 );
 
 // enables authentication in admin routes
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH
 CERVER_EXPORT void http_cerver_enable_admin_routes_authentication (
 	HttpCerver *http_cerver, const HttpRouteAuthType auth_type
 );
@@ -645,6 +658,7 @@ CERVER_EXPORT void http_cerver_admin_routes_set_authentication_handler (
 // always uses admin origin's value
 // if there is no dedicated origin, it will dynamically
 // set the header based on the origins whitelist
+// the initial value is HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS
 CERVER_EXPORT void http_cerver_enable_admin_cors_headers (
 	HttpCerver *http_cerver, const bool enable
 );
