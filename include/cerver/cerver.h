@@ -167,6 +167,10 @@ CERVER_EXPORT u8 cerver_set_welcome_msg (
 	struct _Cerver *cerver, const char *msg
 );
 
+CERVER_PRIVATE void cerver_update_uptime (
+	struct _Cerver *cerver
+);
+
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
 CERVER_PUBLIC u8 cerver_info_send_info_packet (
