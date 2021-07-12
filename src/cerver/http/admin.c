@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cerver/cerver.h"
 #include "cerver/system.h"
+#include "cerver/version.h"
 
 #include "cerver/http/admin.h"
 #include "cerver/http/http.h"
@@ -45,6 +47,81 @@ HttpAdminFileSystemStats *http_admin_file_system_stats_create (
 	}
 
 	return stats;
+
+}
+
+static void http_cerver_admin_generate_info_json_internal (
+	const Cerver *cerver, json_t *json
+) {
+
+	(void) json_object_set_new (
+		json, "name", json_string (cerver->info->name)
+	);
+
+	(void) json_object_set_new (
+		json, "alias", json_string (cerver->info->alias)
+	);
+
+	(void) json_object_set_new (
+		json, "time_started", json_integer ((json_int_t) cerver->info->time_started)
+	);
+
+	cerver_update_uptime ((Cerver *) cerver);
+
+	(void) json_object_set_new (
+		json, "uptime", json_integer ((json_int_t) cerver->info->uptime)
+	);
+
+}
+
+static json_t *http_cerver_admin_generate_version_json (void) {
+
+	json_t *version_object = json_object ();
+
+	(void) json_object_set_new (
+		version_object, "name", json_string (CERVER_VERSION_NAME)
+	);
+
+	(void) json_object_set_new (
+		version_object, "date", json_string (CERVER_VERSION_DATE)
+	);
+
+	(void) json_object_set_new (
+		version_object, "time", json_string (CERVER_VERSION_TIME)
+	);
+
+	(void) json_object_set_new (
+		version_object, "author", json_string (CERVER_VERSION_AUTHOR)
+	);
+
+	return version_object;
+
+}
+
+char *http_cerver_admin_generate_info_json (
+	const HttpCerver *http_cerver
+) {
+
+	char *json_string = NULL;
+
+	json_t *json = json_object ();
+	if (json) {
+		http_cerver_admin_generate_info_json_internal (
+			http_cerver->cerver, json
+		);
+
+		(void) json_object_set_new (
+			json,
+			"version",
+			http_cerver_admin_generate_version_json ()
+		);
+
+		json_string = json_dumps (json, 0);
+
+		json_decref (json);
+	}
+
+	return json_string;
 
 }
 
@@ -577,6 +654,7 @@ static inline void http_cerver_admin_send_response (
 
 }
 
+// OPTIONS [top level]/cerver/info
 // OPTIONS [top level]/cerver/stats
 // OPTIONS [top level]/cerver/stats/filesystems
 static void http_cerver_admin_options_handler (
@@ -588,8 +666,61 @@ static void http_cerver_admin_options_handler (
 
 }
 
+// HEAD [top level]/cerver/info
+static void http_cerver_admin_info_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *info_json = http_cerver_admin_generate_info_json (
+		http_cerver
+	);
+
+	if (info_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (info_json)
+		);
+
+		free (info_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
+// GET [top level]/cerver/info
+static void http_cerver_admin_info_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *info_json = http_cerver_admin_generate_info_json (
+		http_cerver
+	);
+
+	if (info_json) {
+		http_cerver_admin_send_response (
+			http_receive, request,
+			info_json, strlen (info_json)
+		);
+
+		free (info_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 // HEAD [top level]/cerver/stats
-static void http_cerver_admin_head_handler (
+static void http_cerver_admin_stats_head_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -615,7 +746,7 @@ static void http_cerver_admin_head_handler (
 }
 
 // GET [top level]/cerver/stats
-static void http_cerver_admin_handler (
+static void http_cerver_admin_stats_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
@@ -727,34 +858,65 @@ static void http_cerver_admin_route_set_auth (
 
 }
 
-static void http_cerver_admin_set_main_route (
+static void http_cerver_admin_set_info_route (
 	const HttpCerver *http_cerver, HttpRoute *top_level_route
 ) {
 
-	// GET [top level]/cerver/stats
-	HttpRoute *admin_route = http_route_create (
-		REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_handler
+	// GET [top level]/cerver/info
+	HttpRoute *info_route = http_route_create (
+		REQUEST_METHOD_GET,  "cerver/info", http_cerver_admin_info_handler
 	);
 
 	if (http_cerver->enable_admin_head_handlers) {
 		http_route_set_handler (
-			admin_route,
+			info_route,
 			REQUEST_METHOD_HEAD,
-			http_cerver_admin_head_handler
+			http_cerver_admin_info_head_handler
 		);
 	}
 
 	if (http_cerver->enable_admin_options_handlers) {
 		http_route_set_handler (
-			admin_route,
+			info_route,
 			REQUEST_METHOD_OPTIONS,
 			http_cerver_admin_options_handler
 		);
 	}
 
-	http_cerver_admin_route_set_auth (http_cerver, admin_route);
+	http_cerver_admin_route_set_auth (http_cerver, info_route);
 
-	http_route_child_add (top_level_route, admin_route);
+	http_route_child_add (top_level_route, info_route);
+
+}
+
+static void http_cerver_admin_set_stats_route (
+	const HttpCerver *http_cerver, HttpRoute *top_level_route
+) {
+
+	// GET [top level]/cerver/stats
+	HttpRoute *stats_route = http_route_create (
+		REQUEST_METHOD_GET, "cerver/stats", http_cerver_admin_stats_handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_route_set_handler (
+			stats_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_stats_head_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_route_set_handler (
+			stats_route,
+			REQUEST_METHOD_OPTIONS,
+			http_cerver_admin_options_handler
+		);
+	}
+
+	http_cerver_admin_route_set_auth (http_cerver, stats_route);
+
+	http_route_child_add (top_level_route, stats_route);
 
 }
 
@@ -799,8 +961,15 @@ u8 http_cerver_admin_init (
 	u8 retval = 1;
 
 	if (top_level_route) {
+		// GET [top level]/cerver/info
+		if (http_cerver->enable_admin_info_route) {
+			http_cerver_admin_set_info_route (
+				http_cerver, top_level_route
+			);
+		}
+
 		// GET [top level]/cerver/stats
-		http_cerver_admin_set_main_route (
+		http_cerver_admin_set_stats_route (
 			http_cerver, top_level_route
 		);
 
