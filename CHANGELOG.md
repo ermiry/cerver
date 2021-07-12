@@ -1,13 +1,11 @@
-## HTTP
-- Refactored http_cerver_print_origins_whitelist ()
-- Added more responses CORS related headers methods
-- Handling "Access-Control-Allow-Credentials" header in admin responses
-- Added ability to set custom data in HTTP request
-- Added HTTP requests data related get and set methods
+## General
+- Added dedicated method to update cerver's up-time
 
-## Fixes
-- Fixed error when adding CORS based on request
+## HTTP
+- Added the ability to add custom data in HttpCerver
+- Added base dedicated HTTP admin info handlers
+- Added ability to enable HTTP admin info route
 
 ## Tests
-- Added HTTP request data methods unit tests
-- Added HTTP response CORS methods unit tests
+- Created dedicated data header for HTTP unit tests
+- Added HTTP cerver data related methods tests
