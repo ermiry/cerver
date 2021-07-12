@@ -353,6 +353,7 @@ u8 http_response_add_whitelist_cors_header_from_request (
 
 // sets CORS related header "Access-Control-Allow-Credentials"
 // this header is needed when a CORS request has an "Authorization" header
+// returns 0 on success, 1 on error
 u8 http_response_add_cors_allow_credentials_header (
 	HttpResponse *response
 ) {
@@ -368,6 +369,7 @@ u8 http_response_add_cors_allow_credentials_header (
 // sets CORS related header "Access-Control-Allow-Methods"
 // to be a list of available methods like "GET, HEAD, OPTIONS"
 // this header is needed in preflight OPTIONS request's responses
+// returns 0 on success, 1 on error
 u8 http_response_add_cors_allow_methods_header (
 	HttpResponse *response, const char *methods
 ) {
