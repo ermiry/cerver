@@ -11,6 +11,8 @@
 
 #define WORKER_NAME_SIZE		64
 
+#define WORKER_SLEEP_TIME		100000
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -79,6 +81,14 @@ CERVER_PRIVATE bool worker_get_end (
 CERVER_PRIVATE void worker_set_end (
 	Worker *worker, const bool end
 );
+
+CERVER_PUBLIC unsigned int worker_start (
+	Worker *worker, const WorkerState worker_state
+);
+
+CERVER_PUBLIC unsigned int worker_stop (Worker *worker);
+
+CERVER_PUBLIC unsigned int worker_end (Worker *worker);
 
 #ifdef __cplusplus
 }

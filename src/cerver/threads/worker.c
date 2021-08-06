@@ -9,6 +9,8 @@
 
 #include "cerver/utils/log.h"
 
+static void *worker_thread (void *worker_ptr);
+
 const char *worker_state_to_string (
 	const WorkerState state
 ) {
@@ -149,6 +151,106 @@ void worker_set_end (
 	worker->end = end;
 
 	(void) pthread_mutex_unlock (&worker->mutex);
+
+}
+
+unsigned int worker_start (
+	Worker *worker, const WorkerState worker_state
+) {
+
+	unsigned int retval = 1;
+
+	worker_set_state (worker, worker_state);
+
+	if (!thread_create_detachable (
+		&worker->thread_id,
+		worker_thread,
+		worker
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"Failed to create worker <%s> thread!",
+			worker->name
+		);
+	}
+
+	return retval;
+
+}
+
+unsigned int worker_stop (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Stopping worker <%s>...", worker->name);
+	#endif
+
+	worker_set_stop (worker, true);
+
+	WorkerState state = WORKER_STATE_NONE;
+	while (state != WORKER_STATE_STOPPED) {
+		state = worker_get_state (worker);
+
+		switch (state) {
+			case WORKER_STATE_AVAILABLE:
+			case WORKER_STATE_WORKING: {
+				bsem_post (worker->job_queue->has_jobs);
+
+				retval = 0;
+			} break;
+
+			default: break;
+		}
+
+		(void) usleep (WORKER_SLEEP_TIME);
+	}
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Stopped worker <%s>", worker->name);
+	#endif
+
+	return retval;
+
+}
+
+unsigned int worker_end (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Ending worker <%s>...", worker->name);
+	#endif
+
+	worker_set_end (worker, true);
+
+	WorkerState state = WORKER_STATE_NONE;
+	while (state != WORKER_STATE_ENDED) {
+		state = query_worker_get_state (worker);
+
+		switch (state) {
+			case WORKER_STATE_AVAILABLE:
+			case WORKER_STATE_WORKING:
+			case WORKER_STATE_STOPPED: {
+				bsem_post (worker->job_queue->has_jobs);
+
+				retval = 0;
+			} break;
+
+			default: break;
+		}
+
+		(void) usleep (WORKER_SLEEP_TIME);
+	}
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Ended worker <%s>", worker->name);
+	#endif
+
+	return retval;
 
 }
 
