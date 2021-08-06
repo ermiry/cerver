@@ -218,6 +218,7 @@ web: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/multiple.o -o ./$(EXATARGET)/web/multiple $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/worker.o ./$(EXABUILD)/data.o -o ./$(EXATARGET)/web/worker $(EXALIBS)
 
 examples: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)
