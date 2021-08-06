@@ -9,6 +9,8 @@
 
 #include "cerver/threads/jobs.h"
 
+#define WORKER_NAME_SIZE		64
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,6 +37,7 @@ CERVER_EXPORT const char *worker_state_to_string (
 typedef struct Worker {
 
 	unsigned int id;
+	char name[WORKER_NAME_SIZE];
 
 	WorkerState state;
 
@@ -53,27 +56,27 @@ CERVER_PRIVATE void worker_delete (void *worker_ptr);
 
 CERVER_PUBLIC Worker *worker_create (const unsigned int id);
 
-CERVER_PRIVATE WorkerState recon_worker_get_state (
+CERVER_PRIVATE WorkerState worker_get_state (
 	Worker *worker
 );
 
-CERVER_PRIVATE void recon_worker_set_state (
+CERVER_PRIVATE void worker_set_state (
 	Worker *worker, const WorkerState state
 );
 
-CERVER_PRIVATE bool recon_worker_get_stop (
+CERVER_PRIVATE bool worker_get_stop (
 	Worker *worker
 );
 
-CERVER_PRIVATE void recon_worker_set_stop (
+CERVER_PRIVATE void worker_set_stop (
 	Worker *worker, const bool stop
 );
 
-CERVER_PRIVATE bool recon_worker_get_end (
+CERVER_PRIVATE bool worker_get_end (
 	Worker *worker
 );
 
-CERVER_PRIVATE void recon_worker_set_end (
+CERVER_PRIVATE void worker_set_end (
 	Worker *worker, const bool end
 );
 

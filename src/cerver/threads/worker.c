@@ -4,7 +4,10 @@
 #include <pthread.h>
 
 #include "cerver/threads/jobs.h"
+#include "cerver/threads/thread.h"
 #include "cerver/threads/worker.h"
+
+#include "cerver/utils/log.h"
 
 const char *worker_state_to_string (
 	const WorkerState state
@@ -71,9 +74,7 @@ Worker *worker_create (const unsigned int id) {
 
 }
 
-WorkerState recon_worker_get_state (
-	Worker *worker
-) {
+WorkerState worker_get_state (Worker *worker) {
 
 	WorkerState state = WORKER_STATE_NONE;
 
@@ -87,7 +88,7 @@ WorkerState recon_worker_get_state (
 
 }
 
-void recon_worker_set_state (
+void worker_set_state (
 	Worker *worker, const WorkerState state
 ) {
 
@@ -99,9 +100,7 @@ void recon_worker_set_state (
 
 }
 
-bool recon_worker_get_stop (
-	Worker *worker
-) {
+bool worker_get_stop (Worker *worker) {
 
 	bool stop = false;
 
@@ -115,7 +114,7 @@ bool recon_worker_get_stop (
 
 }
 
-void recon_worker_set_stop (
+void worker_set_stop (
 	Worker *worker, const bool stop
 ) {
 
@@ -127,9 +126,7 @@ void recon_worker_set_stop (
 
 }
 
-bool recon_worker_get_end (
-	Worker *worker
-) {
+bool worker_get_end (Worker *worker) {
 
 	bool end = false;
 
@@ -143,7 +140,7 @@ bool recon_worker_get_end (
 
 }
 
-void recon_worker_set_end (
+void worker_set_end (
 	Worker *worker, const bool end
 ) {
 
@@ -152,5 +149,155 @@ void recon_worker_set_end (
 	worker->end = end;
 
 	(void) pthread_mutex_unlock (&worker->mutex);
+
+}
+
+static void *worker_thread (void *worker_ptr) {
+
+	Worker *worker = (Worker *) worker_ptr;
+
+	cerver_log_success (
+		"Worker <%s> thread has started!",
+		worker->name
+	);
+
+	(void) thread_set_name (worker->name);
+
+	#ifdef THREADS_DEBUG
+	cerver_log_debug (
+		"Worker <%s> state: %s",
+		worker->name,
+		worker_state_to_string (worker_get_state (worker))
+	)
+	#endif
+
+	Job *job = NULL;
+	WorkerState state = WORKER_STATE_NONE;
+	while (state != WORKER_STATE_ENDED) {
+		// wait for work or signal
+		bsem_wait (worker->job_queue->has_jobs);
+
+		// check if we are still required to do work
+		state = worker_get_state (worker);
+
+		// worker was requested to stop while it was waiting
+		if (worker_get_stop (worker)) {
+			#ifdef THREADS_DEBUG
+			cerver_log_msg (
+				"Worker <%s> stop while waiting!\n",
+				worker->name
+			);
+			#endif
+
+			worker_set_state (
+				worker, WORKER_STATE_STOPPED
+			);
+
+			state = WORKER_STATE_STOPPED;
+
+			worker->stop = false;
+		}
+
+		// worker was requested to end while stopped or waiting
+		else if (worker_get_end (worker)) {
+			#ifdef THREADS_DEBUG
+			switch (state) {
+				case WORKER_STATE_AVAILABLE: {
+					cerver_log_msg (
+						"Worker <%s> end while waiting!\n",
+						worker->name
+					);
+				} break;
+
+				case WORKER_STATE_STOPPED: {
+					cerver_log_msg (
+						"Worker <%s> end while stopped!\n",
+						worker->name
+					);
+				} break;
+
+				default: break;
+			}
+			#endif
+
+			worker_set_state (
+				worker, WORKER_STATE_ENDED
+			);
+
+			state = WORKER_STATE_ENDED;
+		}
+
+		if (state == WORKER_STATE_AVAILABLE) {
+			job = job_queue_pull (worker->job_queue);
+			if (job) {
+				#ifdef THREADS_DEBUG
+				cerver_log_success (
+					"Worker <%s> new job!",
+					worker->name
+				);
+				#endif
+
+				worker_set_state (
+					worker, WORKER_STATE_WORKING
+				);
+
+				// do actual work
+				// TODO:
+
+				// worker was requested to stop while working
+				if (worker_get_stop (worker)) {
+					#ifdef THREADS_DEBUG
+					cerver_log_msg (
+						"Worker <%s> stop while working!\n",
+						worker->name
+					);
+					#endif
+
+					worker_set_state (
+						worker, WORKER_STATE_STOPPED
+					);
+
+					state = WORKER_STATE_STOPPED;
+
+					worker->stop = false;
+				}
+
+				// worker was requested to end while working
+				else if (worker_get_end (worker)) {
+					#ifdef THREADS_DEBUG
+					cerver_log_msg (
+						"Worker <%s> end while working!\n",
+						worker->name
+					);
+					#endif
+
+					worker_set_state (
+						worker, WORKER_STATE_ENDED
+					);
+
+					state = WORKER_STATE_ENDED;
+				}
+
+				else {
+					// worker is still available to handle work
+					worker_set_state (
+						worker, WORKER_STATE_AVAILABLE
+					);
+				}
+
+				// TODO:
+				// job->args = NULL;
+
+				job_return (worker->job_queue, job);
+			}
+		}
+	}
+
+	cerver_log_success (
+		"Worker <%s> thread has exited!",
+		worker->name
+	);
+
+	return NULL;
 
 }
