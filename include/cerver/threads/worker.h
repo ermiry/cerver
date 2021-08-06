@@ -53,6 +53,7 @@ typedef struct Worker {
 	JobQueue *job_queue;
 
 	void (*work) (void *args);
+	void (*delete_data) (void *args);
 
 	pthread_mutex_t mutex;
 
@@ -96,6 +97,10 @@ CERVER_PRIVATE void worker_set_end (
 
 CERVER_PUBLIC void worker_set_work (
 	Worker *worker, void (*work) (void *args)
+);
+
+CERVER_PUBLIC void worker_set_delete_data (
+	Worker *worker, void (*delete_data) (void *args)
 );
 
 CERVER_PUBLIC unsigned int worker_start_with_state (

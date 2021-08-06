@@ -45,6 +45,7 @@ static Worker *worker_new (void) {
 		worker->job_queue = NULL;
 
 		worker->work = NULL;
+		worker->delete_data = NULL;
 
 		(void) memset (&worker->mutex, 0, sizeof (pthread_mutex_t));
 	}
@@ -183,6 +184,14 @@ void worker_set_work (
 ) {
 
 	worker->work = work;
+
+}
+
+void worker_set_delete_data (
+	Worker *worker, void (*delete_data) (void *args)
+) {
+
+	worker->delete_data = delete_data;
 
 }
 
@@ -453,8 +462,11 @@ static void *worker_thread (void *worker_ptr) {
 					);
 				}
 
-				// TODO:
-				// job->args = NULL;
+				if (worker->delete_data) {
+					worker->delete_data (job->args);
+				}
+
+				job->args = NULL;
 
 				job_return (worker->job_queue, job);
 			}
