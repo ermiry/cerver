@@ -39,6 +39,8 @@ CERVER_EXPORT const char *worker_state_to_string (
 typedef struct Worker {
 
 	unsigned int id;
+
+	unsigned int name_len;
 	char name[WORKER_NAME_SIZE];
 
 	WorkerState state;
@@ -50,13 +52,23 @@ typedef struct Worker {
 
 	JobQueue *job_queue;
 
+	void (*work) (void *args);
+
 	pthread_mutex_t mutex;
 
 } Worker;
 
 CERVER_PRIVATE void worker_delete (void *worker_ptr);
 
-CERVER_PUBLIC Worker *worker_create (const unsigned int id);
+CERVER_PUBLIC Worker *worker_create (void);
+
+CERVER_PUBLIC Worker *worker_create_with_id (
+	const unsigned int id
+);
+
+CERVER_PUBLIC void worker_set_name (
+	Worker *worker, const char *name
+);
 
 CERVER_PRIVATE WorkerState worker_get_state (
 	Worker *worker
@@ -82,13 +94,24 @@ CERVER_PRIVATE void worker_set_end (
 	Worker *worker, const bool end
 );
 
-CERVER_PUBLIC unsigned int worker_start (
+CERVER_PUBLIC void worker_set_work (
+	Worker *worker, void (*work) (void *args)
+);
+
+CERVER_PUBLIC unsigned int worker_start_with_state (
 	Worker *worker, const WorkerState worker_state
 );
+
+CERVER_PUBLIC unsigned int worker_start (Worker *worker);
 
 CERVER_PUBLIC unsigned int worker_stop (Worker *worker);
 
 CERVER_PUBLIC unsigned int worker_end (Worker *worker);
+
+CERVER_PUBLIC unsigned int worker_push_job (
+	Worker *worker,
+	void (*work) (void *args), void *args
+);
 
 #ifdef __cplusplus
 }

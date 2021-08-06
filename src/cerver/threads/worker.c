@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <pthread.h>
+#include <unistd.h>
 
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
@@ -31,6 +32,9 @@ static Worker *worker_new (void) {
 	if (worker) {
 		worker->id = 0;
 
+		worker->name_len = 0;
+		(void) memset (worker->name, 0, WORKER_NAME_SIZE);
+
 		worker->state = WORKER_STATE_NONE;
 
 		worker->thread_id = 0;
@@ -39,6 +43,8 @@ static Worker *worker_new (void) {
 		worker->end = false;
 
 		worker->job_queue = NULL;
+
+		worker->work = NULL;
 
 		(void) memset (&worker->mutex, 0, sizeof (pthread_mutex_t));
 	}
@@ -61,18 +67,36 @@ void worker_delete (void *worker_ptr) {
 
 }
 
-Worker *worker_create (const unsigned int id) {
+Worker *worker_create (void) {
 
 	Worker *worker = worker_new ();
 	if (worker) {
-		worker->id = id;
-
 		worker->job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 
 		(void) pthread_mutex_init (&worker->mutex, NULL);
 	}
 
 	return worker;
+
+}
+
+Worker *worker_create_with_id (const unsigned int id) {
+
+	Worker *worker = worker_create ();
+	if (worker) {
+		worker->id = id;
+	}
+
+	return worker;
+
+}
+
+void worker_set_name (Worker *worker, const char *name) {
+
+	if (worker && name) {
+		strncpy (worker->name, name, WORKER_NAME_SIZE - 1);
+		worker->name_len = (unsigned int) strlen (worker->name);
+	}
 
 }
 
@@ -154,13 +178,30 @@ void worker_set_end (
 
 }
 
-unsigned int worker_start (
+void worker_set_work (
+	Worker *worker, void (*work) (void *args)
+) {
+
+	worker->work = work;
+
+}
+
+unsigned int worker_start_with_state (
 	Worker *worker, const WorkerState worker_state
 ) {
 
 	unsigned int retval = 1;
 
 	worker_set_state (worker, worker_state);
+
+	if (!worker->name_len) {
+		(void) snprintf (
+			worker->name, WORKER_NAME_SIZE - 1,
+			"worker-%u", worker->id
+		);
+
+		worker->name_len = (unsigned int) strlen (worker->name);
+	}
 
 	if (!thread_create_detachable (
 		&worker->thread_id,
@@ -178,6 +219,12 @@ unsigned int worker_start (
 	}
 
 	return retval;
+
+}
+
+unsigned int worker_start (Worker *worker) {
+
+	return worker_start_with_state (worker, WORKER_STATE_AVAILABLE);
 
 }
 
@@ -229,7 +276,7 @@ unsigned int worker_end (Worker *worker) {
 
 	WorkerState state = WORKER_STATE_NONE;
 	while (state != WORKER_STATE_ENDED) {
-		state = query_worker_get_state (worker);
+		state = worker_get_state (worker);
 
 		switch (state) {
 			case WORKER_STATE_AVAILABLE:
@@ -254,6 +301,19 @@ unsigned int worker_end (Worker *worker) {
 
 }
 
+unsigned int worker_push_job (
+	Worker *worker,
+	void (*work) (void *args), void *args
+) {
+
+	return job_queue_push_job (
+		worker->job_queue,
+		work ? work : worker->work,
+		args
+	);
+
+}
+
 static void *worker_thread (void *worker_ptr) {
 
 	Worker *worker = (Worker *) worker_ptr;
@@ -270,7 +330,7 @@ static void *worker_thread (void *worker_ptr) {
 		"Worker <%s> state: %s",
 		worker->name,
 		worker_state_to_string (worker_get_state (worker))
-	)
+	);
 	#endif
 
 	Job *job = NULL;
@@ -344,7 +404,13 @@ static void *worker_thread (void *worker_ptr) {
 				);
 
 				// do actual work
-				// TODO:
+				if (job->work) {
+					job->work (job->args);
+				}
+
+				else if (worker->work) {
+					worker->work (job->args);
+				}
 
 				// worker was requested to stop while working
 				if (worker_get_stop (worker)) {
