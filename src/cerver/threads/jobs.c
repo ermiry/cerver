@@ -549,7 +549,7 @@ void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
 
 		else {
 			(void) pthread_mutex_unlock (job_queue->rwmutex);
-		}	
+		}
 	}
 
 	return match;
@@ -617,7 +617,7 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 }
 
 static unsigned int job_queue_start_internal (JobQueue *job_queue) {
-	
+
 	unsigned int retval = 1;
 
 	job_queue->running = true;
@@ -657,6 +657,20 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 	}
 
 	return errors;
+
+}
+
+// wait for work or signal on the job queue
+void job_queue_wait (JobQueue *job_queue) {
+
+	bsem_wait (job_queue->has_jobs);
+
+}
+
+// signal a job queue
+void job_queue_signal (JobQueue *job_queue) {
+
+	bsem_post (job_queue->has_jobs);
 
 }
 
