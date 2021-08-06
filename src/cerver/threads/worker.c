@@ -47,6 +47,8 @@ void worker_delete (void *worker_ptr) {
 	if (worker_ptr) {
 		Worker *worker = (Worker *) worker_ptr;
 
+		job_queue_delete (worker->job_queue);
+
 		pthread_mutex_destroy (&worker->mutex);
 
 		free (worker_ptr);
@@ -66,5 +68,89 @@ Worker *worker_create (const unsigned int id) {
 	}
 
 	return worker;
+
+}
+
+WorkerState recon_worker_get_state (
+	Worker *worker
+) {
+
+	WorkerState state = WORKER_STATE_NONE;
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	state = worker->state;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
+
+	return state;
+
+}
+
+void recon_worker_set_state (
+	Worker *worker, const WorkerState state
+) {
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	worker->state = state;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
+
+}
+
+bool recon_worker_get_stop (
+	Worker *worker
+) {
+
+	bool stop = false;
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	stop = worker->stop;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
+
+	return stop;
+
+}
+
+void recon_worker_set_stop (
+	Worker *worker, const bool stop
+) {
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	worker->stop = stop;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
+
+}
+
+bool recon_worker_get_end (
+	Worker *worker
+) {
+
+	bool end = false;
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	end = worker->end;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
+
+	return end;
+
+}
+
+void recon_worker_set_end (
+	Worker *worker, const bool end
+) {
+
+	(void) pthread_mutex_lock (&worker->mutex);
+
+	worker->end = end;
+
+	(void) pthread_mutex_unlock (&worker->mutex);
 
 }

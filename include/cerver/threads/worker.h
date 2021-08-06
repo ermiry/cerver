@@ -53,6 +53,30 @@ CERVER_PRIVATE void worker_delete (void *worker_ptr);
 
 CERVER_PUBLIC Worker *worker_create (const unsigned int id);
 
+CERVER_PRIVATE WorkerState recon_worker_get_state (
+	Worker *worker
+);
+
+CERVER_PRIVATE void recon_worker_set_state (
+	Worker *worker, const WorkerState state
+);
+
+CERVER_PRIVATE bool recon_worker_get_stop (
+	Worker *worker
+);
+
+CERVER_PRIVATE void recon_worker_set_stop (
+	Worker *worker, const bool stop
+);
+
+CERVER_PRIVATE bool recon_worker_get_end (
+	Worker *worker
+);
+
+CERVER_PRIVATE void recon_worker_set_end (
+	Worker *worker, const bool end
+);
+
 #ifdef __cplusplus
 }
 #endif
