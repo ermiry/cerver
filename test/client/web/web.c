@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cerver/http/status.h>
+
 #include <cerver/utils/log.h>
 
 #include "curl.h"
@@ -33,6 +35,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -40,6 +43,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render/text", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -47,6 +51,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/render/json", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -54,6 +59,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -61,6 +67,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/key", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -68,6 +75,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/message", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -75,6 +83,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/message", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -82,6 +91,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/error", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -89,6 +99,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/error", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -96,6 +107,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/custom", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -103,6 +115,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/custom", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -110,6 +123,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/reference", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -117,6 +131,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/reference", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		web_request_all_data_handler, data_buffer
 	);
 

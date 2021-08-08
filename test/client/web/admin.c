@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cerver/http/status.h>
+
 #include <cerver/utils/log.h>
 
 #include "curl.h"
@@ -32,6 +34,7 @@ static unsigned int admin_request_all_actual (
 	// GET /
 	errors |= curl_simple_handle_data (
 		curl, address,
+		HTTP_STATUS_OK,
 		admin_request_all_data_handler, data_buffer
 	);
 
@@ -39,6 +42,7 @@ static unsigned int admin_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/cerver/info", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		admin_request_all_data_handler, data_buffer
 	);
 
@@ -46,6 +50,7 @@ static unsigned int admin_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/cerver/stats", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		admin_request_all_data_handler, data_buffer
 	);
 
@@ -53,6 +58,7 @@ static unsigned int admin_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/cerver/stats/filesystems", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
+		HTTP_STATUS_OK,
 		admin_request_all_data_handler, data_buffer
 	);
 
