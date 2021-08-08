@@ -88,7 +88,7 @@ static unsigned int upload_request_all_actual (
 	// POST /discard - discard
 	errors |= curl_upload_file_with_extra_value (
 		curl, actual_address,
-		HTTP_STATUS_OK,
+		HTTP_STATUS_BAD_REQUEST,
 		"./test/web/img/ermiry.png",
 		"key", "discard"
 	);

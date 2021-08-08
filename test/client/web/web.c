@@ -91,7 +91,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create/error", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
-		HTTP_STATUS_OK,
+		HTTP_STATUS_BAD_REQUEST,
 		web_request_all_data_handler, data_buffer
 	);
 
@@ -99,7 +99,7 @@ static unsigned int web_request_all_actual (
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/send/error", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
-		HTTP_STATUS_OK,
+		HTTP_STATUS_BAD_REQUEST,
 		web_request_all_data_handler, data_buffer
 	);
 
