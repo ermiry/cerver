@@ -44,7 +44,7 @@ static CurlResult curl_perform_request (
 }
 
 // performs a simple curl request to the specified address
-// creates an destroy a local CURL structure
+// creates an destroys a local CURL structure
 // returns 0 on success, 1 on any error
 unsigned int curl_simple_full (
 	const char *address,
@@ -56,6 +56,33 @@ unsigned int curl_simple_full (
 	CURL *curl = curl_easy_init ();
 	if (curl) {
 		curl_easy_setopt (curl, CURLOPT_URL, address);
+
+		// perfrom the request
+		retval = curl_perform_request (curl, expected_status);
+
+		curl_easy_cleanup (curl);
+	}
+
+	return retval;
+
+}
+
+// works like curl_simple_full () but handles the data
+// returns 0 on success, 1 on any error
+unsigned int curl_full_handle_data (
+	const char *address,
+	const http_status expected_status,
+	curl_write_data_cb write_cb, char *buffer
+) {
+
+	unsigned int retval = 1;
+
+	CURL *curl = curl_easy_init ();
+	if (curl) {
+		curl_easy_setopt (curl, CURLOPT_URL, address);
+
+		curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
+		curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
 
 		// perfrom the request
 		retval = curl_perform_request (curl, expected_status);
@@ -246,6 +273,48 @@ CurlResult curl_post_form_value (
 	field = curl_mime_addpart (form);
 	(void) curl_mime_name (field, key);
 	(void) curl_mime_data (field, value, CURL_ZERO_TERMINATED);
+
+	/* what URL that receives this POST */
+	(void) curl_easy_setopt (curl, CURLOPT_URL, address);
+
+	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
+
+	(void) curl_easy_setopt (curl, CURLOPT_MIMEPOST, form);
+
+	result = curl_perform_request (curl, expected_status);
+
+	curl_mime_free (form);
+
+	return result;
+
+}
+
+// performs a multi-part request with two values
+// returns 0 on success, 1 on error
+CurlResult curl_post_two_form_values (
+	CURL *curl, const char *address,
+	const http_status expected_status,
+	curl_write_data_cb write_cb, char *buffer,
+	const char *first_key, const char *first_value,
+	const char *second_key, const char *second_value
+) {
+
+	CurlResult result = CURL_RESULT_NONE;
+
+	curl_mimepart *field = NULL;
+
+	curl_mime *form = curl_mime_init (curl);
+
+	// add the first value
+	field = curl_mime_addpart (form);
+	(void) curl_mime_name (field, first_key);
+	(void) curl_mime_data (field, first_value, CURL_ZERO_TERMINATED);
+
+	// add the second value
+	field = curl_mime_addpart (form);
+	(void) curl_mime_name (field, second_key);
+	(void) curl_mime_data (field, second_value, CURL_ZERO_TERMINATED);
 
 	/* what URL that receives this POST */
 	(void) curl_easy_setopt (curl, CURLOPT_URL, address);

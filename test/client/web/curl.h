@@ -27,6 +27,14 @@ extern unsigned int curl_simple_full (
 	const http_status expected_status
 );
 
+// works like curl_simple_full () but handles the data
+// returns 0 on success, 1 on any error
+extern unsigned int curl_full_handle_data (
+	const char *address,
+	const http_status expected_status,
+	curl_write_data_cb write_cb, char *buffer
+);
+
 // performs a simple curl request to the specified address
 // uses an already created CURL structure
 // returns 0 on success, 1 on any error
@@ -86,6 +94,16 @@ extern CurlResult curl_post_form_value (
 	const http_status expected_status,
 	curl_write_data_cb write_cb, char *buffer,
 	const char *key, const char *value
+);
+
+// performs a multi-part request with two values
+// returns 0 on success, 1 on error
+extern CurlResult curl_post_two_form_values (
+	CURL *curl, const char *address,
+	const http_status expected_status,
+	curl_write_data_cb write_cb, char *buffer,
+	const char *first_key, const char *first_value,
+	const char *second_key, const char *second_value
 );
 
 // uploads a file to the requested route performing a multi-part request
