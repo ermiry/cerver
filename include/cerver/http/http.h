@@ -42,6 +42,8 @@ extern "C" {
 
 struct _Cerver;
 
+struct _Worker;
+
 struct _HttpRouteFileStats;
 
 struct _HttpReceive;
@@ -168,6 +170,7 @@ struct _HttpCerver {
 	HttpOrigin admin_origin;
 	
 	DoubleList *admin_file_systems_stats;
+	DoubleList *admin_workers;
 	pthread_mutex_t *admin_mutex;
 
 	// used to correctly update stats
@@ -673,6 +676,12 @@ CERVER_EXPORT void http_cerver_admin_set_origin (
 // when requesting for fs stats
 CERVER_EXPORT void http_cerver_register_admin_file_system (
 	HttpCerver *http_cerver, const char *path
+);
+
+// registers an existing worker to be handled
+// when requisting for workers states
+CERVER_EXPORT void http_cerver_register_admin_worker (
+	HttpCerver *http_cerver, const struct _Worker *worker
 );
 
 #pragma endregion
