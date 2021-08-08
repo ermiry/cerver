@@ -36,7 +36,7 @@ CERVER_EXPORT const char *worker_state_to_string (
 	const WorkerState state
 );
 
-typedef struct Worker {
+struct _Worker {
 
 	unsigned int id;
 
@@ -57,7 +57,9 @@ typedef struct Worker {
 
 	pthread_mutex_t mutex;
 
-} Worker;
+};
+
+typedef struct _Worker Worker;
 
 CERVER_PRIVATE void worker_delete (void *worker_ptr);
 
