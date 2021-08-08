@@ -199,6 +199,8 @@ int main (int argc, char **argv) {
 		/*** web cerver configuration ***/
 		HttpCerver *http_cerver = (HttpCerver *) web_cerver->cerver_data;
 
+		http_cerver_enable_admin_routes (http_cerver, true);
+
 		// GET /
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
 		http_cerver_route_register (http_cerver, main_route);
@@ -222,6 +224,9 @@ int main (int argc, char **argv) {
 		worker_set_work (worker, worker_handler_method);
 		worker_set_delete_data (worker, data_delete);
 		(void) worker_start (worker);
+
+		// register worker to be handled by admin routes
+		http_cerver_register_admin_worker (http_cerver, worker);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (

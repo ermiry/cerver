@@ -78,6 +78,14 @@ static unsigned int worker_request_all_actual (
 		worker_request_all_data_handler, data_buffer
 	);
 
+	// GET /cerver/stats/workers
+	(void) snprintf (actual_address, 128, "%s/cerver/stats/workers", address);
+	errors |= curl_full_handle_data (
+		actual_address,
+		HTTP_STATUS_OK,
+		worker_request_all_data_handler, data_buffer
+	);
+
 	return errors;
 
 }
