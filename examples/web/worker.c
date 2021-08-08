@@ -69,7 +69,7 @@ static void worker_handler_method (void *data_ptr) {
 
 // GET /
 void main_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -80,9 +80,9 @@ void main_handler (
 
 }
 
-// GET /work
+// POST /work
 void worker_handler (
-	const struct _HttpReceive *http_receive,
+	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
 
@@ -111,6 +111,52 @@ void worker_handler (
 			http_receive,
 			HTTP_STATUS_BAD_REQUEST,
 			"Missing values!"
+		);
+	}
+
+}
+
+// GET /work/start
+void worker_start_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	if (!worker_resume (worker)) {
+		(void) http_response_json_key_value_send (
+			http_receive, HTTP_STATUS_OK,
+			"oki", "doki"
+		);
+	}
+
+	else {
+		(void) http_response_json_error_send (
+			http_receive,
+			HTTP_STATUS_INTERNAL_SERVER_ERROR,
+			"Worker is running!"
+		);
+	}
+
+}
+
+// GET /work/stop
+void worker_stop_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	if (!worker_stop (worker)) {
+		(void) http_response_json_key_value_send (
+			http_receive, HTTP_STATUS_OK,
+			"oki", "doki"
+		);
+	}
+
+	else {
+		(void) http_response_json_error_send (
+			http_receive,
+			HTTP_STATUS_INTERNAL_SERVER_ERROR,
+			"Worker is NOT running!"
 		);
 	}
 
@@ -166,6 +212,14 @@ int main (int argc, char **argv) {
 		HttpRoute *worker_route = http_route_create (REQUEST_METHOD_POST, "work", worker_handler);
 		http_route_set_modifier (worker_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, worker_route);
+
+		// GET /work/start
+		HttpRoute *worker_start_route = http_route_create (REQUEST_METHOD_GET, "work/start", worker_start_handler);
+		http_cerver_route_register (http_cerver, worker_start_route);
+
+		// GET /work/stop
+		HttpRoute *worker_stop_route = http_route_create (REQUEST_METHOD_GET, "work/stop", worker_stop_handler);
+		http_cerver_route_register (http_cerver, worker_stop_route);
 
 		/*** worker ***/
 		worker = worker_create ();
