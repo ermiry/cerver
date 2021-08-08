@@ -1174,8 +1174,8 @@ u8 http_response_json_custom_send (
 		HttpResponse *res = http_response_json_custom_internal (status, json);
 		if (res) {
 			#ifdef HTTP_RESPONSE_DEBUG
-			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
-			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
+			(void) printf ("\n%.*s", (int) res->header_len, (char *) res->header);
+			(void) printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
 			http_response_delete (res);
@@ -1254,8 +1254,8 @@ u8 http_response_json_custom_reference_send (
 
 		if (res) {
 			#ifdef HTTP_RESPONSE_DEBUG
-			printf ("\n%.*s", (int) res->header_len, (char *) res->header);
-			printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
+			(void) printf ("\n%.*s", (int) res->header_len, (char *) res->header);
+			(void) printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
 			#endif
 			retval = http_response_send_split (res, http_receive);
 			http_response_delete (res);
