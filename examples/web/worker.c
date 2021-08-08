@@ -228,6 +228,9 @@ int main (int argc, char **argv) {
 		worker_set_delete_data (worker, data_delete);
 		(void) worker_start (worker);
 
+		http_cerver_enable_admin_routes (http_cerver, true);
+		http_cerver_register_admin_worker (http_cerver, worker);
+
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
