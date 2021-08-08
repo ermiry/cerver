@@ -209,6 +209,22 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
+# worker
+echo "Worker integration test..."
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 8080:8080 \
+	ermiry/cerver:test ./bin/web/worker
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/web/worker || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
+
 # admin
 echo "Admin integration test..."
 sudo docker run \
