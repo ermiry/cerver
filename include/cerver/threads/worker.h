@@ -109,6 +109,8 @@ CERVER_PUBLIC unsigned int worker_start_with_state (
 
 CERVER_PUBLIC unsigned int worker_start (Worker *worker);
 
+CERVER_PUBLIC unsigned int worker_resume (Worker *worker);
+
 CERVER_PUBLIC unsigned int worker_stop (Worker *worker);
 
 CERVER_PUBLIC unsigned int worker_end (Worker *worker);

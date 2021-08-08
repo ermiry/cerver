@@ -195,7 +195,7 @@ void worker_set_delete_data (
 
 }
 
-unsigned int worker_start_with_state (
+static unsigned int worker_start_internal (
 	Worker *worker, const WorkerState worker_state
 ) {
 
@@ -231,13 +231,68 @@ unsigned int worker_start_with_state (
 
 }
 
+unsigned int worker_start_with_state (
+	Worker *worker, const WorkerState worker_state
+) {
+
+	unsigned int retval = 1;
+
+	if (worker_get_state (worker) == WORKER_STATE_NONE) {
+		retval = worker_start_internal (worker, worker_state);
+	}
+
+	return retval;
+
+}
+
 unsigned int worker_start (Worker *worker) {
 
 	return worker_start_with_state (worker, WORKER_STATE_AVAILABLE);
 
 }
 
-unsigned int worker_stop (Worker *worker) {
+static unsigned int worker_resume_internal (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Starting worker <%s>...", worker->name);
+	#endif
+
+	switch (worker_get_state (worker)) {
+		case WORKER_STATE_STOPPED: {
+			worker_set_state (worker, WORKER_STATE_AVAILABLE);
+
+			// signal worker's job queue
+			bsem_post (worker->job_queue->has_jobs);
+
+			retval = 0;
+		} break;
+
+		default: break;
+	}
+
+	#ifdef THREADS_DEBUG
+	cerver_log_msg ("Started worker <%s>", worker->name);
+	#endif
+
+	return retval;
+
+}
+
+unsigned int worker_resume (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	if (worker_get_state (worker) == WORKER_STATE_STOPPED) {
+		retval = worker_resume_internal (worker);
+	}
+
+	return retval;
+
+}
+
+static unsigned int worker_stop_internal (Worker *worker) {
 
 	unsigned int retval = 1;
 
@@ -273,7 +328,24 @@ unsigned int worker_stop (Worker *worker) {
 
 }
 
-unsigned int worker_end (Worker *worker) {
+unsigned int worker_stop (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	switch (worker_get_state (worker)) {
+		case WORKER_STATE_AVAILABLE:
+		case WORKER_STATE_WORKING: {
+			retval = worker_stop_internal (worker);
+		} break;
+
+		default: break;
+	}
+
+	return retval;
+
+}
+
+static unsigned int worker_end_internal (Worker *worker) {
 
 	unsigned int retval = 1;
 
@@ -305,6 +377,24 @@ unsigned int worker_end (Worker *worker) {
 	#ifdef THREADS_DEBUG
 	cerver_log_msg ("Ended worker <%s>", worker->name);
 	#endif
+
+	return retval;
+
+}
+
+unsigned int worker_end (Worker *worker) {
+
+	unsigned int retval = 1;
+
+	switch (worker_get_state (worker)) {
+		case WORKER_STATE_AVAILABLE:
+		case WORKER_STATE_WORKING:
+		case WORKER_STATE_STOPPED: {
+			retval = worker_end_internal (worker);
+		} break;
+
+		default: break;
+	}
 
 	return retval;
 
