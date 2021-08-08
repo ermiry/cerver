@@ -101,6 +101,8 @@ int main (int argc, char **argv) {
 
 	threads_tests_thpool ();
 
+	threads_tests_worker ();
+
 	(void) printf ("\nDone with THREADS tests!\n\n");
 
 	return 0;

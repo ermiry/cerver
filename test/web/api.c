@@ -89,9 +89,6 @@ int main (int argc, char **argv) {
 
 	cerver_version_print_full ();
 
-	cerver_log_debug ("Cerver Web API Example");
-	printf ("\n");
-
 	users_init ();
 
 	api_cerver = cerver_create (

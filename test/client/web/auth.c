@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <cerver/http/http.h>
+#include <cerver/http/status.h>
 
 #include <cerver/http/json/json.h>
 
@@ -37,9 +38,9 @@ static unsigned int auth_request_custom_success (char *data_buffer) {
 		(void) snprintf (actual_address, 128, "%s/auth/custom", address);
 		retval = curl_post_form_value (
 			curl, actual_address,
+			HTTP_STATUS_OK,
 			auth_request_all_data_handler, data_buffer,
-			"key", "okay",
-			(unsigned int) HTTP_STATUS_OK
+			"key", "okay"
 		);
 
 		curl_easy_cleanup (curl);
@@ -61,9 +62,9 @@ static unsigned int auth_request_custom_bad (char *data_buffer) {
 		(void) snprintf (actual_address, 128, "%s/auth/custom", address);
 		retval = curl_post_form_value (
 			curl, actual_address,
+			HTTP_STATUS_UNAUTHORIZED,
 			auth_request_all_data_handler, data_buffer,
-			"key", "bad",
-			(unsigned int) HTTP_STATUS_UNAUTHORIZED
+			"key", "bad"
 		);
 
 		curl_easy_cleanup (curl);
@@ -86,12 +87,17 @@ static unsigned int auth_request_all_actual (
 	(void) snprintf (actual_address, 128, "%s/test", address);
 	errors |= curl_simple_handle_data (
 		curl, address,
+		HTTP_STATUS_OK,
 		auth_request_all_data_handler, data_buffer
 	);
 
 	// GET /auth/token
 	(void) snprintf (actual_address, 128, "%s/auth/token", address);
-	errors |= curl_simple_with_auth (curl, actual_address, token);
+	errors |= curl_simple_with_auth (
+		curl, actual_address,
+		HTTP_STATUS_OK,
+		token
+	);
 
 	// POST /auth/custom
 	errors |= auth_request_custom_success (data_buffer);

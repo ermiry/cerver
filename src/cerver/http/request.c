@@ -435,8 +435,9 @@ const MultiPart *http_request_multi_parts_get (
 
 }
 
-// searches the request's multi parts values for a value with matching key
-// returns a constant c string that should not be deleted if found, NULL if not match
+// searches the request's multi-parts for one with matching key
+// returns a reference to the multi-part instance that should not be deleted if found
+// returns NULL if not match
 const char *http_request_multi_parts_get_value (
 	const HttpRequest *http_request, const char *key
 ) {

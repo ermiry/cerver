@@ -54,7 +54,7 @@ void test_handler (
 		HTTP_STATUS_OK, "Test route works!"
 	);
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
@@ -73,7 +73,7 @@ void auth_token_handler (
 		HTTP_STATUS_OK, "Token auth route works!"
 	);
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
@@ -92,7 +92,7 @@ void auth_custom_handler (
 		HTTP_STATUS_OK, "Custom auth route works!"
 	);
 	if (res) {
-		#ifdef EXAMPLES_DEBUG
+		#ifdef TEST_DEBUG
 		http_response_print (res);
 		#endif
 		http_response_send (res, http_receive);
@@ -140,12 +140,7 @@ int main (int argc, char **argv) {
 
 	cerver_init ();
 
-	cerver_log_line_break ();
 	cerver_version_print_full ();
-	cerver_log_line_break ();
-
-	cerver_log_debug ("Web Cerver Authentication Example");
-	cerver_log_line_break ();
 
 	auth_cerver = cerver_create (
 		CERVER_TYPE_WEB,

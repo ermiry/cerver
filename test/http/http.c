@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cerver/threads/worker.h>
+
 #include <cerver/http/http.h>
 
 #include "data.h"
@@ -92,6 +94,7 @@ static void test_http_cerver_new (void) {
 	test_check_str_empty (http_cerver->admin_origin.value);
 
 	test_check_null_ptr (http_cerver->admin_file_systems_stats);
+	test_check_null_ptr (http_cerver->admin_workers);
 	test_check_null_ptr (http_cerver->admin_mutex);
 
 	test_check_null_ptr (http_cerver->mutex);
@@ -161,6 +164,7 @@ static HttpCerver *test_http_cerver_create (void) {
 	test_check_str_empty (http_cerver->admin_origin.value);
 
 	test_check_ptr (http_cerver->admin_file_systems_stats);
+	test_check_ptr (http_cerver->admin_workers);
 	test_check_ptr (http_cerver->admin_mutex);
 
 	test_check_ptr (http_cerver->mutex);
@@ -490,6 +494,19 @@ static void test_http_cerver_admin_file_systems (void) {
 
 }
 
+static void test_http_cerver_register_admin_worker (void) {
+
+	HttpCerver *http_cerver = test_http_cerver_create ();
+
+	http_cerver_enable_admin_routes (http_cerver, true);
+
+	Worker *worker = worker_create ();
+	http_cerver_register_admin_worker (http_cerver, worker);
+
+	http_cerver_delete (http_cerver);
+
+}
+
 #pragma endregion
 
 #pragma region receive
@@ -614,6 +631,7 @@ static void http_tests_main (void) {
 	test_http_cerver_admin_custom_auth ();
 	test_http_cerver_admin_cors_headers ();
 	test_http_cerver_admin_file_systems ();
+	test_http_cerver_register_admin_worker ();
 
 	// receive
 	test_http_receive_new ();

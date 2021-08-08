@@ -175,6 +175,12 @@ CERVER_PUBLIC void *job_queue_request (
 
 CERVER_PUBLIC unsigned int job_queue_start (JobQueue *job_queue);
 
+// wait for work or signal on the job queue
+CERVER_PUBLIC void job_queue_wait (JobQueue *job_queue);
+
+// signal a job queue
+CERVER_PUBLIC void job_queue_signal (JobQueue *job_queue);
+
 CERVER_PUBLIC unsigned int job_queue_stop (JobQueue *job_queue);
 
 // clears the job queue -> destroys all jobs

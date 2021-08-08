@@ -255,8 +255,9 @@ CERVER_EXPORT const String *http_request_query_params_get_value (
 	const HttpRequest *http_request, const char *key
 );
 
-// searches the request's multi parts values for one with matching key & type
-// returns a constant Stirng that should not be deleted if found, NULL if not match
+// searches the request's multi-parts for one with matching key
+// returns a reference to the multi-part instance that should not be deleted if found
+// returns NULL if not match
 CERVER_EXPORT const MultiPart *http_request_multi_parts_get (
 	const HttpRequest *http_request, const char *key
 );

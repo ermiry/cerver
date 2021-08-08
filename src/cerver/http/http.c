@@ -18,6 +18,8 @@
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 
+#include "cerver/threads/worker.h"
+
 #include "cerver/http/admin.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
@@ -280,6 +282,7 @@ HttpCerver *http_cerver_new (void) {
 		http_origin_reset (&http_cerver->admin_origin);
 
 		http_cerver->admin_file_systems_stats = NULL;
+		http_cerver->admin_workers = NULL;
 		http_cerver->admin_mutex = NULL;
 
 		http_cerver->mutex = NULL;
@@ -316,6 +319,7 @@ void http_cerver_delete (void *http_cerver_ptr) {
 			str_delete (http_cerver->response_headers[i]);
 
 		dlist_delete (http_cerver->admin_file_systems_stats);
+		dlist_delete (http_cerver->admin_workers);
 		pthread_mutex_delete (http_cerver->admin_mutex);
 
 		pthread_mutex_delete (http_cerver->mutex);
@@ -352,6 +356,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		http_cerver->admin_file_systems_stats = dlist_init (
 			http_admin_file_system_stats_delete, NULL
 		);
+
+		http_cerver->admin_workers = dlist_init (NULL, NULL);
 
 		http_cerver->admin_mutex = pthread_mutex_new ();
 
@@ -1936,6 +1942,21 @@ void http_cerver_register_admin_file_system (
 		(void) dlist_insert_at_end_unsafe (
 			http_cerver->admin_file_systems_stats,
 			http_admin_file_system_stats_create (path)
+		);
+	}
+
+}
+
+// registers an existing worker to be handled
+// when requisting for workers states
+void http_cerver_register_admin_worker (
+	HttpCerver *http_cerver, const Worker *worker
+) {
+
+	if (http_cerver && worker) {
+		(void) dlist_insert_at_end_unsafe (
+			http_cerver->admin_workers,
+			worker
 		);
 	}
 

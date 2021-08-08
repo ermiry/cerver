@@ -6,6 +6,8 @@
 #include "cerver/system.h"
 #include "cerver/version.h"
 
+#include "cerver/threads/worker.h"
+
 #include "cerver/http/admin.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
@@ -428,25 +430,27 @@ static json_t *http_cerver_admin_handler_single_file_systems_stats (
 
 	json_t *file_system_object = json_object ();
 
-	(void) json_object_set_new (
-		file_system_object, "path", json_string (admin_file_system->path)
-	);
+	if (file_system_object) {
+		(void) json_object_set_new (
+			file_system_object, "path", json_string (admin_file_system->path)
+		);
 
-	(void) json_object_set_new (
-		file_system_object, "total", json_real (admin_file_system->stats.total)
-	);
+		(void) json_object_set_new (
+			file_system_object, "total", json_real (admin_file_system->stats.total)
+		);
 
-	(void) json_object_set_new (
-		file_system_object, "available", json_real (admin_file_system->stats.available)
-	);
+		(void) json_object_set_new (
+			file_system_object, "available", json_real (admin_file_system->stats.available)
+		);
 
-	(void) json_object_set_new (
-		file_system_object, "used", json_real (admin_file_system->stats.used)
-	);
+		(void) json_object_set_new (
+			file_system_object, "used", json_real (admin_file_system->stats.used)
+		);
 
-	(void) json_object_set_new (
-		file_system_object, "used_percentage", json_real (admin_file_system->stats.used_percentage)
-	);
+		(void) json_object_set_new (
+			file_system_object, "used_percentage", json_real (admin_file_system->stats.used_percentage)
+		);
+	}
 
 	return file_system_object;
 
@@ -469,8 +473,10 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 			file_system_object = http_cerver_admin_handler_single_file_systems_stats (
 				(const HttpAdminFileSystemStats *) le->data
 			);
-			
-			(void) json_array_append_new (file_systems_array, file_system_object);
+
+			if (file_system_object) {
+				(void) json_array_append_new (file_systems_array, file_system_object);
+			}
 		}
 
 		(void) json_object_set_new (
@@ -483,6 +489,61 @@ char *http_cerver_admin_generate_file_systems_stats_json (
 	}
 
 	(void) pthread_mutex_unlock ((pthread_mutex_t *) http_cerver->admin_mutex);
+
+	return json_string;
+
+}
+
+static json_t *worker_state_to_json (Worker *worker) {
+
+	json_t *worker_object = json_object ();
+
+	if (worker_object) {
+		(void) json_object_set_new (
+			worker_object, "id", json_integer ((json_int_t) worker->id)
+		);
+
+		(void) json_object_set_new (
+			worker_object, "name", json_string (worker->name)
+		);
+
+		(void) json_object_set_new (
+			worker_object, "state",
+			json_string (
+				worker_state_to_string (worker_get_state (worker))
+			)
+		);
+	}
+
+	return worker_object;
+
+}
+
+char *http_cerver_admin_generate_workers_json (
+	const HttpCerver *http_cerver
+) {
+
+	char *json_string = NULL;
+
+	json_t *json = json_object ();
+	if (json) {
+		json_t *workers_array = json_array ();
+
+		json_t *worker_object = NULL;
+		for (ListElement *le = dlist_start (http_cerver->admin_workers); le; le = le->next) {
+			worker_object = worker_state_to_json ((Worker *) le->data);
+
+			if (worker_object) {
+				(void) json_array_append_new (workers_array, worker_object);
+			}
+		}
+
+		(void) json_object_set_new (json, "workers", workers_array);
+
+		json_string = json_dumps (json, 0);
+
+		json_decref (json);
+	}
 
 	return json_string;
 
@@ -657,6 +718,7 @@ static inline void http_cerver_admin_send_response (
 // OPTIONS [top level]/cerver/info
 // OPTIONS [top level]/cerver/stats
 // OPTIONS [top level]/cerver/stats/filesystems
+// OPTIONS [top level]/cerver/stats/workers
 static void http_cerver_admin_options_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
@@ -825,6 +887,59 @@ static void http_cerver_admin_file_systems_handler (
 
 }
 
+// HEAD [top level]/cerver/stats/workers
+static void http_cerver_admin_workers_head_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *workers_json = http_cerver_admin_generate_workers_json (
+		http_cerver
+	);
+
+	if (workers_json) {
+		http_cerver_admin_send_head (
+			http_receive, strlen (workers_json)
+		);
+
+		free (workers_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
+// GET [top level]/cerver/stats/workers
+static void http_cerver_admin_workers_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+
+	char *workers_json = http_cerver_admin_generate_workers_json (
+		http_cerver
+	);
+
+	if (workers_json) {
+		http_cerver_admin_send_response (
+			http_receive, request,
+			workers_json, strlen (workers_json)
+		);
+
+		free (workers_json);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 #pragma GCC diagnostic pop
 
 static void http_cerver_admin_route_set_auth (
@@ -953,6 +1068,39 @@ static void http_cerver_admin_set_file_systems_route (
 
 }
 
+static void http_cerver_admin_set_workers_route (
+	const HttpCerver *http_cerver, HttpRoute *top_level_route
+) {
+
+	// GET [top level]/cerver/stats/workers
+	HttpRoute *workers_route = http_route_create (
+		REQUEST_METHOD_GET,
+		"cerver/stats/workers",
+		http_cerver_admin_workers_handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_route_set_handler (
+			workers_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_workers_head_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_route_set_handler (
+			workers_route,
+			REQUEST_METHOD_OPTIONS,
+			http_cerver_admin_options_handler
+		);
+	}
+
+	http_cerver_admin_route_set_auth (http_cerver, workers_route);
+
+	http_route_child_add (top_level_route, workers_route);
+
+}
+
 u8 http_cerver_admin_init (
 	const HttpCerver *http_cerver,
 	HttpRoute *top_level_route
@@ -975,6 +1123,11 @@ u8 http_cerver_admin_init (
 
 		// GET [top level]/cerver/stats/filesystems
 		http_cerver_admin_set_file_systems_route (
+			http_cerver, top_level_route
+		);
+
+		// GET [top level]/cerver/stats/workers
+		http_cerver_admin_set_workers_route (
 			http_cerver, top_level_route
 		);
 

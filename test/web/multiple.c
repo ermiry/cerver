@@ -321,12 +321,7 @@ int main (int argc, char **argv) {
 
 	cerver_init ();
 
-	printf ("\n");
 	cerver_version_print_full ();
-	printf ("\n");
-
-	cerver_log_debug ("Uploads Web Cerver Example");
-	printf ("\n");
 
 	web_cerver = cerver_create (
 		CERVER_TYPE_WEB,

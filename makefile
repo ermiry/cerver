@@ -218,6 +218,7 @@ web: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/multiple.o -o ./$(EXATARGET)/web/multiple $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/upload.o -o ./$(EXATARGET)/web/upload $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/web.o -o ./$(EXATARGET)/web/web $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/web/worker.o ./$(EXABUILD)/data.o -o ./$(EXATARGET)/web/worker $(EXALIBS)
 
 examples: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)
@@ -354,6 +355,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/multiple.o -o $(INTWEBOUT)/multiple $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/upload.o -o $(INTWEBOUT)/upload $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/web.o -o $(INTWEBOUT)/web $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/worker.o -o $(INTWEBOUT)/worker $(INTWEBLIBS)
 
 INTWEBCLIENTIN		:= ./$(TESTBUILD)/client/web
 INTWEBCLIENTOUT		:= ./$(TESTTARGET)/client/web
@@ -368,6 +370,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/multiple.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/multiple $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/upload.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/upload $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/web.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/web $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/worker.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/worker $(INTWEBCLIENTLIBS)
 
 integration: testout $(TESTOBJS)
 	$(MAKE) integration-cerver

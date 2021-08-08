@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <cerver/http/http.h>
+#include <cerver/http/status.h>
 
 #include <cerver/http/json/json.h>
 
@@ -43,6 +44,7 @@ static unsigned int api_request_register (
 	if (encoded_data) {
 		retval = curl_simple_post (
 			curl, actual_address,
+			HTTP_STATUS_OK,
 			encoded_data, strlen (encoded_data)
 		);
 		
@@ -65,6 +67,7 @@ static unsigned int api_request_login (
 	if (encoded_data) {
 		if (!curl_simple_post_handle_data (
 			curl, actual_address,
+			HTTP_STATUS_OK,
 			encoded_data, strlen (encoded_data),
 			api_request_all_data_handler, data_buffer
 		)) {
@@ -111,6 +114,7 @@ static unsigned int api_request_all_actual (
 	// GET /api/users
 	errors |= curl_simple_handle_data (
 		curl, address,
+		HTTP_STATUS_OK,
 		api_request_all_data_handler, data_buffer
 	);
 
@@ -124,7 +128,11 @@ static unsigned int api_request_all_actual (
 
 	// GET api/users/profile
 	(void) snprintf (actual_address, 128, "%s/profile", address);
-	errors |= curl_simple_with_auth (curl, actual_address, token);
+	errors |= curl_simple_with_auth (
+		curl, actual_address,
+		HTTP_STATUS_OK,
+		token
+	);
 
 	return errors;
 

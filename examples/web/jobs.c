@@ -81,7 +81,7 @@ void main_handler (
 
 }
 
-// GET /jobs
+// POST /jobs
 void jobs_handler (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
@@ -152,8 +152,8 @@ int main (int argc, char **argv) {
 		HttpRoute *main_route = http_route_create (REQUEST_METHOD_GET, "/", main_handler);
 		http_cerver_route_register (http_cerver, main_route);
 
-		// GET /jobs
-		HttpRoute *jobs_route = http_route_create (REQUEST_METHOD_GET, "jobs", jobs_handler);
+		// POST /jobs
+		HttpRoute *jobs_route = http_route_create (REQUEST_METHOD_POST, "jobs", jobs_handler);
 		http_route_set_modifier (jobs_route, HTTP_ROUTE_MODIFIER_MULTI_PART);
 		http_cerver_route_register (http_cerver, jobs_route);
 
