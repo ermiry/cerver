@@ -6,6 +6,8 @@
 
 #include "data.h"
 
+static unsigned int next_id = 0;
+
 Data *data_new (void) {
 
 	Data *data = (Data *) malloc (sizeof (Data));
@@ -47,6 +49,9 @@ Data *data_create (const char *name, const char *value) {
 
 	Data *data = data_new ();
 	if (data) {
+		data->id = next_id;
+		next_id += 1;
+
 		data_set_name (data, name);
 		data_set_value (data, value);
 
@@ -61,6 +66,7 @@ void data_print (const Data *data) {
 
 	if (data) {
 		(void) printf ("Data: \n");
+		(void) printf ("\tid: %u\n", data->id);
 		(void) printf ("\tName: %s\n", data->name);
 		(void) printf ("\tValue: %s\n", data->value);
 	}

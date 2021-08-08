@@ -8,6 +8,8 @@
 
 typedef struct Data {
 
+	unsigned int id;
+
 	unsigned int name_len;
 	char name[DATA_NAME_SIZE];
 
