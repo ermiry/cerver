@@ -55,6 +55,9 @@ struct _Worker {
 	void (*work) (void *args);
 	void (*delete_data) (void *args);
 
+	const void *reference;
+	void (*remove_reference) (const void *args);
+
 	pthread_mutex_t mutex;
 
 };
@@ -103,6 +106,14 @@ CERVER_PUBLIC void worker_set_work (
 
 CERVER_PUBLIC void worker_set_delete_data (
 	Worker *worker, void (*delete_data) (void *args)
+);
+
+CERVER_PUBLIC void worker_set_reference (
+	Worker *worker, const void *reference
+);
+
+CERVER_PUBLIC void worker_set_remove_reference (
+	Worker *worker, void (*remove_reference) (const void *args)
 );
 
 CERVER_PUBLIC unsigned int worker_start_with_state (
