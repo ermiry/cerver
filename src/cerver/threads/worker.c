@@ -47,6 +47,9 @@ static Worker *worker_new (void) {
 		worker->work = NULL;
 		worker->delete_data = NULL;
 
+		worker->reference = NULL;
+		worker->remove_reference = NULL;
+
 		(void) memset (&worker->mutex, 0, sizeof (pthread_mutex_t));
 	}
 
@@ -192,6 +195,22 @@ void worker_set_delete_data (
 ) {
 
 	worker->delete_data = delete_data;
+
+}
+
+void worker_set_reference (
+	Worker *worker, const void *reference
+) {
+
+	worker->reference = reference;
+
+}
+
+void worker_set_remove_reference (
+	Worker *worker, void (*remove_reference) (const void *args)
+) {
+
+	worker->remove_reference = remove_reference;
 
 }
 
@@ -401,14 +420,22 @@ unsigned int worker_end (Worker *worker) {
 }
 
 unsigned int worker_push_job (
+	Worker *worker, void *args
+) {
+
+	return job_queue_push_job (
+		worker->job_queue, NULL, args
+	);
+
+}
+
+unsigned int worker_push_job_with_work (
 	Worker *worker,
 	void (*work) (void *args), void *args
 ) {
 
 	return job_queue_push_job (
-		worker->job_queue,
-		work ? work : worker->work,
-		args
+		worker->job_queue, work, args
 	);
 
 }
@@ -554,6 +581,10 @@ static void *worker_thread (void *worker_ptr) {
 
 				if (worker->delete_data) {
 					worker->delete_data (job->args);
+				}
+
+				if (worker->remove_reference) {
+					worker->remove_reference (worker->reference);
 				}
 
 				job->args = NULL;

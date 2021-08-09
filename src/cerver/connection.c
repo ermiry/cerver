@@ -210,8 +210,8 @@ void connection_delete (void *connection_ptr) {
 
 		connection_stats_delete (connection->stats);
 
-		pthread_cond_delete (connection->cond);
-		pthread_mutex_delete (connection->mutex);
+		thread_cond_delete (connection->cond);
+		thread_mutex_delete (connection->mutex);
 
 		free (connection);
 	}

@@ -1911,8 +1911,8 @@ Connection *client_connection_create (
 			connection_init (connection);
 			connection_register_to_client (client, connection);
 
-			connection->cond = pthread_cond_new ();
-			connection->mutex = pthread_mutex_new ();
+			connection->cond = thread_cond_new ();
+			connection->mutex = thread_mutex_new ();
 		}
 	}
 

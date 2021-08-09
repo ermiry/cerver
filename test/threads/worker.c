@@ -13,6 +13,12 @@ static void work_method (void *data_ptr) {
 
 }
 
+static void worker_remove_reference (const void *worker_ptr) {
+
+	(void) printf ("Removing reference...");
+
+}
+
 static Worker *test_worker_create (void) {
 
 	Worker *worker = worker_create ();
@@ -35,6 +41,9 @@ static Worker *test_worker_create (void) {
 
 	test_check_null_ptr (worker->work);
 	test_check_null_ptr (worker->delete_data);
+
+	test_check_null_ptr (worker->reference);
+	test_check_null_ptr (worker->remove_reference);
 
 	return worker;
 
@@ -153,6 +162,30 @@ static void test_worker_set_delete_data (void) {
 
 }
 
+static void test_worker_set_reference (void) {
+
+	Worker *worker = test_worker_create ();
+
+	worker_set_reference (worker, worker);
+
+	test_check_ptr (worker->reference);
+
+	worker_delete (worker);
+
+}
+
+static void test_worker_set_remove_reference (void) {
+
+	Worker *worker = test_worker_create ();
+
+	worker_set_remove_reference (worker, worker_remove_reference);
+
+	test_check_ptr_eq (worker->remove_reference, worker_remove_reference);
+
+	worker_delete (worker);
+
+}
+
 static void test_worker_start (void) {
 
 	Worker *worker = test_worker_create ();
@@ -208,6 +241,8 @@ void threads_tests_worker (void) {
 	test_worker_set_end ();
 	test_worker_set_work ();
 	test_worker_set_delete_data ();
+	test_worker_set_reference ();
+	test_worker_set_remove_reference ();
 
 	test_worker_start ();
 	test_worker_stop ();

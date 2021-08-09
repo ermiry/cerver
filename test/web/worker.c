@@ -90,7 +90,7 @@ void worker_handler (
 	const char *value = http_request_multi_parts_get_value (request, "value");
 
 	if (name && value) {
-		if (!worker_push_job (worker, NULL, data_create (name, value))) {
+		if (!worker_push_job (worker, data_create (name, value))) {
 			(void) http_response_json_key_value_send (
 				http_receive, HTTP_STATUS_OK,
 				"oki", "doki"
