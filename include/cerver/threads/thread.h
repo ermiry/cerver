@@ -34,20 +34,26 @@ CERVER_PUBLIC unsigned int thread_set_name (
 #pragma region mutex
 
 // allocates & initializes a new mutex that should be deleted after use
-CERVER_PUBLIC pthread_mutex_t *pthread_mutex_new (void);
+CERVER_PUBLIC pthread_mutex_t *thread_mutex_new (void);
 
 // destroys & frees an allocated mutex
-CERVER_PUBLIC void pthread_mutex_delete (pthread_mutex_t *mutex);
+CERVER_PUBLIC void thread_mutex_delete (pthread_mutex_t *mutex);
+
+// locks an existing mutex
+CERVER_PUBLIC void thread_mutex_lock (pthread_mutex_t *mutex);
+
+// unlocks a locked mutex
+CERVER_PUBLIC void thread_mutex_unlock (pthread_mutex_t *mutex);
 
 #pragma endregion
 
 #pragma region cond
 
 // allocates & initializes a new cond that should be deleted after use
-CERVER_PUBLIC pthread_cond_t *pthread_cond_new (void);
+CERVER_PUBLIC pthread_cond_t *thread_cond_new (void);
 
 // destroys & frees an allocated cond
-CERVER_PUBLIC void pthread_cond_delete (pthread_cond_t *cond);
+CERVER_PUBLIC void thread_cond_delete (pthread_cond_t *cond);
 
 #pragma endregion
 
