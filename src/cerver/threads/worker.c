@@ -401,14 +401,22 @@ unsigned int worker_end (Worker *worker) {
 }
 
 unsigned int worker_push_job (
+	Worker *worker, void *args
+) {
+
+	return job_queue_push_job (
+		worker->job_queue, NULL, args
+	);
+
+}
+
+unsigned int worker_push_job_with_work (
 	Worker *worker,
 	void (*work) (void *args), void *args
 ) {
 
 	return job_queue_push_job (
-		worker->job_queue,
-		work ? work : worker->work,
-		args
+		worker->job_queue, work, args
 	);
 
 }

@@ -118,6 +118,10 @@ CERVER_PUBLIC unsigned int worker_stop (Worker *worker);
 CERVER_PUBLIC unsigned int worker_end (Worker *worker);
 
 CERVER_PUBLIC unsigned int worker_push_job (
+	Worker *worker, void *args
+);
+
+CERVER_PUBLIC unsigned int worker_push_job_with_work (
 	Worker *worker,
 	void (*work) (void *args), void *args
 );
