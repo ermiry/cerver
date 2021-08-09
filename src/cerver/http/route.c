@@ -134,7 +134,7 @@ HttpRouteStats *http_route_stats_new (void) {
 
 		route_stats->min_response_size = LONG_MAX;
 
-		route_stats->mutex = pthread_mutex_new ();
+		route_stats->mutex = thread_mutex_new ();
 	}
 
 	return route_stats;
@@ -146,7 +146,7 @@ void http_route_stats_delete (void *route_stats_ptr) {
 	if (route_stats_ptr) {
 		HttpRouteStats *route_stats = (HttpRouteStats *) route_stats_ptr;
 
-		pthread_mutex_delete (route_stats->mutex);
+		thread_mutex_delete (route_stats->mutex);
 		
 		free (route_stats_ptr);
 	}
@@ -233,7 +233,7 @@ void http_route_file_stats_delete (void *route_file_stats_ptr) {
 	if (route_file_stats_ptr) {
 		HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) route_file_stats_ptr;
 
-		pthread_mutex_delete (route_file_stats->mutex);
+		thread_mutex_delete (route_file_stats->mutex);
 		
 		free (route_file_stats_ptr);
 	}
@@ -244,7 +244,7 @@ HttpRouteFileStats *http_route_file_stats_create (void) {
 
 	HttpRouteFileStats *route_file_stats = http_route_file_stats_new ();
 	if (route_file_stats) {
-		route_file_stats->mutex = pthread_mutex_new ();
+		route_file_stats->mutex = thread_mutex_new ();
 	}
 
 	return route_file_stats;

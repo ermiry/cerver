@@ -320,9 +320,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 
 		dlist_delete (http_cerver->admin_file_systems_stats);
 		dlist_delete (http_cerver->admin_workers);
-		pthread_mutex_delete (http_cerver->admin_mutex);
+		thread_mutex_delete (http_cerver->admin_mutex);
 
-		pthread_mutex_delete (http_cerver->mutex);
+		thread_mutex_delete (http_cerver->mutex);
 
 		free (http_cerver_ptr);
 	}
@@ -359,9 +359,9 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 
 		http_cerver->admin_workers = dlist_init (NULL, NULL);
 
-		http_cerver->admin_mutex = pthread_mutex_new ();
+		http_cerver->admin_mutex = thread_mutex_new ();
 
-		http_cerver->mutex = pthread_mutex_new ();
+		http_cerver->mutex = thread_mutex_new ();
 	}
 
 	return http_cerver;
