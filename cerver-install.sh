@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CERVER_VERSION=2.0b-45
+CERVER_VERSION=2.0b-46
 
 # sudo apt-get update && sudo apt-get install -y make wget
 
