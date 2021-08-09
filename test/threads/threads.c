@@ -52,7 +52,7 @@ static void test_threads_detachable (void) {
 
 static void test_threads_mutex (void) {
 
-	pthread_mutex_t *mutex = pthread_mutex_new ();
+	pthread_mutex_t *mutex = thread_mutex_new ();
 	test_check_ptr (mutex);
 
 	int result = pthread_mutex_lock (mutex);
@@ -61,19 +61,23 @@ static void test_threads_mutex (void) {
 	result = pthread_mutex_unlock (mutex);
 	test_check_int_eq (result, 0, NULL);
 
-	pthread_mutex_delete (mutex);
+	thread_mutex_lock (mutex);
+
+	thread_mutex_unlock (mutex);
+
+	thread_mutex_delete (mutex);
 
 }
 
 static void test_threads_cond (void) {
 
-	pthread_cond_t *cond = pthread_cond_new ();
+	pthread_cond_t *cond = thread_cond_new ();
 	test_check_ptr (cond);
 
 	int result = pthread_cond_signal (cond);
 	test_check_int_eq (result, 0, NULL);
 
-	pthread_cond_delete (cond);
+	thread_cond_delete (cond);
 
 }
 
