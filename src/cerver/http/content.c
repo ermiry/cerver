@@ -57,6 +57,18 @@ ContentType http_content_type_by_mime (
 
 }
 
+ContentType http_content_type_by_extension (
+	const char *extension_string
+) {
+
+	#define XX(num, name, extension, description, mime) if (!strcmp (#extension, extension_string)) return HTTP_CONTENT_TYPE_##name;
+	HTTP_CONTENT_TYPE_MAP(XX)
+	#undef XX
+
+	return HTTP_CONTENT_TYPE_NONE;
+
+}
+
 const char *http_content_type_mime_by_extension (
 	const char *extension_string
 ) {
@@ -65,7 +77,7 @@ const char *http_content_type_mime_by_extension (
 	HTTP_CONTENT_TYPE_MAP(XX)
 	#undef XX
 
-	return http_content_type_mime_by_extension (HTTP_CONTENT_TYPE_NONE);
+	return NULL;
 
 }
 
