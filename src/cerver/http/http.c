@@ -3283,9 +3283,9 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
 
-	#ifdef HTTP_HEADERS_DEBUG
-	http_request_headers_print (http_receive->request);
-	#endif
+	// #ifdef HTTP_HEADERS_DEBUG
+	// http_request_headers_print (http_receive->request);
+	// #endif
 
 	// check if we are going to get any file(s)
 	if (http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]) {
