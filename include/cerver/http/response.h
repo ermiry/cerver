@@ -18,6 +18,8 @@
 #define HTTP_RESPONSE_HEADER_SIZE				256
 #define HTTP_RESPONSE_HEADER_VALUE_SIZE			128
 
+#define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
+
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #define HTTP_RESPONSE_SEND_FILE_HEADER_SIZE		256
@@ -182,9 +184,12 @@ CERVER_EXPORT HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 );
 
-// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
-// ready to be sent from the request
-CERVER_PUBLIC void http_response_compile_header (HttpResponse *res);
+// uses the exiting response's values to correctly
+// create a HTTP header in a continuos buffer
+// ready to be sent by the response
+CERVER_PUBLIC void http_response_compile_header (
+	HttpResponse *response
+);
 
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error

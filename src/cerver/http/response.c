@@ -487,72 +487,90 @@ HttpResponse *http_response_create (
 
 }
 
-// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
-// ready to be sent from the request
-void http_response_compile_header (HttpResponse *res) {
+static void http_response_compile_single_header (
+	HttpResponse *response
+) {
 
-	if (res->n_headers || producer->http_cerver->n_response_headers) {
-		char *main_header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
-			res->status, http_status_string (res->status),
-			CERVER_VERSION
-		);
+	response->header = (char *) calloc (HTTP_RESPONSE_MAIN_HEADER_SIZE, sizeof (char));
 
-		size_t main_header_len = strlen (main_header);
-		res->header_len = main_header_len;
+	response->header_len = (size_t) snprintf (
+		response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
+		response->status, http_status_string (response->status),
+		CERVER_VERSION
+	);
 
-		u8 i = 0;
-		for (; i < HTTP_HEADERS_SIZE; i++) {
-			if (res->headers[i]) {
-				res->header_len += res->headers[i]->len;
-			}
+}
 
-			else if (producer->http_cerver->response_headers[i]) {
-				res->header_len += producer->http_cerver->response_headers[i]->len;
-			}
+static void http_response_compile_multiple_headers (
+	HttpResponse *response
+) {
+
+	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE] = { 0 };
+	(void) snprintf (
+		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
+		response->status, http_status_string (response->status),
+		CERVER_VERSION
+	);
+
+	size_t main_header_len = strlen (main_header);
+	response->header_len = main_header_len;
+
+	u8 i = 0;
+	for (; i < HTTP_HEADERS_SIZE; i++) {
+		if (response->headers[i]) {
+			response->header_len += response->headers[i]->len;
 		}
 
-		res->header_len += 2;	// \r\n
+		else if (producer->http_cerver->response_headers[i]) {
+			response->header_len += producer->http_cerver->response_headers[i]->len;
+		}
+	}
 
-		res->header = calloc (res->header_len, sizeof (char));
+	response->header_len += 2;	// \r\n
 
-		char *end = (char *) res->header;
-		(void) memcpy (end, main_header, main_header_len);
-		end += main_header_len;
-		for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
-			if (res->headers[i]) {
-				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
-				end += res->headers[i]->len;
-			}
+	response->header = calloc (response->header_len, sizeof (char));
 
-			else if (producer->http_cerver->response_headers[i]) {
-				(void) memcpy (
-					end,
-					producer->http_cerver->response_headers[i]->str,
-					producer->http_cerver->response_headers[i]->len
-				);
-				
-				end += producer->http_cerver->response_headers[i]->len;
-			}
+	char *end = (char *) response->header;
+	(void) memcpy (end, main_header, main_header_len);
+	end += main_header_len;
+	for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		if (response->headers[i]) {
+			(void) memcpy (end, response->headers[i]->str, response->headers[i]->len);
+			end += response->headers[i]->len;
 		}
 
-		// append header end
-		*end = '\r';
-		end += 1;
-		*end = '\n';
+		else if (producer->http_cerver->response_headers[i]) {
+			(void) memcpy (
+				end,
+				producer->http_cerver->response_headers[i]->str,
+				producer->http_cerver->response_headers[i]->len
+			);
+			
+			end += producer->http_cerver->response_headers[i]->len;
+		}
+	}
 
-		free (main_header);
+	// append header end
+	*end = '\r';
+	end += 1;
+	*end = '\n';
+
+}
+
+// uses the exiting response's values to correctly
+// create a HTTP header in a continuos buffer
+// ready to be sent by the response
+void http_response_compile_header (HttpResponse *response) {
+
+	if (response->n_headers || producer->http_cerver->n_response_headers) {
+		http_response_compile_multiple_headers (response);
 	}
 
 	// create the default header
 	else {
-		res->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			res->status, http_status_string (res->status),
-			CERVER_VERSION
-		);
-
-		res->header_len = strlen ((const char *) res->header);
+		http_response_compile_single_header (response);
 	}
 
 }
@@ -565,14 +583,6 @@ u8 http_response_compile (HttpResponse *res) {
 
 	if (res) {
 		if (!res->header) {
-			// res->header = c_string_create (
-			// 	"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			// 	res->status, http_status_string (res->status),
-			// 	CERVER_VERSION
-			// );
-
-			// res->header_len = strlen ((const char *) res->header);
-
 			http_response_compile_header (res);
 		}
 
