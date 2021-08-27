@@ -251,6 +251,12 @@ CERVER_PUBLIC void http_request_headers_print (
 	const HttpRequest *http_request
 );
 
+// works like http_request_headers_print ()
+// but prints NULL if header as not in the HTTP request
+CERVER_PUBLIC void http_request_headers_print_full (
+	const HttpRequest *http_request
+);
+
 // prints the request's query params values
 CERVER_PUBLIC void http_request_query_params_print (
 	const HttpRequest *http_request

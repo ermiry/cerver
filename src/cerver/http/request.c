@@ -434,15 +434,28 @@ const DoubleList *http_request_get_body_values (
 void http_request_headers_print (const HttpRequest *http_request) {
 
 	if (http_request) {
-		const char *null = "NULL";
-		String *header = NULL;
 		for (u8 i = 0; i < HTTP_HEADERS_MAX; i++) {
-			header = http_request->headers[i];
+			if (http_request->headers[i]) {
+				cerver_log_msg (
+					"%s: %s",
+					http_header_string ((const http_header) i),
+					http_request->headers[i]->str
+				);
+			}
+		}
+	}
 
+}
+
+void http_request_headers_print_full (const HttpRequest *http_request) {
+
+	if (http_request) {
+		static const char *null = "NULL";
+		for (u8 i = 0; i < HTTP_HEADERS_MAX; i++) {
 			cerver_log_msg (
 				"%s: %s",
 				http_header_string ((const http_header) i),
-				header ? header->str : null
+				http_request->headers[i] ? http_request->headers[i]->str : null
 			);
 		}
 	}
