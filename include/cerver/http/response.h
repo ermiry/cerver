@@ -26,6 +26,8 @@
 #define HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE	256
 #define HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE	256
 
+#define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -282,6 +284,17 @@ CERVER_EXPORT u8 http_response_render_json (
 CERVER_EXPORT u8 http_response_render_file (
 	const struct _HttpReceive *http_receive,
 	const http_status status,
+	const char *filename
+);
+
+#pragma endregion
+
+#pragma region videos
+
+// handles the transmission of a video to the client
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_handle_video (
+	const struct _HttpReceive *http_receive,
 	const char *filename
 );
 

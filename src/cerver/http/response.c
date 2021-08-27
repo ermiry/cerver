@@ -506,7 +506,7 @@ u8 http_response_set_data_ref (
 
 // creates a new http response with the specified status code
 // ability to set the response's data (body); it will be copied to the response
-// and the original data can be safely deleted 
+// and the original data can be safely deleted
 HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 ) {
@@ -536,7 +536,7 @@ static void http_response_compile_single_header (
 
 	response->header_len = (size_t) snprintf (
 		response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n\r\n", 
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n\r\n",
 		response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
@@ -550,7 +550,7 @@ static void http_response_compile_multiple_headers (
 	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE] = { 0 };
 	(void) snprintf (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n", 
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
 		response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
@@ -588,7 +588,7 @@ static void http_response_compile_multiple_headers (
 				producer->http_cerver->response_headers[i]->str,
 				producer->http_cerver->response_headers[i]->len
 			);
-			
+
 			end += producer->http_cerver->response_headers[i]->len;
 		}
 	}
@@ -671,7 +671,7 @@ void http_response_print (const HttpResponse *response) {
 #pragma region send
 
 static u8 http_response_send_actual (
-	Socket *socket, 
+	Socket *socket,
 	const char *data, size_t data_size
 ) {
 
@@ -782,7 +782,7 @@ u8 http_response_create_and_send (
 		if (!http_response_compile (response)) {
 			retval = http_response_send (response, http_receive);
 		}
-		
+
 		http_response_delete (response);
 	}
 
@@ -799,7 +799,7 @@ u8 http_response_send_file (
 	int file, const char *filename,
 	struct stat *filestatus
 ) {
-	
+
 	u8 retval = 1;
 
 	unsigned int ext_len = 0;
@@ -814,7 +814,7 @@ u8 http_response_send_file (
 		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -839,8 +839,8 @@ u8 http_response_send_file (
 
 			// send the actual file
 			if (!sendfile (
-				http_receive->cr->connection->socket->sock_fd, 
-				file, 
+				http_receive->cr->connection->socket->sock_fd,
+				file,
 				0, filestatus->st_size
 			)) {
 				total_size += (size_t) filestatus->st_size;
@@ -910,7 +910,7 @@ u8 http_response_render_text (
 		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -948,7 +948,7 @@ u8 http_response_render_json (
 		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -1003,6 +1003,145 @@ u8 http_response_render_file (
 
 #pragma endregion
 
+#pragma region videos
+
+static ContentType http_response_handle_video_content (
+	const char *filename
+) {
+
+	ContentType content_type = HTTP_CONTENT_TYPE_MP4;
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	if (ext) {
+		content_type = http_content_type_by_extension (ext);
+	}
+
+	return content_type;
+
+}
+
+static u8 http_response_handle_video_internal (
+	const HttpReceive *http_receive,
+	const char *filename,
+	BytesRange *bytes_range
+) {
+
+	u8 retval = 1;
+
+	// create response
+	HttpResponse *response = http_response_get ();
+
+	// generate header
+	response->status = HTTP_STATUS_PARTIAL_CONTENT;
+	const ContentType content_type = http_response_handle_video_content (filename);
+	http_response_add_video_headers (response, content_type, bytes_range);
+	http_response_compile_multiple_headers (response);
+
+	(void) printf ("\n\n%s\n\n", response->header);
+
+	// pipe header
+	if (!http_response_send_actual (
+		http_receive->cr->connection->socket,
+		response->header, response->header_len
+	)) {
+		size_t total_sent = response->header_len;
+
+		// open video
+		int video_fd = open (filename, O_RDONLY);
+
+		// TODO:
+		// pipe video
+		total_sent += (size_t) sendfile (
+			http_receive->cr->connection->socket->sock_fd,
+			video_fd,
+			&bytes_range->start,
+			bytes_range->chunk_size
+		);
+
+		// update stats
+		http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+		http_receive->cr->connection->stats->total_bytes_sent += total_sent;
+
+		((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
+		((HttpReceive *) http_receive)->sent = total_sent;
+
+		(void) close (video_fd);
+	}
+
+	http_response_return (response);
+
+	return retval;
+
+}
+
+// handles the transmission of a video to the client
+// returns 0 on success, 1 on error
+u8 http_response_handle_video (
+	const HttpReceive *http_receive,
+	const char *filename
+) {
+
+	u8 retval = 1;
+
+	// check that video exists
+	struct stat filestats = { 0 };
+	if (!stat (filename, &filestats)) {
+		// get range
+		BytesRange bytes_range = {
+			.file_size = filestats.st_size,
+			.type = HTTP_RANGE_TYPE_NONE,
+			.start = 0, .end = 0,
+			.chunk_size = HTTP_RESPONSE_VIDEO_CHUNK_SIZE
+		};
+
+		http_request_get_bytes_range (
+			http_receive->request, &bytes_range
+		);
+
+		switch (bytes_range.type) {
+			case HTTP_RANGE_TYPE_EMPTY: {
+				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
+			} break;
+
+			case HTTP_RANGE_TYPE_FIRST: {
+				long bytes_left = bytes_range.file_size - bytes_range.start;
+				if (bytes_left < bytes_range.chunk_size) {
+					bytes_range.chunk_size = bytes_left;
+				}
+
+				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
+			} break;
+
+			case HTTP_RANGE_TYPE_FULL: {
+				bytes_range.chunk_size = bytes_range.end - bytes_range.start;
+			} break;
+
+			default: break;
+		}
+
+		bytes_range.end -= 1;
+
+		// (void) printf ("chunk size: %ld\n", bytes_range.chunk_size);
+
+		retval = http_response_handle_video_internal (
+			http_receive, filename, &bytes_range
+		);
+	}
+
+	else {
+		cerver_log_error ("Video %s not found!", filename);
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
 #pragma region json
 
 static void http_response_create_json_common (
@@ -1049,7 +1188,7 @@ HttpResponse *http_response_create_json (
 HttpResponse *http_response_create_json_key_value (
 	const http_status status, const char *key, const char *value
 ) {
-	
+
 	HttpResponse *response = NULL;
 
 	if (key && value) {
@@ -1094,7 +1233,7 @@ static HttpResponse *http_response_json_internal (
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
@@ -1109,7 +1248,7 @@ static HttpResponse *http_response_json_internal (
 
 }
 
-// creates a http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { msg: "your message" }
 HttpResponse *http_response_json_msg (
 	const http_status status, const char *msg
@@ -1141,7 +1280,7 @@ u8 http_response_json_msg_send (
 
 }
 
-// creates a http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { error: "your error message" }
 HttpResponse *http_response_json_error (
 	const http_status status, const char *error_msg
@@ -1219,7 +1358,7 @@ static HttpResponse *http_response_json_custom_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
@@ -1241,7 +1380,7 @@ HttpResponse *http_response_json_custom (
 	if (json) {
 		response = http_response_json_custom_internal (status, json);
 
-		(void) http_response_compile (response);	
+		(void) http_response_compile (response);
 	}
 
 	return response;
@@ -1289,7 +1428,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
@@ -1315,7 +1454,7 @@ HttpResponse *http_response_json_custom_reference (
 			status,
 			json, json_len
 		);
-		
+
 		(void) http_response_compile (response);
 	}
 
