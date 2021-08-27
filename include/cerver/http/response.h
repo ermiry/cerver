@@ -164,6 +164,21 @@ CERVER_EXPORT u8 http_response_add_cors_allow_methods_header (
 	HttpResponse *response, const char *methods
 );
 
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+// header to the response
+CERVER_PUBLIC u8 http_response_add_content_range_header (
+	HttpResponse *response, const BytesRange *bytes_range
+);
+
+// adds an "Accept-Ranges" with value "bytes"
+// adds a "Content-Type" with content type value
+// adds a "Content-Length" with value of chunk_size
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+CERVER_PUBLIC void http_response_add_video_headers (
+	HttpResponse *response,
+	const ContentType content_type, const BytesRange *bytes_range
+);
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (

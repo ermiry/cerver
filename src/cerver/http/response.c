@@ -88,7 +88,7 @@ void *http_response_new (void) {
 
 		response->res = NULL;
 		response->res_len = 0;
-	} 
+	}
 
 	return response;
 
@@ -173,7 +173,7 @@ void http_response_set_header (
 		if (response->header) {
 			free (response->header);
 			response->header = NULL;
-		} 
+		}
 
 		if (header) {
 			response->header = (void *) header;
@@ -184,7 +184,7 @@ void http_response_set_header (
 }
 
 // adds a new header to the response
-// the headers will be handled when calling 
+// the headers will be handled when calling
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
@@ -410,6 +410,50 @@ u8 http_response_add_cors_allow_methods_header (
 		response,
 		HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS,
 		methods
+	);
+
+}
+
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+// header to the response
+u8 http_response_add_content_range_header (
+	HttpResponse *response, const BytesRange *bytes_range
+) {
+
+	return http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_RANGE,
+		"bytes %ld-%ld/%ld",
+		bytes_range->start, bytes_range->end, bytes_range->file_size
+	);
+
+}
+
+// adds an "Accept-Ranges" with value "bytes"
+// adds a "Content-Type" with content type value
+// adds a "Content-Length" with value of chunk_size
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+void http_response_add_video_headers (
+	HttpResponse *response,
+	const ContentType content_type, const BytesRange *bytes_range
+) {
+
+	(void) http_response_add_header (
+		response, HTTP_HEADER_ACCEPT_RANGES, "bytes"
+	);
+
+	(void) http_response_add_content_type_header (
+		response, content_type
+	);
+
+	(void) http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_LENGTH,
+		"%ld", bytes_range->chunk_size
+	);
+
+	(void) http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_RANGE,
+		"bytes %ld-%ld/%ld",
+		bytes_range->start, bytes_range->end, bytes_range->file_size
 	);
 
 }
