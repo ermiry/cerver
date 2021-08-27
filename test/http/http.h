@@ -28,6 +28,8 @@ extern void http_tests_responses (void);
 
 extern void http_tests_multiparts (void);
 
+extern void http_tests_utils (void);
+
 /*** integration ***/
 
 extern void http_tests_origins_whitelist (void);

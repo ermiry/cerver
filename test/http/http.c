@@ -656,6 +656,8 @@ int main (int argc, char **argv) {
 	http_tests_requests ();
 	http_tests_responses ();
 	http_tests_multiparts ();
+	http_tests_utils ();
+	
 	http_tests_jwt ();
 
 	// integration tests
