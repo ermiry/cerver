@@ -193,18 +193,53 @@ u8 http_response_add_header (
 	u8 retval = 1;
 
 	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (response->headers[type]) {
-			str_delete (response->headers[type]);
-		}
-
-		else {
+		if (!response->headers[type]) {
+			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
 			response->n_headers += 1;
 		}
-		
-		response->headers[type] = str_create (
-			"%s: %s\r\n",
-			http_header_string (type), actual_header
+
+		str_set (
+			response->headers[type],
+			"%s: %s\r\n", http_header_string (type), actual_header
 		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// works like http_response_add_header ()
+// but generates the header values in the fly
+u8 http_response_add_custom_header (
+	HttpResponse *response,
+	const http_header type, const char *format, ...
+) {
+
+	u8 retval = 1;
+
+	if (response && format && (type < HTTP_HEADERS_SIZE)) {
+		va_list args;
+		va_start (args, format);
+
+		char header_value[HTTP_RESPONSE_HEADER_VALUE_SIZE] = { 0 };
+		(void) vsnprintf (
+			header_value, HTTP_RESPONSE_HEADER_VALUE_SIZE - 1,
+			format, args
+		);
+
+		if (!response->headers[type]) {
+			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
+			response->n_headers += 1;
+		}
+
+		str_set (
+			response->headers[type],
+			"%s: %s\r\n", http_header_string (type), header_value
+		);
+
+		va_end (args);
 
 		retval = 0;
 	}

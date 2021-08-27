@@ -15,6 +15,9 @@
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
+#define HTTP_RESPONSE_HEADER_SIZE				256
+#define HTTP_RESPONSE_HEADER_VALUE_SIZE			128
+
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #define HTTP_RESPONSE_SEND_FILE_HEADER_SIZE		256
@@ -82,6 +85,13 @@ CERVER_EXPORT void http_response_set_header (
 CERVER_EXPORT u8 http_response_add_header (
 	HttpResponse *response,
 	const http_header type, const char *actual_header
+);
+
+// works like http_response_add_header ()
+// but generates the header values in the fly
+CERVER_EXPORT u8 http_response_add_custom_header (
+	HttpResponse *response,
+	const http_header type, const char *format, ...
 );
 
 // adds a "Content-Type" header to the response
