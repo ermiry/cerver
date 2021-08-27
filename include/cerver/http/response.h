@@ -69,15 +69,16 @@ CERVER_EXPORT HttpResponse *http_response_get (void);
 // correctly disposes a HTTP response
 CERVER_EXPORT void http_response_return (HttpResponse *response);
 
-// sets the http response's status code to be set in the header when compilling
+// sets the HTTP response's status code to be set in the header
+// when compilling
 CERVER_EXPORT void http_response_set_status (
-	HttpResponse *res, const http_status status
+	HttpResponse *response, const http_status status
 );
 
 // sets the response's header, it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_header (
-	HttpResponse *res, void *header, size_t header_len
+	HttpResponse *response, const void *header, const size_t header_len
 );
 
 // adds a new header to the response
@@ -166,7 +167,7 @@ CERVER_EXPORT u8 http_response_add_cors_allow_methods_header (
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (
-	HttpResponse *res, void *data, size_t data_len
+	HttpResponse *response, const void *data, const size_t data_len
 );
 
 // sets a reference to a data buffer to send
@@ -174,7 +175,7 @@ CERVER_EXPORT void http_response_set_data (
 // this method is similar to packet_set_data_ref ()
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_set_data_ref (
-	HttpResponse *res, void *data, size_t data_size
+	HttpResponse *response, const void *data, const size_t data_size
 );
 
 // creates a new http response with the specified status code
@@ -193,9 +194,13 @@ CERVER_PUBLIC void http_response_compile_header (
 
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_response_compile (HttpResponse *res);
+CERVER_EXPORT u8 http_response_compile (
+	HttpResponse *response
+);
 
-CERVER_PUBLIC void http_response_print (const HttpResponse *res);
+CERVER_PUBLIC void http_response_print (
+	const HttpResponse *response
+);
 
 #pragma endregion
 
@@ -204,7 +209,7 @@ CERVER_PUBLIC void http_response_print (const HttpResponse *res);
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send (
-	HttpResponse *res,
+	HttpResponse *response,
 	const struct _HttpReceive *http_receive
 );
 
@@ -213,7 +218,7 @@ CERVER_EXPORT u8 http_response_send (
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send_split (
-	HttpResponse *res,
+	HttpResponse *response,
 	const struct _HttpReceive *http_receive
 );
 
