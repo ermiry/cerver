@@ -12,6 +12,7 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/origin.h"
 #include "cerver/http/status.h"
+#include "cerver/http/utils.h"
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
