@@ -1041,7 +1041,7 @@ static u8 http_response_handle_video_internal (
 	http_response_add_video_headers (response, content_type, bytes_range);
 	http_response_compile_multiple_headers (response);
 
-	(void) printf ("\n\n%s\n\n", response->header);
+	// (void) printf ("\n\n%s\n\n", response->header);
 
 	// pipe header
 	if (!http_response_send_actual (
@@ -1052,22 +1052,49 @@ static u8 http_response_handle_video_internal (
 
 		// open video
 		int video_fd = open (filename, O_RDONLY);
+		if (video_fd) {
+			// pipe video
+			ssize_t copied = 0;
 
-		// TODO:
-		// pipe video
-		total_sent += (size_t) sendfile (
-			http_receive->cr->connection->socket->sock_fd,
-			video_fd,
-			&bytes_range->start,
-			bytes_range->chunk_size
-		);
+			#ifdef HTTP_RESPONSE_DEBUG
+			unsigned int count = 0;
+			#endif
 
-		// update stats
-		http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
-		http_receive->cr->connection->stats->total_bytes_sent += total_sent;
+			do {
+				copied = sendfile (
+					http_receive->cr->connection->socket->sock_fd,
+					video_fd,
+					&bytes_range->start,
+					bytes_range->chunk_size
+				);
 
-		((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
-		((HttpReceive *) http_receive)->sent = total_sent;
+				#ifdef HTTP_RESPONSE_DEBUG
+				count += 1;
+				#endif
+			} while (copied > 0);
+
+			#ifdef HTTP_RESPONSE_DEBUG
+			cerver_log_debug (
+				"Video chunk took %u copies", count
+			);
+			#endif
+
+			total_sent += bytes_range->chunk_size;
+
+			// update stats
+			http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+			http_receive->cr->connection->stats->total_bytes_sent += total_sent;
+
+			((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
+			((HttpReceive *) http_receive)->sent = total_sent;
+		}
+
+		else {
+			cerver_log_error (
+				"http_response_handle_video () - Failed to open %s",
+				filename
+			);
+		}
 
 		(void) close (video_fd);
 	}
@@ -1078,6 +1105,7 @@ static u8 http_response_handle_video_internal (
 
 }
 
+// TODO: add variable arguments
 // handles the transmission of a video to the client
 // returns 0 on success, 1 on error
 u8 http_response_handle_video (
@@ -1133,7 +1161,10 @@ u8 http_response_handle_video (
 	}
 
 	else {
-		cerver_log_error ("Video %s not found!", filename);
+		cerver_log_error (
+			"http_response_handle_video () - Video %s not found!",
+			filename
+		);
 	}
 
 	return retval;
