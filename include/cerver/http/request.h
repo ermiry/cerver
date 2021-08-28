@@ -12,6 +12,7 @@
 #include "cerver/http/content.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/multipart.h"
+#include "cerver/http/utils.h"
 
 #define REQUEST_DIRNAME_SIZE			512
 
@@ -155,6 +156,12 @@ CERVER_EXPORT bool http_request_content_type_is_json (
 	const HttpRequest *http_request
 );
 
+// gets the byte range from the HTTP request header
+// returns true on success, false on error
+CERVER_EXPORT bool http_request_get_bytes_range (
+	const HttpRequest *http_request, BytesRange *bytes_range
+);
+
 // gets the HTTP request's decoded data
 // this data was created by the HTTP route's decode_data method
 // configured by http_route_set_decode_data ()
@@ -241,6 +248,12 @@ CERVER_EXPORT const DoubleList *http_request_get_body_values (
 
 // prints the HTTP request's headers values
 CERVER_PUBLIC void http_request_headers_print (
+	const HttpRequest *http_request
+);
+
+// works like http_request_headers_print ()
+// but prints NULL if header as not in the HTTP request
+CERVER_PUBLIC void http_request_headers_print_full (
 	const HttpRequest *http_request
 );
 

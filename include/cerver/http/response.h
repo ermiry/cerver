@@ -15,11 +15,18 @@
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
+#define HTTP_RESPONSE_HEADER_SIZE				256
+#define HTTP_RESPONSE_HEADER_VALUE_SIZE			128
+
+#define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
+
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #define HTTP_RESPONSE_SEND_FILE_HEADER_SIZE		256
 #define HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE	256
 #define HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE	256
+
+#define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,15 +71,16 @@ CERVER_EXPORT HttpResponse *http_response_get (void);
 // correctly disposes a HTTP response
 CERVER_EXPORT void http_response_return (HttpResponse *response);
 
-// sets the http response's status code to be set in the header when compilling
+// sets the HTTP response's status code to be set in the header
+// when compilling
 CERVER_EXPORT void http_response_set_status (
-	HttpResponse *res, const http_status status
+	HttpResponse *response, const http_status status
 );
 
 // sets the response's header, it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_header (
-	HttpResponse *res, void *header, size_t header_len
+	HttpResponse *response, const void *header, const size_t header_len
 );
 
 // adds a new header to the response
@@ -82,6 +90,13 @@ CERVER_EXPORT void http_response_set_header (
 CERVER_EXPORT u8 http_response_add_header (
 	HttpResponse *response,
 	const http_header type, const char *actual_header
+);
+
+// works like http_response_add_header ()
+// but generates the header values in the fly
+CERVER_EXPORT u8 http_response_add_custom_header (
+	HttpResponse *response,
+	const http_header type, const char *format, ...
 );
 
 // adds a "Content-Type" header to the response
@@ -151,10 +166,25 @@ CERVER_EXPORT u8 http_response_add_cors_allow_methods_header (
 	HttpResponse *response, const char *methods
 );
 
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+// header to the response
+CERVER_PUBLIC u8 http_response_add_content_range_header (
+	HttpResponse *response, const BytesRange *bytes_range
+);
+
+// adds an "Accept-Ranges" with value "bytes"
+// adds a "Content-Type" with content type value
+// adds a "Content-Length" with value of chunk_size
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+CERVER_PUBLIC void http_response_add_video_headers (
+	HttpResponse *response,
+	const ContentType content_type, const BytesRange *bytes_range
+);
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 CERVER_EXPORT void http_response_set_data (
-	HttpResponse *res, void *data, size_t data_len
+	HttpResponse *response, const void *data, const size_t data_len
 );
 
 // sets a reference to a data buffer to send
@@ -162,7 +192,7 @@ CERVER_EXPORT void http_response_set_data (
 // this method is similar to packet_set_data_ref ()
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_set_data_ref (
-	HttpResponse *res, void *data, size_t data_size
+	HttpResponse *response, const void *data, const size_t data_size
 );
 
 // creates a new http response with the specified status code
@@ -172,15 +202,22 @@ CERVER_EXPORT HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 );
 
-// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
-// ready to be sent from the request
-CERVER_PUBLIC void http_response_compile_header (HttpResponse *res);
+// uses the exiting response's values to correctly
+// create a HTTP header in a continuos buffer
+// ready to be sent by the response
+CERVER_PUBLIC void http_response_compile_header (
+	HttpResponse *response
+);
 
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_response_compile (HttpResponse *res);
+CERVER_EXPORT u8 http_response_compile (
+	HttpResponse *response
+);
 
-CERVER_PUBLIC void http_response_print (const HttpResponse *res);
+CERVER_PUBLIC void http_response_print (
+	const HttpResponse *response
+);
 
 #pragma endregion
 
@@ -189,7 +226,7 @@ CERVER_PUBLIC void http_response_print (const HttpResponse *res);
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send (
-	HttpResponse *res,
+	HttpResponse *response,
 	const struct _HttpReceive *http_receive
 );
 
@@ -198,7 +235,7 @@ CERVER_EXPORT u8 http_response_send (
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_send_split (
-	HttpResponse *res,
+	HttpResponse *response,
 	const struct _HttpReceive *http_receive
 );
 
@@ -247,6 +284,17 @@ CERVER_EXPORT u8 http_response_render_json (
 CERVER_EXPORT u8 http_response_render_file (
 	const struct _HttpReceive *http_receive,
 	const http_status status,
+	const char *filename
+);
+
+#pragma endregion
+
+#pragma region videos
+
+// handles the transmission of a video to the client
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_handle_video (
+	const struct _HttpReceive *http_receive,
 	const char *filename
 );
 

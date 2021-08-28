@@ -17,8 +17,10 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/origin.h"
+#include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/status.h"
+#include "cerver/http/utils.h"
 
 #include "cerver/http/json/json.h"
 
@@ -69,26 +71,26 @@ static void http_response_producer_delete (
 
 void *http_response_new (void) {
 
-	HttpResponse *res = (HttpResponse *) malloc (sizeof (HttpResponse));
-	if (res) {
-		res->status = HTTP_STATUS_OK;
+	HttpResponse *response = (HttpResponse *) malloc (sizeof (HttpResponse));
+	if (response) {
+		response->status = HTTP_STATUS_OK;
 
-		res->n_headers = 0;
+		response->n_headers = 0;
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-			res->headers[i] = NULL;
+			response->headers[i] = NULL;
 
-		res->header = NULL;
-		res->header_len = 0;
+		response->header = NULL;
+		response->header_len = 0;
 
-		res->data = NULL;
-		res->data_len = 0;
-		res->data_ref = false;
+		response->data = NULL;
+		response->data_len = 0;
+		response->data_ref = false;
 
-		res->res = NULL;
-		res->res_len = 0;
-	} 
+		response->res = NULL;
+		response->res_len = 0;
+	}
 
-	return res;
+	return response;
 
 }
 
@@ -154,35 +156,35 @@ void http_response_return (HttpResponse *response) {
 
 // sets the HTTP response's status code to be used in the header
 void http_response_set_status (
-	HttpResponse *res, const http_status status
+	HttpResponse *response, const http_status status
 ) {
 
-	if (res) res->status = status;
+	if (response) response->status = status;
 
 }
 
 // sets the response's header, it will replace the existing one
 // the data will be deleted when the response gets deleted
 void http_response_set_header (
-	HttpResponse *res, void *header, size_t header_len
+	HttpResponse *response, const void *header, const size_t header_len
 ) {
 
-	if (res) {
-		if (res->header) {
-			free (res->header);
-			res->header = NULL;
-		} 
+	if (response) {
+		if (response->header) {
+			free (response->header);
+			response->header = NULL;
+		}
 
 		if (header) {
-			res->header = header;
-			res->header_len = header_len;
+			response->header = (void *) header;
+			response->header_len = header_len;
 		}
 	}
 
 }
 
 // adds a new header to the response
-// the headers will be handled when calling 
+// the headers will be handled when calling
 // http_response_compile () to generate a continuos header buffer
 // returns 0 on success, 1 on error
 u8 http_response_add_header (
@@ -193,18 +195,53 @@ u8 http_response_add_header (
 	u8 retval = 1;
 
 	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (response->headers[type]) {
-			str_delete (response->headers[type]);
-		}
-
-		else {
+		if (!response->headers[type]) {
+			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
 			response->n_headers += 1;
 		}
-		
-		response->headers[type] = str_create (
-			"%s: %s\r\n",
-			http_header_string (type), actual_header
+
+		str_set (
+			response->headers[type],
+			"%s: %s\r\n", http_header_string (type), actual_header
 		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// works like http_response_add_header ()
+// but generates the header values in the fly
+u8 http_response_add_custom_header (
+	HttpResponse *response,
+	const http_header type, const char *format, ...
+) {
+
+	u8 retval = 1;
+
+	if (response && format && (type < HTTP_HEADERS_SIZE)) {
+		va_list args;
+		va_start (args, format);
+
+		char header_value[HTTP_RESPONSE_HEADER_VALUE_SIZE] = { 0 };
+		(void) vsnprintf (
+			header_value, HTTP_RESPONSE_HEADER_VALUE_SIZE - 1,
+			format, args
+		);
+
+		if (!response->headers[type]) {
+			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
+			response->n_headers += 1;
+		}
+
+		str_set (
+			response->headers[type],
+			"%s: %s\r\n", http_header_string (type), header_value
+		);
+
+		va_end (args);
 
 		retval = 0;
 	}
@@ -249,19 +286,14 @@ void http_response_add_json_headers (
 	HttpResponse *response, const size_t json_len
 ) {
 
-	char buffer[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
-	(void) snprintf (
-		buffer, HTTP_RESPONSE_CONTENT_LENGTH_SIZE - 1,
-		"%lu", json_len
-	);
-
 	(void) http_response_add_header (
 		response, HTTP_HEADER_CONTENT_TYPE,
 		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
 	);
 
-	(void) http_response_add_header (
-		response, HTTP_HEADER_CONTENT_LENGTH, buffer
+	(void) http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_LENGTH,
+		"%lu", json_len
 	);
 
 }
@@ -382,21 +414,65 @@ u8 http_response_add_cors_allow_methods_header (
 
 }
 
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+// header to the response
+u8 http_response_add_content_range_header (
+	HttpResponse *response, const BytesRange *bytes_range
+) {
+
+	return http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_RANGE,
+		"bytes %ld-%ld/%ld",
+		bytes_range->start, bytes_range->end, bytes_range->file_size
+	);
+
+}
+
+// adds an "Accept-Ranges" with value "bytes"
+// adds a "Content-Type" with content type value
+// adds a "Content-Length" with value of chunk_size
+// adds a "Content-Range: bytes ${start}-${end}/${file_size}"
+void http_response_add_video_headers (
+	HttpResponse *response,
+	const ContentType content_type, const BytesRange *bytes_range
+) {
+
+	(void) http_response_add_header (
+		response, HTTP_HEADER_ACCEPT_RANGES, "bytes"
+	);
+
+	(void) http_response_add_content_type_header (
+		response, content_type
+	);
+
+	(void) http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_LENGTH,
+		"%ld", bytes_range->chunk_size
+	);
+
+	(void) http_response_add_custom_header (
+		response, HTTP_HEADER_CONTENT_RANGE,
+		"bytes %ld-%ld/%ld",
+		bytes_range->start, bytes_range->end, bytes_range->file_size
+	);
+
+}
+
 // sets the response's data (body), it will replace the existing one
 // the data will be deleted when the response gets deleted
 void http_response_set_data (
-	HttpResponse *res, void *data, size_t data_len
+	HttpResponse *response, const void *data, const size_t data_len
 ) {
 
-	if (res) {
-		if (res->data) {
-			free (res->data);
-			res->data = NULL;
+	if (response) {
+		if (response->data) {
+			free (response->data);
+			response->data = NULL;
 		}
 
 		if (data) {
-			res->data = data;
-			res->data_len = data_len;
+			response->data = (void *) data;
+			response->data_len = data_len;
 		}
 	}
 
@@ -407,19 +483,19 @@ void http_response_set_data (
 // this method is similar to packet_set_data_ref ()
 // returns 0 on success, 1 on error
 u8 http_response_set_data_ref (
-	HttpResponse *res, void *data, size_t data_size
+	HttpResponse *response, const void *data, const size_t data_size
 ) {
 
 	u8 retval = 1;
 
-	if (res && data) {
-		if (!res->data_ref) {
-			if (res->data) free (res->data);
+	if (response && data) {
+		if (!response->data_ref) {
+			if (response->data) free (response->data);
 		}
 
-		res->data = data;
-		res->data_len = data_size;
-		res->data_ref = true;
+		response->data = (void *) data;
+		response->data_len = data_size;
+		response->data_ref = true;
 
 		retval = 0;
 	}
@@ -430,133 +506,143 @@ u8 http_response_set_data_ref (
 
 // creates a new http response with the specified status code
 // ability to set the response's data (body); it will be copied to the response
-// and the original data can be safely deleted 
+// and the original data can be safely deleted
 HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 ) {
 
-	HttpResponse *res = http_response_new ();
-	if (res) {
-		res->status = status;
+	HttpResponse *response = http_response_new ();
+	if (response) {
+		response->status = status;
 
 		if (data) {
-			res->data = malloc (data_len);
-			if (res->data) {
-				(void) memcpy (res->data, data, data_len);
-				res->data_len = data_len;
+			response->data = malloc (data_len);
+			if (response->data) {
+				(void) memcpy (response->data, data, data_len);
+				response->data_len = data_len;
 			}
 		}
 	}
 
-	return res;
+	return response;
 
 }
 
-// uses the exiting response's values to correctly create a HTTP header in a continuos buffer
-// ready to be sent from the request
-void http_response_compile_header (HttpResponse *res) {
+static void http_response_compile_single_header (
+	HttpResponse *response
+) {
 
-	if (res->n_headers || producer->http_cerver->n_response_headers) {
-		char *main_header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n", 
-			res->status, http_status_string (res->status),
-			CERVER_VERSION
-		);
+	response->header = (char *) calloc (HTTP_RESPONSE_MAIN_HEADER_SIZE, sizeof (char));
 
-		size_t main_header_len = strlen (main_header);
-		res->header_len = main_header_len;
+	response->header_len = (size_t) snprintf (
+		response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n\r\n",
+		response->status, http_status_string (response->status),
+		CERVER_VERSION
+	);
 
-		u8 i = 0;
-		for (; i < HTTP_HEADERS_SIZE; i++) {
-			if (res->headers[i]) {
-				res->header_len += res->headers[i]->len;
-			}
+}
 
-			else if (producer->http_cerver->response_headers[i]) {
-				res->header_len += producer->http_cerver->response_headers[i]->len;
-			}
+static void http_response_compile_multiple_headers (
+	HttpResponse *response
+) {
+
+	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE] = { 0 };
+	(void) snprintf (
+		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
+		response->status, http_status_string (response->status),
+		CERVER_VERSION
+	);
+
+	size_t main_header_len = strlen (main_header);
+	response->header_len = main_header_len;
+
+	u8 i = 0;
+	for (; i < HTTP_HEADERS_SIZE; i++) {
+		if (response->headers[i]) {
+			response->header_len += response->headers[i]->len;
 		}
 
-		res->header_len += 2;	// \r\n
+		else if (producer->http_cerver->response_headers[i]) {
+			response->header_len += producer->http_cerver->response_headers[i]->len;
+		}
+	}
 
-		res->header = calloc (res->header_len, sizeof (char));
+	response->header_len += 2;	// \r\n
 
-		char *end = (char *) res->header;
-		(void) memcpy (end, main_header, main_header_len);
-		end += main_header_len;
-		for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
-			if (res->headers[i]) {
-				(void) memcpy (end, res->headers[i]->str, res->headers[i]->len);
-				end += res->headers[i]->len;
-			}
+	response->header = calloc (response->header_len, sizeof (char));
 
-			else if (producer->http_cerver->response_headers[i]) {
-				(void) memcpy (
-					end,
-					producer->http_cerver->response_headers[i]->str,
-					producer->http_cerver->response_headers[i]->len
-				);
-				
-				end += producer->http_cerver->response_headers[i]->len;
-			}
+	char *end = (char *) response->header;
+	(void) memcpy (end, main_header, main_header_len);
+	end += main_header_len;
+	for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		if (response->headers[i]) {
+			(void) memcpy (end, response->headers[i]->str, response->headers[i]->len);
+			end += response->headers[i]->len;
 		}
 
-		// append header end
-		*end = '\r';
-		end += 1;
-		*end = '\n';
+		else if (producer->http_cerver->response_headers[i]) {
+			(void) memcpy (
+				end,
+				producer->http_cerver->response_headers[i]->str,
+				producer->http_cerver->response_headers[i]->len
+			);
 
-		free (main_header);
+			end += producer->http_cerver->response_headers[i]->len;
+		}
+	}
+
+	// append header end
+	*end = '\r';
+	end += 1;
+	*end = '\n';
+
+}
+
+// uses the exiting response's values to correctly
+// create a HTTP header in a continuos buffer
+// ready to be sent by the response
+void http_response_compile_header (HttpResponse *response) {
+
+	if (response->n_headers || producer->http_cerver->n_response_headers) {
+		http_response_compile_multiple_headers (response);
 	}
 
 	// create the default header
 	else {
-		res->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			res->status, http_status_string (res->status),
-			CERVER_VERSION
-		);
-
-		res->header_len = strlen ((const char *) res->header);
+		http_response_compile_single_header (response);
 	}
 
 }
 
 // merge the response header and the data into the final response
 // returns 0 on success, 1 on error
-u8 http_response_compile (HttpResponse *res) {
+u8 http_response_compile (HttpResponse *response) {
 
 	u8 retval = 1;
 
-	if (res) {
-		if (!res->header) {
-			// res->header = c_string_create (
-			// 	"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n\r\n", 
-			// 	res->status, http_status_string (res->status),
-			// 	CERVER_VERSION
-			// );
-
-			// res->header_len = strlen ((const char *) res->header);
-
-			http_response_compile_header (res);
+	if (response) {
+		if (!response->header) {
+			http_response_compile_header (response);
 		}
 
 		// compile into a continous buffer
-		if (res->res) {
-			free (res->res);
-			res->res = NULL;
-			res->res_len = 0;
+		if (response->res) {
+			free (response->res);
+			response->res = NULL;
+			response->res_len = 0;
 		}
 
-		res->res_len = res->header_len + res->data_len;
-		res->res = malloc (res->res_len);
-		if (res->res) {
-			char *end = (char *) res->res;
-			(void) memcpy (end, res->header, res->header_len);
+		response->res_len = response->header_len + response->data_len;
+		response->res = malloc (response->res_len);
+		if (response->res) {
+			char *end = (char *) response->res;
+			(void) memcpy (end, response->header, response->header_len);
 
-			if (res->data) {
-				end += res->header_len;
-				(void) memcpy (end, res->data, res->data_len);
+			if (response->data) {
+				end += response->header_len;
+				(void) memcpy (end, response->data, response->data_len);
 			}
 
 			retval = 0;
@@ -567,13 +653,13 @@ u8 http_response_compile (HttpResponse *res) {
 
 }
 
-void http_response_print (const HttpResponse *res) {
+void http_response_print (const HttpResponse *response) {
 
-	if (res) {
-		if (res->res) {
+	if (response) {
+		if (response->res) {
 			(void) printf (
 				"\n%.*s\n\n",
-				(int) res->res_len, (char *) res->res
+				(int) response->res_len, (char *) response->res
 			);
 		}
 	}
@@ -585,7 +671,7 @@ void http_response_print (const HttpResponse *res) {
 #pragma region send
 
 static u8 http_response_send_actual (
-	Socket *socket, 
+	Socket *socket,
 	const char *data, size_t data_size
 ) {
 
@@ -612,25 +698,25 @@ static u8 http_response_send_actual (
 // sends a response through the connection's socket
 // returns 0 on success, 1 on error
 u8 http_response_send (
-	HttpResponse *res,
+	HttpResponse *response,
 	const HttpReceive *http_receive
 ) {
 
 	u8 retval = 1;
 
-	if (res && http_receive->cr->connection) {
-		if (res->res) {
+	if (response && http_receive->cr->connection) {
+		if (response->res) {
 			if (!http_response_send_actual (
 				http_receive->cr->connection->socket,
-				(char *) res->res, res->res_len
+				(char *) response->res, response->res_len
 			)) {
 				if (http_receive->cr->cerver)
-					http_receive->cr->cerver->stats->total_bytes_sent += res->res_len;
+					http_receive->cr->cerver->stats->total_bytes_sent += response->res_len;
 
-				http_receive->cr->connection->stats->total_bytes_sent += res->res_len;
+				http_receive->cr->connection->stats->total_bytes_sent += response->res_len;
 
-				((HttpReceive *) http_receive)->status = res->status;
-				((HttpReceive *) http_receive)->sent = res->res_len;
+				((HttpReceive *) http_receive)->status = response->status;
+				((HttpReceive *) http_receive)->sent = response->res_len;
 
 				retval = 0;
 			}
@@ -646,30 +732,30 @@ u8 http_response_send (
 // use this for maximun efficiency
 // returns 0 on success, 1 on error
 u8 http_response_send_split (
-	HttpResponse *res,
+	HttpResponse *response,
 	const HttpReceive *http_receive
 ) {
 
 	u8 retval = 1;
 
-	if (res && http_receive->cr->connection) {
-		if (res->header && res->data) {
+	if (response && http_receive->cr->connection) {
+		if (response->header && response->data) {
 			if (!http_response_send_actual (
 				http_receive->cr->connection->socket,
-				(char *) res->header, res->header_len
+				(char *) response->header, response->header_len
 			)) {
 				if (!http_response_send_actual (
 					http_receive->cr->connection->socket,
-					(char *) res->data, res->data_len
+					(char *) response->data, response->data_len
 				)) {
-					size_t total_size = res->header_len + res->data_len;
+					size_t total_size = response->header_len + response->data_len;
 
 					if (http_receive->cr->cerver)
 						http_receive->cr->cerver->stats->total_bytes_sent += total_size;
 
 					http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
-					((HttpReceive *) http_receive)->status = res->status;
+					((HttpReceive *) http_receive)->status = response->status;
 					((HttpReceive *) http_receive)->sent = total_size;
 
 					retval = 0;
@@ -691,13 +777,13 @@ u8 http_response_create_and_send (
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_create (status, data, data_len);
-	if (res) {
-		if (!http_response_compile (res)) {
-			retval = http_response_send (res, http_receive);
+	HttpResponse *response = http_response_create (status, data, data_len);
+	if (response) {
+		if (!http_response_compile (response)) {
+			retval = http_response_send (response, http_receive);
 		}
-		
-		http_response_delete (res);
+
+		http_response_delete (response);
 	}
 
 	return retval;
@@ -713,7 +799,7 @@ u8 http_response_send_file (
 	int file, const char *filename,
 	struct stat *filestatus
 ) {
-	
+
 	u8 retval = 1;
 
 	unsigned int ext_len = 0;
@@ -728,7 +814,7 @@ u8 http_response_send_file (
 		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -753,8 +839,8 @@ u8 http_response_send_file (
 
 			// send the actual file
 			if (!sendfile (
-				http_receive->cr->connection->socket->sock_fd, 
-				file, 
+				http_receive->cr->connection->socket->sock_fd,
+				file,
 				0, filestatus->st_size
 			)) {
 				total_size += (size_t) filestatus->st_size;
@@ -824,7 +910,7 @@ u8 http_response_render_text (
 		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -862,7 +948,7 @@ u8 http_response_render_json (
 		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n", 
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -885,6 +971,7 @@ u8 http_response_render_json (
 
 }
 
+// TODO: add variable arguments
 // opens the selected file and sends it back to the user
 // this method takes care of generating the header based on the file values
 // returns 0 on success, 1 on error
@@ -916,26 +1003,196 @@ u8 http_response_render_file (
 
 #pragma endregion
 
+#pragma region videos
+
+static ContentType http_response_handle_video_content (
+	const char *filename
+) {
+
+	ContentType content_type = HTTP_CONTENT_TYPE_MP4;
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	if (ext) {
+		content_type = http_content_type_by_extension (ext);
+	}
+
+	return content_type;
+
+}
+
+static u8 http_response_handle_video_internal (
+	const HttpReceive *http_receive,
+	const char *filename,
+	BytesRange *bytes_range
+) {
+
+	u8 retval = 1;
+
+	// create response
+	HttpResponse *response = http_response_get ();
+
+	// generate header
+	response->status = HTTP_STATUS_PARTIAL_CONTENT;
+	const ContentType content_type = http_response_handle_video_content (filename);
+	http_response_add_video_headers (response, content_type, bytes_range);
+	http_response_compile_multiple_headers (response);
+
+	// (void) printf ("\n\n%s\n\n", response->header);
+
+	// pipe header
+	if (!http_response_send_actual (
+		http_receive->cr->connection->socket,
+		response->header, response->header_len
+	)) {
+		size_t total_sent = response->header_len;
+
+		// open video
+		int video_fd = open (filename, O_RDONLY);
+		if (video_fd) {
+			// pipe video
+			ssize_t copied = 0;
+
+			#ifdef HTTP_RESPONSE_DEBUG
+			unsigned int count = 0;
+			#endif
+
+			do {
+				copied = sendfile (
+					http_receive->cr->connection->socket->sock_fd,
+					video_fd,
+					&bytes_range->start,
+					bytes_range->chunk_size
+				);
+
+				#ifdef HTTP_RESPONSE_DEBUG
+				count += 1;
+				#endif
+			} while (copied > 0);
+
+			#ifdef HTTP_RESPONSE_DEBUG
+			cerver_log_debug (
+				"Video chunk took %u copies", count
+			);
+			#endif
+
+			total_sent += bytes_range->chunk_size;
+
+			// update stats
+			http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+			http_receive->cr->connection->stats->total_bytes_sent += total_sent;
+
+			((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
+			((HttpReceive *) http_receive)->sent = total_sent;
+		}
+
+		else {
+			cerver_log_error (
+				"http_response_handle_video () - Failed to open %s",
+				filename
+			);
+		}
+
+		(void) close (video_fd);
+	}
+
+	http_response_return (response);
+
+	return retval;
+
+}
+
+// TODO: add variable arguments
+// handles the transmission of a video to the client
+// returns 0 on success, 1 on error
+u8 http_response_handle_video (
+	const HttpReceive *http_receive,
+	const char *filename
+) {
+
+	u8 retval = 1;
+
+	// check that video exists
+	struct stat filestats = { 0 };
+	if (!stat (filename, &filestats)) {
+		// get range
+		BytesRange bytes_range = {
+			.file_size = filestats.st_size,
+			.type = HTTP_RANGE_TYPE_NONE,
+			.start = 0, .end = 0,
+			.chunk_size = HTTP_RESPONSE_VIDEO_CHUNK_SIZE
+		};
+
+		http_request_get_bytes_range (
+			http_receive->request, &bytes_range
+		);
+
+		switch (bytes_range.type) {
+			case HTTP_RANGE_TYPE_EMPTY: {
+				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
+			} break;
+
+			case HTTP_RANGE_TYPE_FIRST: {
+				long bytes_left = bytes_range.file_size - bytes_range.start;
+				if (bytes_left < bytes_range.chunk_size) {
+					bytes_range.chunk_size = bytes_left;
+				}
+
+				bytes_range.end = bytes_range.start + bytes_range.chunk_size;
+			} break;
+
+			case HTTP_RANGE_TYPE_FULL: {
+				bytes_range.chunk_size = bytes_range.end - bytes_range.start;
+			} break;
+
+			default: break;
+		}
+
+		bytes_range.end -= 1;
+
+		// (void) printf ("chunk size: %ld\n", bytes_range.chunk_size);
+
+		retval = http_response_handle_video_internal (
+			http_receive, filename, &bytes_range
+		);
+	}
+
+	else {
+		cerver_log_error (
+			"http_response_handle_video () - Video %s not found!",
+			filename
+		);
+	}
+
+	return retval;
+
+}
+
+#pragma endregion
+
 #pragma region json
 
 static void http_response_create_json_common (
-	HttpResponse *res, const http_status status,
+	HttpResponse *response, const http_status status,
 	const char *json, const size_t json_len
 ) {
 
-	res->status = status;
+	response->status = status;
 
 	// add headers
-	http_response_add_content_type_header (res, HTTP_CONTENT_TYPE_JSON);
-	http_response_add_content_length_header (res, json_len);
+	http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
+	http_response_add_content_length_header (response, json_len);
 
 	// add body
-	res->data = (char *) json;
-	res->data_len = json_len;
-	res->data_ref = true;
+	response->data = (char *) json;
+	response->data_len = json_len;
+	response->data_ref = true;
 
 	// generate response
-	(void) http_response_compile (res);
+	(void) http_response_compile (response);
 
 }
 
@@ -943,35 +1200,35 @@ HttpResponse *http_response_create_json (
 	const http_status status, const char *json, const size_t json_len
 ) {
 
-	HttpResponse *res = NULL;
+	HttpResponse *response = NULL;
 
 	if (json) {
-		res = http_response_new ();
-		if (res) {
+		response = http_response_new ();
+		if (response) {
 			http_response_create_json_common (
-				res, status,
+				response, status,
 				json, json_len
 			);
 		}
 	}
 
-	return res;
+	return response;
 
 }
 
 HttpResponse *http_response_create_json_key_value (
 	const http_status status, const char *key, const char *value
 ) {
-	
-	HttpResponse *res = NULL;
+
+	HttpResponse *response = NULL;
 
 	if (key && value) {
-		res = http_response_new ();
-		if (res) {
+		response = http_response_new ();
+		if (response) {
 			char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
 			if (json) {
 				http_response_create_json_common (
-					res, status,
+					response, status,
 					json, strlen (json)
 				);
 
@@ -980,7 +1237,7 @@ HttpResponse *http_response_create_json_key_value (
 		}
 	}
 
-	return res;
+	return response;
 
 }
 
@@ -988,41 +1245,41 @@ static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
-	HttpResponse *res = http_response_new ();
-	if (res) {
-		res->status = status;
+	HttpResponse *response = http_response_new ();
+	if (response) {
+		response->status = status;
 
 		// body
 		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
 		if (json) {
-			res->data = json;
-			res->data_len = strlen (json);
+			response->data = json;
+			response->data_len = strlen (json);
 		}
 
 		// header
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_TYPE, "application/json");
 
 		// char json_len[16] = { 0 };
-		// snprintf (json_len, 16, "%ld", res->data_len);
+		// snprintf (json_len, 16, "%ld", response->data_len);
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
-		res->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_string (res->status),
+		response->header = c_string_create (
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			response->status, http_status_string (response->status),
 			CERVER_VERSION,
-			res->data_len
+			response->data_len
 		);
 
-		res->header_len = strlen ((const char *) res->header);
+		response->header_len = strlen ((const char *) response->header);
 
-		(void) http_response_compile (res);
+		(void) http_response_compile (response);
 	}
 
-	return res;
+	return response;
 
 }
 
-// creates a http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { msg: "your message" }
 HttpResponse *http_response_json_msg (
 	const http_status status, const char *msg
@@ -1041,20 +1298,20 @@ u8 http_response_json_msg_send (
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_msg (status, msg);
-	if (res) {
+	HttpResponse *response = http_response_json_msg (status, msg);
+	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
-		http_response_print (res);
+		http_response_print (response);
 		#endif
-		retval = http_response_send (res, http_receive);
-		http_response_delete (res);
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
 	}
 
 	return retval;
 
 }
 
-// creates a http response with the defined status code ready to be sent 
+// creates a http response with the defined status code ready to be sent
 // and a data (body) with a json message of type { error: "your error message" }
 HttpResponse *http_response_json_error (
 	const http_status status, const char *error_msg
@@ -1073,13 +1330,13 @@ u8 http_response_json_error_send (
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_error (status, error_msg);
-	if (res) {
+	HttpResponse *response = http_response_json_error (status, error_msg);
+	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
-		http_response_print (res);
+		http_response_print (response);
 		#endif
-		retval = http_response_send (res, http_receive);
-		http_response_delete (res);
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
 	}
 
 	return retval;
@@ -1105,13 +1362,13 @@ u8 http_response_json_key_value_send (
 
 	u8 retval = 1;
 
-	HttpResponse *res = http_response_json_key_value (status, key, value);
-	if (res) {
+	HttpResponse *response = http_response_json_key_value (status, key, value);
+	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
-		http_response_print (res);
+		http_response_print (response);
 		#endif
-		retval = http_response_send (res, http_receive);
-		http_response_delete (res);
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
 	}
 
 	return retval;
@@ -1122,26 +1379,26 @@ static HttpResponse *http_response_json_custom_internal (
 	const http_status status, const char *json
 ) {
 
-	HttpResponse *res = http_response_new ();
-	if (res) {
-		res->status = status;
+	HttpResponse *response = http_response_new ();
+	if (response) {
+		response->status = status;
 
 		// body
-		res->data = strdup (json);
-		res->data_len = strlen (json);
+		response->data = strdup (json);
+		response->data_len = strlen (json);
 
 		// header
-		res->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_string (res->status),
+		response->header = c_string_create (
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			response->status, http_status_string (response->status),
 			CERVER_VERSION,
-			res->data_len
+			response->data_len
 		);
 
-		res->header_len = strlen ((const char *) res->header);
+		response->header_len = strlen ((const char *) response->header);
 	}
 
-	return res;
+	return response;
 
 }
 
@@ -1150,14 +1407,14 @@ HttpResponse *http_response_json_custom (
 	const http_status status, const char *json
 ) {
 
-	HttpResponse *res = NULL;
+	HttpResponse *response = NULL;
 	if (json) {
-		res = http_response_json_custom_internal (status, json);
+		response = http_response_json_custom_internal (status, json);
 
-		(void) http_response_compile (res);	
+		(void) http_response_compile (response);
 	}
 
-	return res;
+	return response;
 
 }
 
@@ -1171,14 +1428,14 @@ u8 http_response_json_custom_send (
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		HttpResponse *res = http_response_json_custom_internal (status, json);
-		if (res) {
+		HttpResponse *response = http_response_json_custom_internal (status, json);
+		if (response) {
 			#ifdef HTTP_RESPONSE_DEBUG
-			(void) printf ("\n%.*s", (int) res->header_len, (char *) res->header);
-			(void) printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
+			(void) printf ("\n%.*s", (int) response->header_len, (char *) response->header);
+			(void) printf ("\n%.*s\n\n", (int) response->data_len, (char *) response->data);
 			#endif
-			retval = http_response_send_split (res, http_receive);
-			http_response_delete (res);
+			retval = http_response_send_split (response, http_receive);
+			http_response_delete (response);
 		}
 	}
 
@@ -1191,27 +1448,27 @@ static HttpResponse *http_response_json_custom_reference_internal (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *res = http_response_new ();
-	if (res) {
-		res->status = status;
+	HttpResponse *response = http_response_new ();
+	if (response) {
+		response->status = status;
 
 		// body
-		res->data_ref = true;
-		res->data = (char *) json;
-		res->data_len = json_len;
+		response->data_ref = true;
+		response->data = (char *) json;
+		response->data_len = json_len;
 
 		// header
-		res->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n", 
-			res->status, http_status_string (res->status),
+		response->header = c_string_create (
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			response->status, http_status_string (response->status),
 			CERVER_VERSION,
-			res->data_len
+			response->data_len
 		);
 
-		res->header_len = strlen ((const char *) res->header);
+		response->header_len = strlen ((const char *) response->header);
 	}
 
-	return res;
+	return response;
 
 }
 
@@ -1222,17 +1479,17 @@ HttpResponse *http_response_json_custom_reference (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *res = NULL;
+	HttpResponse *response = NULL;
 	if (json) {
-		res = http_response_json_custom_reference_internal (
+		response = http_response_json_custom_reference_internal (
 			status,
 			json, json_len
 		);
-		
-		(void) http_response_compile (res);
+
+		(void) http_response_compile (response);
 	}
 
-	return res;
+	return response;
 
 }
 
@@ -1247,18 +1504,18 @@ u8 http_response_json_custom_reference_send (
 	u8 retval = 1;
 
 	if (http_receive && json) {
-		HttpResponse *res = http_response_json_custom_reference_internal (
+		HttpResponse *response = http_response_json_custom_reference_internal (
 			status,
 			json, json_len
 		);
 
-		if (res) {
+		if (response) {
 			#ifdef HTTP_RESPONSE_DEBUG
-			(void) printf ("\n%.*s", (int) res->header_len, (char *) res->header);
-			(void) printf ("\n%.*s\n\n", (int) res->data_len, (char *) res->data);
+			(void) printf ("\n%.*s", (int) response->header_len, (char *) response->header);
+			(void) printf ("\n%.*s\n\n", (int) response->data_len, (char *) response->data);
 			#endif
-			retval = http_response_send_split (res, http_receive);
-			http_response_delete (res);
+			retval = http_response_send_split (response, http_receive);
+			http_response_delete (response);
 		}
 	}
 

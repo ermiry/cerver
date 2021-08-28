@@ -1,0 +1,21 @@
+version: '3'
+services:
+  api:
+    restart: always
+    image: ermiry/cerver:local
+    command: ./bin/web/web
+    ports:
+      - 5000
+    volumes:
+      - ./data:/home/cerver/data
+
+  nginx:
+    restart: always
+    image: ermiry/cerver-nginx:latest
+    ports:
+      - '80:80'
+
+networks:
+  default:
+    external:
+      name: cerver
