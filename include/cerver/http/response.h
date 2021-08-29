@@ -16,9 +16,6 @@
 
 #define HTTP_RESPONSE_POOL_INIT					32
 
-#define HTTP_RESPONSE_HEADER_SIZE				256
-#define HTTP_RESPONSE_HEADER_VALUE_SIZE			128
-
 #define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
 
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
@@ -43,7 +40,7 @@ struct _HttpResponse {
 	http_status status;
 
 	u8 n_headers;
-	String *headers[HTTP_HEADERS_SIZE];
+	HttpHeader headers[HTTP_HEADERS_SIZE];
 
 	void *header;
 	size_t header_len;

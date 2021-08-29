@@ -76,8 +76,10 @@ void *http_response_new (void) {
 		response->status = HTTP_STATUS_OK;
 
 		response->n_headers = 0;
-		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-			response->headers[i] = NULL;
+		(void) memset (
+			response->headers, 0,
+			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
+		);
 
 		response->header = NULL;
 		response->header_len = 0;
@@ -99,10 +101,10 @@ void http_response_reset (HttpResponse *response) {
 	response->status = HTTP_STATUS_OK;
 
 	response->n_headers = 0;
-	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++) {
-		str_delete (response->headers[i]);
-		response->headers[i] = NULL;
-	}
+	(void) memset (
+		response->headers, 0,
+		HTTP_HEADERS_SIZE * sizeof (HttpHeader)
+	);
 
 	response->header_len = 0;
 	if (response->header) {
@@ -195,14 +197,12 @@ u8 http_response_add_header (
 	u8 retval = 1;
 
 	if (response && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (!response->headers[type]) {
-			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
+		if (response->headers[type].len <= 0) {
 			response->n_headers += 1;
 		}
 
-		str_set (
-			response->headers[type],
-			"%s: %s\r\n", http_header_string (type), actual_header
+		http_response_header_set_with_type (
+			&response->headers[type], type, actual_header
 		);
 
 		retval = 0;
@@ -225,20 +225,13 @@ u8 http_response_add_custom_header (
 		va_list args;
 		va_start (args, format);
 
-		char header_value[HTTP_RESPONSE_HEADER_VALUE_SIZE] = { 0 };
-		(void) vsnprintf (
-			header_value, HTTP_RESPONSE_HEADER_VALUE_SIZE - 1,
-			format, args
-		);
-
-		if (!response->headers[type]) {
-			response->headers[type] = str_allocate (HTTP_RESPONSE_HEADER_SIZE);
+		if (response->headers[type].len <= 0) {
 			response->n_headers += 1;
 		}
 
-		str_set (
-			response->headers[type],
-			"%s: %s\r\n", http_header_string (type), header_value
+		http_response_header_set_with_type_and_args (
+			&response->headers[type], type,
+			format, args
 		);
 
 		va_end (args);
@@ -560,8 +553,8 @@ static void http_response_compile_multiple_headers (
 
 	u8 i = 0;
 	for (; i < HTTP_HEADERS_SIZE; i++) {
-		if (response->headers[i]) {
-			response->header_len += response->headers[i]->len;
+		if (response->headers[i].len > 0) {
+			response->header_len += response->headers[i].len;
 		}
 
 		else if (producer->http_cerver->response_headers[i]) {
@@ -577,9 +570,9 @@ static void http_response_compile_multiple_headers (
 	(void) memcpy (end, main_header, main_header_len);
 	end += main_header_len;
 	for (i = 0; i < HTTP_HEADERS_SIZE; i++) {
-		if (response->headers[i]) {
-			(void) memcpy (end, response->headers[i]->str, response->headers[i]->len);
-			end += response->headers[i]->len;
+		if (response->headers[i].len > 0) {
+			(void) memcpy (end, response->headers[i].value, response->headers[i].len);
+			end += response->headers[i].len;
 		}
 
 		else if (producer->http_cerver->response_headers[i]) {
