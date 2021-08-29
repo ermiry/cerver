@@ -2194,22 +2194,26 @@ static int http_receive_handle_header_value (
 
 }
 
-// TODO: what happens if the body is bigger than received buffer?
 static int http_receive_handle_body (
 	http_parser *parser, const char *at, size_t length
 ) {
+
+	// (void) printf ("http_receive_handle_body ()\n");
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
 	if (http_receive->receive_status == HTTP_RECEIVE_STATUS_HEADERS)
 		http_receive->receive_status = HTTP_RECEIVE_STATUS_BODY;
 
-	// printf ("Body: %.*s", (int) length, at);
-	// printf ("%.*s", (int) length, at);
+	// (void) printf ("Body: %.*s", (int) length, at);
 
-	http_receive->request->body = str_new (NULL);
-	http_receive->request->body->str = c_string_create ("%.*s", (int) length, at);
-	http_receive->request->body->len = length;
+	if (!http_receive->request->body) {
+		http_receive->request->body = str_create ("%.*s", (int) length, at);
+	}
+
+	else {
+		str_append_n_from_c_string (http_receive->request->body, at, length);
+	}
 
 	return 0;
 
