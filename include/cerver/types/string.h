@@ -59,6 +59,10 @@ CERVER_PUBLIC String *str_clone (
 	const String *original
 );
 
+CERVER_PUBLIC void str_replace (
+	String *str, const char *format, ...
+);
+
 CERVER_PUBLIC void str_replace_with (
 	String *str, const char *c_str
 );
@@ -82,6 +86,10 @@ CERVER_PUBLIC void str_append_char (
 // reallocates the same string
 CERVER_PUBLIC void str_append_c_string (
 	String *str, const char *c_str
+);
+
+CERVER_PUBLIC void str_append_n_from_c_string (
+	String *str, const char *c_str, const size_t n
 );
 
 CERVER_PUBLIC void str_to_upper (String *string);

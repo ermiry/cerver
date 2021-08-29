@@ -160,6 +160,22 @@ String *str_clone (const String *original) {
 
 }
 
+void str_replace (String *str, const char *format, ...) {
+
+	if (str && format) {
+		va_list args;
+		va_start (args, format);
+
+		if (str->str) free (str->str);
+
+		(void) vasprintf (&str->str, format, args);
+		str->len = strlen (str->str);
+
+		va_end (args);
+	}
+
+}
+
 void str_replace_with (String *str, const char *c_str) {
 
 	if (str && c_str) {
@@ -186,7 +202,7 @@ void str_n_replace_with (
 
 String *str_concat (const String *s1, const String *s2) {
 
-	return (s1 && s2) ? str_create ("%s/%s", s1->str, s2->str) : NULL;
+	return (s1 && s2) ? str_create ("%s%s", s1->str, s2->str) : NULL;
 
 }
 
@@ -197,11 +213,12 @@ void str_append_char (String *str, const char c) {
 	if (str) {
 		const size_t new_len = str->len + 1;
 
-		str->str = (char *) realloc (str->str + 1, new_len);
+		str->str = (char *) realloc (str->str, new_len);
 		if (str->str) {
 			char *des = str->str + str->len;
 			*des = c;
-			*des++ = '\0';
+			des += 1;
+			*des = '\0';
 
 			str->len = new_len;
 		}
@@ -219,8 +236,24 @@ void str_append_c_string (String *str, const char *c_str) {
 
 		str->str = (char *) realloc (str->str, new_len);
 		if (str->str) {
-			(void) memcpy (str->str + str->len, c_str, c_str_len);
+			(void) strncpy (str->str + str->len, c_str, c_str_len);
 			str->len = new_len - 1;
+		}
+	}
+
+}
+
+void str_append_n_from_c_string (
+	String *str, const char *c_str, const size_t n
+) {
+
+	if (str && c_str) {
+		const size_t out_len = str->len + n + 1;
+
+		str->str = (char *) realloc (str->str, out_len);
+		if (str->str) {
+			(void) strncpy (str->str + str->len, c_str, n);
+			str->len = out_len - 1;
 		}
 	}
 
