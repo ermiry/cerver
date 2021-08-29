@@ -3,12 +3,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <ctype.h>
-#include <math.h>
-
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include <ctype.h>
+#include <math.h>
 
 #include "cerver/utils/utils.h"
 
@@ -25,26 +25,30 @@ bool system_is_little_endian (void) {
 
 /*** math ***/
 
-int clamp_int (int val, int min, int max) {
+int clamp_int (
+	const int val, const int min, const int max
+) {
 
 	const int t = val < min ? min : val;
 	return t > max ? max : t;
 
 }
 
-int abs_int (int value) {
+int abs_int (const int value) {
 	
 	return value > 0 ? value : (value * -1);
 	
 }
 
-float lerp (float first, float second, float by) {
+float lerp (
+	const float first, const float second, const float by
+) {
 	
 	return first * (1 - by) + second * by;
 	
 }
 
-bool float_compare (float f1, float f2) {
+bool float_compare (const float f1, const float f2) {
 
 	return fabs (f1 - f2) < 0.00001;
 
@@ -53,9 +57,13 @@ bool float_compare (float f1, float f2) {
 /*** random ***/
 
 // init psuedo random generator based on our seed
-void random_set_seed (unsigned int seed) { srand (seed); }
+void random_set_seed (const unsigned int seed) {
 
-int random_int_in_range (int min, int max) {
+	srand (seed);
+
+}
+
+int random_int_in_range (const int min, const int max) {
 
 	int low = 0, high = 0;
 
@@ -73,7 +81,7 @@ int random_int_in_range (int min, int max) {
 
 }
 
-float random_float (float abs) {
+float random_float (const float abs) {
 
 	return ((float) rand () / (float)(RAND_MAX)) * abs;
 
@@ -223,28 +231,18 @@ size_t c_string_concat_safe (
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
-	char *fmt = NULL;
+	char *result = NULL;
 
-	if (format != NULL) fmt = strdup (format);
-	else fmt = strdup ("");
+	if (format) {
+		va_list args;
+		va_start (args, format);
 
-	va_list argp;
-	va_start (argp, format);
-	char oneChar[1];
-	int len = vsnprintf (oneChar, 1, fmt, argp);
-	if (len < 1) return NULL;
-	va_end (argp);
+		vasprintf (&result, format, args);
 
-	char *str = (char *) calloc (len + 1, sizeof (char));
-	if (!str) return NULL;
+		va_end (args);
+	}
 
-	va_start (argp, format);
-	vsnprintf (str, len + 1, fmt, argp);
-	va_end (argp);
-
-	free (fmt);
-
-	return str;
+	return result;
 
 }
 
