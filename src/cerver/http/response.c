@@ -249,9 +249,26 @@ u8 http_response_add_content_type_header (
 	HttpResponse *response, const ContentType type
 ) {
 
-	return http_response_add_header (
-		response, HTTP_HEADER_CONTENT_TYPE, http_content_type_mime (type)
-	);
+	u8 retval = 1;
+
+	if (response) {
+		HttpHeader *header = &response->headers[HTTP_HEADER_CONTENT_TYPE];
+
+		if (header->len <= 0) {
+			response->n_headers += 1;
+		}
+
+		header->len = snprintf (
+			header->value, HTTP_HEADER_VALUE_SIZE,
+			"%s: %s\r\n",
+			http_header_string (HTTP_HEADER_CONTENT_TYPE),
+			http_content_type_mime (type)
+		);
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
@@ -261,15 +278,25 @@ u8 http_response_add_content_length_header (
 	HttpResponse *response, const size_t length
 ) {
 
-	char buffer[HTTP_RESPONSE_CONTENT_LENGTH_SIZE] = { 0 };
-	(void) snprintf (
-		buffer, HTTP_RESPONSE_CONTENT_LENGTH_SIZE - 1,
-		"%lu", length
-	);
+	u8 retval = 1;
 
-	return http_response_add_header (
-		response, HTTP_HEADER_CONTENT_LENGTH, buffer
-	);
+	if (response) {
+		HttpHeader *header = &response->headers[HTTP_HEADER_CONTENT_LENGTH];
+
+		if (header->len <= 0) {
+			response->n_headers += 1;
+		}
+
+		header->len = snprintf (
+			header->value, HTTP_HEADER_VALUE_SIZE,
+			"%s: %lu\r\n",
+			http_header_string (HTTP_HEADER_CONTENT_LENGTH), length
+		);
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
@@ -279,14 +306,12 @@ void http_response_add_json_headers (
 	HttpResponse *response, const size_t json_len
 ) {
 
-	(void) http_response_add_header (
-		response, HTTP_HEADER_CONTENT_TYPE,
-		http_content_type_mime (HTTP_CONTENT_TYPE_JSON)
+	(void) http_response_add_content_type_header (
+		response, HTTP_CONTENT_TYPE_JSON
 	);
 
-	(void) http_response_add_custom_header (
-		response, HTTP_HEADER_CONTENT_LENGTH,
-		"%lu", json_len
+	(void) http_response_add_content_length_header (
+		response, json_len
 	);
 
 }
@@ -438,9 +463,8 @@ void http_response_add_video_headers (
 		response, content_type
 	);
 
-	(void) http_response_add_custom_header (
-		response, HTTP_HEADER_CONTENT_LENGTH,
-		"%ld", bytes_range->chunk_size
+	(void) http_response_add_content_length_header (
+		response, (const size_t) bytes_range->chunk_size
 	);
 
 	(void) http_response_add_custom_header (
