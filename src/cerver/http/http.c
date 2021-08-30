@@ -3330,9 +3330,10 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 	bool found = false;
 
-	HttpStaticPath *static_path = NULL;
+	char filename[HTTP_CERVER_STATIC_FILE_SIZE] = { 0 };
 	struct stat filestatus = { 0 };
-	char filename[256] = { 0 };
+	HttpStaticPath *static_path = NULL;
+
 	for (
 		ListElement *le = dlist_start (http_receive->http_cerver->static_paths);
 		le; le = le->next
@@ -3341,7 +3342,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 		(void) c_string_concat_safe (
 			static_path->path->str, http_receive->request->url->str,
-			filename, 256
+			filename, HTTP_CERVER_STATIC_FILE_SIZE
 		);
 
 		// check if file exists
@@ -3350,15 +3351,10 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 			http_receive->served_file = http_receive->request->url->str;
 
 			// serve the file
-			int file = open (filename, O_RDONLY);
-			if (file) {
-				http_response_send_file (
-					http_receive, HTTP_STATUS_OK,
-					file, filename, &filestatus
-				);
-
-				(void) close (file);
-			}
+			(void) http_response_send_file_internal (
+				http_receive, HTTP_STATUS_OK,
+				filename, &filestatus
+			);
 
 			found = true;
 			break;
