@@ -2,6 +2,7 @@
 #define _CERVER_STRING_H_
 
 #include <stdarg.h>
+#include <stddef.h>
 
 #include "cerver/types/types.h"
 
