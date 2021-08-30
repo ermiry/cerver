@@ -24,6 +24,7 @@
 #define HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE	256
 #define HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE	256
 
+#define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
 
 #ifdef __cplusplus
@@ -244,14 +245,28 @@ CERVER_EXPORT u8 http_response_create_and_send (
 	const struct _HttpReceive *http_receive
 );
 
-// sends a file directly through the connection
-// this method is used when serving files from static paths & by  http_response_render_file ()
-// returns 0 on success, 1 on error
-CERVER_PRIVATE u8 http_response_send_file (
+CERVER_PRIVATE u8 http_response_send_file_internal (
 	const struct _HttpReceive *http_receive,
 	const http_status status,
-	int file, const char *filename,
+	const char *filename,
 	struct stat *filestatus
+);
+
+// opens the selected file and sends it back to the client
+// takes care of generating the header based on the file values
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_send_file (
+	const struct _HttpReceive *http_receive,
+	const http_status status,
+	const char *filename
+);
+
+// works like http_response_send_file ()
+// but generates filename on the fly
+CERVER_EXPORT u8 http_response_send_file_generate (
+	const struct _HttpReceive *http_receive,
+	const http_status status,
+	const char *format, ...
 );
 
 #pragma endregion
@@ -276,15 +291,6 @@ CERVER_EXPORT u8 http_response_render_json (
 	const char *json, const size_t json_len
 );
 
-// opens the selected file and sends it back to the user
-// this method takes care of generating the header based on the file values
-// returns 0 on success, 1 on error
-CERVER_EXPORT u8 http_response_render_file (
-	const struct _HttpReceive *http_receive,
-	const http_status status,
-	const char *filename
-);
-
 #pragma endregion
 
 #pragma region videos
@@ -294,6 +300,13 @@ CERVER_EXPORT u8 http_response_render_file (
 CERVER_EXPORT u8 http_response_handle_video (
 	const struct _HttpReceive *http_receive,
 	const char *filename
+);
+
+// works like http_response_handle_video ()
+// but generates filename on the fly
+CERVER_EXPORT u8 http_response_handle_video_generate (
+	const struct _HttpReceive *http_receive,
+	const char *format, ...
 );
 
 #pragma endregion
@@ -325,7 +338,7 @@ CERVER_EXPORT HttpResponse *http_response_json_int_value (
 // with a json body of type { "key": int_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_int_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const int value
 );
 
@@ -340,7 +353,7 @@ CERVER_EXPORT HttpResponse *http_response_json_large_int_value (
 // with a json body of type { "key": large_int_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_large_int_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const long value
 );
 
@@ -355,7 +368,7 @@ CERVER_EXPORT HttpResponse *http_response_json_real_value (
 // with a json body of type { "key": double_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_real_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const double value
 );
 
@@ -370,7 +383,7 @@ CERVER_EXPORT HttpResponse *http_response_json_bool_value (
 // with a json body of type { "key": bool_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_bool_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const bool value
 );
 

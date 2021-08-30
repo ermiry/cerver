@@ -36,6 +36,8 @@
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_AUTH		false
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS		false
 
+#define HTTP_CERVER_STATIC_FILE_SIZE				256
+
 #ifdef __cplusplus
 extern "C" {
 #endif

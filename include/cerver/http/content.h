@@ -121,6 +121,10 @@ CERVER_PUBLIC bool http_content_type_is_json (
 	const char *description
 );
 
+CERVER_PUBLIC ContentType http_content_type_from_filename (
+	const char *filename
+);
+
 #ifdef __cplusplus
 }
 #endif

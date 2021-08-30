@@ -48,7 +48,7 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
-	if (http_response_render_file (
+	if (http_response_send_file (
 		http_receive, HTTP_STATUS_OK, "./examples/web/public/video.html"
 	)) {
 		cerver_log_error (

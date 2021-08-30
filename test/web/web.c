@@ -48,7 +48,7 @@ static void main_render_handler (
 	const HttpRequest *request
 ) {
 
-	if (http_response_render_file (
+	if (http_response_send_file (
 		http_receive, HTTP_STATUS_OK, "./public/index.html"
 	)) {
 		cerver_log_error (
