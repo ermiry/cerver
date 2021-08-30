@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <cerver/files.h>
+
 #include <cerver/http/status.h>
 
 #include <cerver/utils/log.h>
@@ -19,6 +21,34 @@ static size_t json_request_all_data_handler (
 	(void) strncpy ((char *) storage, (char *) contents, size * nmemb);
 
 	return size * nmemb;
+
+}
+
+static unsigned int json_request_post_json (
+	const char *actual_address, char *data_buffer,
+	const char *json_filename
+) {
+
+	unsigned int retval = 1;
+
+	CURL *curl = curl_easy_init ();
+	if (curl) {
+		size_t json_len = 0;
+		char *json_data = file_read (json_filename, &json_len);
+		if (json_data) {
+			curl_simple_post_json (
+				curl, actual_address,
+				HTTP_STATUS_OK, json_data, json_len,
+				json_request_all_data_handler, data_buffer
+			);
+
+			free (json_data);
+		}
+
+		curl_easy_cleanup (curl);
+	}
+
+	return retval;
 
 }
 
@@ -40,10 +70,15 @@ static unsigned int json_request_all_actual (
 	);
 
 	// POST /json
-	// TODO:
+	json_request_post_json (
+		actual_address, data_buffer, "./test/data/small.json"
+	);
 
 	// POST /json/big
-	// TODO:
+	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/big", address);
+	json_request_post_json (
+		actual_address, data_buffer, "./test/data/big.json"
+	);
 
 	// GET /json/create
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/create", address);
