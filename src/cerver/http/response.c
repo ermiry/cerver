@@ -1192,44 +1192,47 @@ u8 http_response_handle_video (
 
 #pragma region json
 
-static void http_response_create_json_common (
-	HttpResponse *response, const http_status status,
+static HttpResponse *http_response_create_json_common (
+	const http_status status,
 	const char *json, const size_t json_len
 ) {
 
-	response->status = status;
+	HttpResponse *response = http_response_new ();
+	if (response) {
+		response->status = status;
 
-	// add headers
-	http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
-	http_response_add_content_length_header (response, json_len);
+		// add headers
+		(void) http_response_add_content_type_header (
+			response, HTTP_CONTENT_TYPE_JSON
+		);
 
-	// add body
-	response->data = (char *) json;
-	response->data_len = json_len;
-	response->data_ref = true;
+		(void) http_response_add_content_length_header (
+			response, json_len
+		);
 
-	// generate response
-	(void) http_response_compile (response);
+		// add body
+		response->data = (char *) json;
+		response->data_len = json_len;
+		response->data_ref = true;
+
+		// generate response
+		(void) http_response_compile (response);
+	}
+
+	return response;
 
 }
 
+// creates a HTTP response with the defined status code
+// with a custom json message body
+// returns a new HTTP response instance ready to be sent
 HttpResponse *http_response_create_json (
 	const http_status status, const char *json, const size_t json_len
 ) {
 
-	HttpResponse *response = NULL;
-
-	if (json) {
-		response = http_response_new ();
-		if (response) {
-			http_response_create_json_common (
-				response, status,
-				json, json_len
-			);
-		}
-	}
-
-	return response;
+	return json ? http_response_create_json_common (
+		status, json, json_len
+	) : NULL;
 
 }
 
@@ -1240,21 +1243,238 @@ HttpResponse *http_response_create_json_key_value (
 	HttpResponse *response = NULL;
 
 	if (key && value) {
-		response = http_response_new ();
-		if (response) {
-			char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
-			if (json) {
-				http_response_create_json_common (
-					response, status,
-					json, strlen (json)
-				);
+		char *json = c_string_create ("{\"%s\": \"%s\"}", key, value);
+		if (json) {
+			response = http_response_create_json_common (
+				status, json, strlen (json)
+			);
 
-				free (json);
-			}
+			free (json);
 		}
 	}
 
 	return response;
+
+}
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": int_value }
+// returns a new HTTP response instance ready to be sent
+HttpResponse *http_response_json_int_value (
+	const http_status status, const char *key, const int value
+) {
+
+	HttpResponse *response = NULL;
+
+	if (key) {
+		char *json = c_string_create ("{\"%s\": %d}", key, value);
+		if (json) {
+			response = http_response_create_json_common (
+				status, json, strlen (json)
+			);
+
+			free (json);
+		}
+	}
+
+	return response;
+
+}
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": int_value }
+// returns 0 on success, 1 on error
+u8 http_response_json_int_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const int value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_json_int_value (
+		status, key, value
+	);
+
+	if (response) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (response);
+		#endif
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+	return retval;
+
+}
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": large_int_value }
+// returns a new HTTP response instance ready to be sent
+HttpResponse *http_response_json_large_int_value (
+	const http_status status, const char *key, const long value
+) {
+
+	HttpResponse *response = NULL;
+
+	if (key) {
+		char *json = c_string_create ("{\"%s\": %ld}", key, value);
+		if (json) {
+			response = http_response_create_json_common (
+				status, json, strlen (json)
+			);
+
+			free (json);
+		}
+	}
+
+	return response;
+
+}
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": large_int_value }
+// returns 0 on success, 1 on error
+u8 http_response_json_large_int_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const long value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_json_large_int_value (
+		status, key, value
+	);
+
+	if (response) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (response);
+		#endif
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+	return retval;
+
+}
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": double_value }
+// returns a new HTTP response instance ready to be sent
+HttpResponse *http_response_json_real_value (
+	const http_status status, const char *key, const double value
+) {
+
+	HttpResponse *response = NULL;
+
+	if (key) {
+		char *json = c_string_create ("{\"%s\": %f}", key, value);
+		if (json) {
+			response = http_response_create_json_common (
+				status, json, strlen (json)
+			);
+
+			free (json);
+		}
+	}
+
+	return response;
+
+}
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": double_value }
+// returns 0 on success, 1 on error
+u8 http_response_json_real_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const double value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_json_real_value (
+		status, key, value
+	);
+
+	if (response) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (response);
+		#endif
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+	return retval;
+
+}
+
+static char *http_response_create_json_bool_string (
+	const char *key, const bool value
+) {
+
+	char *json_string_value = NULL;
+
+	json_t *json = json_object ();
+	if (json) {
+		(void) json_object_set_new (
+			json, key, json_boolean (value)
+		);
+
+		json_string_value = json_dumps (json, 0);
+
+		json_decref (json);
+	}
+
+	return json_string_value;
+
+}
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": bool_value }
+// returns a new HTTP response instance ready to be sent
+HttpResponse *http_response_json_bool_value (
+	const http_status status, const char *key, const bool value
+) {
+
+	HttpResponse *response = NULL;
+
+	if (key) {
+		char *json = http_response_create_json_bool_string (key, value);
+		if (json) {
+			response = http_response_create_json_common (
+				status, json, strlen (json)
+			);
+
+			free (json);
+		}
+	}
+
+	return response;
+
+}
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": bool_value }
+// returns 0 on success, 1 on error
+u8 http_response_json_bool_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const bool value
+) {
+
+	u8 retval = 1;
+
+	HttpResponse *response = http_response_json_bool_value (
+		status, key, value
+	);
+
+	if (response) {
+		#ifdef HTTP_RESPONSE_DEBUG
+		http_response_print (response);
+		#endif
+		retval = http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+	return retval;
 
 }
 

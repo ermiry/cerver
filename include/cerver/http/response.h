@@ -300,9 +300,9 @@ CERVER_EXPORT u8 http_response_handle_video (
 
 #pragma region json
 
-// creates a HTTP response with the defined status code and a json data (body)
-// that is ready to be sent
-// returns a new HTTP response instance
+// creates a HTTP response with the defined status code
+// with a custom json message body
+// returns a new HTTP response instance ready to be sent
 CERVER_EXPORT HttpResponse *http_response_create_json (
 	const http_status status, const char *json, const size_t json_len
 );
@@ -312,6 +312,66 @@ CERVER_EXPORT HttpResponse *http_response_create_json (
 // returns a new HTTP response instance
 CERVER_EXPORT HttpResponse *http_response_create_json_key_value (
 	const http_status status, const char *key, const char *value
+);
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": int_value }
+// returns a new HTTP response instance ready to be sent
+CERVER_EXPORT HttpResponse *http_response_json_int_value (
+	const http_status status, const char *key, const int value
+);
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": int_value }
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_int_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const int value
+);
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": large_int_value }
+// returns a new HTTP response instance ready to be sent
+CERVER_EXPORT HttpResponse *http_response_json_large_int_value (
+	const http_status status, const char *key, const long value
+);
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": large_int_value }
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_large_int_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const long value
+);
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": double_value }
+// returns a new HTTP response instance ready to be sent
+CERVER_EXPORT HttpResponse *http_response_json_real_value (
+	const http_status status, const char *key, const double value
+);
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": double_value }
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_real_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const double value
+);
+
+// creates a HTTP response with the defined status code
+// with a json body of type { "key": bool_value }
+// returns a new HTTP response instance ready to be sent
+CERVER_EXPORT HttpResponse *http_response_json_bool_value (
+	const http_status status, const char *key, const bool value
+);
+
+// sends a HTTP response with custom status code
+// with a json body of type { "key": bool_value }
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_response_json_bool_value_send (
+	const HttpReceive *http_receive,
+	const http_status status, const char *key, const bool value
 );
 
 // creates a HTTP response with the defined status code and a data (body)
