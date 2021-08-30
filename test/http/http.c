@@ -68,8 +68,13 @@ static void test_http_cerver_new (void) {
 	test_check_null_ptr (http_cerver->delete_custom_data);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
-	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (http_cerver->response_headers[i]);
+	HttpHeader *header = NULL;
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		header = &http_cerver->response_headers[i];
+
+		test_check_int_eq (header->len, 0, NULL);
+		test_check_str_empty (header->value);
+	}
 
 	test_check_unsigned_eq (http_cerver->n_incompleted_requests, 0, NULL);
 	test_check_unsigned_eq (http_cerver->n_unhandled_requests, 0, NULL);
@@ -142,8 +147,13 @@ static HttpCerver *test_http_cerver_create (void) {
 	test_check_null_ptr (http_cerver->delete_custom_data);
 
 	test_check_unsigned_eq (http_cerver->n_response_headers, 0, NULL);
-	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (http_cerver->response_headers[i]);
+	HttpHeader *header = NULL;
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		header = &http_cerver->response_headers[i];
+
+		test_check_int_eq (header->len, 0, NULL);
+		test_check_str_empty (header->value);
+	}
 
 	test_check_unsigned_eq (http_cerver->n_incompleted_requests, 0, NULL);
 	test_check_unsigned_eq (http_cerver->n_unhandled_requests, 0, NULL);
