@@ -69,6 +69,15 @@ extern CurlResult curl_simple_post (
 	const char *data, const size_t datalen
 );
 
+// posts a JSON to the specified address
+// uses an already created CURL structure
+extern CurlResult curl_simple_post_json (
+	CURL *curl, const char *address,
+	const http_status expected_status,
+	const char *json, const size_t json_len,
+	curl_write_data_cb write_cb, char *buffer
+);
+
 // works like curl_simple_post ()
 // but sets a custom Authorization header
 extern CurlResult curl_simple_post_with_auth (
