@@ -1,6 +1,8 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include "cerver/files.h"
+
 #include "cerver/http/content.h"
 
 const char *http_content_type_extension (
@@ -86,5 +88,18 @@ bool http_content_type_is_json (
 ) {
 
 	return !strcasecmp ("application/json", description);
+
+}
+
+ContentType http_content_type_from_filename (
+	const char *filename
+) {
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	return ext ? http_content_type_by_extension (ext) : HTTP_CONTENT_TYPE_NONE;
 
 }
