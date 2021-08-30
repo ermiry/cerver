@@ -325,7 +325,7 @@ CERVER_EXPORT HttpResponse *http_response_json_int_value (
 // with a json body of type { "key": int_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_int_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const int value
 );
 
@@ -340,7 +340,7 @@ CERVER_EXPORT HttpResponse *http_response_json_large_int_value (
 // with a json body of type { "key": large_int_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_large_int_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const long value
 );
 
@@ -355,7 +355,7 @@ CERVER_EXPORT HttpResponse *http_response_json_real_value (
 // with a json body of type { "key": double_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_real_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const double value
 );
 
@@ -370,7 +370,7 @@ CERVER_EXPORT HttpResponse *http_response_json_bool_value (
 // with a json body of type { "key": bool_value }
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_json_bool_value_send (
-	const HttpReceive *http_receive,
+	const struct _HttpReceive *http_receive,
 	const http_status status, const char *key, const bool value
 );
 
