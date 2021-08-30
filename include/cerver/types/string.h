@@ -13,8 +13,8 @@ extern "C" {
 
 typedef struct String {
 
-	unsigned int max_len;
-	unsigned int len;
+	size_t max_len;
+	size_t len;
 	char *str;
 
 } String;
@@ -48,32 +48,48 @@ CERVER_PUBLIC int str_comparator (
 );
 
 CERVER_PUBLIC void str_copy (
-	String *to, String *from
+	String *to, const String *from
+);
+
+CERVER_PUBLIC void str_n_copy (
+	String *to, const String *from, const size_t n
 );
 
 CERVER_PUBLIC String *str_clone (
-	String *original
+	const String *original
 );
 
 CERVER_PUBLIC void str_replace (
-	String *old, const char *str
+	String *str, const char *format, ...
+);
+
+CERVER_PUBLIC void str_replace_with (
+	String *str, const char *c_str
+);
+
+CERVER_PUBLIC void str_n_replace_with (
+	String *str, const char *c_str, const size_t n
 );
 
 // concatenates two strings into a new one
 CERVER_PUBLIC String *str_concat (
-	String *s1, String *s2
+	const String *s1, const String *s2
 );
 
 // appends a char to the end of the string
 // reallocates the same string
 CERVER_PUBLIC void str_append_char (
-	String *s, const char c
+	String *str, const char c
 );
 
 // appends a c string at the end of the string
 // reallocates the same string
 CERVER_PUBLIC void str_append_c_string (
-	String *s, const char *c_str
+	String *str, const char *c_str
+);
+
+CERVER_PUBLIC void str_append_n_from_c_string (
+	String *str, const char *c_str, const size_t n
 );
 
 CERVER_PUBLIC void str_to_upper (String *string);

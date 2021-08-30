@@ -162,7 +162,7 @@ static void handle_msg_request (Packet *packet, unsigned int handler_id, String 
 			"Got a request for handler's <%d> message!", handler_id
 		);
 
-		printf ("%s - %d\n", msg->str, msg->len);
+		printf ("%s - %lu\n", msg->str, msg->len);
 
 		AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 		memset (app_message, 0, sizeof (AppMessage));

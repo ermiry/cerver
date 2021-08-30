@@ -1,6 +1,8 @@
 #ifndef _CERVER_HTTP_HEADERS_H_
 #define _CERVER_HTTP_HEADERS_H_
 
+#include <stdarg.h>
+
 #include "cerver/config.h"
 
 #define HTTP_HEADERS_MAX				55
@@ -9,6 +11,7 @@
 #define HTTP_HEADER_VALUE_SIZE			256
 
 #define HTTP_HEADER_TEMP_SIZE			64
+#define HTTP_HEADER_ACTUAL_SIZE			128
 
 #ifdef __cplusplus
 extern "C" {
@@ -116,6 +119,24 @@ struct _HttpHeader {
 };
 
 typedef struct _HttpHeader HttpHeader;
+
+CERVER_PRIVATE void http_header_set (
+	HttpHeader *header, const char *format, ...
+);
+
+CERVER_PRIVATE void http_response_header_set_with_type (
+	HttpHeader *header, const http_header type,
+	const char *actual_header
+);
+
+CERVER_PRIVATE void http_response_header_set_with_type_and_args (
+	HttpHeader *header, const http_header type,
+	const char *format, va_list args
+);
+
+CERVER_PUBLIC void http_header_print (
+	const HttpHeader *header
+);
 
 #ifdef __cplusplus
 }

@@ -17,7 +17,7 @@
 
 #include "cerver/utils/utils.h"
 
-static const char *http_request_bytes_range = "bytes=";
+// static const char *http_request_bytes_range = "bytes=";
 static const size_t http_request_bytes_range_len = 6;
 
 static const char *request_method_strings[] = {

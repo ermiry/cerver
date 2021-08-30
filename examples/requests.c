@@ -144,7 +144,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 	if (packet && msg) {
 		cerver_log_debug ("Got an APP DATA request!");
 
-		printf ("%s - %d\n", msg->str, msg->len);
+		printf ("%s - %lu\n", msg->str, msg->len);
 
 		AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 		memset (app_message, 0, sizeof (AppMessage));

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+./test/bin/types || { exit 1; }
+
 ./test/bin/cerver/test || { exit 1; }
 
 ./test/bin/client/test || { exit 1; }

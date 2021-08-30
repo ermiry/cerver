@@ -8,7 +8,8 @@
 
 #include "curl.h"
 
-#define AUTH_HEADER_SIZE		1024
+#define AUTHORIZATION_HEADER_SIZE		1024
+#define CONTENT_LENGTH_HEADER_SIZE		256
 
 static CurlResult curl_perform_request (
 	CURL *curl, const http_status expected_status
@@ -125,9 +126,9 @@ CurlResult curl_simple_with_auth (
 
 	// add custom Authorization header
 	struct curl_slist *headers = NULL;
-	char auth_header[AUTH_HEADER_SIZE] = { 0 };
+	char auth_header[AUTHORIZATION_HEADER_SIZE] = { 0 };
 	(void) snprintf (
-		auth_header, AUTH_HEADER_SIZE - 1,
+		auth_header, AUTHORIZATION_HEADER_SIZE - 1,
 		"Authorization: %s", authorization
 	);
 
@@ -191,6 +192,47 @@ CurlResult curl_simple_post (
 
 }
 
+// posts a JSON to the specified address
+// uses an already created CURL structure
+CurlResult curl_simple_post_json (
+	CURL *curl, const char *address,
+	const http_status expected_status,
+	const char *json, const size_t json_len,
+	curl_write_data_cb write_cb, char *buffer
+) {
+
+	CurlResult result = CURL_RESULT_NONE;
+
+	char content_length[CONTENT_LENGTH_HEADER_SIZE] = { 0 };
+	(void) snprintf (
+		content_length, CONTENT_LENGTH_HEADER_SIZE - 1,
+		"Content-Length: %lu",
+		json_len
+	);
+
+	struct curl_slist *headers = NULL;
+	(void) curl_slist_append (headers, "Accept: application/json");
+	(void) curl_slist_append (headers, "Content-Type: application/json");
+	(void) curl_slist_append (headers, content_length);
+	// (void) curl_slist_append (headers, "charset: utf-8");
+
+	curl_easy_setopt (curl, CURLOPT_CUSTOMREQUEST, "POST");
+	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt (curl, CURLOPT_POSTFIELDS, json);
+
+	// set the destination address
+	curl_easy_setopt (curl, CURLOPT_URL, address);
+
+	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
+	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
+
+	// perfrom the request
+	result = curl_perform_request (curl, expected_status);
+
+	return result;
+
+}
+
 // works like curl_simple_post ()
 // but sets a custom Authorization header
 CurlResult curl_simple_post_with_auth (
@@ -206,9 +248,9 @@ CurlResult curl_simple_post_with_auth (
 
 	// add custom Authorization header
 	struct curl_slist *headers = NULL;
-	char auth_header[AUTH_HEADER_SIZE] = { 0 };
+	char auth_header[AUTHORIZATION_HEADER_SIZE] = { 0 };
 	(void) snprintf (
-		auth_header, AUTH_HEADER_SIZE - 1,
+		auth_header, AUTHORIZATION_HEADER_SIZE - 1,
 		"Authorization: %s", authorization
 	);
 

@@ -49,30 +49,22 @@ void str_delete (void *str_ptr) {
 
 String *str_create (const char *format, ...) {
 
-	String *s = NULL;
+	String *str = NULL;
 
 	if (format) {
-		char *fmt = strdup (format);
-
 		va_list args;
 		va_start (args, format);
-		char one_char[1] = { 0 };
-		int len = vsnprintf (one_char, 1, fmt, args);
+
+		str = (String *) malloc (sizeof (String));
+		(void) vasprintf (&str->str, format, args);
+		str->len = strlen (str->str);
+
+		str->max_len = 0;
+
 		va_end (args);
-
-		char *str = (char *) calloc (len + 1, sizeof (char));
-
-		va_start (args, format);
-		vsnprintf (str, len + 1, fmt, args);
-		va_end (args);
-
-		s = str_new (str);
-
-		free (str);
-		free (fmt);
 	}
 
-	return s;
+	return str;
 
 }
 
@@ -95,10 +87,12 @@ void str_set (String *str, const char *format, ...) {
 		va_list args;
 		va_start (args, format);
 
-		str->len = (unsigned int) vsnprintf (
+		(void) vsnprintf (
 			str->str, str->max_len - 1,
 			format, args
 		);
+
+		str->len = strlen (str->str);
 
 		va_end (args);
 	}
@@ -114,6 +108,8 @@ void str_set_with_args (
 			str->str, str->max_len - 1,
 			format, args
 		);
+
+		str->len = strlen (str->str);
 	}
 
 }
@@ -136,67 +132,95 @@ int str_comparator (const void *a, const void *b) {
 
 }
 
-void str_copy (String *to, String *from) {
+void str_copy (String *to, const String *from) {
 
 	if (to && from) {
-		while (*from->str)
-			*to->str++ = *from->str++;
-
-		*to->str = '\0';
+		if (to->str) free (to->str);
 		to->len = from->len;
+		to->str = (char *) calloc (to->len + 1, sizeof (char));
+		(void) strncpy (to->str, from->str, from->len);
 	}
 
 }
 
-String *str_clone (String *original) {
+void str_n_copy (String *to, const String *from, const size_t n) {
+
+	if (to && from) {
+		if (to->str) free (to->str);
+		to->len = n;
+		to->str = (char *) calloc (to->len + 1, sizeof (char));
+		(void) strncpy (to->str, from->str, n);
+	}
+
+}
+
+String *str_clone (const String *original) {
 
 	return original ? str_new (original->str) : NULL;
 
 }
 
-void str_replace (String *old, const char *str) {
+void str_replace (String *str, const char *format, ...) {
 
-	if (old && str) {
-		if (old->str) free (old->str);
-		old->len = strlen (str);
-		old->str = (char *) calloc (old->len + 1, sizeof (char));
-		if (old->str) char_copy (old->str, (char *) str);
+	if (str && format) {
+		va_list args;
+		va_start (args, format);
+
+		if (str->str) free (str->str);
+
+		(void) vasprintf (&str->str, format, args);
+		str->len = strlen (str->str);
+
+		va_end (args);
 	}
 
 }
 
-String *str_concat (String *s1, String *s2) {
+void str_replace_with (String *str, const char *c_str) {
 
-	String *des = NULL;
-
-	if (s1 && s2) {
-		des = str_new (NULL);
-		des->str = (char *) calloc (s1->len + s2->len + 1, sizeof (char));
-
-		while (*s1->str) *des->str++ = *s1->str++;
-		while (*s2->str) *des->str++ = *s2->str++;
-
-		*des->str = '\0';
-
-		des->len = s1->len + s2->len;
+	if (str && c_str) {
+		if (str->str) free (str->str);
+		str->len = strlen (c_str);
+		str->str = (char *) calloc (str->len + 1, sizeof (char));
+		(void) strncpy (str->str, c_str, str->len);
 	}
 
-	return des;
+}
+
+void str_n_replace_with (
+	String *str, const char *c_str, const size_t n
+) {
+
+	if (str && c_str) {
+		if (str->str) free (str->str);
+		str->len = n;
+		str->str = (char *) calloc (str->len + 1, sizeof (char));
+		(void) strncpy (str->str, c_str, n);
+	}
+
+}
+
+String *str_concat (const String *s1, const String *s2) {
+
+	return (s1 && s2) ? str_create ("%s%s", s1->str, s2->str) : NULL;
 
 }
 
 // appends a char to the end of the string
 // reallocates the same string
-void str_append_char (String *s, const char c) {
+void str_append_char (String *str, const char c) {
 
-	if (s) {
-		unsigned int new_len = s->len + 1;
+	if (str) {
+		const size_t new_len = str->len + 1;
 
-		s->str = (char *) realloc (s->str, new_len);
-		if (s->str) {
-			char *des = s->str + (s->len);
+		str->str = (char *) realloc (str->str, new_len);
+		if (str->str) {
+			char *des = str->str + str->len;
 			*des = c;
-			s->len = new_len;
+			des += 1;
+			*des = '\0';
+
+			str->len = new_len;
 		}
 	}
 
@@ -204,16 +228,32 @@ void str_append_char (String *s, const char c) {
 
 // appends a c string at the end of the string
 // reallocates the same string
-void str_append_c_string (String *s, const char *c_str) {
+void str_append_c_string (String *str, const char *c_str) {
 
-	if (s && c_str) {
-		unsigned int new_len = s->len + strlen (c_str);
+	if (str && c_str) {
+		const size_t c_str_len = strlen (c_str);
+		const size_t new_len = str->len + c_str_len + 1;
 
-		s->str = (char *) realloc (s->str, new_len);
-		if (s->str) {
-			char *des = s->str + (s->len);
-			char_copy (des, (char *) c_str);
-			s->len = new_len;
+		str->str = (char *) realloc (str->str, new_len);
+		if (str->str) {
+			(void) strncpy (str->str + str->len, c_str, c_str_len);
+			str->len = new_len - 1;
+		}
+	}
+
+}
+
+void str_append_n_from_c_string (
+	String *str, const char *c_str, const size_t n
+) {
+
+	if (str && c_str) {
+		const size_t out_len = str->len + n + 1;
+
+		str->str = (char *) realloc (str->str, out_len);
+		if (str->str) {
+			(void) strncpy (str->str + str->len, c_str, n);
+			str->len = out_len - 1;
 		}
 	}
 
@@ -222,7 +262,7 @@ void str_append_c_string (String *s, const char *c_str) {
 void str_to_upper (String *str) {
 
 	if (str) {
-		for (unsigned int i = 0; i < str->len; i++) {
+		for (size_t i = 0; i < str->len; i++) {
 			str->str[i] = toupper (str->str[i]);
 		}
 	}
@@ -232,7 +272,7 @@ void str_to_upper (String *str) {
 void str_to_lower (String *str) {
 
 	if (str) {
-		for (unsigned int i = 0; i < str->len; i++) {
+		for (size_t i = 0; i < str->len; i++) {
 			str->str[i] = tolower (str->str[i]);
 		}
 	}
@@ -318,12 +358,17 @@ char **str_split (
 
 void str_remove_char (String *str, const char garbage) {
 
-	char *src, *dst;
-	for (src = dst = str->str; *src != '\0'; src++) {
-		*dst = *src;
-		if (*dst != garbage) dst++;
+	if (str) {
+		char *src, *dst;
+		for (src = dst = str->str; *src != '\0'; src++) {
+			*dst = *src;
+			if (*dst != garbage) dst++;
+		}
+
+		*dst = '\0';
+
+		str->len = strlen (str->str);
 	}
-	*dst = '\0';
 
 }
 
@@ -332,12 +377,12 @@ void str_remove_last_char (String *s) {
 
 	if (s) {
 		if (s->len > 0) {
-			unsigned int new_len = s->len - 1;
+			const size_t new_len = s->len;
 
 			s->str = (char *) realloc (s->str, s->len);
 			if (s->str) {
 				s->str[s->len - 1] = '\0';
-				s->len = new_len;
+				s->len = new_len - 1;
 			}
 		}
 	}
@@ -346,12 +391,12 @@ void str_remove_last_char (String *s) {
 
 int str_contains (const String *str, const char *to_find) {
 
-	unsigned int slen = str->len;
-	unsigned int to_find_len = strlen (to_find);
-	unsigned int found = 0;
+	const size_t slen = str->len;
+	const size_t to_find_len = strlen (to_find);
+	size_t found = 0;
 
 	if (slen >= to_find_len) {
-		for (unsigned int s = 0, t = 0; s < slen; s++) {
+		for (size_t s = 0, t = 0; s < slen; s++) {
 			do {
 				if (str->str[s] == to_find[t] ) {
 					if (++found == to_find_len) return 0;

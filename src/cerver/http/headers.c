@@ -1,4 +1,7 @@
 #include <string.h>
+#include <stdio.h>
+
+#include <stdarg.h>
 
 #include "cerver/http/headers.h"
 
@@ -39,5 +42,59 @@ const http_header http_header_type_by_string (
 	#undef XX
 
 	return HTTP_HEADER_INVALID;
+
+}
+
+void http_header_set (
+	HttpHeader *header, const char *format, ...
+) {
+
+	va_list args;
+	va_start (args, format);
+
+	header->len = vsnprintf (
+		header->value, HTTP_HEADER_VALUE_SIZE,
+		format, args
+	);
+
+	va_end (args);
+
+}
+
+void http_response_header_set_with_type (
+	HttpHeader *header, const http_header type,
+	const char *actual_header
+) {
+
+	header->len = snprintf (
+		header->value, HTTP_HEADER_VALUE_SIZE,
+		"%s: %s\r\n",
+		http_header_string (type), actual_header
+	);
+
+}
+
+void http_response_header_set_with_type_and_args (
+	HttpHeader *header, const http_header type,
+	const char *format, va_list args
+) {
+
+	char actual_header[HTTP_HEADER_ACTUAL_SIZE] = { 0 };
+	(void) vsnprintf (
+		actual_header, HTTP_HEADER_ACTUAL_SIZE,
+		format, args
+	);
+
+	header->len = snprintf (
+		header->value, HTTP_HEADER_VALUE_SIZE,
+		"%s: %s\r\n",
+		http_header_string (type), actual_header
+	);
+
+}
+
+void http_header_print (const HttpHeader *header) {
+
+	(void) printf ("(%d) - %s\n", header->len, header->value);
 
 }

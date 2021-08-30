@@ -77,9 +77,14 @@ static HttpResponse *test_http_response_new (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 0, NULL);
 
-	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (response->headers[i]);
-	
+	HttpHeader *header = NULL;
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		header = &response->headers[i];
+
+		test_check_int_eq (header->len, 0, NULL);
+		test_check_str_empty (header->value);
+	}
+
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -104,9 +109,14 @@ static void test_http_response_reset (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 0, NULL);
 
-	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++)
-		test_check_null_ptr (response->headers[i]);
-	
+	HttpHeader *header = NULL;
+	for (unsigned int i = 0; i < HTTP_HEADERS_SIZE; i++) {
+		header = &response->headers[i];
+
+		test_check_int_eq (header->len, 0, NULL);
+		test_check_str_empty (header->value);
+	}
+
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -166,10 +176,9 @@ static void test_http_response_add_header (void) {
 	test_check_unsigned_eq (result, 0, NULL);
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, content_type_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, strlen (content_type_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].value, content_type_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE].value, strlen (content_type_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].len, strlen (content_type_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -181,10 +190,9 @@ static void test_http_response_add_header (void) {
 	test_check_unsigned_eq (result, 0, NULL);
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 2, NULL);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, content_length_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, strlen (content_length_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, content_length_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, strlen (content_length_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].len, strlen (content_length_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -218,10 +226,9 @@ static void test_http_response_add_content_type_header (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, content_type_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, strlen (content_type_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].value, content_type_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE].value, strlen (content_type_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].len, strlen (content_type_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -255,10 +262,9 @@ static void test_http_response_add_content_length_header (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, content_length_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, strlen (content_length_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, content_length_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, strlen (content_length_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].len, strlen (content_length_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -291,17 +297,15 @@ static void test_http_response_add_json_headers (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 2, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_TYPE]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, content_type_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE]->str, strlen (content_type_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].value, content_type_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_TYPE].value, strlen (content_type_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_TYPE].len, strlen (content_type_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]);
-	test_check_ptr (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, content_length_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH]->str, strlen (content_length_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, content_length_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_CONTENT_LENGTH].value, strlen (content_length_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_CONTENT_LENGTH].len, strlen (content_length_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -339,10 +343,9 @@ static void test_http_response_add_cors_header (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]);
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str, allow_origin_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str, strlen (allow_origin_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].value, allow_origin_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].value, strlen (allow_origin_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].len, strlen (allow_origin_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -365,10 +368,9 @@ static void test_http_response_add_cors_header_from_origin (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]);
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str, allow_origin_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN]->str, strlen (allow_origin_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].value, allow_origin_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].value, strlen (allow_origin_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_ORIGIN].len, strlen (allow_origin_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -388,10 +390,9 @@ static void test_http_response_add_cors_allow_credentials_header (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS]);
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS]->str, allow_credentials_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS]->str, strlen (allow_credentials_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS].value, allow_credentials_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS].value, strlen (allow_credentials_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_CREDENTIALS].len, strlen (allow_credentials_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -411,10 +412,9 @@ static void test_http_response_add_cors_allow_methods_header_single (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]);
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str, allow_single_method_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str, strlen (allow_single_method_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].value, allow_single_method_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].value, strlen (allow_single_method_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].len, strlen (allow_single_method_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 
@@ -434,10 +434,9 @@ static void test_http_response_add_cors_allow_methods_header_multiple (void) {
 	test_check_unsigned_eq (response->status, HTTP_STATUS_OK, NULL);
 	test_check_unsigned_eq (response->n_headers, 1, NULL);
 
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]);
-	test_check_ptr (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str);
-	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str, allow_multiple_methods_header, NULL);
-	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS]->str, strlen (allow_multiple_methods_header), NULL);
+	test_check_str_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].value, allow_multiple_methods_header, NULL);
+	test_check_str_len (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].value, strlen (allow_multiple_methods_header), NULL);
+	test_check_int_eq (response->headers[HTTP_HEADER_ACCESS_CONTROL_ALLOW_METHODS].len, strlen (allow_multiple_methods_header), NULL);
 	test_check_null_ptr (response->header);
 	test_check_unsigned_eq (response->header_len, 0, NULL);
 

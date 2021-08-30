@@ -7,11 +7,13 @@ coverage
 
 keys
 
-!test/http/keys
-!test/jwt/keys
-!test/web/keys
-
 data
 uploads
 
 logs
+
+!test/http/keys
+!test/jwt/keys
+!test/web/keys
+
+!test/data
