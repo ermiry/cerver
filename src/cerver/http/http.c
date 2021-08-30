@@ -258,8 +258,10 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->delete_custom_data = NULL;
 
 		http_cerver->n_response_headers = 0;
-		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-			http_cerver->response_headers[i] = NULL;
+		(void) memset (
+			http_cerver->response_headers, 0,
+			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
+		);
 
 		http_cerver->n_incompleted_requests = 0;
 		http_cerver->n_unhandled_requests = 0;
@@ -314,9 +316,6 @@ void http_cerver_delete (void *http_cerver_ptr) {
 				);
 			}
 		}
-
-		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-			str_delete (http_cerver->response_headers[i]);
 
 		dlist_delete (http_cerver->admin_file_systems_stats);
 		dlist_delete (http_cerver->admin_workers);
@@ -1537,23 +1536,19 @@ void http_cerver_set_default_delete_custom_data (
 // returns 0 on success, 1 on error
 u8 http_cerver_add_responses_header (
 	HttpCerver *http_cerver,
-	http_header type, const char *actual_header
+	const http_header type, const char *actual_header
 ) {
 
 	u8 retval = 1;
 
 	if (http_cerver && actual_header && (type < HTTP_HEADERS_SIZE)) {
-		if (http_cerver->response_headers[type]) {
-			str_delete (http_cerver->response_headers[type]);
-		}
-
-		else {
+		if (http_cerver->response_headers[type].len <= 0) {
 			http_cerver->n_response_headers += 1;
 		}
 
-		http_cerver->response_headers[type] = str_create (
-			"%s: %s\r\n",
-			http_header_string (type), actual_header
+		http_response_header_set_with_type (
+			&http_cerver->response_headers[type],
+			type, actual_header
 		);
 
 		retval = 0;

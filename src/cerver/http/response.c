@@ -581,8 +581,8 @@ static void http_response_compile_multiple_headers (
 			response->header_len += response->headers[i].len;
 		}
 
-		else if (producer->http_cerver->response_headers[i]) {
-			response->header_len += producer->http_cerver->response_headers[i]->len;
+		else if (producer->http_cerver->response_headers[i].len > 0) {
+			response->header_len += producer->http_cerver->response_headers[i].len;
 		}
 	}
 
@@ -599,14 +599,14 @@ static void http_response_compile_multiple_headers (
 			end += response->headers[i].len;
 		}
 
-		else if (producer->http_cerver->response_headers[i]) {
+		else if (producer->http_cerver->response_headers[i].len > 0) {
 			(void) memcpy (
 				end,
-				producer->http_cerver->response_headers[i]->str,
-				producer->http_cerver->response_headers[i]->len
+				producer->http_cerver->response_headers[i].value,
+				producer->http_cerver->response_headers[i].len
 			);
 
-			end += producer->http_cerver->response_headers[i]->len;
+			end += producer->http_cerver->response_headers[i].len;
 		}
 	}
 
