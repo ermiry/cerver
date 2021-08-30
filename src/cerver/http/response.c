@@ -807,68 +807,168 @@ u8 http_response_create_and_send (
 
 }
 
-// sends a file directly to the connection
-// this method is used when serving files from static paths & by  http_response_render_file ()
-// returns 0 on success, 1 on error
-u8 http_response_send_file (
+static u8 http_response_send_file_actual (
+	const HttpReceive *http_receive,
+	const HttpResponse *response,
+	const char *filename
+) {
+
+	u8 retval = 1;
+
+	int file_fd = open (filename, O_RDONLY);
+	if (file_fd > 0) {
+		size_t total_sent = response->header_len;
+
+		// pipe file
+		ssize_t copied = 0;
+
+		#ifdef HTTP_RESPONSE_DEBUG
+		unsigned int count = 0;
+		#endif
+
+		do {
+			copied = sendfile (
+				http_receive->cr->connection->socket->sock_fd,
+				file_fd,
+				NULL,
+				HTTP_RESPONSE_FILE_CHUNK_SIZE
+			);
+
+			if (copied > 0) {
+				total_sent += (size_t) copied;
+
+				#ifdef HTTP_RESPONSE_DEBUG
+				count += 1;
+				#endif
+			}
+		} while (copied > 0);
+
+		#ifdef HTTP_RESPONSE_DEBUG
+		cerver_log_debug (
+			"File took %u copies", count
+		);
+		#endif
+
+		// update stats
+		http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+		http_receive->cr->connection->stats->total_bytes_sent += total_sent;
+
+		((HttpReceive *) http_receive)->status = response->status;
+		((HttpReceive *) http_receive)->sent = total_sent;
+
+		(void) close (file_fd);
+
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"http_response_send_file () - Failed to open %s",
+			filename
+		);
+	}
+
+	return retval;
+
+}
+
+u8 http_response_send_file_internal (
 	const HttpReceive *http_receive,
 	const http_status status,
-	int file, const char *filename,
+	const char *filename,
 	struct stat *filestatus
 ) {
 
 	u8 retval = 1;
 
-	unsigned int ext_len = 0;
-	const char *ext = files_get_file_extension_reference (
-		filename, &ext_len
+	// create response
+	HttpResponse *response = http_response_get ();
+
+	// generate header
+	response->status = status;
+	http_response_add_content_type_header (
+		response, http_content_type_from_filename (filename)
 	);
 
-	if (ext) {
-		const char *content_type = http_content_type_mime_by_extension (ext);
+	http_response_add_content_length_header (response, filestatus->st_size);
 
-		// prepare & send the header
-		char header[HTTP_RESPONSE_SEND_FILE_HEADER_SIZE] = { 0 };
-		size_t header_len = (size_t) snprintf (
-			header, HTTP_RESPONSE_SEND_FILE_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: %s\r\nContent-Length: %ld\r\n\r\n",
-			status,
-			http_status_string (status),
-			CERVER_VERSION,
-			content_type,
-			filestatus->st_size
+	http_response_compile_multiple_headers (response);
+
+	#ifdef HTTP_RESPONSE_DEBUG
+	cerver_log_msg ("\n%s\n", response->header);
+	#endif
+
+	// pipe header
+	if (!http_response_send_actual (
+		http_receive->cr->connection->socket,
+		response->header, response->header_len
+	)) {
+		retval = http_response_send_file_actual (
+			http_receive, response, filename
 		);
-
-		#ifdef HTTP_RESPONSE_DEBUG
-		cerver_log_msg ("\n%s\n", header);
-		#endif
-
-		if (!http_response_send_actual (
-			http_receive->cr->connection->socket,
-			header, header_len
-		)) {
-			size_t total_size = header_len;
-
-			if (http_receive->cr->cerver)
-				http_receive->cr->cerver->stats->total_bytes_sent += total_size;
-
-			http_receive->cr->connection->stats->total_bytes_sent += total_size;
-
-			// send the actual file
-			if (!sendfile (
-				http_receive->cr->connection->socket->sock_fd,
-				file,
-				0, filestatus->st_size
-			)) {
-				total_size += (size_t) filestatus->st_size;
-			}
-
-			((HttpReceive *) http_receive)->status = status;
-			((HttpReceive *) http_receive)->sent = total_size;
-
-			retval = 0;
-		}
 	}
+
+	http_response_return (response);
+
+	return retval;
+
+}
+
+// opens the selected file and sends it back to the client
+// takes care of generating the header based on the file values
+// returns 0 on success, 1 on error
+u8 http_response_send_file (
+	const HttpReceive *http_receive,
+	const http_status status,
+	const char *filename
+) {
+
+	u8 retval = 1;
+
+	// check if file exists
+	struct stat filestatus = { 0 };
+	if (!stat (filename, &filestatus)) {
+		retval = http_response_send_file_internal (
+			http_receive, status,
+			filename, &filestatus
+		);
+	}
+
+	else {
+		cerver_log_error (
+			"http_response_send_file () - File %s not found!",
+			filename
+		);
+	}
+
+	return retval;
+
+}
+
+// works like http_response_send_file ()
+// but generates filename on the fly
+u8 http_response_send_file_generate (
+	const HttpReceive *http_receive,
+	const http_status status,
+	const char *format, ...
+) {
+
+	u8 retval = 1;
+
+	va_list args;
+	va_start (args, format);
+
+	char filename[FILENAME_DEFAULT_SIZE] = { 0 };
+	(void) vsnprintf (
+		filename, FILENAME_DEFAULT_SIZE,
+		format, args
+	);
+
+	retval = http_response_send_file (
+		http_receive, status, filename
+	);
+
+	va_end (args);
 
 	return retval;
 
@@ -988,36 +1088,6 @@ u8 http_response_render_json (
 
 }
 
-// TODO: add variable arguments
-// opens the selected file and sends it back to the user
-// this method takes care of generating the header based on the file values
-// returns 0 on success, 1 on error
-u8 http_response_render_file (
-	const HttpReceive *http_receive,
-	const http_status status,
-	const char *filename
-) {
-
-	u8 retval = 1;
-
-	if (http_receive && filename) {
-		// check if file exists
-		struct stat filestatus = { 0 };
-		int file = file_open_as_fd (filename, &filestatus, O_RDONLY);
-		if (file > 0) {
-			retval = http_response_send_file (
-				http_receive, status,
-				file, filename, &filestatus
-			);
-
-			(void) close (file);
-		}
-	}
-
-	return retval;
-
-}
-
 #pragma endregion
 
 #pragma region videos
@@ -1069,7 +1139,7 @@ static u8 http_response_handle_video_internal (
 
 		// open video
 		int video_fd = open (filename, O_RDONLY);
-		if (video_fd) {
+		if (video_fd > 0) {
 			// pipe video
 			ssize_t copied = 0;
 
@@ -1085,9 +1155,13 @@ static u8 http_response_handle_video_internal (
 					bytes_range->chunk_size
 				);
 
-				#ifdef HTTP_RESPONSE_DEBUG
-				count += 1;
-				#endif
+				if (copied > 0) {
+					total_sent += (size_t) copied;
+
+					#ifdef HTTP_RESPONSE_DEBUG
+					count += 1;
+					#endif
+				}
 			} while (copied > 0);
 
 			#ifdef HTTP_RESPONSE_DEBUG
@@ -1096,14 +1170,16 @@ static u8 http_response_handle_video_internal (
 			);
 			#endif
 
-			total_sent += bytes_range->chunk_size;
-
 			// update stats
 			http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
 			http_receive->cr->connection->stats->total_bytes_sent += total_sent;
 
 			((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
 			((HttpReceive *) http_receive)->sent = total_sent;
+
+			(void) close (video_fd);
+
+			retval = 0;
 		}
 
 		else {
@@ -1112,8 +1188,6 @@ static u8 http_response_handle_video_internal (
 				filename
 			);
 		}
-
-		(void) close (video_fd);
 	}
 
 	http_response_return (response);
@@ -1122,7 +1196,6 @@ static u8 http_response_handle_video_internal (
 
 }
 
-// TODO: add variable arguments
 // handles the transmission of a video to the client
 // returns 0 on success, 1 on error
 u8 http_response_handle_video (
@@ -1183,6 +1256,34 @@ u8 http_response_handle_video (
 			filename
 		);
 	}
+
+	return retval;
+
+}
+
+// works like http_response_handle_video ()
+// but generates filename on the fly
+u8 http_response_handle_video_generate (
+	const HttpReceive *http_receive,
+	const char *format, ...
+) {
+
+	u8 retval = 1;
+
+	va_list args;
+	va_start (args, format);
+
+	char filename[FILENAME_DEFAULT_SIZE] = { 0 };
+	(void) vsnprintf (
+		filename, FILENAME_DEFAULT_SIZE,
+		format, args
+	);
+
+	retval = http_response_handle_video (
+		http_receive, filename
+	);
+
+	va_end (args);
 
 	return retval;
 
