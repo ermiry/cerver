@@ -145,52 +145,6 @@ void adios_handler (
 
 }
 
-// GET /key
-void key_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) http_response_json_key_value_send (
-		http_receive,
-		HTTP_STATUS_OK, "key", "value"
-	);
-
-}
-
-// GET /custom
-void custom_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	(void) http_response_json_custom_send (
-		http_receive,
-		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
-	);
-
-}
-
-// GET /reference
-void reference_handler (
-	const struct _HttpReceive *http_receive,
-	const HttpRequest *request
-) {
-
-	char *json = (char *) calloc (256, sizeof (char));
-	if (json) {
-		strncpy (json, "{\"oki\": \"doki\"}", 256);
-
-		(void) http_response_json_custom_reference_send (
-			http_receive,
-			HTTP_STATUS_OK, json, strlen (json)
-		);
-
-		free (json);
-	}
-
-}
-
 #pragma endregion
 
 #pragma region start
@@ -258,18 +212,6 @@ int main (int argc, char **argv) {
 		// GET /adios
 		HttpRoute *adios_route = http_route_create (REQUEST_METHOD_GET, "adios", adios_handler);
 		http_cerver_route_register (http_cerver, adios_route);
-
-		// GET /key
-		HttpRoute *key_route = http_route_create (REQUEST_METHOD_GET, "key", key_handler);
-		http_cerver_route_register (http_cerver, key_route);
-
-		// GET /custom
-		HttpRoute *custom_route = http_route_create (REQUEST_METHOD_GET, "custom", custom_handler);
-		http_cerver_route_register (http_cerver, custom_route);
-
-		// GET /reference
-		HttpRoute *reference_route = http_route_create (REQUEST_METHOD_GET, "reference", reference_handler);
-		http_cerver_route_register (http_cerver, reference_route);
 
 		if (cerver_start (web_cerver)) {
 			cerver_log_error (
