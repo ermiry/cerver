@@ -43,6 +43,9 @@ static const char *HEADER_WEB_SOCKET_VERSION = { "Sec-WebSocket-Version" };
 
 static const char *HEADER_OTHER = { "Undefined" };
 
+static const char *content_type_header = { "Content-Type: application/json\r\n" };
+static const char *content_length_header = { "Content-Length: 128\r\n" };
+
 static void test_http_headers_get_string (void) {
 
 	test_check_str_eq (http_header_string (HTTP_HEADER_ACCEPT), HEADER_ACCEPT, NULL);
@@ -132,6 +135,102 @@ static void test_http_headers_get_type_by_string (void) {
 
 }
 
+static void test_http_header_type_by_string (void) {
+
+	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT));
+	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_CHARSET));
+	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_ENCODING));
+	test_check_ptr (http_header_string (HTTP_HEADER_ACCEPT_LANGUAGE));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_AUTHORIZATION));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_CACHE_CONTROL));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_CONNECTION));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_LENGTH));
+	test_check_ptr (http_header_string (HTTP_HEADER_CONTENT_TYPE));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_COOKIE));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_DATE));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_EXPECT));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_HOST));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_ORIGIN));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_PROXY_AUTHORIZATION));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_UPGRADE));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_USER_AGENT));
+
+	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
+	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
+
+	test_check_str_eq (http_header_string (HTTP_HEADER_INVALID), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string ((const http_header) 1024), HEADER_OTHER, NULL);
+
+}
+
+// "Content-Length: 128\r\n"
+static void test_http_header_set (void) {
+
+	const size_t content_length = 128;
+
+	HttpHeader header;
+	http_header_set (&header, "Content-Length: %lu\r\n", content_length);
+
+	test_check_str_eq (header.value, content_length_header, NULL);
+	test_check_str_len (header.value, strlen (content_length_header), NULL);
+	test_check_int_eq (header.len, strlen (content_length_header), NULL);
+
+}
+
+static void test_http_response_header_set_with_type (void) {
+
+	const char *content_type = "application/json";
+	const char *content_length = "128";
+
+	HttpHeader header;
+
+	// "Content-Type: application/json\r\n"
+	http_response_header_set_with_type (&header, HTTP_HEADER_CONTENT_TYPE, content_type);
+
+	test_check_str_eq (header.value, content_type_header, NULL);
+	test_check_str_len (header.value, strlen (content_type_header), NULL);
+	test_check_int_eq (header.len, strlen (content_type_header), NULL);
+
+
+	// "Content-Length: 128\r\n"
+	http_response_header_set_with_type (&header, HTTP_HEADER_CONTENT_LENGTH, content_length);
+
+	test_check_str_eq (header.value, content_length_header, NULL);
+	test_check_str_len (header.value, strlen (content_length_header), NULL);
+	test_check_int_eq (header.len, strlen (content_length_header), NULL);
+
+}
+
+static void test_http_header_print (void) {
+
+	const char *content_type = "application/json";
+
+	HttpHeader header;
+
+	// "Content-Type: application/json\r\n"
+	http_response_header_set_with_type (&header, HTTP_HEADER_CONTENT_TYPE, content_type);
+
+	http_header_print (&header);
+
+}
+
 void http_tests_headers (void) {
 
 	(void) printf ("Testing HTTP headers...\n");
@@ -139,6 +238,14 @@ void http_tests_headers (void) {
 	test_http_headers_get_string ();
 
 	test_http_headers_get_type_by_string ();
+
+	test_http_header_type_by_string ();
+
+	test_http_header_set ();
+
+	test_http_response_header_set_with_type ();
+
+	test_http_header_print ();
 
 	(void) printf ("Done!\n");
 
