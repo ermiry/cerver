@@ -1142,6 +1142,7 @@ static u8 http_response_handle_video_internal (
 		if (video_fd > 0) {
 			// pipe video
 			ssize_t copied = 0;
+			size_t to_copy = (size_t) bytes_range->chunk_size;
 
 			#ifdef HTTP_RESPONSE_DEBUG
 			unsigned int count = 0;
@@ -1152,17 +1153,18 @@ static u8 http_response_handle_video_internal (
 					http_receive->cr->connection->socket->sock_fd,
 					video_fd,
 					&bytes_range->start,
-					bytes_range->chunk_size
+					to_copy
 				);
 
 				if (copied > 0) {
+					to_copy -= (size_t) copied;
 					total_sent += (size_t) copied;
 
 					#ifdef HTTP_RESPONSE_DEBUG
 					count += 1;
 					#endif
 				}
-			} while (copied > 0);
+			} while ((copied > 0) && to_copy);
 
 			#ifdef HTTP_RESPONSE_DEBUG
 			cerver_log_debug (
