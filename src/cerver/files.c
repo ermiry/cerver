@@ -758,12 +758,24 @@ static const char *image_jpeg_extension = { "jpeg" };
 const char *files_image_type_to_string (const ImageType type) {
 
 	switch (type) {
-		#define XX(num, name, string) case IMAGE_TYPE_##name: return #string;
+		#define XX(num, name, string, extension) case IMAGE_TYPE_##name: return #string;
 		IMAGE_TYPE_MAP(XX)
 		#undef XX
 	}
 
 	return files_image_type_to_string (IMAGE_TYPE_NONE);
+
+}
+
+const char *files_image_type_extension (const ImageType type) {
+
+	switch (type) {
+		#define XX(num, name, string, extension) case IMAGE_TYPE_##name: return #extension;
+		IMAGE_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return NULL;
 
 }
 
@@ -850,6 +862,22 @@ ImageType files_image_get_type_by_extension (const char *filename) {
 
 }
 
+bool files_image_is_jpeg (const char *filename) {
+
+	bool result = false;
+
+	switch (files_image_get_type (filename)) {
+		case IMAGE_TYPE_JPEG:
+			result = true;
+			break;
+
+		default: break;
+	}
+
+	return result;
+
+}
+
 bool files_image_extension_is_jpeg (const char *filename) {
 
 	bool retval = false;
@@ -869,6 +897,12 @@ bool files_image_extension_is_jpeg (const char *filename) {
 	}
 
 	return retval;
+
+}
+
+bool files_image_is_png (const char *filename) {
+
+	return (files_image_get_type (filename) == IMAGE_TYPE_PNG);
 
 }
 

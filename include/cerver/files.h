@@ -227,24 +227,44 @@ typedef enum ImageType {
 
 } ImageType;
 
-CERVER_EXPORT const char *files_image_type_to_string (const ImageType type);
+CERVER_EXPORT const char *files_image_type_to_string (
+	const ImageType type
+);
+
+CERVER_EXPORT const char *files_image_type_extension (
+	const ImageType type
+);
 
 // reads the file's contents to find matching magic bytes
-CERVER_EXPORT ImageType files_image_get_type_from_file (const void *file);
+CERVER_EXPORT ImageType files_image_get_type_from_file (
+	const void *file
+);
 
 // opens the file and returns the file's image type
-CERVER_EXPORT ImageType files_image_get_type (const char *filename);
+CERVER_EXPORT ImageType files_image_get_type (
+	const char *filename
+);
 
 // returns the correct image type based on the filename's extension
 CERVER_EXPORT ImageType files_image_get_type_by_extension (
 	const char *filename
 );
 
+// returns true if jpeg magic bytes are in file
+CERVER_EXPORT bool files_image_is_jpeg (const char *filename);
+
 // returns true if the filename's extension is jpg or jpeg
-CERVER_EXPORT bool files_image_extension_is_jpeg (const char *filename);
+CERVER_EXPORT bool files_image_extension_is_jpeg (
+	const char *filename
+);
+
+// returns true if png magic bytes are in file
+CERVER_EXPORT bool files_image_is_png (const char *filename);
 
 // returns true if the filename's extension is png
-CERVER_EXPORT bool files_image_extension_is_png (const char *filename);
+CERVER_EXPORT bool files_image_extension_is_png (
+	const char *filename
+);
 
 #pragma endregion
 
