@@ -2,6 +2,7 @@
 #define _CERVER_FILES_H_
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #include <unistd.h>
 
@@ -211,16 +212,16 @@ CERVER_EXPORT int file_open_as_fd (
 
 #pragma region images
 
-#define IMAGE_TYPE_MAP(XX)			\
-	XX(0,	NONE, 		None)		\
-	XX(1,	PNG, 		PNG)		\
-	XX(2,	JPEG, 		JPEG)		\
-	XX(3,	GIF, 		GIF)		\
-	XX(4,	BMP, 		BMP)
+#define IMAGE_TYPE_MAP(XX)						\
+	XX(0,	NONE, 		None, 		undefined)	\
+	XX(1,	PNG, 		PNG,		png)		\
+	XX(2,	JPEG, 		JPEG, 		jpeg)		\
+	XX(3,	GIF, 		GIF,		gif)		\
+	XX(4,	BMP, 		BMP,		bmp)
 
 typedef enum ImageType {
 
-	#define XX(num, name, string) IMAGE_TYPE_##name = num,
+	#define XX(num, name, string, extension) IMAGE_TYPE_##name = num,
 	IMAGE_TYPE_MAP (XX)
 	#undef XX
 
