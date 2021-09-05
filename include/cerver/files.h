@@ -202,6 +202,11 @@ CERVER_EXPORT char *file_read (
 	const char *filename, size_t *file_size
 );
 
+// opens and reads n bytes from a file into a buffer
+CERVER_EXPORT char *file_n_read (
+	const char *filename, const size_t n_bytes, size_t *n_read
+);
+
 // opens a file with the required flags
 // returns fd on success, -1 on error
 CERVER_EXPORT int file_open_as_fd (
