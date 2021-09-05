@@ -692,33 +692,50 @@ char *file_read (const char *filename, size_t *file_size) {
 
 	if (filename) {
 		struct stat filestatus = { 0 };
-		FILE *fp = file_open_as_file (filename, "rt", &filestatus);
-		if (fp) {
-			*file_size = filestatus.st_size;
-			file_contents = (char *) malloc (filestatus.st_size);
+		if (!stat (filename, &filestatus)) {
+			*file_size = (size_t) filestatus.st_size;
 
-			// read the entire file into the buffer
-			if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
-				#ifdef FILES_DEBUG
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_FILE,
-					"Failed to read file (%s) contents!", filename
+			int file_fd = open (filename, O_RDONLY);
+			if (file_fd > 0) {
+				file_contents = (char *) calloc (
+					filestatus.st_size + 1, sizeof (char)
 				);
-				#endif
 
-				free (file_contents);
+				if (file_contents) {
+					char *end = file_contents;
+					ssize_t copied = 0;
+					size_t to_copy = (size_t) filestatus.st_size;
+
+					#ifdef FILES_DEBUG
+					unsigned int count = 0;
+					#endif
+
+					do {
+						copied = read (
+							file_fd,
+							file_contents,
+							to_copy
+						);
+
+						if (copied > 0) {
+							to_copy -= (size_t) copied;
+
+							#ifdef FILES_DEBUG
+							count += 1;
+							#endif
+						}
+
+					} while ((copied > 0) && to_copy);
+
+					#ifdef FILES_DEBUG
+					cerver_log_debug (
+						"File read took %u copies", count
+					);
+					#endif
+				}
+				
+				(void) close (file_fd);
 			}
-
-			(void) fclose (fp);
-		}
-
-		else {
-			#ifdef FILES_DEBUG
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_FILE,
-				"Unable to open file %s.", filename
-			);
-			#endif
 		}
 	}
 
