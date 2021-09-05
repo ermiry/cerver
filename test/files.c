@@ -32,6 +32,9 @@ static const char *png_file_complete = { "/home/ermiry/Pictures/test.png" };
 static const char *png_file_bad = { "test" };
 static const char *png_file_wrong = { "/home/ermiry/Pictures/test" };
 
+static const char *test_string = { "This is a test file" };
+static const char *less_test_string = { "This is a test" };
+
 #pragma region main
 
 static void test_files_sanitize_complete_filename (void) {
@@ -157,6 +160,74 @@ static void test_files_get_file_extension_reference (void) {
 
 }
 
+static void test_file_read_text (void) {
+
+	size_t file_size = 0;
+	char *file_contents = file_read ("./test/data/test.txt", &file_size);
+
+	test_check_ptr (file_contents);
+	test_check_unsigned_eq (file_size, strlen (test_string), NULL);
+	test_check_str_eq (file_contents, test_string, NULL);
+
+	free (file_contents);
+
+}
+
+static void test_file_read_json (void)  {
+
+	size_t file_size = 0;
+	char *file_contents = file_read ("./test/data/small.json", &file_size);
+
+	test_check_ptr (file_contents);
+	
+	(void) printf ("\n/%s/\n\n", file_contents);
+
+	free (file_contents);
+
+}
+
+static void test_file_read (void) {
+
+	test_file_read_text ();
+
+	test_file_read_json ();
+
+}
+
+static void test_file_n_read_less_text (void) {
+
+	size_t n_read = 0;
+	char *file_contents = file_n_read ("./test/data/test.txt", 14, &n_read);
+
+	test_check_ptr (file_contents);
+	test_check_unsigned_eq (n_read, strlen (less_test_string), NULL);
+	test_check_str_eq (file_contents, less_test_string, NULL);
+
+	free (file_contents);
+
+}
+
+static void test_file_n_read_more_text (void) {
+
+	size_t n_read = 0;
+	char *file_contents = file_n_read ("./test/data/test.txt", 128, &n_read);
+
+	test_check_ptr (file_contents);
+	test_check_unsigned_eq (n_read, strlen (test_string), NULL);
+	test_check_str_eq (file_contents, test_string, NULL);
+
+	free (file_contents);
+
+}
+
+static void test_file_n_read (void) {
+
+	test_file_n_read_less_text ();
+
+	test_file_n_read_more_text ();
+
+}
+
 #pragma endregion
 
 #pragma region images
@@ -234,6 +305,8 @@ int main (int argc, char **argv) {
 	test_files_create_dir ();
 	test_files_create_recursive_dir ();
 	test_files_get_file_extension_reference ();
+	test_file_read ();
+	test_file_n_read ();
 
 	// images
 	test_files_image_type_to_string ();
