@@ -1,6 +1,9 @@
 ## General
-- Added files extensions in images types map
-- Added more image files types related methods
+- Logging connection values if CERVER_DEBUG is defined
 
-## HTTP
-- Refactored HTTP handle video internal loop
+## Files
+- Refactored file read method internal implementation
+- Added method to read n bytes from file into a buffer
+
+## Tests
+- Added dedicated file read methods unit tests

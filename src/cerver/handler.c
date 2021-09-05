@@ -2817,13 +2817,13 @@ static void cerver_register_new_connection (
 	);
 	
 	if (connection) {
-		// #ifdef CERVER_DEBUG
+		#ifdef CERVER_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"New connection from IP address: %s -- Port: %d",
 			connection->ip, connection->port
 		);
-		// #endif
+		#endif
 
 		connection->active = true;
 

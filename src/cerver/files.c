@@ -684,6 +684,62 @@ FILE *file_open_as_file (
 
 }
 
+static char *file_read_internal (
+	const char *filename, const size_t n_bytes, size_t *n_read
+) {
+
+	char *file_contents = NULL;
+
+	int file_fd = open (filename, O_RDONLY);
+	if (file_fd > 0) {
+		file_contents = (char *) calloc (
+			n_bytes + 1, sizeof (char)
+		);
+
+		if (file_contents) {
+			char *end = file_contents;
+			ssize_t copied = 0;
+			size_t to_copy = (size_t) n_bytes;
+
+			#ifdef FILES_DEBUG
+			unsigned int count = 0;
+			#endif
+
+			do {
+				copied = read (
+					file_fd,
+					file_contents,
+					to_copy
+				);
+
+				if (copied > 0) {
+					to_copy -= (size_t) copied;
+					*n_read += (size_t) copied;
+					end += copied;
+
+					#ifdef FILES_DEBUG
+					count += 1;
+					#endif
+				}
+
+			} while ((copied > 0) && to_copy);
+
+			#ifdef FILES_DEBUG
+			cerver_log_debug (
+				"File read took %u copies", count
+			);
+			#endif
+
+			// *end = '\0';
+		}
+		
+		(void) close (file_fd);
+	}
+
+	return file_contents;
+
+}
+
 // opens and reads a file into a buffer
 // sets file size to the amount of bytes read
 char *file_read (const char *filename, size_t *file_size) {
@@ -692,33 +748,37 @@ char *file_read (const char *filename, size_t *file_size) {
 
 	if (filename) {
 		struct stat filestatus = { 0 };
-		FILE *fp = file_open_as_file (filename, "rt", &filestatus);
-		if (fp) {
-			*file_size = filestatus.st_size;
-			file_contents = (char *) malloc (filestatus.st_size);
+		if (!stat (filename, &filestatus)) {
+			*file_size = (size_t) filestatus.st_size;
 
-			// read the entire file into the buffer
-			if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
-				#ifdef FILES_DEBUG
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_FILE,
-					"Failed to read file (%s) contents!", filename
-				);
-				#endif
-
-				free (file_contents);
-			}
-
-			(void) fclose (fp);
-		}
-
-		else {
-			#ifdef FILES_DEBUG
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_FILE,
-				"Unable to open file %s.", filename
+			size_t n_read = 0;
+			file_contents = file_read_internal (
+				filename, (size_t) filestatus.st_size, &n_read
 			);
-			#endif
+		}
+	}
+
+	return file_contents;
+
+}
+
+// opens and reads n bytes from a file into a buffer
+char *file_n_read (
+	const char *filename, const size_t n_bytes, size_t *n_read
+) {
+
+	char *file_contents = NULL;
+
+	if (filename) {
+		struct stat filestatus = { 0 };
+		if (!stat (filename, &filestatus)) {
+			size_t file_size = (size_t) filestatus.st_size;
+
+			size_t to_read = (n_bytes > file_size) ? file_size : n_bytes;
+
+			file_contents = file_read_internal (
+				filename, to_read, n_read
+			);
 		}
 	}
 
