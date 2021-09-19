@@ -7,7 +7,7 @@ void cerver_version_print_full (void) {
 
 	cerver_log_both (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"Cerver Version: %s", CERVER_VERSION_NAME
+		"\nCerver Version: %s", CERVER_VERSION_NAME
 	);
 
 	cerver_log_both (
@@ -29,7 +29,7 @@ void cerver_version_print_version_id (void) {
 
 	cerver_log_both (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"Cerver Version ID: %s\n",
+		"\nCerver Version ID: %s\n",
 		CERVER_VERSION
 	);
 
@@ -40,7 +40,7 @@ void cerver_version_print_version_name (void) {
 
 	cerver_log_both (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"Cerver Version: %s\n",
+		"\nCerver Version: %s\n",
 		CERVER_VERSION_NAME
 	);
 

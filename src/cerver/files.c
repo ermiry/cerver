@@ -9,9 +9,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -27,9 +27,8 @@
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
-#include "cerver/utils/json.h"
+#include "cerver/utils/utils.h"
 
 bool file_exists (const char *filename);
 
@@ -216,10 +215,10 @@ String *file_cerver_search_file (
 	String *retval = NULL;
 
 	if (file_cerver && filename) {
-		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		char filename_query[FILENAME_DEFAULT_SIZE * 2] = { 0 };
 		for (unsigned int i = 0; i < file_cerver->n_paths; i++) {
 			(void) snprintf (
-				filename_query, DEFAULT_FILENAME_LEN * 2,
+				filename_query, FILENAME_DEFAULT_SIZE * 2,
 				"%s/%s",
 				file_cerver->paths[i]->str, filename
 			);
@@ -352,6 +351,32 @@ void files_sanitize_filename (char *filename) {
 
 }
 
+// works like files_sanitize_filename ()
+// but also keeps '/' characters
+void files_sanitize_complete_filename (char *filename) {
+
+	if (filename) {
+		for (int i = 0, j; filename[i] != '\0'; ++i) {
+			while (
+				!(filename[i] >= 'a' && filename[i] <= 'z') && !(filename[i] >= 'A' && filename[i] <= 'Z')	// alphabet
+				&& !(filename[i] >= 48 && filename[i] <= 57)												// numbers
+				&& !(filename[i] == '/')																	// path related
+				&& !(filename[i] == '-') && !(filename[i] == '_') && !(filename[i] == '.')					// clean characters
+				&& !(filename[i] == '\0')
+			) {
+				for (j = i; filename[j] != '\0'; ++j) {
+					filename[j] = filename[j + 1];
+				}
+
+				filename[j] = '\0';
+			}
+		}
+
+		c_string_remove_spaces (filename);
+	}
+
+}
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 unsigned int files_create_dir (
@@ -386,6 +411,93 @@ unsigned int files_create_dir (
 	}
 
 	return retval;
+
+}
+
+// recursively creates all directories in dir path
+// returns 0 on success, 1 on error
+unsigned int files_create_recursive_dir (
+	const char *dir_path, mode_t mode
+) {
+
+	unsigned int retval = 1;
+
+	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
+	char *p = NULL;
+	struct stat sb = { 0 };
+
+	// check if the path already exists
+	if (stat (dir_path, &sb)) {
+		size_t len = strlen (dir_path);
+		(void) strncpy (tmp, dir_path, DIRNAME_DEFAULT_SIZE - 1);
+
+		// remove trailing slash
+		if (tmp[len - 1] == '/') {
+			tmp[len - 1] = '\0';
+		}
+
+		// recursive mkdir
+		for (p = tmp + 1; *p; p++) {
+			if (*p == '/') {
+				*p = 0;
+
+				if (stat (tmp, &sb)) {
+					// create directory
+					if (mkdir (tmp, mode)) {
+						break;
+					}
+				}
+
+				else if (!S_ISDIR (sb.st_mode)) {
+					// not a directory
+					break;
+				}
+
+				*p = '/';
+			}
+		}
+
+		// create final dir
+		if (stat (tmp, &sb)) {
+			// create directory
+			if (!mkdir (tmp, mode)) {
+				retval = 0;
+			}
+		}
+	}
+
+	#ifdef FILES_DEBUG
+	else {
+		cerver_log (
+			LOG_TYPE_WARNING, LOG_TYPE_FILE,
+			"files_create_recursive_dir () - dir %s exists!", dir_path
+		);
+	}
+	#endif
+
+	return retval;
+
+}
+
+// moves one file from one location to another
+// returns 0 on success
+int file_move_to (
+	const char *actual_path, const char *saved_path
+) {
+
+	char move_command[FILES_MOVE_SIZE] = { 0 };
+
+	(void) snprintf (
+		move_command, FILES_MOVE_SIZE - 1,
+		"mv \"%s\" \"%s\"",
+		actual_path, saved_path
+	);
+
+	#ifdef FILES_DEBUG
+	(void) printf ("COMMAND: %s\n", move_command);
+	#endif
+
+	return system (move_command);
 
 }
 
@@ -428,7 +540,7 @@ const char *files_get_file_extension_reference (
 	if (filename) {
 		char *ptr = strrchr ((char *) filename, '.');
 		if (ptr) {
-			char *p = ptr;
+			char *p = ptr + 1;
 			while (*p++) *ext_len += 1;
 
 			if (ext_len) {
@@ -509,7 +621,7 @@ DoubleList *file_get_lines (
 			char *buffer = (char *) calloc (buffer_size, sizeof (char));
 			if (buffer) {
 				String *line = NULL;
-			
+
 				while ((line = file_get_line (file, buffer, buffer_size))) {
 					(void) dlist_insert_at_end_unsafe (lines, line);
 				}
@@ -557,17 +669,74 @@ FILE *file_open_as_file (
 		if (!stat (filename, filestatus))
 			fp = fopen (filename, modes);
 
+		#ifdef FILES_DEBUG
 		else {
-			#ifdef FILES_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_FILE,
 				"File %s not found!", filename
 			);
-			#endif
+
 		}
+		#endif
 	}
 
 	return fp;
+
+}
+
+static char *file_read_internal (
+	const char *filename, const size_t n_bytes, size_t *n_read
+) {
+
+	char *file_contents = NULL;
+
+	int file_fd = open (filename, O_RDONLY);
+	if (file_fd > 0) {
+		file_contents = (char *) calloc (
+			n_bytes + 1, sizeof (char)
+		);
+
+		if (file_contents) {
+			char *end = file_contents;
+			ssize_t copied = 0;
+			size_t to_copy = (size_t) n_bytes;
+
+			#ifdef FILES_DEBUG
+			unsigned int count = 0;
+			#endif
+
+			do {
+				copied = read (
+					file_fd,
+					file_contents,
+					to_copy
+				);
+
+				if (copied > 0) {
+					to_copy -= (size_t) copied;
+					*n_read += (size_t) copied;
+					end += copied;
+
+					#ifdef FILES_DEBUG
+					count += 1;
+					#endif
+				}
+
+			} while ((copied > 0) && to_copy);
+
+			#ifdef FILES_DEBUG
+			cerver_log_debug (
+				"File read took %u copies", count
+			);
+			#endif
+
+			// *end = '\0';
+		}
+
+		(void) close (file_fd);
+	}
+
+	return file_contents;
 
 }
 
@@ -579,33 +748,37 @@ char *file_read (const char *filename, size_t *file_size) {
 
 	if (filename) {
 		struct stat filestatus = { 0 };
-		FILE *fp = file_open_as_file (filename, "rt", &filestatus);
-		if (fp) {
-			*file_size = filestatus.st_size;
-			file_contents = (char *) malloc (filestatus.st_size);
+		if (!stat (filename, &filestatus)) {
+			*file_size = (size_t) filestatus.st_size;
 
-			// read the entire file into the buffer
-			if (fread (file_contents, filestatus.st_size, 1, fp) != 1) {
-				#ifdef FILES_DEBUG
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_FILE,
-					"Failed to read file (%s) contents!", filename
-				);
-				#endif
-
-				free (file_contents);
-			}
-
-			(void) fclose (fp);
-		}
-
-		else {
-			#ifdef FILES_DEBUG
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_FILE,
-				"Unable to open file %s.", filename
+			size_t n_read = 0;
+			file_contents = file_read_internal (
+				filename, (size_t) filestatus.st_size, &n_read
 			);
-			#endif
+		}
+	}
+
+	return file_contents;
+
+}
+
+// opens and reads n bytes from a file into a buffer
+char *file_n_read (
+	const char *filename, const size_t n_bytes, size_t *n_read
+) {
+
+	char *file_contents = NULL;
+
+	if (filename) {
+		struct stat filestatus = { 0 };
+		if (!stat (filename, &filestatus)) {
+			size_t file_size = (size_t) filestatus.st_size;
+
+			size_t to_read = (n_bytes > file_size) ? file_size : n_bytes;
+
+			file_contents = file_read_internal (
+				filename, to_read, n_read
+			);
 		}
 	}
 
@@ -632,20 +805,183 @@ int file_open_as_fd (
 
 }
 
-json_value *file_json_parse (const char *filename) {
+#pragma endregion
 
-	json_value *value = NULL;
+#pragma region images
 
-	if (filename) {
-		size_t file_size = 0;
-		char *file_contents = file_read (filename, &file_size);
-		json_char *json = (json_char *) file_contents;
-		value = json_parse (json, file_size);
+static const char *image_bmp_extension = { "bmp" };
+static const char *image_gif_extension = { "gif" };
+static const char *image_png_extension = { "png" };
+static const char *image_jpg_extension = { "jpg" };
+static const char *image_jpeg_extension = { "jpeg" };
 
-		free (file_contents);
+const char *files_image_type_to_string (const ImageType type) {
+
+	switch (type) {
+		#define XX(num, name, string, extension) case IMAGE_TYPE_##name: return #string;
+		IMAGE_TYPE_MAP(XX)
+		#undef XX
 	}
 
-	return value;
+	return files_image_type_to_string (IMAGE_TYPE_NONE);
+
+}
+
+const char *files_image_type_extension (const ImageType type) {
+
+	switch (type) {
+		#define XX(num, name, string, extension) case IMAGE_TYPE_##name: return #extension;
+		IMAGE_TYPE_MAP(XX)
+		#undef XX
+	}
+
+	return NULL;
+
+}
+
+ImageType files_image_get_type_from_file (const void *file_ptr) {
+
+	FILE *file = (FILE *) file_ptr;
+
+	ImageType type = IMAGE_TYPE_NONE;
+
+	(void) fseek (file, 0, SEEK_END);
+	long len = ftell (file);
+	(void) fseek (file, 0, SEEK_SET);
+	if (len > 24) {
+		unsigned char buf[24] = { 0 };
+		(void) fread (buf, 1, 24, file);
+
+		if (buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF) {
+			type = IMAGE_TYPE_JPEG;
+		}
+
+		else if (
+			buf[0] == 0x89 && buf[1] == 'P' && buf[2] =='N' && buf[3] =='G'
+			&& buf[4] == 0x0D && buf[5] == 0x0A && buf[6] ==0x1A && buf[7] ==0x0A
+			&& buf[12] == 'I' && buf[13] == 'H' && buf[14] =='D' && buf[15] =='R'
+		) {
+			type = IMAGE_TYPE_PNG;
+		}
+
+		else if (buf[0] =='G' && buf[1] =='I' && buf[2] =='F') {
+			type = IMAGE_TYPE_GIF;
+		}
+	}
+
+	return type;
+
+}
+
+ImageType files_image_get_type (const char *filename) {
+
+	ImageType type = IMAGE_TYPE_NONE;
+
+	FILE *file = fopen (filename, "rb");
+	if (file) {
+		type = files_image_get_type_from_file (file);
+
+		(void) fclose (file);
+	}
+
+	return type;
+
+}
+
+ImageType files_image_get_type_by_extension (const char *filename) {
+
+	ImageType type = IMAGE_TYPE_NONE;
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	if (ext) {
+		if (!strcmp (image_png_extension, ext)) {
+			type = IMAGE_TYPE_PNG;
+		}
+
+		else if (
+			!strcmp (image_jpg_extension, ext)
+			|| !strcmp (image_jpeg_extension, ext)
+		) {
+			type = IMAGE_TYPE_JPEG;
+		}
+
+		else if (!strcmp (image_bmp_extension, ext)) {
+			type = IMAGE_TYPE_BMP;
+		}
+
+		else if (!strcmp (image_gif_extension, ext)) {
+			type = IMAGE_TYPE_GIF;
+		}
+	}
+
+	return type;
+
+}
+
+bool files_image_is_jpeg (const char *filename) {
+
+	bool result = false;
+
+	switch (files_image_get_type (filename)) {
+		case IMAGE_TYPE_JPEG:
+			result = true;
+			break;
+
+		default: break;
+	}
+
+	return result;
+
+}
+
+bool files_image_extension_is_jpeg (const char *filename) {
+
+	bool retval = false;
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	if (ext) {
+		if (
+			!strcmp (image_jpg_extension, ext)
+			|| !strcmp (image_jpeg_extension, ext)
+		) {
+			retval = true;
+		}
+	}
+
+	return retval;
+
+}
+
+bool files_image_is_png (const char *filename) {
+
+	return (files_image_get_type (filename) == IMAGE_TYPE_PNG);
+
+}
+
+bool files_image_extension_is_png (const char *filename) {
+
+	bool retval = false;
+
+	unsigned int ext_len = 0;
+	const char *ext = files_get_file_extension_reference (
+		filename, &ext_len
+	);
+
+	if (ext) {
+		if (!strcmp (image_png_extension, ext)) {
+			retval = true;
+		}
+	}
+
+	return retval;
 
 }
 
@@ -679,7 +1015,7 @@ static u8 file_send_header (
 		end += sizeof (PacketHeader);
 
 		FileHeader *file_header = (FileHeader *) end;
-		(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
+		(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
 		file_header->len = filelen;
 
 		packet_set_network_values (packet, cerver, client, connection, NULL);

@@ -1,7 +1,10 @@
 #ifndef _CERVER_RECEIVE_H_
 #define _CERVER_RECEIVE_H_
 
+#include <stddef.h>
+
 #include "cerver/config.h"
+#include "cerver/packets.h"
 
 #ifdef __cplusplus
 extern "C" {

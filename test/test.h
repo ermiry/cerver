@@ -177,4 +177,19 @@
 		}															\
 	})
 
+#define																\
+	test_check_str_empty(string)									\
+	({																\
+		if (strlen ((char *) string)) {								\
+			where;													\
+			(void) fprintf (										\
+				stderr,												\
+				"STRING %s is not empty\n",							\
+				(char *) string										\
+			);														\
+																	\
+			exit (1);												\
+		}															\
+	})
+
 #endif

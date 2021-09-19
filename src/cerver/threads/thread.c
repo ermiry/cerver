@@ -1,9 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <stdarg.h>
+
 #include <errno.h>
 #include <pthread.h>
-#include <stdarg.h>
 
 #include <sys/prctl.h>
 
@@ -78,9 +79,12 @@ unsigned int thread_set_name (const char *name, ...) {
 #pragma region mutex
 
 // allocates & initializes a new mutex that should be deleted after use
-pthread_mutex_t *pthread_mutex_new (void) {
+pthread_mutex_t *thread_mutex_new (void) {
 
-	pthread_mutex_t *mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+	pthread_mutex_t *mutex = (pthread_mutex_t *) malloc (
+		sizeof (pthread_mutex_t)
+	);
+
 	if (mutex) {
 		(void) pthread_mutex_init (mutex, NULL);
 	}
@@ -89,8 +93,26 @@ pthread_mutex_t *pthread_mutex_new (void) {
 
 }
 
+// locks an existing mutex
+void thread_mutex_lock (pthread_mutex_t *mutex) {
+
+	if (mutex) {
+		(void) pthread_mutex_lock (mutex);
+	}
+
+}
+
+// unlocks a locked mutex
+void thread_mutex_unlock (pthread_mutex_t *mutex) {
+
+	if (mutex) {
+		(void) pthread_mutex_unlock (mutex);
+	}
+
+}
+
 // destroys & frees an allocated mutex
-void pthread_mutex_delete (pthread_mutex_t *mutex) {
+void thread_mutex_delete (pthread_mutex_t *mutex) {
 
 	if (mutex) {
 		(void) pthread_mutex_destroy (mutex);
@@ -104,7 +126,7 @@ void pthread_mutex_delete (pthread_mutex_t *mutex) {
 #pragma region cond
 
 // allocates & initializes a new cond that should be deleted after use
-pthread_cond_t *pthread_cond_new (void) {
+pthread_cond_t *thread_cond_new (void) {
 
 	pthread_cond_t *cond = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
 	if (cond) {
@@ -116,7 +138,7 @@ pthread_cond_t *pthread_cond_new (void) {
 }
 
 // destroys & frees an allocated cond
-void pthread_cond_delete (pthread_cond_t *cond) {
+void thread_cond_delete (pthread_cond_t *cond) {
 
 	if (cond) {
 		(void) pthread_cond_destroy (cond);

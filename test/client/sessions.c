@@ -124,7 +124,7 @@ int main (int argc, const char **argv) {
 
 	(void) printf ("Testing CLIENT sessions...\n");
 
-	responses_lock = pthread_mutex_new ();
+	responses_lock = thread_mutex_new ();
 
 	client = client_create ();
 
@@ -263,7 +263,7 @@ int main (int argc, const char **argv) {
 	client_connection_end (client, connection);
 	client_teardown (client);
 
-	pthread_mutex_delete (responses_lock);
+	thread_mutex_delete (responses_lock);
 
 	(void) printf ("Done!\n\n");
 

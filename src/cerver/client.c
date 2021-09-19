@@ -2579,10 +2579,10 @@ String *client_files_search_file (
 	String *retval = NULL;
 
 	if (client && filename) {
-		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		char filename_query[FILENAME_DEFAULT_SIZE * 2] = { 0 };
 		for (unsigned int i = 0; i < client->n_paths; i++) {
 			(void) snprintf (
-				filename_query, DEFAULT_FILENAME_LEN * 2,
+				filename_query, FILENAME_DEFAULT_SIZE * 2,
 				"%s/%s",
 				client->paths[i]->str, filename
 			);
@@ -2627,7 +2627,7 @@ u8 client_file_get (
 				end += sizeof (PacketHeader);
 
 				FileHeader *file_header = (FileHeader *) end;
-				(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
+				(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
 				file_header->len = 0;
 
 				packet_set_network_values (packet, NULL, client, connection, NULL);

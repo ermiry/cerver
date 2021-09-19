@@ -1,33 +1,27 @@
 ## General
-- Moved port & udp related definitions to network header
-- Refactored cerver's name & welcome fields definitions
-- Updated sources to handle new cerver name value
-- Added cerver info alias definition & method
-- Refactored THREAD_NAME_BUFFER_SIZE definition
-- Refactored sources to use new thread_set_name ()
+- Updated custom string type methods implementations
+- Added dedicated script to compile & install cerver
+- Added script to compile development sources
 
-## Client
-- Refactored client connect & start related methods
-- Refactored client request to cerver methods
-
-## Connection
-- Added base connection state definitions & methods
-- Added dedicated connection state mutex
-- Added base connection attempt reconnect fields
-- Refactored connection_connect () to update state
-- Added client reference directly inside connection
-- Moved connection start methods to connection sources
-- Added ability to set connection's receive flags
-- Added dedicated methods to reset connection values
+## Files
+- Renamed custom filename sizes related definitions
+- Added latest files & images types definitions & methods
 
 ## Threads
-- Added ability to request jobs from queue by id
-- Changed jobs methods return values types
+- Added latest available worker structure & methods
+- Added dedicated methods to wait & signal a job queue
+- Refactored custom thread mutex & cond methods
 
-## Examples
-- Updated examples to handle new cerver fields
+## Utilities
+- Removed obsolete json utilities methods & sources
+- Small updates in custom log types & internal methods
+- Updated custom math & c string related utilities
 
 ## Tests
-- Updated cerver integration tests name checks
-- Updated integration tests to handle welcome meesage
-- Updated jobs unit tests with new fields
+- Added base dedicated math utilities unit tests sources
+- Added string type methods custom tests methods
+- Added worker unit tests & update threads tests
+- Added custom data structure directly in test app
+- Added dedicated data files to be used in unit tests
+- Added files & receive handler related tests sources
+- Added script to build image used for local tests

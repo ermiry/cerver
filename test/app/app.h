@@ -1,5 +1,5 @@
-#ifndef _EXAMPLE_APP_H_
-#define _EXAMPLE_APP_H_
+#ifndef _TEST_APP_H_
+#define _TEST_APP_H_
 
 #include <time.h>
 
