@@ -2,8 +2,13 @@
 #define _CERVER_FILES_H_
 
 #include <stdio.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -70,7 +75,7 @@ struct _FileCerver {
 		struct _Cerver *, struct _Client *, struct _Connection *,
 		const char *saved_filename
 	);
-	
+
 	FileCerverStats *stats;
 
 };
@@ -143,10 +148,26 @@ CERVER_EXPORT void file_cerver_stats_print (FileCerver *file_cerver);
 // alphabet, numbers, '-', '_' and  '.'
 CERVER_EXPORT void files_sanitize_filename (char *filename);
 
+// works like files_sanitize_filename ()
+// but also keeps '/' characters
+CERVER_EXPORT void files_sanitize_complete_filename (char *filename);
+
 // check if a directory already exists, and if not, creates it
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_dir (
 	const char *dir_path, mode_t mode
+);
+
+// recursively creates all directories in dir path
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_create_recursive_dir (
+	const char *dir_path, mode_t mode
+);
+
+// moves one file from one location to another
+// returns 0 on success
+CERVER_EXPORT int file_move_to (
+	const char *actual_path, const char *saved_path
 );
 
 // returns an allocated string with the file extension
@@ -182,13 +203,74 @@ CERVER_EXPORT char *file_read (
 	const char *filename, size_t *file_size
 );
 
+// opens and reads n bytes from a file into a buffer
+CERVER_EXPORT char *file_n_read (
+	const char *filename, const size_t n_bytes, size_t *n_read
+);
+
 // opens a file with the required flags
 // returns fd on success, -1 on error
 CERVER_EXPORT int file_open_as_fd (
 	const char *filename, struct stat *filestatus, int flags
 );
 
-CERVER_EXPORT json_value *file_json_parse (const char *filename);
+#pragma endregion
+
+#pragma region images
+
+#define IMAGE_TYPE_MAP(XX)						\
+	XX(0,	NONE, 		None, 		undefined)	\
+	XX(1,	PNG, 		PNG,		png)		\
+	XX(2,	JPEG, 		JPEG, 		jpeg)		\
+	XX(3,	GIF, 		GIF,		gif)		\
+	XX(4,	BMP, 		BMP,		bmp)
+
+typedef enum ImageType {
+
+	#define XX(num, name, string, extension) IMAGE_TYPE_##name = num,
+	IMAGE_TYPE_MAP (XX)
+	#undef XX
+
+} ImageType;
+
+CERVER_EXPORT const char *files_image_type_to_string (
+	const ImageType type
+);
+
+CERVER_EXPORT const char *files_image_type_extension (
+	const ImageType type
+);
+
+// reads the file's contents to find matching magic bytes
+CERVER_EXPORT ImageType files_image_get_type_from_file (
+	const void *file
+);
+
+// opens the file and returns the file's image type
+CERVER_EXPORT ImageType files_image_get_type (
+	const char *filename
+);
+
+// returns the correct image type based on the filename's extension
+CERVER_EXPORT ImageType files_image_get_type_by_extension (
+	const char *filename
+);
+
+// returns true if jpeg magic bytes are in file
+CERVER_EXPORT bool files_image_is_jpeg (const char *filename);
+
+// returns true if the filename's extension is jpg or jpeg
+CERVER_EXPORT bool files_image_extension_is_jpeg (
+	const char *filename
+);
+
+// returns true if png magic bytes are in file
+CERVER_EXPORT bool files_image_is_png (const char *filename);
+
+// returns true if the filename's extension is png
+CERVER_EXPORT bool files_image_extension_is_png (
+	const char *filename
+);
 
 #pragma endregion
 
@@ -196,7 +278,7 @@ CERVER_EXPORT json_value *file_json_parse (const char *filename);
 
 struct _FileHeader {
 
-	char filename[DEFAULT_FILENAME_LEN];
+	char filename[FILENAME_DEFAULT_SIZE];
 	size_t len;
 
 };
