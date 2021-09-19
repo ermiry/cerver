@@ -660,6 +660,20 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 
 }
 
+// wait for work or signal on the job queue
+void job_queue_wait (JobQueue *job_queue) {
+
+	bsem_wait (job_queue->has_jobs);
+
+}
+
+// signal a job queue
+void job_queue_signal (JobQueue *job_queue) {
+
+	bsem_post (job_queue->has_jobs);
+
+}
+
 unsigned int job_queue_stop (JobQueue *job_queue) {
 
 	unsigned int retval = 1;
