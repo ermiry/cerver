@@ -3,12 +3,12 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include <ctype.h>
-#include <math.h>
-
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include <ctype.h>
+#include <math.h>
 
 #include "cerver/utils/utils.h"
 
@@ -25,26 +25,30 @@ bool system_is_little_endian (void) {
 
 /*** math ***/
 
-int clamp_int (int val, int min, int max) {
+int clamp_int (
+	const int val, const int min, const int max
+) {
 
 	const int t = val < min ? min : val;
 	return t > max ? max : t;
 
 }
 
-int abs_int (int value) {
-	
+int abs_int (const int value) {
+
 	return value > 0 ? value : (value * -1);
-	
+
 }
 
-float lerp (float first, float second, float by) {
-	
+float lerp (
+	const float first, const float second, const float by
+) {
+
 	return first * (1 - by) + second * by;
-	
+
 }
 
-bool float_compare (float f1, float f2) {
+bool float_compare (const float f1, const float f2) {
 
 	return fabs (f1 - f2) < 0.00001;
 
@@ -53,9 +57,13 @@ bool float_compare (float f1, float f2) {
 /*** random ***/
 
 // init psuedo random generator based on our seed
-void random_set_seed (unsigned int seed) { srand (seed); }
+void random_set_seed (const unsigned int seed) {
 
-int random_int_in_range (int min, int max) {
+	srand (seed);
+
+}
+
+int random_int_in_range (const int min, const int max) {
 
 	int low = 0, high = 0;
 
@@ -73,7 +81,7 @@ int random_int_in_range (int min, int max) {
 
 }
 
-float random_float (float abs) {
+float random_float (const float abs) {
 
 	return ((float) rand () / (float)(RAND_MAX)) * abs;
 
@@ -82,14 +90,14 @@ float random_float (float abs) {
 /*** converters ***/
 
 // convert a string representing a hex to a string
-int xtoi (char *hexString) {
+int xtoi (char *hex_string) {
 
 	int i = 0;
 
-	if ((*hexString == '0') && (*(hexString + 1) == 'x')) hexString += 2;
+	if ((*hex_string == '0') && (*(hex_string + 1) == 'x')) hex_string += 2;
 
-	while (*hexString) {
-		char c = toupper (*hexString++);
+	while (*hex_string) {
+		char c = toupper (*hex_string++);
 		if ((c < '0') || (c > 'F') || ((c > '9') && (c < 'A'))) break;
 		c -= '0';
 		if (c > 9) c-= 7;
@@ -123,6 +131,13 @@ char *itoa (int i, char *b) {
 	} while (i);
 
 	return b;
+
+}
+
+bool bool_value_from_string (const char *string_value) {
+
+	if (!strcasecmp ("true", string_value)) return true;
+	return false;
 
 }
 
@@ -216,28 +231,18 @@ size_t c_string_concat_safe (
 // creates a new c string with the desired format, as in printf
 char *c_string_create (const char *format, ...) {
 
-	char *fmt = NULL;
+	char *result = NULL;
 
-	if (format != NULL) fmt = strdup (format);
-	else fmt = strdup ("");
+	if (format) {
+		va_list args;
+		va_start (args, format);
 
-	va_list argp;
-	va_start (argp, format);
-	char oneChar[1];
-	int len = vsnprintf (oneChar, 1, fmt, argp);
-	if (len < 1) return NULL;
-	va_end (argp);
+		vasprintf (&result, format, args);
 
-	char *str = (char *) calloc (len + 1, sizeof (char));
-	if (!str) return NULL;
+		va_end (args);
+	}
 
-	va_start (argp, format);
-	vsnprintf (str, len + 1, fmt, argp);
-	va_end (argp);
-
-	free (fmt);
-
-	return str;
+	return result;
 
 }
 
@@ -476,6 +481,31 @@ bool c_string_starts_with (const char *str, const char *substr) {
 
 	return (str && substr) ?
 		strncmp (str, substr, strlen (substr)) == 0 : false;
+
+}
+
+// find a substring in another string with a max length
+char *c_string_find_sub_in_len (
+	const char *haystack, const char *needle, size_t len
+) {
+
+	int i = 0;
+	size_t needle_len = 0;
+
+	if (0 == (needle_len = strnlen (needle, len)))
+			return (char *) haystack;
+
+	for (i = 0; i <= (int) (len - needle_len); i++) {
+		if (
+			(haystack[0] == needle[0]) &&
+			(0 == strncmp(haystack, needle, needle_len))
+		)
+			return (char *) haystack;
+
+		haystack++;
+	}
+
+	return NULL;
 
 }
 
