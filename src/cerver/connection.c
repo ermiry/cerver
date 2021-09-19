@@ -249,7 +249,7 @@ void connection_delete (void *connection_ptr) {
 		socket_delete (connection->socket);
 
 		if (connection->state_mutex)
-			pthread_mutex_delete (connection->state_mutex);
+			thread_mutex_delete (connection->state_mutex);
 
 		if (connection->active) connection_end (connection);
 
@@ -271,10 +271,10 @@ void connection_delete (void *connection_ptr) {
 		connection_stats_delete (connection->stats);
 
 		if (connection->cond)
-			pthread_cond_delete (connection->cond);
+			thread_cond_delete (connection->cond);
 
 		if (connection->mutex)
-			pthread_mutex_delete (connection->mutex);
+			thread_mutex_delete (connection->mutex);
 
 		free (connection);
 	}
@@ -304,10 +304,10 @@ Connection *connection_create_complete (void) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
-		connection->state_mutex = pthread_mutex_new ();
+		connection->state_mutex = thread_mutex_new ();
 
-		connection->cond = pthread_cond_new ();
-		connection->mutex = pthread_mutex_new ();
+		connection->cond = thread_cond_new ();
+		connection->mutex = thread_mutex_new ();
 	}
 
 	return connection;

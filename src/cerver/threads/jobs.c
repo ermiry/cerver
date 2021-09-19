@@ -111,8 +111,8 @@ void job_handler_delete (void *job_handler_ptr) {
 		job_handler->cerver = NULL;
 		job_handler->connection = NULL;
 
-		pthread_mutex_delete (job_handler->mutex);
-		pthread_cond_delete (job_handler->cond);
+		thread_mutex_delete (job_handler->mutex);
+		thread_cond_delete (job_handler->cond);
 
 		if (job_handler->data_delete)
 			job_handler->data_delete (job_handler->data);
@@ -129,8 +129,8 @@ void *job_handler_create (void) {
 
 	JobHandler *job_handler = (JobHandler *) job_handler_new ();
 	if (job_handler) {
-		job_handler->cond = pthread_cond_new ();
-		job_handler->mutex = pthread_mutex_new ();
+		job_handler->cond = thread_cond_new ();
+		job_handler->mutex = thread_mutex_new ();
 	}
 
 	return job_handler;
@@ -549,7 +549,7 @@ void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
 
 		else {
 			(void) pthread_mutex_unlock (job_queue->rwmutex);
-		}	
+		}
 	}
 
 	return match;
@@ -617,7 +617,7 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 }
 
 static unsigned int job_queue_start_internal (JobQueue *job_queue) {
-	
+
 	unsigned int retval = 1;
 
 	job_queue->running = true;
