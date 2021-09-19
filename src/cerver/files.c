@@ -216,10 +216,10 @@ String *file_cerver_search_file (
 	String *retval = NULL;
 
 	if (file_cerver && filename) {
-		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		char filename_query[FILENAME_DEFAULT_SIZE * 2] = { 0 };
 		for (unsigned int i = 0; i < file_cerver->n_paths; i++) {
 			(void) snprintf (
-				filename_query, DEFAULT_FILENAME_LEN * 2,
+				filename_query, FILENAME_DEFAULT_SIZE * 2,
 				"%s/%s",
 				file_cerver->paths[i]->str, filename
 			);

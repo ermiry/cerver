@@ -12,9 +12,10 @@
 
 #include "cerver/config.h"
 
-#include "cerver/utils/json.h"
+#define DIRNAME_DEFAULT_SIZE			1024
+#define FILENAME_DEFAULT_SIZE			1024
 
-#define DEFAULT_FILENAME_LEN			1024
+#define FILES_MOVE_SIZE					2048
 
 #ifdef __cplusplus
 extern "C" {
