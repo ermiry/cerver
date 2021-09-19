@@ -10,10 +10,15 @@ sudo docker kill $(sudo docker ps -q)
 make TYPE=test -j4 || { exit 1; }
 make TYPE=test -j4 test || { exit 1; }
 
+# unit tests
+bash test/run.sh || { exit 1; }
+
 # compile docker
+echo "Building test docker image..."
 sudo docker build -t ermiry/cerver:local -f Dockerfile.local . || { exit 1; }
 
 # ping
+echo "Ping integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -29,6 +34,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # packets
+echo "Packets integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -44,6 +50,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # requests
+echo "Requests integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -59,6 +66,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # auth
+echo "Auth integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -74,6 +82,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # sessions
+echo "Sessions integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -89,6 +98,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # threads
+echo "Threads integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -104,6 +114,7 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 sudo docker kill $(sudo docker ps -q)
 
 # queue
+echo "Queue integration test..."
 sudo docker run \
 	-d \
 	--name test --rm \
@@ -117,3 +128,5 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 ./test/bin/client/queue || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
+
+printf "\n\nDone\n\n"
