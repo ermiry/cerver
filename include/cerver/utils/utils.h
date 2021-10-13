@@ -16,30 +16,46 @@ CERVER_PUBLIC bool system_is_little_endian (void);
 
 /*** math ***/
 
-CERVER_PUBLIC int clamp_int (int val, int min, int max);
+CERVER_PUBLIC int clamp_int (
+	const int val, const int min, const int max
+);
 
-CERVER_PUBLIC int abs_int (int value);
+CERVER_PUBLIC int abs_int (const int value);
 
-CERVER_PUBLIC float lerp (float first, float second, float by);
+CERVER_PUBLIC float lerp (
+	const float first, const float second, const float by
+);
 
-CERVER_PUBLIC bool float_compare (float f1, float f2);
+CERVER_PUBLIC bool float_compare (
+	const float f1, const float f2
+);
 
 /*** random ***/
 
 // init psuedo random generator based on our seed
-CERVER_PUBLIC void random_set_seed (unsigned int seed);
+CERVER_PUBLIC void random_set_seed (
+	const unsigned int seed
+);
 
-CERVER_PUBLIC int random_int_in_range (int min, int max);
+CERVER_PUBLIC int random_int_in_range (
+	const int min, int max
+);
 
-// abds = 5 for random float values between 0.0001 and 4.9999
-CERVER_PUBLIC float random_float (float abs);
+// abs = 5 for random float values between 0.0001 and 4.9999
+CERVER_PUBLIC float random_float (
+	const float abs
+);
 
 /*** converters ***/
 
 // convert a string representing a hex to a string
-CERVER_PUBLIC int xtoi (char *hexString);
+CERVER_PUBLIC int xtoi (char *hex_string);
 
 CERVER_PUBLIC char *itoa (int i, char *b);
+
+CERVER_PUBLIC bool bool_value_from_string (
+	const char *string_value
+);
 
 /*** c strings ***/
 
@@ -116,6 +132,11 @@ CERVER_PUBLIC char *c_string_strip_quotes (char *str);
 // returns true if the string starts with the selected sub string
 CERVER_PUBLIC bool c_string_starts_with (
 	const char *str, const char *substr
+);
+
+// find a substring in another string with a max length
+CERVER_PUBLIC char *c_string_find_sub_in_len (
+	const char *haystack, const char *needle, size_t len
 );
 
 // creates a newly allocated string using the data between the two pointers of the SAME string

@@ -178,7 +178,7 @@ static void app_packet_handler (void *data) {
 		AppData *app_data = (AppData *) handler_data->data;
 		Packet *packet = handler_data->packet;
 		if (packet) {
-			switch (packet->header->request_type) {
+			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet); break;
 
 				case GET_MSG: handle_msg_request(packet, app_data->message); break;
@@ -245,7 +245,7 @@ int main (void) {
 		if (cerver_start (my_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				my_cerver->info->name->str
+				my_cerver->info->name
 			);
 
 			cerver_delete (my_cerver);

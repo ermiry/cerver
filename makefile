@@ -4,6 +4,8 @@ NATIVE		:= 0
 
 COVERAGE	:= 0
 
+DEBUG		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -25,14 +27,21 @@ MATH		:= -lm
 
 DEFINES		:= -D _GNU_SOURCE
 
-DEVELOPMENT	:= -D CERVER_DEBUG -D CERVER_STATS 				\
-				-D CLIENT_DEBUG								\
-				-D CONNECTION_DEBUG							\
-				-D HANDLER_DEBUG 							\
+BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
+				-D CLIENT_DEBUG -D CLIENT_STATS 			\
+				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
-				-D FILES_DEBUG
+				-D FILES_DEBUG								\
+				-D THREADS_DEBUG
+
+HAND_DEBUG	:= -D HANDLER_DEBUG -D SOCKET_DEBUG
+RECV_DEBUG	:= -D RECEIVE_DEBUG -D CLIENT_RECEIVE_DEBUG
+
+EXTRA_DEBUG	:= $(HAND_DEBUG) $(RECV_DEBUG)
+
+DEVELOPMENT := $(BASE_DEBUG)
 
 CC          := gcc
 
@@ -166,6 +175,34 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+EXAPP		:= ./$(EXATARGET)/app/libapp.so
+EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
+
+EXAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	EXAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	EXAPPFGS += -D EXAMPLE_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++) 
+	EXAPPFGS += -std=c++11 -fpermissive
+else
+	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+EXAPPFGS += $(COMMON)
+
+EXAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
+
+exapp:
+	@mkdir -p ./$(EXATARGET)/app
+	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
+
 base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
@@ -191,6 +228,7 @@ client: $(EXOBJS)
 examples:
 	@mkdir -p ./$(EXATARGET)
 	$(MAKE) $(EXOBJS)
+	$(MAKE) exapp
 	$(MAKE) base
 	$(MAKE) client
 
@@ -244,6 +282,14 @@ TESTAPPSRC  := $(shell find $(TESTDIR)/app -type f -name *.$(SRCEXT))
 
 TESTAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
 
+ifeq ($(TYPE), development)
+	TESTAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	TESTAPPFGS += -D TEST_APP_DEBUG
+endif
+
 # check which compiler we are using
 ifeq ($(CC), g++) 
 	TESTAPPFGS += -std=c++11 -fpermissive
@@ -253,7 +299,9 @@ endif
 
 TESTAPPFGS += $(COMMON)
 
-TESTAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver
+TESTAPPLIBS := -L /usr/local/lib -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+
+TESTAPPLIB	:= -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
 
 testapp:
 	@mkdir -p ./$(TESTTARGET)/app
@@ -264,7 +312,12 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/files.o -o ./$(TESTTARGET)/files $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/packets.o -o ./$(TESTTARGET)/packets $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/receive.o -o ./$(TESTTARGET)/receive $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/system.o -o ./$(TESTTARGET)/system $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/types/*.o -o ./$(TESTTARGET)/types $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
@@ -276,6 +329,8 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/queue.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/queue $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/requests.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/requests $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
 
@@ -287,6 +342,8 @@ integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/queue.o -o $(INTCLIENTOUT)/queue $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
 
@@ -294,16 +351,26 @@ integration: testout $(TESTOBJS)
 	$(MAKE) integration-cerver
 	$(MAKE) integration-client
 
+TESTHANDLERIN	:= ./$(TESTBUILD)/handler
+TESTHANDLEROUT	:= ./$(TESTTARGET)/handler
+TESTHANDLERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
+
+testhandler: testout $(TESTOBJS)
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/cerver.o -o $(TESTHANDLEROUT)/cerver $(TESTHANDLERLIBS)
+	$(CC) $(TESTINC) $(TESTHANDLERIN)/client.o -o $(TESTHANDLEROUT)/client $(TESTHANDLERLIBS)
+
 testout:
 	@mkdir -p ./$(TESTTARGET)
 	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/handler
 
 test: testout
 	$(MAKE) $(TESTOBJS)
 	$(MAKE) units
 	$(MAKE) testapp
 	$(MAKE) integration
+	$(MAKE) testhandler
 
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
@@ -351,7 +418,7 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
 endif
 
-BENCHLIBS	:= $(PTHREAD) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
@@ -360,6 +427,7 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
 
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)

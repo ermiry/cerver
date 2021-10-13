@@ -8,22 +8,55 @@
 
 #include "../test.h"
 
-#define MESSAGE			"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+const char *MESSAGE	= {
+	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+	"Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris "
+	"nisi ut aliquip ex ea commodo consequat."
+};
 
-#define MESSAGE_0		"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-#define MESSAGE_1		"Sagittis nisl rhoncus mattis rhoncus urna. Vitae congue eu consequat ac felis donec et odio. "
-#define MESSAGE_2		"Commodo sed egestas egestas fringilla phasellus. Tellus id interdum velit laoreet id donec ultrices tincidunt. Porttitor massa id neque aliquam vestibulum morbi blandit cursus."
-#define MESSAGE_3		"Malesuada pellentesque elit eget gravida cum. Pharetra vel turpis nunc eget lorem dolor sed viverra."
-#define MESSAGE_4		"Justo donec enim diam vulputate. Dui nunc mattis enim ut. Quis vel eros donec ac odio tempor. Lorem ipsum dolor sit amet consectetur."
+const char *MESSAGE_0 = {
+	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+};
+
+const char *MESSAGE_1 = {
+	"Sagittis nisl rhoncus mattis rhoncus urna. Vitae congue eu consequat "
+	"ac felis donec et odio. "
+};
+
+const char *MESSAGE_2 = {
+	"Commodo sed egestas egestas fringilla phasellus. Tellus id interdum "
+	"velit laoreet id donec ultrices tincidunt. Porttitor massa id neque "
+	"aliquam vestibulum morbi blandit cursus."
+};
+
+const char *MESSAGE_3 = {
+	"Malesuada pellentesque elit eget gravida cum. Pharetra vel turpis "
+	"nunc eget lorem dolor sed viverra."
+};
+
+const char *MESSAGE_4 = {
+	"Justo donec enim diam vulputate. Dui nunc mattis enim ut. "
+	"Quis vel eros donec ac odio tempor. Lorem ipsum dolor sit amet consectetur."
+};
+
+static const char *client_name = { "test-client" };
 
 static Client *client = NULL;
 static Connection *connection = NULL;
 
-static void single_app_message (const char *msg) {
+static void single_app_message (
+	const size_t id, const char *msg
+) {
+
+	AppMessage *app_message = app_message_create (
+		id, msg
+	);
 
 	Packet *message = packet_create (
 		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
-		msg, strlen (msg)
+		app_message, sizeof (AppMessage)
 	);
 
 	test_check_ptr (message);
@@ -46,15 +79,23 @@ static void single_app_message (const char *msg) {
 
 	test_check_unsigned_ne (sent, 0);
 
+	// done
+	app_message_delete (app_message);
 	packet_delete (message);
 
 }
 
-static void single_app_message_generate_request (const char *msg) {
+static void single_app_message_generate_request (
+	const size_t id, const char *msg
+) {
+
+	AppMessage *app_message = app_message_create (
+		id, msg
+	);
 
 	Packet *message = packet_generate_request (
 		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
-		msg, strlen (msg)
+		app_message, sizeof (AppMessage)
 	);
 
 	test_check_ptr (message);
@@ -74,6 +115,7 @@ static void single_app_message_generate_request (const char *msg) {
 	test_check_unsigned_ne (sent, 0);
 
 	// done
+	app_message_delete (app_message);
 	packet_delete (message);
 
 }
@@ -99,7 +141,7 @@ static void single_app_message_manual (const char *msg) {
 	end += sizeof (PacketHeader);
 
 	app_message_create_internal (
-		(AppMessage *) end, msg
+		(AppMessage *) end, 0, msg
 	);
 
 	// send the packet
@@ -129,10 +171,9 @@ int main (int argc, const char **argv) {
 
 	test_check_ptr (client);
 
-	client_set_name (client, "test-client");
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, "test-client", NULL);
-	test_check_str_len (client->name->str, strlen ("test-client"), NULL);
+	client_set_name (client, client_name);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	// Handler *app_handler = handler_create (client_app_handler);
 	// handler_set_direct_handle (app_handler, true);
@@ -152,8 +193,8 @@ int main (int argc, const char **argv) {
 	);
 
 	/*** send ***/
-	single_app_message (MESSAGE);
-	single_app_message_generate_request (MESSAGE);
+	single_app_message (0, MESSAGE);
+	single_app_message_generate_request (1, MESSAGE);
 	single_app_message_manual (MESSAGE);
 
 	// wait for any response to arrive

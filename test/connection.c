@@ -13,12 +13,10 @@ static Connection *test_connection_create (void) {
 
 	Connection *connection = connection_create_empty ();
 
-	test_check_ptr (connection->name);
-	test_check_str_eq (connection->name->str, "no-name", NULL);
-	test_check_str_len (connection->name->str, strlen ("no-name"), NULL);
+	test_check_str_eq (connection->name, CONNECTION_DEFAULT_NAME, NULL);
+	test_check_str_len (connection->name, strlen (CONNECTION_DEFAULT_NAME), NULL);
 	test_check_unsigned_eq (connection->connected_timestamp, 0, NULL);
 	test_check_ptr (connection->socket);
-	test_check_ptr (connection->sock_receive);
 	test_check_ptr (connection->stats);
 
 	return connection;
@@ -30,8 +28,8 @@ static void test_connection_base_configuration (void) {
 	Connection *connection = test_connection_create ();
 
 	connection_set_name (connection,connection_name);
-	test_check_str_eq (connection->name->str, connection_name, NULL);
-	test_check_str_len (connection->name->str, strlen (connection_name), NULL);
+	test_check_str_eq (connection->name, connection_name, NULL);
+	test_check_str_len (connection->name, strlen (connection_name), NULL);
 
 	connection_delete (connection);
 

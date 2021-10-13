@@ -12,8 +12,11 @@
 
 #include "cerver/config.h"
 
-#define IP_TO_STR_LEN       16
-#define IPV6_TO_STR_LEN     46
+#define IP_TO_STR_LEN					16
+#define IPV6_TO_STR_LEN					46
+
+#define MAX_PORT_NUM					65535
+#define MAX_UDP_PACKET_SIZE				65515
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,6 +42,11 @@ CERVER_PUBLIC char *network_hostname_to_ip (
 // true on success, false if there was an error
 CERVER_PUBLIC bool sock_set_blocking (
 	int32_t fd, bool blocking
+);
+
+CERVER_PUBLIC unsigned int sock_ip_to_string_actual (
+	const struct sockaddr *address,
+	char *ip_buffer
 );
 
 CERVER_PUBLIC char *sock_ip_to_string (

@@ -1,83 +1,63 @@
 ## General
-- Updated cerver default definitions in main cerver header
-- Moved definitions from auth & handler headers to main cerver header
-- Refactored cerver_new () & cerver init methods to use new default values
-- Refactored main cerver methods definitions structure
-- Removed poll type as the default handler when creating a new cerver
-- Cerver's handle type must be manually specified before calling cerver_start ()
-- Added dedicated development & test Dockerfiles
-- Added dedicated Dockerfile to be used by docker hub's automated builds
-- Added base network_hostname_to_ip ()
-- Added base sock_set_reusable () to set socket's reusable flags
-- Added new implementations of base64 methods using avx2 instructions
-- Updated sha256 implementation and added user friendly methods
-- Added Work type which takes and returns a void pointer
-- Refactored cerver & client events & errors to use Work instead Action
-- Added extern "C" modifiers in headers witch check for __cplusplus
-- Added cerver documentation submodule
-- Added base documentation workflow
-- Added base codecov configuration
-- Updated makefile to compile sources & tests with coverage flags
-- Added dedicated version file
-- Added CHANGELOG.md to keep track of the latest changes
-- Added dedicated beta & production Dockerfiles
-- Added base cerver-cmongo integration Dockerfiles and workflows
-- Adedd more cerver log methods
-- Removed HTTP header & source
+- Added SOCKET_DEBUG definition for extra receive information
+- Added CLIENT_STATS & CONNECTION_STATS compilation definitions
+- Added the ability to set a custom cerver max received packet size
+- Added base file-system methods in dedicated sources
+- Moved port & udp related definitions to network header
+- Added cerver info alias definition & method
+- Updated custom string type methods implementations
 
-## Clients
-- Refactored client header & sources organization
-- Added base client connections status definitions
-- Refactored client_remove_connection () to use ClientConnectionsStatus
+## Client
+- Added new base client_receive_handle_buffer () implementation
+- Added CLIENT_RECEIVE_DEBUG definition for extra client receive logs
+- Added base client handler error definitions & methods
+- Added client handler error return values to packet handlers
+- Updated client get_next_packet () & receive related methods
+- Split client_connection_start () into dedicated connection methods
 
-## Connections
-- Refactored connection custom receive to take buffer & buffer size
-- Refactored connection default values definitions
-- Updated connection sources organization
+## Connection
+- Added ReceiveHandle into connection structure
+- Removed sock receive & full packet fields from connection
+- Added base methods to send packets using connection's queue
+- Added dedicated method to en-queue a packet in connection
+- Added base connection state definitions & methods
+- Added dedicated connection state mutex
+
+## Packets
+- Changed packet's header field from a pointer to a static value
+- Changed packet version from a reference to a static field
+- Added base packet_send_actual () to send a tcp packet
+- Added dedicated packets init requests methods
 
 ## Handler
-- Removed original cerver_receive () as it will not be needed anymore
-- Refactored cerver_receive_handle_buffer () to be used in one thread
-- Removed sock receive check & mutex locks in receive_handle_buffer ()
-- Removed extra check in cerver_receive_handle_spare_packet ()
-- Passing received size to cerver_receive related methods & structures
-- Removed checks for buffer & size in cerver_receive_handle_buffer ()
-- Replaced buffer_size with received_size in receive_handle_buffer ()
-- Added base main handler errors definitions
-- Refactored main cerver handler methods to use CerverHandlerError
-- Refactored cerver_receive_handle_failed () to be used in one thread
+- Refactored cerver_test_packet_handler () to send a ping packet
+- Added a new cerver_receive_handle_buffer () implementation
+- Added RECEIVE_DEBUG definition to enable extra logs in receive methods
+- Added handler receive error definitions & methods
 
-## Auth
-- Added ability to set cerver's on hold receive buffer size
-- Refactored on hold poll to use a constant buffer to handle receives
-- Added auth errors definitions to be used in internal auth methods
+## Threads
+- Added dedicated THREADS_DEBUG definition
+- Refactored JobQueue methods to handle different types
+- Refactored thread_set_name () to handle variable arguments
+- Added ability to request jobs from queue by id
+- Added latest available worker structure & methods
+- Added dedicated methods to wait & signal a job queue
+- Refactored custom thread mutex & cond methods
 
-## Admin
-- Refactored admin cerver default values definitions
-- Refactored admin poll methods to be used in just one thread
-- Added base admin cerver handler errors definitions
-- Added base admin connections status definitions
+## Files
+- Renamed custom filename sizes related definitions
+- Added latest files & images types definitions & methods
 
-## Collections
-- Updated dlist with latest available methods
-- Updated avl & htab sources with latest methods
-
-## Examples
-- Updated examples to manually specify their handler type
-- Refactored makefile example & removed mongo dependency
-- Updated examples event methods to be of the correct type
+## Utilities
+- Removed obsolete json utilities methods & sources
+- Small updates in custom log types & internal methods
+- Updated custom math & c string related utilities
 
 ## Tests
-- Added check macros in dedicated test header
-- Added dedicated script to run tests
-- Added base tests actions in build workflow
-- Added instructions in make to compile tests
-- Added dlist test methods
-- Added base cerver & client integration tests
-- Added test app sources to be used for integration tests
-
-## Benchmarks
-- Refactored bench script to compile sources with TYPE=test
-- Updated makefile to correctly build base web benchmark
-- Added dedicated script to build sources to be used in benchmarks
-- Added base64 benchmark - compile sources with optimization flags
+- Checking packet's data integrity in test app handlers
+- Updated send packet methods in client packets integration test
+- Added dedicated client & cerver queue integration tests
+- Added custom thread structures & methods unit tests
+- Added base dedicated math utilities unit tests sources
+- Added string type methods custom tests methods
+- Added worker unit tests & update threads tests

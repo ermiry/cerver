@@ -23,7 +23,7 @@ static void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:
@@ -49,9 +49,8 @@ int main (int argc, const char **argv) {
 	test_check_ptr (client);
 
 	client_set_name (client, client_name);
-	test_check_ptr (client->name->str);
-	test_check_str_eq (client->name->str, client_name, NULL);
-	test_check_str_len (client->name->str, strlen (client_name), NULL);
+	test_check_str_eq (client->name, client_name, NULL);
+	test_check_str_len (client->name, strlen (client_name), NULL);
 
 	/*** handler ***/
 	Handler *app_packet_handler = handler_create (app_handler);
@@ -138,13 +137,11 @@ int main (int argc, const char **argv) {
 	// send a bunch of requests to the cerver
 	Packet *request = NULL;
 	for (unsigned int i = 0; i < REQUESTS; i++) {
-		request = packet_new ();
-		if (request) {
-			(void) packet_create_request (
-				request,
-				PACKET_TYPE_APP, APP_REQUEST_TEST
-			);
+		request = packet_create_request (
+			PACKET_TYPE_APP, APP_REQUEST_TEST
+		);
 
+		if (request) {
 			packet_set_network_values (
 				request,
 				NULL, client, connection, NULL

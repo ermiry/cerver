@@ -16,12 +16,12 @@
 
 #include "cerver/threads/thread.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 #pragma region types
 
-static const char *log_get_msg_type (LogType type) {
+static const char *log_get_msg_type (const LogType type) {
 
 	switch (type) {
 		#define XX(num, name, string) case LOG_TYPE_##name: return #string;
@@ -59,7 +59,7 @@ LogOutputType cerver_log_get_output_type (void) {
 }
 
 // sets the log output type to use
-void cerver_log_set_output_type (LogOutputType type) {
+void cerver_log_set_output_type (const LogOutputType type) {
 
 	log_global_output_type = type;
 
@@ -90,13 +90,13 @@ unsigned int cerver_log_set_path (const char *pathname) {
 }
 
 // sets the interval in secs which will be used to sync the contents of the log file to disk
-void cerver_log_set_update_interval (unsigned int interval) {
+void cerver_log_set_update_interval (const unsigned int interval) {
 
 	log_file_update_interval = interval;
 
 }
 
-const char *cerver_log_time_type_to_string (LogTimeType type) {
+const char *cerver_log_time_type_to_string (const LogTimeType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case LOG_TIME_TYPE_##name: return #string;
@@ -108,7 +108,7 @@ const char *cerver_log_time_type_to_string (LogTimeType type) {
 
 }
 
-const char *cerver_log_time_type_description (LogTimeType type) {
+const char *cerver_log_time_type_description (const LogTimeType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case LOG_TIME_TYPE_##name: return #description;
@@ -132,19 +132,27 @@ LogTimeType cerver_log_get_time_config (void) {
 // time: 24h time format
 // date: day/month/year format
 // both: day/month/year - 24h date time format
-void cerver_log_set_time_config (LogTimeType type) {
+void cerver_log_set_time_config (const LogTimeType type) {
 
 	log_time_type = type;
 
 }
 
 // set if logs datetimes will use local time or not
-void cerver_log_set_local_time (bool value) { use_local_time = value; }
+void cerver_log_set_local_time (const bool value) {
+
+	use_local_time = value;
+
+}
 
 // if the log's quiet option is set to TRUE,
 // only success, warning & error messages will be handled
 // any other type will be ignored
-void cerver_log_set_quiet (bool value) { quiet = value; }
+void cerver_log_set_quiet (const bool value) {
+
+	quiet = value;
+
+}
 
 #pragma endregion
 
@@ -185,7 +193,7 @@ static void cerver_log_delete (void *cerver_log_ptr) {
 
 static void cerver_log_header_create (
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	const LogType first_type, const LogType second_type
 ) {
 
 	const char *first = log_get_msg_type (first_type);
@@ -228,7 +236,7 @@ static void cerver_log_header_create (
 
 }
 
-static FILE *cerver_log_get_stream (LogType first_type) {
+static FILE *cerver_log_get_stream (const LogType first_type) {
 
 	FILE *retval = stdout;
 
@@ -250,7 +258,7 @@ static FILE *cerver_log_get_stream (LogType first_type) {
 
 static void cerver_log_internal_normal_std (
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	const LogType first_type, const LogType second_type
 ) {
 
 	switch (first_type) {
@@ -285,7 +293,7 @@ static void cerver_log_internal_normal_std (
 static void cerver_log_internal_normal_file (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	const LogType first_type, const LogType second_type
 ) {
 
 	switch (first_type) {
@@ -316,8 +324,8 @@ static void cerver_log_internal_normal_file (
 static void cerver_log_internal_normal (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type,
-	LogOutputType log_output_type
+	const LogType first_type, const LogType second_type,
+	const LogOutputType log_output_type
 ) {
 
 	switch (log_output_type) {
@@ -336,7 +344,7 @@ static void cerver_log_internal_normal (
 
 static void cerver_log_internal_with_time_std (
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	const LogType first_type, const LogType second_type
 ) {
 
 	switch (first_type) {
@@ -371,7 +379,7 @@ static void cerver_log_internal_with_time_std (
 static void cerver_log_internal_with_time_file (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type
+	const LogType first_type, const LogType second_type
 ) {
 
 	switch (first_type) {
@@ -406,9 +414,9 @@ static void cerver_log_internal_with_time_file (
 static void cerver_log_internal_with_time_actual (
 	FILE *__restrict __stream,
 	CerverLog *log,
-	LogType first_type, LogType second_type,
-	LogTimeType log_time_type,
-	LogOutputType log_output_type
+	const LogType first_type, const LogType second_type,
+	const LogTimeType log_time_type,
+	const LogOutputType log_output_type
 ) {
 
 	time_t datetime = time (NULL);
@@ -438,9 +446,9 @@ static void cerver_log_internal_with_time_actual (
 
 static void cerver_log_internal (
 	FILE *__restrict __stream,
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, va_list args,
-	LogOutputType log_output_type
+	const LogOutputType log_output_type
 ) {
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
@@ -471,9 +479,9 @@ static void cerver_log_internal (
 
 static void cerver_log_internal_with_time (
 	FILE *__restrict __stream,
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, va_list args,
-	LogOutputType log_output_type
+	const LogOutputType log_output_type
 ) {
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
@@ -495,7 +503,7 @@ static void cerver_log_internal_with_time (
 static void cerver_log_internal_raw (
 	FILE *__restrict __stream,
 	const char *format, va_list args,
-	LogOutputType log_output_type
+	const LogOutputType log_output_type
 ) {
 
 	CerverLog *log = (CerverLog *) pool_pop (log_pool);
@@ -526,7 +534,7 @@ static void cerver_log_internal_raw (
 // creates and prints a message of custom types
 // based on the first type, the message can be printed with colors to stdout
 void cerver_log (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 ) {
 
@@ -569,7 +577,7 @@ void cerver_log (
 // and adds the date & time
 // if the log_time_type has been configured, it will be kept
 void cerver_log_with_date (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 ) {
 
@@ -611,7 +619,7 @@ void cerver_log_with_date (
 // and to log file if available
 // this messages ignore the quiet flag
 void cerver_log_both (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 ) {
 
@@ -786,6 +794,29 @@ static void *cerver_log_update (void *data) {
 
 #pragma GCC diagnostic pop
 
+static void cerver_log_init_file (void) {
+
+	char filename[LOG_FILENAME_SIZE] = { 0 };
+	(void) snprintf (
+		filename, LOG_FILENAME_SIZE,
+		"%s/%ld.log",
+		logs_pathname->str, time (NULL)
+	);
+
+	logfile = fopen (filename, "w+");
+	if (logfile) {
+		update_log_file = true;
+		(void) thread_create_detachable (&update_log_thread_id, cerver_log_update, NULL);
+	}
+
+	else {
+		(void) fprintf (stderr, "\n\nFailed to open %s log file!\n", filename);
+		perror ("Error");
+		(void) fprintf (stderr, "\n\n");
+	}
+
+}
+
 void cerver_log_init (void) {
 
 	if (!log_pool) {
@@ -802,20 +833,7 @@ void cerver_log_init (void) {
 	switch (log_global_output_type) {
 		case LOG_OUTPUT_TYPE_FILE:
 		case LOG_OUTPUT_TYPE_BOTH: {
-			char filename[1024] = { 0 };
-			(void) snprintf (filename, 1024, "%s/%ld.log", logs_pathname->str, time (NULL));
-
-			logfile = fopen (filename, "w+");
-			if (logfile) {
-				update_log_file = true;
-				(void) thread_create_detachable (&update_log_thread_id, cerver_log_update, NULL);
-			}
-
-			else {
-				(void) fprintf (stderr, "\n\nFailed to open %s log file!\n", filename);
-				perror ("Error");
-				(void) fprintf (stderr, "\n\n");
-			}
+			cerver_log_init_file ();
 		} break;
 
 		default: break;

@@ -24,8 +24,7 @@
 
 #include "cerver/game/game.h"
 
-#define MAX_PORT_NUM								65535
-#define MAX_UDP_PACKET_SIZE							65515
+#define CERVER_DEFAULT_ALIAS						"my-cerver"
 
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
@@ -33,6 +32,7 @@
 #define CERVER_DEFAULT_CONNECTION_QUEUE				10
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
+#define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 
 #define CERVER_DEFAULT_REUSABLE_FLAGS				false
 
@@ -132,16 +132,34 @@ CERVER_EXPORT const char *cerver_handler_type_description (
 
 #pragma region info
 
+#define CERVER_INFO_NAME_SIZE				128
+#define CERVER_INFO_ALIAS_SIZE				32
+#define CERVER_INFO_WELCOME_SIZE			512
+
 typedef struct CerverInfo {
 
-	String *name;
-	String *welcome_msg;                  // this msg is sent to the client when it first connects
-	struct _Packet *cerver_info_packet;    // useful info that we can send to clients
+	size_t name_len;
+	char name[CERVER_INFO_NAME_SIZE];
 
-	time_t time_started;                   // the actual time the cerver was started
-	u64 uptime;                            // the seconds the cerver has been up
+	size_t alias_len;
+	char alias[CERVER_INFO_ALIAS_SIZE];
+
+	// this message is sent to the client when it first connects
+	size_t welcome_len;
+	char welcome[CERVER_INFO_WELCOME_SIZE];
+	struct _Packet *cerver_info_packet;
+
+	time_t time_started;					// the actual time the cerver was started
+	u64 uptime;								// the seconds the cerver has been up
 
 } CerverInfo;
+
+// sets the cerver's alias
+// to be used primarily to handle cerver's related threads names
+// as they must not exceed a certain size
+CERVER_EXPORT void cerver_set_alias (
+	struct _Cerver *cerver, const char *alias
+);
 
 // sets the cerver msg to be sent when a client connects
 // retuns 0 on success, 1 on error
@@ -218,7 +236,6 @@ struct _Cerver {
 	Protocol protocol;                  // we only support either tcp or udp
 	bool use_ipv6;
 	u16 connection_queue;               // each server can handle connection differently
-	u32 receive_buffer_size;
 
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	bool blocking;                      // sokcet fd is blocking?
@@ -287,6 +304,9 @@ struct _Cerver {
 	// the admin can define a function to handle the recieve buffer if they are using a custom protocol
 	// otherwise, it will be set to the default one
 	Action handle_received_buffer;
+
+	u32 receive_buffer_size;
+	size_t max_received_packet_size;
 
 	// 27/05/2020 - changed form Action to Handler
 	// custom packet hanlders
@@ -477,6 +497,12 @@ CERVER_EXPORT u8 cerver_set_sessions (
 // sets a custom method to handle the raw received buffer from the socket
 CERVER_EXPORT void cerver_set_handle_recieved_buffer (
 	Cerver *cerver, Action handle_received_buffer
+);
+
+// only handle packets with size <= max_received_packet_size
+// if the packet is bigger it will be considered a bad packet 
+CERVER_EXPORT void cerver_set_max_received_packet_size (
+	Cerver *cerver, size_t max_received_packet_size
 );
 
 // 27/05/2020 - changed form Action to Handler
@@ -677,8 +703,8 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                64
-#define S_CERVER_WELCOME_LENGTH             128
+#define S_CERVER_NAME_LENGTH                128
+#define S_CERVER_WELCOME_LENGTH             512
 
 // serialized cerver structure
 typedef struct SCerver {
@@ -697,10 +723,14 @@ typedef struct SCerver {
 
 } SCerver;
 
-CERVER_PRIVATE CerverReport *cerver_deserialize (SCerver *scerver);
+CERVER_PRIVATE CerverReport *cerver_deserialize (
+	SCerver *scerver
+);
 
 // creates a cerver info packet ready to be sent
-CERVER_PRIVATE struct _Packet *cerver_packet_generate (Cerver *cerver);
+CERVER_PRIVATE struct _Packet *cerver_packet_generate (
+	Cerver *cerver
+);
 
 #pragma endregion
 

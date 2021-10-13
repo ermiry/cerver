@@ -19,14 +19,50 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
 void connection_remove_auth_data (Connection *connection);
+
+void connection_reset (Connection *connection);
+
+static void *connection_update_thread (void *connection_ptr);
+static void *connection_send_thread (void *connection_ptr);
+static void *connection_reconnect_thread (void *connection_ptr);
+
+const char *connection_state_string (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #string;
+		CONNECTION_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_string (CONNECTION_STATE_NONE);
+
+}
+
+const char *connection_state_description (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #description;
+		CONNECTION_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_description (CONNECTION_STATE_NONE);
+
+}
 
 #pragma region stats
 
@@ -60,13 +96,13 @@ void connection_stats_print (Connection *connection) {
 		if (connection->stats) {
 			cerver_log_msg ("Threshold time:            %ld", connection->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld", connection->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %lu", connection->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld", connection->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld", connection->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %lu", connection->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %lu", connection->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld", connection->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld", connection->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %lu", connection->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %lu", connection->stats->n_packets_sent);
 
 			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (connection->stats->received_packets);
@@ -100,16 +136,22 @@ Connection *connection_new (void) {
 
 	Connection *connection = (Connection *) malloc (sizeof (Connection));
 	if (connection) {
-		connection->name = NULL;
+		connection->client = NULL;
+
+		(void) memset (connection->name, 0, CONNECTION_NAME_SIZE);
 
 		connection->socket = NULL;
 		connection->port = 0;
 		connection->protocol = CONNECTION_DEFAULT_PROTOCOL;
 		connection->use_ipv6 = CONNECTION_DEFAULT_USE_IPV6;
 
-		connection->ip = NULL;
+		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
+		connection->state = CONNECTION_STATE_NONE;
+		connection->state_mutex = NULL;
+
+		connection->connection_thread_id = 0;
 		connection->connected_timestamp = 0;
 
 		connection->cerver_report = NULL;
@@ -121,13 +163,45 @@ Connection *connection_new (void) {
 		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
 
+		connection->receive_flags = CONNECTION_DEFAULT_RECEIVE_FLAGS;
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
-		connection->sock_receive = NULL;
+
+		connection->receive_handle = (ReceiveHandle) {
+			.type = RECEIVE_TYPE_NONE,
+
+			.cerver = NULL,
+
+			.socket = NULL,
+			.connection = NULL,
+			.client = NULL,
+			.admin = NULL,
+
+			.lobby = NULL,
+
+			.buffer = NULL,
+			.buffer_size = 0,
+			.received_size = 0,
+
+			.state = RECEIVE_HANDLE_STATE_NONE,
+
+			.header = (PacketHeader) {
+				.packet_type = PACKET_TYPE_NONE,
+				.packet_size = 0,
+				.handler_id = 0,
+				.request_type = 0,
+				.sock_fd = 0
+			},
+
+			.header_end = NULL,
+			.remaining_header = 0,
+
+			.spare_packet = NULL
+		};
+
+		connection->request_thread_id = 0;
 
 		connection->update_thread_id = 0;
 		connection->update_timeout = CONNECTION_DEFAULT_UPDATE_TIMEOUT;
-
-		connection->full_packet = false;
 
 		connection->received_data = NULL;
 		connection->received_data_size = 0;
@@ -139,12 +213,21 @@ Connection *connection_new (void) {
 		connection->custom_receive_args = NULL;
 		connection->custom_receive_args_delete = NULL;
 
+		connection->use_send_queue = CONNECTION_DEFAULT_USE_SEND_QUEUE;
+		connection->send_flags = CONNECTION_DEFAULT_SEND_FLAGS;
+		connection->send_thread_id = 0;
+		connection->send_queue = NULL;
+
 		connection->authenticated = false;
 		connection->auth_data = NULL;
 		connection->auth_data_size = 0;
 		connection->delete_auth_data = NULL;
 		connection->admin_auth = false;
 		connection->auth_packet = NULL;
+
+		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
+		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
+		connection->reconnect_thread_id = 0;
 
 		connection->stats = NULL;
 
@@ -156,22 +239,21 @@ Connection *connection_new (void) {
 
 }
 
-void connection_delete (void *ptr) {
+void connection_delete (void *connection_ptr) {
 
-	if (ptr) {
-		Connection *connection = (Connection *) ptr;
+	if (connection_ptr) {
+		Connection *connection = (Connection *) connection_ptr;
 
-		str_delete (connection->name);
+		connection->client = NULL;
 
 		socket_delete (connection->socket);
 
+		if (connection->state_mutex)
+			thread_mutex_delete (connection->state_mutex);
+
 		if (connection->active) connection_end (connection);
 
-		str_delete (connection->ip);
-
 		cerver_report_delete (connection->cerver_report);
-
-		sock_receive_delete (connection->sock_receive);
 
 		if (connection->received_data && connection->received_data_delete)
 			connection->received_data_delete (connection->received_data);
@@ -182,12 +264,17 @@ void connection_delete (void *ptr) {
 			}
 		}
 
+		job_queue_delete (connection->send_queue);
+
 		connection_remove_auth_data (connection);
 
 		connection_stats_delete (connection->stats);
 
-		pthread_cond_delete (connection->cond);
-		pthread_mutex_delete (connection->mutex);
+		if (connection->cond)
+			thread_cond_delete (connection->cond);
+
+		if (connection->mutex)
+			thread_mutex_delete (connection->mutex);
 
 		free (connection);
 	}
@@ -198,10 +285,14 @@ Connection *connection_create_empty (void) {
 
 	Connection *connection = connection_new ();
 	if (connection) {
-		connection->name = str_new ("no-name");
+		(void) strncpy (
+			connection->name,
+			CONNECTION_DEFAULT_NAME,
+			CONNECTION_NAME_SIZE - 1
+		);
 
 		connection->socket = (Socket *) socket_create_empty ();
-		connection->sock_receive = sock_receive_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
@@ -209,15 +300,29 @@ Connection *connection_create_empty (void) {
 
 }
 
+Connection *connection_create_complete (void) {
+
+	Connection *connection = connection_create_empty ();
+	if (connection) {
+		connection->state_mutex = thread_mutex_new ();
+
+		connection->cond = thread_cond_new ();
+		connection->mutex = thread_mutex_new ();
+	}
+
+	return connection;
+
+}
+
 Connection *connection_create (
-	const i32 sock_fd, const struct sockaddr_storage address,
-	Protocol protocol
+	const i32 sock_fd, const struct sockaddr_storage *address,
+	const Protocol protocol
 ) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
 		connection->socket->sock_fd = sock_fd;
-		memcpy (&connection->address, &address, sizeof (struct sockaddr_storage));
+		(void) memcpy (&connection->address, address, sizeof (struct sockaddr_storage));
 		connection->protocol = protocol;
 
 		connection_get_values (connection);
@@ -245,12 +350,13 @@ int connection_comparator (const void *a, const void *b) {
 
 }
 
-// sets the connection's name, if it had a name before, it will be replaced
-void connection_set_name (Connection *connection, const char *name) {
+// sets the connection's name
+void connection_set_name (
+	Connection *connection, const char *name
+) {
 
 	if (connection) {
-		if (connection->name) str_delete (connection->name);
-		connection->name = name ? str_new (name) : NULL;
+		(void) strncpy (connection->name, name, CONNECTION_NAME_SIZE - 1);
 	}
 
 }
@@ -259,8 +365,14 @@ void connection_set_name (Connection *connection, const char *name) {
 void connection_get_values (Connection *connection) {
 
 	if (connection) {
-		connection->ip = str_new (sock_ip_to_string ((const struct sockaddr *) &connection->address));
-		connection->port = sock_ip_port ((const struct sockaddr *) &connection->address);
+		(void) sock_ip_to_string_actual (
+			(const struct sockaddr *) &connection->address,
+			connection->ip
+		);
+
+		connection->port = sock_ip_port (
+			(const struct sockaddr *) &connection->address
+		);
 	}
 
 }
@@ -272,13 +384,43 @@ void connection_set_values (
 ) {
 
 	if (connection) {
-		if (connection->ip) str_delete (connection->ip);
-		connection->ip = ip_address ? str_new (ip_address) : NULL;
+		(void) strncpy (connection->ip, ip_address, CONNECTION_IP_SIZE - 1);
+
 		connection->port = port;
 		connection->protocol = protocol;
 		connection->use_ipv6 = use_ipv6;
 
 		connection->active = false;
+	}
+
+}
+
+ConnectionState connection_get_state (Connection *connection) {
+
+	ConnectionState state = CONNECTION_STATE_NONE;
+
+	if (connection) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		state = connection->state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
+	}
+
+	return state;
+
+}
+
+void connection_set_state (
+	Connection *connection, const ConnectionState state
+) {
+
+	if (connection) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		connection->state = state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
 	}
 
 }
@@ -295,6 +437,13 @@ void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 void connection_set_receive (Connection *connection, bool receive) {
 
 	if (connection) connection->receive_packets = receive;
+
+}
+
+// sets the flags to be passed to recv () when handling packets
+void connection_set_receive_flags (Connection *connection, int flags) {
+
+	if (connection) connection->receive_flags = flags;
 
 }
 
@@ -316,7 +465,8 @@ void connection_set_update_timeout (Connection *connection, u32 timeout) {
 }
 
 // sets the connection received data
-// 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
+// a place to safely store the request response,
+// like when using client_connection_request_to_cerver ()
 void connection_set_received_data (
 	Connection *connection,
 	void *data, size_t data_size, Action data_delete
@@ -331,7 +481,8 @@ void connection_set_received_data (
 }
 
 // sets a custom receive method to handle incomming packets in the connection
-// a reference to the client and connection will be passed to the action as a ConnectionCustomReceiveData structure
+// a reference to the client and connection will be passed to the action
+// as a ConnectionCustomReceiveData structure
 // alongside the arguments passed to this method
 // the method must return 0 on success & 1 on error
 void connection_set_custom_receive (
@@ -348,6 +499,21 @@ void connection_set_custom_receive (
 		connection->custom_receive_args = args;
 		connection->custom_receive_args_delete = args_delete;
 		if (connection->custom_receive) connection->receive_packets = true;
+	}
+
+}
+
+// enables the ability to send packets using the connection's queue
+// a dedicated thread will be created to send queued packets
+void connection_set_send_queue (
+	Connection *connection, int flags
+) {
+
+	if (connection) {
+		connection->use_send_queue = true;
+		connection->send_flags = flags;
+
+		connection->send_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
 	}
 
 }
@@ -418,73 +584,86 @@ u8 connection_generate_auth_packet (Connection *connection) {
 
 }
 
-// sets up the new connection values
-u8 connection_init (Connection *connection) {
+// sets the ability to attempt a reconnection
+// if the connection has been stopped
+// ability to set the default time (secs) to wait before connecting
+void connection_set_attempt_reconnect (
+	Connection *connection, unsigned int wait_time
+) {
 
-	u8 retval = 1;
+	if (connection) {
+		connection->attempt_reconnect = true;
+		connection->reconnect_wait_time = wait_time;
+	}
+
+}
+
+static bool connection_init_socket (Connection *connection) {
+
+	switch (connection->protocol) {
+		case IPPROTO_TCP:
+			connection->socket->sock_fd = socket (
+				(connection->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_STREAM, 0
+			);
+			break;
+		case IPPROTO_UDP:
+			connection->socket->sock_fd = socket (
+				(connection->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_DGRAM, 0
+			);
+			break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+				"connection_init () - Unkonw protocol type!"
+			);
+			break;
+	}
+
+	return (connection->socket->sock_fd > 0);
+
+}
+
+static void connection_init_address (Connection *connection) {
+
+	if (connection->use_ipv6) {
+		struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
+		addr->sin6_family = AF_INET6;
+		addr->sin6_addr = in6addr_any;
+		addr->sin6_port = htons (connection->port);
+	}
+
+	else {
+		struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
+		addr->sin_family = AF_INET;
+		addr->sin_addr.s_addr = inet_addr (connection->ip);
+		addr->sin_port = htons (connection->port);
+	}
+
+}
+
+// sets up the new connection values
+unsigned int connection_init (Connection *connection) {
+
+	unsigned int retval = 1;
 
 	if (connection) {
 		if (!connection->active) {
-			// init the new connection socket
-			switch (connection->protocol) {
-				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_STREAM, 0);
-					break;
-				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket ((connection->use_ipv6 == 1 ? AF_INET6 : AF_INET), SOCK_DGRAM, 0);
-					break;
+			if (connection_init_socket (connection)) {
+				connection_init_address (connection);
 
-				default: cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Unkonw protocol type!"); return 1;
-			}
-
-			if (connection->socket->sock_fd > 0) {
-				// if (connection->async) {
-				//     if (sock_set_blocking (connection->sock_fd, connection->blocking)) {
-				//         connection->blocking = false;
-
-						// get the address ready
-						if (connection->use_ipv6) {
-							struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-							addr->sin6_family = AF_INET6;
-							addr->sin6_addr = in6addr_any;
-							addr->sin6_port = htons (connection->port);
-						}
-
-						else {
-							struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-							addr->sin_family = AF_INET;
-							addr->sin_addr.s_addr = inet_addr (connection->ip->str);
-							addr->sin_port = htons (connection->port);
-						}
-
-						retval = 0;     // connection setup was successfull
-					// }
-
-					// else {
-					//     #ifdef CLIENT_DEBUG
-					//     cengine_log_msg (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					//         "Failed to set the socket to non blocking mode!");
-					//     #endif
-					//     close (connection->sock_fd);
-				//     }
-				// }
+				retval = 0;		// connection setup was successfull
 			}
 
 			else {
 				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_NONE,
-					"Failed to create new socket!"
+					LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+					"connection_init () - Failed to create socket!"
 				);
 			}
 		}
-
-		else {
-			cerver_log (
-				LOG_TYPE_WARNING, LOG_TYPE_NONE,
-				"Failed to init connection -- it is already active!"
-			);
-		}
-
 	}
 
 	return retval;
@@ -492,29 +671,292 @@ u8 connection_init (Connection *connection) {
 }
 
 // try to connect a client to an address (server) with exponential backoff
-static u8 connection_try (
+static unsigned int connection_try (
 	Connection *connection, const struct sockaddr_storage address
 ) {
 
+	unsigned int retval = 1;
+
 	u32 numsec = 0;
 	for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
-		if (!connect (connection->socket->sock_fd,
+		if (!connect (
+			connection->socket->sock_fd,
 			(const struct sockaddr *) &address,
-			sizeof (struct sockaddr)))
-			return 0;
+			sizeof (struct sockaddr)
+		)) {
+			retval = 0;
+			break;
+		}
 
-		if (numsec <= connection->max_sleep / 2) sleep (numsec);
+		if (numsec <= connection->max_sleep / 2) (void) sleep (numsec);
 	}
 
-	return 1;
+	return retval;
 
 }
 
-// starts a connection -> connects to the specified ip and port
-// returns 0 on success, 1 on error
-int connection_connect (Connection *connection) {
+static unsigned int connection_attempt (
+	Connection *connection
+) {
 
-	return (connection ? connection_try (connection, connection->address) : 1);
+	unsigned int retval = 1;
+
+	connection_set_state (connection, CONNECTION_STATE_CONNECTING);
+
+	if (!connection_try (connection, connection->address)) {
+		connection_set_state (connection, CONNECTION_STATE_READY);
+
+		connection->active = true;
+		connection->connected_timestamp = time (NULL);
+
+		retval = 0;
+	}
+
+	else {
+		connection_set_state (connection, CONNECTION_STATE_UNAVAILABLE);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_connect_internal (
+	Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!connection_init (connection)) {
+		retval = connection_attempt (connection);
+	}
+
+	return retval;
+
+}
+
+// connects to the specified address (ip and port)
+// sets connection's state based on result
+// returns 0 on success, 1 on error
+unsigned int connection_connect (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection) {
+		ConnectionState current_state = connection_get_state (connection);
+		switch (current_state) {
+			case CONNECTION_STATE_NONE:
+				retval = connection_connect_internal (connection);
+				break;
+
+			default: {
+				#ifdef CONNECTION_DEBUG
+				cerver_log_warning (
+					"connection_connect () - "
+					"Can't try connection with current state: %s",
+					connection_state_string (current_state)
+				);
+				#endif
+			} break;
+		}
+	}
+
+	return retval;
+
+}
+
+// creates a detachable thread to attempt a reconnection
+// returns 0 on success, 1 on error
+unsigned int connection_reconnect (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection) {
+		connection_reset (connection);
+
+		if (!connection_init (connection)) {
+			retval = thread_create_detachable (
+				&connection->reconnect_thread_id,
+				connection_reconnect_thread,
+				connection
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_update (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (!thread_create_detachable (
+		&connection->update_thread_id,
+		connection_update_thread,
+		(void *) connection
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"connection_start () -"
+			"Failed to create update thread for connection %s",
+			connection->name
+		);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_send (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (!thread_create_detachable (
+		&connection->send_thread_id,
+		connection_send_thread,
+		(void *) connection
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"connection_start () - "
+			"Failed to create send thread for connection %s",
+			connection->name
+		);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_internal (Connection *connection) {
+
+	unsigned int errors = 0;
+
+	errors |= connection_start_update (connection);
+
+	if (connection->use_send_queue) {
+		errors |= connection_start_send (connection);
+	}
+
+	return errors;
+
+}
+
+// starts a connection
+// returns 0 on success, 1 on error
+unsigned int connection_start (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection) {
+		if (!connection_start_internal (connection)) {
+			connection_set_state (connection, CONNECTION_STATE_WORKING);
+			
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+static void connection_reset_received_data (Connection *connection) {
+
+	if (connection->received_data) {
+		if (connection->received_data_delete) {
+			connection->received_data_delete (
+				connection->received_data
+			);
+		}
+	}
+
+	connection->received_data = NULL;
+	connection->received_data_size = 0;
+
+}
+
+static void connection_reset_authentication (Connection *connection) {
+
+	connection->authenticated = false;
+	connection->admin_auth = false;
+
+	if (connection->auth_data) {
+		if (connection->delete_auth_data)
+			connection->delete_auth_data (connection->auth_data);
+	}
+
+	if (connection->auth_packet) {
+		packet_delete (connection->auth_packet);
+		connection->auth_packet = NULL;
+	}
+
+	connection->auth_data = NULL;
+	connection->auth_data_size = 0;
+
+}
+
+static void connection_reset_stats (Connection *connection) {
+
+	connection->stats->threshold_time = 0;
+
+	connection->stats->n_receives_done = 0;
+
+	connection->stats->total_bytes_received = 0;
+	connection->stats->total_bytes_sent = 0;
+	
+	connection->stats->n_packets_received = 0;
+	connection->stats->n_packets_sent = 0;
+
+	(void) memset (connection->stats->received_packets, 0, sizeof (PacketsPerType));
+	(void) memset (connection->stats->sent_packets, 0, sizeof (PacketsPerType));
+
+}
+
+// resets connection values
+void connection_reset (Connection *connection) {
+
+	if (connection) {
+		connection->socket->sock_fd = 0;
+
+		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+		connection_set_state (connection, CONNECTION_STATE_NONE);
+
+		connection->connection_thread_id = 0;
+		connection->connected_timestamp = 0;
+
+		cerver_report_delete (connection->cerver_report);
+		connection->cerver_report = NULL;
+
+		connection->active = false;
+		connection->updating = false;
+
+		connection->auth_tries = 0;
+		connection->bad_packets = 0;
+
+		receive_handle_reset (&connection->receive_handle);
+
+		connection->request_thread_id = 0;
+
+		connection->update_thread_id = 0;
+
+		connection_reset_received_data (connection);
+
+		connection->send_thread_id = 0;
+		job_queue_clear (connection->send_queue);
+
+		connection_reset_authentication (connection);
+
+		connection->reconnect_thread_id = 0;
+
+		connection_reset_stats (connection);
+	}
 
 }
 
@@ -637,6 +1079,8 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 
 	if (client && connection) {
 		if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
+			connection->client = client;
+			
 			#ifdef CERVER_DEBUG
 			if (client->session_id) {
 				cerver_log (
@@ -696,7 +1140,7 @@ u8 connection_unregister_from_cerver (
 		if (htab_remove (cerver->client_sock_fd_map, key, sizeof (i32))) {
 			// cerver_log_success (
 			// 	"Removed sock fd %d from cerver's %s client sock map.",
-			//     connection->socket->sock_fd, cerver->info->name->str
+			//     connection->socket->sock_fd, cerver->info->name
 			// );
 
 			retval = 0;
@@ -707,7 +1151,7 @@ u8 connection_unregister_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Failed to remove sock fd %d from cerver's %s client sock map.",
-				connection->socket->sock_fd, cerver->info->name->str
+				connection->socket->sock_fd, cerver->info->name
 			);
 			#endif
 		}
@@ -791,12 +1235,16 @@ u8 connection_remove_from_cerver (
 
 #pragma region receive
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 static ConnectionCustomReceiveData *connection_custom_receive_data_new (
 	Client *client, Connection *connection, 
 	void *args
 ) {
 
-	ConnectionCustomReceiveData *custom_data = (ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
+	ConnectionCustomReceiveData *custom_data =
+		(ConnectionCustomReceiveData *) malloc (sizeof (ConnectionCustomReceiveData));
 	if (custom_data) {
 		custom_data->client = client;
 		custom_data->connection = connection;
@@ -813,90 +1261,188 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 
 }
 
+#pragma GCC diagnostic pop
+
 // starts listening and receiving data in the connection sock
-void *connection_update (void *client_connection_ptr) {
+static void *connection_update_thread (void *connection_ptr) {
 
-	if (client_connection_ptr) {
-		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
-		// thread_set_name (c_string_create ("connection-%s", cc->connection->name->str));
+	char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
-		String *client_name = str_new (cc->client->name->str);
-		String *connection_name = str_new (cc->connection->name->str);
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = (Client *) connection->client;
 
-		#ifdef CONNECTION_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_update () thread has started",
-			client_name->str, connection_name->str
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_update () thread has started",
+		client->name, connection->name
+	);
+	#endif
+
+	(void) strncpy (client_name, client->name, THREAD_NAME_BUFFER_SIZE - 1);
+	(void) strncpy (connection_name, connection->name, THREAD_NAME_BUFFER_SIZE - 1);
+
+	if (strcmp (CONNECTION_DEFAULT_NAME, connection->name)) {
+		(void) thread_set_name (connection_name);
+	}
+
+	connection->receive_handle.client = client;
+	connection->receive_handle.connection = connection;
+
+	connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
+
+	const size_t buffer_size = connection->receive_packet_buffer_size;
+	char *buffer = (char *) calloc (buffer_size, sizeof (char));
+	if (buffer) {
+		(void) sock_set_timeout (
+			connection->socket->sock_fd,
+			connection->update_timeout
 		);
-		#endif
 
-		ConnectionCustomReceiveData *custom_data = connection_custom_receive_data_new (
-			cc->client, cc->connection,
-			cc->connection->custom_receive_args
-		);
+		connection->updating = true;
 
-		if (!cc->connection->sock_receive) cc->connection->sock_receive = sock_receive_new ();
+		// check if we have a custom receive method
+		if (connection->custom_receive) {
+			ConnectionCustomReceiveData custom_data = {
+				.client = client,
+				.connection = connection,
+				.args = connection->custom_receive_args
+			};
 
-		size_t buffer_size = cc->connection->receive_packet_buffer_size;
-		char *buffer = (char *) calloc (buffer_size, sizeof (char));
-		if (buffer) {
-			(void) sock_set_timeout (cc->connection->socket->sock_fd, cc->connection->update_timeout);
-
-			cc->connection->updating = true;
-
-			while (cc->client->running && cc->connection->active) {
-				// pthread_mutex_lock (cc->client->lock);
-
-				if (cc->connection->custom_receive) {
-					// if a custom receive method is set, use that one directly
-					if (cc->connection->custom_receive (custom_data, buffer, buffer_size)) {
-						// break;      // an error has ocurred
-					}
-				}
-
-				else {
-					// use the default receive method that expects cerver type packages
-					(void) client_receive_internal (
-						cc->client, cc->connection,
-						buffer, buffer_size
-					);
-				}
-
-				// pthread_mutex_unlock (cc->client->lock);
-			}
-
-			free (buffer);
-		}
-
-		else {
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
-				"connection_update () - Failed to allocate buffer for client %s - connection %s!",
-				client_name->str, connection_name->str
+			while (
+				client->running
+				&& connection->active
+				&& !connection->custom_receive (
+					&custom_data,
+					buffer, buffer_size
+				)
 			);
 		}
 
-		// signal waiting thread
-		(void) pthread_mutex_lock (cc->connection->mutex);
-		cc->connection->updating = false;
-		(void) pthread_cond_signal (cc->connection->cond);
-		(void) pthread_mutex_unlock (cc->connection->mutex);
+		// use the default receive method
+		// that handles cerver type packages
+		else {
+			while (
+				client->running
+				&& connection->active
+				&& !client_receive_internal (
+					client, connection,
+					buffer, buffer_size
+				)
+			);
+		}
 
-		connection_custom_receive_data_delete (custom_data);
-		client_connection_aux_delete (cc);
-
-		#ifdef CONNECTION_DEBUG
-		cerver_log (
-			LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
-			"Client %s - connection %s connection_update () thread has ended",
-			client_name->str, connection_name->str
-		);
-		#endif
-
-		str_delete (client_name);
-		str_delete (connection_name);
+		free (buffer);
 	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_CONNECTION,
+			"connection_update () - "
+			"Failed to allocate buffer for client %s - connection %s!",
+			client_name, connection_name
+		);
+	}
+
+	// signal waiting thread
+	(void) pthread_mutex_lock (connection->mutex);
+	connection->updating = false;
+	(void) pthread_cond_signal (connection->cond);
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_update () thread has ended",
+		client_name, connection_name
+	);
+	#endif
+
+	return NULL;
+
+}
+
+#pragma endregion
+
+#pragma region send
+
+void connection_send_packet (
+	Connection *connection, Packet *packet
+) {
+
+	if (connection) {
+		(void) job_queue_push (
+			connection->send_queue,
+			job_create (NULL, packet)
+		);
+	}
+
+}
+
+static void *connection_send_thread (void *connection_ptr) {
+
+	char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+	char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
+
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = (Client *) connection->client;
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_send () thread has started",
+		client->name, connection->name
+	);
+	#endif
+
+	(void) strncpy (client_name, client->name, THREAD_NAME_BUFFER_SIZE - 1);
+	(void) strncpy (connection_name, connection->name, THREAD_NAME_BUFFER_SIZE - 1);
+
+	Job *job = NULL;
+	size_t sent = 0;
+	Packet *packet = NULL;
+	u8 failed = 0;
+	while (connection->active && !failed) {
+		bsem_wait (connection->send_queue->has_jobs);
+
+		if (connection->active) {
+			job = job_queue_pull (connection->send_queue);
+			if (job) {
+				packet = (Packet *) job->args;
+
+				failed = packet_send_actual (
+					packet,
+					connection->send_flags, &sent,
+					client, connection
+				);
+
+				packet_delete (packet);
+
+				job_delete (job);
+			}
+		}
+	}
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Client %s - connection %s connection_send () thread has ended",
+		client_name, connection_name
+	);
+	#endif
+
+	return NULL;
+
+}
+
+#pragma endregion
+
+#pragma region reconnect
+
+static void *connection_reconnect_thread (void *connection_ptr) {
+
+	// TODO:
 
 	return NULL;
 

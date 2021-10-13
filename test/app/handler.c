@@ -4,21 +4,19 @@
 
 #include <cerver/packets.h>
 
+#include <cerver/utils/log.h>
+
 #include "app.h"
+
+static const char *MESSAGE = { 
+	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+	"Ut enim ad minim veniam, quis nostrud exercitation ullamco "
+	"laboris nisi ut aliquip ex ea commodo consequat."
+};
 
 // send back a test message
 static void app_handler_test (const Packet *packet) {
-
-	PacketHeader header = {
-		.packet_type = PACKET_TYPE_APP,
-		.packet_size = sizeof (PacketHeader),
-
-		.handler_id = 0,
-
-		.request_type = APP_REQUEST_TEST,
-
-		.sock_fd = 0,
-	};
 
 	Packet response = {
 		.cerver = packet->cerver,
@@ -35,10 +33,29 @@ static void app_handler_test (const Packet *packet) {
 		.data_end = NULL,
 		.data_ref = false,
 
-		.header = NULL,
-		.version = NULL,
+		.remaining_data = 0,
+
+		.header = (PacketHeader) {
+			.packet_type = PACKET_TYPE_APP,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = APP_REQUEST_TEST,
+
+			.sock_fd = packet->header.sock_fd,
+		},
+
+		.version = (PacketVersion) {
+			.protocol_id = 0,
+			.protocol_version = {
+				.major = 0,
+				.minor = 0
+			}
+		},
+
 		.packet_size = sizeof (PacketHeader),
-		.packet = &header,
+		.packet = &response.header,
 		.packet_ref = false
 	};
 
@@ -66,7 +83,22 @@ static void app_handler_message (const Packet *packet) {
 
 	header->request_type = APP_REQUEST_MESSAGE;
 
+	header->sock_fd = packet->header.sock_fd;
+
 	end += sizeof (PacketHeader);
+
+	// print the client's message
+	// #ifdef EXAMPLE_APP_DEBUG
+	// (void) printf ("|%s|\n", end);
+	// #endif
+
+	AppMessage *original_app_message = (AppMessage *) end;
+	if (strcmp (MESSAGE, original_app_message->message)) {
+		cerver_log_error (
+			"Message [%lu] mismatch!",
+			original_app_message->id
+		);
+	}
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 
@@ -99,7 +131,7 @@ void app_handler (void *packet_ptr) {
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
 
-		switch (packet->header->request_type) {
+		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
 			case APP_REQUEST_TEST:
