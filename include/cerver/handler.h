@@ -192,7 +192,7 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 #pragma region receive
 
 // the default timeout when handling a connection in dedicated thread
-#define DEFAULT_SOCKET_RECV_TIMEOUT         5
+#define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
 
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (

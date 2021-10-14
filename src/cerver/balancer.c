@@ -159,7 +159,7 @@ void balancer_delete (void *balancer_ptr) {
 
 		balancer_stats_delete (balancer->stats);
 
-		pthread_mutex_delete (balancer->mutex);
+		thread_mutex_delete (balancer->mutex);
 
 		free (balancer_ptr);
 	}
@@ -199,7 +199,7 @@ Balancer *balancer_create (
 
 		balancer->stats = balancer_stats_new ();
 
-		balancer->mutex = pthread_mutex_new ();
+		balancer->mutex = thread_mutex_new ();
 	}
 
 	return balancer;

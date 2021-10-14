@@ -595,7 +595,7 @@ void lobby_poll (void *ptr) {
                     //     cerver_receive_new (cerver, lobby->players_fds[i].fd, false))) {
                     //     cerver_log (stderr, LOG_TYPE_ERROR, LOG_TYPE_NONE, 
                     //         c_string_create ("Failed to add cerver_receive () to cerver's %s thpool!", 
-                    //         cerver->info->name->str));
+                    //         cerver->info->name));
                     // }
                 }
             }
@@ -877,7 +877,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
             // else {
             //     cerver_log (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME,
             //         c_string_create ("Failed to add lobby %s handler to cerver's thpool!",
-            //         lobby->id->str, cerver->info->name->str));
+            //         lobby->id->str, cerver->info->name));
             // }
 
             if (thread_create_detachable (
@@ -916,7 +916,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
             // else {
             //     cerver_log (stderr, LOG_TYPE_ERROR, LOG_TYPE_GAME,
             //         c_string_create ("Failed to add lobby %s update to cerver's thpool!",
-            //         lobby->id->str, cerver->info->name->str));
+            //         lobby->id->str, cerver->info->name));
             // }
 
             if (thread_create_detachable (

@@ -16,6 +16,7 @@ void *job_new (void) {
 
 	Job *job = (Job *) malloc (sizeof (Job));
 	if (job) {
+		job->id = 0;
 		job->work = NULL;
 		job->args = NULL;
 	}
@@ -27,6 +28,22 @@ void *job_new (void) {
 void job_delete (void *job_ptr) {
 
 	if (job_ptr) free (job_ptr);
+
+}
+
+int job_comparator (const void *a, const void *b) {
+
+	if (a && b) {
+		Job *job_a = (Job *) a;
+		Job *job_b = (Job *) b;
+
+		if (job_a->id < job_b->id) return -1;
+		else if (job_a->id == job_b->id) return 0;
+		else return 1;
+	}
+
+	if (a) return -1;
+	return 1;
 
 }
 
@@ -94,8 +111,8 @@ void job_handler_delete (void *job_handler_ptr) {
 		job_handler->cerver = NULL;
 		job_handler->connection = NULL;
 
-		pthread_mutex_delete (job_handler->mutex);
-		pthread_cond_delete (job_handler->cond);
+		thread_mutex_delete (job_handler->mutex);
+		thread_cond_delete (job_handler->cond);
 
 		if (job_handler->data_delete)
 			job_handler->data_delete (job_handler->data);
@@ -112,8 +129,8 @@ void *job_handler_create (void) {
 
 	JobHandler *job_handler = (JobHandler *) job_handler_new ();
 	if (job_handler) {
-		job_handler->cond = pthread_cond_new ();
-		job_handler->mutex = pthread_mutex_new ();
+		job_handler->cond = thread_cond_new ();
+		job_handler->mutex = thread_mutex_new ();
 	}
 
 	return job_handler;
@@ -209,6 +226,10 @@ JobQueue *job_queue_new (void) {
 
 		job_queue->rwmutex = NULL;
 		job_queue->has_jobs = NULL;
+
+		job_queue->waiting = false;
+		job_queue->requested_id = 0;
+		job_queue->requested_job = NULL;
 
 		job_queue->running = false;
 		job_queue->handler = NULL;
@@ -318,26 +339,13 @@ void job_queue_set_handler (
 
 }
 
-static int job_queue_push_internal (
+static unsigned int job_queue_push_internal (
 	JobQueue *job_queue, void *job_ptr
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	(void) pthread_mutex_lock (job_queue->rwmutex);
-
-	// job->prev = NULL;
-	// switch (job_queue->size) {
-	// 	case 0:
-	// 		job_queue->front = job;
-	// 		job_queue->rear = job;
-	// 		break;
-
-	// 	default:
-	// 		job->prev = job_queue->rear;
-	// 		job_queue->rear = job;
-	// 		break;
-	// }
 
 	retval = dlist_insert_after (
 		job_queue->queue,
@@ -355,19 +363,19 @@ static int job_queue_push_internal (
 
 // add a new job to the queue
 // returns 0 on success, 1 on error
-int job_queue_push (JobQueue *job_queue, void *job_ptr) {
+unsigned int job_queue_push (JobQueue *job_queue, void *job_ptr) {
 
 	return (job_queue && job_ptr) ?
 		job_queue_push_internal (job_queue, job_ptr) : 1;
 
 }
 
-int job_queue_push_job (
+unsigned int job_queue_push_job (
 	JobQueue *job_queue,
 	void (*work) (void *args), void *args
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	if (job_queue) {
 		Job *job = (Job *) pool_pop (job_queue->pool);
@@ -387,14 +395,69 @@ int job_queue_push_job (
 
 }
 
-int job_queue_push_handler (
+static unsigned int job_queue_push_job_with_id_internal (
+	JobQueue *job_queue, Job *job
+) {
+
+	unsigned int retval = 1;
+
+	(void) pthread_mutex_lock (job_queue->rwmutex);
+
+	if (job_queue->waiting && (job_queue->requested_id == job->id)) {
+		job_queue->requested_job = job;
+
+		bsem_post (job_queue->has_jobs);
+
+		retval = 0;
+	}
+
+	else {
+		retval = dlist_insert_after (
+			job_queue->queue,
+			dlist_end (job_queue->queue),
+			job
+		);
+	}
+
+	(void) pthread_mutex_unlock (job_queue->rwmutex);
+
+	return retval;
+
+}
+
+unsigned int job_queue_push_job_with_id (
+	JobQueue *job_queue,
+	const u64 job_id,
+	void (*work) (void *args), void *args
+) {
+
+	unsigned int retval = 1;
+
+	if (job_queue) {
+		Job *job = (Job *) pool_pop (job_queue->pool);
+		if (job) {
+			job->id = job_id;
+			job->work = work;
+			job->args = args;
+
+			retval = job_queue_push_job_with_id_internal (
+				job_queue, job
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+unsigned int job_queue_push_handler (
 	JobQueue *job_queue,
 	struct _Cerver *cerver,
 	struct _Connection *connection,
 	void *data, void (*data_delete) (void *data_ptr)
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
 	if (job_queue) {
 		JobHandler *job_handler = (JobHandler *) pool_pop (job_queue->pool);
@@ -444,6 +507,52 @@ void *job_queue_pull (JobQueue *job_queue) {
 	}
 
 	return retval;
+
+}
+
+// requests to get an specific job from the queue by matching id
+// blocks and waits until the requested job is available
+void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
+
+	void *match = NULL;
+
+	if (job_queue) {
+		(void) pthread_mutex_lock (job_queue->rwmutex);
+
+		// check if the job is already in the queue
+		Job query = { .id = job_id, .work = NULL, .args = NULL };
+		match = dlist_remove (job_queue->queue, &query, job_comparator);
+
+		if (!match) {
+			// request job
+			job_queue->waiting = true;
+			job_queue->requested_id = job_id;
+			job_queue->requested_job = NULL;
+
+			(void) pthread_mutex_unlock (job_queue->rwmutex);
+
+			// wait until the job is inserted in the queue
+			bsem_wait (job_queue->has_jobs);
+
+			(void) pthread_mutex_lock (job_queue->rwmutex);
+
+			// get the requested job
+			match = job_queue->requested_job;
+
+			// reset request values
+			job_queue->waiting = false;
+			job_queue->requested_id = 0;
+			job_queue->requested_job = NULL;
+
+			(void) pthread_mutex_unlock (job_queue->rwmutex);
+		}
+
+		else {
+			(void) pthread_mutex_unlock (job_queue->rwmutex);
+		}
+	}
+
+	return match;
 
 }
 
@@ -508,7 +617,7 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 }
 
 static unsigned int job_queue_start_internal (JobQueue *job_queue) {
-	
+
 	unsigned int retval = 1;
 
 	job_queue->running = true;
@@ -548,6 +657,20 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 	}
 
 	return errors;
+
+}
+
+// wait for work or signal on the job queue
+void job_queue_wait (JobQueue *job_queue) {
+
+	bsem_wait (job_queue->has_jobs);
+
+}
+
+// signal a job queue
+void job_queue_signal (JobQueue *job_queue) {
+
+	bsem_post (job_queue->has_jobs);
 
 }
 

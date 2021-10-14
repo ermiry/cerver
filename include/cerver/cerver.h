@@ -24,8 +24,7 @@
 
 #include "cerver/game/game.h"
 
-#define MAX_PORT_NUM								65535
-#define MAX_UDP_PACKET_SIZE							65515
+#define CERVER_DEFAULT_ALIAS						"my-cerver"
 
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
@@ -137,16 +136,34 @@ CERVER_EXPORT const char *cerver_handler_type_description (
 
 #pragma region info
 
+#define CERVER_INFO_NAME_SIZE				128
+#define CERVER_INFO_ALIAS_SIZE				32
+#define CERVER_INFO_WELCOME_SIZE			512
+
 typedef struct CerverInfo {
 
-	String *name;
-	String *welcome_msg;                  // this msg is sent to the client when it first connects
-	struct _Packet *cerver_info_packet;    // useful info that we can send to clients
+	size_t name_len;
+	char name[CERVER_INFO_NAME_SIZE];
 
-	time_t time_started;                   // the actual time the cerver was started
-	u64 uptime;                            // the seconds the cerver has been up
+	size_t alias_len;
+	char alias[CERVER_INFO_ALIAS_SIZE];
+
+	// this message is sent to the client when it first connects
+	size_t welcome_len;
+	char welcome[CERVER_INFO_WELCOME_SIZE];
+	struct _Packet *cerver_info_packet;
+
+	time_t time_started;					// the actual time the cerver was started
+	u64 uptime;								// the seconds the cerver has been up
 
 } CerverInfo;
+
+// sets the cerver's alias
+// to be used primarily to handle cerver's related threads names
+// as they must not exceed a certain size
+CERVER_EXPORT void cerver_set_alias (
+	struct _Cerver *cerver, const char *alias
+);
 
 // sets the cerver msg to be sent when a client connects
 // retuns 0 on success, 1 on error
@@ -199,12 +216,12 @@ typedef struct CerverStats {
 
 // sets the cerver stats threshold time (how often the stats get reset)
 CERVER_EXPORT void cerver_stats_set_threshold_time (
-	struct _Cerver *cerver, time_t threshold_time
+	struct _Cerver *cerver, const time_t threshold_time
 );
 
 // prints the cerver stats
 CERVER_EXPORT void cerver_stats_print (
-	struct _Cerver *cerver, bool received, bool sent
+	struct _Cerver *cerver, const bool received, const bool sent
 );
 
 #pragma endregion
@@ -354,7 +371,7 @@ CERVER_PRIVATE void cerver_delete (void *cerver_ptr);
 CERVER_EXPORT void cerver_set_network_values (
 	Cerver *cerver,
 	const u16 port, const Protocol protocol,
-	bool use_ipv6, const u16 connection_queue
+	const bool use_ipv6, const u16 connection_queue
 );
 
 // sets the cerver connection queue (how many connections to queue for accept)
@@ -371,12 +388,12 @@ CERVER_EXPORT void cerver_set_receive_buffer_size (
 // if TRUE, this can prevent failing when trying to bind address
 // the default value is CERVER_DEFAULT_REUSABLE_FLAGS
 CERVER_EXPORT void cerver_set_reusable_address_flags (
-	Cerver *cerver, bool value
+	Cerver *cerver, const bool value
 );
 
 // sets the cerver's data and a way to free it
 CERVER_EXPORT void cerver_set_cerver_data (
-	Cerver *cerver, void *data, Action delete_data
+	Cerver *cerver, void *data, const Action delete_data
 );
 
 // sets the cerver's thpool number of threads
@@ -386,13 +403,13 @@ CERVER_EXPORT void cerver_set_cerver_data (
 // from multiple threads at the same time
 // by default, all received packets will be handle only in one thread
 CERVER_EXPORT void cerver_set_thpool_n_threads (
-	Cerver *cerver, u16 n_threads
+	Cerver *cerver, const u16 n_threads
 );
 
 // sets the initial number of sockets to be created in the cerver's sockets pool
 // the defauult value is 10
 CERVER_EXPORT void cerver_set_sockets_pool_init (
-	Cerver *cerver, unsigned int n_sockets
+	Cerver *cerver, const unsigned int n_sockets
 );
 
 // 17/06/2020
@@ -402,14 +419,14 @@ CERVER_EXPORT void cerver_set_sockets_pool_init (
 // check_inactive_interval - how often to check for inactive clients in secs, 0 for default
 CERVER_EXPORT void cerver_set_inactive_clients (
 	Cerver *cerver,
-	u32 max_inactive_time, u32 check_inactive_interval
+	const u32 max_inactive_time, const u32 check_inactive_interval
 );
 
 // sets the cerver handler type
 // the default type is to handle connections using the poll () which requires only one thread
 // if threads type is selected, a new thread will be created for each new connection
 CERVER_EXPORT void cerver_set_handler_type (
-	Cerver *cerver, CerverHandlerType handler_type
+	Cerver *cerver, const CerverHandlerType handler_type
 );
 
 // set the ability to handle new connections if cerver handler type is CERVER_HANDLER_TYPE_THREADS
@@ -417,7 +434,7 @@ CERVER_EXPORT void cerver_set_handler_type (
 // by default, this option is turned off to also use the thpool
 // if cerver is of type CERVER_TYPE_WEB, the thpool will be used more often as connections have a shorter life
 CERVER_EXPORT void cerver_set_handle_detachable_threads (
-	Cerver *cerver, bool active
+	Cerver *cerver, const bool active
 );
 
 // sets the cerver poll timeout in ms
@@ -433,23 +450,23 @@ CERVER_EXPORT void cerver_set_poll_time_out (
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_auth (
 	Cerver *cerver,
-	u8 max_auth_tries, delegate authenticate
+	const u8 max_auth_tries, const delegate authenticate
 );
 
 // sets the max auth tries a new connection is allowed to have before it is dropped due to failure
 CERVER_EXPORT void cerver_set_auth_max_tries (
-	Cerver *cerver, u8 max_auth_tries
+	Cerver *const cerver, u8 max_auth_tries
 );
 
 // sets the method to be used for client authentication
 // must return 0 on success authentication
 CERVER_EXPORT void cerver_set_auth_method (
-	Cerver *cerver, delegate authenticate
+	Cerver *cerver, const delegate authenticate
 );
 
 // sets the cerver on poll timeout in ms
 CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
-	Cerver *cerver, u32 on_hold_poll_timeout
+	Cerver *cerver, const u32 on_hold_poll_timeout
 );
 
 // sets the max number of bad packets to tolerate from an ON HOLD connection before being dropped,
@@ -457,13 +474,13 @@ CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
 // a bad packet is anyone which can't be handle by the cerver because there is no handle,
 // or because it failed the packet_check () method
 CERVER_EXPORT void cerver_set_on_hold_max_bad_packets (
-	Cerver *cerver, u8 on_hold_max_bad_packets
+	Cerver *cerver, const u8 on_hold_max_bad_packets
 );
 
 // sets whether to check for packets using the packet_check () method in ON HOLD handler or NOT
 // any packet that fails the check will be considered as a bad packet
 CERVER_EXPORT void cerver_set_on_hold_check_packets (
-	Cerver *cerver, bool check
+	Cerver *cerver, const bool check
 );
 
 // sets the size of the buffer to be allocated
@@ -485,13 +502,13 @@ CERVER_EXPORT u8 cerver_set_sessions (
 
 // sets a custom method to handle the raw received buffer from the socket
 CERVER_EXPORT void cerver_set_handle_recieved_buffer (
-	Cerver *cerver, Action handle_received_buffer
+	Cerver *cerver, const Action handle_received_buffer
 );
 
 // only handle packets with size <= max_received_packet_size
-// if the packet is bigger it will be considered a bad packet 
+// if the packet is bigger it will be considered a bad packet
 CERVER_EXPORT void cerver_set_max_received_packet_size (
-	Cerver *cerver, size_t max_received_packet_size
+	Cerver *cerver, const size_t max_received_packet_size
 );
 
 // 27/05/2020 - changed form Action to Handler
@@ -506,14 +523,14 @@ CERVER_EXPORT void cerver_set_app_handlers (
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_app_handler_delete (
-	Cerver *cerver, bool delete_packet
+	Cerver *cerver, const bool delete_packet
 );
 
 // sets option to automatically delete PACKET_TYPE_APP_ERROR packets after use
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_app_error_handler_delete (
-	Cerver *cerver, bool delete_packet
+	Cerver *cerver, const bool delete_packet
 );
 
 // 27/05/2020 - changed form Action to Handler
@@ -526,13 +543,13 @@ CERVER_EXPORT void cerver_set_custom_handler (
 // if set to false, user must delete the packets manualy
 // by the default, packets are deleted by cerver
 CERVER_EXPORT void cerver_set_custom_handler_delete (
-	Cerver *cerver, bool delete_packet
+	Cerver *cerver, const bool delete_packet
 );
 
 // enables the ability of the cerver to have multiple app handlers
 // returns 0 on success, 1 on error
 CERVER_EXPORT int cerver_set_multiple_handlers (
-	Cerver *cerver, unsigned int n_handlers
+	Cerver *cerver, const unsigned int n_handlers
 );
 
 // set whether to check or not incoming packets
@@ -541,7 +558,7 @@ CERVER_EXPORT int cerver_set_multiple_handlers (
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
 CERVER_EXPORT void cerver_set_check_packets (
-	Cerver *cerver, bool check_packets
+	Cerver *cerver, const bool check_packets
 );
 
 // sets a custom cerver update function to be executed every n ticks
@@ -550,7 +567,7 @@ CERVER_EXPORT void cerver_set_check_packets (
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update (
 	Cerver *cerver,
-	Action update,
+	const Action update,
 	void *update_args, void (*delete_update_args)(void *),
 	const u8 fps
 );
@@ -561,7 +578,7 @@ CERVER_EXPORT void cerver_set_update (
 // will only be deleted at cerver teardown if you set the delete_update_args ()
 CERVER_EXPORT void cerver_set_update_interval (
 	Cerver *cerver,
-	Action update,
+	const Action update,
 	void *update_args, void (*delete_update_args)(void *),
 	const u32 interval
 );
@@ -612,8 +629,8 @@ CERVER_EXPORT unsigned int cerver_get_n_handlers_working (Cerver *cerver);
 // returns a new cerver with the specified parameters
 CERVER_EXPORT Cerver *cerver_create (
 	const CerverType type, const char *name,
-	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue
+	const u16 port, const Protocol protocol, const bool use_ipv6,
+	const u16 connection_queue
 );
 
 #pragma endregion
@@ -692,8 +709,8 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                64
-#define S_CERVER_WELCOME_LENGTH             128
+#define S_CERVER_NAME_LENGTH                128
+#define S_CERVER_WELCOME_LENGTH             512
 
 // serialized cerver structure
 typedef struct SCerver {

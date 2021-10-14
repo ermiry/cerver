@@ -11,3 +11,9 @@ data
 uploads
 
 logs
+
+!test/http/keys
+!test/jwt/keys
+!test/web/keys
+
+!test/data

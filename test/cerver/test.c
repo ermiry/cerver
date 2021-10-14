@@ -25,9 +25,8 @@ static Cerver *test_cerver_create (void) {
 	test_check_ptr (cerver);
 	test_check_int_eq (cerver->type, CERVER_TYPE_CUSTOM, NULL);
 	test_check_ptr (cerver->info);
-	test_check_ptr (cerver->info->name);
-	test_check_str_eq (cerver->info->name->str, cerver_name, NULL);
-	test_check_str_len (cerver->info->name->str, strlen (cerver_name), NULL);
+	test_check_str_eq (cerver->info->name, cerver_name, NULL);
+	test_check_str_len (cerver->info->name, strlen (cerver_name), NULL);
 	test_check_int_eq (cerver->port, CERVER_DEFAULT_PORT, NULL);
 	test_check_int_eq (cerver->protocol, PROTOCOL_TCP, NULL);
 	test_check_bool_eq (cerver->use_ipv6, false, NULL);

@@ -7,4 +7,6 @@ extern void threads_tests_jobs (void);
 
 extern void threads_tests_thpool (void);
 
+extern void threads_tests_worker (void);
+
 #endif

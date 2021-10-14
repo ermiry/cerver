@@ -23,22 +23,23 @@
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
-#include "cerver/events.h"
 #include "cerver/errors.h"
+#include "cerver/events.h"
 #include "cerver/files.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
-#include "cerver/receive.h"
 #include "cerver/packets.h"
+#include "cerver/receive.h"
+#include "cerver/socket.h"
 
-#include "cerver/threads/thread.h"
 #include "cerver/threads/jobs.h"
+#include "cerver/threads/thread.h"
 
 #include "cerver/game/game.h"
 #include "cerver/game/lobby.h"
 
-#include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
+#include "cerver/utils/utils.h"
 
 #pragma region handler
 
@@ -349,24 +350,24 @@ static void *handler_do (void *handler_ptr) {
 
 		// set the thread name
 		if (handler->id >= 0) {
-			char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
+			char thread_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 
 			switch (handler->type) {
 				case HANDLER_TYPE_CERVER:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"cerver-handler-%d", handler->unique_id
 					);
 					break;
 				case HANDLER_TYPE_CLIENT:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"client-handler-%d", handler->unique_id
 					);
 					break;
 				case HANDLER_TYPE_ADMIN:
 					(void) snprintf (
-						thread_name, THREAD_NAME_BUFFER_LEN,
+						thread_name, THREAD_NAME_BUFFER_SIZE,
 						"admin-handler-%d", handler->unique_id
 					);
 					break;
@@ -458,6 +459,34 @@ int handler_start (Handler *handler) {
 
 #pragma region handlers
 
+const char *cerver_handler_error_to_string (
+	const CerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_ERROR_##name: return #string;
+		CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_handler_error_to_string (CERVER_HANDLER_ERROR_NONE);
+
+}
+
+const char *cerver_handler_error_description (
+	const CerverHandlerError error
+) {
+
+	switch (error) {
+		#define XX(num, name, string, description) case CERVER_HANDLER_ERROR_##name: return #description;
+		CERVER_HANDLER_ERROR_MAP(XX)
+		#undef XX
+	}
+
+	return cerver_handler_error_description (CERVER_HANDLER_ERROR_NONE);
+
+}
+
 static CerverHandlerError cerver_client_packet_handler_by_header (
 	const PacketHeader *header,
 	Cerver *cerver,
@@ -547,7 +576,7 @@ static CerverHandlerError cerver_client_packet_handler_by_header (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
 				"Got an unknown client packet in cerver %s",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 		} break;
@@ -670,7 +699,7 @@ void cerver_request_get_file (Packet *packet) {
 			#ifdef HANDLER_DEBUG
 			cerver_log_warning (
 				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_GET_FILE requests",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -758,7 +787,7 @@ void cerver_request_send_file (Packet *packet) {
 			#ifdef HANDLER_DEBUG
 			cerver_log_warning (
 				"Cerver %s is not able to handle REQUEST_PACKET_TYPE_SEND_FILE requests",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -790,7 +819,7 @@ static void cerver_request_packet_handler (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
 				"Got an unknown request packet in cerver %s",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 		} break;
@@ -804,8 +833,8 @@ void cerver_test_packet_handler (Packet *packet) {
 	#ifdef HANDLER_DEBUG
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_PACKET,
-		"Got a test packet in cerver %s",
-		packet->cerver->info->name->str
+		"Got a test packet in cerver %s.",
+		packet->cerver->info->name
 	);
 	#endif
 
@@ -839,7 +868,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 				)) {
 					cerver_log_error (
 						"Failed to push a new job to cerver's %s <%d> handler!",
-						packet->cerver->info->name->str, packet->header.handler_id
+						packet->cerver->info->name, packet->header.handler_id
 					);
 				}
 			}
@@ -864,7 +893,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 				)) {
 					cerver_log_error (
 						"Failed to push a new job to cerver's %s app_packet_handler!",
-						packet->cerver->info->name->str
+						packet->cerver->info->name
 					);
 				}
 			}
@@ -873,7 +902,7 @@ static void cerver_app_packet_handler (Packet *packet) {
 		else {
 			cerver_log_warning (
 				"Cerver %s does not have an app_packet_handler!",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 		}
 	}
@@ -900,7 +929,7 @@ static void cerver_app_error_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to cerver's %s app_error_packet_handler!",
-					packet->cerver->info->name->str
+					packet->cerver->info->name
 				);
 			}
 		}
@@ -909,7 +938,7 @@ static void cerver_app_error_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Cerver %s does not have an app_error_packet_handler!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 	}
 
@@ -935,7 +964,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to cerver's %s custom_packet_handler!",
-					packet->cerver->info->name->str
+					packet->cerver->info->name
 				);
 			}
 		}
@@ -944,7 +973,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
 	else {
 		cerver_log_warning (
 			"Cerver %s does not have a custom_packet_handler!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 	}
 
@@ -993,7 +1022,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 
 		case PACKET_TYPE_CERVER: break;
 
-		case PACKET_TYPE_CLIENT:
+		case PACKET_TYPE_CLIENT: {
 			packet->cerver->stats->received_packets->n_client_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_client_packets += 1;
@@ -1004,10 +1033,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
 			error = cerver_client_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles an error from the client
-		case PACKET_TYPE_ERROR:
+		case PACKET_TYPE_ERROR: {
 			packet->cerver->stats->received_packets->n_error_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_error_packets += 1;
@@ -1018,10 +1047,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
 			cerver_error_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles a request made from the client
-		case PACKET_TYPE_REQUEST:
+		case PACKET_TYPE_REQUEST: {
 			packet->cerver->stats->received_packets->n_request_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_request_packets += 1;
@@ -1032,10 +1061,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
 			cerver_request_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles authentication packets
-		case PACKET_TYPE_AUTH:
+		case PACKET_TYPE_AUTH: {
 			packet->cerver->stats->received_packets->n_auth_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_auth_packets += 1;
@@ -1046,10 +1075,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
 			/* TODO: */
 			packet_delete (packet);
-			break;
+		} break;
 
 		// handles a game packet sent from the client
-		case PACKET_TYPE_GAME:
+		case PACKET_TYPE_GAME: {
 			packet->cerver->stats->received_packets->n_game_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_game_packets += 1;
@@ -1059,10 +1088,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
 			game_packet_handler (packet);
-			break;
+		} break;
 
 		// user set handler to handle app specific packets
-		case PACKET_TYPE_APP:
+		case PACKET_TYPE_APP: {
 			packet->cerver->stats->received_packets->n_app_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_app_packets += 1;
@@ -1072,10 +1101,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
 			cerver_app_packet_handler (packet);
-			break;
+		} break;
 
 		// user set handler to handle app specific errors
-		case PACKET_TYPE_APP_ERROR:
+		case PACKET_TYPE_APP_ERROR: {
 			packet->cerver->stats->received_packets->n_app_error_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_app_error_packets += 1;
@@ -1085,10 +1114,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
 			cerver_app_error_packet_handler (packet);
-			break;
+		} break;
 
 		// custom packet hanlder
-		case PACKET_TYPE_CUSTOM:
+		case PACKET_TYPE_CUSTOM: {
 			packet->cerver->stats->received_packets->n_custom_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_custom_packets += 1;
@@ -1098,10 +1127,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
 			cerver_custom_packet_handler (packet);
-			break;
+		} break;
 
 		// acknowledge the client we have received his test packet
-		case PACKET_TYPE_TEST:
+		case PACKET_TYPE_TEST: {
 			packet->cerver->stats->received_packets->n_test_packets += 1;
 			#ifdef CLIENT_STATS
 			packet->client->stats->received_packets->n_test_packets += 1;
@@ -1112,7 +1141,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
 			cerver_test_packet_handler (packet);
 			packet_delete (packet);
-			break;
+		} break;
 
 		default: {
 			packet->cerver->stats->received_packets->n_bad_packets += 1;
@@ -1128,7 +1157,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
 				"Got a packet of unknown type in cerver %s.",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 
@@ -1191,6 +1220,8 @@ static u8 cerver_packet_select_handler (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->n_packets_received += 1;
 			#endif
+
+			if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
 
 			retval = cerver_packet_handler (packet);
 		} break;
@@ -1828,8 +1859,8 @@ void cerver_receive_handle_buffer (
 
 }
 
-// handles a failed recive from a connection associatd with a client
-// end sthe connection to prevent seg faults or signals for bad sock fd
+// handles a failed receive from a connection associatd with a client
+// ends the connection to prevent seg faults or signals for bad sock fd
 void cerver_receive_handle_failed (CerverReceive *cr) {
 
 	if (cr->socket) {
@@ -2075,7 +2106,7 @@ static inline void balancer_receive_success (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
 				"balancer_receive () - packet of unknown type in cerver %s.",
-				cr->cerver->info->name->str
+				cr->cerver->info->name
 			);
 			#endif
 
@@ -2295,8 +2326,9 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	);
 	#endif
 
-	// set the socket's timeout to prevent thread from getting stuck if no more data to read
-	(void) sock_set_timeout (sock_fd, DEFAULT_SOCKET_RECV_TIMEOUT);
+	// set the socket's timeout to prevent thread from getting stuck
+	// if no more data to read
+	(void) sock_set_timeout (sock_fd, CERVER_DEFAULT_SOCKET_RECV_TIMEOUT);
 
 	u8 (*receive)(CerverReceive *, char *, const size_t) = NULL;
 	size_t buffer_size = 0;
@@ -2424,7 +2456,7 @@ static u8 cerver_register_new_connection_auth_required (
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 			"Connection is on hold on cerver %s!",
-			cerver->info->name->str
+			cerver->info->name
 		);
 		#endif
 
@@ -2446,7 +2478,7 @@ static u8 cerver_register_new_connection_auth_required (
 	else {
 		cerver_log_error (
 			"Failed to put connection on hold in cerver %s",
-			cerver->info->name->str
+			cerver->info->name
 		);
 	}
 
@@ -2519,7 +2551,7 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 					"Cerver %s thpool is full! "
 					"Creating a detachable thread for sock fd <%d> connection...",
-					cerver->info->name->str, connection->socket->sock_fd
+					cerver->info->name, connection->socket->sock_fd
 				);
 				#endif
 
@@ -2542,7 +2574,7 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 					cerver_log (
 						LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
 						"Cerver %s thpool - %d / %d threads working",
-						cerver->info->name->str,
+						cerver->info->name,
 						thpool_get_num_threads_working (cerver->thpool),
 						cerver->thpool->num_threads_alive
 					);
@@ -2690,7 +2722,7 @@ static void cerver_register_new_connection (
 			#ifdef CERVER_DEBUG
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-				"New connection to cerver %s!", cerver->info->name->str
+				"New connection to cerver %s!", cerver->info->name
 			);
 			#endif
 		}
@@ -2862,7 +2894,7 @@ static u8 cerver_poll_register_connection_internal (
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 			"Added sock fd <%d> to cerver %s MAIN poll, idx: %i",
-			connection->socket->sock_fd, cerver->info->name->str, idx
+			connection->socket->sock_fd, cerver->info->name, idx
 		);
 		#endif
 
@@ -2870,7 +2902,7 @@ static u8 cerver_poll_register_connection_internal (
 		cerver_log (
 			LOG_TYPE_CERVER, LOG_TYPE_NONE,
 			"Cerver %s current active connections: %ld",
-			cerver->info->name->str,
+			cerver->info->name,
 			cerver->stats->current_active_client_connections
 		);
 		#endif
@@ -2905,7 +2937,7 @@ u8 cerver_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_NONE,
 				"Cerver %s main poll is full -- we need to realloc...",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 
@@ -2913,7 +2945,7 @@ u8 cerver_poll_register_connection (
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_NONE,
 					"Failed to realloc cerver %s main poll fds!",
-					cerver->info->name->str
+					cerver->info->name
 				);
 			}
 
@@ -2954,7 +2986,7 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Removed sock fd <%d> from cerver %s MAIN poll, idx: %d",
-				sock_fd, cerver->info->name->str, idx
+				sock_fd, cerver->info->name, idx
 			);
 			#endif
 
@@ -2962,7 +2994,7 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
 				"Cerver %s current active connections: %ld",
-				cerver->info->name->str,
+				cerver->info->name,
 				cerver->stats->current_active_client_connections
 			);
 			#endif
@@ -2975,7 +3007,7 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 				"Sock fd <%d> was NOT found in cerver %s MAIN poll!",
-				sock_fd, cerver->info->name->str
+				sock_fd, cerver->info->name
 			);
 			// #endif
 		}
@@ -3002,7 +3034,7 @@ static inline void cerver_poll_handle_actual_accept (Cerver *cerver) {
 		if (thpool_add_work (cerver->thpool, cerver_accept, cerver))  {
 			cerver_log_error (
 				"Failed to add cerver_accept () to cerver's %s thpool!",
-				cerver->info->name->str
+				cerver->info->name
 			);
 		}
 	}
@@ -3102,7 +3134,7 @@ u8 cerver_poll (Cerver *cerver) {
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 			"Cerver %s is ready in port %d!",
-			cerver->info->name->str, cerver->port
+			cerver->info->name, cerver->port
 		);
 
 		#ifdef CERVER_DEBUG
@@ -3130,7 +3162,7 @@ u8 cerver_poll (Cerver *cerver) {
 						cerver_log (
 							LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 							"Cerver %s main poll has failed!",
-							cerver->info->name->str
+							cerver->info->name
 						);
 
 						perror ("Error");
@@ -3141,7 +3173,7 @@ u8 cerver_poll (Cerver *cerver) {
 						// #ifdef CERVER_DEBUG
 						// cerver_log_debug (
 						// 	"Cerver %s MAIN poll timeout",
-						// 	cerver->info->name->str
+						// 	cerver->info->name
 						// );
 						// #endif
 					} break;
@@ -3156,7 +3188,7 @@ u8 cerver_poll (Cerver *cerver) {
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
 				"Cerver %s main poll has stopped!",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 
@@ -3196,7 +3228,7 @@ u8 cerver_threads (Cerver *cerver) {
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 			"Cerver %s ready in port %d!",
-			cerver->info->name->str, cerver->port
+			cerver->info->name, cerver->port
 		);
 
 		#ifdef CERVER_DEBUG
@@ -3214,7 +3246,7 @@ u8 cerver_threads (Cerver *cerver) {
 		cerver_log (
 			LOG_TYPE_CERVER, LOG_TYPE_NONE,
 			"Cerver %s accept thread has stopped!",
-			cerver->info->name->str
+			cerver->info->name
 		);
 		#endif
 

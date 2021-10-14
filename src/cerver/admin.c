@@ -983,7 +983,7 @@ u8 admin_cerver_register_admin (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
-				admin_cerver->cerver->info->name->str,
+				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connected_admins
 			);
 			#endif
@@ -1024,7 +1024,7 @@ u8 admin_cerver_unregister_admin (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connected admins: %ld",
-				admin_cerver->cerver->info->name->str,
+				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connected_admins
 			);
 			#endif
@@ -1070,7 +1070,7 @@ static void *admin_cerver_update (void *args) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_success (
 			"Cerver's %s admin_cerver_update () has started!",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 
@@ -1109,7 +1109,7 @@ static void *admin_cerver_update (void *args) {
 			fps++;
 			// printf ("delta ticks: %ld\n", delta_ticks);
 			if (delta_ticks >= 1000) {
-				// printf ("cerver %s update fps: %i\n", cerver->info->name->str, fps);
+				// printf ("cerver %s update fps: %i\n", cerver->info->name, fps);
 				delta_ticks = 0;
 				fps = 0;
 			}
@@ -1126,7 +1126,7 @@ static void *admin_cerver_update (void *args) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_success (
 			"Cerver's %s admin_cerver_update () has ended!",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 	}
@@ -1145,7 +1145,7 @@ static void *admin_cerver_update_interval (void *args) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_success (
 			"Cerver's %s admin_cerver_update_interval () has started!",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 
@@ -1173,7 +1173,7 @@ static void *admin_cerver_update_interval (void *args) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_success (
 			"Cerver's %s admin_cerver_update_interval () has ended!",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 	}
@@ -1224,7 +1224,7 @@ static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
 					#ifdef ADMIN_DEBUG
 					cerver_log_success (
 						"Admin cerver %s app_packet_handler has started!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 					#endif
 				}
@@ -1232,7 +1232,7 @@ static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
 				else {
 					cerver_log_error (
 						"Failed to start ADMIN cerver %s app_packet_handler!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 				}
 			}
@@ -1242,7 +1242,7 @@ static u8 admin_cerver_app_handler_start (AdminCerver *admin_cerver) {
 			#ifdef ADMIN_DEBUG
 			cerver_log_warning (
 				"Admin cerver %s does not have an app_packet_handler",
-				admin_cerver->cerver->info->name->str
+				admin_cerver->cerver->info->name
 			);
 			#endif
 		}
@@ -1263,7 +1263,7 @@ static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
 					#ifdef ADMIN_DEBUG
 					cerver_log_success (
 						"Admin cerver %s app_error_packet_handler has started!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 					#endif
 				}
@@ -1271,7 +1271,7 @@ static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
 				else {
 					cerver_log_error (
 						"Failed to start ADMIN cerver %s app_error_packet_handler!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 				}
 			}
@@ -1281,7 +1281,7 @@ static u8 admin_cerver_app_error_handler_start (AdminCerver *admin_cerver) {
 			#ifdef ADMIN_DEBUG
 			cerver_log_warning (
 				"Admin cerver %s does not have an app_error_packet_handler",
-				admin_cerver->cerver->info->name->str
+				admin_cerver->cerver->info->name
 			);
 			#endif
 		}
@@ -1302,7 +1302,7 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
 					#ifdef ADMIN_DEBUG
 					cerver_log_success (
 						"Admin cerver %s custom_packet_handler has started!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 					#endif
 				}
@@ -1310,7 +1310,7 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
 				else {
 					cerver_log_error (
 						"Failed to start ADMIN cerver %s custom_packet_handler!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 				}
 			}
@@ -1320,7 +1320,7 @@ static u8 admin_cerver_custom_handler_start (AdminCerver *admin_cerver) {
 			// #ifdef ADMIN_DEBUG
 			// cerver_log_warning (
 			//     "Cerver %s does not have a custom_packet_handler",
-			// 	admin_cerver->cerver->info->name->str
+			// 	admin_cerver->cerver->info->name
 			// );
 			// #endif
 		}
@@ -1338,7 +1338,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_debug (
 			"Initializing cerver %s admin handlers...",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 
@@ -1355,7 +1355,7 @@ static u8 admin_cerver_handlers_start (AdminCerver *admin_cerver) {
 			#ifdef ADMIN_DEBUG
 			cerver_log_debug (
 				"Done initializing cerver %s admin handlers!",
-				admin_cerver->cerver->info->name->str
+				admin_cerver->cerver->info->name
 			);
 			#endif
 		}
@@ -1381,7 +1381,7 @@ static u8 admin_cerver_start_poll (Cerver *cerver) {
 		else {
 			cerver_log_error (
 				"Failed to create admin_poll () thread in cerver %s!",
-				cerver->info->name->str
+				cerver->info->name
 			);
 		}
 	}
@@ -1404,7 +1404,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 				)) {
 					cerver_log_error (
 						"Failed to create cerver %s ADMIN UPDATE thread!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 				}
 			}
@@ -1417,7 +1417,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 				)) {
 					cerver_log_error (
 						"Failed to create cerver %s ADMIN UPDATE INTERVAL thread!",
-						admin_cerver->cerver->info->name->str
+						admin_cerver->cerver->info->name
 					);
 				}
 			}
@@ -1431,7 +1431,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 			else {
 				cerver_log_error (
 					"admin_cerver_start () - failed to start cerver %s admin handlers!",
-					admin_cerver->cerver->info->name->str
+					admin_cerver->cerver->info->name
 				);
 			}
 		}
@@ -1439,7 +1439,7 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 		else {
 			cerver_log_error (
 				"admin_cerver_start () - failed to start cerver %s admin internal!",
-				admin_cerver->cerver->info->name->str
+				admin_cerver->cerver->info->name
 			);
 		}
 	}
@@ -1518,7 +1518,7 @@ static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_debug (
 			"Stopping handlers in cerver %s admin...",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 
@@ -1574,7 +1574,7 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_debug (
 			"Staring cerver %s admin teardown...",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 		#endif
 
@@ -1584,7 +1584,7 @@ u8 admin_cerver_end (AdminCerver *admin_cerver) {
 
 		cerver_log_success (
 			"Cerver %s admin teardown was successful!",
-			admin_cerver->cerver->info->name->str
+			admin_cerver->cerver->info->name
 		);
 	}
 
@@ -1685,7 +1685,7 @@ static AdminCerverHandlerError admin_cerver_client_packet_handler (
 				LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
 				"admin_cerver_client_packet_handler () - "
 				"Got an unknown client packet in ADMIN cerver %s",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 		} break;
@@ -1714,7 +1714,7 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
 				"Got an unknown request packet in ADMIN cerver %s",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 		} break;
@@ -1742,7 +1742,7 @@ static void admin_app_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
-					packet->cerver->info->name->str
+					packet->cerver->info->name
 				);
 			}
 		}
@@ -1752,7 +1752,7 @@ static void admin_app_packet_handler (Packet *packet) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_warning (
 			"Cerver %s ADMIN does not have an app_packet_handler!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 		#endif
 	}
@@ -1779,7 +1779,7 @@ static void admin_app_error_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
-					packet->cerver->info->name->str
+					packet->cerver->info->name
 				);
 			}
 		}
@@ -1789,7 +1789,7 @@ static void admin_app_error_packet_handler (Packet *packet) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_warning (
 			"Cerver %s ADMIN does not have an app_error_packet_handler!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 		#endif
 	}
@@ -1816,7 +1816,7 @@ static void admin_custom_packet_handler (Packet *packet) {
 			)) {
 				cerver_log_error (
 					"Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
-					packet->cerver->info->name->str
+					packet->cerver->info->name
 				);
 			}
 		}
@@ -1826,7 +1826,7 @@ static void admin_custom_packet_handler (Packet *packet) {
 		#ifdef ADMIN_DEBUG
 		cerver_log_warning (
 			"Cerver %s ADMIN does not have an custom_packet_handler!",
-			packet->cerver->info->name->str
+			packet->cerver->info->name
 		);
 		#endif
 	}
@@ -1886,7 +1886,7 @@ static AdminCerverHandlerError admin_packet_handler_actual (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PACKET,
 				"Got a packet of unknown type in cerver %s admin handler",
-				packet->cerver->info->name->str
+				packet->cerver->info->name
 			);
 			#endif
 			packet_delete (packet);
@@ -2018,7 +2018,7 @@ u8 admin_cerver_poll_register_connection (
 				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
 				"Added sock fd <%d> to cerver %s ADMIN poll, idx: %i",
 				connection->socket->sock_fd,
-				admin_cerver->cerver->info->name->str, idx
+				admin_cerver->cerver->info->name, idx
 			);
 			#endif
 
@@ -2026,7 +2026,7 @@ u8 admin_cerver_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %ld",
-				admin_cerver->cerver->info->name->str,
+				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connections
 			);
 			#endif
@@ -2039,7 +2039,7 @@ u8 admin_cerver_poll_register_connection (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN poll is full!",
-				admin_cerver->cerver->info->name->str
+				admin_cerver->cerver->info->name
 			);
 			#endif
 		}
@@ -2074,7 +2074,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
 				"Removed sock fd <%d> from cerver %s ADMIN poll, idx: %d",
-				sock_fd, admin_cerver->cerver->info->name->str, idx
+				sock_fd, admin_cerver->cerver->info->name, idx
 			);
 			#endif
 
@@ -2082,7 +2082,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_ADMIN,
 				"Cerver %s ADMIN current connections: %ld",
-				admin_cerver->cerver->info->name->str,
+				admin_cerver->cerver->info->name,
 				admin_cerver->stats->current_connections
 			);
 			#endif
@@ -2095,7 +2095,7 @@ u8 admin_cerver_poll_unregister_sock_fd (
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_ADMIN,
 				"Sock fd <%d> was NOT found in cerver %s ADMIN poll!",
-				sock_fd, admin_cerver->cerver->info->name->str
+				sock_fd, admin_cerver->cerver->info->name
 			);
 			// #endif
 		}
@@ -2165,16 +2165,10 @@ static void *admin_poll (void *cerver_ptr) {
 		cerver_log (
 			LOG_TYPE_SUCCESS, LOG_TYPE_ADMIN,
 			"Cerver %s ADMIN poll has started!",
-			cerver->info->name->str
+			cerver->info->name
 		);
 
-		char thread_name[THREAD_NAME_BUFFER_LEN] = { 0 };
-		(void) snprintf (
-			thread_name, THREAD_NAME_BUFFER_LEN,
-			"%s-admin", cerver->info->name->str
-		);
-
-		(void) thread_set_name (thread_name);
+		(void) thread_set_name ("%s-admin", cerver->info->alias);
 
 		char *packet_buffer = (char *) calloc (
 			admin_cerver->receive_buffer_size, sizeof (char)
@@ -2201,7 +2195,7 @@ static void *admin_poll (void *cerver_ptr) {
 						cerver_log (
 							LOG_TYPE_ERROR, LOG_TYPE_ADMIN,
 							"Cerver %s ADMIN poll has failed!",
-							cerver->info->name->str
+							cerver->info->name
 						);
 
 						perror ("Error");
@@ -2213,7 +2207,7 @@ static void *admin_poll (void *cerver_ptr) {
 						// cerver_log (
 						//     LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
 						//     "Cerver %s ADMIN poll timeout",
-						// 	cerver->info->name->str
+						// 	cerver->info->name
 						// );
 						// #endif
 					} break;
@@ -2229,7 +2223,7 @@ static void *admin_poll (void *cerver_ptr) {
 			#ifdef ADMIN_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_ADMIN,
-				"Cerver %s ADMIN poll has stopped!", cerver->info->name->str
+				"Cerver %s ADMIN poll has stopped!", cerver->info->name
 			);
 			#endif
 			

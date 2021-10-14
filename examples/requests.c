@@ -144,7 +144,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 	if (packet && msg) {
 		cerver_log_debug ("Got an APP DATA request!");
 
-		printf ("%s - %d\n", msg->str, msg->len);
+		printf ("%s - %lu\n", msg->str, msg->len);
 
 		AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 		memset (app_message, 0, sizeof (AppMessage));
@@ -245,7 +245,7 @@ int main (void) {
 		if (cerver_start (my_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				my_cerver->info->name->str
+				my_cerver->info->name
 			);
 
 			cerver_delete (my_cerver);

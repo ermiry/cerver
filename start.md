@@ -12,9 +12,9 @@ If the pthreads library is not installed on your system, install it (in Ubuntu) 
 
 ## 2. Download Cerver Source Code
 
-You can donwload **cerver's** latest source from this repo. If you want the latest rolling release in master, you can git clone in the master branch. However if you want the latest stable version, please refer to the releases tab in this repo and select the version you want.
+You can donwload **cerver's** latest source from this repo. If you want the latest rolling release, you can git clone in the master branch. However if you want the latest stable version, please refer to the releases tab in this repo and select the version you want.
 
-## 3. Get Welcome Example Running
+## 3. Get Test Example Running
 
 Now that you have **cerver's** source code, you can try running the base example.
 
@@ -25,26 +25,27 @@ Let's start with a little explanation on the source code layout. You need to foc
 
 Finally there is the examples directory, where you will find some examples to get you started.
 
-We will focus on compiling the welcome example (welcome.c). To do this, first we need to compile the cerver library into a shared object (.so). The are three basic commands for the Makefile:
+We will focus on compiling the test example (test.c). To do this, first we need to compile the cerver library into a shared object (.so). The are three basic commands for the Makefile:
 
 | Command        | Description   |
 | -------------  |:-------------:|
-| make           | Compile cerver's source code into a shared object (.so)          |
-| make examples  | Compile the examples using the newly created cerver.so           |
-| make clean     | Clean created objects (.o files) and binaries                    |
+| make           | Compile cerver's source code into a shared object (libcerver.so)         |
+| make examples  | Compile the examples using the newly created libcerver.so                |
+| make install   | Install the newly created libcerver.so & its headers into your system    |
+| make clean     | Clean created objects (.o files) and binaries                            |
 
 
 After a success compilation you can run any of the examples running the following command:
 
-`LD_LIBRARY_PATH=bin/ ./examples/bin/welcome`
+`LD_LIBRARY_PATH=bin/ ./examples/bin/test`
 
 You should see the following ouput in your terminal inidicating that the **cerver** has initialized successfully and is ready to listen for connections:
 
-![Welcome Example](./img/cerver-welcome-example.png)
+![Test Example](./img/test-example.png)
 
 But you need to add your own configuration and your own application code to correctly handle your custom packets. So for now, we can quit the **cerver** by typing Ctrl + c to send the **cerver** a SIGINT signal, and as we have registered a method to handle that, this is the output that you should see:
 
-![Exit Output Example](./img/cerver-exit-example.png)
+![Exit Output Example](./img/exit-example.png)
 
 ## 4. Create Awesome Apps
 
