@@ -46,7 +46,7 @@ static void *on_cever_started (void *event_data_ptr) {
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
 			"Cerver %s has started!\n",
-			event_data->cerver->info->name->str
+			event_data->cerver->info->name
 		);
 	}
 
@@ -63,7 +63,7 @@ static void *on_cever_teardown (void *event_data_ptr) {
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CERVER,
 			"Cerver %s is going to be destroyed!\n",
-			event_data->cerver->info->name->str
+			event_data->cerver->info->name
 		);
 	}
 
@@ -82,7 +82,7 @@ static void *on_client_connected (void *event_data_ptr) {
 			"Client %ld connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
-			event_data->cerver->info->name->str
+			event_data->cerver->info->name
 		);
 	}
 
@@ -99,7 +99,7 @@ static void *on_client_close_connection (void *event_data_ptr) {
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
 			"A client closed a connection to cerver %s!\n",
-			event_data->cerver->info->name->str
+			event_data->cerver->info->name
 		);
 	}
 
@@ -222,7 +222,7 @@ int main (int argc, char **argv) {
 		if (cerver_start (my_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				my_cerver->info->name->str
+				my_cerver->info->name
 			);
 
 			cerver_delete (my_cerver);

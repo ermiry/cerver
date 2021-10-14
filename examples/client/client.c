@@ -371,7 +371,7 @@ int main (void) {
 		if (cerver_start (client_cerver)) {
 			cerver_log_error (
 				"Failed to start %s!",
-				client_cerver->info->name->str
+				client_cerver->info->name
 			);
 
 			cerver_delete (client_cerver);
