@@ -11,6 +11,8 @@ int main (int argc, char **argv) {
 
 	utils_tests_c_strings ();
 
+	utils_tests_math ();
+
 	utils_tests_sha256 ();
 
 	(void) printf ("\nDone with UTILS tests!\n\n");
