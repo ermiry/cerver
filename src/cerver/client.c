@@ -473,7 +473,7 @@ void client_set_custom_handler (
 }
 
 // only handle packets with size <= max_received_packet_size
-// if the packet is bigger it will be considered a bad packet 
+// if the packet is bigger it will be considered a bad packet
 void client_set_max_received_packet_size (
 	Client *client, size_t max_received_packet_size
 ) {
@@ -777,7 +777,7 @@ u8 client_register_connections_to_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to register all the connections for client %ld (id) to cerver %s",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -815,7 +815,7 @@ u8 client_unregister_connections_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to unregister all the connections for client %ld (id) from cerver %s",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -854,7 +854,7 @@ u8 client_register_connections_to_cerver_poll (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to register all the connections for client %ld (id) to cerver %s poll",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -893,7 +893,7 @@ u8 client_unregister_connections_from_cerver_poll (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 				"Failed to unregister all the connections for client %ld (id) from cerver %s poll",
-				client->id, cerver->info->name->str
+				client->id, cerver->info->name
 			);
 			#endif
 
@@ -922,7 +922,7 @@ Client *client_remove_from_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
-				"Unregistered a client from cerver %s.", cerver->info->name->str
+				"Unregistered a client from cerver %s.", cerver->info->name
 			);
 			#endif
 
@@ -931,7 +931,7 @@ Client *client_remove_from_cerver (
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 				"Connected clients to cerver %s: %i.",
-				cerver->info->name->str, cerver->stats->current_n_connected_clients
+				cerver->info->name, cerver->stats->current_n_connected_clients
 			);
 			#endif
 		}
@@ -941,7 +941,7 @@ Client *client_remove_from_cerver (
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Received NULL ptr when attempting to remove a client from cerver's %s client tree.",
-				cerver->info->name->str
+				cerver->info->name
 			);
 			#endif
 		}
@@ -961,7 +961,7 @@ static void client_register_to_cerver_internal (
 	cerver_log (
 		LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
 		"Registered a new client to cerver %s.",
-		cerver->info->name->str
+		cerver->info->name
 	);
 	#endif
 
@@ -972,7 +972,7 @@ static void client_register_to_cerver_internal (
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
 		"Connected clients to cerver %s: %i.",
-		cerver->info->name->str,
+		cerver->info->name,
 		cerver->stats->current_n_connected_clients
 	);
 	#endif
@@ -1905,14 +1905,14 @@ Connection *client_connection_create (
 	Connection *connection = NULL;
 
 	if (client) {
-		connection = connection_create_empty ();
+		connection = connection_create_complete ();
 		if (connection) {
-			connection_set_values (connection, ip_address, port, protocol, use_ipv6);
-			connection_init (connection);
-			connection_register_to_client (client, connection);
+			connection_set_values (
+				connection,
+				ip_address, port, protocol, use_ipv6
+			);
 
-			connection->cond = pthread_cond_new ();
-			connection->mutex = pthread_mutex_new ();
+			connection_register_to_client (client, connection);
 		}
 	}
 
@@ -2084,11 +2084,38 @@ unsigned int client_connection_get_next_packet (
 
 #pragma region connect
 
+static unsigned int client_connect_internal (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!connection_connect (connection)) {
+		client_event_trigger (
+			CLIENT_EVENT_CONNECTED,
+			client, connection
+		);
+
+		retval = 0;
+	}
+
+	else {
+		client_event_trigger (
+			CLIENT_EVENT_CONNECTION_FAILED,
+			client, connection
+		);
+	}
+
+	return retval;
+
+}
+
 // connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is a blocking method, as it will wait until the connection has been successfull or a timeout
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// this is a blocking method, as it will wait while attempting the connection
+// CLIENT_EVENT_CONNECTED will be triggered if the connection was successful
+// CLIENT_EVENT_CONNECTION_FAILED will be triggered if failed to connect
+// user must set how to receive / handle incomming packets and also send requests
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 unsigned int client_connect (
 	Client *client, Connection *connection
 ) {
@@ -2096,77 +2123,53 @@ unsigned int client_connect (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		if (!connection_connect (connection)) {
-			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
-			// connection->connected = true;
-			connection->active = true;
-			(void) time (&connection->connected_timestamp);
-
-			retval = 0;     // success - connected to cerver
-		}
-
-		else {
-			client_event_trigger (
-				CLIENT_EVENT_CONNECTION_FAILED,
-				client, connection
-			);
-		}
+		retval = client_connect_internal (
+			client, connection
+		);
 	}
 
 	return retval;
 
 }
 
-// connects a client to the host with the specified values in the connection
+// works like client_connect ()
 // performs a first read to get the cerver info packet
-// this is a blocking method, and works exactly the same as if only calling client_connect ()
-// returns 0 when the connection has been established, 1 on error or failed to connect
+// returns 0 when the connection has been successful, 1 on error or failed to connect
 unsigned int client_connect_to_cerver (
 	Client *client, Connection *connection
 ) {
 
 	unsigned int retval = 1;
 
-	if (!client_connect (client, connection)) {
-		// we expect to handle a packet with the cerver's information
-		client_connection_get_next_packet (
-			client, connection
-		);
+	if (client && connection) {
+		if (!client_connect_internal (client, connection)) {
+			// we expect to handle a packet with the cerver's information
+			client_connection_get_next_packet (
+				client, connection
+			);
 
-		retval = 0;
+			retval = 0;
+		}
 	}
 
 	return retval;
 
 }
 
-static void *client_connect_thread (void *client_connection_ptr) {
+static void *client_connect_thread (void *connection_ptr) {
 
-	if (client_connection_ptr) {
-		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = connection->client;
 
-		if (!connection_connect (cc->connection)) {
-			// client_event_trigger (cc->client, EVENT_CONNECTED);
-			// cc->connection->connected = true;
-			cc->connection->active = true;
-			time (&cc->connection->connected_timestamp);
-
-			client_start (cc->client);
-		}
-
-		client_connection_aux_delete (cc);
-	}
+	(void) client_connect_internal (client, connection);
 
 	return NULL;
 
 }
 
-// connects a client to the host with the specified values in the connection
-// it can be a cerver or not
-// this is NOT a blocking method, a new thread will be created to wait for a connection to be established
-// open a success connection, EVENT_CONNECTED will be triggered, otherwise, EVENT_CONNECTION_FAILED will be triggered
-// user must manually handle how he wants to receive / handle incomming packets and also send requests
-// returns 0 on success connection thread creation, 1 on error
+// works like client_connect ()
+// this is NOT a blocking method, a new thread will be created
+// returns 0 on success creating connection thread, 1 on error
 unsigned int client_connect_async (
 	Client *client, Connection *connection
 ) {
@@ -2174,22 +2177,72 @@ unsigned int client_connect_async (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		ClientConnection *cc = client_connection_aux_new (client, connection);
-		if (cc) {
-			if (!thread_create_detachable (
-				&cc->connection_thread_id, client_connect_thread, cc
-			)) {
-				retval = 0;         // success
-			}
-
-			else {
-				#ifdef CLIENT_DEBUG
-				cerver_log_error (
-					"Failed to create client_connect_thread () detachable thread!"
-				);
-				#endif
-			}
+		if (!thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_thread,
+			(void *) connection
+		)) {
+			retval = 0;
 		}
+
+		#ifdef CLIENT_DEBUG
+		else {
+			cerver_log_error (
+				"client_connect_async () - "
+				"Failed to create client_connect_thread () detachable thread!"
+			);
+		}
+		#endif
+	}
+
+	return retval;
+
+}
+
+static void *client_connect_to_cerver_thread (
+	void *connection_ptr
+) {
+
+	Connection *connection = (Connection *) connection_ptr;
+	Client *client = connection->client;
+
+	if (!client_connect_internal (client, connection)) {
+		// we expect to handle a packet with the cerver's information
+		client_connection_get_next_packet (
+			client, connection
+		);
+	}
+
+	return NULL;
+
+}
+
+// works like client_connect_async ()
+// performs a first read to get the cerver info packet
+// returns 0 on success creating connection thread, 1 on error
+unsigned int client_connect_to_cerver_async (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		if (!thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_to_cerver_thread,
+			(void *) connection
+		)) {
+			retval = 0;
+		}
+
+		#ifdef CLIENT_DEBUG
+		else {
+			cerver_log_error (
+				"client_connect_to_cerver_async () - "
+				"Failed to create client_connect_to_cerver_thread () detachable thread!"
+			);
+		}
+		#endif
 	}
 
 	return retval;
@@ -2200,114 +2253,23 @@ unsigned int client_connect_async (
 
 #pragma region start
 
-static int connection_start_update (
+static unsigned int client_connection_start_internal (
 	Client *client, Connection *connection
 ) {
 
-	int retval = 1;
+	unsigned int retval = 1;
 
-	if (!thread_create_detachable (
-			&connection->update_thread_id,
-			connection_update,
-			client_connection_aux_new (client, connection)
-		)) {
-			retval = 0;
-		}
-
-		else {
-			cerver_log_error (
-				"client_connection_start () - "
-				"Failed to create update thread for connection %s",
-				connection->name
-			);
-		}
-
-	return retval;
-
-}
-
-static int connection_start_send (
-	Client *client, Connection *connection
-) {
-
-	int retval = 1;
-
-	if (!thread_create_detachable (
-			&connection->send_thread_id,
-			connection_send_thread,
-			client_connection_aux_new (client, connection)
-		)) {
-			retval = 0;
-		}
-
-		else {
-			cerver_log_error (
-				"client_connection_start () - "
-				"Failed to create send thread for connection %s",
-				connection->name
-			);
-		}
-
-	return retval;
-
-}
-
-// after a client connection successfully connects to a server,
-// it will start the connection's update thread to enable the connection to
-// receive & handle packets in a dedicated thread
-// returns 0 on success, 1 on error
-int client_connection_start (
-	Client *client, Connection *connection
-) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		if (connection->active) {
-			if (!client_start (client)) {
-				int errors = 0;
-
-				errors |= connection_start_update (client, connection);
-
-				if (connection->use_send_queue) {
-					errors |= connection_start_send (client, connection);
-				}
-
-				retval = errors;
-			}
-
-			else {
-				cerver_log_error (
-					"client_connection_start () - "
-					"Failed to start client %s",
-					client->name
-				);
-			}
-		}
-	}
-
-	return retval;
-
-}
-
-// connects a client connection to a server
-// and after a success connection, it will start the connection (create update thread for receiving messages)
-// this is a blocking method, returns only after a success or failed connection
-// returns 0 on success, 1 on error
-int client_connect_and_start (Client *client, Connection *connection) {
-
-	int retval = 1;
-
-	if (client && connection) {
-		if (!client_connect (client, connection)) {
-			if (!client_connection_start (client, connection)) {
+	if (connection->active) {
+		if (!client_start (client)) {
+			if (!connection_start (connection)) {
 				retval = 0;
 			}
 		}
 
 		else {
 			cerver_log_error (
-				"client_connect_and_start () - Client %s failed to connect",
+				"client_connection_start_internal () - "
+				"Failed to start client %s",
 				client->name
 			);
 		}
@@ -2317,30 +2279,95 @@ int client_connect_and_start (Client *client, Connection *connection) {
 
 }
 
-static void *client_connection_start_wrapper (void *data_ptr) {
+// starts the connection's update thread to enable the connection to
+// receive & handle packets in a dedicated thread
+// returns 0 on success, 1 on error
+unsigned int client_connection_start (
+	Client *client, Connection *connection
+) {
 
-	if (data_ptr) {
-		ClientConnection *cc = (ClientConnection *) data_ptr;
-		client_connect_and_start (cc->client, cc->connection);
-		client_connection_aux_delete (cc);
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		retval = client_connection_start_internal (
+			client, connection
+		);
 	}
+
+	return retval;
+
+}
+
+static unsigned int client_connect_and_start_internal (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (!client_connect_internal (client, connection)) {
+		if (!client_connection_start_internal (
+			client, connection
+		)) {
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// works like client_connect () & client_connection_start ()
+// starts the connection's threads after a success connection
+// this is a blocking method, returns only after a success or failed connection
+// returns 0 on success, 1 on error
+unsigned int client_connect_and_start (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		retval = client_connect_and_start_internal (
+			client, connection
+		);
+	}
+
+	return retval;
+
+}
+
+static void *client_connect_and_start_thread (
+	void *connection_ptr
+) {
+
+	Connection *connection = (Connection *) connection_ptr;
+
+	(void) client_connect_and_start_internal (
+		connection->client, connection
+	);
 
 	return NULL;
 
 }
 
-// connects a client connection to a server in a new thread to avoid blocking the calling thread,
-// and after a success connection, it will start the connection (create update thread for receiving messages)
+// works like client_connect_and_start ()
+// this is NOT a blocking method, a new thread will be created
 // returns 0 on success creating connection thread, 1 on error
-u8 client_connect_and_start_async (Client *client, Connection *connection) {
+unsigned int client_connect_and_start_async (
+	Client *client, Connection *connection
+) {
 
-	pthread_t thread_id = 0;
+	unsigned int retval = 1;
 
-	return (client && connection) ? thread_create_detachable (
-		&thread_id,
-		client_connection_start_wrapper,
-		client_connection_aux_new (client, connection)
-	) : 1;
+	if (client && connection) {
+		retval = thread_create_detachable (
+			&connection->connection_thread_id,
+			client_connect_and_start_thread,
+			(void *) connection
+		);
+	}
+
+	return retval;
 
 }
 
@@ -2348,12 +2375,46 @@ u8 client_connect_and_start_async (Client *client, Connection *connection) {
 
 #pragma region requests
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// and the result will be returned
+// send the request to the cerver
+static unsigned int client_request_to_cerver_send (
+	Client *client, Connection *connection, Packet *request
+) {
+
+	unsigned int retval = 1;
+
+	packet_set_network_values (request, NULL, client, connection, NULL);
+
+	size_t sent = 0;
+	if (!packet_send (request, 0, &sent, false)) {
+		#ifdef CLIENT_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
+			"Requested to cerver: %lu\n", sent
+		);
+		#endif
+
+		retval = 0;
+	}
+
+	#ifdef CLIENT_DEBUG
+	else {
+		cerver_log_error (
+			"client_request_to_cerver () - "
+			"failed to send request packet!"
+		);
+	}
+	#endif
+
+	return retval;
+
+}
+
+// sends the packet to the cerver and waits until it has been handled
 // this is a blocking method, as it will wait until a complete cerver response has been received
 // the response will be handled using the client's packet handler
 // this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// neither the client nor the connection will be stopped after the request has ended
+// the request packet won't be deleted
 // retruns 0 when the response has been handled, 1 on error
 unsigned int client_request_to_cerver (
 	Client *client, Connection *connection, Packet *request
@@ -2362,26 +2423,13 @@ unsigned int client_request_to_cerver (
 	unsigned int retval = 1;
 
 	if (client && connection && request) {
-		// send the request to the cerver
-		packet_set_network_values (request, NULL, client, connection, NULL);
-
-		size_t sent = 0;
-		if (!packet_send (request, 0, &sent, false)) {
-			// printf ("Request to cerver: %ld\n", sent);
-
-			// receive the data directly
-			client_connection_get_next_packet (client, connection);
-
-			retval = 0;
-		}
-
-		else {
-			#ifdef CLIENT_DEBUG
-			cerver_log_error (
-				"client_request_to_cerver () - "
-				"failed to send request packet!"
+		if (!client_request_to_cerver_send (
+			client, connection, request
+		)) {
+			// directly receive & handle the response
+			retval = client_connection_get_next_packet_actual (
+				client, connection
 			);
-			#endif
 		}
 	}
 
@@ -2389,28 +2437,21 @@ unsigned int client_request_to_cerver (
 
 }
 
-static void *client_request_to_cerver_thread (void *cc_ptr) {
+static void *client_request_to_cerver_thread (void *connection_ptr) {
 
-	if (cc_ptr) {
-		ClientConnection *cc = (ClientConnection *) cc_ptr;
+	Connection *connection = (Connection *) connection_ptr;
 
-		(void) client_connection_get_next_packet (
-			cc->client, cc->connection
-		);
-
-		client_connection_aux_delete (cc);
-	}
+	(void) client_connection_get_next_packet_actual (
+		connection->client, connection
+	);
 
 	return NULL;
 
 }
 
-// when a client is already connected to the cerver, a request can be made to the cerver
-// the result will be placed inside the connection
-// this method will NOT block and the response will be handled using the client's packet handler
-// this method only works if your response consists only of one packet
-// neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
-// returns 0 on success request, 1 on error
+// works like client_request_to_cerver ()
+// this is NOT a blocking method, a new thread will be created
+// returns 0 on success creating connection thread, 1 on error
 unsigned int client_request_to_cerver_async (
 	Client *client, Connection *connection, Packet *request
 ) {
@@ -2418,36 +2459,14 @@ unsigned int client_request_to_cerver_async (
 	unsigned int retval = 1;
 
 	if (client && connection && request) {
-		// send the request to the cerver
-		packet_set_network_values (request, NULL, client, connection, NULL);
-		if (!packet_send (request, 0, NULL, false)) {
-			ClientConnection *cc = client_connection_aux_new (client, connection);
-			if (cc) {
-				// create a new thread to receive & handle the response
-				if (!thread_create_detachable (
-					&cc->connection_thread_id, client_request_to_cerver_thread, cc
-				)) {
-					retval = 0;         // success
-				}
-
-				else {
-					#ifdef CLIENT_DEBUG
-					cerver_log_error (
-						"Failed to create client_request_to_cerver_thread () "
-						"detachable thread!"
-					);
-					#endif
-				}
-			}
-		}
-
-		else {
-			#ifdef CLIENT_DEBUG
-			cerver_log_error (
-				"client_request_to_cerver_async () - "
-				"failed to send request packet!"
+		if (!client_request_to_cerver_send (
+			client, connection, request
+		)) {
+			retval = thread_create_detachable (
+				&connection->request_thread_id,
+				client_request_to_cerver_thread,
+				(void *) connection
 			);
-			#endif
 		}
 	}
 
@@ -2560,10 +2579,10 @@ String *client_files_search_file (
 	String *retval = NULL;
 
 	if (client && filename) {
-		char filename_query[DEFAULT_FILENAME_LEN * 2] = { 0 };
+		char filename_query[FILENAME_DEFAULT_SIZE * 2] = { 0 };
 		for (unsigned int i = 0; i < client->n_paths; i++) {
 			(void) snprintf (
-				filename_query, DEFAULT_FILENAME_LEN * 2,
+				filename_query, FILENAME_DEFAULT_SIZE * 2,
 				"%s/%s",
 				client->paths[i]->str, filename
 			);
@@ -2608,7 +2627,7 @@ u8 client_file_get (
 				end += sizeof (PacketHeader);
 
 				FileHeader *file_header = (FileHeader *) end;
-				(void) strncpy (file_header->filename, filename, DEFAULT_FILENAME_LEN - 1);
+				(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
 				file_header->len = 0;
 
 				packet_set_network_values (packet, NULL, client, connection, NULL);
@@ -3180,7 +3199,7 @@ static ClientHandlerError client_packet_handler_actual (
 	Packet *packet
 ) {
 
-	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;	
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
 
 	switch (packet->header.packet_type) {
 		case PACKET_TYPE_NONE: break;
@@ -3285,7 +3304,7 @@ static ClientHandlerError client_packet_handler_check_version (
 	if (packet->data) {
 		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 		packet->data_ptr += sizeof (PacketVersion);
-		
+
 		// TODO: return errors to cerver/client
 		// TODO: drop client on max bad packets
 		if (packet_check (packet)) {
@@ -3297,7 +3316,7 @@ static ClientHandlerError client_packet_handler_check_version (
 		cerver_log_error (
 			"client_packet_handler () - No packet version to check!"
 		);
-		
+
 		// TODO: add to bad packets count
 
 		error = CLIENT_HANDLER_ERROR_PACKET;
@@ -3526,7 +3545,7 @@ static void client_receive_handle_buffer_actual (
 					#ifdef CLIENT_RECEIVE_DEBUG
 					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
 					#endif
-					
+
 					if (remaining_buffer_size > 0) {
 						#ifdef CLIENT_RECEIVE_DEBUG
 						(void) printf (
@@ -3618,7 +3637,7 @@ static void client_receive_handle_buffer (
 	);
 	#endif
 
-		// check if we have any spare parts 
+		// check if we have any spare parts
 	switch (receive_handle->state) {
 		// check if we have a spare header
 		// that was incompleted from the last buffer
@@ -3642,7 +3661,7 @@ static void client_receive_handle_buffer (
 			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
 
 			// (void) printf ("\n");
-			
+
 			#ifdef CLIENT_RECEIVE_DEBUG
 			packet_header_print (&receive_handle->header);
 			#endif
@@ -3672,8 +3691,8 @@ static void client_receive_handle_buffer (
 			if (
 				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
 			) {
-				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
-				
+				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data;
+
 				// copy packet's remaining data
 				(void) packet_add_data (
 					receive_handle->spare_packet,
@@ -3789,7 +3808,7 @@ static ReceiveError client_receive_actual (
 	ssize_t received = recv (
 		connection->socket->sock_fd,
 		buffer, buffer_size,
-		0
+		connection->receive_flags
 	);
 
 	switch (received) {
@@ -3840,13 +3859,13 @@ static ReceiveError client_receive_actual (
 		} break;
 
 		default: {
-			// #ifdef CLIENT_RECEIVE_DEBUG
+			#ifdef CLIENT_RECEIVE_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"client_receive_actual () - received %ld from connection %s",
 				received, connection->name
 			);
-			// #endif
+			#endif
 		} break;
 	}
 
@@ -3920,7 +3939,7 @@ unsigned int client_receive_internal (
 	unsigned int retval = 1;
 
 	size_t received = 0;
-	
+
 	ReceiveError error = client_receive_actual (
 		client, connection,
 		buffer, buffer_size,
