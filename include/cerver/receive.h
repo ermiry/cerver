@@ -110,6 +110,10 @@ CERVER_PRIVATE ReceiveHandle *receive_handle_new (void);
 
 CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
 
+CERVER_PRIVATE void receive_handle_reset (
+	ReceiveHandle *receive_handle
+);
+
 #ifdef __cplusplus
 }
 #endif
