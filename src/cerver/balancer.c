@@ -21,7 +21,7 @@
 
 static void balancer_service_delete (void *service_ptr);
 
-void balancer_service_stats_print (Service *service);
+void balancer_service_stats_print (const Service *service);
 
 static u8 balancer_client_receive (
 	void *custom_data_ptr,
@@ -50,7 +50,7 @@ static BalancerStats *balancer_stats_new (void) {
 
 	BalancerStats *stats = (BalancerStats *) malloc (sizeof (BalancerStats));
 	if (stats) {
-		memset (stats, 0, sizeof (BalancerStats));
+		(void) memset (stats, 0, sizeof (BalancerStats));
 	}
 
 	return stats;
@@ -169,9 +169,9 @@ void balancer_delete (void *balancer_ptr) {
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 Balancer *balancer_create (
-	const char *name, BalancerType type,
-	u16 port, u16 connection_queue,
-	unsigned int n_services
+	const char *name, const BalancerType type,
+	const u16 port, const u16 connection_queue,
+	const unsigned int n_services
 ) {
 
 	Balancer *balancer = balancer_new ();
@@ -290,7 +290,7 @@ static void balancer_service_stats_delete (ServiceStats *stats) {
 
 }
 
-void balancer_service_stats_print (Service *service) {
+void balancer_service_stats_print (const Service *service) {
 
 	if (service) {
 		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
@@ -329,7 +329,7 @@ static Service *balancer_service_new (void) {
 		service->status = SERVICE_STATUS_NONE;
 
 		service->connection = NULL;
-		service->reconnect_wait_time = DEFAULT_SERVICE_WAIT_TIME;
+		service->reconnect_wait_time = SERVICE_DEFAULT_WAIT_TIME;
 
 		service->stats = NULL;
 	}
@@ -399,7 +399,7 @@ static u8 balancer_service_forward_pipe_create (
 				service->connection->name
 			);
 			perror ("Error");
-			printf ("\n");
+			(void) printf ("\n");
 		}
 	}
 
@@ -433,7 +433,7 @@ static u8 balancer_service_receive_pipe_create (
 				service->connection->name
 			);
 			perror ("Error");
-			printf ("\n");
+			(void) printf ("\n");
 		}
 	}
 
@@ -511,49 +511,68 @@ static int balancer_get_next_service (
 
 }
 
-// registers a new service to the load balancer
-// a dedicated connection will be created when the balancer starts to handle traffic to & from the service
-// returns 0 on success, 1 on error
-u8 balancer_service_register (
+static unsigned int balancer_service_register_internal (
 	Balancer *balancer,
-	const char *ip_address, u16 port
+	const char *ip_address, const u16 port
 ) {
 
-	u8 retval = 1;
+	unsigned int retval = 1;
+
+	Service *service = balancer_service_create ();
+	if (service) {
+		Connection *connection = client_connection_create (
+			balancer->client,
+			ip_address, port,
+			PROTOCOL_TCP, false
+		);
+
+		if (connection) {
+			service->connection = connection;
+
+			char name[SERVICE_CONNECTION_NAME_SIZE] = { 0 };
+			(void) snprintf (
+				name, SERVICE_CONNECTION_NAME_SIZE,
+				"service-%d", balancer->next_service
+			);
+
+			connection_set_name (connection, name);
+			connection_set_max_sleep (connection, SERVICE_DEFAULT_MAX_SLEEP);
+
+			connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
+			connection_set_custom_receive (
+				connection, 
+				balancer_client_receive,
+				balancer_service_aux_new (balancer, service),
+				balancer_service_aux_delete
+			);
+
+			balancer->services[balancer->next_service] = service;
+			balancer->next_service += 1;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// registers a new service to the load balancer
+// a dedicated connection will be created when the balancer starts
+// to handle traffic to & from the service
+// returns 0 on success, 1 on error
+unsigned int balancer_service_register (
+	Balancer *balancer,
+	const char *ip_address, const u16 port
+) {
+
+	unsigned int retval = 1;
 
 	if (balancer && ip_address) {
 		if ((balancer->next_service + 1) <= balancer->n_services) {
-			Service *service = balancer_service_create ();
-			if (service) {
-				Connection *connection = client_connection_create (
-					balancer->client,
-					ip_address, port,
-					PROTOCOL_TCP, false
-				);
-
-				if (connection) {
-					service->connection = connection;
-
-					char name[64] = { 0 };
-					(void) snprintf (name, 64, "service-%d", balancer->next_service);
-
-					connection_set_name (connection, name);
-					connection_set_max_sleep (connection, 30);
-
-					connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
-					connection_set_custom_receive (
-						connection, 
-						balancer_client_receive,
-						balancer_service_aux_new (balancer, service),
-						balancer_service_aux_delete
-					);
-
-					balancer->services[balancer->next_service] = service;
-					balancer->next_service += 1;
-
-					retval = 0;
-				}
-			}
+			retval = balancer_service_register_internal (
+				balancer, ip_address, port
+			);
 		}
 	}
 
@@ -575,7 +594,7 @@ void balancer_service_set_name (
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
 void balancer_service_set_reconnect_wait_time (
-	Service *service, unsigned int wait_time
+	Service *service, const unsigned int wait_time
 ) {
 
 	if (service) service->reconnect_wait_time = wait_time;
@@ -611,7 +630,8 @@ static u8 balancer_service_test (
 
 }
 
-// connects to the service & sends a test packet to check its ability to handle requests
+// connects to the service
+// sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
 static u8 balancer_service_connect (
 	Balancer *balancer, Service *service
