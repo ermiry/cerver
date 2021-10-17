@@ -106,6 +106,8 @@ CERVER_PRIVATE Balancer *balancer_new (void);
 
 CERVER_PRIVATE void balancer_delete (void *balancer_ptr);
 
+CERVER_EXPORT BalancerType balancer_get_type (const Balancer *balancer);
+
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 CERVER_EXPORT Balancer *balancer_create (
@@ -118,6 +120,7 @@ CERVER_EXPORT Balancer *balancer_create (
 
 #pragma region services
 
+#define SERVICE_NAME_SIZE					64
 #define SERVICE_CONNECTION_NAME_SIZE		64
 
 #define SERVICE_CONSUME_BUFFER_SIZE			512
@@ -177,10 +180,15 @@ CERVER_EXPORT void balancer_service_stats_print (
 
 struct _Service {
 
+	unsigned int id;
+	char name[SERVICE_NAME_SIZE];
+
 	ServiceStatus status;
+	Action on_status_change;
 
 	Connection *connection;
 	unsigned int reconnect_wait_time;
+	pthread_t reconnect_thread_id;
 
 	int forward_pipe_fds[2];
 	int receive_pipe_fds[2];
@@ -191,6 +199,18 @@ struct _Service {
 
 typedef struct _Service Service;
 
+CERVER_PUBLIC ServiceStatus balancer_service_get_status (
+	const Service *service
+);
+
+CERVER_PUBLIC const char *balancer_service_get_status_string (
+	const Service *service
+);
+
+CERVER_EXPORT void balancer_service_set_on_status_change (
+	Service *service, const Action on_status_change
+);
+
 // registers a new service to the load balancer
 // a dedicated connection will be created when the balancer starts
 // to handle traffic to & from the service
@@ -198,6 +218,10 @@ typedef struct _Service Service;
 CERVER_EXPORT unsigned int balancer_service_register (
 	Balancer *balancer,
 	const char *ip_address, const u16 port
+);
+
+CERVER_EXPORT const char *balancer_service_get_name (
+	const Service *service
 );
 
 // sets the service's name

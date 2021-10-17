@@ -166,6 +166,12 @@ void balancer_delete (void *balancer_ptr) {
 
 }
 
+BalancerType balancer_get_type (const Balancer *balancer) {
+
+	return balancer->type;
+
+}
+
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 Balancer *balancer_create (
@@ -181,7 +187,7 @@ Balancer *balancer_create (
 
 		balancer->cerver = cerver_create (
 			CERVER_TYPE_BALANCER,
-			"load-balancer-cerver",
+			"balancer-cerver",
 			port, PROTOCOL_TCP, false, connection_queue
 		);
 
@@ -327,9 +333,11 @@ static Service *balancer_service_new (void) {
 	Service *service = (Service *) malloc (sizeof (Service));
 	if (service) {
 		service->status = SERVICE_STATUS_NONE;
+		service->on_status_change = NULL;
 
 		service->connection = NULL;
 		service->reconnect_wait_time = SERVICE_DEFAULT_WAIT_TIME;
+		service->reconnect_thread_id = 0;
 
 		service->stats = NULL;
 	}
@@ -363,12 +371,38 @@ static Service *balancer_service_create (void) {
 
 }
 
+ServiceStatus balancer_service_get_status (const Service *service) {
+
+	return service->status;
+
+}
+
+const char *balancer_service_get_status_string (
+	const Service *service
+) {
+
+	return balancer_service_status_to_string (service->status);
+
+}
+
 static void balancer_service_set_status (
-	Service *service, ServiceStatus status
+	Service *service, const ServiceStatus status
+) {
+
+	service->status = status;
+
+	if (service->on_status_change) {
+		service->on_status_change (service);
+	}
+
+}
+
+void balancer_service_set_on_status_change (
+	Service *service, const Action on_status_change
 ) {
 
 	if (service) {
-		service->status = status;
+		service->on_status_change = on_status_change;
 	}
 
 }
@@ -453,18 +487,6 @@ static void balancer_service_pipe_destroy (Service *service) {
 
 }
 
-// static ServiceStatus balancer_service_get_status (Service *service) {
-
-// 	ServiceStatus retval = SERVICE_STATUS_NONE;
-
-// 	if (service) {
-// 		retval =  service->status;
-// 	}
-
-// 	return retval;
-
-// }
-
 static inline int balancer_get_next_service_round_robin (
 	Balancer *balancer
 ) {
@@ -527,15 +549,16 @@ static unsigned int balancer_service_register_internal (
 		);
 
 		if (connection) {
-			service->connection = connection;
+			service->id = (unsigned int) balancer->next_service;
 
-			char name[SERVICE_CONNECTION_NAME_SIZE] = { 0 };
 			(void) snprintf (
-				name, SERVICE_CONNECTION_NAME_SIZE,
-				"service-%d", balancer->next_service
+				service->name, SERVICE_NAME_SIZE,
+				"service-%u", service->id
 			);
 
-			connection_set_name (connection, name);
+			service->connection = connection;
+
+			connection_set_name (connection, service->name);
 			connection_set_max_sleep (connection, SERVICE_DEFAULT_MAX_SLEEP);
 
 			connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
@@ -580,13 +603,21 @@ unsigned int balancer_service_register (
 
 }
 
+const char *balancer_service_get_name (
+	const Service *service
+) {
+
+	return service ? service->name : NULL;
+
+}
+
 // sets the service's name
 void balancer_service_set_name (
 	Service *service, const char *name
 ) {
 
 	if (service && name) {
-		connection_set_name (service->connection, name);
+		(void) strncpy (service->name, name, SERVICE_NAME_SIZE - 1);
 	}
 
 }
@@ -608,22 +639,48 @@ static u8 balancer_service_test (
 
 	u8 retval = 1;
 
-	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
-	if (packet) {
-		if (!client_request_to_cerver (
-			balancer->client, service->connection, packet
-		)) {
-			retval = 0;
-		}
+	Packet ping = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
 
-		else {
-			cerver_log_error (
-				"Failed to send test request to %s",
-				service->connection->name
-			);
-		}
+		.packet_type = PACKET_TYPE_TEST,
+		.req_type = 0,
 
-		packet_delete (packet);
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.header = (PacketHeader) {
+			.packet_type = PACKET_TYPE_TEST,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = 0,
+
+			.sock_fd = 0
+		},
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &ping.header,
+		.packet_ref = true
+	};
+
+	if (!client_request_to_cerver (
+		balancer->client, service->connection, &ping
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"Failed to send test request to %s",
+			service->connection->name
+		);
 	}
 
 	return retval;
@@ -889,7 +946,7 @@ static u8 balancer_route_to_service_actual (
 
 	u8 retval = 1;
 
-	pthread_mutex_lock (to->socket->write_mutex);
+	(void) pthread_mutex_lock (to->socket->write_mutex);
 
 	// first send the header
 	ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
@@ -926,7 +983,7 @@ static u8 balancer_route_to_service_actual (
 		}
 	}
 
-	pthread_mutex_unlock (to->socket->write_mutex);
+	(void) pthread_mutex_unlock (to->socket->write_mutex);
 
 
 	return retval;
@@ -1425,9 +1482,9 @@ static void balancer_client_receive_handle_failed (
 
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
 
-	pthread_t thread_id = 0;
 	if (thread_create_detachable (
-		&thread_id, balancer_service_reconnect_thread, bs
+		&bs->service->reconnect_thread_id,
+		balancer_service_reconnect_thread, bs
 	)) {
 		cerver_log_error (
 			"Failed to create reconnect thread for balancer %s service %s",
@@ -1539,6 +1596,13 @@ u8 balancer_teardown (Balancer *balancer) {
 	u8 retval = 1;
 
 	if (balancer) {
+		// disconnect from services
+		for (int idx = 0; idx < balancer->n_services; idx++) {
+			balancer_service_set_status (
+				balancer->services[idx], SERVICE_STATUS_DISCONNECTING
+			);
+		}
+
 		(void) cerver_teardown (balancer->cerver);
 		balancer->cerver = NULL;
 
