@@ -698,6 +698,9 @@ static u8 balancer_service_connect (
 
 	balancer_service_set_status (service, SERVICE_STATUS_CONNECTING);
 
+	// reset connection values
+	connection_reset (service->connection);
+
 	if (!client_connect_to_cerver (balancer->client, service->connection)) {
 		cerver_log_success (
 			"Connected to %s",
@@ -737,8 +740,6 @@ static void *balancer_service_reconnect_thread (void *bs_ptr) {
 
 	Balancer *balancer = bs->balancer;
 	Service *service = bs->service;
-
-	(void) connection_init (service->connection);
 
 	do {
 		(void) sleep (service->reconnect_wait_time);
