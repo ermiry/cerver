@@ -751,7 +751,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 					saved_filename
 				);
 			}
-			
+
 			if (saved_filename) free (saved_filename);
 		}
 
@@ -796,7 +796,7 @@ void cerver_request_send_file (Packet *packet) {
 				packet->cerver, packet->client, packet->connection
 			);
 		} break;
-	}	
+	}
 
 }
 
@@ -989,7 +989,7 @@ static CerverHandlerError cerver_packet_handler_check_version (
 	if (packet->data) {
 		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 		packet->data_ptr += sizeof (PacketVersion);
-		
+
 		// TODO: return errors to client
 		// TODO: drop client on max bad packets
 		if (packet_check (packet)) {
@@ -1001,7 +1001,7 @@ static CerverHandlerError cerver_packet_handler_check_version (
 		cerver_log_error (
 			"cerver_packet_handler () - No packet version to check!"
 		);
-		
+
 		// TODO: add to bad packets count
 
 		error = CERVER_HANDLER_ERROR_PACKET;
@@ -1625,7 +1625,7 @@ static void cerver_receive_handle_buffer_actual (
 					#ifdef RECEIVE_DEBUG
 					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
 					#endif
-					
+
 					if (remaining_buffer_size > 0) {
 						#ifdef RECEIVE_DEBUG
 						(void) printf (
@@ -1719,7 +1719,7 @@ void cerver_receive_handle_buffer (
 	);
 	#endif
 
-	// check if we have any spare parts 
+	// check if we have any spare parts
 	switch (receive_handle->state) {
 		// check if we have a spare header
 		// that was incompleted from the last buffer
@@ -1743,7 +1743,7 @@ void cerver_receive_handle_buffer (
 			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
 
 			// (void) printf ("\n");
-			
+
 			#ifdef RECEIVE_DEBUG
 			packet_header_print (&receive_handle->header);
 			#endif
@@ -1773,8 +1773,8 @@ void cerver_receive_handle_buffer (
 			if (
 				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
 			) {
-				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
-				
+				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data;
+
 				// copy packet's remaining data
 				(void) packet_add_data (
 					receive_handle->spare_packet,
@@ -2001,6 +2001,88 @@ static void cerver_receive_success (
 
 }
 
+static unsigned int balancer_receive_handle_from_connection_internal (
+	CerverReceive *cr, Packet *packet, const size_t to_read
+) {
+
+	unsigned int retval = 1;
+
+	ssize_t rc = recv (cr->socket->sock_fd, packet->data_end, to_read, 0);
+	switch (rc) {
+		case -1: {
+			if (errno == EAGAIN) {
+				#ifdef SOCKET_DEBUG
+				cerver_log_debug (
+					"balancer_receive_handle_from_connection () - "
+					"sock fd: %d timed out",
+					cr->socket->sock_fd
+				);
+				#endif
+
+				retval = 0;
+			}
+
+			#ifdef HANDLER_DEBUG
+			else {
+				cerver_log (
+					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+					"balancer_receive_handle_from_connection () - "
+					"rc < 0 - sock fd: %d",
+					cr->socket->sock_fd
+				);
+
+				perror ("Error");
+			}
+			#endif
+		} break;
+
+		case 0: {
+			#ifdef HANDLER_DEBUG
+			cerver_log (
+				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+				"balancer_receive_handle_from_connection () - "
+				"rc == 0 - sock fd: %d",
+				cr->socket->sock_fd
+			);
+			#endif
+		} break;
+
+		default: {
+			retval = 0;
+		} break;
+	}
+
+	return retval;
+
+}
+
+void balancer_receive_handle_from_connection (
+	CerverReceive *cr, Packet *packet
+) {
+
+	size_t to_read = 0;
+	size_t data_size = packet->data_size;
+
+	packet->data = calloc (packet->data_size, sizeof (char));
+	packet->data_end = packet->data;
+
+	do {
+		to_read = (data_size >= BALANCER_RECEIVE_BUFFER_SIZE) ?
+			BALANCER_RECEIVE_BUFFER_SIZE : data_size;
+
+		if (balancer_receive_handle_from_connection_internal (
+			cr, packet, to_read
+		)) {
+			cerver_receive_handle_failed (cr);
+			break;
+		}
+
+		data_size -= to_read;
+		packet->data_end += to_read;
+	} while ((data_size > 0));
+
+}
+
 void balancer_receive_consume_from_connection (
 	CerverReceive *cr, size_t data_size
 ) {
@@ -2009,11 +2091,13 @@ void balancer_receive_consume_from_connection (
 	char buffer[BALANCER_CONSUME_BUFFER_SIZE] = { 0 };
 
 	do {
-		to_read = data_size >= BALANCER_CONSUME_BUFFER_SIZE ? BALANCER_CONSUME_BUFFER_SIZE : data_size;
+		to_read = (data_size >= BALANCER_CONSUME_BUFFER_SIZE) ?
+			BALANCER_CONSUME_BUFFER_SIZE : data_size;
+
 		if (recv (cr->socket->sock_fd, buffer, to_read, 0) <= 0) {
 			#ifdef HANDLER_DEBUG
 			cerver_log_warning (
-				"balancer_receive_consume_from_connection () - rc <= 0 - sock fd %d", 
+				"balancer_receive_consume_from_connection () - rc <= 0 - sock fd %d",
 				cr->socket->sock_fd
 			);
 			#endif
@@ -2043,7 +2127,7 @@ static void balancer_receive_bad_type (
 			// end connection directly if remaining packet is to large
 			#ifdef HANDLER_DEBUG
 			cerver_log_warning (
-				"balancer_receive_bad_type () - sock fd %d - data size %ld > %d", 
+				"balancer_receive_bad_type () - sock fd %d - data size %ld > %d",
 				cr->socket->sock_fd, data_size, MAX_UDP_PACKET_SIZE
 			);
 			#endif
@@ -2257,7 +2341,7 @@ static inline u8 cerver_receive_threads_actual (
 ) {
 
 	u8 retval = 1;
-	
+
 	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
 	switch (rc) {
 		case -1: {
@@ -2392,6 +2476,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 #pragma region accept
 
+// FIXME: create connection with dedicated methods
 // create a new connection but check if we can use the cerver's socket pool first
 static Connection *cerver_connection_create (
 	Cerver *cerver,
@@ -2410,6 +2495,8 @@ static Connection *cerver_connection_create (
 				// from connection_create_empty ()
 				// connection->socket = (Socket *) socket_create_empty ();
 				connection->socket = socket;
+
+				connection->state_mutex = thread_mutex_new ();
 
 				connection->stats = connection_stats_new ();
 
@@ -2706,7 +2793,7 @@ static void cerver_register_new_connection (
 	Connection *connection = cerver_connection_create (
 		cerver, new_fd, client_address
 	);
-	
+
 	if (connection) {
 		// #ifdef CERVER_DEBUG
 		cerver_log (

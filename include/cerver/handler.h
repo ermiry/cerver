@@ -239,6 +239,10 @@ CERVER_PRIVATE void cerver_receive_internal (
 	char *packet_buffer, const size_t packet_buffer_size
 );
 
+CERVER_PRIVATE void balancer_receive_handle_from_connection (
+	CerverReceive *cr, Packet *packet
+);
+
 CERVER_PRIVATE void balancer_receive_consume_from_connection (
 	CerverReceive *cr, size_t data_size
 );
