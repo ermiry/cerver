@@ -1,17 +1,23 @@
 ## General
-- Updated custom string type methods implementations
-- Removed obsolete json utilities methods & sources
-- Added latest related files methods implementations
-- Refactored cerver information structure & values
-- Updated client & connection with latest sources
-- Updated main handler internal methods & definitions
+- Added dedicated script to uninstall libcerver
 
-## Threads
-- Added latest available worker structure & methods
-- Added dedicated methods to wait & signal a job queue
-- Refactored custom thread mutex & cond methods
+## Connection
+- Setting connection disconnected state after ended
+
+## Handler
+- Added balancer handler to receive packet data
+
+## Balancer
+- Refactored custom balancer methods & types
+- Added ability to call a cb when service status changes
+- Resetting connection every time before reconnecting
+- Added dedicated ended service status definition
+- Added ability to handle packets on unavailable services
+
+## Examples
+- Added method to send test packet in example app
+- Updated example app related definitions & methods
+- Updated balancer example with latest callback methods
 
 ## Tests
-- Added base dedicated math utilities unit tests sources
-- Added string type methods custom tests methods
-- Added worker unit tests & update threads tests
+- Added more balancer & services methods unit tests

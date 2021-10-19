@@ -72,14 +72,14 @@ static void start (const BalancerType type) {
 	/*** create ***/
 	load_balancer = balancer_create (
 		balancer_name,
-		BALANCER_TYPE_ROUND_ROBIN,
+		type,
 		7000,
 		CERVER_DEFAULT_CONNECTION_QUEUE,
 		n_services
 	);
 
 	test_check_ptr (load_balancer);
-	test_check_int_eq (load_balancer->type, BALANCER_TYPE_ROUND_ROBIN, NULL);
+	test_check_int_eq (load_balancer->type, type, NULL);
 	test_check_ptr (load_balancer->cerver);
 	test_check_str_eq (load_balancer->name->str, balancer_name, NULL);
 	test_check_str_len (load_balancer->name->str, strlen (balancer_name), NULL);

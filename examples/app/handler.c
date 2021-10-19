@@ -8,15 +8,14 @@
 
 #include "app.h"
 
-static const char *MESSAGE = { 
-	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
-	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
-	"Ut enim ad minim veniam, quis nostrud exercitation ullamco "
-	"laboris nisi ut aliquip ex ea commodo consequat."
-};
+// static const char *MESSAGE = { 
+// 	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
+// 	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
+// 	"Ut enim ad minim veniam, quis nostrud exercitation ullamco "
+// 	"laboris nisi ut aliquip ex ea commodo consequat."
+// };
 
-// send back a test message
-static void app_handler_test (const Packet *packet) {
+void send_test_message (const Packet *packet) {
 
 	Packet response = {
 		.cerver = packet->cerver,
@@ -60,7 +59,16 @@ static void app_handler_test (const Packet *packet) {
 	};
 
 	size_t sent = 0;
-	(void) packet_send (&response, 0, &sent, false);
+	if (packet_send (&response, 0, &sent, false)) {
+		cerver_log_error ("Failed to send test message!");
+	}
+
+}
+
+// send back a test message
+static void app_handler_test (const Packet *packet) {
+
+	send_test_message (packet);
 
 }
 
@@ -88,18 +96,18 @@ static void app_handler_message (const Packet *packet) {
 	end += sizeof (PacketHeader);
 
 	// print the client's message
-	// #ifdef EXAMPLE_APP_DEBUG
-	// (void) printf ("|%s|\n", end);
-	// #endif
+	#ifdef EXAMPLE_APP_DEBUG
+	(void) printf ("|%s|\n", end);
+	#endif
 
-	if (strcmp (MESSAGE, app_message->message)) {
-		cerver_log_error (
-			"Message [%lu] mismatch!",
-			app_message->id
-		);
+	// if (strcmp (MESSAGE, app_message->message)) {
+	// 	cerver_log_error (
+	// 		"Message [%lu] mismatch!",
+	// 		app_message->id
+	// 	);
 
-		(void) printf ("|%s|\n", app_message->message);
-	}
+	// 	(void) printf ("|%s|\n", app_message->message);
+	// }
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 

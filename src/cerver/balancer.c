@@ -19,9 +19,9 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static void balancer_service_delete (void *service_ptr);
+void balancer_service_delete (void *service_ptr);
 
-void balancer_service_stats_print (Service *service);
+void balancer_service_stats_print (const Service *service);
 
 static u8 balancer_client_receive (
 	void *custom_data_ptr,
@@ -50,7 +50,7 @@ static BalancerStats *balancer_stats_new (void) {
 
 	BalancerStats *stats = (BalancerStats *) malloc (sizeof (BalancerStats));
 	if (stats) {
-		memset (stats, 0, sizeof (BalancerStats));
+		(void) memset (stats, 0, sizeof (BalancerStats));
 	}
 
 	return stats;
@@ -88,6 +88,10 @@ void balancer_stats_print (const Balancer *balancer) {
 		// responses sent to the original clients
 		cerver_log_msg ("Responses sent packets:      %ld", balancer->stats->n_packets_sent);
 		cerver_log_msg ("Responses sent bytes:        %ld\n", balancer->stats->total_bytes_sent);
+
+		// packets handled by balancer on unavailable services
+		cerver_log_msg ("Backup packets:              %ld", balancer->stats->backup_handled_packets);
+		cerver_log_msg ("Backup bytes:                %ld\n", balancer->stats->backup_handled_bytes);
 
 		// packets that the balancer was unable to handle
 		cerver_log_msg ("Unhandled packets:           %ld", balancer->stats->unhandled_packets);
@@ -131,6 +135,8 @@ Balancer *balancer_new (void) {
 		balancer->n_services = 0;
 		balancer->services = NULL;
 
+		balancer->on_unavailable_services = NULL;
+
 		balancer->stats = NULL;
 
 		balancer->mutex = NULL;
@@ -166,12 +172,30 @@ void balancer_delete (void *balancer_ptr) {
 
 }
 
+BalancerType balancer_get_type (const Balancer *balancer) {
+
+	return balancer->type;
+
+}
+
+// sets a cb method to be used whenever there are no services available
+// a reference to the received packet will be passed to the method
+void balancer_set_on_unavailable_services (
+	Balancer *balancer, const Action on_unavailable_services
+) {
+
+	if (balancer) {
+		balancer->on_unavailable_services = on_unavailable_services;
+	}
+
+}
+
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 Balancer *balancer_create (
-	const char *name, BalancerType type,
-	u16 port, u16 connection_queue,
-	unsigned int n_services
+	const char *name, const BalancerType type,
+	const u16 port, const u16 connection_queue,
+	const unsigned int n_services
 ) {
 
 	Balancer *balancer = balancer_new ();
@@ -181,7 +205,7 @@ Balancer *balancer_create (
 
 		balancer->cerver = cerver_create (
 			CERVER_TYPE_BALANCER,
-			"load-balancer-cerver",
+			"balancer-cerver",
 			port, PROTOCOL_TCP, false, connection_queue
 		);
 
@@ -290,7 +314,7 @@ static void balancer_service_stats_delete (ServiceStats *stats) {
 
 }
 
-void balancer_service_stats_print (Service *service) {
+void balancer_service_stats_print (const Service *service) {
 
 	if (service) {
 		if (cerver_log_get_output_type () != LOG_OUTPUT_TYPE_FILE)
@@ -326,10 +350,21 @@ static Service *balancer_service_new (void) {
 
 	Service *service = (Service *) malloc (sizeof (Service));
 	if (service) {
+		service->id = 0;
+		(void) memset (service->name, 0, SERVICE_NAME_SIZE);
+
 		service->status = SERVICE_STATUS_NONE;
+		service->on_status_change = NULL;
 
 		service->connection = NULL;
-		service->reconnect_wait_time = DEFAULT_SERVICE_WAIT_TIME;
+		service->reconnect_wait_time = SERVICE_DEFAULT_WAIT_TIME;
+		service->reconnect_thread_id = 0;
+
+		service->forward_pipe_fds[0] = 0;
+		service->forward_pipe_fds[1] = 0;
+
+		service->receive_pipe_fds[0] = 0;
+		service->receive_pipe_fds[1] = 0;
 
 		service->stats = NULL;
 	}
@@ -338,7 +373,7 @@ static Service *balancer_service_new (void) {
 
 }
 
-static void balancer_service_delete (void *service_ptr) {
+void balancer_service_delete (void *service_ptr) {
 
 	if (service_ptr) {
 		Service *service = (Service *) service_ptr;
@@ -352,7 +387,7 @@ static void balancer_service_delete (void *service_ptr) {
 
 }
 
-static Service *balancer_service_create (void) {
+Service *balancer_service_create (void) {
 
 	Service *service = balancer_service_new ();
 	if (service) {
@@ -363,12 +398,38 @@ static Service *balancer_service_create (void) {
 
 }
 
+ServiceStatus balancer_service_get_status (const Service *service) {
+
+	return service->status;
+
+}
+
+const char *balancer_service_get_status_string (
+	const Service *service
+) {
+
+	return balancer_service_status_to_string (service->status);
+
+}
+
 static void balancer_service_set_status (
-	Service *service, ServiceStatus status
+	Service *service, const ServiceStatus status
+) {
+
+	service->status = status;
+
+	if (service->on_status_change) {
+		service->on_status_change (service);
+	}
+
+}
+
+void balancer_service_set_on_status_change (
+	Service *service, const Action on_status_change
 ) {
 
 	if (service) {
-		service->status = status;
+		service->on_status_change = on_status_change;
 	}
 
 }
@@ -399,7 +460,7 @@ static u8 balancer_service_forward_pipe_create (
 				service->connection->name
 			);
 			perror ("Error");
-			printf ("\n");
+			(void) printf ("\n");
 		}
 	}
 
@@ -433,7 +494,7 @@ static u8 balancer_service_receive_pipe_create (
 				service->connection->name
 			);
 			perror ("Error");
-			printf ("\n");
+			(void) printf ("\n");
 		}
 	}
 
@@ -452,18 +513,6 @@ static void balancer_service_pipe_destroy (Service *service) {
 	}
 
 }
-
-// static ServiceStatus balancer_service_get_status (Service *service) {
-
-// 	ServiceStatus retval = SERVICE_STATUS_NONE;
-
-// 	if (service) {
-// 		retval =  service->status;
-// 	}
-
-// 	return retval;
-
-// }
 
 static inline int balancer_get_next_service_round_robin (
 	Balancer *balancer
@@ -511,53 +560,81 @@ static int balancer_get_next_service (
 
 }
 
-// registers a new service to the load balancer
-// a dedicated connection will be created when the balancer starts to handle traffic to & from the service
-// returns 0 on success, 1 on error
-u8 balancer_service_register (
+static unsigned int balancer_service_register_internal (
 	Balancer *balancer,
-	const char *ip_address, u16 port
+	const char *ip_address, const u16 port
 ) {
 
-	u8 retval = 1;
+	unsigned int retval = 1;
 
-	if (balancer && ip_address) {
-		if ((balancer->next_service + 1) <= balancer->n_services) {
-			Service *service = balancer_service_create ();
-			if (service) {
-				Connection *connection = client_connection_create (
-					balancer->client,
-					ip_address, port,
-					PROTOCOL_TCP, false
-				);
+	Service *service = balancer_service_create ();
+	if (service) {
+		Connection *connection = client_connection_create (
+			balancer->client,
+			ip_address, port,
+			PROTOCOL_TCP, false
+		);
 
-				if (connection) {
-					service->connection = connection;
+		if (connection) {
+			service->id = (unsigned int) balancer->next_service;
 
-					char name[64] = { 0 };
-					(void) snprintf (name, 64, "service-%d", balancer->next_service);
+			(void) snprintf (
+				service->name, SERVICE_NAME_SIZE,
+				"service-%u", service->id
+			);
 
-					connection_set_name (connection, name);
-					connection_set_max_sleep (connection, 30);
+			service->connection = connection;
 
-					connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
-					connection_set_custom_receive (
-						connection, 
-						balancer_client_receive,
-						balancer_service_aux_new (balancer, service),
-						balancer_service_aux_delete
-					);
+			connection_set_name (connection, service->name);
+			connection_set_max_sleep (connection, SERVICE_DEFAULT_MAX_SLEEP);
 
-					balancer->services[balancer->next_service] = service;
-					balancer->next_service += 1;
+			connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
+			connection_set_custom_receive (
+				connection, 
+				balancer_client_receive,
+				balancer_service_aux_new (balancer, service),
+				balancer_service_aux_delete
+			);
 
-					retval = 0;
-				}
-			}
+			balancer->services[balancer->next_service] = service;
+			balancer->next_service += 1;
+
+			retval = 0;
 		}
 	}
 
 	return retval;
+
+}
+
+// registers a new service to the load balancer
+// a dedicated connection will be created when the balancer starts
+// to handle traffic to & from the service
+// returns 0 on success, 1 on error
+unsigned int balancer_service_register (
+	Balancer *balancer,
+	const char *ip_address, const u16 port
+) {
+
+	unsigned int retval = 1;
+
+	if (balancer && ip_address) {
+		if ((balancer->next_service + 1) <= balancer->n_services) {
+			retval = balancer_service_register_internal (
+				balancer, ip_address, port
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+const char *balancer_service_get_name (
+	const Service *service
+) {
+
+	return service ? service->name : NULL;
 
 }
 
@@ -567,7 +644,7 @@ void balancer_service_set_name (
 ) {
 
 	if (service && name) {
-		connection_set_name (service->connection, name);
+		(void) strncpy (service->name, name, SERVICE_NAME_SIZE - 1);
 	}
 
 }
@@ -575,7 +652,7 @@ void balancer_service_set_name (
 // sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
 // the default value is 20 secs
 void balancer_service_set_reconnect_wait_time (
-	Service *service, unsigned int wait_time
+	Service *service, const unsigned int wait_time
 ) {
 
 	if (service) service->reconnect_wait_time = wait_time;
@@ -589,29 +666,56 @@ static u8 balancer_service_test (
 
 	u8 retval = 1;
 
-	Packet *packet = packet_generate_request (PACKET_TYPE_TEST, 0, NULL, 0);
-	if (packet) {
-		if (!client_request_to_cerver (
-			balancer->client, service->connection, packet
-		)) {
-			retval = 0;
-		}
+	Packet ping = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
 
-		else {
-			cerver_log_error (
-				"Failed to send test request to %s",
-				service->connection->name
-			);
-		}
+		.packet_type = PACKET_TYPE_TEST,
+		.req_type = 0,
 
-		packet_delete (packet);
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.header = (PacketHeader) {
+			.packet_type = PACKET_TYPE_TEST,
+			.packet_size = sizeof (PacketHeader),
+
+			.handler_id = 0,
+
+			.request_type = 0,
+
+			.sock_fd = 0
+		},
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &ping.header,
+		.packet_ref = true
+	};
+
+	if (!client_request_to_cerver (
+		balancer->client, service->connection, &ping
+	)) {
+		retval = 0;
+	}
+
+	else {
+		cerver_log_error (
+			"Failed to send test request to %s",
+			service->connection->name
+		);
 	}
 
 	return retval;
 
 }
 
-// connects to the service & sends a test packet to check its ability to handle requests
+// connects to the service
+// sends a test packet to check its ability to handle requests
 // returns 0 on success, 1 on error
 static u8 balancer_service_connect (
 	Balancer *balancer, Service *service
@@ -620,6 +724,9 @@ static u8 balancer_service_connect (
 	u8 retval = 1;
 
 	balancer_service_set_status (service, SERVICE_STATUS_CONNECTING);
+
+	// reset connection values
+	connection_reset (service->connection);
 
 	if (!client_connect_to_cerver (balancer->client, service->connection)) {
 		cerver_log_success (
@@ -660,8 +767,6 @@ static void *balancer_service_reconnect_thread (void *bs_ptr) {
 
 	Balancer *balancer = bs->balancer;
 	Service *service = bs->service;
-
-	(void) connection_init (service->connection);
 
 	do {
 		(void) sleep (service->reconnect_wait_time);
@@ -773,6 +878,71 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region route
 
+static void balancer_handle_unavailable_services (
+	CerverReceive *cr,
+	Balancer *balancer, Connection *connection,
+	PacketHeader *header
+) {
+
+	if (balancer->on_unavailable_services) {
+		Packet packet = (Packet) {
+			.cerver = cr->cerver,
+			.client = cr->client,
+			.connection = cr->connection,
+			.lobby = cr->lobby,
+
+			.packet_type = header->packet_size,
+			.req_type = header->request_type,
+
+			.data_size = header->packet_size - sizeof (PacketHeader),
+			.data = NULL,
+			.data_ptr = NULL,
+			.data_end = NULL,
+			.data_ref = false,
+
+			.header = *header,
+
+			.packet_size = header->packet_size,
+			.packet = NULL,
+			.packet_ref = true
+		};
+
+		if (header->packet_size > sizeof (PacketHeader)) {
+			balancer_receive_handle_from_connection (
+				cr, &packet
+			);
+		}
+
+		// handle actual packet
+		balancer->on_unavailable_services (&packet);
+
+		// correctly delete packet data
+		if (packet.data) free (packet.data);
+
+		balancer->stats->backup_handled_packets += 1;
+		balancer->stats->backup_handled_bytes += header->packet_size;
+	}
+
+	else {
+		// send back generic error message
+		error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
+			balancer->cerver, balancer->client, connection
+		);
+
+		if (header->packet_size > sizeof (PacketHeader)) {
+			// consume data from socket to get next packet
+			balancer_receive_consume_from_connection (
+				cr, header->packet_size - sizeof (PacketHeader)
+			);
+		}
+
+		balancer->stats->unhandled_packets += 1;
+		balancer->stats->unhandled_bytes += header->packet_size;
+	}
+
+}
+
 // move from socket to pipe buffer
 static inline u8 balancer_route_to_service_receive (
 	int from_fd, int pipefd, int buff_size,
@@ -869,7 +1039,7 @@ static u8 balancer_route_to_service_actual (
 
 	u8 retval = 1;
 
-	pthread_mutex_lock (to->socket->write_mutex);
+	(void) pthread_mutex_lock (to->socket->write_mutex);
 
 	// first send the header
 	ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
@@ -906,7 +1076,7 @@ static u8 balancer_route_to_service_actual (
 		}
 	}
 
-	pthread_mutex_unlock (to->socket->write_mutex);
+	(void) pthread_mutex_unlock (to->socket->write_mutex);
 
 
 	return retval;
@@ -963,20 +1133,9 @@ void balancer_route_to_service (
 	else {
 		cerver_log_warning ("No available services to handle packets!");
 
-		error_packet_generate_and_send (
-			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
-			balancer->cerver, balancer->client, connection
+		balancer_handle_unavailable_services (
+			cr, balancer, connection, header
 		);
-
-		if (header->packet_size > sizeof (PacketHeader)) {
-			// consume data from socket to get next packet
-			balancer_receive_consume_from_connection (
-				cr, header->packet_size - sizeof (PacketHeader)
-			);
-		}
-
-		balancer->stats->unhandled_packets += 1;
-		balancer->stats->unhandled_bytes += header->packet_size;
 	}
 
 }
@@ -1405,9 +1564,9 @@ static void balancer_client_receive_handle_failed (
 
 	balancer_service_set_status (bs->service, SERVICE_STATUS_DISCONNECTED);
 
-	pthread_t thread_id = 0;
 	if (thread_create_detachable (
-		&thread_id, balancer_service_reconnect_thread, bs
+		&bs->service->reconnect_thread_id,
+		balancer_service_reconnect_thread, bs
 	)) {
 		cerver_log_error (
 			"Failed to create reconnect thread for balancer %s service %s",
@@ -1519,11 +1678,25 @@ u8 balancer_teardown (Balancer *balancer) {
 	u8 retval = 1;
 
 	if (balancer) {
+		// disconnect from services
+		for (int idx = 0; idx < balancer->n_services; idx++) {
+			balancer_service_set_status (
+				balancer->services[idx], SERVICE_STATUS_DISCONNECTING
+			);
+		}
+
 		(void) cerver_teardown (balancer->cerver);
 		balancer->cerver = NULL;
 
 		client_teardown (balancer->client);
 		balancer->client = NULL;
+
+		// the connections with the services have ended
+		for (int idx = 0; idx < balancer->n_services; idx++) {
+			balancer_service_set_status (
+				balancer->services[idx], SERVICE_STATUS_ENDED
+			);
+		}
 
 		// end services
 		for (int i = 0; i < balancer->n_services; i++)

@@ -13,6 +13,9 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/app.h>
+#include <app/handler.h>
+
 static Balancer *load_balancer = NULL;
 
 #pragma region end
@@ -33,6 +36,35 @@ static void end (int dummy) {
 #pragma endregion
 
 #pragma region events
+
+static void on_service_status_change (void *service_ptr) {
+
+	if (service_ptr) {
+		Service *service = (Service *) service_ptr;
+
+		const char *status = balancer_service_get_status_string (service);
+
+		cerver_log_debug (
+			"Service %s changed status to %s",
+			service->name, status
+		);
+	}
+
+}
+
+static void on_unavailable_services (void *packet_ptr) {
+
+	Packet *packet = (Packet *) packet_ptr;
+
+	packet_header_print (&packet->header);
+
+	AppMessage *app_message = (AppMessage *) packet->data;
+	app_message_print (app_message);
+
+	// send back test message to client
+	send_test_message (packet);
+
+}
 
 static void *on_cever_started (void *event_data_ptr) {
 
@@ -91,7 +123,7 @@ static void *on_client_close_connection (void *event_data_ptr) {
 
 	if (event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
-		
+
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
@@ -160,6 +192,9 @@ static void start (const BalancerType type) {
 
 		cerver_set_reusable_address_flags (load_balancer->cerver, true);
 
+		/*** balancer configuration ***/
+		balancer_set_on_unavailable_services (load_balancer, on_unavailable_services);
+
 		/*** register services ***/
 		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {
 			cerver_log_error ("Failed to register FIRST service!");
@@ -167,6 +202,14 @@ static void start (const BalancerType type) {
 
 		if (balancer_service_register (load_balancer, "127.0.0.1", 7002)) {
 			cerver_log_error ("Failed to register SECOND service!");
+		}
+
+		Service *service = NULL;
+		for (int idx = 0; idx < load_balancer->n_services; idx++) {
+			service = load_balancer->services[idx];
+			balancer_service_set_on_status_change (
+				service, on_service_status_change
+			);
 		}
 
 		/*** register to events ***/

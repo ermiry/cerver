@@ -293,6 +293,8 @@ Connection *connection_create_empty (void) {
 
 		connection->socket = (Socket *) socket_create_empty ();
 
+		connection->state_mutex = thread_mutex_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
@@ -304,8 +306,6 @@ Connection *connection_create_complete (void) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
-		connection->state_mutex = thread_mutex_new ();
-
 		connection->cond = thread_cond_new ();
 		connection->mutex = thread_mutex_new ();
 	}
@@ -654,6 +654,9 @@ unsigned int connection_init (Connection *connection) {
 			if (connection_init_socket (connection)) {
 				connection_init_address (connection);
 
+				// reset connection state
+				connection_set_state (connection, CONNECTION_STATE_NONE);
+
 				retval = 0;		// connection setup was successfull
 			}
 
@@ -965,8 +968,10 @@ void connection_end (Connection *connection) {
 
 	if (connection) {
 		if (connection->active) {
-			close (connection->socket->sock_fd);
+			(void) close (connection->socket->sock_fd);
 			connection->socket->sock_fd = -1;
+
+			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
 			connection->active = false;
 		}
 	}

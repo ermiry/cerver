@@ -222,7 +222,7 @@ base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS)
 
 load: $(EXOBJS)
-	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 
 client: $(EXOBJS)

@@ -62,6 +62,10 @@ typedef struct BalancerStats {
 	u64 n_packets_sent;                // total number of packets that were sent
 	u64 total_bytes_sent;              // total amount of bytes sent by the cerver
 
+	// packets handled by balancer on unavailable services
+	u64 backup_handled_packets;
+	u64 backup_handled_bytes;
+
 	// packets that the balancer was unable to handle
 	u64 unhandled_packets;
 	u64 unhandled_bytes;
@@ -80,7 +84,8 @@ CERVER_EXPORT void balancer_stats_print (
 
 #pragma region main
 
-#define BALANCER_CONSUME_BUFFER_SIZE			512
+#define BALANCER_RECEIVE_BUFFER_SIZE		512
+#define BALANCER_CONSUME_BUFFER_SIZE		1024
 
 struct _Balancer {
 
@@ -94,6 +99,8 @@ struct _Balancer {
 	int n_services;					// how many services the load balancer is connected to
 	struct _Service **services;		// references to the client's connections for direct access
 
+	Action on_unavailable_services;
+
 	BalancerStats *stats;
 
 	pthread_mutex_t *mutex;
@@ -106,21 +113,33 @@ CERVER_PRIVATE Balancer *balancer_new (void);
 
 CERVER_PRIVATE void balancer_delete (void *balancer_ptr);
 
+CERVER_EXPORT BalancerType balancer_get_type (const Balancer *balancer);
+
+// sets a cb method to be used whenever there are no services available
+// a reference to the received packet will be passed to the method
+CERVER_EXPORT void balancer_set_on_unavailable_services (
+	Balancer *balancer, const Action on_unavailable_services
+);
+
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
 CERVER_EXPORT Balancer *balancer_create (
-	const char *name, BalancerType type,
-	u16 port, u16 connection_queue,
-	unsigned int n_services
+	const char *name, const BalancerType type,
+	const u16 port, const u16 connection_queue,
+	const unsigned int n_services
 );
 
 #pragma endregion
 
 #pragma region services
 
-#define SERVICE_CONSUME_BUFFER_SIZE				512
+#define SERVICE_NAME_SIZE					64
+#define SERVICE_CONNECTION_NAME_SIZE		64
 
-#define DEFAULT_SERVICE_WAIT_TIME				20
+#define SERVICE_CONSUME_BUFFER_SIZE			512
+
+#define SERVICE_DEFAULT_MAX_SLEEP			30
+#define SERVICE_DEFAULT_WAIT_TIME			20
 
 #define SERVICE_STATUS_MAP(XX)																			\
 	XX(0, 	NONE, 			None, 			None)														\
@@ -129,7 +148,8 @@ CERVER_EXPORT Balancer *balancer_create (
 	XX(3, 	WORKING, 		Working, 		Handling packets)											\
 	XX(4, 	DISCONNECTING, 	Disconnecting, 	In the process of closing the connection)					\
 	XX(5, 	DISCONNECTED, 	Disconnected, 	The balancer has been disconnected from the service)		\
-	XX(6, 	UNAVAILABLE, 	Unavailable, 	The service is down or is not handling packets)
+	XX(6, 	UNAVAILABLE, 	Unavailable, 	The service is down or is not handling packets)				\
+	XX(7, 	ENDED, 			Ended, 			The connection with the service has ended)
 
 typedef enum ServiceStatus {
 
@@ -169,15 +189,20 @@ typedef struct ServiceStats {
 } ServiceStats;
 
 CERVER_EXPORT void balancer_service_stats_print (
-	struct _Service *service
+	const struct _Service *service
 );
 
 struct _Service {
 
+	unsigned int id;
+	char name[SERVICE_NAME_SIZE];
+
 	ServiceStatus status;
+	Action on_status_change;
 
 	Connection *connection;
 	unsigned int reconnect_wait_time;
+	pthread_t reconnect_thread_id;
 
 	int forward_pipe_fds[2];
 	int receive_pipe_fds[2];
@@ -188,12 +213,33 @@ struct _Service {
 
 typedef struct _Service Service;
 
+CERVER_PRIVATE void balancer_service_delete (void *service_ptr);
+
+CERVER_PRIVATE Service *balancer_service_create (void);
+
+CERVER_PUBLIC ServiceStatus balancer_service_get_status (
+	const Service *service
+);
+
+CERVER_PUBLIC const char *balancer_service_get_status_string (
+	const Service *service
+);
+
+CERVER_EXPORT void balancer_service_set_on_status_change (
+	Service *service, const Action on_status_change
+);
+
 // registers a new service to the load balancer
-// a dedicated connection will be created when the balancer starts to handle traffic to & from the service
+// a dedicated connection will be created when the balancer starts
+// to handle traffic to & from the service
 // returns 0 on success, 1 on error
-CERVER_EXPORT u8 balancer_service_register (
+CERVER_EXPORT unsigned int balancer_service_register (
 	Balancer *balancer,
-	const char *ip_address, u16 port
+	const char *ip_address, const u16 port
+);
+
+CERVER_EXPORT const char *balancer_service_get_name (
+	const Service *service
 );
 
 // sets the service's name
@@ -201,10 +247,11 @@ CERVER_EXPORT void balancer_service_set_name (
 	Service *service, const char *name
 );
 
-// sets the time (in secs) to wait to attempt a reconnection whenever the service disconnects
+// sets the time (in secs) to wait to attempt a reconnection
+// whenever the service disconnects
 // the default value is 20 secs
 CERVER_EXPORT void balancer_service_set_reconnect_wait_time (
-	Service *service, unsigned int wait_time
+	Service *service, const unsigned int wait_time
 );
 
 #pragma endregion

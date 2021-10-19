@@ -45,7 +45,7 @@ void app_message_create_internal (
 		(void) strncpy (
 			app_message->message,
 			message,
-			APP_MESSAGE_LEN - 1
+			APP_MESSAGE_SIZE - 1
 		);
 	}
 
