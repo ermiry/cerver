@@ -293,6 +293,8 @@ Connection *connection_create_empty (void) {
 
 		connection->socket = (Socket *) socket_create_empty ();
 
+		connection->state_mutex = thread_mutex_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
@@ -304,8 +306,6 @@ Connection *connection_create_complete (void) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
-		connection->state_mutex = thread_mutex_new ();
-
 		connection->cond = thread_cond_new ();
 		connection->mutex = thread_mutex_new ();
 	}
