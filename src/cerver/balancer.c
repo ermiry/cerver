@@ -131,6 +131,8 @@ Balancer *balancer_new (void) {
 		balancer->n_services = 0;
 		balancer->services = NULL;
 
+		balancer->on_unavailable_services = NULL;
+
 		balancer->stats = NULL;
 
 		balancer->mutex = NULL;
@@ -169,6 +171,18 @@ void balancer_delete (void *balancer_ptr) {
 BalancerType balancer_get_type (const Balancer *balancer) {
 
 	return balancer->type;
+
+}
+
+// sets a cb method to be used whenever there are no services available
+// a reference to the received packet will be passed to the method
+void balancer_set_on_unavailable_services (
+	Balancer *balancer, const Action on_unavailable_services
+) {
+
+	if (balancer) {
+		balancer->on_unavailable_services = on_unavailable_services;
+	}
 
 }
 
@@ -851,6 +865,68 @@ u8 balancer_start (Balancer *balancer) {
 
 #pragma region route
 
+static void balancer_handle_unavailable_services (
+	CerverReceive *cr,
+	Balancer *balancer, Connection *connection,
+	PacketHeader *header
+) {
+
+	if (balancer->on_unavailable_services) {
+		Packet packet = (Packet) {
+			.cerver = cr->cerver,
+			.client = cr->client,
+			.connection = cr->connection,
+			.lobby = cr->lobby,
+
+			.packet_type = header->packet_size,
+			.req_type = header->request_type,
+
+			.data_size = header->packet_size - sizeof (PacketHeader),
+			.data = NULL,
+			.data_ptr = NULL,
+			.data_end = NULL,
+			.data_ref = false,
+
+			.header = *header,
+
+			.packet_size = header->packet_size,
+			.packet = NULL,
+			.packet_ref = true
+		};
+
+		if (header->packet_size > sizeof (PacketHeader)) {
+			balancer_receive_handle_from_connection (
+				cr, &packet
+			);
+		}
+
+		// handle actual packet
+		balancer->on_unavailable_services (&packet);
+
+		// correctly delete packet data
+		if (packet.data) free (packet.data);
+	}
+
+	else {
+		// send back generic error message
+		error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
+			balancer->cerver, balancer->client, connection
+		);
+
+		if (header->packet_size > sizeof (PacketHeader)) {
+			// consume data from socket to get next packet
+			balancer_receive_consume_from_connection (
+				cr, header->packet_size - sizeof (PacketHeader)
+			);
+		}
+
+		balancer->stats->unhandled_packets += 1;
+		balancer->stats->unhandled_bytes += header->packet_size;
+	}
+
+}
+
 // move from socket to pipe buffer
 static inline u8 balancer_route_to_service_receive (
 	int from_fd, int pipefd, int buff_size,
@@ -1041,20 +1117,9 @@ void balancer_route_to_service (
 	else {
 		cerver_log_warning ("No available services to handle packets!");
 
-		error_packet_generate_and_send (
-			CERVER_ERROR_PACKET_ERROR, "Services unavailable",
-			balancer->cerver, balancer->client, connection
+		balancer_handle_unavailable_services (
+			cr, balancer, connection, header
 		);
-
-		if (header->packet_size > sizeof (PacketHeader)) {
-			// consume data from socket to get next packet
-			balancer_receive_consume_from_connection (
-				cr, header->packet_size - sizeof (PacketHeader)
-			);
-		}
-
-		balancer->stats->unhandled_packets += 1;
-		balancer->stats->unhandled_bytes += header->packet_size;
 	}
 
 }

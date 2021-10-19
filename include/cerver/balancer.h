@@ -80,7 +80,8 @@ CERVER_EXPORT void balancer_stats_print (
 
 #pragma region main
 
-#define BALANCER_CONSUME_BUFFER_SIZE			512
+#define BALANCER_RECEIVE_BUFFER_SIZE		512
+#define BALANCER_CONSUME_BUFFER_SIZE		1024
 
 struct _Balancer {
 
@@ -93,6 +94,8 @@ struct _Balancer {
 	int next_service;
 	int n_services;					// how many services the load balancer is connected to
 	struct _Service **services;		// references to the client's connections for direct access
+
+	Action on_unavailable_services;
 
 	BalancerStats *stats;
 
@@ -107,6 +110,12 @@ CERVER_PRIVATE Balancer *balancer_new (void);
 CERVER_PRIVATE void balancer_delete (void *balancer_ptr);
 
 CERVER_EXPORT BalancerType balancer_get_type (const Balancer *balancer);
+
+// sets a cb method to be used whenever there are no services available
+// a reference to the received packet will be passed to the method
+CERVER_EXPORT void balancer_set_on_unavailable_services (
+	Balancer *balancer, const Action on_unavailable_services
+);
 
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
