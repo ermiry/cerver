@@ -19,7 +19,7 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-static void balancer_service_delete (void *service_ptr);
+void balancer_service_delete (void *service_ptr);
 
 void balancer_service_stats_print (const Service *service);
 
@@ -350,12 +350,21 @@ static Service *balancer_service_new (void) {
 
 	Service *service = (Service *) malloc (sizeof (Service));
 	if (service) {
+		service->id = 0;
+		(void) memset (service->name, 0, SERVICE_NAME_SIZE);
+
 		service->status = SERVICE_STATUS_NONE;
 		service->on_status_change = NULL;
 
 		service->connection = NULL;
 		service->reconnect_wait_time = SERVICE_DEFAULT_WAIT_TIME;
 		service->reconnect_thread_id = 0;
+
+		service->forward_pipe_fds[0] = 0;
+		service->forward_pipe_fds[1] = 0;
+
+		service->receive_pipe_fds[0] = 0;
+		service->receive_pipe_fds[1] = 0;
 
 		service->stats = NULL;
 	}
@@ -364,7 +373,7 @@ static Service *balancer_service_new (void) {
 
 }
 
-static void balancer_service_delete (void *service_ptr) {
+void balancer_service_delete (void *service_ptr) {
 
 	if (service_ptr) {
 		Service *service = (Service *) service_ptr;
@@ -378,7 +387,7 @@ static void balancer_service_delete (void *service_ptr) {
 
 }
 
-static Service *balancer_service_create (void) {
+Service *balancer_service_create (void) {
 
 	Service *service = balancer_service_new ();
 	if (service) {

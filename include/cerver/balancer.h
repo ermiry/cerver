@@ -213,6 +213,10 @@ struct _Service {
 
 typedef struct _Service Service;
 
+CERVER_PRIVATE void balancer_service_delete (void *service_ptr);
+
+CERVER_PRIVATE Service *balancer_service_create (void);
+
 CERVER_PUBLIC ServiceStatus balancer_service_get_status (
 	const Service *service
 );
