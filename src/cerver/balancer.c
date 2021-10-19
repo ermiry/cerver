@@ -89,6 +89,10 @@ void balancer_stats_print (const Balancer *balancer) {
 		cerver_log_msg ("Responses sent packets:      %ld", balancer->stats->n_packets_sent);
 		cerver_log_msg ("Responses sent bytes:        %ld\n", balancer->stats->total_bytes_sent);
 
+		// packets handled by balancer on unavailable services
+		cerver_log_msg ("Backup packets:              %ld", balancer->stats->backup_handled_packets);
+		cerver_log_msg ("Backup bytes:                %ld\n", balancer->stats->backup_handled_bytes);
+
 		// packets that the balancer was unable to handle
 		cerver_log_msg ("Unhandled packets:           %ld", balancer->stats->unhandled_packets);
 		cerver_log_msg ("Unhandled bytes:             %ld\n", balancer->stats->unhandled_bytes);
@@ -905,6 +909,9 @@ static void balancer_handle_unavailable_services (
 
 		// correctly delete packet data
 		if (packet.data) free (packet.data);
+
+		balancer->stats->backup_handled_packets += 1;
+		balancer->stats->backup_handled_bytes += header->packet_size;
 	}
 
 	else {
