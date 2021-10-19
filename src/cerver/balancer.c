@@ -1610,6 +1610,13 @@ u8 balancer_teardown (Balancer *balancer) {
 		client_teardown (balancer->client);
 		balancer->client = NULL;
 
+		// the connections with the services have ended
+		for (int idx = 0; idx < balancer->n_services; idx++) {
+			balancer_service_set_status (
+				balancer->services[idx], SERVICE_STATUS_ENDED
+			);
+		}
+
 		// end services
 		for (int i = 0; i < balancer->n_services; i++)
 			balancer_service_pipe_destroy (balancer->services[i]);

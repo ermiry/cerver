@@ -135,7 +135,8 @@ CERVER_EXPORT Balancer *balancer_create (
 	XX(3, 	WORKING, 		Working, 		Handling packets)											\
 	XX(4, 	DISCONNECTING, 	Disconnecting, 	In the process of closing the connection)					\
 	XX(5, 	DISCONNECTED, 	Disconnected, 	The balancer has been disconnected from the service)		\
-	XX(6, 	UNAVAILABLE, 	Unavailable, 	The service is down or is not handling packets)
+	XX(6, 	UNAVAILABLE, 	Unavailable, 	The service is down or is not handling packets)				\
+	XX(7, 	ENDED, 			Ended, 			The connection with the service has ended)
 
 typedef enum ServiceStatus {
 
