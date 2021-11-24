@@ -50,6 +50,18 @@ static void test_threads_detachable (void) {
 
 }
 
+static void test_thread_create_detached (void) {
+
+	// good test
+	int data = 128;
+	pthread_t thread_id = thread_create_detached (
+		test_thread, &data
+	);
+
+	test_check_unsigned_ne (thread_id, 0);
+
+}
+
 static void test_threads_mutex (void) {
 
 	pthread_mutex_t *mutex = thread_mutex_new ();
@@ -86,6 +98,9 @@ static void threads_tests_main (void) {
 	(void) printf ("Testing THREADS main...\n");
 
 	test_threads_detachable ();
+
+	test_thread_create_detached ();
+
 	test_threads_mutex ();
 	test_threads_cond ();
 
