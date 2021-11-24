@@ -1,9 +1,5 @@
-## General
-- Logging connection values if CERVER_DEBUG is defined
-
-## Files
-- Refactored file read method internal implementation
-- Added method to read n bytes from file into a buffer
+## Threads
+- Added another method to create a detached thread
 
 ## Tests
-- Added dedicated file read methods unit tests
+- Added dedicated thread_create_detached () unit test

@@ -18,12 +18,11 @@
 
 // creates a custom detachable thread (will go away on its own upon completion)
 // returns 0 on success, 1 on error
-u8 thread_create_detachable (
-	pthread_t *thread,
-	void *(*work) (void *), void *args
+unsigned int thread_create_detachable (
+	pthread_t *thread, void *(*work) (void *), void *args
 ) {
 
-	u8 retval = 1;
+	unsigned int retval = 1;
 
 	if (thread && work) {
 		pthread_attr_t attr = { 0 };
@@ -46,6 +45,27 @@ u8 thread_create_detachable (
 	}
 
 	return retval;
+
+}
+
+pthread_t thread_create_detached (void *(*work) (void *), void *args) {
+
+	pthread_t thread_id = 0;
+
+	pthread_attr_t attr = { 0 };
+	if (!pthread_attr_init (&attr)) {
+		if (!pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED)) {
+			if (pthread_create (&thread_id, &attr, work, args)) {
+				cerver_log_error ("Failed to create detached thread!");
+
+				#ifdef THREADS_DEBUG
+				perror ("Error");
+				#endif
+			}
+		}
+	}
+
+	return thread_id;
 
 }
 

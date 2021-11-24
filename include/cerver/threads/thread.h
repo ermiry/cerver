@@ -17,10 +17,14 @@ extern "C" {
 
 #pragma region threads
 
-// creates a custom detachable thread (will go away on its own upon completion)
+// creates a custom detached thread
+// the thread will go away on its own upon completion
 // returns 0 on success, 1 on error
-CERVER_PUBLIC u8 thread_create_detachable (
-	pthread_t *thread,
+CERVER_PUBLIC unsigned int thread_create_detachable (
+	pthread_t *thread, void *(*work) (void *), void *args
+);
+
+CERVER_PUBLIC pthread_t thread_create_detached (
 	void *(*work) (void *), void *args
 );
 
