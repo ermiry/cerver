@@ -83,7 +83,7 @@ static void test_http_headers_get_string (void) {
 	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY), HEADER_WEB_SOCKET_KEY, NULL);
 	test_check_str_eq (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION), HEADER_WEB_SOCKET_VERSION, NULL);
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_INVALID), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
@@ -128,10 +128,10 @@ static void test_http_headers_get_type_by_string (void) {
 	test_check_unsigned_eq (http_header_type_by_string (HEADER_WEB_SOCKET_KEY), HTTP_HEADER_SEC_WEBSOCKET_KEY, NULL);
 	test_check_unsigned_eq (http_header_type_by_string (HEADER_WEB_SOCKET_VERSION), HTTP_HEADER_SEC_WEBSOCKET_VERSION, NULL);
 
-	test_check_unsigned_eq (http_header_type_by_string (HEADER_OTHER), HTTP_HEADER_INVALID, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("hola"), HTTP_HEADER_INVALID, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("adios"), HTTP_HEADER_INVALID, NULL);
-	test_check_unsigned_eq (http_header_type_by_string ("erick"), HTTP_HEADER_INVALID, NULL);
+	test_check_unsigned_eq (http_header_type_by_string (HEADER_OTHER), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("hola"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("adios"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("erick"), HTTP_HEADER_UNDEFINED, NULL);
 
 }
 
@@ -172,7 +172,7 @@ static void test_http_header_type_by_string (void) {
 	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_KEY));
 	test_check_ptr (http_header_string (HTTP_HEADER_SEC_WEBSOCKET_VERSION));
 
-	test_check_str_eq (http_header_string (HTTP_HEADER_INVALID), HEADER_OTHER, NULL);
+	test_check_str_eq (http_header_string (HTTP_HEADER_UNDEFINED), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 73), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 85), HEADER_OTHER, NULL);
 	test_check_str_eq (http_header_string ((const http_header) 100), HEADER_OTHER, NULL);
