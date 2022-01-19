@@ -10,7 +10,7 @@
 
 #define HTTP_HEADER_VALUE_SIZE			256
 
-#define HTTP_HEADER_TEMP_SIZE			64
+#define HTTP_HEADER_TEMP_SIZE			128
 #define HTTP_HEADER_ACTUAL_SIZE			128
 
 #ifdef __cplusplus
