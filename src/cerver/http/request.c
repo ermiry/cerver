@@ -37,7 +37,7 @@ const char *http_request_method_str (
 	const RequestMethod request_method
 ) {
 
-	return ELEM_AT (
+	return ARRAY_ELEM_AT (
 		request_method_strings, request_method, "Undefined"
 	);
 
@@ -64,6 +64,7 @@ HttpRequest *http_request_new (void) {
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;
 
+		http_request->current_custom_header = NULL;
 		http_request->custom_headers = NULL;
 
 		http_request->decoded_data = NULL;
@@ -107,6 +108,7 @@ void http_request_delete (HttpRequest *http_request) {
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			str_delete (http_request->headers[i]);
 
+		http_request->current_custom_header = NULL;
 		dlist_delete (http_request->custom_headers);
 
 		if (http_request->decoded_data) {
