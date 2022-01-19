@@ -10,6 +10,7 @@
 #include "cerver/config.h"
 
 #include "cerver/http/content.h"
+#include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
@@ -63,6 +64,8 @@ HttpRequest *http_request_new (void) {
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;
 
+		http_request->custom_headers = NULL;
+
 		http_request->decoded_data = NULL;
 		http_request->delete_decoded_data = NULL;
 
@@ -103,6 +106,8 @@ void http_request_delete (HttpRequest *http_request) {
 
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			str_delete (http_request->headers[i]);
+
+		dlist_delete (http_request->custom_headers);
 
 		if (http_request->decoded_data) {
 			if (http_request->delete_decoded_data)
@@ -196,6 +201,82 @@ const String *http_request_get_header (
 ) {
 
 	return http_request->headers[header];
+
+}
+
+void http_request_set_current_custom_header (
+	HttpRequest *http_request, const char *header
+) {
+
+	HttpCustomHeader *custom_header = http_custom_header_create (header);
+	if (custom_header) {
+		http_request->current_custom_header = custom_header;
+
+		if (!http_request->custom_headers) {
+			http_request->custom_headers = dlist_init (
+				http_custom_header_delete, NULL
+			);
+		}
+
+		(void) dlist_insert_at_end_unsafe (
+			http_request->custom_headers, custom_header
+		);
+	}
+
+}
+
+void http_request_set_current_custom_header_value (
+	HttpRequest *http_request, const char *header_value
+) {
+
+	if (http_request->current_custom_header) {
+		(void) strncpy (
+			http_request->current_custom_header->header_value,
+			header_value,
+			HTTP_CUSTOM_HEADER_VALUE_SIZE - 1
+		);
+
+		http_request->current_custom_header->header_value_len = (unsigned int) strlen (
+			http_request->current_custom_header->header_value
+		);
+	}
+
+}
+
+const size_t http_request_get_custom_headers_count (
+	const HttpRequest *http_request
+) {
+
+	size_t count = 0;
+
+	if (http_request->custom_headers) {
+		count = http_request->custom_headers->size;
+	}
+
+	return count;
+
+}
+
+const char *http_request_get_custom_header (
+	const HttpRequest *http_request, const char *header
+) {
+
+	const char *result = NULL;
+
+	if (http_request->custom_headers) {
+		ListElement *le = NULL;
+		HttpCustomHeader *custom_header = NULL;
+		dlist_for_each (http_request->custom_headers, le) {
+			custom_header = (HttpCustomHeader *) le->data;
+
+			if (!strcmp (custom_header->header, header)) {
+				result = custom_header->header_value;
+				break;
+			}
+		}
+	}
+
+	return result;
 
 }
 

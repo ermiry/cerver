@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdbool.h>
 
 #include <stdarg.h>
 
@@ -21,6 +22,7 @@
 #include "cerver/threads/worker.h"
 
 #include "cerver/http/admin.h"
+#include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
@@ -2155,16 +2157,22 @@ static int http_receive_handle_header_field (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	char header[HTTP_HEADER_TEMP_SIZE] = { 0 };
+	HttpRequest *request = ((HttpReceive *) parser->data)->request;
+
+	char temp_header[HTTP_HEADER_TEMP_SIZE] = { 0 };
 	(void) snprintf (
-		header, HTTP_HEADER_TEMP_SIZE - 1,
+		temp_header, HTTP_HEADER_TEMP_SIZE - 1,
 		"%.*s", (int) length, at
 	);
 
 	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
 
-	(((HttpReceive *) parser->data)->request)->next_header =
-		http_header_type_by_string (header);
+	const http_header next_header = http_header_type_by_string (temp_header);
+	if (next_header == HTTP_HEADER_UNDEFINED) {
+		http_request_set_current_custom_header (request, temp_header);
+	}
+
+	request->next_header = next_header;
 
 	return 0;
 
@@ -2177,13 +2185,23 @@ static int http_receive_handle_header_value (
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
 
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
-	if (request->next_header != HTTP_HEADER_INVALID) {
+	if (request->next_header != HTTP_HEADER_UNDEFINED) {
 		request->headers[request->next_header] = str_new (NULL);
 		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
 		request->headers[request->next_header]->len = length;
 	}
 
-	// request->next_header = REQUEST_HEADER_INVALID;
+	else {
+		(void) snprintf (
+			request->current_custom_header->header_value,
+			HTTP_CUSTOM_HEADER_VALUE_SIZE - 1,
+			"%.*s", (int) length, at
+		);
+
+		request->current_custom_header->header_value_len = (unsigned int) strlen (
+			request->current_custom_header->header_value
+		);
+	}
 
 	return 0;
 
