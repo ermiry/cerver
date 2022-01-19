@@ -58,7 +58,7 @@ HttpRequest *http_request_new (void) {
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 			http_request->params[i] = NULL;
 
-		http_request->next_header = HTTP_HEADER_INVALID;
+		http_request->next_header = HTTP_HEADER_UNDEFINED;
 
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;

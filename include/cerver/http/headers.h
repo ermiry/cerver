@@ -89,7 +89,7 @@ extern "C" {
 	/* Other */																																																																					\
 	XX(53,  DATE,								Date,								(Contains the date and time at which the message was originated.))																																			\
 	XX(54,  UPGRADE,							Upgrade,							(The standard establishes rules for upgrading or changing to a different protocol on the current client, server, transport protocol connection.))															\
-	XX(63,  INVALID,							Undefined,							(Invalid Header))																																															\
+	XX(63,  UNDEFINED,							Undefined,							(Undefined Header))																																															\
 
 typedef enum http_header {
 
