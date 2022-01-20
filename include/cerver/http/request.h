@@ -10,6 +10,7 @@
 #include "cerver/config.h"
 
 #include "cerver/http/content.h"
+#include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/utils.h"
@@ -62,6 +63,9 @@ struct _HttpRequest {
 
 	http_header next_header;
 	String *headers[HTTP_HEADERS_SIZE];
+
+	HttpCustomHeader *current_custom_header;
+	DoubleList *custom_headers;
 
 	// JWT decoded data
 	void *decoded_data;
@@ -139,6 +143,24 @@ CERVER_EXPORT const String *http_request_get_param_at_idx (
 // gets the specified HTTP header value from the HTTP request
 CERVER_EXPORT const String *http_request_get_header (
 	const HttpRequest *http_request, const http_header header
+);
+
+CERVER_PRIVATE void http_request_set_current_custom_header (
+	HttpRequest *http_request, const char *header
+);
+
+CERVER_PRIVATE void http_request_set_current_custom_header_value (
+	HttpRequest *http_request, const char *header_value
+);
+
+// gets the HTTP request's custom headers count
+CERVER_EXPORT const size_t http_request_get_custom_headers_count (
+	const HttpRequest *http_request
+);
+
+// gets the specified custom header actual value
+CERVER_EXPORT const char *http_request_get_custom_header (
+	const HttpRequest *http_request, const char *header
 );
 
 // gets the HTTP request's content type value from the request's headers

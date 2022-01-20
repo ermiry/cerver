@@ -15,7 +15,7 @@ const char *http_header_string (
 		#undef XX
 	}
 
-	return http_header_string (HTTP_HEADER_INVALID);
+	return http_header_string (HTTP_HEADER_UNDEFINED);
 
 }
 
@@ -29,7 +29,7 @@ const char *http_header_description (
 		#undef XX
 	}
 
-	return http_header_description (HTTP_HEADER_INVALID);
+	return http_header_description (HTTP_HEADER_UNDEFINED);
 
 }
 
@@ -41,7 +41,7 @@ const http_header http_header_type_by_string (
 	HTTP_HEADERS_MAP(XX)
 	#undef XX
 
-	return HTTP_HEADER_INVALID;
+	return HTTP_HEADER_UNDEFINED;
 
 }
 

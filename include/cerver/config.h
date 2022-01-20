@@ -54,8 +54,8 @@
 	#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
-#ifndef ELEM_AT
-	#define ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
+#ifndef ARRAY_ELEM_AT
+	#define ARRAY_ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
 #endif
 
 // va_copy is a C99 feature. In C89 implementations, it's sometimes

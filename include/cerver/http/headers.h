@@ -10,7 +10,7 @@
 
 #define HTTP_HEADER_VALUE_SIZE			256
 
-#define HTTP_HEADER_TEMP_SIZE			64
+#define HTTP_HEADER_TEMP_SIZE			128
 #define HTTP_HEADER_ACTUAL_SIZE			128
 
 #ifdef __cplusplus
@@ -89,7 +89,7 @@ extern "C" {
 	/* Other */																																																																					\
 	XX(53,  DATE,								Date,								(Contains the date and time at which the message was originated.))																																			\
 	XX(54,  UPGRADE,							Upgrade,							(The standard establishes rules for upgrading or changing to a different protocol on the current client, server, transport protocol connection.))															\
-	XX(63,  INVALID,							Undefined,							(Invalid Header))																																															\
+	XX(63,  UNDEFINED,							Undefined,							(Undefined Header))																																															\
 
 typedef enum http_header {
 

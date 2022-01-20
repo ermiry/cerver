@@ -32,9 +32,12 @@ static HttpRequest *test_http_request_new (void) {
 	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 		test_check_null_ptr (request->params[i]);
 
-	test_check_unsigned_eq (request->next_header, HTTP_HEADER_INVALID, NULL);
+	test_check_unsigned_eq (request->next_header, HTTP_HEADER_UNDEFINED, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (request->headers[i]);
+
+	test_check_null_ptr (request->current_custom_header);
+	test_check_null_ptr (request->custom_headers);
 
 	test_check_null_ptr (request->decoded_data);
 	test_check_null_ptr (request->delete_decoded_data);
@@ -80,6 +83,9 @@ static void test_http_request_create (void) {
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_request_get_header (request, (const http_header) i));
 	
+	test_check_null_ptr (request->current_custom_header);
+	test_check_null_ptr (request->custom_headers);
+
 	test_check_unsigned_eq (http_request_get_content_type (request), HTTP_CONTENT_TYPE_NONE, NULL);
 
 	test_check_null_ptr (http_request_get_content_type_string (request));
@@ -101,6 +107,75 @@ static void test_http_request_create (void) {
 	test_check_str_empty (http_request_get_dirname (request));
 
 	test_check_null_ptr (http_request_get_body_values (request));
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_set_current_custom_header (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_current_custom_header (request, "Custom-Header");
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_set_current_custom_header_value (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_current_custom_header (request, "Custom-Header");
+	http_request_set_current_custom_header_value (request, "Hola");
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_get_custom_headers_count (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_current_custom_header (request, "Custom-Header");
+	http_request_set_current_custom_header_value (request, "Hola");
+
+	http_request_set_current_custom_header (request, "Another-Header");
+	http_request_set_current_custom_header_value (request, "Adios");
+
+	test_check_unsigned_eq (
+		http_request_get_custom_headers_count (request), 2, NULL
+	);
+
+	http_request_delete (request);
+
+}
+
+static void test_http_request_get_custom_header (void) {
+
+	const char *custom_header = "Custom-Header";
+	const char *custom_header_value = "Hola";
+
+	const char *another_header = "Another-Header";
+	const char *another_header_value = "Adios";
+
+	HttpRequest *request = test_http_request_new ();
+
+	http_request_set_current_custom_header (request, custom_header);
+	http_request_set_current_custom_header_value (request, custom_header_value);
+
+	test_check_str_eq (
+		http_request_get_custom_header (request, custom_header), custom_header_value, NULL
+	);
+
+	test_check_null_ptr (http_request_get_custom_header (request, another_header));
+
+	http_request_set_current_custom_header (request, another_header);
+	http_request_set_current_custom_header_value (request, another_header_value);
+
+	test_check_str_eq (
+		http_request_get_custom_header (request, another_header), another_header_value, NULL
+	);
 
 	http_request_delete (request);
 
@@ -223,6 +298,12 @@ void http_tests_requests (void) {
 
 	// main
 	test_http_request_create ();
+
+	test_http_request_set_current_custom_header ();
+	test_http_request_set_current_custom_header_value ();
+	test_http_request_get_custom_headers_count ();
+	test_http_request_get_custom_header ();
+
 	test_http_request_set_decoded_data ();
 	test_http_request_set_default_delete_decoded_data ();
 	test_http_request_set_custom_data ();
