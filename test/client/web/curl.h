@@ -19,6 +19,10 @@ typedef size_t (*curl_write_data_cb)(
 	void *contents, size_t size, size_t nmemb, void *storage
 );
 
+extern CurlResult curl_perform_request (
+	CURL *curl, const http_status expected_status
+);
+
 // performs a simple curl request to the specified address
 // creates an destroy a local CURL structure
 // returns 0 on success, 1 on any error
