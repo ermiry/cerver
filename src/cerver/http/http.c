@@ -2390,16 +2390,25 @@ static int http_receive_handle_mpart_header_field (
 	multipart_parser *parser, const char *at, size_t length
 ) {
 
-	char header[HTTP_MULTI_PART_TEMP_HEADER_SIZE] = { 0 };
+	MultiPart *mpart = (((HttpReceive *) parser->data)->request)->current_part;
+
+	// (void) printf ("\nHeader field original: /%.*s/\n", (int) length, at);
+
+	// build header in a temp location
+	char *end = mpart->temp_header.value + mpart->temp_header.len;
+
 	(void) snprintf (
-		header, HTTP_MULTI_PART_TEMP_HEADER_SIZE - 1,
+		end, HTTP_HEADER_VALUE_SIZE - mpart->temp_header.len - 1,
 		"%.*s", (int) length, at
 	);
 
-	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
+	mpart->temp_header.len = (int) strlen (mpart->temp_header.value);
 
-	(((HttpReceive *) parser->data)->request)->current_part->next_header =
-		http_receive_handle_mpart_header_field_handle (header);
+	// (void) printf ("\nHeader field build: /%s/\n", mpart->temp_header.value);
+
+	mpart->next_header = http_receive_handle_mpart_header_field_handle (
+		mpart->temp_header.value
+	);
 
 	return 0;
 
