@@ -193,6 +193,22 @@ sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
 
 sudo docker kill $(sudo docker ps -q)
 
+# multi
+echo "Multi integration test..."
+sudo docker run \
+	-d \
+	--name test --rm \
+	-p 8080:8080 \
+	ermiry/cerver:test ./bin/web/multi
+
+sleep 2
+
+sudo docker inspect test --format='{{.State.ExitCode}}' || { exit 1; }
+
+./test/bin/client/web/multi || { exit 1; }
+
+sudo docker kill $(sudo docker ps -q)
+
 # multiple
 echo "Multiple integration test..."
 sudo docker run \
