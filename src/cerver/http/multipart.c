@@ -79,6 +79,8 @@ void http_multi_part_reset (MultiPart *multi_part) {
 			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
 		);
 
+		(void) memset (&multi_part->temp_header, 0, sizeof (HttpHeader));
+
 		dlist_reset (multi_part->params);
 
 		multi_part->name = NULL;
