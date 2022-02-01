@@ -2608,10 +2608,14 @@ static int http_receive_handle_mpart_data (
 		// printf ("|%.*s|\n", (int) length, at);
 		// multi_part->value = str_create ("%.*s", (int) length, at);
 
-		multi_part->value_len = snprintf (
-			multi_part->value, HTTP_MULTI_PART_VALUE_SIZE - 1,
+		char *end = multi_part->value + multi_part->value_len;
+
+		(void) snprintf (
+			end, HTTP_MULTI_PART_VALUE_SIZE - multi_part->value_len,
 			"%.*s", (int) length, at
 		);
+
+		multi_part->value_len = (int) strlen (multi_part->value);
 	}
 
 	return 0;
