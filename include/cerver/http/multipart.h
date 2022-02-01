@@ -58,6 +58,8 @@ struct _MultiPart {
 	MultiPartHeader next_header;
 	HttpHeader headers[MULTI_PART_HEADERS_SIZE];
 
+	HttpHeader temp_header;
+
 	DoubleList *params;
 
 	// taken from params - do not delete

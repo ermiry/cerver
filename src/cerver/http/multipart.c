@@ -26,6 +26,8 @@ void *http_multi_part_new (void) {
 			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
 		);
 
+		(void) memset (&multi_part->temp_header, 0, sizeof (HttpHeader));
+
 		multi_part->params = dlist_init (key_value_pair_delete, NULL);
 
 		multi_part->name = NULL;
