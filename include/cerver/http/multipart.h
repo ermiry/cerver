@@ -100,6 +100,10 @@ CERVER_PRIVATE void http_multi_part_reset (
 	MultiPart *multi_part
 );
 
+CERVER_PRIVATE bool http_multi_part_is_not_empty (
+	const MultiPart *multi_part
+);
+
 // returns the multi-part's type
 CERVER_PUBLIC const MultiPartType http_multi_part_get_type (
 	const MultiPart *multi_part
