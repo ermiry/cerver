@@ -2422,14 +2422,16 @@ static int http_receive_handle_mpart_header_value (
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
-		multi_part->headers[multi_part->next_header].len = snprintf (
-			multi_part->headers[multi_part->next_header].value,
-			HTTP_HEADER_VALUE_SIZE - 1,
+		HttpHeader *header = &multi_part->headers[multi_part->next_header];
+		char *end = header->value + header->len;
+		
+		(void) snprintf (
+			end, HTTP_HEADER_VALUE_SIZE - header->len,
 			"%.*s", (int) length, at
 		);
-	}
 
-	// multi_part->next_header = MULTI_PART_HEADER_INVALID;
+		header->len = (int) strlen (header->value);
+	}
 
 	return 0;
 
