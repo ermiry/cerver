@@ -31,6 +31,7 @@
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
+#include "cerver/http/url.h"
 
 #include "cerver/http/json/json.h"
 
@@ -88,26 +89,6 @@ static void http_receive_handle (
 	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 );
-
-#pragma region utils
-
-static const char hex[] = "0123456789abcdef";
-
-// converts a hex character to its integer value
-static const char from_hex (const char ch) {
-
-	return isdigit (ch) ? ch - '0' : tolower (ch) - 'a' + 10;
-
-}
-
-// converts an integer value to its hex character
-static const char to_hex (const char code) {
-
-	return hex[code & 15];
-
-}
-
-#pragma endregion
 
 #pragma region kvp
 
@@ -1404,23 +1385,23 @@ bool http_cerver_auth_validate_jwt (
 					retval = true;
 				}
 
+				#ifdef HTTP_AUTH_DEBUG
 				else {
-					#ifdef HTTP_AUTH_DEBUG
 					cerver_log_error (
 						"Failed to validate JWT: %08x",
 						jwt_valid_get_status(jwt_valid)
 					);
-					#endif
 				}
+				#endif
 
 				jwt_free (jwt);
 			}
 
+			#ifdef HTTP_AUTH_DEBUG
 			else {
-				#ifdef HTTP_AUTH_DEBUG
 				cerver_log_error ("Invalid JWT!");
-				#endif
 			}
+			#endif
 		}
 
 		jwt_valid_free (jwt_valid);
@@ -1961,62 +1942,6 @@ void http_cerver_register_admin_worker (
 
 #pragma endregion
 
-#pragma region url
-
-// returns a newly allocated url-encoded version of str that should be deleted after use
-char *http_url_encode (const char *str) {
-
-	char *pstr = (char *) str, *buf = (char *) malloc (strlen (str) * 3 + 1), *pbuf = buf;
-
-	if (buf) {
-		while (*pstr) {
-			if (isalnum (*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
-				*pbuf++ = *pstr;
-
-			else if (*pstr == ' ') *pbuf++ = '+';
-
-			else *pbuf++ = '%', *pbuf++ = to_hex (*pstr >> 4), *pbuf++ = to_hex (*pstr & 15);
-
-			pstr++;
-		}
-
-		*pbuf = '\0';
-	}
-
-	return buf;
-
-}
-
-// returns a newly allocated url-decoded version of str that should be deleted after use
-char *http_url_decode (const char *str) {
-
-	char *pstr = (char *) str, *buf = (char *) malloc (strlen (str) + 1), *pbuf = buf;
-
-	if (buf) {
-		while (*pstr) {
-			if (*pstr == '%') {
-				if (pstr[1] && pstr[2]) {
-					*pbuf++ = from_hex (pstr[1]) << 4 | from_hex (pstr[2]);
-					pstr += 2;
-				}
-			}
-
-			else if (*pstr == '+') *pbuf++ = ' ';
-
-			else *pbuf++ = *pstr;
-
-			pstr++;
-		}
-
-		*pbuf = '\0';
-	}
-
-	return buf;
-
-}
-
-#pragma endregion
-
 #pragma region parser
 
 static String *http_strip_path_from_query (
@@ -2424,7 +2349,7 @@ static int http_receive_handle_mpart_header_value (
 	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
 		HttpHeader *header = &multi_part->headers[multi_part->next_header];
 		char *end = header->value + header->len;
-		
+
 		(void) snprintf (
 			end, HTTP_HEADER_VALUE_SIZE - header->len,
 			"%.*s", (int) length, at
@@ -2471,8 +2396,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				http_receive->file_stats->n_uploaded_files += 1;
 
 				// sanitize file
-				(void) strncpy (
-					multi_part->filename, original_filename->str, HTTP_MULTI_PART_FILENAME_SIZE
+				(void) snprintf (
+					multi_part->filename, HTTP_MULTI_PART_FILENAME_SIZE,
+					"%s", original_filename->str
 				);
 
 				files_sanitize_filename (multi_part->filename);
@@ -2574,7 +2500,19 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				http_receive->request->n_values += 1;
 			}
 		}
+
+		#ifdef HTTP_MPART_DEBUG
+		else {
+			cerver_log_error ("c_string_starts_with");
+		}
+		#endif
 	}
+
+	#ifdef HTTP_MPART_DEBUG
+	else {
+		cerver_log_error ("multi_part->headers[MULTI_PART_HEADER_CONTENT_DISPOSITION].len > 0");
+	}
+	#endif
 
 	return 0;
 
@@ -3128,7 +3066,6 @@ static void http_receive_handle_select_auth_bearer (
 			#endif
 
 			http_receive_handle_select_failed_auth (http_receive);
-			http_cerver->n_failed_auth_requests += 1;
 		}
 	}
 
