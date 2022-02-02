@@ -120,6 +120,8 @@ struct _HttpHeader {
 
 typedef struct _HttpHeader HttpHeader;
 
+CERVER_PRIVATE void http_header_reset (HttpHeader *header);
+
 CERVER_PRIVATE void http_header_set (
 	HttpHeader *header, const char *format, ...
 );
