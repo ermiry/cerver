@@ -9,6 +9,7 @@
 #include <cerver/cerver.h>
 #include <cerver/handler.h>
 
+#include <cerver/http/auth.h>
 #include <cerver/http/http.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>

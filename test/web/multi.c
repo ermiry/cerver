@@ -55,6 +55,15 @@ static void test_handler (
 
 	// cerver_log_warning ("Count: %ld", request->multi_parts->size);
 
+	const MultiPart *cerver_mpart = http_request_multi_parts_get (request, "cerver");
+	if (cerver_mpart) {
+		cerver_log_success ("Got cerver!");
+	}
+
+	else {
+		cerver_log_error ("Failed to get cerver!");
+	}
+
 	if (http_request_multi_parts_iter_start (request)) {
 		const MultiPart *mpart = http_request_multi_parts_iter_get_next (request);
 		while (mpart) {

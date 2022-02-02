@@ -45,6 +45,12 @@ const http_header http_header_type_by_string (
 
 }
 
+void http_header_reset (HttpHeader *header) {
+
+	(void) memset (header, 0, sizeof (HttpHeader));
+
+}
+
 void http_header_set (
 	HttpHeader *header, const char *format, ...
 ) {
