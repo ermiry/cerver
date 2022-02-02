@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <cerver/http/auth.h>
 #include <cerver/http/http.h>
 
 #include "../test.h"

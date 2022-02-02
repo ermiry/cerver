@@ -4,6 +4,7 @@
 
 #include <cerver/threads/worker.h>
 
+#include <cerver/http/auth.h>
 #include <cerver/http/http.h>
 
 #include "data.h"
