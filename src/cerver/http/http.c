@@ -1900,7 +1900,9 @@ static int http_receive_handle_mpart_header_field (
 
 	MultiPart *mpart = (((HttpReceive *) parser->data)->request)->current_part;
 
-	// (void) printf ("\nHeader field original: /%.*s/\n", (int) length, at);
+	#ifdef HTTP_MPART_DEBUG
+	(void) printf ("Header field original: /%.*s/\n", (int) length, at);
+	#endif
 
 	// build header in a temp location
 	char *end = mpart->temp_header.value + mpart->temp_header.len;
@@ -1912,7 +1914,9 @@ static int http_receive_handle_mpart_header_field (
 
 	mpart->temp_header.len = (int) strlen (mpart->temp_header.value);
 
-	// (void) printf ("\nHeader field build: /%s/\n", mpart->temp_header.value);
+	#ifdef HTTP_MPART_DEBUG
+	(void) printf ("Header field build: /%s/\n", mpart->temp_header.value);
+	#endif
 
 	mpart->next_header = http_receive_handle_mpart_header_field_handle (
 		mpart->temp_header.value
@@ -1926,7 +1930,9 @@ static int http_receive_handle_mpart_header_value (
 	multipart_parser *parser, const char *at, size_t length
 ) {
 
-	// printf ("\nHeader value: %.*s\n", (int) length, at);
+	#ifdef HTTP_MPART_DEBUG
+	(void) printf ("Header value: %.*s\n", (int) length, at);
+	#endif
 
 	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
 	if (multi_part->next_header != MULTI_PART_HEADER_INVALID) {
