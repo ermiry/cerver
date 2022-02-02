@@ -2323,7 +2323,7 @@ static int http_receive_handle_mpart_header_field (
 	char *end = mpart->temp_header.value + mpart->temp_header.len;
 
 	(void) snprintf (
-		end, HTTP_HEADER_VALUE_SIZE - mpart->temp_header.len - 1,
+		end, HTTP_HEADER_VALUE_SIZE - mpart->temp_header.len,
 		"%.*s", (int) length, at
 	);
 
