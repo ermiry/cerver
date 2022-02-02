@@ -6,6 +6,7 @@
 
 #include <cerver/cerver.h>
 
+#include <cerver/http/auth.h>
 #include <cerver/http/http.h>
 
 #include <cerver/http/jwt/alg.h>
