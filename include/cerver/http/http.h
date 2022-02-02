@@ -688,18 +688,6 @@ CERVER_EXPORT void http_cerver_register_admin_worker (
 
 #pragma endregion
 
-#pragma region url
-
-// returns a newly allocated url-encoded version of str
-// that should be deleted after use
-CERVER_PUBLIC char *http_url_encode (const char *str);
-
-// returns a newly allocated url-decoded version of str
-// that should be deleted after use
-CERVER_PUBLIC char *http_url_decode (const char *str);
-
-#pragma endregion
-
 #pragma region parser
 
 // parses a url query into key value pairs for better manipulation

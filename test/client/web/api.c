@@ -4,6 +4,7 @@
 
 #include <cerver/http/http.h>
 #include <cerver/http/status.h>
+#include <cerver/http/url.h>
 
 #include <cerver/http/json/json.h>
 

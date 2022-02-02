@@ -11,7 +11,7 @@
 #define AUTHORIZATION_HEADER_SIZE		1024
 #define CONTENT_LENGTH_HEADER_SIZE		256
 
-static CurlResult curl_perform_request (
+CurlResult curl_perform_request (
 	CURL *curl, const http_status expected_status
 ) {
 

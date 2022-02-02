@@ -58,6 +58,8 @@ struct _MultiPart {
 	MultiPartHeader next_header;
 	HttpHeader headers[MULTI_PART_HEADERS_SIZE];
 
+	HttpHeader temp_header;
+
 	DoubleList *params;
 
 	// taken from params - do not delete
@@ -96,6 +98,10 @@ CERVER_PRIVATE void http_multi_part_delete (
 
 CERVER_PRIVATE void http_multi_part_reset (
 	MultiPart *multi_part
+);
+
+CERVER_PRIVATE bool http_multi_part_is_not_empty (
+	const MultiPart *multi_part
 );
 
 // returns the multi-part's type

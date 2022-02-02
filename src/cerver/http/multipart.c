@@ -26,6 +26,8 @@ void *http_multi_part_new (void) {
 			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
 		);
 
+		(void) memset (&multi_part->temp_header, 0, sizeof (HttpHeader));
+
 		multi_part->params = dlist_init (key_value_pair_delete, NULL);
 
 		multi_part->name = NULL;
@@ -77,6 +79,8 @@ void http_multi_part_reset (MultiPart *multi_part) {
 			multi_part->headers, 0, sizeof (HttpHeader) * MULTI_PART_HEADERS_SIZE
 		);
 
+		(void) memset (&multi_part->temp_header, 0, sizeof (HttpHeader));
+
 		dlist_reset (multi_part->params);
 
 		multi_part->name = NULL;
@@ -100,6 +104,46 @@ void http_multi_part_reset (MultiPart *multi_part) {
 		multi_part->value_len = 0;
 		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
 	}
+
+}
+
+static bool http_multi_part_name_is_not_empty (const MultiPart *multi_part) {
+
+	bool result = false;
+
+	if (multi_part->name) {
+		if (multi_part->name->str && strlen (multi_part->name->str)) {
+			result = true;
+		}
+	}
+
+	return result;
+
+}
+
+bool http_multi_part_is_not_empty (const MultiPart *multi_part) {
+
+	bool result = false;
+
+	switch (multi_part->type) {
+		case MULTI_PART_TYPE_FILE: {
+			result |= http_multi_part_name_is_not_empty (multi_part);
+
+			result |= (multi_part->filename_len && strlen (multi_part->filename));
+
+			result |= (multi_part->saved_filename_len && strlen (multi_part->saved_filename));
+		} break;
+
+		case MULTI_PART_TYPE_VALUE: {
+			result |= http_multi_part_name_is_not_empty (multi_part);
+
+			result |= (multi_part->value_len && strlen (multi_part->value));
+		} break;
+
+		default: break;
+	}
+
+	return result;
 
 }
 
