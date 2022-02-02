@@ -2358,6 +2358,9 @@ static int http_receive_handle_mpart_header_value (
 		header->len = (int) strlen (header->value);
 	}
 
+	// reset temp header after the actual value has been handled
+	http_header_reset (&multi_part->temp_header);
+
 	return 0;
 
 }
