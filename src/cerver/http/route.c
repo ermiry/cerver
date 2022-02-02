@@ -11,6 +11,7 @@
 
 #include "cerver/threads/thread.h"
 
+#include "cerver/http/auth.h"
 #include "cerver/http/http.h"
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
