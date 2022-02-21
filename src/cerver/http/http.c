@@ -26,7 +26,6 @@
 #include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
-#include "cerver/http/http_parser.h"
 #include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/request.h"
@@ -38,6 +37,10 @@
 
 #include "cerver/http/jwt/alg.h"
 #include "cerver/http/jwt/jwt.h"
+
+#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/helpers.h"
+#include "cerver/http/parser/llhttp.h"
 
 #include "cerver/utils/base64.h"
 #include "cerver/utils/log.h"
@@ -1641,7 +1644,7 @@ void http_query_pairs_print (const DoubleList *pairs) {
 }
 
 static int http_receive_handle_url (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	// printf ("url: %.*s\n", (int) length, at);
@@ -1662,7 +1665,7 @@ static int http_receive_handle_url (
 }
 
 static int http_receive_handle_header_field (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	HttpRequest *request = ((HttpReceive *) parser->data)->request;
@@ -1687,7 +1690,7 @@ static int http_receive_handle_header_field (
 }
 
 static int http_receive_handle_header_value (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	// printf ("\nHeader value: %.*s\n", (int) length, at);
@@ -1716,7 +1719,7 @@ static int http_receive_handle_header_value (
 }
 
 static int http_receive_handle_body (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	// (void) printf ("http_receive_handle_body ()\n");
@@ -2174,7 +2177,7 @@ static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 }
 
 static int http_receive_handle_mpart_body (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	(void) multipart_parser_execute (((HttpReceive *) parser->data)->mpart_parser, at, length);
@@ -2184,7 +2187,7 @@ static int http_receive_handle_mpart_body (
 }
 
 static int http_receive_handle_mpart_body_look_for_boundary (
-	http_parser *parser, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -2224,9 +2227,9 @@ static int http_receive_handle_mpart_body_look_for_boundary (
 
 #pragma region handler
 
-static int http_receive_handle_headers_completed (http_parser *parser);
+static int http_receive_handle_headers_completed (llhttp_t *parser);
 
-static int http_receive_handle_message_completed (http_parser *parser);
+static int http_receive_handle_message_completed (llhttp_t *parser);
 
 const char *http_receive_status_str (
 	const HttpReceiveStatus status
@@ -2255,9 +2258,6 @@ HttpReceive *http_receive_new (void) {
 		http_receive->handler = NULL;
 
 		http_receive->http_cerver = NULL;
-
-		http_receive->parser = NULL;
-		(void) memset (&http_receive->settings, 0, sizeof (http_parser_settings));
 
 		http_receive->mpart_parser = NULL;
 		(void) memset (&http_receive->mpart_settings, 0, sizeof (multipart_parser_settings));
@@ -2289,11 +2289,7 @@ HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
 		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
 
-		http_receive->parser = (http_parser *) malloc (sizeof (http_parser));
-		http_parser_init (http_receive->parser, HTTP_REQUEST);
-
-		// http_receive->parser->data = http_receive->request;
-		http_receive->parser->data = http_receive;
+		llhttp_settings_init (&http_receive->settings);
 
 		http_receive->settings.on_message_begin = NULL;
 		http_receive->settings.on_url = http_receive_handle_url;
@@ -2305,6 +2301,9 @@ HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 		http_receive->settings.on_message_complete = http_receive_handle_message_completed;
 		http_receive->settings.on_chunk_header = NULL;
 		http_receive->settings.on_chunk_complete = NULL;
+
+		llhttp_init (&http_receive->parser, HTTP_REQUEST, &http_receive->settings);
+		http_receive->parser.data = http_receive;
 
 		http_receive->request = http_request_new ();
 		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
@@ -2322,8 +2321,6 @@ void http_receive_delete (HttpReceive *http_receive) {
 		http_receive->cr = NULL;
 
 		http_receive->http_cerver = NULL;
-
-		free (http_receive->parser);
 
 		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
@@ -2838,7 +2835,7 @@ static void http_receive_init_mpart_parser (
 
 }
 
-static int http_receive_handle_headers_completed (http_parser *parser) {
+static int http_receive_handle_headers_completed (llhttp_t *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
@@ -2937,7 +2934,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 }
 
-static int http_receive_handle_message_completed (http_parser *parser) {
+static int http_receive_handle_message_completed (llhttp_t *parser) {
 
 	// printf ("\non message complete!\n");
 
@@ -2945,7 +2942,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 
-	http_receive->request->method = (RequestMethod) http_receive->parser->method;
+	http_receive->request->method = (RequestMethod) http_receive->parser.method;
 
 	#ifdef HTTP_DEBUG
 	cerver_log (
@@ -2995,18 +2992,17 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 }
 
 static void http_receive_handle (
-	HttpReceive *http_receive,
-	ssize_t rc, char *packet_buffer
+	HttpReceive *http_receive, ssize_t rc, char *packet_buffer
 ) {
 
-	ssize_t n_parsed = http_parser_execute (
-		http_receive->parser, &http_receive->settings, packet_buffer, rc
+	enum llhttp_errno err = llhttp_execute (
+		&http_receive->parser, packet_buffer, rc
 	);
 
-	if (n_parsed != rc) {
+	if (err != HPE_OK) {
 		cerver_log_error (
-			"http_parser_execute () failed - n parsed %ld / received %ld",
-			n_parsed, rc
+			"llhttp parse error: %s %s\n",
+			llhttp_errno_name (err), http_receive->parser.reason
 		);
 
 		// send back error message

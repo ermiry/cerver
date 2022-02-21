@@ -12,13 +12,16 @@
 #include "cerver/handler.h"
 
 #include "cerver/http/headers.h"
-#include "cerver/http/http_parser.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/origin.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
+#include "cerver/http/status.h"
 
 #include "cerver/http/jwt/alg.h"
+
+#include "cerver/http/parser/api.h"
+#include "cerver/http/parser/llhttp.h"
 
 #define HTTP_CERVER_MULTI_PARTS_POOL_INIT			32
 
@@ -601,8 +604,8 @@ struct _HttpReceive {
 
 	HttpCerver *http_cerver;
 
-	http_parser *parser;
-	http_parser_settings settings;
+	llhttp_t parser;
+	llhttp_settings_t settings;
 
 	multipart_parser *mpart_parser;
 	multipart_parser_settings mpart_settings;
