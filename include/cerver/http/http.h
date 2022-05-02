@@ -168,6 +168,9 @@ struct _HttpCerver {
 		const HttpRequest *request
 	);
 
+	void *admin_routes_custom_data;
+	void (*delete_admin_routes_custom_data)(void *);
+
 	bool enable_admin_cors_headers;
 	HttpOrigin admin_origin;
 	
@@ -506,6 +509,16 @@ CERVER_EXPORT void http_cerver_admin_routes_set_authentication_handler (
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
+);
+
+// sets a custom data reference to be set in all admin routes
+CERVER_EXPORT void http_cerver_admin_routes_set_custom_data (
+	HttpCerver *http_cerver, void *custom_data
+);
+
+// sets how the custom data will be disposed when the service gets destroyed
+CERVER_EXPORT void http_cerver_admin_routes_set_delete_custom_data (
+	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
 );
 
 // enables CORS headers in admin routes responses
