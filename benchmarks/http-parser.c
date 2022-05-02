@@ -7,7 +7,9 @@
 
 #include <sys/time.h>
 
-#include <cerver/http/http_parser.h>
+#include <cerver/http/parser/api.h>
+#include <cerver/http/parser/helpers.h>
+#include <cerver/http/parser/llhttp.h>
 
 /* 8 gb */
 static const int64_t kBytes = 8LL << 30;
@@ -30,21 +32,22 @@ static const char data[] =
 
 static const size_t data_len = sizeof(data) - 1;
 
-static int on_info (http_parser *p) {
+static int on_info (llhttp_t *parser) {
 
 	return 0;
+
 }
 
 
 static int on_data (
-	http_parser* p, const char *at, size_t length
+	llhttp_t *parser, const char *at, size_t length
 ) {
 
 	return 0;
 
 }
 
-static http_parser_settings settings = {
+static llhttp_settings_t settings = {
 
 	.on_message_begin = on_info,
 	.on_headers_complete = on_info,
@@ -59,7 +62,7 @@ static http_parser_settings settings = {
 
 int bench (int iter_count, int silent) {
 
-	struct http_parser parser = { 0 };
+	llhttp_t parser;
 	int err = 0;
 	struct timeval start = { 0 };
 	struct timeval end = { 0 };
@@ -70,13 +73,18 @@ int bench (int iter_count, int silent) {
 	}
 
 	(void) fprintf (stderr, "req_len=%d\n", (int) data_len);
-	size_t parsed = 0;
 	register int i = 0;
+	enum llhttp_errno parser_error = 0;
 	for (i = 0; i < iter_count; i++) {
-		http_parser_init (&parser, HTTP_REQUEST);
+		llhttp_init(&parser, HTTP_REQUEST, &settings);
 
-		parsed = http_parser_execute (&parser, &settings, data, data_len);
-		assert (parsed == data_len);
+		parser_error = llhttp_execute (&parser, data, data_len);
+		if (parser_error != HPE_OK) {
+			fprintf (
+				stderr, "Parse error: %s %s\n",
+				llhttp_errno_name (err), parser.reason
+			);
+		}
 	}
 
 	if (!silent) {
