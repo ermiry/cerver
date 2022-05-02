@@ -260,6 +260,9 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->admin_delete_decoded_data = NULL;
 		http_cerver->admin_auth_handler = NULL;
 
+		http_cerver->admin_routes_custom_data = NULL;
+		http_cerver->delete_admin_routes_custom_data = NULL;
+
 		http_cerver->enable_admin_cors_headers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS;
 		http_origin_reset (&http_cerver->admin_origin);
 
@@ -293,6 +296,14 @@ void http_cerver_delete (void *http_cerver_ptr) {
 			if (http_cerver->delete_custom_data) {
 				http_cerver->delete_custom_data (
 					http_cerver->custom_data
+				);
+			}
+		}
+
+		if (http_cerver->admin_routes_custom_data) {
+			if (http_cerver->delete_admin_routes_custom_data) {
+				http_cerver->delete_admin_routes_custom_data (
+					http_cerver->admin_routes_custom_data
 				);
 			}
 		}
@@ -1459,6 +1470,28 @@ void http_cerver_admin_routes_set_authentication_handler (
 
 	if (http_cerver) {
 		http_cerver->admin_auth_handler = authentication_handler;
+	}
+
+}
+
+// sets a custom data reference to be set in all admin routes
+void http_cerver_admin_routes_set_custom_data (
+	HttpCerver *http_cerver, void *custom_data
+) {
+
+	if (http_cerver) {
+		http_cerver->admin_routes_custom_data = custom_data;
+	}
+
+}
+
+// sets how the custom data will be disposed when the service gets destroyed
+void http_cerver_admin_routes_set_delete_custom_data (
+	HttpCerver *http_cerver, void (*delete_custom_data)(void *)
+) {
+
+	if (http_cerver) {
+		http_cerver->delete_admin_routes_custom_data = delete_custom_data;
 	}
 
 }
