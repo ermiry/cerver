@@ -148,7 +148,7 @@ void http_route_stats_delete (void *route_stats_ptr) {
 		HttpRouteStats *route_stats = (HttpRouteStats *) route_stats_ptr;
 
 		thread_mutex_delete (route_stats->mutex);
-		
+
 		free (route_stats_ptr);
 	}
 
@@ -235,7 +235,7 @@ void http_route_file_stats_delete (void *route_file_stats_ptr) {
 		HttpRouteFileStats *route_file_stats = (HttpRouteFileStats *) route_file_stats_ptr;
 
 		thread_mutex_delete (route_file_stats->mutex);
-		
+
 		free (route_file_stats_ptr);
 	}
 
@@ -324,6 +324,9 @@ HttpRoute *http_route_new (void) {
 
 		route->authentication_handler = NULL;
 
+		route->custom_data = NULL;
+		route->delete_custom_data = NULL;
+
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			route->handlers[i] = NULL;
 			route->stats[i] = NULL;
@@ -358,6 +361,12 @@ void http_route_delete (void *route_ptr) {
 			free (route->routes_tokens);
 		}
 
+		if (route->custom_data) {
+			if (route->delete_custom_data) {
+				route->delete_custom_data (route->custom_data);
+			}
+		}
+
 		for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 			http_route_stats_delete (route->stats[i]);
 		}
@@ -376,9 +385,9 @@ int http_route_comparator_by_n_tokens (const void *a, const void *b) {
 }
 
 // creates a new route that can be registered to be sued by an http cerver
-HttpRoute *http_route_create ( 
-	const RequestMethod method, 
-	const char *actual_route, 
+HttpRoute *http_route_create (
+	const RequestMethod method,
+	const char *actual_route,
 	const HttpHandler handler
 ) {
 
@@ -413,9 +422,7 @@ HttpRoute *http_route_create (
 
 // sets the route's handler for the selected http method
 void http_route_set_handler (
-	HttpRoute *route,
-	const RequestMethod method,
-	const HttpHandler handler
+	HttpRoute *route, const RequestMethod method, const HttpHandler handler
 ) {
 
 	if (route) {
@@ -536,7 +543,7 @@ void http_route_set_auth (
 // also sets a method to delete it after use
 // if no delete method is set, data won't be freed
 void http_route_set_decode_data (
-	HttpRoute *route, 
+	HttpRoute *route,
 	void *(*decode_data)(void *), void (*delete_decoded_data)(void *)
 ) {
 
@@ -573,6 +580,30 @@ void http_route_set_authentication_handler (
 	if (route) {
 		route->authentication_handler = authentication_handler;
 	}
+
+}
+
+const void *http_route_get_custom_data (
+	const HttpRoute *route
+) {
+
+	return route->custom_data;
+
+}
+
+void http_route_set_custom_data (
+	HttpRoute *route, void *custom_data
+) {
+
+	route->custom_data = custom_data;
+
+}
+
+void http_route_set_delete_custom_data (
+	HttpRoute *route, void (*delete_custom_data)(void *)
+) {
+
+	route->delete_custom_data = delete_custom_data;
 
 }
 

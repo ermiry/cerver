@@ -185,6 +185,9 @@ struct _HttpRoute {
 		const HttpRequest *request
 	);
 
+	void *custom_data;
+	void (*delete_custom_data)(void *);
+
 	// handler
 	HttpHandler handlers[HTTP_HANDLERS_COUNT];
 
@@ -258,6 +261,18 @@ CERVER_EXPORT void http_route_set_authentication_handler (
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
+);
+
+CERVER_EXPORT const void *http_route_get_custom_data (
+	const HttpRoute *route
+);
+
+CERVER_EXPORT void http_route_set_custom_data (
+	HttpRoute *route, void *custom_data
+);
+
+CERVER_EXPORT void http_route_set_delete_custom_data (
+	HttpRoute *route, void (*delete_custom_data)(void *)
 );
 
 CERVER_EXPORT void http_route_print (
