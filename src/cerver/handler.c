@@ -2312,33 +2312,21 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	double process_time = timer_get_current_time () - start_time;
 
 	// log request summary
+	const bool handled_file_request = (http_receive->type == HTTP_RECEIVE_TYPE_FILE);
 	switch (http_receive->receive_status) {
 		case HTTP_RECEIVE_STATUS_COMPLETED: {
-			if (http_receive->type == HTTP_RECEIVE_TYPE_FILE) {
-				cerver_log_with_date (
-					LOG_TYPE_NONE, LOG_TYPE_NONE,
-					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
-					cr->connection->ip,
-					http_request_method_str (http_receive->request->method),
-					http_receive->served_file,
-					total_received,
-					process_time,
-					http_receive->status, http_receive->sent
-				);
-			}
+			cerver_log_with_date (
+				LOG_TYPE_NONE, LOG_TYPE_NONE,
+				"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
+				cr->connection->ip,
+				http_request_method_str (http_receive->request->method),
+				handled_file_request ? http_receive->served_file : http_receive->route->route->str,
+				total_received,
+				process_time,
+				http_receive->status, http_receive->sent
+			);
 
-			else {
-				cerver_log_with_date (
-					LOG_TYPE_NONE, LOG_TYPE_NONE,
-					"%s -> [%s] %s - %ld -> %fs -> %d - %ld",
-					cr->connection->ip,
-					http_request_method_str (http_receive->request->method),
-					http_receive->route->route->str,
-					total_received,
-					process_time,
-					http_receive->status, http_receive->sent
-				);
-
+			if (!handled_file_request) {
 				// update route stats
 				http_route_stats_update (
 					http_receive->route->stats[http_receive->request->method],
@@ -2849,13 +2837,15 @@ static void cerver_register_new_connection (
 	}
 
 	else {
-		// FIXME: close the socket and cleanup
 		// #ifdef CERVER_DEBUG
 		cerver_log (
 			LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
 			"cerver_register_new_connection () - failed to create a new connection!"
 		);
 		// #endif
+
+		// close the socket and cleanup
+		connection_drop (cerver, connection);
 	}
 
 }
