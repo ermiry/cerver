@@ -77,6 +77,9 @@ static HttpRoute *test_http_route_new (void) {
 
 	test_check_null_ptr (route->authentication_handler);
 
+	test_check_null_ptr (route->custom_data);
+	test_check_null_ptr (route->delete_custom_data);
+
 	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
 		test_check_null_ptr (route->handlers[i]);
 		test_check_null_ptr (route->stats[i]);

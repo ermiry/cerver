@@ -95,6 +95,9 @@ static void test_http_cerver_new (void) {
 	test_check_null_ptr (http_cerver->admin_delete_decoded_data);
 	test_check_null_ptr (http_cerver->admin_auth_handler);
 
+	test_check_null_ptr (http_cerver->admin_routes_custom_data);
+	test_check_null_ptr (http_cerver->delete_admin_routes_custom_data);
+
 	test_check (http_cerver->enable_admin_cors_headers == HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS, NULL);
 	test_check_int_eq (http_cerver->admin_origin.len, 0, NULL);
 	test_check_str_empty (http_cerver->admin_origin.value);
@@ -459,7 +462,7 @@ static unsigned int custom_authentication_handler (
 }
 
 static void test_http_cerver_admin_custom_auth (void) {
-	
+
 	HttpCerver *http_cerver = test_http_cerver_create ();
 
 	http_cerver_enable_admin_routes (http_cerver, true);
@@ -470,6 +473,14 @@ static void test_http_cerver_admin_custom_auth (void) {
 	http_cerver_admin_routes_set_authentication_handler (http_cerver, custom_authentication_handler);
 
 	test_check_ptr_eq (http_cerver->admin_auth_handler, custom_authentication_handler);
+
+	void *custom_data = (void *) malloc (sizeof (int));
+
+	http_cerver_admin_routes_set_custom_data (http_cerver, custom_data);
+	http_cerver_admin_routes_set_delete_custom_data (http_cerver, free);
+
+	test_check_ptr_eq (http_cerver->admin_routes_custom_data, custom_data);
+	test_check_ptr_eq (http_cerver->delete_admin_routes_custom_data, free);
 
 	http_cerver_delete (http_cerver);
 
