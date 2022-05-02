@@ -101,7 +101,8 @@ endif
 ifeq ($(CC), g++) 
 	CFLAGS += -std=c++11 -fpermissive
 else
-	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
+	# CFLAGS += -std=c11 -Wpedantic -pedantic-errors
+	CFLAGS += -std=c11
 	# check for compiler version
 	ifeq "$(GCCVGTEQ8)" "1"
     	CFLAGS += -Wcast-function-type
@@ -452,7 +453,9 @@ ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
 endif
 
-BENCHLIBS	:= $(PTHREAD) $(CURL) -L ./$(TARGETDIR) -l cerver
+BENCHLIBS	:= $(PTHREAD) $(CURL)
+BENCHLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+
 BENCHINC	:= -I $(INCDIR) -I ./$(BENCHDIR)
 
 BENCHS		:= $(shell find $(BENCHDIR) -type f -name *.$(SRCEXT))
