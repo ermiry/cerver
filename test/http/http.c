@@ -536,8 +536,6 @@ static void test_http_receive_new (void) {
 
 	test_check_null_ptr (http_receive->http_cerver);
 
-	test_check_null_ptr (http_receive->parser);
-
 	test_check_null_ptr (http_receive->mpart_parser);
 
 	test_check_null_ptr (http_receive->request);
@@ -579,9 +577,7 @@ static void test_http_receive_create (void) {
 
 	test_check_ptr (http_receive->http_cerver);
 
-	test_check_ptr (http_receive->parser);
-
-	http_receive->parser->data = http_receive;
+	http_receive->parser.data = http_receive;
 
 	test_check_null_ptr (http_receive->settings.on_message_begin);
 	test_check_ptr (http_receive->settings.on_url);
