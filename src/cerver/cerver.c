@@ -62,7 +62,7 @@ void cerver_end (void) {
 
 #pragma region types
 
-const char *cerver_type_to_string (CerverType type) {
+const char *cerver_type_to_string (const CerverType type) {
 
 	switch (type) {
 		#define XX(num, name, string) case CERVER_TYPE_##name: return #string;
@@ -74,7 +74,7 @@ const char *cerver_type_to_string (CerverType type) {
 
 }
 
-const char *cerver_handler_type_to_string (CerverHandlerType type) {
+const char *cerver_handler_type_to_string (const CerverHandlerType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #string;
@@ -86,7 +86,7 @@ const char *cerver_handler_type_to_string (CerverHandlerType type) {
 
 }
 
-const char *cerver_handler_type_description (CerverHandlerType type) {
+const char *cerver_handler_type_description (const CerverHandlerType type) {
 
 	switch (type) {
 		#define XX(num, name, string, description) case CERVER_HANDLER_TYPE_##name: return #description;
@@ -108,10 +108,9 @@ static CerverInfo *cerver_info_new (void) {
 	if (cerver_info) {
 		(void) memset (cerver_info, 0, sizeof (CerverInfo));
 
-		(void) strncpy (
-			cerver_info->alias,
-			CERVER_DEFAULT_ALIAS,
-			CERVER_INFO_ALIAS_SIZE - 1
+		(void) snprintf (
+			cerver_info->alias, CERVER_INFO_ALIAS_SIZE,
+			"%s", CERVER_DEFAULT_ALIAS
 		);
 
 		cerver_info->alias_len = strlen (cerver_info->alias);
@@ -135,8 +134,8 @@ static void cerver_info_delete (CerverInfo *cerver_info) {
 
 static void cerver_set_name (Cerver *cerver, const char *name) {
 
-	(void) strncpy (
-		cerver->info->name, name, CERVER_INFO_NAME_SIZE - 1
+	(void) snprintf (
+		cerver->info->name, CERVER_INFO_NAME_SIZE, "%s", name
 	);
 
 	cerver->info->name_len = strlen (cerver->info->name);
@@ -149,8 +148,8 @@ static void cerver_set_name (Cerver *cerver, const char *name) {
 void cerver_set_alias (Cerver *cerver, const char *alias) {
 
 	if (cerver && alias) {
-		(void) strncpy (
-			cerver->info->alias, alias, CERVER_INFO_ALIAS_SIZE - 1
+		(void) snprintf (
+			cerver->info->alias, CERVER_INFO_ALIAS_SIZE, "%s", alias
 		);
 
 		cerver->info->alias_len = strlen (cerver->info->alias);
