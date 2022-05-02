@@ -361,7 +361,7 @@ static void http_cerver_admin_handler_routes_stats (
 		route_object = http_cerver_admin_handler_single_route_stats (
 			(const HttpRoute *) le->data
 		);
-		
+
 		(void) json_array_append_new (routes_array, route_object);
 	}
 
@@ -1000,6 +1000,8 @@ static void http_cerver_admin_set_info_route (
 
 	http_cerver_admin_route_set_auth (http_cerver, info_route);
 
+	http_route_set_custom_data (info_route, http_cerver->admin_routes_custom_data);
+
 	http_route_child_add (top_level_route, info_route);
 
 }
@@ -1031,6 +1033,8 @@ static void http_cerver_admin_set_stats_route (
 
 	http_cerver_admin_route_set_auth (http_cerver, stats_route);
 
+	http_route_set_custom_data (stats_route, http_cerver->admin_routes_custom_data);
+
 	http_route_child_add (top_level_route, stats_route);
 
 }
@@ -1038,7 +1042,7 @@ static void http_cerver_admin_set_stats_route (
 static void http_cerver_admin_set_file_systems_route (
 	const HttpCerver *http_cerver, HttpRoute *top_level_route
 ) {
-	
+
 	// GET [top level]/cerver/stats/filesystems
 	HttpRoute *file_systems_route = http_route_create (
 		REQUEST_METHOD_GET,
@@ -1063,6 +1067,8 @@ static void http_cerver_admin_set_file_systems_route (
 	}
 
 	http_cerver_admin_route_set_auth (http_cerver, file_systems_route);
+
+	http_route_set_custom_data (file_systems_route, http_cerver->admin_routes_custom_data);
 
 	http_route_child_add (top_level_route, file_systems_route);
 
@@ -1096,6 +1102,8 @@ static void http_cerver_admin_set_workers_route (
 	}
 
 	http_cerver_admin_route_set_auth (http_cerver, workers_route);
+
+	http_route_set_custom_data (workers_route, http_cerver->admin_routes_custom_data);
 
 	http_route_child_add (top_level_route, workers_route);
 
