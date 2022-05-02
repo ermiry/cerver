@@ -2645,8 +2645,6 @@ static void http_receive_handle_select_auth_bearer (
 				#endif
 
 				http_receive_handle_select_failed_auth (http_receive);
-
-				http_cerver->n_failed_auth_requests += 1;
 			}
 
 			jwt_free (jwt);
@@ -2693,7 +2691,6 @@ static void http_receive_handle_select_auth_custom (
 			#endif
 
 			http_receive_handle_select_failed_auth (http_receive);
-			http_cerver->n_failed_auth_requests += 1;
 		}
 	}
 
@@ -2704,7 +2701,6 @@ static void http_receive_handle_select_auth_custom (
 		#endif
 
 		http_receive_handle_select_failed_auth (http_receive);
-		http_cerver->n_failed_auth_requests += 1;
 	}
 
 }
@@ -2771,7 +2767,6 @@ static void http_receive_handle_select (
 				// no authentication header was provided
 				else {
 					http_receive_handle_select_failed_auth (http_receive);
-					http_cerver->n_failed_auth_requests += 1;
 				}
 			} break;
 
