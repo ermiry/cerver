@@ -232,6 +232,7 @@ JobQueue *job_queue_new (void) {
 		job_queue->requested_job = NULL;
 
 		job_queue->running = false;
+		job_queue->handler_thread_id = 0;
 		job_queue->handler = NULL;
 	}
 
