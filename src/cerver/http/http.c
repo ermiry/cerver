@@ -6,7 +6,13 @@
 #include <stdarg.h>
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <time.h>
+
+#include <sys/socket.h>
+#include <sys/stat.h>
 
 #include <openssl/sha.h>
 
@@ -15,8 +21,11 @@
 
 #include "cerver/collections/pool.h"
 
+#include "cerver/connection.h"
+#include "cerver/errors.h"
 #include "cerver/files.h"
 #include "cerver/handler.h"
+#include "cerver/network.h"
 #include "cerver/packets.h"
 
 #include "cerver/threads/worker.h"
@@ -52,6 +61,14 @@ HttpResponse *server_error = NULL;
 
 static HttpResponse *catch_all = NULL;
 
+static HttpResponse *payload_too_large_error = NULL;
+static HttpResponse *uri_too_long_error = NULL;
+static HttpResponse *header_fields_too_large_error = NULL;
+
+static const char *expect_continue_value = { "100-continue" };
+static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
+static const size_t continue_response_len = 25;
+
 static Pool *multi_parts_pool = NULL;
 
 static const char *multi_part_header_value = { "multipart/form-data;" };
@@ -60,8 +77,6 @@ static const size_t multi_part_header_value_len = 20;
 static const char *multi_part_form_data = { "form-data;" };
 static const size_t multi_part_form_data_len = 10;
 
-static const char *webkit_multi_part_boundary_value = { "------WebKitFormBoundary" };
-static const size_t webkit_multi_part_boundary_value_len = 24;
 
 static void http_static_path_delete (void *http_static_path_ptr);
 
@@ -271,6 +286,15 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->admin_mutex = NULL;
 
 		http_cerver->mutex = NULL;
+
+		http_cerver->max_body_size = HTTP_CERVER_DEFAULT_MAX_BODY_SIZE;
+		http_cerver->max_url_size = HTTP_CERVER_DEFAULT_MAX_URL_SIZE;
+		http_cerver->max_header_size = HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE;
+		http_cerver->max_headers = HTTP_CERVER_DEFAULT_MAX_HEADERS;
+		http_cerver->max_multipart_parts = HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS;
+		http_cerver->max_file_size = HTTP_CERVER_DEFAULT_MAX_FILE_SIZE;
+
+		http_cerver->n_limited_requests = 0;
 	}
 
 	return http_cerver;
@@ -390,12 +414,26 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_OK, "msg", "HTTP Cerver!"
 	);
 
+	payload_too_large_error = http_response_create_json_key_value (
+		HTTP_STATUS_PAYLOAD_TOO_LARGE, "error", "Payload too large!"
+	);
+
+	uri_too_long_error = http_response_create_json_key_value (
+		HTTP_STATUS_URI_TOO_LONG, "error", "URI too long!"
+	);
+
+	header_fields_too_large_error = http_response_create_json_key_value (
+		HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE, "error", "Request header fields too large!"
+	);
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
 		&& bad_auth_error && not_found_error
 		&& server_error
 		&& catch_all
+		&& payload_too_large_error && uri_too_long_error
+		&& header_fields_too_large_error
 	) retval = 0;
 
 	return retval;
@@ -597,6 +635,10 @@ void http_cerver_end (HttpCerver *http_cerver) {
 		http_response_delete (not_found_error);
 		http_response_delete (server_error);
 		http_response_delete (catch_all);
+
+		http_response_delete (payload_too_large_error);
+		http_response_delete (uri_too_long_error);
+		http_response_delete (header_fields_too_large_error);
 	}
 
 }
@@ -840,7 +882,8 @@ void http_cerver_set_uploads_file_mode (
 }
 
 // method that can be used to generate multi-part uploads filenames
-// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+// with format "%d-%ld-%u-%s" using "sock_fd-time (NULL)-file index-multi_part->filename"
+// the file index keeps unique the files of a request that have the same filename
 void http_cerver_default_uploads_filename_generator (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
@@ -850,9 +893,10 @@ void http_cerver_default_uploads_filename_generator (
 
 	http_multi_part_set_generated_filename (
 		mpart,
-		"%d-%ld-%s",
+		"%d-%ld-%u-%s",
 		http_receive->cr->connection->socket->sock_fd,
 		time (NULL),
+		(unsigned int) request->n_files,
 		http_multi_part_get_filename (mpart)
 	);
 
@@ -955,6 +999,90 @@ void http_cerver_set_uploads_delete_when_done (
 
 	if (http_cerver) {
 		http_cerver->uploads_delete_when_done = value;
+	}
+
+}
+
+#pragma endregion
+
+#pragma region limits
+
+// the limits are tuned by measuring each service, always with powers of 2
+static void http_cerver_limit_check_power_of_two (
+	const char *limit_name, const size_t value
+) {
+
+	if (value && (value & (value - 1))) {
+		cerver_log_warning (
+			"http_cerver_set_%s () - %zu is not a power of 2",
+			limit_name, value
+		);
+	}
+
+}
+
+void http_cerver_set_max_body_size (
+	HttpCerver *http_cerver, const size_t max_body_size
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_body_size", max_body_size);
+		http_cerver->max_body_size = max_body_size;
+	}
+
+}
+
+void http_cerver_set_max_url_size (
+	HttpCerver *http_cerver, const size_t max_url_size
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_url_size", max_url_size);
+		http_cerver->max_url_size = max_url_size;
+	}
+
+}
+
+void http_cerver_set_max_header_size (
+	HttpCerver *http_cerver, const size_t max_header_size
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_header_size", max_header_size);
+		http_cerver->max_header_size = max_header_size;
+	}
+
+}
+
+void http_cerver_set_max_headers (
+	HttpCerver *http_cerver, const unsigned int max_headers
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_headers", max_headers);
+		http_cerver->max_headers = max_headers;
+	}
+
+}
+
+void http_cerver_set_max_multipart_parts (
+	HttpCerver *http_cerver, const unsigned int max_multipart_parts
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_multipart_parts", max_multipart_parts);
+		http_cerver->max_multipart_parts = max_multipart_parts;
+	}
+
+}
+
+void http_cerver_set_max_file_size (
+	HttpCerver *http_cerver, const size_t max_file_size
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("max_file_size", max_file_size);
+		http_cerver->max_file_size = max_file_size;
 	}
 
 }
@@ -1560,33 +1688,317 @@ void http_cerver_register_admin_worker (
 
 #pragma region parser
 
-static String *http_strip_path_from_query (
-	const char *url, size_t url_len
+// sends a response before the request was completed
+// and marks it, so the rest of the request is not handled
+// returns 1 to be used as the return value of a parser callback
+static int http_receive_reject (
+	HttpReceive *http_receive,
+	HttpResponse *response, const HttpReceiveStatus status
 ) {
 
-	String *query = NULL;
+	if (!http_receive->responded) {
+		(void) http_response_send (response, http_receive);
 
-	unsigned int idx = 0;
-	bool found = false;
-	while (idx < url_len) {
-		if (url[idx] == '?') {
-			found = true;
-			break;
+		http_receive->responded = true;
+		http_receive->receive_status = status;
+
+		if (status == HTTP_RECEIVE_STATUS_LIMIT) {
+			(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+			http_receive->http_cerver->n_limited_requests += 1;
+			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
 		}
-
-		idx++;
 	}
 
-	if (found) {
-		query = str_new (NULL);
-		query->len = url_len - idx;
-		query->str = (char *) calloc (query->len, sizeof (char));
-		char *from = (char *) url;
-		from += (idx + 1);
-		c_string_n_copy (query->str, from, query->len);
+	return 1;
+
+}
+
+// keeps the string's memory but empties its contents
+static inline void http_receive_buffer_reset (String *buffer) {
+
+	if (buffer) {
+		buffer->len = 0;
+		if (buffer->str) buffer->str[0] = '\0';
 	}
 
-	return query;
+}
+
+// adds a piece of a token to its buffer
+// returns 0 on success, 1 on error
+static inline int http_receive_buffer_append (
+	String **buffer, const char *at, const size_t length
+) {
+
+	if (!*buffer) *buffer = str_new (NULL);
+
+	return *buffer ? str_append_bytes (*buffer, at, length) : 1;
+
+}
+
+// splits the url that was received into the request's path and query
+static void http_receive_close_url (HttpReceive *http_receive) {
+
+	HttpRequest *request = http_receive->request;
+
+	if (!request->url) {
+		const String *url = http_receive->url_buffer;
+		const char *start = (url && url->str) ? url->str : "";
+		const size_t url_len = url ? url->len : 0;
+
+		const char *question = (const char *) memchr (start, '?', url_len);
+		const size_t path_len = question ? (size_t) (question - start) : url_len;
+
+		request->url = str_create_from_bytes (start, path_len);
+
+		// the query does not include the '?'
+		if (question) {
+			request->query = str_create_from_bytes (
+				question + 1, url_len - path_len - 1
+			);
+		}
+	}
+
+}
+
+// these headers must appear only once (RFC 9110 section 5.3)
+static inline bool http_header_is_unique (const http_header type) {
+
+	return (type == HTTP_HEADER_HOST)
+		|| (type == HTTP_HEADER_CONTENT_TYPE)
+		|| (type == HTTP_HEADER_CONTENT_LENGTH)
+		|| (type == HTTP_HEADER_AUTHORIZATION);
+
+}
+
+static HttpCustomHeader *http_request_custom_header_find (
+	const HttpRequest *request, const char *header
+) {
+
+	HttpCustomHeader *found = NULL;
+
+	if (request->custom_headers) {
+		ListElement *le = NULL;
+		dlist_for_each (request->custom_headers, le) {
+			if (!strcasecmp (((HttpCustomHeader *) le->data)->header, header)) {
+				found = (HttpCustomHeader *) le->data;
+				break;
+			}
+		}
+	}
+
+	return found;
+
+}
+
+// joins a new value to a custom header that was already received
+// returns 0 on success, 1 if the joined value does not fit
+static int http_receive_join_custom_header (
+	HttpCustomHeader *existing, const char *value, const size_t value_len
+) {
+
+	int retval = 1;
+
+	const size_t new_len = existing->header_value_len
+		+ HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
+
+	if (new_len < HTTP_CUSTOM_HEADER_VALUE_SIZE) {
+		char *end = existing->header_value + existing->header_value_len;
+		(void) memcpy (end, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN);
+		(void) memcpy (end + HTTP_HEADER_VALUES_SEPARATOR_LEN, value, value_len);
+
+		existing->header_value[new_len] = '\0';
+		existing->header_value_len = (unsigned int) new_len;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// adds a new custom header to the request
+// returns 0 on success, 1 if the value does not fit
+static int http_receive_add_custom_header (
+	HttpRequest *request,
+	const String *field, const char *value, const size_t value_len
+) {
+
+	int retval = 1;
+
+	if (value_len < HTTP_CUSTOM_HEADER_VALUE_SIZE) {
+		http_request_set_current_custom_header (request, field->str);
+
+		HttpCustomHeader *custom_header = request->current_custom_header;
+		if (custom_header) {
+			(void) memcpy (custom_header->header_value, value, value_len);
+			custom_header->header_value[value_len] = '\0';
+			custom_header->header_value_len = (unsigned int) value_len;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// saves a custom header, a repeated one is joined with HTTP_HEADER_VALUES_SEPARATOR
+// returns 0 on success, 1 if the header does not fit
+static int http_receive_close_custom_header (
+	HttpRequest *request,
+	const String *field, const char *value, const size_t value_len
+) {
+
+	if (field->len >= HTTP_CUSTOM_HEADER_SIZE) return 1;
+
+	HttpCustomHeader *existing = http_request_custom_header_find (request, field->str);
+
+	return existing ?
+		http_receive_join_custom_header (existing, value, value_len) :
+		http_receive_add_custom_header (request, field, value, value_len);
+
+}
+
+// joins a new value to a header that was already received
+// returns 0 on success, 1 on error
+static inline int http_header_values_join (
+	String *header, const char *value, const size_t value_len
+) {
+
+	return str_append_bytes (header, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN)
+		|| str_append_bytes (header, value, value_len);
+
+}
+
+// saves a header of the HTTP headers map
+// a repeated header is joined with HTTP_HEADER_VALUES_SEPARATOR, unless it must be unique
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_close_known_header (
+	HttpReceive *http_receive, const http_header type,
+	const char *value, const size_t value_len
+) {
+
+	int retval = 0;
+
+	HttpRequest *request = http_receive->request;
+
+	if (!request->headers[type]) {
+		request->headers[type] = str_create_from_bytes (value, value_len);
+	}
+
+	else if (http_header_is_unique (type)) {
+		retval = http_receive_reject (
+			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+		);
+	}
+
+	else if (http_header_values_join (request->headers[type], value, value_len)) {
+		retval = http_receive_reject (
+			http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+		);
+	}
+
+	return retval;
+
+}
+
+// saves a complete header in the request
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_save_header (
+	HttpReceive *http_receive, const String *field
+) {
+
+	const String *value_buffer = http_receive->value_buffer;
+	const char *value = (value_buffer && value_buffer->str) ? value_buffer->str : "";
+	const size_t value_len = value_buffer ? value_buffer->len : 0;
+
+	http_receive->n_headers += 1;
+
+	const unsigned int max_headers = http_receive->http_cerver->max_headers;
+	if (max_headers && (http_receive->n_headers > max_headers)) {
+		return http_receive_reject (
+			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+	}
+
+	const http_header type = http_header_type_by_string (field->str);
+	if (type != HTTP_HEADER_UNDEFINED) {
+		return http_receive_close_known_header (http_receive, type, value, value_len);
+	}
+
+	return http_receive_close_custom_header (http_receive->request, field, value, value_len) ?
+		http_receive_reject (
+			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		) : 0;
+
+}
+
+// closes the header that was received in pieces
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_close_header (HttpReceive *http_receive) {
+
+	int retval = 0;
+
+	const String *field = http_receive->field_buffer;
+	if (field && field->len) {
+		retval = http_receive_save_header (http_receive, field);
+	}
+
+	http_receive_buffer_reset (http_receive->field_buffer);
+	http_receive_buffer_reset (http_receive->value_buffer);
+
+	return retval;
+
+}
+
+// marks that the body is being received and checks its size
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_check_body_size (
+	HttpReceive *http_receive, const size_t length
+) {
+
+	if (http_receive->receive_status == HTTP_RECEIVE_STATUS_HEADERS)
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_BODY;
+
+	http_receive->body_size += length;
+
+	const size_t max_body_size = http_receive->http_cerver->max_body_size;
+
+	return (max_body_size && (http_receive->body_size > max_body_size)) ?
+		http_receive_reject (
+			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		) : 0;
+
+}
+
+// the body is binary, it can contain '\0', and it is always terminated with '\0'
+// returns 0 on success, 1 on error
+static int http_request_body_append (
+	HttpRequest *request, const char *at, const size_t length
+) {
+
+	if (!request->body) {
+		request->body = str_create_from_bytes (at, length);
+		return request->body ? 0 : 1;
+	}
+
+	return str_append_bytes (request->body, at, length);
+
+}
+
+// checks the size of all the headers that have been received
+static inline int http_receive_check_header_size (
+	HttpReceive *http_receive, const size_t length
+) {
+
+	http_receive->header_size += length;
+
+	const size_t max_header_size = http_receive->http_cerver->max_header_size;
+
+	return (max_header_size && (http_receive->header_size > max_header_size)) ?
+		http_receive_reject (
+			http_receive, header_fields_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		) : 0;
 
 }
 
@@ -1673,78 +2085,63 @@ void http_query_pairs_print (const DoubleList *pairs) {
 
 }
 
+// the url can arrive in many pieces, it is closed in on_headers_complete
 static int http_receive_handle_url (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	// printf ("url: %.*s\n", (int) length, at);
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
+	http_receive->token = HTTP_RECEIVE_TOKEN_URL;
 
-	request->query = http_strip_path_from_query (at, length);
-	// if (request->query) printf ("query: %s\n", request->query->str);
+	const size_t current_len = http_receive->url_buffer ? http_receive->url_buffer->len : 0;
+	const size_t max_url_size = http_receive->http_cerver->max_url_size;
+	if (max_url_size && ((current_len + length) > max_url_size)) {
+		return http_receive_reject (
+			http_receive, uri_too_long_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+	}
 
-	request->url = str_new (NULL);
-	request->url->len = request->query ? length - request->query->len : length;
-	request->url->str = c_string_create ("%.*s", (int) request->url->len, at);
-
-	// printf ("path: %s\n", request->url->str);
-
-	return 0;
+	return http_receive_buffer_append (&http_receive->url_buffer, at, length) ?
+		http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
 
+// a header field can arrive in many pieces,
+// a new field after a value closes the previous header
 static int http_receive_handle_header_field (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	char temp_header[HTTP_HEADER_TEMP_SIZE] = { 0 };
-	(void) snprintf (
-		temp_header, HTTP_HEADER_TEMP_SIZE - 1,
-		"%.*s", (int) length, at
-	);
-
-	// printf ("\nHeader field: /%.*s/\n", (int) length, at);
-
-	const http_header next_header = http_header_type_by_string (temp_header);
-	if (next_header == HTTP_HEADER_UNDEFINED) {
-		http_request_set_current_custom_header (request, temp_header);
+	if (http_receive->token == HTTP_RECEIVE_TOKEN_VALUE) {
+		if (http_receive_close_header (http_receive)) return 1;
 	}
 
-	request->next_header = next_header;
+	http_receive->token = HTTP_RECEIVE_TOKEN_FIELD;
 
-	return 0;
+	if (http_receive_check_header_size (http_receive, length)) return 1;
+
+	return http_receive_buffer_append (&http_receive->field_buffer, at, length) ?
+		http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
 
+// a header value can arrive in many pieces,
+// it is closed by the next field or by on_headers_complete
 static int http_receive_handle_header_value (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	// printf ("\nHeader value: %.*s\n", (int) length, at);
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
-	if (request->next_header != HTTP_HEADER_UNDEFINED) {
-		request->headers[request->next_header] = str_new (NULL);
-		request->headers[request->next_header]->str = c_string_create ("%.*s", (int) length, at);
-		request->headers[request->next_header]->len = length;
-	}
+	http_receive->token = HTTP_RECEIVE_TOKEN_VALUE;
 
-	else {
-		(void) snprintf (
-			request->current_custom_header->header_value,
-			HTTP_CUSTOM_HEADER_VALUE_SIZE - 1,
-			"%.*s", (int) length, at
-		);
+	if (http_receive_check_header_size (http_receive, length)) return 1;
 
-		request->current_custom_header->header_value_len = (unsigned int) strlen (
-			request->current_custom_header->header_value
-		);
-	}
-
-	return 0;
+	return http_receive_buffer_append (&http_receive->value_buffer, at, length) ?
+		http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
 
@@ -1752,24 +2149,12 @@ static int http_receive_handle_body (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	// (void) printf ("http_receive_handle_body ()\n");
-
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
-	if (http_receive->receive_status == HTTP_RECEIVE_STATUS_HEADERS)
-		http_receive->receive_status = HTTP_RECEIVE_STATUS_BODY;
+	if (http_receive_check_body_size (http_receive, length)) return 1;
 
-	// (void) printf ("Body: %.*s", (int) length, at);
-
-	if (!http_receive->request->body) {
-		http_receive->request->body = str_create ("%.*s", (int) length, at);
-	}
-
-	else {
-		str_append_n_from_c_string (http_receive->request->body, at, length);
-	}
-
-	return 0;
+	return http_request_body_append (http_receive->request, at, length) ?
+		http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
 
@@ -1780,6 +2165,9 @@ static int http_receive_handle_body (
 static unsigned int http_multi_parts_init_pool (void) {
 
 	unsigned int retval = 1;
+
+	// the pool is shared by every HTTP cerver in the process
+	if (multi_parts_pool) return 0;
 
 	multi_parts_pool = pool_create (http_multi_part_delete);
 	if (multi_parts_pool) {
@@ -1895,18 +2283,159 @@ static unsigned int http_mpart_get_boundary (
 
 }
 
+// a file that could not be saved completely (for example, the uploads file system is full)
+// is never reported as saved: the part keeps the error and the request is answered with 500
+// returns 1 to stop the parser
+static int http_receive_mpart_file_failed (
+	HttpReceive *http_receive, MultiPart *multi_part,
+	const char *operation, const int error
+) {
+
+	multi_part->error = error;
+
+	char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
+	cerver_log_error (
+		"Failed to %s %s to save multipart file - errno %d (%s) - wrote %u",
+		operation, multi_part->saved_filename, error,
+		strerror_r (error, error_description, sizeof (error_description)),
+		multi_part->total_wrote
+	);
+
+	return http_receive_reject (
+		http_receive, server_error, HTTP_RECEIVE_STATUS_UPLOAD_ERROR
+	);
+
+}
+
+// sets in the part's saved filename the original one with a number,
+// before its extension if it has one: "uploads/name.png" -> "uploads/name-1.png"
+// returns 0 on success, 1 if the new filename does not fit
+static int http_receive_mpart_file_number (
+	MultiPart *multi_part, const char *original, const unsigned int number
+) {
+
+	const char *basename = strrchr (original, '/');
+	const char *extension = strrchr (basename ? basename : original, '.');
+	const int name_len = extension ? (int) (extension - original) : (int) strlen (original);
+
+	const int written = snprintf (
+		multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
+		"%.*s-%u%s", name_len, original, number, extension ? extension : ""
+	);
+
+	if ((written < 0) || (written >= HTTP_MULTI_PART_SAVED_FILENAME_SIZE)) return 1;
+
+	multi_part->saved_filename_len = written;
+
+	return 0;
+
+}
+
+// opens the file where the part is saved, a file is never overwritten:
+// if the filename already exists, a number is added to it
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_mpart_file_open (
+	HttpReceive *http_receive, MultiPart *multi_part
+) {
+
+	char original[HTTP_MULTI_PART_SAVED_FILENAME_SIZE] = { 0 };
+	(void) snprintf (original, HTTP_MULTI_PART_SAVED_FILENAME_SIZE, "%s", multi_part->saved_filename);
+
+	const int flags = O_CREAT | O_EXCL | O_WRONLY;
+	const unsigned int mode = http_receive->http_cerver->uploads_file_mode;
+
+	multi_part->fd = open (multi_part->saved_filename, flags, mode);
+
+	for (
+		unsigned int number = 1;
+		(multi_part->fd == -1) && (errno == EEXIST) && (number <= HTTP_MULTI_PART_FILENAME_NUMBERS);
+		number++
+	) {
+		if (http_receive_mpart_file_number (multi_part, original, number)) break;
+
+		multi_part->fd = open (multi_part->saved_filename, flags, mode);
+	}
+
+	return (multi_part->fd == -1) ?
+		http_receive_mpart_file_failed (http_receive, multi_part, "open", errno) : 0;
+
+}
+
+// writes a piece of a multi-part file, write () can save less bytes than requested
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_mpart_file_write (
+	HttpReceive *http_receive, MultiPart *multi_part,
+	const char *at, const size_t length
+) {
+
+	multi_part->n_reads += 1;
+
+	const size_t max_file_size = http_receive->http_cerver->max_file_size;
+	if (max_file_size && (((size_t) multi_part->total_wrote + length) > max_file_size)) {
+		return http_receive_reject (
+			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+	}
+
+	const char *pending = at;
+	size_t pending_length = length;
+	while (pending_length > 0) {
+		const ssize_t wrote = write (multi_part->fd, pending, pending_length);
+		if (wrote < 0) {
+			if (errno == EINTR) continue;
+
+			return http_receive_mpart_file_failed (
+				http_receive, multi_part, "write", errno
+			);
+		}
+
+		multi_part->total_wrote += (u32) wrote;
+		pending += wrote;
+		pending_length -= (size_t) wrote;
+	}
+
+	return 0;
+
+}
+
+// adds a piece of a multi-part value, a value that does not fit is truncated
+static int http_receive_mpart_value_append (
+	MultiPart *multi_part, const char *at, const size_t length
+) {
+
+	char *end = multi_part->value + multi_part->value_len;
+
+	(void) snprintf (
+		end, HTTP_MULTI_PART_VALUE_SIZE - multi_part->value_len,
+		"%.*s", (int) length, at
+	);
+
+	multi_part->value_len = (int) strlen (multi_part->value);
+
+	return 0;
+
+}
+
 static int http_receive_handle_mpart_part_data_begin (
 	multipart_parser *parser
 ) {
 
-	// create a new multipart structure to handle new data
-	HttpRequest *request = ((HttpReceive *) parser->data)->request;
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	HttpRequest *request = http_receive->request;
 
+	http_receive->n_parts += 1;
+
+	const unsigned int max_multipart_parts = http_receive->http_cerver->max_multipart_parts;
+	if (max_multipart_parts && (http_receive->n_parts > max_multipart_parts)) {
+		return http_receive_reject (
+			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+	}
+
+	// create a new multipart structure to handle new data
 	request->current_part = http_multi_parts_get ();
-	(void) dlist_insert_after (
-		request->multi_parts,
-		dlist_end (request->multi_parts),
-		request->current_part
+	(void) dlist_insert_at_end_unsafe (
+		request->multi_parts, request->current_part
 	);
 
 	return 0;
@@ -2005,8 +2534,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			// end += strlen ("form-data;");
 			end += multi_part_form_data_len;
 
+			// the part already has an empty list from http_multi_part_new ()
+			dlist_delete (multi_part->params);
 			multi_part->params = http_mpart_attributes_parse (end);
-			// key_value_pairs_print (multi_part->params);
 
 			multi_part->name = key_value_pairs_get_value (multi_part->params, "name");
 			// multi_part->filename = key_value_pairs_get_value (multi_part->params, "filename");
@@ -2088,29 +2618,8 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 						}
 					}
 
-					multi_part->fd = open (
-						multi_part->saved_filename,
-						O_CREAT | O_WRONLY,
-						http_receive->http_cerver->uploads_file_mode
-					);
-
-					switch (multi_part->fd) {
-						case -1: {
-							cerver_log_error (
-								"Failed to open %s filename to save multipart file!",
-								multi_part->saved_filename
-							);
-							perror ("Error");
-						} break;
-
-						default: {
-							#ifdef HTTP_MPART_DEBUG
-							cerver_log_debug (
-								"Opened %s to save multipart file!",
-								multi_part->saved_filename
-							);
-							#endif
-						} break;
+					if (http_receive_mpart_file_open (http_receive, multi_part)) {
+						return 1;
 					}
 				}
 
@@ -2147,41 +2656,12 @@ static int http_receive_handle_mpart_data (
 	multipart_parser *parser, const char *at, size_t length
 ) {
 
-	MultiPart *multi_part = ((HttpReceive *) parser->data)->request->current_part;
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	MultiPart *multi_part = http_receive->request->current_part;
 
-	// printf ("fd %d - filename %s - bytes %ld\n", multi_part->fd, multi_part->filename->str, length);
-
-	if (multi_part->fd != -1) {
-		multi_part->n_reads += 1;
-
-		ssize_t wrote = write (multi_part->fd, at, length);
-		switch (wrote) {
-			case -1: {
-				cerver_log_error ("http_receive_handle_mpart_data () - Error writting to file!");
-				perror ("Error");
-			} break;
-
-			default:
-				multi_part->total_wrote += wrote;
-				break;
-		}
-	}
-
-	else {
-		// printf ("|%.*s|\n", (int) length, at);
-		// multi_part->value = str_create ("%.*s", (int) length, at);
-
-		char *end = multi_part->value + multi_part->value_len;
-
-		(void) snprintf (
-			end, HTTP_MULTI_PART_VALUE_SIZE - multi_part->value_len,
-			"%.*s", (int) length, at
-		);
-
-		multi_part->value_len = (int) strlen (multi_part->value);
-	}
-
-	return 0;
+	return (multi_part->fd != -1) ?
+		http_receive_mpart_file_write (http_receive, multi_part, at, length) :
+		http_receive_mpart_value_append (multi_part, at, length);
 
 }
 
@@ -2192,6 +2672,7 @@ static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 
 	if (multi_part->fd != -1) {
 		(void) close (multi_part->fd);
+		multi_part->fd = -1;
 	}
 
 	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
@@ -2210,46 +2691,17 @@ static int http_receive_handle_mpart_body (
 	http_parser *parser, const char *at, size_t length
 ) {
 
-	(void) multipart_parser_execute (((HttpReceive *) parser->data)->mpart_parser, at, length);
-
-	return 0;
-
-}
-
-static int http_receive_handle_mpart_body_look_for_boundary (
-	http_parser *parser, const char *at, size_t length
-) {
-
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
-	char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
 
-	char *found = c_string_find_sub_in_len (at, webkit_multi_part_boundary_value, length);
-	if (found) {
-		#ifdef HTTP_MPART_DEBUG
-		cerver_log_success ("Found multi-part boundary in body!");
-		#endif
+	if (http_receive_check_body_size (http_receive, length)) return 1;
 
-		(void) snprintf (
-			boundary,
-			HTTP_MULTI_PART_BOUNDARY_MAX_SIZE - 1,
-			"------WebKitFormBoundary%.*s",
-			(int) HTTP_MULTI_PART_WEBKIT_BOUNDARY_ID_SIZE,
-			found + webkit_multi_part_boundary_value_len
-		);
+	const size_t parsed = multipart_parser_execute (
+		http_receive->mpart_parser, at, length
+	);
 
-		#ifdef HTTP_MPART_DEBUG
-		cerver_log_debug ("Multi-part bundary from body is: %s", boundary);
-		#endif
-
-		// set mpart parser values
-		http_receive->settings.on_body = http_receive_handle_mpart_body;
-		http_receive_init_mpart_parser (http_receive, boundary);
-
-		// we can parse the current data
-		(void) multipart_parser_execute (http_receive->mpart_parser, at, length);
-	}
-
-	return 0;
+	// a callback rejected the request, or the multi-part body is not valid
+	return (parsed != length) ?
+		http_receive_reject (http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
 
@@ -2306,6 +2758,18 @@ HttpReceive *http_receive_new (void) {
 
 		http_receive->is_multi_part = false;
 		http_receive->file_stats = NULL;
+
+		http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
+		http_receive->url_buffer = NULL;
+		http_receive->field_buffer = NULL;
+		http_receive->value_buffer = NULL;
+
+		http_receive->header_size = 0;
+		http_receive->n_headers = 0;
+		http_receive->body_size = 0;
+		http_receive->n_parts = 0;
+
+		http_receive->responded = false;
 	}
 
 	return http_receive;
@@ -2366,6 +2830,10 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		if (http_receive->mpart_parser)
 			multipart_parser_free (http_receive->mpart_parser);
+
+		str_delete (http_receive->url_buffer);
+		str_delete (http_receive->field_buffer);
+		str_delete (http_receive->value_buffer);
 
 		free (http_receive);
 	}
@@ -2461,15 +2929,12 @@ static void http_receive_handle_match (
 			if (request->query) {
 				char *real_query = http_url_decode (request->query->str);
 
+				// the decoded query is shorter than the original one
 				if (real_query) {
 					request->query_params = http_parse_query_into_pairs (
 						real_query,
-						real_query + request->query->len
+						real_query + strlen (real_query)
 					);
-
-					// printf ("Query: %s\n", request->query->str);
-					// printf ("Real Query: %s\n", real_query);
-					// http_query_pairs_print (request->query_params);
 
 					free (real_query);
 				}
@@ -2484,15 +2949,12 @@ static void http_receive_handle_match (
 					)) {
 						char *real_body = http_url_decode (request->body->str);
 
+						// the decoded body is shorter than the original one
 						if (real_body) {
 							request->body_values = http_parse_query_into_pairs (
 								real_body,
-								real_body + request->body->len
+								real_body + strlen (real_body)
 							);
-
-							// printf ("Body: %s\n", request->body->str);
-							// printf ("Real Body: %s\n", real_body);
-							// http_query_pairs_print (request->body_values);
 
 							free (real_body);
 						}
@@ -2548,12 +3010,14 @@ static inline bool http_receive_handle_select_children (
 
 		tokens = c_string_split (end_sub, '/', &n_tokens);
 
-		// printf ("n tokens: %ld\n", n_tokens);
-		// printf ("second end_sub: %s\n", end_sub);
-
 		if (tokens) {
-			HttpRoutesTokens *routes_tokens = route->routes_tokens[n_tokens - 1];
-			if (routes_tokens->n_routes) {
+			// routes are grouped by their number of tokens,
+			// a url with more tokens than any route can not match
+			HttpRoutesTokens *routes_tokens = (
+				(n_tokens > 0) && (n_tokens <= DEFAULT_ROUTES_TOKENS_SIZE)
+			) ? route->routes_tokens[n_tokens - 1] : NULL;
+
+			if (routes_tokens && routes_tokens->n_routes) {
 				// match all url tokens with existing route tokens
 				bool fail = false;
 				for (unsigned int main_idx = 0; main_idx < routes_tokens->n_routes; main_idx++) {
@@ -2583,7 +3047,10 @@ static inline bool http_receive_handle_select_children (
 
 							// get route params
 							for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
-								if (routes_tokens->tokens[main_idx][sub_idx][0] == '*') {
+								if (
+									(routes_tokens->tokens[main_idx][sub_idx][0] == '*')
+									&& (request->n_params < REQUEST_PARAMS_SIZE)
+								) {
 									request->params[request->n_params] = str_new (tokens[sub_idx]);
 									request->n_params++;
 								}
@@ -2615,7 +3082,9 @@ static void http_receive_handle_select_failed_auth (
 	HttpReceive *http_receive
 ) {
 
-	(void) http_response_send (bad_auth_error, http_receive);
+	(void) http_receive_reject (
+		http_receive, bad_auth_error, HTTP_RECEIVE_STATUS_REJECTED
+	);
 
 	(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
 	http_receive->http_cerver->n_failed_auth_requests += 1;
@@ -2623,18 +3092,31 @@ static void http_receive_handle_select_failed_auth (
 
 }
 
-static void http_receive_handle_select_auth_bearer (
+static const char *bearer_prefix = { "Bearer " };
+static const size_t bearer_prefix_len = 7;
+
+// returns true if the request has a valid bearer JWT
+// the route's decode_data method sets the request's decoded data
+static bool http_receive_handle_select_auth_bearer (
 	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
 
-	// get the bearer token
-	// printf ("\nComplete Token -> %s\n", request->headers[REQUEST_HEADER_AUTHORIZATION]->str);
+	bool authenticated = false;
 
-	char *token = request->headers[HTTP_HEADER_AUTHORIZATION]->str + sizeof ("Bearer");
+	// the header must be "Bearer <token>"
+	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
+	if (
+		!authorization
+		|| (authorization->len <= bearer_prefix_len)
+		|| strncmp (authorization->str, bearer_prefix, bearer_prefix_len)
+	) {
+		http_receive_handle_select_failed_auth (http_receive);
+		return authenticated;
+	}
 
-	// printf ("\nToken -> %s\n", token);
+	char *token = authorization->str + bearer_prefix_len;
 
 	jwt_t *jwt = NULL;
 	jwt_valid_t *jwt_valid = NULL;
@@ -2661,19 +3143,14 @@ static void http_receive_handle_select_auth_bearer (
 					request->delete_decoded_data = found->delete_decoded_data;
 				}
 
-				http_receive_handle_match (
-					http_cerver,
-					http_receive,
-					request,
-					found
-				);
+				authenticated = true;
 			}
 
 			else {
 				#ifdef HTTP_AUTH_DEBUG
 				cerver_log_error (
 					"Failed to validate JWT: %08x",
-					jwt_valid_get_status(jwt_valid)
+					jwt_valid_get_status (jwt_valid)
 				);
 				#endif
 
@@ -2694,13 +3171,17 @@ static void http_receive_handle_select_auth_bearer (
 
 	jwt_valid_free (jwt_valid);
 
+	return authenticated;
+
 }
 
-static void http_receive_handle_select_auth_custom (
-	HttpCerver *http_cerver,
+// returns true if the route's custom authentication handler accepts the request
+static bool http_receive_handle_select_auth_custom (
 	HttpReceive *http_receive,
 	HttpRoute *found, HttpRequest *request
 ) {
+
+	bool authenticated = false;
 
 	if (found->authentication_handler) {
 		if (!found->authentication_handler (
@@ -2710,12 +3191,7 @@ static void http_receive_handle_select_auth_custom (
 			cerver_log_success ("Success authentication with custom method!");
 			#endif
 
-			http_receive_handle_match (
-				http_cerver,
-				http_receive,
-				request,
-				found
-			);
+			authenticated = true;
 		}
 
 		else {
@@ -2736,14 +3212,55 @@ static void http_receive_handle_select_auth_custom (
 		http_receive_handle_select_failed_auth (http_receive);
 	}
 
+	return authenticated;
+
 }
 
-// select the route that will handle the request
-static void http_receive_handle_select (
-	HttpReceive *http_receive, HttpRequest *request
+// authenticates the request with the found route's method
+// a failed authentication is answered here
+// returns true if the request can be handled by the route
+static bool http_receive_handle_authenticate (
+	HttpCerver *http_cerver,
+	HttpReceive *http_receive,
+	HttpRoute *found, HttpRequest *request
 ) {
 
-	HttpCerver *http_cerver = (HttpCerver *) http_receive->cr->cerver->cerver_data;
+	bool authenticated = false;
+
+	switch (found->auth_type) {
+		// no authentication, handle the request directly
+		case HTTP_ROUTE_AUTH_TYPE_NONE: {
+			authenticated = true;
+		} break;
+
+		// a bearer JWT is expected in the authorization header
+		case HTTP_ROUTE_AUTH_TYPE_BEARER: {
+			authenticated = http_receive_handle_select_auth_bearer (
+				http_cerver, http_receive, found, request
+			);
+		} break;
+
+		// a custom method is used to handle authentication
+		case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
+			authenticated = http_receive_handle_select_auth_custom (
+				http_receive, found, request
+			);
+		} break;
+
+		default: {
+			http_receive_handle_select_failed_auth (http_receive);
+		} break;
+	}
+
+	return authenticated;
+
+}
+
+// selects the route that will handle the request
+// returns NULL if no route matches the request's url
+static HttpRoute *http_receive_handle_select_route (
+	HttpCerver *http_cerver, HttpRequest *request
+) {
 
 	bool match = false;
 	HttpRoute *found = NULL;
@@ -2774,49 +3291,7 @@ static void http_receive_handle_select (
 		le = le->next;
 	}
 
-	// we have found a route!
-	if (match) {
-		http_receive->route = found;
-
-		switch (found->auth_type) {
-			// no authentication, handle the request directly
-			case HTTP_ROUTE_AUTH_TYPE_NONE: {
-				http_receive_handle_match (
-					http_cerver,
-					http_receive,
-					request,
-					found
-				);
-			} break;
-
-			// a bearer JWT is expected in the authorization header
-			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
-				if (request->headers[HTTP_HEADER_AUTHORIZATION]) {
-					http_receive_handle_select_auth_bearer (
-						http_cerver, http_receive, found, request
-					);
-				}
-
-				// no authentication header was provided
-				else {
-					http_receive_handle_select_failed_auth (http_receive);
-				}
-			} break;
-
-			// a custom method is used to handle authentication
-			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
-				http_receive_handle_select_auth_custom (
-					http_cerver, http_receive, found, request
-				);
-			} break;
-
-			default: break;
-		}
-	}
-
-	else {
-		http_receive_handle_catch_all (http_cerver, http_receive, request);
-	}
+	return match ? found : NULL;
 
 }
 
@@ -2866,52 +3341,170 @@ static void http_receive_init_mpart_parser (
 
 }
 
-static int http_receive_handle_headers_completed (http_parser *parser) {
+// answers "100 Continue" to a client that waits for it before sending the body
+static void http_receive_handle_expect_continue (HttpReceive *http_receive) {
 
-	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	const String *expect = http_receive->request->headers[HTTP_HEADER_EXPECT];
+	if (expect && !strcasecmp (expect->str, expect_continue_value)) {
+		(void) send (
+			http_receive->cr->connection->socket->sock_fd,
+			continue_response, continue_response_len, MSG_NOSIGNAL
+		);
+	}
 
-	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
+}
 
-	// #ifdef HTTP_HEADERS_DEBUG
-	// http_request_headers_print (http_receive->request);
-	// #endif
+// prepares the multi-part parser of an authenticated request to a route
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 
-	// check if we are going to get any file(s)
-	if (http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]) {
-		if (is_multipart (
-			http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str
+	int retval = 0;
+
+	const String *content_type = http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE];
+	if (content_type && is_multipart (content_type->str)) {
+		http_receive->is_multi_part = true;
+
+		char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
+		if (!http_mpart_get_boundary (
+			boundary, content_type->str, (unsigned int) content_type->len
 		)) {
-			// printf ("\nis multipart!\n");
-			http_receive->is_multi_part = true;
+			http_receive->settings.on_body = http_receive_handle_mpart_body;
 
-			char boundary[HTTP_MULTI_PART_BOUNDARY_MAX_SIZE] = { 0 };
+			http_receive_init_mpart_parser (http_receive, boundary);
+		}
 
-			if (!http_mpart_get_boundary (
-				boundary,
-				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->str,
-				http_receive->request->headers[HTTP_HEADER_CONTENT_TYPE]->len
-			)) {
-				// printf ("\n%s\n", boundary);
-				http_receive->settings.on_body = http_receive_handle_mpart_body;
-
-				http_receive_init_mpart_parser (http_receive, boundary);
-			}
-
-			else {
-				#ifdef HTTP_MPART_DEBUG
-				cerver_log_warning (
-					"Unable to find the multi-part boundary in the header, "
-					"searching for it in the body..."
-				);
-				#endif
-
-				// we need to search for the boundary in the response
-				http_receive->settings.on_body = http_receive_handle_mpart_body_look_for_boundary;
-			}
+		// a multi-part request without a boundary can not be parsed
+		else {
+			retval = http_receive_reject (
+				http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+			);
 		}
 	}
 
+	return retval;
+
+}
+
+// a request without a route is answered by the catch all handler,
+// so its body is only checked against the limit, but it is not saved
+static int http_receive_handle_body_discard (
+	http_parser *parser, const char *at, size_t length
+) {
+
+	(void) at;
+
+	return http_receive_check_body_size ((HttpReceive *) parser->data, length);
+
+}
+
+// the url and the headers are complete: the route is selected
+// and the request is authenticated before its body is received,
+// so the files of a rejected request are never saved
+// a non zero value stops the parser (1 would only skip the body)
+static int http_receive_handle_headers_completed (http_parser *parser) {
+
+	HttpReceive *http_receive = (HttpReceive *) parser->data;
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	HttpRequest *request = http_receive->request;
+
+	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
+
+	if (http_receive->token == HTTP_RECEIVE_TOKEN_VALUE) {
+		if (http_receive_close_header (http_receive)) return -1;
+	}
+
+	http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
+
+	http_receive_close_url (http_receive);
+
+	request->method = (RequestMethod) parser->method;
+
+	#ifdef HTTP_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
+		"%s %s",
+		http_method_str ((enum http_method) request->method),
+		request->url->str
+	);
+	#endif
+
+	// a body bigger than the limit is rejected before receiving it
+	if (
+		http_cerver->max_body_size
+		&& (parser->content_length != (uint64_t) -1)
+		&& (parser->content_length > http_cerver->max_body_size)
+	) {
+		(void) http_receive_reject (
+			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
+		);
+
+		return -1;
+	}
+
+	// a GET with a file extension is served from the static paths
+	if (
+		(request->method == REQUEST_METHOD_GET)
+		&& http_cerver->static_paths->size
+		&& strrchr (request->url->str, '.')
+	) {
+		http_receive->type = HTTP_RECEIVE_TYPE_FILE;
+	}
+
+	else {
+		http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
+
+		HttpRoute *found = http_receive_handle_select_route (http_cerver, request);
+		if (found) {
+			// the authentication handler can use the request's route
+			http_receive->route = found;
+
+			if (
+				!found->authentication_with_body
+				&& !http_receive_handle_authenticate (http_cerver, http_receive, found, request)
+			) {
+				return -1;
+			}
+
+			if (http_receive_handle_headers_multi_part (http_receive)) {
+				return -1;
+			}
+		}
+
+		else {
+			http_receive->settings.on_body = http_receive_handle_body_discard;
+		}
+	}
+
+	http_receive_handle_expect_continue (http_receive);
+
 	return 0;
+
+}
+
+// sets in real_filename (PATH_MAX bytes) the real path of the url inside the static path
+// returns false if the path does not fit or if it is outside the static path ("..", symbolic links)
+static bool http_static_path_resolve (
+	const HttpStaticPath *static_path, const char *url, char *real_filename
+) {
+
+	char filename[HTTP_CERVER_STATIC_FILE_SIZE] = { 0 };
+	char real_static_path[PATH_MAX] = { 0 };
+
+	// a path that does not fit is never truncated
+	const int written = snprintf (
+		filename, HTTP_CERVER_STATIC_FILE_SIZE,
+		"%s%s", static_path->path->str, url
+	);
+
+	if ((written < 0) || (written >= HTTP_CERVER_STATIC_FILE_SIZE)) return false;
+
+	if (!realpath (filename, real_filename)) return false;
+	if (!realpath (static_path->path->str, real_static_path)) return false;
+
+	const size_t real_static_path_len = strlen (real_static_path);
+
+	return !strncmp (real_filename, real_static_path, real_static_path_len)
+		&& (real_filename[real_static_path_len] == '/');
 
 }
 
@@ -2920,7 +3513,7 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 	bool found = false;
 
-	char filename[HTTP_CERVER_STATIC_FILE_SIZE] = { 0 };
+	char real_filename[PATH_MAX] = { 0 };
 	struct stat filestatus = { 0 };
 	HttpStaticPath *static_path = NULL;
 
@@ -2930,20 +3523,19 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	) {
 		static_path = (HttpStaticPath *) le->data;
 
-		(void) c_string_concat_safe (
-			static_path->path->str, http_receive->request->url->str,
-			filename, HTTP_CERVER_STATIC_FILE_SIZE
-		);
+		if (!http_static_path_resolve (
+			static_path, http_receive->request->url->str, real_filename
+		)) continue;
 
-		// check if file exists
+		// only regular files are served
 		(void) memset (&filestatus, 0, sizeof (struct stat));
-		if (!stat (filename, &filestatus)) {
+		if (!stat (real_filename, &filestatus) && S_ISREG (filestatus.st_mode)) {
 			http_receive->served_file = http_receive->request->url->str;
 
 			// serve the file
 			(void) http_response_send_file_internal (
 				http_receive, HTTP_STATUS_OK,
-				filename, &filestatus
+				real_filename, &filestatus
 			);
 
 			found = true;
@@ -2965,60 +3557,131 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 }
 
-static int http_receive_handle_message_completed (http_parser *parser) {
+// a route whose authentication needs the body is authenticated now,
+// any other route was authenticated in on_headers_complete
+static void http_receive_handle_route (HttpReceive *http_receive) {
 
-	// printf ("\non message complete!\n");
+	HttpRoute *route = http_receive->route;
+
+	if (
+		route->authentication_with_body
+		&& !http_receive_handle_authenticate (
+			http_receive->http_cerver, http_receive, route, http_receive->request
+		)
+	) {
+		return;
+	}
+
+	http_receive_handle_match (
+		http_receive->http_cerver, http_receive, http_receive->request, route
+	);
+
+}
+
+// the route and its authentication were resolved in on_headers_complete,
+// now that the body is complete the request is handled
+static int http_receive_handle_message_completed (http_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 
-	http_receive->request->method = (RequestMethod) http_receive->parser->method;
+	switch (http_receive->type) {
+		case HTTP_RECEIVE_TYPE_FILE: {
+			http_receive_handle_serve_file (http_receive);
+		} break;
 
-	#ifdef HTTP_DEBUG
-	cerver_log (
-		LOG_TYPE_DEBUG, LOG_TYPE_HTTP,
-		"%s %s",
-		http_method_str ((enum http_method) http_receive->request->method),
-		http_receive->request->url->str
-	);
-	#endif
-
-	// select method handler
-	switch (http_receive->request->method) {
-		case REQUEST_METHOD_GET: {
-			// check for file extension
-			if (strrchr (http_receive->request->url->str, '.')) {
-				// check if we can serve file from static paths
-				if (http_receive->http_cerver->static_paths->size) {
-					http_receive_handle_serve_file (http_receive);
-					http_receive->type = HTTP_RECEIVE_TYPE_FILE;
-				}
-
-				// unable to serve a file, try for matching route
-				else {
-					http_receive_handle_select (http_receive, http_receive->request);
-					http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
-				}
+		default: {
+			if (http_receive->route) {
+				http_receive_handle_route (http_receive);
 			}
 
 			else {
-				http_receive_handle_select (http_receive, http_receive->request);
-				http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
+				http_receive_handle_catch_all (
+					http_receive->http_cerver,
+					http_receive, http_receive->request
+				);
 			}
 		} break;
-
-		default:
-			http_receive_handle_select (http_receive, http_receive->request);
-			http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
-			break;
 	}
 
-	if (!http_receive->keep_alive) {
-		connection_end (http_receive->cr->connection);
-	}
+	// only one request is handled by connection,
+	// the parser stops here, so a pipelined request in the same buffer is never parsed
+	http_parser_pause (parser, 1);
 
 	return 0;
+
+}
+
+// reads the data that the client already sent, up to HTTP_RECEIVE_DRAIN_SIZE bytes
+// waiting tells if recv () waits for more data, with the socket's timeout
+static void http_receive_drain (const int sock_fd, const bool waiting) {
+
+	char buffer[HTTP_RECEIVE_DRAIN_BUFFER_SIZE];
+	const int flags = waiting ? 0 : MSG_DONTWAIT;
+
+	size_t drained = 0;
+	while (drained < HTTP_RECEIVE_DRAIN_SIZE) {
+		const ssize_t received = recv (sock_fd, buffer, sizeof (buffer), flags);
+		if (received <= 0) break;
+
+		drained += (size_t) received;
+	}
+
+}
+
+// closes the connection after its response was sent
+// the data that the client already sent is read first,
+// because a close () with unread data answers with a RST that can destroy the response
+// a rejected request waits a bit for the rest of its body
+static void http_receive_close (
+	HttpReceive *http_receive, const bool rejected
+) {
+
+	Connection *connection = http_receive->cr->connection;
+	const int sock_fd = connection->socket->sock_fd;
+
+	if (!http_receive->keep_alive && (sock_fd > -1)) {
+		(void) shutdown (sock_fd, SHUT_WR);
+
+		if (rejected) {
+			(void) sock_set_timeout (sock_fd, HTTP_RECEIVE_DRAIN_TIMEOUT);
+		}
+
+		http_receive_drain (sock_fd, rejected);
+
+		connection_end (connection);
+	}
+
+}
+
+// a request that http_parser could not parse is answered with 400,
+// unless a callback already answered it (a limit, a failed authentication, ...)
+static void http_receive_handle_parser_error (
+	HttpReceive *http_receive,
+	const size_t n_parsed, const ssize_t received
+) {
+
+	if (!http_receive->responded) {
+		const enum http_errno parser_errno = HTTP_PARSER_ERRNO (http_receive->parser);
+
+		cerver_log_with_date (
+			LOG_TYPE_ERROR, LOG_TYPE_HTTP,
+			"http_receive_handle () - http_parser_execute () failed - n parsed %zu / received %zd"
+			" - fd %d - %s: %s - status %s",
+			n_parsed, received,
+			http_receive->cr->connection->socket->sock_fd,
+			http_errno_name (parser_errno),
+			http_errno_description (parser_errno),
+			http_receive_status_str (http_receive->receive_status)
+		);
+
+		(void) http_receive_reject (
+			http_receive, bad_request_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
+		);
+	}
+
+	http_receive_close (http_receive, true);
 
 }
 
@@ -3027,23 +3690,23 @@ static void http_receive_handle (
 	ssize_t rc, char *packet_buffer
 ) {
 
-	ssize_t n_parsed = http_parser_execute (
-		http_receive->parser, &http_receive->settings, packet_buffer, rc
+	const size_t n_parsed = http_parser_execute (
+		http_receive->parser, &http_receive->settings, packet_buffer, (size_t) rc
 	);
 
-	if (n_parsed != rc) {
-		cerver_log_error (
-			"http_parser_execute () failed - n parsed %ld / received %ld",
-			n_parsed, rc
-		);
+	switch (HTTP_PARSER_ERRNO (http_receive->parser)) {
+		// all the data was parsed, the request is not complete yet
+		case HPE_OK: break;
 
-		// send back error message
-		(void) http_response_send (server_error, http_receive);
+		// the request was completed and handled
+		case HPE_PAUSED:
+			http_receive_close (http_receive, false);
+			break;
 
-		connection_end (http_receive->cr->connection);
+		default:
+			http_receive_handle_parser_error (http_receive, n_parsed, rc);
+			break;
 	}
-
-	// printf ("http_receive_handle () - end!\n");
 
 }
 

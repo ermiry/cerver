@@ -24,8 +24,26 @@
 
 #define HTTP_CERVER_UPLOADS_PATH_SIZE				256
 
-#define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0777
-#define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0777
+#define HTTP_CERVER_DEFAULT_UPLOADS_DIR_MODE		0755
+#define HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE		0644
+
+// requests limits, a value of 0 disables the limit
+#define HTTP_CERVER_DEFAULT_MAX_BODY_SIZE			(1 << 29)
+#define HTTP_CERVER_DEFAULT_MAX_URL_SIZE			(1 << 13)
+#define HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE			(1 << 16)
+#define HTTP_CERVER_DEFAULT_MAX_HEADERS				(1 << 7)
+#define HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS		(1 << 10)
+#define HTTP_CERVER_DEFAULT_MAX_FILE_SIZE			(1 << 29)
+
+// the most bytes read from a connection before closing it
+// when a request was rejected before its body was received
+#define HTTP_RECEIVE_DRAIN_SIZE						(1 << 16)
+#define HTTP_RECEIVE_DRAIN_BUFFER_SIZE				(1 << 12)
+#define HTTP_RECEIVE_DRAIN_TIMEOUT					1
+
+// joins the values of a repeated header (RFC 9110 section 5.3)
+#define HTTP_HEADER_VALUES_SEPARATOR				", "
+#define HTTP_HEADER_VALUES_SEPARATOR_LEN			2
 
 #define HTTP_CERVER_DEFAULT_UPLOADS_DELETE			false
 
@@ -181,6 +199,16 @@ struct _HttpCerver {
 	// used to correctly update stats
 	pthread_mutex_t *mutex;
 
+	// requests limits, a value of 0 disables the limit
+	size_t max_body_size;
+	size_t max_url_size;
+	size_t max_header_size;
+	unsigned int max_headers;
+	unsigned int max_multipart_parts;
+	size_t max_file_size;
+
+	size_t n_limited_requests;		// rejected because they exceeded a limit
+
 };
 
 typedef struct _HttpCerver HttpCerver;
@@ -305,7 +333,8 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 );
 
 // method that can be used to generate multi-part uploads filenames
-// with format "%d-%ld-%s" using "sock_fd-time (NULL)-multi_part->filename"
+// with format "%d-%ld-%u-%s" using "sock_fd-time (NULL)-file index-multi_part->filename"
+// the file index keeps unique the files of a request that have the same filename
 CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
@@ -365,6 +394,52 @@ CERVER_EXPORT void http_cerver_set_default_uploads_dirname_generator (
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_DELETE
 CERVER_EXPORT void http_cerver_set_uploads_delete_when_done (
 	HttpCerver *http_cerver, bool value
+);
+
+#pragma endregion
+
+#pragma region limits
+
+// sets the max size in bytes of a request's body
+// a bigger request is answered with 413
+// the default value is HTTP_CERVER_DEFAULT_MAX_BODY_SIZE, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_body_size (
+	HttpCerver *http_cerver, const size_t max_body_size
+);
+
+// sets the max size in bytes of a request's url (path and query)
+// a bigger url is answered with 414
+// the default value is HTTP_CERVER_DEFAULT_MAX_URL_SIZE, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_url_size (
+	HttpCerver *http_cerver, const size_t max_url_size
+);
+
+// sets the max size in bytes of all of a request's headers
+// bigger headers are answered with 431
+// the default value is HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_header_size (
+	HttpCerver *http_cerver, const size_t max_header_size
+);
+
+// sets the max number of headers of a request
+// more headers are answered with 431
+// the default value is HTTP_CERVER_DEFAULT_MAX_HEADERS, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_headers (
+	HttpCerver *http_cerver, const unsigned int max_headers
+);
+
+// sets the max number of parts of a multi-part request
+// more parts are answered with 413
+// the default value is HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_multipart_parts (
+	HttpCerver *http_cerver, const unsigned int max_multipart_parts
+);
+
+// sets the max size in bytes of each file of a multi-part request
+// a bigger file is answered with 413
+// the default value is HTTP_CERVER_DEFAULT_MAX_FILE_SIZE, 0 disables the limit
+CERVER_EXPORT void http_cerver_set_max_file_size (
+	HttpCerver *http_cerver, const size_t max_file_size
 );
 
 #pragma endregion
@@ -576,7 +651,13 @@ CERVER_PUBLIC void http_query_pairs_print (
 	XX(2,  BODY,			Body)			\
 	XX(3,  COMPLETED,		Completed)		\
 	XX(4,  INCOMPLETED,		Incompleted)	\
-	XX(5,  UNHANDLED,		Unhandled)
+	XX(5,  UNHANDLED,		Unhandled)		\
+	XX(6,  TIMEOUT,			Timeout)		\
+	XX(7,  CLOSED,			Closed)			\
+	XX(8,  PARSER_ERROR,	Parser Error)	\
+	XX(9,  LIMIT,			Limit)			\
+	XX(10, REJECTED,		Rejected)		\
+	XX(11, UPLOAD_ERROR,	Upload Error)
 
 typedef enum HttpReceiveStatus {
 
@@ -597,6 +678,19 @@ typedef enum HttpReceiveType {
 	HTTP_RECEIVE_TYPE_ROUTE		= 2
 
 } HttpReceiveType;
+
+// the token that the parser is building between callbacks,
+// a token can arrive in many pieces when it is split between two recv ()
+typedef enum HttpReceiveToken {
+
+	HTTP_RECEIVE_TOKEN_NONE			= 0,
+	HTTP_RECEIVE_TOKEN_URL			= 1,
+	HTTP_RECEIVE_TOKEN_FIELD		= 2,
+	HTTP_RECEIVE_TOKEN_VALUE		= 3,
+
+	HTTP_RECEIVE_TOKEN_MAX			= 4
+
+} HttpReceiveToken;
 
 struct _HttpReceive {
 
@@ -632,6 +726,22 @@ struct _HttpReceive {
 
 	bool is_multi_part;
 	struct _HttpRouteFileStats *file_stats;
+
+	// the pieces of the token that is being built
+	HttpReceiveToken token;
+	String *url_buffer;
+	String *field_buffer;
+	String *value_buffer;
+
+	// used to check the requests limits
+	size_t header_size;
+	unsigned int n_headers;
+	size_t body_size;
+	unsigned int n_parts;
+
+	// a response was already sent before the request was completed,
+	// the rest of the request is not handled
+	bool responded;
 
 };
 
