@@ -6,6 +6,7 @@
 #include "cerver/config.h"
 
 #include <pthread.h>
+#include <signal.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -347,6 +348,7 @@ Cerver *cerver_new (void) {
 		cerver->isRunning = false;
 		cerver->blocking = true;
 		cerver->reusable = CERVER_DEFAULT_REUSABLE_FLAGS;
+		cerver->ignore_sigpipe = CERVER_DEFAULT_IGNORE_SIGPIPE;
 
 		cerver->cerver_data = NULL;
 		cerver->delete_cerver_data = NULL;
@@ -557,6 +559,33 @@ void cerver_set_reusable_address_flags (
 ) {
 
 	if (cerver) cerver->reusable = value;
+
+}
+
+// sets whether cerver_start () ignores SIGPIPE when the process has not set a handler for it,
+// writing to a connection that the client reset raises SIGPIPE, that by default kills the process
+// the default value is CERVER_DEFAULT_IGNORE_SIGPIPE
+void cerver_set_ignore_sigpipe (
+	Cerver *cerver, bool value
+) {
+
+	if (cerver) cerver->ignore_sigpipe = value;
+
+}
+
+// a handler that the application installed is never replaced
+static void cerver_start_ignore_sigpipe (const Cerver *cerver) {
+
+	struct sigaction current;
+	(void) memset (&current, 0, sizeof (struct sigaction));
+
+	if (
+		cerver->ignore_sigpipe
+		&& !sigaction (SIGPIPE, NULL, &current)
+		&& (current.sa_handler == SIG_DFL)
+	) {
+		(void) signal (SIGPIPE, SIG_IGN);
+	}
 
 }
 
@@ -969,8 +998,16 @@ int cerver_sockets_pool_push (Cerver *cerver, Socket *socket) {
 	int retval = 1;
 
 	if (cerver && socket) {
+		#ifdef SOCKET_DEBUG
+		if (socket->sock_fd != -1) {
+			cerver_log_warning (
+				"cerver_sockets_pool_push () - socket still open - fd %d",
+				socket->sock_fd
+			);
+		}
+		#endif
+
 		retval = pool_push (cerver->sockets_pool, socket);
-		// printf ("push!\n");
 	}
 
 	return retval;
@@ -982,9 +1019,34 @@ Socket *cerver_sockets_pool_pop (Cerver *cerver) {
 	Socket *retval = NULL;
 
 	if (cerver) {
+		#ifdef SOCKET_DEBUG
+		if (cerver->sockets_pool && cerver->sockets_pool->dlist) {
+			DoubleList *sockets_list = cerver->sockets_pool->dlist;
+
+			(void) pthread_mutex_lock (sockets_list->mutex);
+			if (sockets_list->size && !sockets_list->start) {
+				cerver_log_warning (
+					"cerver_sockets_pool_pop () - pool corrupted - size %zu - start NULL",
+					sockets_list->size
+				);
+			}
+			(void) pthread_mutex_unlock (sockets_list->mutex);
+		}
+		#endif
+
 		void *value = pool_pop (cerver->sockets_pool);
-		if (value) retval = (Socket *) value;
-		// printf ("pop!\n");
+		if (value) {
+			retval = (Socket *) value;
+
+			#ifdef SOCKET_DEBUG
+			if (retval->sock_fd != -1) {
+				cerver_log_warning (
+					"cerver_sockets_pool_pop () - socket in use - fd %d",
+					retval->sock_fd
+				);
+			}
+			#endif
+		}
 	}
 
 	return retval;
@@ -2285,6 +2347,8 @@ u8 cerver_start (Cerver *cerver) {
 
 	if (!cerver->isRunning) {
 		cerver->isRunning = true;
+
+		cerver_start_ignore_sigpipe (cerver);
 
 		if (!cerver_one_time_init (cerver)) {
 			u8 errors = 0;
