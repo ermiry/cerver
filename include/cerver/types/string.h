@@ -89,8 +89,23 @@ CERVER_PUBLIC void str_append_c_string (
 	String *str, const char *c_str
 );
 
+// appends the first n chars of c_str at the end of the string
+// reallocates the same string
 CERVER_PUBLIC void str_append_n_from_c_string (
 	String *str, const char *c_str, const size_t n
+);
+
+// creates a new string with exactly n bytes copied from bytes,
+// bytes may contain '\0' and the result is always terminated with '\0'
+CERVER_PUBLIC String *str_create_from_bytes (
+	const char *bytes, const size_t n
+);
+
+// appends exactly n bytes at the end of the string,
+// bytes may contain '\0' and the result is always terminated with '\0'
+// returns 0 on success, 1 on error (the string is kept unchanged)
+CERVER_PUBLIC int str_append_bytes (
+	String *str, const char *bytes, const size_t n
 );
 
 CERVER_PUBLIC void str_to_upper (String *string);

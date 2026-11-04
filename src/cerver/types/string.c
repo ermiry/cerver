@@ -211,17 +211,7 @@ String *str_concat (const String *s1, const String *s2) {
 void str_append_char (String *str, const char c) {
 
 	if (str) {
-		const size_t new_len = str->len + 1;
-
-		str->str = (char *) realloc (str->str, new_len);
-		if (str->str) {
-			char *des = str->str + str->len;
-			*des = c;
-			des += 1;
-			*des = '\0';
-
-			str->len = new_len;
-		}
+		str_append_bytes (str, &c, 1);
 	}
 
 }
@@ -231,31 +221,62 @@ void str_append_char (String *str, const char c) {
 void str_append_c_string (String *str, const char *c_str) {
 
 	if (str && c_str) {
-		const size_t c_str_len = strlen (c_str);
-		const size_t new_len = str->len + c_str_len + 1;
-
-		str->str = (char *) realloc (str->str, new_len);
-		if (str->str) {
-			(void) strncpy (str->str + str->len, c_str, c_str_len);
-			str->len = new_len - 1;
-		}
+		str_append_bytes (str, c_str, strlen (c_str));
 	}
 
 }
 
+// appends the first n chars of c_str at the end of the string
+// reallocates the same string
 void str_append_n_from_c_string (
 	String *str, const char *c_str, const size_t n
 ) {
 
 	if (str && c_str) {
-		const size_t out_len = str->len + n + 1;
+		str_append_bytes (str, c_str, n);
+	}
 
-		str->str = (char *) realloc (str->str, out_len);
+}
+
+// creates a new string with exactly n bytes copied from bytes,
+// bytes may contain '\0' and the result is always terminated with '\0'
+String *str_create_from_bytes (const char *bytes, const size_t n) {
+
+	String *str = str_new (NULL);
+	if (str) {
+		str->str = (char *) malloc (n + 1);
 		if (str->str) {
-			(void) strncpy (str->str + str->len, c_str, n);
-			str->len = out_len - 1;
+			if (n) (void) memcpy (str->str, bytes, n);
+			str->str[n] = '\0';
+			str->len = n;
 		}
 	}
+
+	return str;
+
+}
+
+// appends exactly n bytes at the end of the string,
+// bytes may contain '\0' and the result is always terminated with '\0'
+// returns 0 on success, 1 on error (the string is kept unchanged)
+int str_append_bytes (String *str, const char *bytes, const size_t n) {
+
+	int retval = 1;
+
+	if (str && (bytes || !n)) {
+		char *new_str = (char *) realloc (str->str, str->len + n + 1);
+		if (new_str) {
+			if (n) (void) memcpy (new_str + str->len, bytes, n);
+			new_str[str->len + n] = '\0';
+
+			str->str = new_str;
+			str->len += n;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
 
 }
 
