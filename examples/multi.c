@@ -199,7 +199,7 @@ static void handler_cero (void *data) {
 			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
 
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
+				case GET_MSG: handle_msg_request (packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
 					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
@@ -221,7 +221,7 @@ static void handler_one (void *data) {
 			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
 
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
+				case GET_MSG: handle_msg_request (packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
 					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
@@ -243,7 +243,7 @@ static void handler_two (void *data) {
 			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
 
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
+				case GET_MSG: handle_msg_request (packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
 					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
@@ -265,7 +265,7 @@ static void handler_three (void *data) {
 			switch (packet->header.request_type) {
 				case TEST_MSG: handle_test_request (packet, handler_data->handler_id); break;
 
-				case GET_MSG: handle_msg_request(packet, handler_data->handler_id, app_data->message); break;
+				case GET_MSG: handle_msg_request (packet, handler_data->handler_id, app_data->message); break;
 
 				default: 
 					cerver_log (LOG_TYPE_WARNING, LOG_TYPE_PACKET, "Got an unknown app request.");
