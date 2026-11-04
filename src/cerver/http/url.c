@@ -3,6 +3,8 @@
 
 #include <ctype.h>
 
+#include "cerver/http/url.h"
+
 static const char hex[] = "0123456789abcdef";
 
 // converts a hex character to its integer value
