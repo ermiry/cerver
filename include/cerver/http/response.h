@@ -18,6 +18,12 @@
 
 #define HTTP_RESPONSE_MAIN_HEADER_SIZE			128
 
+// cerver always closes the connection after sending a response,
+// so every response must say so (RFC 9112 9.6),
+// otherwise a client (like nginx) may reuse the connection
+// and its next request gets reset when cerver closes the socket
+#define HTTP_RESPONSE_CONNECTION_CLOSE_HEADER	"Connection: close\r\n"
+
 #define HTTP_RESPONSE_CONTENT_LENGTH_SIZE		16
 
 #define HTTP_RESPONSE_SEND_FILE_HEADER_SIZE		256
@@ -26,6 +32,9 @@
 
 #define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
+
+// the times a send () to a full socket buffer (EAGAIN) is retried
+#define HTTP_RESPONSE_SEND_RETRIES				(1 << 4)
 
 #ifdef __cplusplus
 extern "C" {

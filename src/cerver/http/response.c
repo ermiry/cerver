@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <errno.h>
+
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 
@@ -10,6 +12,7 @@
 #include "cerver/collections/pool.h"
 
 #include "cerver/cerver.h"
+#include "cerver/errors.h"
 #include "cerver/files.h"
 #include "cerver/version.h"
 
@@ -553,7 +556,9 @@ static void http_response_compile_single_header (
 
 	response->header_len = (size_t) snprintf (
 		response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n\r\n",
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
+		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+		"\r\n",
 		response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
@@ -567,7 +572,8 @@ static void http_response_compile_multiple_headers (
 	char main_header[HTTP_RESPONSE_MAIN_HEADER_SIZE] = { 0 };
 	(void) snprintf (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
-		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n",
+		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
+		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER,
 		response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
@@ -588,7 +594,8 @@ static void http_response_compile_multiple_headers (
 
 	response->header_len += 2;	// \r\n
 
-	response->header = calloc (response->header_len, sizeof (char));
+	// one more byte to always terminate the header with '\0'
+	response->header = calloc (response->header_len + 1, sizeof (char));
 
 	char *end = (char *) response->header;
 	(void) memcpy (end, main_header, main_header_len);
@@ -687,6 +694,43 @@ void http_response_print (const HttpResponse *response) {
 
 #pragma region send
 
+// an interrupted send () is always retried,
+// a full socket buffer (EAGAIN) is retried up to HTTP_RESPONSE_SEND_RETRIES times
+static bool http_response_send_can_retry (
+	const int error, unsigned int *retries
+) {
+
+	bool retry = false;
+
+	if (error == EINTR) {
+		retry = true;
+	}
+
+	else if ((error == EAGAIN) || (error == EWOULDBLOCK)) {
+		*retries += 1;
+		retry = (*retries <= HTTP_RESPONSE_SEND_RETRIES);
+	}
+
+	return retry;
+
+}
+
+static void http_response_send_failed (
+	const Socket *socket, const char *operation,
+	const int error, const size_t pending
+) {
+
+	char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
+	cerver_log_with_date (
+		LOG_TYPE_WARNING, LOG_TYPE_HTTP,
+		"http_response_send () - %s () failed - fd %d - errno %d (%s) - pending %zu",
+		operation, socket->sock_fd, error,
+		strerror_r (error, error_description, sizeof (error_description)),
+		pending
+	);
+
+}
+
 static u8 http_response_send_actual (
 	Socket *socket,
 	const char *data, size_t data_size
@@ -694,17 +738,21 @@ static u8 http_response_send_actual (
 
 	u8 retval = 0;
 
-	ssize_t sent = 0;
-	char *p = (char *) data;
+	unsigned int retries = 0;
+	const char *p = data;
 	while (data_size > 0) {
-		sent = send (socket->sock_fd, p, data_size, 0);
+		// MSG_NOSIGNAL: a client that reset the connection returns EPIPE instead of raising SIGPIPE
+		const ssize_t sent = send (socket->sock_fd, p, data_size, MSG_NOSIGNAL);
 		if (sent < 0) {
+			if (http_response_send_can_retry (errno, &retries)) continue;
+
+			http_response_send_failed (socket, "send", errno, data_size);
+
 			retval = 1;
 			break;
 		}
 
 		p += sent;
-		// *actual_sent += (size_t) sent;
 		data_size -= (size_t) sent;
 	}
 
@@ -807,6 +855,35 @@ u8 http_response_create_and_send (
 
 }
 
+// copies the whole file to the socket and adds the bytes that were sent to total_sent
+// sendfile () does not accept MSG_NOSIGNAL, so SIGPIPE is ignored by cerver_start ()
+// returns 0 on success, 1 if the file was not sent completely
+static u8 http_response_send_file_pipe (
+	const Socket *socket, const int file_fd, size_t *total_sent
+) {
+
+	u8 retval = 0;
+
+	unsigned int retries = 0;
+	ssize_t copied = 0;
+	do {
+		copied = sendfile (socket->sock_fd, file_fd, NULL, HTTP_RESPONSE_FILE_CHUNK_SIZE);
+		if (copied > 0) {
+			*total_sent += (size_t) copied;
+		}
+
+		else if (copied < 0) {
+			if (http_response_send_can_retry (errno, &retries)) continue;
+
+			http_response_send_failed (socket, "sendfile", errno, 0);
+			retval = 1;
+		}
+	} while (copied != 0 && !retval);
+
+	return retval;
+
+}
+
 static u8 http_response_send_file_actual (
 	const HttpReceive *http_receive,
 	const HttpResponse *response,
@@ -819,35 +896,10 @@ static u8 http_response_send_file_actual (
 	if (file_fd > 0) {
 		size_t total_sent = response->header_len;
 
-		// pipe file
-		ssize_t copied = 0;
-
-		#ifdef HTTP_RESPONSE_DEBUG
-		unsigned int count = 0;
-		#endif
-
-		do {
-			copied = sendfile (
-				http_receive->cr->connection->socket->sock_fd,
-				file_fd,
-				NULL,
-				HTTP_RESPONSE_FILE_CHUNK_SIZE
-			);
-
-			if (copied > 0) {
-				total_sent += (size_t) copied;
-
-				#ifdef HTTP_RESPONSE_DEBUG
-				count += 1;
-				#endif
-			}
-		} while (copied > 0);
-
-		#ifdef HTTP_RESPONSE_DEBUG
-		cerver_log_debug (
-			"File took %u copies", count
+		retval = http_response_send_file_pipe (
+			http_receive->cr->connection->socket,
+			file_fd, &total_sent
 		);
-		#endif
 
 		// update stats
 		http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
@@ -857,8 +909,6 @@ static u8 http_response_send_file_actual (
 		((HttpReceive *) http_receive)->sent = total_sent;
 
 		(void) close (file_fd);
-
-		retval = 0;
 	}
 
 	else {
@@ -1027,7 +1077,9 @@ u8 http_response_render_text (
 		char header[HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
+			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -1065,7 +1117,9 @@ u8 http_response_render_json (
 		char header[HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE] = { 0 };
 		size_t header_len = (size_t) snprintf (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
-			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
+			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+			"Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
 			status,
 			http_status_string (status),
 			CERVER_VERSION,
@@ -1604,7 +1658,9 @@ static HttpResponse *http_response_json_internal (
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
@@ -1729,7 +1785,9 @@ static HttpResponse *http_response_json_custom_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
@@ -1799,7 +1857,9 @@ static HttpResponse *http_response_json_custom_reference_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
+			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
+			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
 			response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
