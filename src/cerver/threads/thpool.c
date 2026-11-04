@@ -8,7 +8,7 @@
 
 // #define _POSIX_C_SOURCE 200809L
 #include <pthread.h>
-#if defined(__linux__)
+#if defined (__linux__)
 #include <sys/prctl.h>
 #endif
 
