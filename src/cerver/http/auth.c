@@ -409,7 +409,7 @@ bool http_cerver_auth_validate_jwt (
 				else {
 					cerver_log_error (
 						"Failed to validate JWT: %08x",
-						jwt_valid_get_status(jwt_valid)
+						jwt_valid_get_status (jwt_valid)
 					);
 				}
 				#endif
