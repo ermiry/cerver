@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <errno.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -191,9 +192,10 @@ void connection_delete (void *connection_ptr) {
 	if (connection_ptr) {
 		Connection *connection = (Connection *) connection_ptr;
 
-		socket_delete (connection->socket);
-
+		// connection_end () closes the socket, so it must run before deleting it
 		if (connection->active) connection_end (connection);
+
+		socket_delete (connection->socket);
 
 		cerver_report_delete (connection->cerver_report);
 
@@ -554,7 +556,23 @@ void connection_end (Connection *connection) {
 
 	if (connection) {
 		if (connection->active) {
-			close (connection->socket->sock_fd);
+			#ifdef CONNECTION_DEBUG
+			cerver_log_with_date (
+				LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+				"connection_end () - close fd %d - %s:%u",
+				connection->socket->sock_fd,
+				connection->ip, (unsigned int) connection->port
+			);
+			#endif
+
+			if (close (connection->socket->sock_fd)) {
+				cerver_log_with_date (
+					LOG_TYPE_WARNING, LOG_TYPE_CONNECTION,
+					"connection_end () - close () failed - fd %d - errno %d",
+					connection->socket->sock_fd, errno
+				);
+			}
+
 			connection->socket->sock_fd = -1;
 			connection->active = false;
 		}
