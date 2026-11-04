@@ -6,6 +6,7 @@
 #include <stdarg.h>
 
 #include <ctype.h>
+#include <unistd.h>
 
 #include "cerver/files.h"
 
@@ -50,6 +51,8 @@ void *http_multi_part_new (void) {
 
 		multi_part->value_len = 0;
 		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
+
+		multi_part->error = 0;
 	}
 
 	return multi_part;
@@ -92,6 +95,9 @@ void http_multi_part_reset (MultiPart *multi_part) {
 		multi_part->generated_filename_len = 0;
 		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_SIZE);
 
+		// a request that was rejected while receiving a file leaves it open
+		if (multi_part->fd != -1) (void) close (multi_part->fd);
+
 		multi_part->fd = -1;
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
@@ -103,6 +109,8 @@ void http_multi_part_reset (MultiPart *multi_part) {
 
 		multi_part->value_len = 0;
 		(void) memset (multi_part->value, 0, HTTP_MULTI_PART_VALUE_SIZE);
+
+		multi_part->error = 0;
 	}
 
 }
@@ -245,6 +253,14 @@ const u32 http_multi_part_get_total_wrote (
 ) {
 
 	return multi_part->total_wrote;
+
+}
+
+const int http_multi_part_get_error (
+	const MultiPart *multi_part
+) {
+
+	return multi_part->error;
 
 }
 
@@ -407,7 +423,7 @@ void http_multi_part_print (const MultiPart *mpart) {
 #define NOTIFY_CB(FOR)                                     \
 do {                                                       \
 	if (p->settings->on_##FOR) {                           \
-		if (p->settings->on_##FOR(p) != 0) {               \
+		if (p->settings->on_##FOR (p) != 0) {               \
 			return i;                                      \
 		}                                                  \
 	}                                                      \
@@ -416,7 +432,7 @@ do {                                                       \
 #define EMIT_DATA_CB(FOR, ptr, len)                        \
 do {                                                       \
 	if (p->settings->on_##FOR) {                           \
-		if (p->settings->on_##FOR(p, ptr, len) != 0) {     \
+		if (p->settings->on_##FOR (p, ptr, len) != 0) {     \
 			return i;                                      \
 		}                                                  \
 	}                                                      \

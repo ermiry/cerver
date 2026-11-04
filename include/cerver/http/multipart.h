@@ -25,6 +25,9 @@
 
 #define HTTP_MULTI_PART_GENERATED_DESTINATION_SIZE		512
 
+// the numbers that are tried when a saved filename already exists ("name-1.png", ...)
+#define HTTP_MULTI_PART_FILENAME_NUMBERS				(1 << 6)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -85,6 +88,10 @@ struct _MultiPart {
 
 	int value_len;
 	char value[HTTP_MULTI_PART_VALUE_SIZE];
+
+	// the errno of the open () or write () that failed to save the file
+	// 0 if the file was saved completely
+	int error;
 
 };
 
@@ -157,6 +164,12 @@ CERVER_PUBLIC const u32 http_multi_part_get_n_reads (
 
 // returns the multi-part's total ammount of bytes written to the file
 CERVER_PUBLIC const u32 http_multi_part_get_total_wrote (
+	const MultiPart *multi_part
+);
+
+// returns the errno of the open () or write () that failed to save the file
+// returns 0 if the file was saved completely
+CERVER_PUBLIC const int http_multi_part_get_error (
 	const MultiPart *multi_part
 );
 
