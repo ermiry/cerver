@@ -6,6 +6,9 @@ COVERAGE	:= 0
 
 DEBUG		:= 0
 
+# address, thread or undefined
+SANITIZER	:=
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -34,7 +37,7 @@ DEFINES		:= -D _GNU_SOURCE
 BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D CLIENT_DEBUG -D CLIENT_STATS 			\
 				-D CONNECTION_DEBUG -D CONNECTION_STATS 	\
-				-D HANDLER_DEBUG 							\
+				-D HANDLER_DEBUG -D SOCKET_DEBUG			\
 				-D PACKETS_DEBUG 							\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
@@ -114,10 +117,15 @@ ifeq ($(NATIVE), 1)
 	CFLAGS += -march=native
 endif
 
-# common flags
-CFLAGS += -fPIC $(COMMON)
+# sanitizers are applied to the library, the examples and the tests
+ifneq ($(SANITIZER),)
+	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
+endif
 
-LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL)
+# common flags
+CFLAGS += -fPIC $(COMMON) $(SANITIZERFLAGS)
+
+LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL) $(SANITIZERFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -179,9 +187,9 @@ ifeq ($(NATIVE), 1)
 endif
 
 # common flags
-EXAFLAGS += -Wall -Wno-unknown-pragmas
+EXAFLAGS += -Wall -Wno-unknown-pragmas $(SANITIZERFLAGS)
 
-EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
@@ -245,7 +253,7 @@ TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
 TESTCOVDIR	:= $(COVDIR)/test
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format
+TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -257,7 +265,7 @@ ifeq ($(NATIVE), 1)
 	TESTFLAGS += -march=native
 endif
 
-TESTLIBS	:= -L /usr/local/lib $(PTHREAD)
+TESTLIBS	:= -L /usr/local/lib $(PTHREAD) $(SANITIZERFLAGS)
 
 TESTLIBS += -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
 
@@ -294,9 +302,9 @@ else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
 
-TESTAPPFGS += $(COMMON)
+TESTAPPFGS += $(COMMON) $(SANITIZERFLAGS)
 
-TESTAPPLIBS := -L /usr/local/lib -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver
+TESTAPPLIBS := -L /usr/local/lib -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 
 TESTAPPLIB	:= -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/app -l app
 
