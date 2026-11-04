@@ -1,4 +1,4 @@
-FROM gcc as builder
+FROM gcc:13.4 AS builder
 
 WORKDIR /opt/cerver
 
@@ -9,9 +9,9 @@ COPY . .
 RUN make TYPE=test -j4 && make TYPE=test -j4 test
 
 ############
-FROM ubuntu:bionic
+FROM debian:bookworm-slim
 
-ARG RUNTIME_DEPS='libssl-dev'
+ARG RUNTIME_DEPS='libssl3'
 
 RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
 
