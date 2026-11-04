@@ -3,7 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-int utf8_encode(
+#include "cerver/http/json/utf.h"
+
+int utf8_encode (
 	int32_t codepoint, char *buffer, size_t *size
 ) {
 
