@@ -17,10 +17,10 @@ CERVER_PUBLIC void json_delete (json_t *json);
 
 CERVER_PUBLIC void json_decref (json_t *json);
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined (__GNUC__) || defined (__clang__)
 CERVER_PUBLIC void json_decrefp (json_t **json);
 
-#define json_auto_t json_t __attribute__((cleanup(json_decrefp)))
+#define json_auto_t json_t __attribute__ ((cleanup (json_decrefp)))
 #endif
 
 #ifdef __cplusplus

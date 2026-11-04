@@ -12,11 +12,11 @@
 extern "C" {
 #endif
 
-#define json_to_object(json_)  container_of(json_, json_object_t, json)
-#define json_to_array(json_)   container_of(json_, json_array_t, json)
-#define json_to_string(json_)  container_of(json_, json_string_t, json)
-#define json_to_real(json_)    container_of(json_, json_real_t, json)
-#define json_to_integer(json_) container_of(json_, json_integer_t, json)
+#define json_to_object(json_)  container_of (json_, json_object_t, json)
+#define json_to_array(json_)   container_of (json_, json_array_t, json)
+#define json_to_string(json_)  container_of (json_, json_string_t, json)
+#define json_to_real(json_)    container_of (json_, json_real_t, json)
+#define json_to_integer(json_) container_of (json_, json_integer_t, json)
 
 CERVER_PUBLIC void json_object_seed (size_t seed);
 
@@ -24,7 +24,7 @@ CERVER_PUBLIC size_t json_object_size (const json_t *object);
 
 CERVER_PUBLIC json_t *json_object_get (
 	const json_t *object, const char *key
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC int json_object_set_new (
 	json_t *object, const char *key, json_t *value
@@ -87,21 +87,21 @@ CERVER_PUBLIC int json_object_iter_set_new (
 );
 
 #define json_object_foreach(object, key, value)                                          \
-	for (key = json_object_iter_key(json_object_iter(object));                           \
-		 key && (value = json_object_iter_value(json_object_key_to_iter(key)));          \
-		 key = json_object_iter_key(                                                     \
-			 json_object_iter_next(object, json_object_key_to_iter(key))))
+	for (key = json_object_iter_key (json_object_iter (object));                           \
+		 key && (value = json_object_iter_value (json_object_key_to_iter (key)));          \
+		 key = json_object_iter_key (                                                     \
+			 json_object_iter_next (object, json_object_key_to_iter (key))))
 
 #define json_object_foreach_safe(object, n, key, value)                                  \
-	for (key = json_object_iter_key(json_object_iter(object)),                           \
-		n = json_object_iter_next(object, json_object_key_to_iter(key));                 \
-		 key && (value = json_object_iter_value(json_object_key_to_iter(key)));          \
-		 key = json_object_iter_key(n),                                                  \
-		n = json_object_iter_next(object, json_object_key_to_iter(key)))
+	for (key = json_object_iter_key (json_object_iter (object)),                           \
+		n = json_object_iter_next (object, json_object_key_to_iter (key));                 \
+		 key && (value = json_object_iter_value (json_object_key_to_iter (key)));          \
+		 key = json_object_iter_key (n),                                                  \
+		n = json_object_iter_next (object, json_object_key_to_iter (key)))
 
 #define json_array_foreach(array, index, value)                                          \
 	for (index = 0;                                                                      \
-		 index < json_array_size(array) && (value = json_array_get(array, index));       \
+		 index < json_array_size (array) && (value = json_array_get (array, index));       \
 		 index++)
 
 CERVER_PUBLIC int json_object_set (
@@ -135,7 +135,7 @@ CERVER_PUBLIC size_t json_array_size (
 
 CERVER_PUBLIC json_t *json_array_get (
 	const json_t *array, size_t index
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC int json_array_set_new (
 	json_t *array, size_t index, json_t *value
@@ -235,7 +235,7 @@ CERVER_PUBLIC json_t *json_true (void);
 
 CERVER_PUBLIC json_t *json_false (void);
 
-#define json_boolean(val) ((val) ? json_true() : json_false())
+#define json_boolean(val) ((val) ? json_true () : json_false ())
 
 CERVER_PUBLIC json_t *json_null (void);
 

@@ -29,12 +29,12 @@ typedef long json_int_t;
 /* do not call JSON_INTERNAL_INCREF or JSON_INTERNAL_DECREF directly */
 #if JSON_HAVE_ATOMIC_BUILTINS
 #define JSON_INTERNAL_INCREF(json)                                                       \
-	__atomic_add_fetch(&json->refcount, 1, __ATOMIC_ACQUIRE)
+	__atomic_add_fetch (&json->refcount, 1, __ATOMIC_ACQUIRE)
 #define JSON_INTERNAL_DECREF(json)                                                       \
-	__atomic_sub_fetch(&json->refcount, 1, __ATOMIC_RELEASE)
+	__atomic_sub_fetch (&json->refcount, 1, __ATOMIC_RELEASE)
 #elif JSON_HAVE_SYNC_BUILTINS
-#define JSON_INTERNAL_INCREF(json) __sync_add_and_fetch(&json->refcount, 1)
-#define JSON_INTERNAL_DECREF(json) __sync_sub_and_fetch(&json->refcount, 1)
+#define JSON_INTERNAL_INCREF(json) __sync_add_and_fetch (&json->refcount, 1)
+#define JSON_INTERNAL_DECREF(json) __sync_sub_and_fetch (&json->refcount, 1)
 #else
 #define JSON_INTERNAL_INCREF(json) (++json->refcount)
 #define JSON_INTERNAL_DECREF(json) (--json->refcount)
@@ -47,7 +47,7 @@ typedef long json_int_t;
 #endif
 
 #define container_of(ptr_, type_, member_)                                               \
-	((type_ *)((char *)ptr_ - offsetof(type_, member_)))
+	((type_ *)((char *)ptr_ - offsetof (type_, member_)))
 
 struct json_t;
 
@@ -65,25 +65,25 @@ CERVER_PUBLIC int jsonp_dtostr (
 /* Wrappers for custom memory functions */
 CERVER_PUBLIC void *jsonp_malloc (
 	size_t size
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC void jsonp_free (void *ptr);
 
 CERVER_PUBLIC char *jsonp_strndup (
 	const char *str, size_t length
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC char *jsonp_strdup (
 	const char *str
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC char *jsonp_strndup (
 	const char *str, size_t len
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 /* Circular reference check*/
 /* Space for "0x", double the sizeof a pointer for the hex and a terminator. */
-#define LOOP_KEY_LEN (2 + (sizeof(struct json_t *) * 2) + 1)
+#define LOOP_KEY_LEN (2 + (sizeof (struct json_t *) * 2) + 1)
 
 CERVER_PUBLIC int jsonp_loop_check (
 	struct hashtable_t *parents,
@@ -92,11 +92,11 @@ CERVER_PUBLIC int jsonp_loop_check (
 
 CERVER_PUBLIC struct json_t *json_sprintf (
 	const char *fmt, ...
-) CERVER_ATTRS((warn_unused_result, format(printf, 1, 2)));
+) CERVER_ATTRS ((warn_unused_result, format (printf, 1, 2)));
 
 CERVER_PUBLIC struct json_t *json_vsprintf (
 	const char *fmt, va_list ap
-) CERVER_ATTRS((warn_unused_result, format(printf, 1, 0)));
+) CERVER_ATTRS ((warn_unused_result, format (printf, 1, 0)));
 
 CERVER_PUBLIC int json_equal (
 	const struct json_t *value1, const struct json_t *value2
@@ -104,11 +104,11 @@ CERVER_PUBLIC int json_equal (
 
 CERVER_PUBLIC struct json_t *json_copy (
 	struct json_t *value
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC struct json_t *json_deep_copy (
 	const struct json_t *value
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 #ifdef __cplusplus
 }
