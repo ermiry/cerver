@@ -43,7 +43,7 @@ uint64_t global_rdtsc_overhead = (uint64_t) UINT64_MAX;
 		uint64_t cycles_start, cycles_final, cycles_diff;								\
 		uint64_t min_diff = UINT64_MAX;													\
 		for (int i = 0; i < repeat; i++) {												\
-			__asm volatile("" ::: /* pretend to clobber */ "memory");					\
+			__asm volatile ("" ::: /* pretend to clobber */ "memory");					\
 			RDTSC_START (cycles_start);													\
 			test;																		\
 			RDTSC_STOP (cycles_final);													\
