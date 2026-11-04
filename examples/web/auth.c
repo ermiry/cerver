@@ -187,6 +187,10 @@ int main (int argc, char **argv) {
 		HttpRoute *auth_custom_route = http_route_create (REQUEST_METHOD_POST, "auth/custom", auth_custom_handler);
 		http_route_set_auth (auth_custom_route, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
 		http_route_set_authentication_handler (auth_custom_route, custom_authentication_handler);
+
+		// the handler authenticates with a value of the multi-part body
+		http_route_set_authentication_with_body (auth_custom_route, true);
+
 		http_cerver_route_register (http_cerver, auth_custom_route);
 
 		if (cerver_start (auth_cerver)) {
