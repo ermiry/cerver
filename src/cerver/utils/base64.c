@@ -3,8 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// the AVX implementation is only compiled when the target supports it
+#if defined (__AVX__) || defined (__AVX2__)
 #include <x86intrin.h>
+#endif
 
+#include "cerver/utils/base64.h"
 #include "cerver/utils/utils.h"
 
 #define CHAR62			'+'
@@ -424,7 +428,7 @@ static inline __m256i enc_reshuffle (const __m256i input) {
 	// https://github.com/WojciechMula/base64simd/blob/master/encode/unpack_bigendian.cpp
 	const __m256i in = _mm256_shuffle_epi8 (
 		input,
-		_mm256_set_epi8(
+		_mm256_set_epi8 (
 			10, 11, 9, 10,
 			7,  8,  6,  7,
 			4,  5,  3,  4,
@@ -443,22 +447,22 @@ static inline __m256i enc_reshuffle (const __m256i input) {
 	const __m256i t2 = _mm256_and_si256 (in, _mm256_set1_epi32 (0x003f03f0));
 	const __m256i t3 = _mm256_mullo_epi16 (t2, _mm256_set1_epi32 (0x01000010));
 
-	return _mm256_or_si256(t1, t3);
+	return _mm256_or_si256 (t1, t3);
 
 }
 
-static inline __m256i enc_translate(const __m256i in) {
-  const __m256i lut = _mm256_setr_epi8(
+static inline __m256i enc_translate (const __m256i in) {
+  const __m256i lut = _mm256_setr_epi8 (
 	  65, 71, -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -19, -16, 0, 0, 65, 71,
 	  -4, -4, -4, -4, -4, -4, -4, -4, -4, -4, -19, -16, 0, 0);
-  __m256i indices = _mm256_subs_epu8(in, _mm256_set1_epi8(51));
-  __m256i mask = _mm256_cmpgt_epi8((in), _mm256_set1_epi8(25));
-  indices = _mm256_sub_epi8(indices, mask);
-  __m256i out = _mm256_add_epi8(in, _mm256_shuffle_epi8(lut, indices));
+  __m256i indices = _mm256_subs_epu8 (in, _mm256_set1_epi8 (51));
+  __m256i mask = _mm256_cmpgt_epi8 ((in), _mm256_set1_epi8 (25));
+  indices = _mm256_sub_epi8 (indices, mask);
+  __m256i out = _mm256_add_epi8 (in, _mm256_shuffle_epi8 (lut, indices));
   return out;
 }
 
-static inline __m256i dec_reshuffle(__m256i in) {
+static inline __m256i dec_reshuffle (__m256i in) {
 
 	// inlined procedure pack_madd from https://github.com/WojciechMula/base64simd/blob/master/decode/pack.avx2.cpp
 	// The only difference is that elements are reversed,
@@ -508,8 +512,8 @@ size_t fast_avx2_base64_encode (char *dest, const char* str, size_t len) {
 		//that memory location is 0. For example, no faults will be detected if the mask bits are all zero.
 		////////////
 		while (true) {
-			inputvector = enc_reshuffle(inputvector);
-			inputvector = enc_translate(inputvector);
+			inputvector = enc_reshuffle (inputvector);
+			inputvector = enc_translate (inputvector);
 			_mm256_storeu_si256 ((__m256i *)dest, inputvector);
 			str += 24;
 			dest += 32;
@@ -547,7 +551,7 @@ size_t fast_avx2_base64_decode (char *out, const char *src, size_t srclen) {
 		//  5  [97..122]  [26..51]  -71  a..z
 		// (6) Everything else => invalid input
 
-		__m256i str = _mm256_loadu_si256((__m256i *)src);
+		__m256i str = _mm256_loadu_si256 ((__m256i *)src);
 
 		// code by @aqrit from
 		// https://github.com/WojciechMula/base64simd/issues/3#issuecomment-271137490
@@ -586,11 +590,11 @@ size_t fast_avx2_base64_decode (char *out, const char *src, size_t srclen) {
 		const __m256i hi    = _mm256_shuffle_epi8 (lut_hi, hi_nibbles);
 		const __m256i roll  = _mm256_shuffle_epi8 (lut_roll, _mm256_add_epi8 (eq_2F, hi_nibbles));
 
-		if (!_mm256_testz_si256(lo, hi)) {
+		if (!_mm256_testz_si256 (lo, hi)) {
 			break;
 		}
 
-		str = _mm256_add_epi8(str, roll);
+		str = _mm256_add_epi8 (str, roll);
 		// end of copied function
 
 		srclen -= 32;
@@ -599,12 +603,12 @@ size_t fast_avx2_base64_decode (char *out, const char *src, size_t srclen) {
 		// end of inlined function
 
 		// Reshuffle the input to packed 12-byte output format:
-		str = dec_reshuffle(str);
-		_mm256_storeu_si256((__m256i *)out, str);
+		str = dec_reshuffle (str);
+		_mm256_storeu_si256 ((__m256i *)out, str);
 		out += 24;
 	}
 
-	size_t scalarret = chromium_base64_decode(out, src, srclen);
+	size_t scalarret = chromium_base64_decode (out, src, srclen);
 	if (scalarret == MODP_B64_ERROR) return MODP_B64_ERROR;
 	return (out - out_orig) + scalarret;
 
