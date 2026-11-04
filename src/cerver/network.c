@@ -127,7 +127,7 @@ bool sock_ip_equal (
 					struct sockaddr_in6 *b_in6 = (struct sockaddr_in6 *) b;
 					retval = a_in6->sin6_port == b_in6->sin6_port
 						&& a_in6->sin6_flowinfo == b_in6->sin6_flowinfo
-						&& memcmp(a_in6->sin6_addr.s6_addr, b_in6->sin6_addr.s6_addr,
+						&& memcmp (a_in6->sin6_addr.s6_addr, b_in6->sin6_addr.s6_addr,
 								SOCK_SIZEOF_MEMBER (struct in6_addr, s6_addr)) == 0
 						&& a_in6->sin6_scope_id == b_in6->sin6_scope_id;
 				} break;
