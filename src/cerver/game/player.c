@@ -114,7 +114,7 @@ u8 player_register_to_lobby (Lobby *lobby, Player *player) {
 			// }
 
 			// if (!failed) {
-				dlist_insert_after (lobby->players, dlist_end (lobby->players), player);
+				(void) dlist_insert_at_end (lobby->players, player);
 
 				#ifdef CERVER_DEBUG
 				cerver_log (
