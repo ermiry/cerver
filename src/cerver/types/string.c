@@ -7,6 +7,8 @@
 
 #include "cerver/types/string.h"
 
+#include "cerver/collections/arena.h"
+
 static inline void char_copy (char *to, char *from) {
 
 	while (*from) *to++ = *from++;
@@ -250,6 +252,25 @@ String *str_create_from_bytes (const char *bytes, const size_t n) {
 			str->str[n] = '\0';
 			str->len = n;
 		}
+	}
+
+	return str;
+
+}
+
+// works as str_create_from_bytes () but everything is allocated in the arena
+String *str_create_from_bytes_arena (
+	struct Arena *arena, const char *bytes, const size_t n
+) {
+
+	String *str = (String *) arena_alloc (arena, sizeof (String) + n + 1);
+	if (str) {
+		str->max_len = 0;
+		str->len = n;
+		str->str = ((char *) str) + sizeof (String);
+
+		if (n) (void) memcpy (str->str, bytes, n);
+		str->str[n] = '\0';
 	}
 
 	return str;

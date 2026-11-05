@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+struct Arena;
+
 typedef struct String {
 
 	size_t max_len;
@@ -99,6 +101,14 @@ CERVER_PUBLIC void str_append_n_from_c_string (
 // bytes may contain '\0' and the result is always terminated with '\0'
 CERVER_PUBLIC String *str_create_from_bytes (
 	const char *bytes, const size_t n
+);
+
+// works as str_create_from_bytes () but the string and its bytes
+// are allocated in the arena (a single allocation)
+// the string is released with the arena, it must NOT be passed to str_delete ()
+// nor grown with any of the append methods
+CERVER_PUBLIC String *str_create_from_bytes_arena (
+	struct Arena *arena, const char *bytes, const size_t n
 );
 
 // appends exactly n bytes at the end of the string,
