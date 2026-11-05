@@ -1121,7 +1121,9 @@ static void *test_thread_add (void *args) {
 	Integer *integer = NULL;
 	for (unsigned int i = 0; i < 10; i++) {
 		integer = integer_new (i);
-		dlist_insert_after (dlist, dlist_end (dlist), integer);
+
+		// dlist_end () must be read under the list's lock when other threads insert
+		dlist_insert_at_end (dlist, integer);
 	}
 
 	return NULL;

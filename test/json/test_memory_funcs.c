@@ -23,7 +23,7 @@ static void create_and_free_object_with_oom (void) {
 
 	int i = 0;
 	char key[4] = { 0 };
-	json_t *obj = json_object();
+	json_t *obj = json_object ();
 
 	for (i = 0; i < 10; i++) {
 		(void) snprintf (key, sizeof key, "%d", i);
@@ -35,7 +35,7 @@ static void create_and_free_object_with_oom (void) {
 
 static void test_simple (void) {
 
-	create_and_free_complex_object();
+	create_and_free_complex_object ();
 
 }
 

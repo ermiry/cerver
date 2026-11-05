@@ -46,14 +46,14 @@ static uint32_t max_header_size = HTTP_MAX_HEADER_SIZE;
 do {                                                                 \
   parser->nread = nread;                                             \
   parser->http_errno = (e);                                          \
-} while(0)
+} while (0)
 
 #define CURRENT_STATE() p_state
 #define UPDATE_STATE(V) p_state = (enum state) (V);
 #define RETURN(V)                                                    \
 do {                                                                 \
   parser->nread = nread;                                             \
-  parser->state = CURRENT_STATE();                                   \
+  parser->state = CURRENT_STATE ();                                   \
   return (V);                                                        \
 } while (0);
 #define REEXECUTE()                                                  \
@@ -61,8 +61,8 @@ do {                                                                 \
 
 
 #ifdef __GNUC__
-# define LIKELY(X) __builtin_expect(!!(X), 1)
-# define UNLIKELY(X) __builtin_expect(!!(X), 0)
+# define LIKELY(X) __builtin_expect (!!(X), 1)
+# define UNLIKELY(X) __builtin_expect (!!(X), 0)
 #else
 # define LIKELY(X) (X)
 # define UNLIKELY(X) (X)
@@ -72,44 +72,44 @@ do {                                                                 \
 /* Run the notify callback FOR, returning ER if it fails */
 #define CALLBACK_NOTIFY_(FOR, ER)                                    \
 do {                                                                 \
-  assert(HTTP_PARSER_ERRNO(parser) == HPE_OK);                       \
+  assert (HTTP_PARSER_ERRNO (parser) == HPE_OK);                       \
                                                                      \
-  if (LIKELY(settings->on_##FOR)) {                                  \
-    parser->state = CURRENT_STATE();                                 \
-    if (UNLIKELY(0 != settings->on_##FOR(parser))) {                 \
-      SET_ERRNO(HPE_CB_##FOR);                                       \
+  if (LIKELY (settings->on_##FOR)) {                                  \
+    parser->state = CURRENT_STATE ();                                 \
+    if (UNLIKELY (0 != settings->on_##FOR (parser))) {                 \
+      SET_ERRNO (HPE_CB_##FOR);                                       \
     }                                                                \
-    UPDATE_STATE(parser->state);                                     \
+    UPDATE_STATE (parser->state);                                     \
                                                                      \
     /* We either errored above or got paused; get out */             \
-    if (UNLIKELY(HTTP_PARSER_ERRNO(parser) != HPE_OK)) {             \
+    if (UNLIKELY (HTTP_PARSER_ERRNO (parser) != HPE_OK)) {             \
       return (ER);                                                   \
     }                                                                \
   }                                                                  \
 } while (0)
 
 /* Run the notify callback FOR and consume the current byte */
-#define CALLBACK_NOTIFY(FOR)            CALLBACK_NOTIFY_(FOR, p - data + 1)
+#define CALLBACK_NOTIFY(FOR)            CALLBACK_NOTIFY_ (FOR, p - data + 1)
 
 /* Run the notify callback FOR and don't consume the current byte */
-#define CALLBACK_NOTIFY_NOADVANCE(FOR)  CALLBACK_NOTIFY_(FOR, p - data)
+#define CALLBACK_NOTIFY_NOADVANCE(FOR)  CALLBACK_NOTIFY_ (FOR, p - data)
 
 /* Run data callback FOR with LEN bytes, returning ER if it fails */
 #define CALLBACK_DATA_(FOR, LEN, ER)                                 \
 do {                                                                 \
-  assert(HTTP_PARSER_ERRNO(parser) == HPE_OK);                       \
+  assert (HTTP_PARSER_ERRNO (parser) == HPE_OK);                       \
                                                                      \
   if (FOR##_mark) {                                                  \
-    if (LIKELY(settings->on_##FOR)) {                                \
-      parser->state = CURRENT_STATE();                               \
-      if (UNLIKELY(0 !=                                              \
-                   settings->on_##FOR(parser, FOR##_mark, (LEN)))) { \
-        SET_ERRNO(HPE_CB_##FOR);                                     \
+    if (LIKELY (settings->on_##FOR)) {                                \
+      parser->state = CURRENT_STATE ();                               \
+      if (UNLIKELY (0 !=                                              \
+                   settings->on_##FOR (parser, FOR##_mark, (LEN)))) { \
+        SET_ERRNO (HPE_CB_##FOR);                                     \
       }                                                              \
-      UPDATE_STATE(parser->state);                                   \
+      UPDATE_STATE (parser->state);                                   \
                                                                      \
       /* We either errored above or got paused; get out */           \
-      if (UNLIKELY(HTTP_PARSER_ERRNO(parser) != HPE_OK)) {           \
+      if (UNLIKELY (HTTP_PARSER_ERRNO (parser) != HPE_OK)) {           \
         return (ER);                                                 \
       }                                                              \
     }                                                                \
@@ -119,11 +119,11 @@ do {                                                                 \
 
 /* Run the data callback FOR and consume the current byte */
 #define CALLBACK_DATA(FOR)                                           \
-    CALLBACK_DATA_(FOR, p - FOR##_mark, p - data + 1)
+    CALLBACK_DATA_ (FOR, p - FOR##_mark, p - data + 1)
 
 /* Run the data callback FOR and don't consume the current byte */
 #define CALLBACK_DATA_NOADVANCE(FOR)                                 \
-    CALLBACK_DATA_(FOR, p - FOR##_mark, p - data)
+    CALLBACK_DATA_ (FOR, p - FOR##_mark, p - data)
 
 /* Set the mark FOR; non-destructive if mark is already set */
 #define MARK(FOR)                                                    \
@@ -147,8 +147,8 @@ do {                                                                 \
 #define COUNT_HEADER_SIZE(V)                                         \
 do {                                                                 \
   nread += (uint32_t)(V);                                            \
-  if (UNLIKELY(nread > max_header_size)) {                           \
-    SET_ERRNO(HPE_HEADER_OVERFLOW);                                  \
+  if (UNLIKELY (nread > max_header_size)) {                           \
+    SET_ERRNO (HPE_HEADER_OVERFLOW);                                  \
     goto error;                                                      \
   }                                                                  \
 } while (0)
@@ -229,7 +229,7 @@ static const uint8_t normal_url_char[32] = {
 /*   0 nul    1 soh    2 stx    3 etx    4 eot    5 enq    6 ack    7 bel  */
         0    |   0    |   0    |   0    |   0    |   0    |   0    |   0,
 /*   8 bs     9 ht    10 nl    11 vt    12 np    13 cr    14 so    15 si   */
-        0    | T(2)   |   0    |   0    | T(16)  |   0    |   0    |   0,
+        0    | T (2)   |   0    |   0    | T (16)  |   0    |   0    |   0,
 /*  16 dle   17 dc1   18 dc2   19 dc3   20 dc4   21 nak   22 syn   23 etb */
         0    |   0    |   0    |   0    |   0    |   0    |   0    |   0,
 /*  24 can   25 em    26 sub   27 esc   28 fs    29 gs    30 rs    31 us  */
@@ -402,29 +402,29 @@ enum http_host_state
 #define CR                  '\r'
 #define LF                  '\n'
 #define LOWER(c)            (unsigned char)(c | 0x20)
-#define IS_ALPHA(c)         (LOWER(c) >= 'a' && LOWER(c) <= 'z')
+#define IS_ALPHA(c)         (LOWER (c) >= 'a' && LOWER (c) <= 'z')
 #define IS_NUM(c)           ((c) >= '0' && (c) <= '9')
-#define IS_ALPHANUM(c)      (IS_ALPHA(c) || IS_NUM(c))
-#define IS_HEX(c)           (IS_NUM(c) || (LOWER(c) >= 'a' && LOWER(c) <= 'f'))
+#define IS_ALPHANUM(c)      (IS_ALPHA (c) || IS_NUM (c))
+#define IS_HEX(c)           (IS_NUM (c) || (LOWER (c) >= 'a' && LOWER (c) <= 'f'))
 #define IS_MARK(c)          ((c) == '-' || (c) == '_' || (c) == '.' || \
   (c) == '!' || (c) == '~' || (c) == '*' || (c) == '\'' || (c) == '(' || \
   (c) == ')')
-#define IS_USERINFO_CHAR(c) (IS_ALPHANUM(c) || IS_MARK(c) || (c) == '%' || \
+#define IS_USERINFO_CHAR(c) (IS_ALPHANUM (c) || IS_MARK (c) || (c) == '%' || \
   (c) == ';' || (c) == ':' || (c) == '&' || (c) == '=' || (c) == '+' || \
   (c) == '$' || (c) == ',')
 
 #define STRICT_TOKEN(c)     ((c == ' ') ? 0 : tokens[(unsigned char)c])
 
 #if HTTP_PARSER_STRICT
-#define TOKEN(c)            STRICT_TOKEN(c)
-#define IS_URL_CHAR(c)      (BIT_AT(normal_url_char, (unsigned char)c))
-#define IS_HOST_CHAR(c)     (IS_ALPHANUM(c) || (c) == '.' || (c) == '-')
+#define TOKEN(c)            STRICT_TOKEN (c)
+#define IS_URL_CHAR(c)      (BIT_AT (normal_url_char, (unsigned char)c))
+#define IS_HOST_CHAR(c)     (IS_ALPHANUM (c) || (c) == '.' || (c) == '-')
 #else
 #define TOKEN(c)            tokens[(unsigned char)c]
 #define IS_URL_CHAR(c)                                                         \
-  (BIT_AT(normal_url_char, (unsigned char)c) || ((c) & 0x80))
+  (BIT_AT (normal_url_char, (unsigned char)c) || ((c) & 0x80))
 #define IS_HOST_CHAR(c)                                                        \
-  (IS_ALPHANUM(c) || (c) == '.' || (c) == '-' || (c) == '_')
+  (IS_ALPHANUM (c) || (c) == '.' || (c) == '-' || (c) == '_')
 #endif
 
 /**
@@ -441,11 +441,11 @@ enum http_host_state
 # define STRICT_CHECK(cond)                                          \
 do {                                                                 \
   if (cond) {                                                        \
-    SET_ERRNO(HPE_STRICT);                                           \
+    SET_ERRNO (HPE_STRICT);                                           \
     goto error;                                                      \
   }                                                                  \
 } while (0)
-# define NEW_MESSAGE() (http_should_keep_alive(parser) ? start_state : s_dead)
+# define NEW_MESSAGE() (http_should_keep_alive (parser) ? start_state : s_dead)
 #else
 # define STRICT_CHECK(cond)
 # define NEW_MESSAGE() start_state
@@ -462,7 +462,7 @@ static struct {
 };
 #undef HTTP_STRERROR_GEN
 
-int http_message_needs_eof(const http_parser *parser);
+int http_message_needs_eof (const http_parser *parser);
 
 /* Our URL parser.
  *
@@ -476,7 +476,7 @@ int http_message_needs_eof(const http_parser *parser);
  * URL and non-URL states by looking for these.
  */
 static enum state
-parse_url_char(enum state s, const char ch)
+parse_url_char (enum state s, const char ch)
 {
   if (ch == ' ' || ch == '\r' || ch == '\n') {
     return s_dead;
@@ -498,14 +498,14 @@ parse_url_char(enum state s, const char ch)
         return s_req_path;
       }
 
-      if (IS_ALPHA(ch)) {
+      if (IS_ALPHA (ch)) {
         return s_req_schema;
       }
 
       break;
 
     case s_req_schema:
-      if (IS_ALPHA(ch)) {
+      if (IS_ALPHA (ch)) {
         return s;
       }
 
@@ -549,14 +549,14 @@ parse_url_char(enum state s, const char ch)
         return s_req_server_with_at;
       }
 
-      if (IS_USERINFO_CHAR(ch) || ch == '[' || ch == ']') {
+      if (IS_USERINFO_CHAR (ch) || ch == '[' || ch == ']') {
         return s_req_server;
       }
 
       break;
 
     case s_req_path:
-      if (IS_URL_CHAR(ch)) {
+      if (IS_URL_CHAR (ch)) {
         return s;
       }
 
@@ -572,7 +572,7 @@ parse_url_char(enum state s, const char ch)
 
     case s_req_query_string_start:
     case s_req_query_string:
-      if (IS_URL_CHAR(ch)) {
+      if (IS_URL_CHAR (ch)) {
         return s_req_query_string;
       }
 
@@ -588,7 +588,7 @@ parse_url_char(enum state s, const char ch)
       break;
 
     case s_req_fragment_start:
-      if (IS_URL_CHAR(ch)) {
+      if (IS_URL_CHAR (ch)) {
         return s_req_fragment;
       }
 
@@ -603,7 +603,7 @@ parse_url_char(enum state s, const char ch)
       break;
 
     case s_req_fragment:
-      if (IS_URL_CHAR(ch)) {
+      if (IS_URL_CHAR (ch)) {
         return s;
       }
 
@@ -643,17 +643,17 @@ size_t http_parser_execute (http_parser *parser,
   uint32_t nread = parser->nread;
 
   /* We're in an error state. Don't bother doing anything. */
-  if (HTTP_PARSER_ERRNO(parser) != HPE_OK) {
+  if (HTTP_PARSER_ERRNO (parser) != HPE_OK) {
     return 0;
   }
 
   if (len == 0) {
-    switch (CURRENT_STATE()) {
+    switch (CURRENT_STATE ()) {
       case s_body_identity_eof:
         /* Use of CALLBACK_NOTIFY() here would erroneously return 1 byte read if
          * we got paused.
          */
-        CALLBACK_NOTIFY_NOADVANCE(message_complete);
+        CALLBACK_NOTIFY_NOADVANCE (message_complete);
         return 0;
 
       case s_dead:
@@ -663,17 +663,17 @@ size_t http_parser_execute (http_parser *parser,
         return 0;
 
       default:
-        SET_ERRNO(HPE_INVALID_EOF_STATE);
+        SET_ERRNO (HPE_INVALID_EOF_STATE);
         return 1;
     }
   }
 
 
-  if (CURRENT_STATE() == s_header_field)
+  if (CURRENT_STATE () == s_header_field)
     header_field_mark = data;
-  if (CURRENT_STATE() == s_header_value)
+  if (CURRENT_STATE () == s_header_value)
     header_value_mark = data;
-  switch (CURRENT_STATE()) {
+  switch (CURRENT_STATE ()) {
   case s_req_path:
   case s_req_schema:
   case s_req_schema_slash:
@@ -697,20 +697,20 @@ size_t http_parser_execute (http_parser *parser,
   for (p=data; p != data + len; p++) {
     ch = *p;
 
-    if (PARSING_HEADER(CURRENT_STATE()))
-      COUNT_HEADER_SIZE(1);
+    if (PARSING_HEADER (CURRENT_STATE ()))
+      COUNT_HEADER_SIZE (1);
 
 reexecute:
-    switch (CURRENT_STATE()) {
+    switch (CURRENT_STATE ()) {
 
       case s_dead:
         /* this state is used after a 'Connection: close' message
          * the parser will error out if it reads another message
          */
-        if (LIKELY(ch == CR || ch == LF))
+        if (LIKELY (ch == CR || ch == LF))
           break;
 
-        SET_ERRNO(HPE_CLOSED_CONNECTION);
+        SET_ERRNO (HPE_CLOSED_CONNECTION);
         goto error;
 
       case s_start_req_or_res:
@@ -722,13 +722,13 @@ reexecute:
         parser->content_length = ULLONG_MAX;
 
         if (ch == 'H') {
-          UPDATE_STATE(s_res_or_resp_H);
+          UPDATE_STATE (s_res_or_resp_H);
 
-          CALLBACK_NOTIFY(message_begin);
+          CALLBACK_NOTIFY (message_begin);
         } else {
           parser->type = HTTP_REQUEST;
-          UPDATE_STATE(s_start_req);
-          REEXECUTE();
+          UPDATE_STATE (s_start_req);
+          REEXECUTE ();
         }
 
         break;
@@ -737,17 +737,17 @@ reexecute:
       case s_res_or_resp_H:
         if (ch == 'T') {
           parser->type = HTTP_RESPONSE;
-          UPDATE_STATE(s_res_HT);
+          UPDATE_STATE (s_res_HT);
         } else {
-          if (UNLIKELY(ch != 'E')) {
-            SET_ERRNO(HPE_INVALID_CONSTANT);
+          if (UNLIKELY (ch != 'E')) {
+            SET_ERRNO (HPE_INVALID_CONSTANT);
             goto error;
           }
 
           parser->type = HTTP_REQUEST;
           parser->method = HTTP_METHOD_HEAD;
           parser->index = 2;
-          UPDATE_STATE(s_req_method);
+          UPDATE_STATE (s_req_method);
         }
         break;
 
@@ -760,107 +760,107 @@ reexecute:
         parser->content_length = ULLONG_MAX;
 
         if (ch == 'H') {
-          UPDATE_STATE(s_res_H);
+          UPDATE_STATE (s_res_H);
         } else {
-          SET_ERRNO(HPE_INVALID_CONSTANT);
+          SET_ERRNO (HPE_INVALID_CONSTANT);
           goto error;
         }
 
-        CALLBACK_NOTIFY(message_begin);
+        CALLBACK_NOTIFY (message_begin);
         break;
       }
 
       case s_res_H:
-        STRICT_CHECK(ch != 'T');
-        UPDATE_STATE(s_res_HT);
+        STRICT_CHECK (ch != 'T');
+        UPDATE_STATE (s_res_HT);
         break;
 
       case s_res_HT:
-        STRICT_CHECK(ch != 'T');
-        UPDATE_STATE(s_res_HTT);
+        STRICT_CHECK (ch != 'T');
+        UPDATE_STATE (s_res_HTT);
         break;
 
       case s_res_HTT:
-        STRICT_CHECK(ch != 'P');
-        UPDATE_STATE(s_res_HTTP);
+        STRICT_CHECK (ch != 'P');
+        UPDATE_STATE (s_res_HTTP);
         break;
 
       case s_res_HTTP:
-        STRICT_CHECK(ch != '/');
-        UPDATE_STATE(s_res_http_major);
+        STRICT_CHECK (ch != '/');
+        UPDATE_STATE (s_res_http_major);
         break;
 
       case s_res_http_major:
-        if (UNLIKELY(!IS_NUM(ch))) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (!IS_NUM (ch))) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
         parser->http_major = ch - '0';
-        UPDATE_STATE(s_res_http_dot);
+        UPDATE_STATE (s_res_http_dot);
         break;
 
       case s_res_http_dot:
       {
-        if (UNLIKELY(ch != '.')) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (ch != '.')) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
-        UPDATE_STATE(s_res_http_minor);
+        UPDATE_STATE (s_res_http_minor);
         break;
       }
 
       case s_res_http_minor:
-        if (UNLIKELY(!IS_NUM(ch))) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (!IS_NUM (ch))) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
         parser->http_minor = ch - '0';
-        UPDATE_STATE(s_res_http_end);
+        UPDATE_STATE (s_res_http_end);
         break;
 
       case s_res_http_end:
       {
-        if (UNLIKELY(ch != ' ')) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (ch != ' ')) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
-        UPDATE_STATE(s_res_first_status_code);
+        UPDATE_STATE (s_res_first_status_code);
         break;
       }
 
       case s_res_first_status_code:
       {
-        if (!IS_NUM(ch)) {
+        if (!IS_NUM (ch)) {
           if (ch == ' ') {
             break;
           }
 
-          SET_ERRNO(HPE_INVALID_STATUS);
+          SET_ERRNO (HPE_INVALID_STATUS);
           goto error;
         }
         parser->status_code = ch - '0';
-        UPDATE_STATE(s_res_status_code);
+        UPDATE_STATE (s_res_status_code);
         break;
       }
 
       case s_res_status_code:
       {
-        if (!IS_NUM(ch)) {
+        if (!IS_NUM (ch)) {
           switch (ch) {
             case ' ':
-              UPDATE_STATE(s_res_status_start);
+              UPDATE_STATE (s_res_status_start);
               break;
             case CR:
             case LF:
-              UPDATE_STATE(s_res_status_start);
-              REEXECUTE();
+              UPDATE_STATE (s_res_status_start);
+              REEXECUTE ();
               break;
             default:
-              SET_ERRNO(HPE_INVALID_STATUS);
+              SET_ERRNO (HPE_INVALID_STATUS);
               goto error;
           }
           break;
@@ -869,8 +869,8 @@ reexecute:
         parser->status_code *= 10;
         parser->status_code += ch - '0';
 
-        if (UNLIKELY(parser->status_code > 999)) {
-          SET_ERRNO(HPE_INVALID_STATUS);
+        if (UNLIKELY (parser->status_code > 999)) {
+          SET_ERRNO (HPE_INVALID_STATUS);
           goto error;
         }
 
@@ -879,34 +879,34 @@ reexecute:
 
       case s_res_status_start:
       {
-        MARK(status);
-        UPDATE_STATE(s_res_status);
+        MARK (status);
+        UPDATE_STATE (s_res_status);
         parser->index = 0;
 
         if (ch == CR || ch == LF)
-          REEXECUTE();
+          REEXECUTE ();
 
         break;
       }
 
       case s_res_status:
         if (ch == CR) {
-          UPDATE_STATE(s_res_line_almost_done);
-          CALLBACK_DATA(status);
+          UPDATE_STATE (s_res_line_almost_done);
+          CALLBACK_DATA (status);
           break;
         }
 
         if (ch == LF) {
-          UPDATE_STATE(s_header_field_start);
-          CALLBACK_DATA(status);
+          UPDATE_STATE (s_header_field_start);
+          CALLBACK_DATA (status);
           break;
         }
 
         break;
 
       case s_res_line_almost_done:
-        STRICT_CHECK(ch != LF);
-        UPDATE_STATE(s_header_field_start);
+        STRICT_CHECK (ch != LF);
+        UPDATE_STATE (s_header_field_start);
         break;
 
       case s_start_req:
@@ -917,8 +917,8 @@ reexecute:
         parser->uses_transfer_encoding = 0;
         parser->content_length = ULLONG_MAX;
 
-        if (UNLIKELY(!IS_ALPHA(ch))) {
-          SET_ERRNO(HPE_INVALID_METHOD);
+        if (UNLIKELY (!IS_ALPHA (ch))) {
+          SET_ERRNO (HPE_INVALID_METHOD);
           goto error;
         }
 
@@ -943,12 +943,12 @@ reexecute:
           case 'T': parser->method = HTTP_METHOD_TRACE; break;
           case 'U': parser->method = HTTP_METHOD_UNLOCK; /* or UNSUBSCRIBE, UNBIND, UNLINK */ break;
           default:
-            SET_ERRNO(HPE_INVALID_METHOD);
+            SET_ERRNO (HPE_INVALID_METHOD);
             goto error;
         }
-        UPDATE_STATE(s_req_method);
+        UPDATE_STATE (s_req_method);
 
-        CALLBACK_NOTIFY(message_begin);
+        CALLBACK_NOTIFY (message_begin);
 
         break;
       }
@@ -956,14 +956,14 @@ reexecute:
       case s_req_method:
       {
         const char *matcher;
-        if (UNLIKELY(ch == '\0')) {
-          SET_ERRNO(HPE_INVALID_METHOD);
+        if (UNLIKELY (ch == '\0')) {
+          SET_ERRNO (HPE_INVALID_METHOD);
           goto error;
         }
 
         matcher = method_strings[parser->method];
         if (ch == ' ' && matcher[parser->index] == '\0') {
-          UPDATE_STATE(s_req_spaces_before_url);
+          UPDATE_STATE (s_req_spaces_before_url);
         } else if (ch == matcher[parser->index]) {
           ; /* nada */
         } else if ((ch >= 'A' && ch <= 'Z') || ch == '-') {
@@ -994,11 +994,11 @@ reexecute:
             XX(UNLOCK,    3, 'I', UNLINK)
             #undef XX
             default:
-              SET_ERRNO(HPE_INVALID_METHOD);
+              SET_ERRNO (HPE_INVALID_METHOD);
               goto error;
           }
         } else {
-          SET_ERRNO(HPE_INVALID_METHOD);
+          SET_ERRNO (HPE_INVALID_METHOD);
           goto error;
         }
 
@@ -1010,14 +1010,14 @@ reexecute:
       {
         if (ch == ' ') break;
 
-        MARK(url);
+        MARK (url);
         if (parser->method == HTTP_METHOD_CONNECT) {
-          UPDATE_STATE(s_req_server_start);
+          UPDATE_STATE (s_req_server_start);
         }
 
-        UPDATE_STATE(parse_url_char(CURRENT_STATE(), ch));
-        if (UNLIKELY(CURRENT_STATE() == s_dead)) {
-          SET_ERRNO(HPE_INVALID_URL);
+        UPDATE_STATE (parse_url_char (CURRENT_STATE (), ch));
+        if (UNLIKELY (CURRENT_STATE () == s_dead)) {
+          SET_ERRNO (HPE_INVALID_URL);
           goto error;
         }
 
@@ -1034,12 +1034,12 @@ reexecute:
           case ' ':
           case CR:
           case LF:
-            SET_ERRNO(HPE_INVALID_URL);
+            SET_ERRNO (HPE_INVALID_URL);
             goto error;
           default:
-            UPDATE_STATE(parse_url_char(CURRENT_STATE(), ch));
-            if (UNLIKELY(CURRENT_STATE() == s_dead)) {
-              SET_ERRNO(HPE_INVALID_URL);
+            UPDATE_STATE (parse_url_char (CURRENT_STATE (), ch));
+            if (UNLIKELY (CURRENT_STATE () == s_dead)) {
+              SET_ERRNO (HPE_INVALID_URL);
               goto error;
             }
         }
@@ -1057,22 +1057,22 @@ reexecute:
       {
         switch (ch) {
           case ' ':
-            UPDATE_STATE(s_req_http_start);
-            CALLBACK_DATA(url);
+            UPDATE_STATE (s_req_http_start);
+            CALLBACK_DATA (url);
             break;
           case CR:
           case LF:
             parser->http_major = 0;
             parser->http_minor = 9;
-            UPDATE_STATE((ch == CR) ?
+            UPDATE_STATE ((ch == CR) ?
               s_req_line_almost_done :
               s_header_field_start);
-            CALLBACK_DATA(url);
+            CALLBACK_DATA (url);
             break;
           default:
-            UPDATE_STATE(parse_url_char(CURRENT_STATE(), ch));
-            if (UNLIKELY(CURRENT_STATE() == s_dead)) {
-              SET_ERRNO(HPE_INVALID_URL);
+            UPDATE_STATE (parse_url_char (CURRENT_STATE (), ch));
+            if (UNLIKELY (CURRENT_STATE () == s_dead)) {
+              SET_ERRNO (HPE_INVALID_URL);
               goto error;
             }
         }
@@ -1084,94 +1084,94 @@ reexecute:
           case ' ':
             break;
           case 'H':
-            UPDATE_STATE(s_req_http_H);
+            UPDATE_STATE (s_req_http_H);
             break;
           case 'I':
             if (parser->method == HTTP_METHOD_SOURCE) {
-              UPDATE_STATE(s_req_http_I);
+              UPDATE_STATE (s_req_http_I);
               break;
             }
             /* fall through */
           default:
-            SET_ERRNO(HPE_INVALID_CONSTANT);
+            SET_ERRNO (HPE_INVALID_CONSTANT);
             goto error;
         }
         break;
 
       case s_req_http_H:
-        STRICT_CHECK(ch != 'T');
-        UPDATE_STATE(s_req_http_HT);
+        STRICT_CHECK (ch != 'T');
+        UPDATE_STATE (s_req_http_HT);
         break;
 
       case s_req_http_HT:
-        STRICT_CHECK(ch != 'T');
-        UPDATE_STATE(s_req_http_HTT);
+        STRICT_CHECK (ch != 'T');
+        UPDATE_STATE (s_req_http_HTT);
         break;
 
       case s_req_http_HTT:
-        STRICT_CHECK(ch != 'P');
-        UPDATE_STATE(s_req_http_HTTP);
+        STRICT_CHECK (ch != 'P');
+        UPDATE_STATE (s_req_http_HTTP);
         break;
 
       case s_req_http_I:
-        STRICT_CHECK(ch != 'C');
-        UPDATE_STATE(s_req_http_IC);
+        STRICT_CHECK (ch != 'C');
+        UPDATE_STATE (s_req_http_IC);
         break;
 
       case s_req_http_IC:
-        STRICT_CHECK(ch != 'E');
-        UPDATE_STATE(s_req_http_HTTP);  /* Treat "ICE" as "HTTP". */
+        STRICT_CHECK (ch != 'E');
+        UPDATE_STATE (s_req_http_HTTP);  /* Treat "ICE" as "HTTP". */
         break;
 
       case s_req_http_HTTP:
-        STRICT_CHECK(ch != '/');
-        UPDATE_STATE(s_req_http_major);
+        STRICT_CHECK (ch != '/');
+        UPDATE_STATE (s_req_http_major);
         break;
 
       case s_req_http_major:
-        if (UNLIKELY(!IS_NUM(ch))) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (!IS_NUM (ch))) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
         parser->http_major = ch - '0';
-        UPDATE_STATE(s_req_http_dot);
+        UPDATE_STATE (s_req_http_dot);
         break;
 
       case s_req_http_dot:
       {
-        if (UNLIKELY(ch != '.')) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (ch != '.')) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
-        UPDATE_STATE(s_req_http_minor);
+        UPDATE_STATE (s_req_http_minor);
         break;
       }
 
       case s_req_http_minor:
-        if (UNLIKELY(!IS_NUM(ch))) {
-          SET_ERRNO(HPE_INVALID_VERSION);
+        if (UNLIKELY (!IS_NUM (ch))) {
+          SET_ERRNO (HPE_INVALID_VERSION);
           goto error;
         }
 
         parser->http_minor = ch - '0';
-        UPDATE_STATE(s_req_http_end);
+        UPDATE_STATE (s_req_http_end);
         break;
 
       case s_req_http_end:
       {
         if (ch == CR) {
-          UPDATE_STATE(s_req_line_almost_done);
+          UPDATE_STATE (s_req_line_almost_done);
           break;
         }
 
         if (ch == LF) {
-          UPDATE_STATE(s_header_field_start);
+          UPDATE_STATE (s_header_field_start);
           break;
         }
 
-        SET_ERRNO(HPE_INVALID_VERSION);
+        SET_ERRNO (HPE_INVALID_VERSION);
         goto error;
         break;
       }
@@ -1179,40 +1179,40 @@ reexecute:
       /* end of request line */
       case s_req_line_almost_done:
       {
-        if (UNLIKELY(ch != LF)) {
-          SET_ERRNO(HPE_LF_EXPECTED);
+        if (UNLIKELY (ch != LF)) {
+          SET_ERRNO (HPE_LF_EXPECTED);
           goto error;
         }
 
-        UPDATE_STATE(s_header_field_start);
+        UPDATE_STATE (s_header_field_start);
         break;
       }
 
       case s_header_field_start:
       {
         if (ch == CR) {
-          UPDATE_STATE(s_headers_almost_done);
+          UPDATE_STATE (s_headers_almost_done);
           break;
         }
 
         if (ch == LF) {
           /* they might be just sending \n instead of \r\n so this would be
            * the second \n to denote the end of headers*/
-          UPDATE_STATE(s_headers_almost_done);
-          REEXECUTE();
+          UPDATE_STATE (s_headers_almost_done);
+          REEXECUTE ();
         }
 
-        c = TOKEN(ch);
+        c = TOKEN (ch);
 
-        if (UNLIKELY(!c)) {
-          SET_ERRNO(HPE_INVALID_HEADER_TOKEN);
+        if (UNLIKELY (!c)) {
+          SET_ERRNO (HPE_INVALID_HEADER_TOKEN);
           goto error;
         }
 
-        MARK(header_field);
+        MARK (header_field);
 
         parser->index = 0;
-        UPDATE_STATE(s_header_field);
+        UPDATE_STATE (s_header_field);
 
         switch (c) {
           case 'c':
@@ -1243,7 +1243,7 @@ reexecute:
         const char* start = p;
         for (; p != data + len; p++) {
           ch = *p;
-          c = TOKEN(ch);
+          c = TOKEN (ch);
 
           if (!c)
             break;
@@ -1251,8 +1251,8 @@ reexecute:
           switch (parser->header_state) {
             case h_general: {
               size_t left = data + len - p;
-              const char* pe = p + MIN(left, max_header_size);
-              while (p+1 < pe && TOKEN(p[1])) {
+              const char* pe = p + MIN (left, max_header_size);
+              while (p+1 < pe && TOKEN (p[1])) {
                 p++;
               }
               break;
@@ -1287,10 +1287,10 @@ reexecute:
 
             case h_matching_connection:
               parser->index++;
-              if (parser->index > sizeof(CONNECTION)-1
+              if (parser->index > sizeof (CONNECTION)-1
                   || c != CONNECTION[parser->index]) {
                 parser->header_state = h_general;
-              } else if (parser->index == sizeof(CONNECTION)-2) {
+              } else if (parser->index == sizeof (CONNECTION)-2) {
                 parser->header_state = h_connection;
               }
               break;
@@ -1299,10 +1299,10 @@ reexecute:
 
             case h_matching_proxy_connection:
               parser->index++;
-              if (parser->index > sizeof(PROXY_CONNECTION)-1
+              if (parser->index > sizeof (PROXY_CONNECTION)-1
                   || c != PROXY_CONNECTION[parser->index]) {
                 parser->header_state = h_general;
-              } else if (parser->index == sizeof(PROXY_CONNECTION)-2) {
+              } else if (parser->index == sizeof (PROXY_CONNECTION)-2) {
                 parser->header_state = h_connection;
               }
               break;
@@ -1311,10 +1311,10 @@ reexecute:
 
             case h_matching_content_length:
               parser->index++;
-              if (parser->index > sizeof(CONTENT_LENGTH)-1
+              if (parser->index > sizeof (CONTENT_LENGTH)-1
                   || c != CONTENT_LENGTH[parser->index]) {
                 parser->header_state = h_general;
-              } else if (parser->index == sizeof(CONTENT_LENGTH)-2) {
+              } else if (parser->index == sizeof (CONTENT_LENGTH)-2) {
                 parser->header_state = h_content_length;
               }
               break;
@@ -1323,10 +1323,10 @@ reexecute:
 
             case h_matching_transfer_encoding:
               parser->index++;
-              if (parser->index > sizeof(TRANSFER_ENCODING)-1
+              if (parser->index > sizeof (TRANSFER_ENCODING)-1
                   || c != TRANSFER_ENCODING[parser->index]) {
                 parser->header_state = h_general;
-              } else if (parser->index == sizeof(TRANSFER_ENCODING)-2) {
+              } else if (parser->index == sizeof (TRANSFER_ENCODING)-2) {
                 parser->header_state = h_transfer_encoding;
                 parser->uses_transfer_encoding = 1;
               }
@@ -1336,10 +1336,10 @@ reexecute:
 
             case h_matching_upgrade:
               parser->index++;
-              if (parser->index > sizeof(UPGRADE)-1
+              if (parser->index > sizeof (UPGRADE)-1
                   || c != UPGRADE[parser->index]) {
                 parser->header_state = h_general;
-              } else if (parser->index == sizeof(UPGRADE)-2) {
+              } else if (parser->index == sizeof (UPGRADE)-2) {
                 parser->header_state = h_upgrade;
               }
               break;
@@ -1352,26 +1352,26 @@ reexecute:
               break;
 
             default:
-              assert(0 && "Unknown header_state");
+              assert (0 && "Unknown header_state");
               break;
           }
         }
 
         if (p == data + len) {
           --p;
-          COUNT_HEADER_SIZE(p - start);
+          COUNT_HEADER_SIZE (p - start);
           break;
         }
 
-        COUNT_HEADER_SIZE(p - start);
+        COUNT_HEADER_SIZE (p - start);
 
         if (ch == ':') {
-          UPDATE_STATE(s_header_value_discard_ws);
-          CALLBACK_DATA(header_field);
+          UPDATE_STATE (s_header_value_discard_ws);
+          CALLBACK_DATA (header_field);
           break;
         }
 
-        SET_ERRNO(HPE_INVALID_HEADER_TOKEN);
+        SET_ERRNO (HPE_INVALID_HEADER_TOKEN);
         goto error;
       }
 
@@ -1379,12 +1379,12 @@ reexecute:
         if (ch == ' ' || ch == '\t') break;
 
         if (ch == CR) {
-          UPDATE_STATE(s_header_value_discard_ws_almost_done);
+          UPDATE_STATE (s_header_value_discard_ws_almost_done);
           break;
         }
 
         if (ch == LF) {
-          UPDATE_STATE(s_header_value_discard_lws);
+          UPDATE_STATE (s_header_value_discard_lws);
           break;
         }
 
@@ -1392,12 +1392,12 @@ reexecute:
 
       case s_header_value_start:
       {
-        MARK(header_value);
+        MARK (header_value);
 
-        UPDATE_STATE(s_header_value);
+        UPDATE_STATE (s_header_value);
         parser->index = 0;
 
-        c = LOWER(ch);
+        c = LOWER (ch);
 
         switch (parser->header_state) {
           case h_upgrade:
@@ -1419,13 +1419,13 @@ reexecute:
             break;
 
           case h_content_length:
-            if (UNLIKELY(!IS_NUM(ch))) {
-              SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+            if (UNLIKELY (!IS_NUM (ch))) {
+              SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
               goto error;
             }
 
             if (parser->flags & F_CONTENTLENGTH) {
-              SET_ERRNO(HPE_UNEXPECTED_CONTENT_LENGTH);
+              SET_ERRNO (HPE_UNEXPECTED_CONTENT_LENGTH);
               goto error;
             }
 
@@ -1471,32 +1471,32 @@ reexecute:
         for (; p != data + len; p++) {
           ch = *p;
           if (ch == CR) {
-            UPDATE_STATE(s_header_almost_done);
+            UPDATE_STATE (s_header_almost_done);
             parser->header_state = h_state;
-            CALLBACK_DATA(header_value);
+            CALLBACK_DATA (header_value);
             break;
           }
 
           if (ch == LF) {
-            UPDATE_STATE(s_header_almost_done);
-            COUNT_HEADER_SIZE(p - start);
+            UPDATE_STATE (s_header_almost_done);
+            COUNT_HEADER_SIZE (p - start);
             parser->header_state = h_state;
-            CALLBACK_DATA_NOADVANCE(header_value);
-            REEXECUTE();
+            CALLBACK_DATA_NOADVANCE (header_value);
+            REEXECUTE ();
           }
 
-          if (!lenient && !IS_HEADER_CHAR(ch)) {
-            SET_ERRNO(HPE_INVALID_HEADER_TOKEN);
+          if (!lenient && !IS_HEADER_CHAR (ch)) {
+            SET_ERRNO (HPE_INVALID_HEADER_TOKEN);
             goto error;
           }
 
-          c = LOWER(ch);
+          c = LOWER (ch);
 
           switch (h_state) {
             case h_general:
               {
                 size_t left = data + len - p;
-                const char* pe = p + MIN(left, max_header_size);
+                const char* pe = p + MIN (left, max_header_size);
 
                 for (; p != pe; p++) {
                   ch = *p;
@@ -1504,8 +1504,8 @@ reexecute:
                     --p;
                     break;
                   }
-                  if (!lenient && !IS_HEADER_CHAR(ch)) {
-                    SET_ERRNO(HPE_INVALID_HEADER_TOKEN);
+                  if (!lenient && !IS_HEADER_CHAR (ch)) {
+                    SET_ERRNO (HPE_INVALID_HEADER_TOKEN);
                     goto error;
                   }
                 }
@@ -1516,7 +1516,7 @@ reexecute:
 
             case h_connection:
             case h_transfer_encoding:
-              assert(0 && "Shouldn't get here.");
+              assert (0 && "Shouldn't get here.");
               break;
 
             case h_content_length:
@@ -1533,8 +1533,8 @@ reexecute:
                 break;
               }
 
-              if (UNLIKELY(!IS_NUM(ch))) {
-                SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+              if (UNLIKELY (!IS_NUM (ch))) {
+                SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
                 parser->header_state = h_state;
                 goto error;
               }
@@ -1544,8 +1544,8 @@ reexecute:
               t += ch - '0';
 
               /* Overflow? Test against a conservative limit for simplicity. */
-              if (UNLIKELY((ULLONG_MAX - 10) / 10 < parser->content_length)) {
-                SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+              if (UNLIKELY ((ULLONG_MAX - 10) / 10 < parser->content_length)) {
+                SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
                 parser->header_state = h_state;
                 goto error;
               }
@@ -1556,7 +1556,7 @@ reexecute:
 
             case h_content_length_ws:
               if (ch == ' ') break;
-              SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+              SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
               parser->header_state = h_state;
               goto error;
 
@@ -1565,7 +1565,7 @@ reexecute:
               /* looking for 'Transfer-Encoding: chunked' */
               if ('c' == c) {
                 h_state = h_matching_transfer_encoding_chunked;
-              } else if (STRICT_TOKEN(c)) {
+              } else if (STRICT_TOKEN (c)) {
                 /* TODO(indutny): similar code below does this, but why?
                  * At the very least it seems to be inconsistent given that
                  * h_matching_transfer_encoding_token does not check for
@@ -1581,10 +1581,10 @@ reexecute:
 
             case h_matching_transfer_encoding_chunked:
               parser->index++;
-              if (parser->index > sizeof(CHUNKED)-1
+              if (parser->index > sizeof (CHUNKED)-1
                   || c != CHUNKED[parser->index]) {
                 h_state = h_matching_transfer_encoding_token;
-              } else if (parser->index == sizeof(CHUNKED)-2) {
+              } else if (parser->index == sizeof (CHUNKED)-2) {
                 h_state = h_transfer_encoding_chunked;
               }
               break;
@@ -1605,7 +1605,7 @@ reexecute:
                 h_state = h_matching_connection_close;
               } else if (c == 'u') {
                 h_state = h_matching_connection_upgrade;
-              } else if (STRICT_TOKEN(c)) {
+              } else if (STRICT_TOKEN (c)) {
                 h_state = h_matching_connection_token;
               } else if (c == ' ' || c == '\t') {
                 /* Skip lws */
@@ -1617,10 +1617,10 @@ reexecute:
             /* looking for 'Connection: keep-alive' */
             case h_matching_connection_keep_alive:
               parser->index++;
-              if (parser->index > sizeof(KEEP_ALIVE)-1
+              if (parser->index > sizeof (KEEP_ALIVE)-1
                   || c != KEEP_ALIVE[parser->index]) {
                 h_state = h_matching_connection_token;
-              } else if (parser->index == sizeof(KEEP_ALIVE)-2) {
+              } else if (parser->index == sizeof (KEEP_ALIVE)-2) {
                 h_state = h_connection_keep_alive;
               }
               break;
@@ -1628,9 +1628,9 @@ reexecute:
             /* looking for 'Connection: close' */
             case h_matching_connection_close:
               parser->index++;
-              if (parser->index > sizeof(CLOSE)-1 || c != CLOSE[parser->index]) {
+              if (parser->index > sizeof (CLOSE)-1 || c != CLOSE[parser->index]) {
                 h_state = h_matching_connection_token;
-              } else if (parser->index == sizeof(CLOSE)-2) {
+              } else if (parser->index == sizeof (CLOSE)-2) {
                 h_state = h_connection_close;
               }
               break;
@@ -1638,10 +1638,10 @@ reexecute:
             /* looking for 'Connection: upgrade' */
             case h_matching_connection_upgrade:
               parser->index++;
-              if (parser->index > sizeof(UPGRADE) - 1 ||
+              if (parser->index > sizeof (UPGRADE) - 1 ||
                   c != UPGRADE[parser->index]) {
                 h_state = h_matching_connection_token;
-              } else if (parser->index == sizeof(UPGRADE)-2) {
+              } else if (parser->index == sizeof (UPGRADE)-2) {
                 h_state = h_connection_upgrade;
               }
               break;
@@ -1676,7 +1676,7 @@ reexecute:
               break;
 
             default:
-              UPDATE_STATE(s_header_value);
+              UPDATE_STATE (s_header_value);
               h_state = h_general;
               break;
           }
@@ -1686,18 +1686,18 @@ reexecute:
         if (p == data + len)
           --p;
 
-        COUNT_HEADER_SIZE(p - start);
+        COUNT_HEADER_SIZE (p - start);
         break;
       }
 
       case s_header_almost_done:
       {
-        if (UNLIKELY(ch != LF)) {
-          SET_ERRNO(HPE_LF_EXPECTED);
+        if (UNLIKELY (ch != LF)) {
+          SET_ERRNO (HPE_LF_EXPECTED);
           goto error;
         }
 
-        UPDATE_STATE(s_header_value_lws);
+        UPDATE_STATE (s_header_value_lws);
         break;
       }
 
@@ -1708,8 +1708,8 @@ reexecute:
               /* treat obsolete line folding as space */
               parser->header_state = h_content_length_ws;
           }
-          UPDATE_STATE(s_header_value_start);
-          REEXECUTE();
+          UPDATE_STATE (s_header_value_start);
+          REEXECUTE ();
         }
 
         /* finished the header */
@@ -1730,21 +1730,21 @@ reexecute:
             break;
         }
 
-        UPDATE_STATE(s_header_field_start);
-        REEXECUTE();
+        UPDATE_STATE (s_header_field_start);
+        REEXECUTE ();
       }
 
       case s_header_value_discard_ws_almost_done:
       {
-        STRICT_CHECK(ch != LF);
-        UPDATE_STATE(s_header_value_discard_lws);
+        STRICT_CHECK (ch != LF);
+        UPDATE_STATE (s_header_value_discard_lws);
         break;
       }
 
       case s_header_value_discard_lws:
       {
         if (ch == ' ' || ch == '\t') {
-          UPDATE_STATE(s_header_value_discard_ws);
+          UPDATE_STATE (s_header_value_discard_ws);
           break;
         } else {
           switch (parser->header_state) {
@@ -1762,7 +1762,7 @@ reexecute:
               break;
             case h_content_length:
               /* do not allow empty content length */
-              SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+              SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
               goto error;
               break;
             default:
@@ -1770,22 +1770,22 @@ reexecute:
           }
 
           /* header value was empty */
-          MARK(header_value);
-          UPDATE_STATE(s_header_field_start);
-          CALLBACK_DATA_NOADVANCE(header_value);
-          REEXECUTE();
+          MARK (header_value);
+          UPDATE_STATE (s_header_field_start);
+          CALLBACK_DATA_NOADVANCE (header_value);
+          REEXECUTE ();
         }
       }
 
       case s_headers_almost_done:
       {
-        STRICT_CHECK(ch != LF);
+        STRICT_CHECK (ch != LF);
 
         if (parser->flags & F_TRAILING) {
           /* End of a chunked request */
-          UPDATE_STATE(s_message_done);
-          CALLBACK_NOTIFY_NOADVANCE(chunk_complete);
-          REEXECUTE();
+          UPDATE_STATE (s_message_done);
+          CALLBACK_NOTIFY_NOADVANCE (chunk_complete);
+          REEXECUTE ();
         }
 
         /* Cannot use transfer-encoding and a content-length header together
@@ -1797,16 +1797,16 @@ reexecute:
            */
           if (parser->flags & F_CHUNKED) {
             if (!allow_chunked_length) {
-              SET_ERRNO(HPE_UNEXPECTED_CONTENT_LENGTH);
+              SET_ERRNO (HPE_UNEXPECTED_CONTENT_LENGTH);
               goto error;
             }
           } else if (!lenient) {
-            SET_ERRNO(HPE_UNEXPECTED_CONTENT_LENGTH);
+            SET_ERRNO (HPE_UNEXPECTED_CONTENT_LENGTH);
             goto error;
           }
         }
 
-        UPDATE_STATE(s_headers_done);
+        UPDATE_STATE (s_headers_done);
 
         /* Set this here so that on_headers_complete() callbacks can see it */
         if ((parser->flags & F_UPGRADE) &&
@@ -1831,7 +1831,7 @@ reexecute:
          * we have to simulate it by handling a change in errno below.
          */
         if (settings->on_headers_complete) {
-          switch (settings->on_headers_complete(parser)) {
+          switch (settings->on_headers_complete (parser)) {
             case 0:
               break;
 
@@ -1844,22 +1844,22 @@ reexecute:
               break;
 
             default:
-              SET_ERRNO(HPE_CB_headers_complete);
-              RETURN(p - data); /* Error */
+              SET_ERRNO (HPE_CB_headers_complete);
+              RETURN (p - data); /* Error */
           }
         }
 
-        if (HTTP_PARSER_ERRNO(parser) != HPE_OK) {
-          RETURN(p - data);
+        if (HTTP_PARSER_ERRNO (parser) != HPE_OK) {
+          RETURN (p - data);
         }
 
-        REEXECUTE();
+        REEXECUTE ();
       }
 
       case s_headers_done:
       {
         int hasBody;
-        STRICT_CHECK(ch != LF);
+        STRICT_CHECK (ch != LF);
 
         parser->nread = 0;
         nread = 0;
@@ -1869,18 +1869,18 @@ reexecute:
         if (parser->upgrade && (parser->method == HTTP_METHOD_CONNECT ||
                                 (parser->flags & F_SKIPBODY) || !hasBody)) {
           /* Exit, the rest of the message is in a different protocol. */
-          UPDATE_STATE(NEW_MESSAGE());
-          CALLBACK_NOTIFY(message_complete);
-          RETURN((p - data) + 1);
+          UPDATE_STATE (NEW_MESSAGE ());
+          CALLBACK_NOTIFY (message_complete);
+          RETURN ((p - data) + 1);
         }
 
         if (parser->flags & F_SKIPBODY) {
-          UPDATE_STATE(NEW_MESSAGE());
-          CALLBACK_NOTIFY(message_complete);
+          UPDATE_STATE (NEW_MESSAGE ());
+          CALLBACK_NOTIFY (message_complete);
         } else if (parser->flags & F_CHUNKED) {
           /* chunked encoding - ignore Content-Length header,
            * prepare for a chunk */
-          UPDATE_STATE(s_chunk_size_start);
+          UPDATE_STATE (s_chunk_size_start);
         } else if (parser->uses_transfer_encoding == 1) {
           if (parser->type == HTTP_REQUEST && !lenient) {
             /* RFC 7230 3.3.3 */
@@ -1891,8 +1891,8 @@ reexecute:
              * reliably; the server MUST respond with the 400 (Bad Request)
              * status code and then close the connection.
              */
-            SET_ERRNO(HPE_INVALID_TRANSFER_ENCODING);
-            RETURN(p - data); /* Error */
+            SET_ERRNO (HPE_INVALID_TRANSFER_ENCODING);
+            RETURN (p - data); /* Error */
           } else {
             /* RFC 7230 3.3.3 */
 
@@ -1901,24 +1901,24 @@ reexecute:
              * message body length is determined by reading the connection until
              * it is closed by the server.
              */
-            UPDATE_STATE(s_body_identity_eof);
+            UPDATE_STATE (s_body_identity_eof);
           }
         } else {
           if (parser->content_length == 0) {
             /* Content-Length header given but zero: Content-Length: 0\r\n */
-            UPDATE_STATE(NEW_MESSAGE());
-            CALLBACK_NOTIFY(message_complete);
+            UPDATE_STATE (NEW_MESSAGE ());
+            CALLBACK_NOTIFY (message_complete);
           } else if (parser->content_length != ULLONG_MAX) {
             /* Content-Length header given and non-zero */
-            UPDATE_STATE(s_body_identity);
+            UPDATE_STATE (s_body_identity);
           } else {
-            if (!http_message_needs_eof(parser)) {
+            if (!http_message_needs_eof (parser)) {
               /* Assume content-length 0 - read the next */
-              UPDATE_STATE(NEW_MESSAGE());
-              CALLBACK_NOTIFY(message_complete);
+              UPDATE_STATE (NEW_MESSAGE ());
+              CALLBACK_NOTIFY (message_complete);
             } else {
               /* Read body until EOF */
-              UPDATE_STATE(s_body_identity_eof);
+              UPDATE_STATE (s_body_identity_eof);
             }
           }
         }
@@ -1928,10 +1928,10 @@ reexecute:
 
       case s_body_identity:
       {
-        uint64_t to_read = MIN(parser->content_length,
+        uint64_t to_read = MIN (parser->content_length,
                                (uint64_t) ((data + len) - p));
 
-        assert(parser->content_length != 0
+        assert (parser->content_length != 0
             && parser->content_length != ULLONG_MAX);
 
         /* The difference between advancing content_length and p is because
@@ -1939,12 +1939,12 @@ reexecute:
          * Further, if content_length ends up at 0, we want to see the last
          * byte again for our message complete callback.
          */
-        MARK(body);
+        MARK (body);
         parser->content_length -= to_read;
         p += to_read - 1;
 
         if (parser->content_length == 0) {
-          UPDATE_STATE(s_message_done);
+          UPDATE_STATE (s_message_done);
 
           /* Mimic CALLBACK_DATA_NOADVANCE() but with one extra byte.
            *
@@ -1955,8 +1955,8 @@ reexecute:
            * complete-on-length. It's not clear that this distinction is
            * important for applications, but let's keep it for now.
            */
-          CALLBACK_DATA_(body, p - body_mark + 1, p - data);
-          REEXECUTE();
+          CALLBACK_DATA_ (body, p - body_mark + 1, p - data);
+          REEXECUTE ();
         }
 
         break;
@@ -1964,33 +1964,33 @@ reexecute:
 
       /* read until EOF */
       case s_body_identity_eof:
-        MARK(body);
+        MARK (body);
         p = data + len - 1;
 
         break;
 
       case s_message_done:
-        UPDATE_STATE(NEW_MESSAGE());
-        CALLBACK_NOTIFY(message_complete);
+        UPDATE_STATE (NEW_MESSAGE ());
+        CALLBACK_NOTIFY (message_complete);
         if (parser->upgrade) {
           /* Exit, the rest of the message is in a different protocol. */
-          RETURN((p - data) + 1);
+          RETURN ((p - data) + 1);
         }
         break;
 
       case s_chunk_size_start:
       {
-        assert(nread == 1);
-        assert(parser->flags & F_CHUNKED);
+        assert (nread == 1);
+        assert (parser->flags & F_CHUNKED);
 
         unhex_val = unhex[(unsigned char)ch];
-        if (UNLIKELY(unhex_val == -1)) {
-          SET_ERRNO(HPE_INVALID_CHUNK_SIZE);
+        if (UNLIKELY (unhex_val == -1)) {
+          SET_ERRNO (HPE_INVALID_CHUNK_SIZE);
           goto error;
         }
 
         parser->content_length = unhex_val;
-        UPDATE_STATE(s_chunk_size);
+        UPDATE_STATE (s_chunk_size);
         break;
       }
 
@@ -1998,10 +1998,10 @@ reexecute:
       {
         uint64_t t;
 
-        assert(parser->flags & F_CHUNKED);
+        assert (parser->flags & F_CHUNKED);
 
         if (ch == CR) {
-          UPDATE_STATE(s_chunk_size_almost_done);
+          UPDATE_STATE (s_chunk_size_almost_done);
           break;
         }
 
@@ -2009,11 +2009,11 @@ reexecute:
 
         if (unhex_val == -1) {
           if (ch == ';' || ch == ' ') {
-            UPDATE_STATE(s_chunk_parameters);
+            UPDATE_STATE (s_chunk_parameters);
             break;
           }
 
-          SET_ERRNO(HPE_INVALID_CHUNK_SIZE);
+          SET_ERRNO (HPE_INVALID_CHUNK_SIZE);
           goto error;
         }
 
@@ -2022,8 +2022,8 @@ reexecute:
         t += unhex_val;
 
         /* Overflow? Test against a conservative limit for simplicity. */
-        if (UNLIKELY((ULLONG_MAX - 16) / 16 < parser->content_length)) {
-          SET_ERRNO(HPE_INVALID_CONTENT_LENGTH);
+        if (UNLIKELY ((ULLONG_MAX - 16) / 16 < parser->content_length)) {
+          SET_ERRNO (HPE_INVALID_CONTENT_LENGTH);
           goto error;
         }
 
@@ -2033,10 +2033,10 @@ reexecute:
 
       case s_chunk_parameters:
       {
-        assert(parser->flags & F_CHUNKED);
+        assert (parser->flags & F_CHUNKED);
         /* just ignore this shit. TODO check for overflow */
         if (ch == CR) {
-          UPDATE_STATE(s_chunk_size_almost_done);
+          UPDATE_STATE (s_chunk_size_almost_done);
           break;
         }
         break;
@@ -2044,65 +2044,65 @@ reexecute:
 
       case s_chunk_size_almost_done:
       {
-        assert(parser->flags & F_CHUNKED);
-        STRICT_CHECK(ch != LF);
+        assert (parser->flags & F_CHUNKED);
+        STRICT_CHECK (ch != LF);
 
         parser->nread = 0;
         nread = 0;
 
         if (parser->content_length == 0) {
           parser->flags |= F_TRAILING;
-          UPDATE_STATE(s_header_field_start);
+          UPDATE_STATE (s_header_field_start);
         } else {
-          UPDATE_STATE(s_chunk_data);
+          UPDATE_STATE (s_chunk_data);
         }
-        CALLBACK_NOTIFY(chunk_header);
+        CALLBACK_NOTIFY (chunk_header);
         break;
       }
 
       case s_chunk_data:
       {
-        uint64_t to_read = MIN(parser->content_length,
+        uint64_t to_read = MIN (parser->content_length,
                                (uint64_t) ((data + len) - p));
 
-        assert(parser->flags & F_CHUNKED);
-        assert(parser->content_length != 0
+        assert (parser->flags & F_CHUNKED);
+        assert (parser->content_length != 0
             && parser->content_length != ULLONG_MAX);
 
         /* See the explanation in s_body_identity for why the content
          * length and data pointers are managed this way.
          */
-        MARK(body);
+        MARK (body);
         parser->content_length -= to_read;
         p += to_read - 1;
 
         if (parser->content_length == 0) {
-          UPDATE_STATE(s_chunk_data_almost_done);
+          UPDATE_STATE (s_chunk_data_almost_done);
         }
 
         break;
       }
 
       case s_chunk_data_almost_done:
-        assert(parser->flags & F_CHUNKED);
-        assert(parser->content_length == 0);
-        STRICT_CHECK(ch != CR);
-        UPDATE_STATE(s_chunk_data_done);
-        CALLBACK_DATA(body);
+        assert (parser->flags & F_CHUNKED);
+        assert (parser->content_length == 0);
+        STRICT_CHECK (ch != CR);
+        UPDATE_STATE (s_chunk_data_done);
+        CALLBACK_DATA (body);
         break;
 
       case s_chunk_data_done:
-        assert(parser->flags & F_CHUNKED);
-        STRICT_CHECK(ch != LF);
+        assert (parser->flags & F_CHUNKED);
+        STRICT_CHECK (ch != LF);
         parser->nread = 0;
         nread = 0;
-        UPDATE_STATE(s_chunk_size_start);
-        CALLBACK_NOTIFY(chunk_complete);
+        UPDATE_STATE (s_chunk_size_start);
+        CALLBACK_NOTIFY (chunk_complete);
         break;
 
       default:
-        assert(0 && "unhandled state");
-        SET_ERRNO(HPE_INVALID_INTERNAL_STATE);
+        assert (0 && "unhandled state");
+        SET_ERRNO (HPE_INVALID_INTERNAL_STATE);
         goto error;
     }
   }
@@ -2117,26 +2117,26 @@ reexecute:
    * value that's in-bounds).
    */
 
-  assert(((header_field_mark ? 1 : 0) +
+  assert (((header_field_mark ? 1 : 0) +
           (header_value_mark ? 1 : 0) +
           (url_mark ? 1 : 0)  +
           (body_mark ? 1 : 0) +
           (status_mark ? 1 : 0)) <= 1);
 
-  CALLBACK_DATA_NOADVANCE(header_field);
-  CALLBACK_DATA_NOADVANCE(header_value);
-  CALLBACK_DATA_NOADVANCE(url);
-  CALLBACK_DATA_NOADVANCE(body);
-  CALLBACK_DATA_NOADVANCE(status);
+  CALLBACK_DATA_NOADVANCE (header_field);
+  CALLBACK_DATA_NOADVANCE (header_value);
+  CALLBACK_DATA_NOADVANCE (url);
+  CALLBACK_DATA_NOADVANCE (body);
+  CALLBACK_DATA_NOADVANCE (status);
 
-  RETURN(len);
+  RETURN (len);
 
 error:
-  if (HTTP_PARSER_ERRNO(parser) == HPE_OK) {
-    SET_ERRNO(HPE_UNKNOWN);
+  if (HTTP_PARSER_ERRNO (parser) == HPE_OK) {
+    SET_ERRNO (HPE_UNKNOWN);
   }
 
-  RETURN(p - data);
+  RETURN (p - data);
 }
 
 
@@ -2185,14 +2185,14 @@ http_should_keep_alive (const http_parser *parser)
     }
   }
 
-  return !http_message_needs_eof(parser);
+  return !http_message_needs_eof (parser);
 }
 
 void
 http_parser_init (http_parser *parser, enum http_parser_type t)
 {
   void *data = parser->data; /* preserve application data */
-  memset(parser, 0, sizeof(*parser));
+  memset (parser, 0, sizeof (*parser));
   parser->data = data;
   parser->type = t;
   parser->state = (t == HTTP_REQUEST ? s_start_req : (t == HTTP_RESPONSE ? s_start_res : s_start_req_or_res));
@@ -2200,33 +2200,33 @@ http_parser_init (http_parser *parser, enum http_parser_type t)
 }
 
 void
-http_parser_settings_init(http_parser_settings *settings)
+http_parser_settings_init (http_parser_settings *settings)
 {
-  memset(settings, 0, sizeof(*settings));
+  memset (settings, 0, sizeof (*settings));
 }
 
 const char *
-http_errno_name(enum http_errno err) {
-  assert(((size_t) err) < ARRAY_SIZE(http_strerror_tab));
+http_errno_name (enum http_errno err) {
+  assert (((size_t) err) < ARRAY_SIZE (http_strerror_tab));
   return http_strerror_tab[err].name;
 }
 
 const char *
-http_errno_description(enum http_errno err) {
-  assert(((size_t) err) < ARRAY_SIZE(http_strerror_tab));
+http_errno_description (enum http_errno err) {
+  assert (((size_t) err) < ARRAY_SIZE (http_strerror_tab));
   return http_strerror_tab[err].description;
 }
 
 static enum http_host_state
-http_parse_host_char(enum http_host_state s, const char ch) {
-  switch(s) {
+http_parse_host_char (enum http_host_state s, const char ch) {
+  switch (s) {
     case s_http_userinfo:
     case s_http_userinfo_start:
       if (ch == '@') {
         return s_http_host_start;
       }
 
-      if (IS_USERINFO_CHAR(ch)) {
+      if (IS_USERINFO_CHAR (ch)) {
         return s_http_userinfo;
       }
       break;
@@ -2236,14 +2236,14 @@ http_parse_host_char(enum http_host_state s, const char ch) {
         return s_http_host_v6_start;
       }
 
-      if (IS_HOST_CHAR(ch)) {
+      if (IS_HOST_CHAR (ch)) {
         return s_http_host;
       }
 
       break;
 
     case s_http_host:
-      if (IS_HOST_CHAR(ch)) {
+      if (IS_HOST_CHAR (ch)) {
         return s_http_host;
       }
 
@@ -2262,7 +2262,7 @@ http_parse_host_char(enum http_host_state s, const char ch) {
 
     /* fall through */
     case s_http_host_v6_start:
-      if (IS_HEX(ch) || ch == ':' || ch == '.') {
+      if (IS_HEX (ch) || ch == ':' || ch == '.') {
         return s_http_host_v6;
       }
 
@@ -2279,7 +2279,7 @@ http_parse_host_char(enum http_host_state s, const char ch) {
     /* fall through */
     case s_http_host_v6_zone_start:
       /* RFC 6874 Zone ID consists of 1*( unreserved / pct-encoded) */
-      if (IS_ALPHANUM(ch) || ch == '%' || ch == '.' || ch == '-' || ch == '_' ||
+      if (IS_ALPHANUM (ch) || ch == '%' || ch == '.' || ch == '-' || ch == '_' ||
           ch == '~') {
         return s_http_host_v6_zone;
       }
@@ -2287,7 +2287,7 @@ http_parse_host_char(enum http_host_state s, const char ch) {
 
     case s_http_host_port:
     case s_http_host_port_start:
-      if (IS_NUM(ch)) {
+      if (IS_NUM (ch)) {
         return s_http_host_port;
       }
 
@@ -2300,26 +2300,26 @@ http_parse_host_char(enum http_host_state s, const char ch) {
 }
 
 static int
-http_parse_host(const char * buf, struct http_parser_url *u, int found_at) {
+http_parse_host (const char * buf, struct http_parser_url *u, int found_at) {
   enum http_host_state s;
 
   const char *p;
   size_t buflen = u->field_data[UF_HOST].off + u->field_data[UF_HOST].len;
 
-  assert(u->field_set & (1 << UF_HOST));
+  assert (u->field_set & (1 << UF_HOST));
 
   u->field_data[UF_HOST].len = 0;
 
   s = found_at ? s_http_userinfo_start : s_http_host_start;
 
   for (p = buf + u->field_data[UF_HOST].off; p < buf + buflen; p++) {
-    enum http_host_state new_s = http_parse_host_char(s, *p);
+    enum http_host_state new_s = http_parse_host_char (s, *p);
 
     if (new_s == s_http_host_dead) {
       return 1;
     }
 
-    switch(new_s) {
+    switch (new_s) {
       case s_http_host:
         if (s != s_http_host) {
           u->field_data[UF_HOST].off = (uint16_t)(p - buf);
@@ -2382,12 +2382,12 @@ http_parse_host(const char * buf, struct http_parser_url *u, int found_at) {
 }
 
 void
-http_parser_url_init(struct http_parser_url *u) {
-  memset(u, 0, sizeof(*u));
+http_parser_url_init (struct http_parser_url *u) {
+  memset (u, 0, sizeof (*u));
 }
 
 int
-http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
+http_parser_parse_url (const char *buf, size_t buflen, int is_connect,
                       struct http_parser_url *u)
 {
   enum state s;
@@ -2404,7 +2404,7 @@ http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
   old_uf = UF_MAX;
 
   for (p = buf; p < buf + buflen; p++) {
-    s = parse_url_char(s, *p);
+    s = parse_url_char (s, *p);
 
     /* Figure out the next field that we're operating on */
     switch (s) {
@@ -2444,7 +2444,7 @@ http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
         break;
 
       default:
-        assert(!"Unexpected state");
+        assert (!"Unexpected state");
         return 1;
     }
 
@@ -2469,7 +2469,7 @@ http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
   }
 
   if (u->field_set & (1 << UF_HOST)) {
-    if (http_parse_host(buf, u, found_at) != 0) {
+    if (http_parse_host (buf, u, found_at) != 0) {
       return 1;
     }
   }
@@ -2491,7 +2491,7 @@ http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
     end = buf + off + len;
 
     /* NOTE: The characters are already validated and are in the [0-9] range */
-    assert((size_t) (off + len) <= buflen && "Port number overflow");
+    assert ((size_t) (off + len) <= buflen && "Port number overflow");
     v = 0;
     for (p = buf + off; p < end; p++) {
       v *= 10;
@@ -2510,33 +2510,33 @@ http_parser_parse_url(const char *buf, size_t buflen, int is_connect,
 }
 
 void
-http_parser_pause(http_parser *parser, int paused) {
+http_parser_pause (http_parser *parser, int paused) {
   /* Users should only be pausing/unpausing a parser that is not in an error
    * state. In non-debug builds, there's not much that we can do about this
    * other than ignore it.
    */
-  if (HTTP_PARSER_ERRNO(parser) == HPE_OK ||
-      HTTP_PARSER_ERRNO(parser) == HPE_PAUSED) {
+  if (HTTP_PARSER_ERRNO (parser) == HPE_OK ||
+      HTTP_PARSER_ERRNO (parser) == HPE_PAUSED) {
     uint32_t nread = parser->nread; /* used by the SET_ERRNO macro */
-    SET_ERRNO((paused) ? HPE_PAUSED : HPE_OK);
+    SET_ERRNO ((paused) ? HPE_PAUSED : HPE_OK);
   } else {
-    assert(0 && "Attempting to pause parser in error state");
+    assert (0 && "Attempting to pause parser in error state");
   }
 }
 
 int
-http_body_is_final(const struct http_parser *parser) {
+http_body_is_final (const struct http_parser *parser) {
     return parser->state == s_message_done;
 }
 
 unsigned long
-http_parser_version(void) {
+http_parser_version (void) {
   return HTTP_PARSER_VERSION_MAJOR * 0x10000 |
          HTTP_PARSER_VERSION_MINOR * 0x00100 |
          HTTP_PARSER_VERSION_PATCH * 0x00001;
 }
 
 void
-http_parser_set_max_header_size(uint32_t size) {
+http_parser_set_max_header_size (uint32_t size) {
   max_header_size = size;
 }

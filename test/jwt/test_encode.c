@@ -60,7 +60,7 @@ static void test_jwt_encode_str (void) {
 	ret = jwt_add_grant (jwt, "iss", "files.cyphre.com");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_add_grant(jwt, "sub", "user0");
+	ret = jwt_add_grant (jwt, "sub", "user0");
 	test_check_int_eq (ret, 0, NULL);
 
 	ret = jwt_add_grant (jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
@@ -89,7 +89,7 @@ static void test_jwt_encode_alg_none (void) {
 	int ret = 0;
 	char *out = NULL;
 
-	ALLOC_JWT(&jwt);
+	ALLOC_JWT (&jwt);
 
 	ret = jwt_add_grant (jwt, "aud", "www.pluggers.nl");
 	test_check_int_eq (ret, 0, NULL);

@@ -2170,15 +2170,67 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 }
 
+# FIXME:
+// keeps track of the recv () calls of a single HTTP connection
+// to explain why a request ended before being completed
+typedef struct HttpReceiveDiagnostics {
+
+	ssize_t last_rc;
+	int last_errno;
+	unsigned int n_recvs;
+
+} HttpReceiveDiagnostics;
+
+// explains why a request that was still being received has ended
+static inline void cerver_receive_http_set_ended_status (
+	HttpReceive *http_receive, const HttpReceiveStatus status
+) {
+
+	switch (http_receive->receive_status) {
+		case HTTP_RECEIVE_STATUS_NONE:
+		case HTTP_RECEIVE_STATUS_HEADERS:
+		case HTTP_RECEIVE_STATUS_BODY:
+			http_receive->receive_status = status;
+			break;
+
+		default: break;
+	}
+
+}
+
+// a recv () error ends the request, for example when the client resets the connection
+static void cerver_receive_http_failed (
+	const CerverReceive *cr, HttpReceive *http_receive,
+	const size_t total_received, const HttpReceiveDiagnostics *diagnostics
+) {
+
+	char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
+	cerver_log_with_date (
+		LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+		"cerver_receive_http () - recv () failed - fd %d - errno %d (%s) - received %zu - recv #%u",
+		cr->socket->sock_fd, diagnostics->last_errno,
+		strerror_r (diagnostics->last_errno, error_description, sizeof (error_description)),
+		total_received, diagnostics->n_recvs
+	);
+
+	cerver_receive_http_set_ended_status (http_receive, HTTP_RECEIVE_STATUS_CLOSED);
+
+}
+
 static inline u8 cerver_receive_http_actual (
 	CerverReceive *cr, HttpReceive *http_receive,
 	size_t *total_received,
-	char *buffer, const size_t buffer_size
+	char *buffer, const size_t buffer_size,
+	HttpReceiveDiagnostics *diagnostics
 ) {
 
 	u8 retval = 1;
 
 	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
+
+	diagnostics->last_rc = rc;
+	diagnostics->last_errno = (rc < 0) ? errno : 0;
+	diagnostics->n_recvs += 1;
 
 	switch (rc) {
 		case -1: {
@@ -2191,22 +2243,19 @@ static inline u8 cerver_receive_http_actual (
 				#endif
 
 				if (http_receive->keep_alive) retval = 0;
+				else cerver_receive_http_set_ended_status (http_receive, HTTP_RECEIVE_STATUS_TIMEOUT);
 			}
 
 			else {
-				#ifdef HANDLER_DEBUG
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-					"cerver_receive_http () - rc < 0 - sock fd: %d",
-					cr->socket->sock_fd
+				cerver_receive_http_failed (
+					cr, http_receive, *total_received, diagnostics
 				);
-
-				perror ("Error ");
-				#endif
 			}
 		} break;
 
 		case 0: {
+			cerver_receive_http_set_ended_status (http_receive, HTTP_RECEIVE_STATUS_CLOSED);
+
 			#ifdef HANDLER_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
@@ -2254,6 +2303,33 @@ static inline u8 cerver_receive_http_actual (
 
 }
 
+static const char *http_receive_unknown_path = { "-" };
+
+// logs a request that was answered before its body was handled:
+// a failed authentication, a limit that was exceeded or a file that could not be saved
+static void cerver_receive_http_log_rejected (
+	const CerverReceive *cr, const HttpReceive *http_receive,
+	const size_t total_received, const double process_time
+) {
+
+	const char *path = http_receive_unknown_path;
+	if (http_receive->route) path = http_receive->route->route->str;
+	else if (http_receive->request->url) path = http_receive->request->url->str;
+
+	cerver_log_with_date (
+		LOG_TYPE_NONE, LOG_TYPE_NONE,
+		"%s -> [%s] %s - %zu -> %fs -> %s -> %d - %zu",
+		cr->connection->ip,
+		http_request_method_str ((RequestMethod) http_receive->parser->method),
+		path,
+		total_received,
+		process_time,
+		http_receive_status_str (http_receive->receive_status),
+		http_receive->status, http_receive->sent
+	);
+
+}
+
 // we expect only one request to be sent,
 // so keep reading the socket until no more data is left,
 // and then handle the complete buffer
@@ -2267,9 +2343,37 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	size_t total_received = 0;
 
+	HttpReceiveDiagnostics diagnostics = { 0 };
+
 	HttpReceive *http_receive = http_receive_create (cr);
 
 	i32 sock_fd = cr->socket->sock_fd;
+
+	// check that the fd still belongs to the accepted connection
+	// before reading from it (another thread may have closed it)
+	#ifdef HANDLER_DEBUG
+	struct sockaddr_storage peer_address = { 0 };
+	socklen_t peer_address_length = sizeof (struct sockaddr_storage);
+	if (getpeername (sock_fd, (struct sockaddr *) &peer_address, &peer_address_length)) {
+		cerver_log_with_date (
+			LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+			"cerver_receive_http () - fd %d - %s:%u - getpeername () failed - errno %d",
+			sock_fd, cr->connection->ip, (unsigned int) cr->connection->port, errno
+		);
+	}
+
+	else {
+		in_port_t peer_port = sock_ip_port ((const struct sockaddr *) &peer_address);
+		if (peer_port != cr->connection->port) {
+			cerver_log_with_date (
+				LOG_TYPE_WARNING, LOG_TYPE_HANDLER,
+				"cerver_receive_http () - fd %d - %s - expected port %u - found port %u",
+				sock_fd, cr->connection->ip,
+				(unsigned int) cr->connection->port, (unsigned int) peer_port
+			);
+		}
+	}
+	#endif
 
 	// set the socket's timeout
 	// to prevent thread from getting stuck if no more data to read
@@ -2284,8 +2388,9 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 			&& !cerver_receive_http_actual (
 				cr, http_receive,
 				&total_received,
-				buffer, buffer_size
-			) 
+				buffer, buffer_size,
+				&diagnostics
+			)
 		);
 
 		free (buffer);
@@ -2377,12 +2482,26 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 			(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
 		} break;
 
+		// answered before the body was handled: a failed authentication,
+		// a limit that was exceeded or a file that could not be saved
+		case HTTP_RECEIVE_STATUS_REJECTED:
+		case HTTP_RECEIVE_STATUS_LIMIT:
+		case HTTP_RECEIVE_STATUS_UPLOAD_ERROR:
+			cerver_receive_http_log_rejected (cr, http_receive, total_received, process_time);
+			break;
+
 		// unable to process the request
 		default: {
 			cerver_log_with_date (
 				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> Bad request",
-				cr->connection->ip
+				"%s -> Bad request - fd %d - status %s - received %zu - recvs %u"
+				" - last rc %zd - errno %d - parser %s - running %d - %fs",
+				cr->connection->ip, sock_fd,
+				http_receive_status_str (http_receive->receive_status),
+				total_received, diagnostics.n_recvs,
+				diagnostics.last_rc, diagnostics.last_errno,
+				http_errno_name (HTTP_PARSER_ERRNO (http_receive->parser)),
+				cr->cerver->isRunning, process_time
 			);
 
 			// update stats
@@ -2822,6 +2941,15 @@ static void cerver_register_new_connection (
 			LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 			"New connection from IP address: %s -- Port: %d",
 			connection->ip, connection->port
+		);
+		#endif
+
+		// before the dispatch, the worker may delete the connection right after it
+		#ifdef HANDLER_DEBUG
+		cerver_log_with_date (
+			LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
+			"cerver_register_new_connection () - accepted fd %d - %s:%u",
+			new_fd, connection->ip, (unsigned int) connection->port
 		);
 		#endif
 

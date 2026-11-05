@@ -37,7 +37,7 @@ bool s_array_valid (void *array, size_t elem_size, void *valid_begin, void *vali
 	void *begin = s_relative_to_ptr ((char *) array + offsetof (SArray, begin));
 
 	SArray array_;
-	memcpy (&array_, array, sizeof(array_));
+	memcpy (&array_, array, sizeof (array_));
 	void *end = (char *) begin + elem_size * array_.n_elems;
 
 	return array_.n_elems == 0

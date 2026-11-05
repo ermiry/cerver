@@ -26,10 +26,10 @@ static void test_jwt_dump_fp (void) {
 	ret = jwt_add_grant (jwt, "sub", "user0");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_add_grant(jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
+	ret = jwt_add_grant (jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_add_grant_int(jwt, "iat", (long)time(NULL));
+	ret = jwt_add_grant_int (jwt, "iat", (long)time (NULL));
 	test_check_int_eq (ret, 0, NULL);
 
 	out = fopen ("/dev/null", "w");
@@ -93,9 +93,9 @@ static void test_jwt_dump_str (void) {
 	val = jwt_get_header (jwt, "typ");
 	test_check (val == NULL, NULL);
 
-	jwt_free_str(out);
+	jwt_free_str (out);
 
-	jwt_free(jwt);
+	jwt_free (jwt);
 
 }
 
@@ -107,7 +107,7 @@ static void test_jwt_dump_str_alg_default_typ_header (void) {
 	char *out = NULL;
 	const char *val = NULL;
 
-	ret = jwt_new(&jwt);
+	ret = jwt_new (&jwt);
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 
@@ -120,12 +120,12 @@ static void test_jwt_dump_str_alg_default_typ_header (void) {
 	ret = jwt_add_grant (jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_add_grant_int (jwt, "iat", (long)time(NULL));
+	ret = jwt_add_grant_int (jwt, "iat", (long)time (NULL));
 	test_check_int_eq (ret, 0, NULL);
 
 	ret = jwt_set_alg (
 		jwt, JWT_ALG_HS256,
-		(unsigned char *) key, strlen(key)
+		(unsigned char *) key, strlen (key)
 	);
 
 	test_check_int_eq (ret, 0, NULL);
@@ -135,7 +135,7 @@ static void test_jwt_dump_str_alg_default_typ_header (void) {
 	val = jwt_get_header (jwt, "typ");
 	test_check (val == NULL, NULL);
 
-	out = jwt_dump_str(jwt, 1);
+	out = jwt_dump_str (jwt, 1);
 	test_check (out != NULL, NULL);
 
 	/* Test 'typ' header: should be added with default value of 'JWT', cause 'alg' is set explicitly
@@ -182,7 +182,7 @@ static void test_jwt_dump_str_alg_custom_typ_header (void) {
 	ret = jwt_add_grant (jwt, "ref", "XXXX-YYYY-ZZZZ-AAAA-CCCC");
 	test_check_int_eq (ret, 0, NULL);
 
-	ret = jwt_add_grant_int (jwt, "iat", (long)time(NULL));
+	ret = jwt_add_grant_int (jwt, "iat", (long)time (NULL));
 	test_check_int_eq (ret, 0, NULL);
 
 	ret = jwt_add_header (jwt, "typ", "favourite");
@@ -201,7 +201,7 @@ static void test_jwt_dump_str_alg_custom_typ_header (void) {
 	test_check_int_eq (ret, 0, NULL);
 
 	/* Test 'typ' header: should be left untouched. */
-	val = jwt_get_header( jwt, "typ");
+	val = jwt_get_header ( jwt, "typ");
 	test_check (val != NULL, NULL);
 	test_check_str_eq (val, "favourite", NULL);
 
@@ -223,9 +223,9 @@ static void test_jwt_dump_str_alg_custom_typ_header (void) {
 	test_check (val != NULL, NULL);
 	test_check_str_eq (val, "favourite", NULL);
 
-	jwt_free_str(out);
+	jwt_free_str (out);
 
-	jwt_free(jwt);
+	jwt_free (jwt);
 
 }
 

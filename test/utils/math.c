@@ -57,10 +57,13 @@ static void test_random_int_in_range (void) {
 	const int min = 0;
 	const int max = 100;
 
-	const int result = random_int_in_range (min, max);
+	// the range is inclusive on both ends
+	for (unsigned int i = 0; i < 1000; i++) {
+		const int result = random_int_in_range (min, max);
 
-	test_check_true ((result > min));
-	test_check_true ((result < max));
+		test_check_true ((result >= min));
+		test_check_true ((result <= max));
+	}
 
 }
 

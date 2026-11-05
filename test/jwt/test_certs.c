@@ -63,9 +63,9 @@ static void __test_alg_key (const jwt_alg_t alg) {
 	int ret = 0;
 	char *out;
 
-	ALLOC_JWT(&jwt);
+	ALLOC_JWT (&jwt);
 
-	read_key("ec_key_secp384r1.pem");
+	read_key ("ec_key_secp384r1.pem");
 
 	ret = jwt_add_grant (jwt, "iss", "files.cyphre.com");
 	test_check_int_eq (ret, 0, NULL);
@@ -94,42 +94,42 @@ static void __test_alg_key (const jwt_alg_t alg) {
 
 void test_jwt_encode_es256 (void) {
 
-	__test_alg_key(JWT_ALG_ES256);
+	__test_alg_key (JWT_ALG_ES256);
 
 }
 
 
 void test_jwt_verify_es256 (void) {
 
-	__verify_jwt(jwt_es256, JWT_ALG_ES256);
+	__verify_jwt (jwt_es256, JWT_ALG_ES256);
 
 }
 
 
 void test_jwt_encode_es384 (void) {
 
-	__test_alg_key(JWT_ALG_ES384);
+	__test_alg_key (JWT_ALG_ES384);
 
 }
 
 
 void test_jwt_verify_es384 (void) {
 
-	__verify_jwt(jwt_es384, JWT_ALG_ES384);
+	__verify_jwt (jwt_es384, JWT_ALG_ES384);
 
 }
 
 
 void test_jwt_encode_es512 (void) {
 
-	__test_alg_key(JWT_ALG_ES512);
+	__test_alg_key (JWT_ALG_ES512);
 
 }
 
 
 void test_jwt_verify_es512 (void) {
 
-	__verify_jwt(jwt_es512, JWT_ALG_ES512);
+	__verify_jwt (jwt_es512, JWT_ALG_ES512);
 
 }
 
@@ -244,7 +244,7 @@ void test_jwt_encode_invalid_key (void) {
 	ret = jwt_set_alg (jwt, JWT_ALG_ES512, key, key_len);
 	test_check_int_eq (ret, 0, NULL);
 
-	out = jwt_encode_str( jwt);
+	out = jwt_encode_str ( jwt);
 	test_check_ptr_eq (out, NULL);
 
 	jwt_free (jwt);

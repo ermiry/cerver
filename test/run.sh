@@ -27,3 +27,5 @@
 ./test/bin/json || { exit 1; }
 
 ./test/bin/jwt || { exit 1; }
+
+./test/bin/version || { exit 1; }

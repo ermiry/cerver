@@ -53,7 +53,7 @@ static void test_jwt_dup (void) {
 	test_check (val != NULL, NULL);
 	test_check_str_eq (val, "test", NULL);
 
-	test_check_int_eq (jwt_get_alg(new_jwt), JWT_ALG_NONE, NULL);
+	test_check_int_eq (jwt_get_alg (new_jwt), JWT_ALG_NONE, NULL);
 
 	now = time (NULL);
 	ret = jwt_add_grant_int (jwt, "iat", (long)now);

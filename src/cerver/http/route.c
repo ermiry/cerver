@@ -16,6 +16,7 @@
 #include "cerver/http/route.h"
 #include "cerver/http/request.h"
 
+#include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
 const char *http_route_modifier_to_string (
@@ -333,6 +334,8 @@ HttpRoute *http_route_new (void) {
 		}
 
 		route->file_stats = NULL;
+
+		route->authentication_with_body = false;
 	}
 
 	return route;
@@ -431,6 +434,18 @@ void http_route_set_handler (
 
 }
 
+// a child route with more tokens than DEFAULT_ROUTES_TOKENS_SIZE can never match
+static void http_route_init_too_many_tokens (
+	const HttpRoute *route, const HttpRoute *child
+) {
+
+	cerver_log_error (
+		"http_route_init () - route %s has %zu tokens, the max is %d - it is not registered in %s",
+		child->route->str, child->n_tokens, DEFAULT_ROUTES_TOKENS_SIZE, route->route->str
+	);
+
+}
+
 void http_route_init (HttpRoute *route) {
 
 	if (route) {
@@ -467,7 +482,14 @@ void http_route_init (HttpRoute *route) {
 					}
 				}
 
-				route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
+				// routes are grouped by their number of tokens
+				if (child->n_tokens > DEFAULT_ROUTES_TOKENS_SIZE) {
+					http_route_init_too_many_tokens (route, child);
+				}
+
+				else {
+					route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
+				}
 			}
 
 			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
@@ -579,6 +601,16 @@ void http_route_set_authentication_handler (
 
 	if (route) {
 		route->authentication_handler = authentication_handler;
+	}
+
+}
+
+void http_route_set_authentication_with_body (
+	HttpRoute *route, const bool authentication_with_body
+) {
+
+	if (route) {
+		route->authentication_with_body = authentication_with_body;
 	}
 
 }

@@ -44,7 +44,7 @@ void jsonp_free (void *ptr) {
 
 char *jsonp_strdup (const char *str) {
 
-	return jsonp_strndup(str, strlen(str));
+	return jsonp_strndup (str, strlen (str));
 
 }
 
@@ -82,7 +82,7 @@ void jsonp_error_init (
 		error->column = -1;
 		error->position = 0;
 		if (source)
-			jsonp_error_set_source(error, source);
+			jsonp_error_set_source (error, source);
 		else
 			error->source[0] = '\0';
 	}
@@ -131,9 +131,9 @@ void jsonp_error_set (
 
 	va_list ap;
 
-	va_start(ap, msg);
+	va_start (ap, msg);
 	jsonp_error_vset (error, line, column, position, code, msg, ap);
-	va_end(ap);
+	va_end (ap);
 
 }
 
@@ -218,13 +218,13 @@ static int strbuffer_append_bytes (
 
 		new_size = MAX (strbuff->size * STRBUFFER_FACTOR, strbuff->length + size + 1);
 
-		new_value = (char *) jsonp_malloc(new_size);
+		new_value = (char *) jsonp_malloc (new_size);
 		if (!new_value)
 			return -1;
 
 		(void) memcpy (new_value, strbuff->value, strbuff->length);
 
-		jsonp_free(strbuff->value);
+		jsonp_free (strbuff->value);
 		strbuff->value = new_value;
 		strbuff->size = new_size;
 	}
@@ -279,13 +279,13 @@ static void to_locale (strbuffer_t *strbuffer) {
 	const char *point;
 	char *pos;
 
-	point = localeconv()->decimal_point;
+	point = localeconv ()->decimal_point;
 	if (*point == '.') {
 		/* No conversion needed */
 		return;
 	}
 
-	pos = strchr(strbuffer->value, '.');
+	pos = strchr (strbuffer->value, '.');
 	if (pos)
 		*pos = *point;
 
@@ -296,13 +296,13 @@ static void from_locale (char *buffer) {
 	const char *point;
 	char *pos;
 
-	point = localeconv()->decimal_point;
+	point = localeconv ()->decimal_point;
 	if (*point == '.') {
 		/* No conversion needed */
 		return;
 	}
 
-	pos = strchr(buffer, *point);
+	pos = strchr (buffer, *point);
 	if (pos)
 		*pos = '.';
 
@@ -353,12 +353,12 @@ int jsonp_dtostr (
 		return -1;
 
 	#if JSON_HAVE_LOCALECONV
-	from_locale(buffer);
+	from_locale (buffer);
 	#endif
 
 	/* Make sure there's a dot or 'e' in the output. Otherwise
 	   a real is converted to an integer when decoding */
-	if (strchr(buffer, '.') == NULL && strchr(buffer, 'e') == NULL) {
+	if (strchr (buffer, '.') == NULL && strchr (buffer, 'e') == NULL) {
 		if (length + 3 >= size) {
 			/* No space to append ".0" */
 			return -1;
@@ -371,7 +371,7 @@ int jsonp_dtostr (
 
 	/* Remove leading '+' from positive exponent. Also remove leading
 	   zeros from exponents (added by some printf() implementations) */
-	start = strchr(buffer, 'e');
+	start = strchr (buffer, 'e');
 	if (start) {
 		start++;
 		end = start + 1;
@@ -383,7 +383,7 @@ int jsonp_dtostr (
 			end++;
 
 		if (end != start) {
-			memmove(start, end, length - (size_t)(end - buffer));
+			memmove (start, end, length - (size_t)(end - buffer));
 			length -= (size_t)(end - start);
 		}
 	}
@@ -414,7 +414,7 @@ static int dump_to_strbuffer (
 	const char *buffer, size_t size, void *data
 ) {
 
-	return strbuffer_append_bytes((strbuffer_t *)data, buffer, size);
+	return strbuffer_append_bytes ((strbuffer_t *)data, buffer, size);
 
 }
 
@@ -450,7 +450,7 @@ static int dump_to_fd (
 
 	#ifdef HAVE_UNISTD_H
 	int *dest = (int *)data;
-	if (write(*dest, buffer, size) == (ssize_t)size)
+	if (write (*dest, buffer, size) == (ssize_t)size)
 		return 0;
 	#endif
 	return -1;
@@ -465,17 +465,17 @@ static int dump_indent (
 	void *data
 ) {
 
-	if (FLAGS_TO_INDENT(flags) > 0) {
-		unsigned int ws_count = FLAGS_TO_INDENT(flags), n_spaces = depth * ws_count;
+	if (FLAGS_TO_INDENT (flags) > 0) {
+		unsigned int ws_count = FLAGS_TO_INDENT (flags), n_spaces = depth * ws_count;
 
-		if (dump("\n", 1, data))
+		if (dump ("\n", 1, data))
 			return -1;
 
 		while (n_spaces > 0) {
 			int cur_n =
 				n_spaces < sizeof whitespace - 1 ? n_spaces : sizeof whitespace - 1;
 
-			if (dump(whitespace, cur_n, data))
+			if (dump (whitespace, cur_n, data))
 				return -1;
 
 			n_spaces -= cur_n;
@@ -483,7 +483,7 @@ static int dump_indent (
 	}
 	
 	else if (space && !(flags & JSON_COMPACT)) {
-		return dump(" ", 1, data);
+		return dump (" ", 1, data);
 	}
 
 	return 0;
@@ -498,7 +498,7 @@ static int dump_string (
 	const char *pos, *end, *lim;
 	int32_t codepoint = 0;
 
-	if (dump("\"", 1, data))
+	if (dump ("\"", 1, data))
 		return -1;
 
 	end = pos = str;
@@ -509,7 +509,7 @@ static int dump_string (
 		int length;
 
 		while (end < lim) {
-			end = utf8_iterate(pos, lim - pos, &codepoint);
+			end = utf8_iterate (pos, lim - pos, &codepoint);
 			if (!end)
 				return -1;
 
@@ -529,7 +529,7 @@ static int dump_string (
 		}
 
 		if (pos != str) {
-			if (dump(str, pos - str, data))
+			if (dump (str, pos - str, data))
 				return -1;
 		}
 
@@ -566,7 +566,7 @@ static int dump_string (
 			default: {
 				/* codepoint is in BMP */
 				if (codepoint < 0x10000) {
-					snprintf(seq, sizeof(seq), "\\u%04X", (unsigned int)codepoint);
+					snprintf (seq, sizeof (seq), "\\u%04X", (unsigned int)codepoint);
 					length = 6;
 				}
 
@@ -578,7 +578,7 @@ static int dump_string (
 					first = 0xD800 | ((codepoint & 0xffc00) >> 10);
 					last = 0xDC00 | (codepoint & 0x003ff);
 
-					snprintf(seq, sizeof(seq), "\\u%04X\\u%04X", (unsigned int)first,
+					snprintf (seq, sizeof (seq), "\\u%04X\\u%04X", (unsigned int)first,
 							 (unsigned int)last);
 					length = 12;
 				}
@@ -588,13 +588,13 @@ static int dump_string (
 			}
 		}
 
-		if (dump(text, length, data))
+		if (dump (text, length, data))
 			return -1;
 
 		str = pos = end;
 	}
 
-	return dump("\"", 1, data);
+	return dump ("\"", 1, data);
 
 }
 
@@ -616,36 +616,36 @@ static int do_dump (
 	if (!json)
 		return -1;
 
-	switch (json_typeof(json)) {
+	switch (json_typeof (json)) {
 		case JSON_NULL:
-			return dump("null", 4, data);
+			return dump ("null", 4, data);
 
 		case JSON_TRUE:
-			return dump("true", 4, data);
+			return dump ("true", 4, data);
 
 		case JSON_FALSE:
-			return dump("false", 5, data);
+			return dump ("false", 5, data);
 
 		case JSON_INTEGER: {
 			char buffer[MAX_INTEGER_STR_LENGTH];
 			int size;
 
-			size = snprintf(buffer, MAX_INTEGER_STR_LENGTH, "%" JSON_INTEGER_FORMAT,
-							json_integer_value(json));
+			size = snprintf (buffer, MAX_INTEGER_STR_LENGTH, "%" JSON_INTEGER_FORMAT,
+							json_integer_value (json));
 			if (size < 0 || size >= MAX_INTEGER_STR_LENGTH)
 				return -1;
 
-			return dump(buffer, size, data);
+			return dump (buffer, size, data);
 		}
 
 		case JSON_REAL: {
 			char buffer[MAX_REAL_STR_LENGTH];
 			int size;
-			double value = json_real_value(json);
+			double value = json_real_value (json);
 
 			size = jsonp_dtostr (
 				buffer, MAX_REAL_STR_LENGTH, value,
-				FLAGS_TO_PRECISION(flags)
+				FLAGS_TO_PRECISION (flags)
 			);
 
 			if (size < 0)
@@ -656,7 +656,7 @@ static int do_dump (
 
 		case JSON_STRING:
 			return dump_string (
-				json_string_value(json), json_string_length(json), dump,
+				json_string_value (json), json_string_length (json), dump,
 				data, flags
 			);
 
@@ -665,42 +665,42 @@ static int do_dump (
 			size_t i;
 			/* Space for "0x", double the sizeof a pointer for the hex and a
 			 * terminator. */
-			char key[2 + (sizeof(json) * 2) + 1];
+			char key[2 + (sizeof (json) * 2) + 1];
 
 			/* detect circular references */
-			if (jsonp_loop_check(parents, json, key, sizeof(key)))
+			if (jsonp_loop_check (parents, json, key, sizeof (key)))
 				return -1;
 
-			n = json_array_size(json);
+			n = json_array_size (json);
 
-			if (!embed && dump("[", 1, data))
+			if (!embed && dump ("[", 1, data))
 				return -1;
 			if (n == 0) {
-				hashtable_del(parents, key);
-				return embed ? 0 : dump("]", 1, data);
+				hashtable_del (parents, key);
+				return embed ? 0 : dump ("]", 1, data);
 			}
-			if (dump_indent(flags, depth + 1, 0, dump, data))
+			if (dump_indent (flags, depth + 1, 0, dump, data))
 				return -1;
 
 			for (i = 0; i < n; ++i) {
-				if (do_dump(
+				if (do_dump (
 					json_array_get (json, i), flags, depth + 1, parents, dump,
 					data
 				))
 					return -1;
 
 				if (i < n - 1) {
-					if (dump(",", 1, data) ||
-						dump_indent(flags, depth + 1, 1, dump, data))
+					if (dump (",", 1, data) ||
+						dump_indent (flags, depth + 1, 1, dump, data))
 						return -1;
 				} else {
-					if (dump_indent(flags, depth, 0, dump, data))
+					if (dump_indent (flags, depth, 0, dump, data))
 						return -1;
 				}
 			}
 
-			hashtable_del(parents, key);
-			return embed ? 0 : dump("]", 1, data);
+			hashtable_del (parents, key);
+			return embed ? 0 : dump ("]", 1, data);
 		}
 
 		case JSON_OBJECT: {
@@ -718,88 +718,88 @@ static int do_dump (
 			}
 
 			/* detect circular references */
-			if (jsonp_loop_check(parents, json, loop_key, sizeof(loop_key)))
+			if (jsonp_loop_check (parents, json, loop_key, sizeof (loop_key)))
 				return -1;
 
-			iter = json_object_iter((json_t *)json);
+			iter = json_object_iter ((json_t *)json);
 
-			if (!embed && dump("{", 1, data))
+			if (!embed && dump ("{", 1, data))
 				return -1;
 			if (!iter) {
-				hashtable_del(parents, loop_key);
-				return embed ? 0 : dump("}", 1, data);
+				hashtable_del (parents, loop_key);
+				return embed ? 0 : dump ("}", 1, data);
 			}
-			if (dump_indent(flags, depth + 1, 0, dump, data))
+			if (dump_indent (flags, depth + 1, 0, dump, data))
 				return -1;
 
 			if (flags & JSON_SORT_KEYS) {
 				const char **keys;
 				size_t size, i;
 
-				size = json_object_size(json);
-				keys = (const char **) jsonp_malloc(size * sizeof(const char *));
+				size = json_object_size (json);
+				keys = (const char **) jsonp_malloc (size * sizeof (const char *));
 				if (!keys)
 					return -1;
 
 				i = 0;
 				while (iter) {
-					keys[i] = json_object_iter_key(iter);
-					iter = json_object_iter_next((json_t *)json, iter);
+					keys[i] = json_object_iter_key (iter);
+					iter = json_object_iter_next ((json_t *)json, iter);
 					i++;
 				}
-				assert(i == size);
+				assert (i == size);
 
-				qsort(keys, size, sizeof(const char *), compare_keys);
+				qsort (keys, size, sizeof (const char *), compare_keys);
 
 				for (i = 0; i < size; i++) {
 					const char *key;
 					json_t *value;
 
 					key = keys[i];
-					value = json_object_get(json, key);
-					assert(value);
+					value = json_object_get (json, key);
+					assert (value);
 
-					dump_string(key, strlen(key), dump, data, flags);
-					if (dump(separator, separator_length, data) ||
-						do_dump(value, flags, depth + 1, parents, dump, data)) {
-						jsonp_free(keys);
+					dump_string (key, strlen (key), dump, data, flags);
+					if (dump (separator, separator_length, data) ||
+						do_dump (value, flags, depth + 1, parents, dump, data)) {
+						jsonp_free (keys);
 						return -1;
 					}
 
 					if (i < size - 1) {
-						if (dump(",", 1, data) ||
-							dump_indent(flags, depth + 1, 1, dump, data)) {
-							jsonp_free(keys);
+						if (dump (",", 1, data) ||
+							dump_indent (flags, depth + 1, 1, dump, data)) {
+							jsonp_free (keys);
 							return -1;
 						}
 					} else {
-						if (dump_indent(flags, depth, 0, dump, data)) {
-							jsonp_free(keys);
+						if (dump_indent (flags, depth, 0, dump, data)) {
+							jsonp_free (keys);
 							return -1;
 						}
 					}
 				}
 
-				jsonp_free(keys);
+				jsonp_free (keys);
 			} else {
 				/* Don't sort keys */
 
 				while (iter) {
-					void *next = json_object_iter_next((json_t *)json, iter);
-					const char *key = json_object_iter_key(iter);
+					void *next = json_object_iter_next ((json_t *)json, iter);
+					const char *key = json_object_iter_key (iter);
 
-					dump_string(key, strlen(key), dump, data, flags);
-					if (dump(separator, separator_length, data) ||
-						do_dump(json_object_iter_value(iter), flags, depth + 1, parents,
+					dump_string (key, strlen (key), dump, data, flags);
+					if (dump (separator, separator_length, data) ||
+						do_dump (json_object_iter_value (iter), flags, depth + 1, parents,
 								dump, data))
 						return -1;
 
 					if (next) {
-						if (dump(",", 1, data) ||
-							dump_indent(flags, depth + 1, 1, dump, data))
+						if (dump (",", 1, data) ||
+							dump_indent (flags, depth + 1, 1, dump, data))
 							return -1;
 					} else {
-						if (dump_indent(flags, depth, 0, dump, data))
+						if (dump_indent (flags, depth, 0, dump, data))
 							return -1;
 					}
 
@@ -807,8 +807,8 @@ static int do_dump (
 				}
 			}
 
-			hashtable_del(parents, loop_key);
-			return embed ? 0 : dump("}", 1, data);
+			hashtable_del (parents, loop_key);
+			return embed ? 0 : dump ("}", 1, data);
 		}
 
 		default:
@@ -817,20 +817,20 @@ static int do_dump (
 	}
 }
 
-char *json_dumps(const json_t *json, size_t flags) {
+char *json_dumps (const json_t *json, size_t flags) {
 
 	strbuffer_t strbuff;
 	char *result;
 
-	if (strbuffer_init(&strbuff))
+	if (strbuffer_init (&strbuff))
 		return NULL;
 
-	if (json_dump_callback(json, dump_to_strbuffer, (void *)&strbuff, flags))
+	if (json_dump_callback (json, dump_to_strbuffer, (void *)&strbuff, flags))
 		result = NULL;
 	else
-		result = jsonp_strdup(strbuffer_value(&strbuff));
+		result = jsonp_strdup (strbuffer_value (&strbuff));
 
-	strbuffer_close(&strbuff);
+	strbuffer_close (&strbuff);
 	return result;
 
 }
@@ -868,13 +868,13 @@ int json_dump_file (
 
 	int result;
 
-	FILE *output = fopen(path, "w");
+	FILE *output = fopen (path, "w");
 	if (!output)
 		return -1;
 
-	result = json_dumpf(json, output, flags);
+	result = json_dumpf (json, output, flags);
 
-	if (fclose(output) != 0)
+	if (fclose (output) != 0)
 		return -1;
 
 	return result;
@@ -890,14 +890,14 @@ int json_dump_callback (
 	hashtable_t parents_set;
 
 	if (!(flags & JSON_ENCODE_ANY)) {
-		if (!json_is_array(json) && !json_is_object(json))
+		if (!json_is_array (json) && !json_is_object (json))
 			return -1;
 	}
 
-	if (hashtable_init(&parents_set))
+	if (hashtable_init (&parents_set))
 		return -1;
-	res = do_dump(json, flags, 0, &parents_set, callback, data);
-	hashtable_close(&parents_set);
+	res = do_dump (json, flags, 0, &parents_set, callback, data);
+	hashtable_close (&parents_set);
 
 	return res;
 
@@ -923,10 +923,10 @@ int json_dump_callback (
 /* Locale independent versions of isxxx() functions */
 #define l_isupper(c) ('A' <= (c) && (c) <= 'Z')
 #define l_islower(c) ('a' <= (c) && (c) <= 'z')
-#define l_isalpha(c) (l_isupper(c) || l_islower(c))
+#define l_isalpha(c) (l_isupper (c) || l_islower (c))
 #define l_isdigit(c) ('0' <= (c) && (c) <= '9')
 #define l_isxdigit(c)                                                                    \
-	(l_isdigit(c) || ('A' <= (c) && (c) <= 'F') || ('a' <= (c) && (c) <= 'f'))
+	(l_isdigit (c) || ('A' <= (c) && (c) <= 'F') || ('a' <= (c) && (c) <= 'f'))
 
 /* Read one byte from stream, convert to unsigned char, then int, and
    return. return EOF on end of file. This corresponds to the
@@ -964,7 +964,7 @@ typedef struct {
 
 } lex_t;
 
-#define stream_to_lex(stream) container_of(stream, lex_t, stream)
+#define stream_to_lex(stream) container_of (stream, lex_t, stream)
 
 /*** error reporting ***/
 
@@ -983,13 +983,13 @@ static void error_set (
 	if (!error)
 		return;
 
-	va_start(ap, msg);
-	vsnprintf(msg_text, JSON_ERROR_TEXT_LENGTH, msg, ap);
+	va_start (ap, msg);
+	vsnprintf (msg_text, JSON_ERROR_TEXT_LENGTH, msg, ap);
 	msg_text[JSON_ERROR_TEXT_LENGTH - 1] = '\0';
-	va_end(ap);
+	va_end (ap);
 
 	if (lex) {
-		const char *saved_text = strbuffer_value(&lex->saved_text);
+		const char *saved_text = strbuffer_value (&lex->saved_text);
 
 		line = lex->stream.line;
 		col = lex->stream.column;
@@ -1028,7 +1028,7 @@ static void error_set (
 		}
 	}
 
-	jsonp_error_set(error, line, col, pos, code, "%s", result);
+	jsonp_error_set (error, line, col, pos, code, "%s", result);
 }
 
 /*** lexical analyzer ***/
@@ -1059,7 +1059,7 @@ static int stream_get (
 		return stream->state;
 
 	if (!stream->buffer[stream->buffer_pos]) {
-		c = stream->get(stream->data);
+		c = stream->get (stream->data);
 		if (c == EOF) {
 			stream->state = STREAM_STATE_EOF;
 			return STREAM_STATE_EOF;
@@ -1072,16 +1072,16 @@ static int stream_get (
 			/* multi-byte UTF-8 sequence */
 			size_t i, count;
 
-			count = utf8_check_first(c);
+			count = utf8_check_first (c);
 			if (!count)
 				goto out;
 
-			assert(count >= 2);
+			assert (count >= 2);
 
 			for (i = 1; i < count; i++)
-				stream->buffer[i] = stream->get(stream->data);
+				stream->buffer[i] = stream->get (stream->data);
 
-			if (!utf8_check_full(stream->buffer, count, NULL))
+			if (!utf8_check_full (stream->buffer, count, NULL))
 				goto out;
 
 			stream->buffer[count] = '\0';
@@ -1096,7 +1096,7 @@ static int stream_get (
 		stream->line++;
 		stream->last_column = stream->column;
 		stream->column = 0;
-	} else if (utf8_check_first(c)) {
+	} else if (utf8_check_first (c)) {
 		/* track the Unicode character column, so increment only if
 		   this is the first character of a UTF-8 sequence */
 		stream->column++;
@@ -1111,7 +1111,7 @@ out:
 	return STREAM_STATE_ERROR;
 }
 
-static void stream_unget(stream_t *stream, int c) {
+static void stream_unget (stream_t *stream, int c) {
 	if (c == STREAM_STATE_EOF || c == STREAM_STATE_ERROR)
 		return;
 
@@ -1119,19 +1119,19 @@ static void stream_unget(stream_t *stream, int c) {
 	if (c == '\n') {
 		stream->line--;
 		stream->column = stream->last_column;
-	} else if (utf8_check_first(c))
+	} else if (utf8_check_first (c))
 		stream->column--;
 
-	assert(stream->buffer_pos > 0);
+	assert (stream->buffer_pos > 0);
 	stream->buffer_pos--;
-	assert(stream->buffer[stream->buffer_pos] == c);
+	assert (stream->buffer[stream->buffer_pos] == c);
 }
 
-static int lex_get(lex_t *lex, json_error_t *error) {
-	return stream_get(&lex->stream, error);
+static int lex_get (lex_t *lex, json_error_t *error) {
+	return stream_get (&lex->stream, error);
 }
 
-static void lex_save(lex_t *lex, int c) {
+static void lex_save (lex_t *lex, int c) {
 	
 	(void) strbuffer_append_byte (&lex->saved_text, c);
 	
@@ -1139,9 +1139,9 @@ static void lex_save(lex_t *lex, int c) {
 
 static int lex_get_save (lex_t *lex, json_error_t *error) {
 
-	int c = stream_get(&lex->stream, error);
+	int c = stream_get (&lex->stream, error);
 	if (c != STREAM_STATE_EOF && c != STREAM_STATE_ERROR)
-		lex_save(lex, c);
+		lex_save (lex, c);
 	
 	return c;
 
@@ -1149,7 +1149,7 @@ static int lex_get_save (lex_t *lex, json_error_t *error) {
 
 static void lex_unget (lex_t *lex, int c) {
 	
-	stream_unget(&lex->stream, c);
+	stream_unget (&lex->stream, c);
 	
 }
 
@@ -1163,12 +1163,12 @@ static void lex_unget_unsave (lex_t *lex, int c) {
 #ifndef NDEBUG
 		char d;
 #endif
-		stream_unget(&lex->stream, c);
+		stream_unget (&lex->stream, c);
 #ifndef NDEBUG
 		d =
 #endif
-			strbuffer_pop(&lex->saved_text);
-		assert(c == d);
+			strbuffer_pop (&lex->saved_text);
+		assert (c == d);
 	}
 
 }
@@ -1176,7 +1176,7 @@ static void lex_unget_unsave (lex_t *lex, int c) {
 static void lex_save_cached (lex_t *lex) {
 
 	while (lex->stream.buffer[lex->stream.buffer_pos] != '\0') {
-		lex_save(lex, lex->stream.buffer[lex->stream.buffer_pos]);
+		lex_save (lex, lex->stream.buffer[lex->stream.buffer_pos]);
 		lex->stream.buffer_pos++;
 		lex->stream.position++;
 	}
@@ -1185,7 +1185,7 @@ static void lex_save_cached (lex_t *lex) {
 
 static void lex_free_string (lex_t *lex) {
 
-	jsonp_free(lex->value.string.val);
+	jsonp_free (lex->value.string.val);
 	lex->value.string.val = NULL;
 	lex->value.string.len = 0;
 
@@ -1197,16 +1197,16 @@ static int32_t decode_unicode_escape (const char *str) {
 	int i;
 	int32_t value = 0;
 
-	assert(str[0] == 'u');
+	assert (str[0] == 'u');
 
 	for (i = 1; i <= 4; i++) {
 		char c = str[i];
 		value <<= 4;
-		if (l_isdigit(c))
+		if (l_isdigit (c))
 			value += c - '0';
-		else if (l_islower(c))
+		else if (l_islower (c))
 			value += c - 'a' + 10;
-		else if (l_isupper(c))
+		else if (l_isupper (c))
 			value += c - 'A' + 10;
 		else
 			return -1;
@@ -1226,50 +1226,50 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 	lex->value.string.val = NULL;
 	lex->token = TOKEN_INVALID;
 
-	c = lex_get_save(lex, error);
+	c = lex_get_save (lex, error);
 
 	while (c != '"') {
 		if (c == STREAM_STATE_ERROR)
 			goto out;
 
 		else if (c == STREAM_STATE_EOF) {
-			error_set(error, lex, json_error_premature_end_of_input,
+			error_set (error, lex, json_error_premature_end_of_input,
 					  "premature end of input");
 			goto out;
 		}
 
 		else if (0 <= c && c <= 0x1F) {
 			/* control character */
-			lex_unget_unsave(lex, c);
+			lex_unget_unsave (lex, c);
 			if (c == '\n')
-				error_set(error, lex, json_error_invalid_syntax, "unexpected newline");
+				error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
 			else
-				error_set(error, lex, json_error_invalid_syntax, "control character 0x%x",
+				error_set (error, lex, json_error_invalid_syntax, "control character 0x%x",
 						  c);
 			goto out;
 		}
 
 		else if (c == '\\') {
-			c = lex_get_save(lex, error);
+			c = lex_get_save (lex, error);
 			if (c == 'u') {
-				c = lex_get_save(lex, error);
+				c = lex_get_save (lex, error);
 				for (i = 0; i < 4; i++) {
-					if (!l_isxdigit(c)) {
-						error_set(error, lex, json_error_invalid_syntax,
+					if (!l_isxdigit (c)) {
+						error_set (error, lex, json_error_invalid_syntax,
 								  "invalid escape");
 						goto out;
 					}
-					c = lex_get_save(lex, error);
+					c = lex_get_save (lex, error);
 				}
 			} else if (c == '"' || c == '\\' || c == '/' || c == 'b' || c == 'f' ||
 					   c == 'n' || c == 'r' || c == 't')
-				c = lex_get_save(lex, error);
+				c = lex_get_save (lex, error);
 			else {
-				error_set(error, lex, json_error_invalid_syntax, "invalid escape");
+				error_set (error, lex, json_error_invalid_syntax, "invalid escape");
 				goto out;
 			}
 		} else
-			c = lex_get_save(lex, error);
+			c = lex_get_save (lex, error);
 	}
 
 	/* the actual value is at most of the same length as the source
@@ -1279,7 +1279,7 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 		 - two \uXXXX escapes (length 12) forming an UTF-16 surrogate pair
 		   are converted to 4 bytes
 	*/
-	t = (char *) jsonp_malloc(lex->saved_text.length + 1);
+	t = (char *) jsonp_malloc (lex->saved_text.length + 1);
 	if (!t) {
 		/* this is not very nice, since TOKEN_INVALID is returned */
 		goto out;
@@ -1287,7 +1287,7 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 	lex->value.string.val = t;
 
 	/* + 1 to skip the " */
-	p = strbuffer_value(&lex->saved_text) + 1;
+	p = strbuffer_value (&lex->saved_text) + 1;
 
 	while (*p != '"') {
 		if (*p == '\\') {
@@ -1296,9 +1296,9 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 				size_t length;
 				int32_t value;
 
-				value = decode_unicode_escape(p);
+				value = decode_unicode_escape (p);
 				if (value < 0) {
-					error_set(error, lex, json_error_invalid_syntax,
+					error_set (error, lex, json_error_invalid_syntax,
 							  "invalid Unicode escape '%.6s'", p - 1);
 					goto out;
 				}
@@ -1307,9 +1307,9 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 				if (0xD800 <= value && value <= 0xDBFF) {
 					/* surrogate pair */
 					if (*p == '\\' && *(p + 1) == 'u') {
-						int32_t value2 = decode_unicode_escape(++p);
+						int32_t value2 = decode_unicode_escape (++p);
 						if (value2 < 0) {
-							error_set(error, lex, json_error_invalid_syntax,
+							error_set (error, lex, json_error_invalid_syntax,
 									  "invalid Unicode escape '%.6s'", p - 1);
 							goto out;
 						}
@@ -1321,24 +1321,24 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 								((value - 0xD800) << 10) + (value2 - 0xDC00) + 0x10000;
 						} else {
 							/* invalid second surrogate */
-							error_set(error, lex, json_error_invalid_syntax,
+							error_set (error, lex, json_error_invalid_syntax,
 									  "invalid Unicode '\\u%04X\\u%04X'", value, value2);
 							goto out;
 						}
 					} else {
 						/* no second surrogate */
-						error_set(error, lex, json_error_invalid_syntax,
+						error_set (error, lex, json_error_invalid_syntax,
 								  "invalid Unicode '\\u%04X'", value);
 						goto out;
 					}
 				} else if (0xDC00 <= value && value <= 0xDFFF) {
-					error_set(error, lex, json_error_invalid_syntax,
+					error_set (error, lex, json_error_invalid_syntax,
 							  "invalid Unicode '\\u%04X'", value);
 					goto out;
 				}
 
-				if (utf8_encode(value, t, &length))
-					assert(0);
+				if (utf8_encode (value, t, &length))
+					assert (0);
 				t += length;
 			} else {
 				switch (*p) {
@@ -1363,7 +1363,7 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 						*t = '\t';
 						break;
 					default:
-						assert(0);
+						assert (0);
 				}
 				t++;
 				p++;
@@ -1377,7 +1377,7 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 	return;
 
 out:
-	lex_free_string(lex);
+	lex_free_string (lex);
 
 }
 
@@ -1404,42 +1404,42 @@ static int lex_scan_number (
 	lex->token = TOKEN_INVALID;
 
 	if (c == '-')
-		c = lex_get_save(lex, error);
+		c = lex_get_save (lex, error);
 
 	if (c == '0') {
-		c = lex_get_save(lex, error);
-		if (l_isdigit(c)) {
-			lex_unget_unsave(lex, c);
+		c = lex_get_save (lex, error);
+		if (l_isdigit (c)) {
+			lex_unget_unsave (lex, c);
 			goto out;
 		}
-	} else if (l_isdigit(c)) {
+	} else if (l_isdigit (c)) {
 		do
-			c = lex_get_save(lex, error);
-		while (l_isdigit(c));
+			c = lex_get_save (lex, error);
+		while (l_isdigit (c));
 	} else {
-		lex_unget_unsave(lex, c);
+		lex_unget_unsave (lex, c);
 		goto out;
 	}
 
 	if (!(lex->flags & JSON_DECODE_INT_AS_REAL) && c != '.' && c != 'E' && c != 'e') {
 		json_int_t intval;
 
-		lex_unget_unsave(lex, c);
+		lex_unget_unsave (lex, c);
 
-		saved_text = strbuffer_value(&lex->saved_text);
+		saved_text = strbuffer_value (&lex->saved_text);
 
 		errno = 0;
-		intval = json_strtoint(saved_text, &end, 10);
+		intval = json_strtoint (saved_text, &end, 10);
 		if (errno == ERANGE) {
 			if (intval < 0)
-				error_set(error, lex, json_error_numeric_overflow,
+				error_set (error, lex, json_error_numeric_overflow,
 						  "too big negative integer");
 			else
-				error_set(error, lex, json_error_numeric_overflow, "too big integer");
+				error_set (error, lex, json_error_numeric_overflow, "too big integer");
 			goto out;
 		}
 
-		assert(end == saved_text + lex->saved_text.length);
+		assert (end == saved_text + lex->saved_text.length);
 
 		lex->token = TOKEN_INTEGER;
 		lex->value.integer = intval;
@@ -1447,34 +1447,34 @@ static int lex_scan_number (
 	}
 
 	if (c == '.') {
-		c = lex_get(lex, error);
-		if (!l_isdigit(c)) {
-			lex_unget(lex, c);
+		c = lex_get (lex, error);
+		if (!l_isdigit (c)) {
+			lex_unget (lex, c);
 			goto out;
 		}
-		lex_save(lex, c);
+		lex_save (lex, c);
 
 		do
-			c = lex_get_save(lex, error);
-		while (l_isdigit(c));
+			c = lex_get_save (lex, error);
+		while (l_isdigit (c));
 	}
 
 	if (c == 'E' || c == 'e') {
-		c = lex_get_save(lex, error);
+		c = lex_get_save (lex, error);
 		if (c == '+' || c == '-')
-			c = lex_get_save(lex, error);
+			c = lex_get_save (lex, error);
 
-		if (!l_isdigit(c)) {
-			lex_unget_unsave(lex, c);
+		if (!l_isdigit (c)) {
+			lex_unget_unsave (lex, c);
 			goto out;
 		}
 
 		do
-			c = lex_get_save(lex, error);
-		while (l_isdigit(c));
+			c = lex_get_save (lex, error);
+		while (l_isdigit (c));
 	}
 
-	lex_unget_unsave(lex, c);
+	lex_unget_unsave (lex, c);
 
 	if (jsonp_strtod (&lex->saved_text, &doubleval)) {
 		error_set (error, lex, json_error_numeric_overflow, "real number overflow");
@@ -1496,13 +1496,13 @@ static int lex_scan (
 
 	int c = 0;
 
-	strbuffer_clear(&lex->saved_text);
+	strbuffer_clear (&lex->saved_text);
 
 	if (lex->token == TOKEN_STRING)
-		lex_free_string(lex);
+		lex_free_string (lex);
 
 	do
-		c = lex_get(lex, error);
+		c = lex_get (lex, error);
 	while (c == ' ' || c == '\t' || c == '\n' || c == '\r');
 
 	if (c == STREAM_STATE_EOF) {
@@ -1515,35 +1515,35 @@ static int lex_scan (
 		goto out;
 	}
 
-	lex_save(lex, c);
+	lex_save (lex, c);
 
 	if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',')
 		lex->token = c;
 
 	else if (c == '"')
-		lex_scan_string(lex, error);
+		lex_scan_string (lex, error);
 
-	else if (l_isdigit(c) || c == '-') {
-		if (lex_scan_number(lex, c, error))
+	else if (l_isdigit (c) || c == '-') {
+		if (lex_scan_number (lex, c, error))
 			goto out;
 	}
 
-	else if (l_isalpha(c)) {
+	else if (l_isalpha (c)) {
 		/* eat up the whole identifier for clearer error messages */
 		const char *saved_text;
 
 		do
-			c = lex_get_save(lex, error);
-		while (l_isalpha(c));
-		lex_unget_unsave(lex, c);
+			c = lex_get_save (lex, error);
+		while (l_isalpha (c));
+		lex_unget_unsave (lex, c);
 
-		saved_text = strbuffer_value(&lex->saved_text);
+		saved_text = strbuffer_value (&lex->saved_text);
 
-		if (strcmp(saved_text, "true") == 0)
+		if (strcmp (saved_text, "true") == 0)
 			lex->token = TOKEN_TRUE;
-		else if (strcmp(saved_text, "false") == 0)
+		else if (strcmp (saved_text, "false") == 0)
 			lex->token = TOKEN_FALSE;
-		else if (strcmp(saved_text, "null") == 0)
+		else if (strcmp (saved_text, "null") == 0)
 			lex->token = TOKEN_NULL;
 		else
 			lex->token = TOKEN_INVALID;
@@ -1552,7 +1552,7 @@ static int lex_scan (
 	else {
 		/* save the rest of the input UTF-8 sequence to get an error
 		   message of valid UTF-8 */
-		lex_save_cached(lex);
+		lex_save_cached (lex);
 		lex->token = TOKEN_INVALID;
 	}
 
@@ -1581,8 +1581,8 @@ static int lex_init (
 	lex_t *lex, get_func get, size_t flags, void *data
 ) {
 
-	stream_init(&lex->stream, get, data);
-	if (strbuffer_init(&lex->saved_text))
+	stream_init (&lex->stream, get, data);
+	if (strbuffer_init (&lex->saved_text))
 		return -1;
 
 	lex->flags = flags;
@@ -1595,8 +1595,8 @@ static int lex_init (
 static void lex_close (lex_t *lex) {
 
 	if (lex->token == TOKEN_STRING)
-		lex_free_string(lex);
-	strbuffer_close(&lex->saved_text);
+		lex_free_string (lex);
+	strbuffer_close (&lex->saved_text);
 
 }
 
@@ -1610,11 +1610,11 @@ static json_t *parse_object (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
-	json_t *object = json_object();
+	json_t *object = json_object ();
 	if (!object)
 		return NULL;
 
-	lex_scan(lex, error);
+	lex_scan (lex, error);
 	if (lex->token == '}')
 		return object;
 
@@ -1624,65 +1624,65 @@ static json_t *parse_object (
 		json_t *value;
 
 		if (lex->token != TOKEN_STRING) {
-			error_set(error, lex, json_error_invalid_syntax, "string or '}' expected");
+			error_set (error, lex, json_error_invalid_syntax, "string or '}' expected");
 			goto error;
 		}
 
-		key = lex_steal_string(lex, &len);
+		key = lex_steal_string (lex, &len);
 		if (!key)
 			return NULL;
-		if (memchr(key, '\0', len)) {
-			jsonp_free(key);
-			error_set(error, lex, json_error_null_byte_in_key,
+		if (memchr (key, '\0', len)) {
+			jsonp_free (key);
+			error_set (error, lex, json_error_null_byte_in_key,
 					  "NUL byte in object key not supported");
 			goto error;
 		}
 
 		if (flags & JSON_REJECT_DUPLICATES) {
-			if (json_object_get(object, key)) {
-				jsonp_free(key);
-				error_set(error, lex, json_error_duplicate_key, "duplicate object key");
+			if (json_object_get (object, key)) {
+				jsonp_free (key);
+				error_set (error, lex, json_error_duplicate_key, "duplicate object key");
 				goto error;
 			}
 		}
 
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 		if (lex->token != ':') {
-			jsonp_free(key);
-			error_set(error, lex, json_error_invalid_syntax, "':' expected");
+			jsonp_free (key);
+			error_set (error, lex, json_error_invalid_syntax, "':' expected");
 			goto error;
 		}
 
-		lex_scan(lex, error);
-		value = parse_value(lex, flags, error);
+		lex_scan (lex, error);
+		value = parse_value (lex, flags, error);
 		if (!value) {
-			jsonp_free(key);
+			jsonp_free (key);
 			goto error;
 		}
 
-		if (json_object_set_new_nocheck(object, key, value)) {
-			jsonp_free(key);
+		if (json_object_set_new_nocheck (object, key, value)) {
+			jsonp_free (key);
 			goto error;
 		}
 
-		jsonp_free(key);
+		jsonp_free (key);
 
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 		if (lex->token != ',')
 			break;
 
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 	}
 
 	if (lex->token != '}') {
-		error_set(error, lex, json_error_invalid_syntax, "'}' expected");
+		error_set (error, lex, json_error_invalid_syntax, "'}' expected");
 		goto error;
 	}
 
 	return object;
 
 error:
-	json_decref(object);
+	json_decref (object);
 	return NULL;
 
 }
@@ -1691,39 +1691,39 @@ static json_t *parse_array (
 	lex_t *lex, size_t flags, json_error_t *error
 ) {
 
-	json_t *array = json_array();
+	json_t *array = json_array ();
 	if (!array)
 		return NULL;
 
-	lex_scan(lex, error);
+	lex_scan (lex, error);
 	if (lex->token == ']')
 		return array;
 
 	while (lex->token) {
-		json_t *elem = parse_value(lex, flags, error);
+		json_t *elem = parse_value (lex, flags, error);
 		if (!elem)
 			goto error;
 
-		if (json_array_append_new(array, elem)) {
+		if (json_array_append_new (array, elem)) {
 			goto error;
 		}
 
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 		if (lex->token != ',')
 			break;
 
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 	}
 
 	if (lex->token != ']') {
-		error_set(error, lex, json_error_invalid_syntax, "']' expected");
+		error_set (error, lex, json_error_invalid_syntax, "']' expected");
 		goto error;
 	}
 
 	return array;
 
 error:
-	json_decref(array);
+	json_decref (array);
 	return NULL;
 
 }
@@ -1736,7 +1736,7 @@ static json_t *parse_value (
 
 	lex->depth++;
 	if (lex->depth > JSON_PARSER_MAX_DEPTH) {
-		error_set(error, lex, json_error_stack_overflow, "maximum parsing depth reached");
+		error_set (error, lex, json_error_stack_overflow, "maximum parsing depth reached");
 		return NULL;
 	}
 
@@ -1746,55 +1746,55 @@ static json_t *parse_value (
 			size_t len = lex->value.string.len;
 
 			if (!(flags & JSON_ALLOW_NUL)) {
-				if (memchr(value, '\0', len)) {
-					error_set(error, lex, json_error_null_character,
+				if (memchr (value, '\0', len)) {
+					error_set (error, lex, json_error_null_character,
 							  "\\u0000 is not allowed without JSON_ALLOW_NUL");
 					return NULL;
 				}
 			}
 
-			json = jsonp_stringn_nocheck_own(value, len);
+			json = jsonp_stringn_nocheck_own (value, len);
 			lex->value.string.val = NULL;
 			lex->value.string.len = 0;
 			break;
 		}
 
 		case TOKEN_INTEGER: {
-			json = json_integer(lex->value.integer);
+			json = json_integer (lex->value.integer);
 			break;
 		}
 
 		case TOKEN_REAL: {
-			json = json_real(lex->value.real);
+			json = json_real (lex->value.real);
 			break;
 		}
 
 		case TOKEN_TRUE:
-			json = json_true();
+			json = json_true ();
 			break;
 
 		case TOKEN_FALSE:
-			json = json_false();
+			json = json_false ();
 			break;
 
 		case TOKEN_NULL:
-			json = json_null();
+			json = json_null ();
 			break;
 
 		case '{':
-			json = parse_object(lex, flags, error);
+			json = parse_object (lex, flags, error);
 			break;
 
 		case '[':
-			json = parse_array(lex, flags, error);
+			json = parse_array (lex, flags, error);
 			break;
 
 		case TOKEN_INVALID:
-			error_set(error, lex, json_error_invalid_syntax, "invalid token");
+			error_set (error, lex, json_error_invalid_syntax, "invalid token");
 			return NULL;
 
 		default:
-			error_set(error, lex, json_error_invalid_syntax, "unexpected token");
+			error_set (error, lex, json_error_invalid_syntax, "unexpected token");
 			return NULL;
 	}
 
@@ -1814,24 +1814,24 @@ static json_t *parse_json (
 
 	lex->depth = 0;
 
-	lex_scan(lex, error);
+	lex_scan (lex, error);
 	if (!(flags & JSON_DECODE_ANY)) {
 		if (lex->token != '[' && lex->token != '{') {
-			error_set(error, lex, json_error_invalid_syntax, "'[' or '{' expected");
+			error_set (error, lex, json_error_invalid_syntax, "'[' or '{' expected");
 			return NULL;
 		}
 	}
 
-	result = parse_value(lex, flags, error);
+	result = parse_value (lex, flags, error);
 	if (!result)
 		return NULL;
 
 	if (!(flags & JSON_DISABLE_EOF_CHECK)) {
-		lex_scan(lex, error);
+		lex_scan (lex, error);
 		if (lex->token != TOKEN_EOF) {
-			error_set(error, lex, json_error_end_of_input_expected,
+			error_set (error, lex, json_error_end_of_input_expected,
 					  "end of file expected");
-			json_decref(result);
+			json_decref (result);
 			return NULL;
 		}
 	}
@@ -1874,22 +1874,22 @@ json_t *json_loads (
 	json_t *result;
 	string_data_t stream_data;
 
-	jsonp_error_init(error, "<string>");
+	jsonp_error_init (error, "<string>");
 
 	if (string == NULL) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
 	stream_data.data = string;
 	stream_data.pos = 0;
 
-	if (lex_init(&lex, string_get, flags, (void *)&stream_data))
+	if (lex_init (&lex, string_get, flags, (void *)&stream_data))
 		return NULL;
 
-	result = parse_json(&lex, flags, error);
+	result = parse_json (&lex, flags, error);
 
-	lex_close(&lex);
+	lex_close (&lex);
 	return result;
 
 }
@@ -1923,10 +1923,10 @@ json_t *json_loadb (
 	json_t *result;
 	buffer_data_t stream_data;
 
-	jsonp_error_init(error, "<buffer>");
+	jsonp_error_init (error, "<buffer>");
 
 	if (buffer == NULL) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
@@ -1934,12 +1934,12 @@ json_t *json_loadb (
 	stream_data.pos = 0;
 	stream_data.len = buflen;
 
-	if (lex_init(&lex, buffer_get, flags, (void *)&stream_data))
+	if (lex_init (&lex, buffer_get, flags, (void *)&stream_data))
 		return NULL;
 
-	result = parse_json(&lex, flags, error);
+	result = parse_json (&lex, flags, error);
 
-	lex_close(&lex);
+	lex_close (&lex);
 	return result;
 
 }
@@ -1957,19 +1957,19 @@ json_t *json_loadf (
 	else
 		source = "<stream>";
 
-	jsonp_error_init(error, source);
+	jsonp_error_init (error, source);
 
 	if (input == NULL) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
-	if (lex_init(&lex, (get_func)fgetc, flags, input))
+	if (lex_init (&lex, (get_func)fgetc, flags, input))
 		return NULL;
 
-	result = parse_json(&lex, flags, error);
+	result = parse_json (&lex, flags, error);
 
-	lex_close(&lex);
+	lex_close (&lex);
 	return result;
 
 }
@@ -2002,16 +2002,16 @@ json_t *json_loadfd (
 	jsonp_error_init (error, source);
 
 	if (input < 0) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
-	if (lex_init(&lex, (get_func)fd_get_func, flags, &input))
+	if (lex_init (&lex, (get_func)fd_get_func, flags, &input))
 		return NULL;
 
-	result = parse_json(&lex, flags, error);
+	result = parse_json (&lex, flags, error);
 
-	lex_close(&lex);
+	lex_close (&lex);
 	return result;
 
 }
@@ -2023,23 +2023,23 @@ json_t *json_load_file (
 	json_t *result;
 	FILE *fp;
 
-	jsonp_error_init(error, path);
+	jsonp_error_init (error, path);
 
 	if (path == NULL) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
-	fp = fopen(path, "rb");
+	fp = fopen (path, "rb");
 	if (!fp) {
-		error_set(error, NULL, json_error_cannot_open_file, "unable to open %s: %s", path,
-				  strerror(errno));
+		error_set (error, NULL, json_error_cannot_open_file, "unable to open %s: %s", path,
+				  strerror (errno));
 		return NULL;
 	}
 
-	result = json_loadf(fp, flags, error);
+	result = json_loadf (fp, flags, error);
 
-	fclose(fp);
+	fclose (fp);
 	return result;
 
 }
@@ -2056,14 +2056,14 @@ typedef struct {
 
 } callback_data_t;
 
-static int callback_get(void *data) {
+static int callback_get (void *data) {
 
 	char c;
 	callback_data_t *stream = (callback_data_t *) data;
 
 	if (stream->pos >= stream->len) {
 		stream->pos = 0;
-		stream->len = stream->callback(stream->data, MAX_BUF_LEN, stream->arg);
+		stream->len = stream->callback (stream->data, MAX_BUF_LEN, stream->arg);
 		if (stream->len == 0 || stream->len == (size_t)-1)
 			return EOF;
 	}
@@ -2084,23 +2084,23 @@ json_t *json_load_callback (
 
 	callback_data_t stream_data;
 
-	memset(&stream_data, 0, sizeof(stream_data));
+	memset (&stream_data, 0, sizeof (stream_data));
 	stream_data.callback = callback;
 	stream_data.arg = arg;
 
-	jsonp_error_init(error, "<callback>");
+	jsonp_error_init (error, "<callback>");
 
 	if (callback == NULL) {
-		error_set(error, NULL, json_error_invalid_argument, "wrong arguments");
+		error_set (error, NULL, json_error_invalid_argument, "wrong arguments");
 		return NULL;
 	}
 
-	if (lex_init(&lex, (get_func)callback_get, flags, &stream_data))
+	if (lex_init (&lex, (get_func)callback_get, flags, &stream_data))
 		return NULL;
 
-	result = parse_json(&lex, flags, error);
+	result = parse_json (&lex, flags, error);
 
-	lex_close(&lex);
+	lex_close (&lex);
 	return result;
 
 }
@@ -2141,7 +2141,7 @@ static const char *const type_names[] = {
 	"real",   "true",  "false",  "null"
 };
 
-#define type_name(x) type_names[json_typeof(x)]
+#define type_name(x) type_names[json_typeof (x)]
 
 static const char unpack_value_starters[] = "{[siIbfFOon";
 
@@ -2153,9 +2153,9 @@ static void scanner_init (
 	s->error = error;
 	s->flags = flags;
 	s->fmt = s->start = fmt;
-	(void) memset(&s->prev_token, 0, sizeof(token_t));
-	(void) memset(&s->token, 0, sizeof(token_t));
-	(void) memset(&s->next_token, 0, sizeof(token_t));
+	(void) memset (&s->prev_token, 0, sizeof (token_t));
+	(void) memset (&s->token, 0, sizeof (token_t));
+	(void) memset (&s->next_token, 0, sizeof (token_t));
 	s->line = 1;
 	s->column = 0;
 	s->pos = 0;
@@ -2174,7 +2174,7 @@ static void next_token (scanner_t *s) {
 		return;
 	}
 
-	if (!token(s) && !*s->fmt)
+	if (!token (s) && !*s->fmt)
 		return;
 
 	t = s->fmt;
@@ -2226,7 +2226,7 @@ static void set_error (
 
 	jsonp_error_set_source (s->error, source);
 
-	va_end(ap);
+	va_end (ap);
 }
 
 static json_t *pack (scanner_t *s, va_list *ap);
@@ -2243,27 +2243,27 @@ static char *read_string (
 	const char *str;
 	size_t length;
 
-	next_token(s);
-	t = token(s);
-	prev_token(s);
+	next_token (s);
+	t = token (s);
+	prev_token (s);
 
 	*ours = 0;
 	if (t != '#' && t != '%' && t != '+') {
 		/* Optimize the simple case */
-		str = va_arg(*ap, const char *);
+		str = va_arg (*ap, const char *);
 
 		if (!str) {
 			if (!optional) {
-				set_error(s, "<args>", json_error_null_value, "NULL %s", purpose);
+				set_error (s, "<args>", json_error_null_value, "NULL %s", purpose);
 				s->has_error = 1;
 			}
 			return NULL;
 		}
 
-		length = strlen(str);
+		length = strlen (str);
 
-		if (!utf8_check_string(str, length)) {
-			set_error(s, "<args>", json_error_invalid_utf8, "Invalid UTF-8 %s", purpose);
+		if (!utf8_check_string (str, length)) {
+			set_error (s, "<args>", json_error_invalid_utf8, "Invalid UTF-8 %s", purpose);
 			s->has_error = 1;
 			return NULL;
 		}
@@ -2271,183 +2271,183 @@ static char *read_string (
 		*out_len = length;
 		return (char *)str;
 	} else if (optional) {
-		set_error(s, "<format>", json_error_invalid_format,
+		set_error (s, "<format>", json_error_invalid_format,
 				  "Cannot use '%c' on optional strings", t);
 		s->has_error = 1;
 
 		return NULL;
 	}
 
-	if (strbuffer_init(&strbuff)) {
-		set_error(s, "<internal>", json_error_out_of_memory, "Out of memory");
+	if (strbuffer_init (&strbuff)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		s->has_error = 1;
 	}
 
 	while (1) {
-		str = va_arg(*ap, const char *);
+		str = va_arg (*ap, const char *);
 		if (!str) {
-			set_error(s, "<args>", json_error_null_value, "NULL %s", purpose);
+			set_error (s, "<args>", json_error_null_value, "NULL %s", purpose);
 			s->has_error = 1;
 		}
 
-		next_token(s);
+		next_token (s);
 
-		if (token(s) == '#') {
-			length = va_arg(*ap, int);
-		} else if (token(s) == '%') {
-			length = va_arg(*ap, size_t);
+		if (token (s) == '#') {
+			length = va_arg (*ap, int);
+		} else if (token (s) == '%') {
+			length = va_arg (*ap, size_t);
 		} else {
-			prev_token(s);
-			length = s->has_error ? 0 : strlen(str);
+			prev_token (s);
+			length = s->has_error ? 0 : strlen (str);
 		}
 
-		if (!s->has_error && strbuffer_append_bytes(&strbuff, str, length) == -1) {
-			set_error(s, "<internal>", json_error_out_of_memory, "Out of memory");
+		if (!s->has_error && strbuffer_append_bytes (&strbuff, str, length) == -1) {
+			set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 			s->has_error = 1;
 		}
 
-		next_token(s);
-		if (token(s) != '+') {
-			prev_token(s);
+		next_token (s);
+		if (token (s) != '+') {
+			prev_token (s);
 			break;
 		}
 	}
 
 	if (s->has_error) {
-		strbuffer_close(&strbuff);
+		strbuffer_close (&strbuff);
 		return NULL;
 	}
 
-	if (!utf8_check_string(strbuff.value, strbuff.length)) {
-		set_error(s, "<args>", json_error_invalid_utf8, "Invalid UTF-8 %s", purpose);
-		strbuffer_close(&strbuff);
+	if (!utf8_check_string (strbuff.value, strbuff.length)) {
+		set_error (s, "<args>", json_error_invalid_utf8, "Invalid UTF-8 %s", purpose);
+		strbuffer_close (&strbuff);
 		s->has_error = 1;
 		return NULL;
 	}
 
 	*out_len = strbuff.length;
 	*ours = 1;
-	return strbuffer_steal_value(&strbuff);
+	return strbuffer_steal_value (&strbuff);
 
 }
 
 static json_t *pack_object (scanner_t *s, va_list *ap) {
 
-	json_t *object = json_object();
-	next_token(s);
+	json_t *object = json_object ();
+	next_token (s);
 
-	while (token(s) != '}') {
+	while (token (s) != '}') {
 		char *key;
 		size_t len;
 		int ours;
 		json_t *value;
 		char valueOptional;
 
-		if (!token(s)) {
-			set_error(s, "<format>", json_error_invalid_format,
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Unexpected end of format string");
 			goto error;
 		}
 
-		if (token(s) != 's') {
-			set_error(s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token(s));
+		if (token (s) != 's') {
+			set_error (s, "<format>", json_error_invalid_format,
+					  "Expected format 's', got '%c'", token (s));
 			goto error;
 		}
 
-		key = read_string(s, ap, "object key", &len, &ours, 0);
+		key = read_string (s, ap, "object key", &len, &ours, 0);
 
-		next_token(s);
+		next_token (s);
 
-		next_token(s);
-		valueOptional = token(s);
-		prev_token(s);
+		next_token (s);
+		valueOptional = token (s);
+		prev_token (s);
 
-		value = pack(s, ap);
+		value = pack (s, ap);
 		if (!value) {
 			if (ours)
-				jsonp_free(key);
+				jsonp_free (key);
 
 			if (valueOptional != '*') {
-				set_error(s, "<args>", json_error_null_value, "NULL object value");
+				set_error (s, "<args>", json_error_null_value, "NULL object value");
 				s->has_error = 1;
 			}
 
-			next_token(s);
+			next_token (s);
 			continue;
 		}
 
 		if (s->has_error)
-			json_decref(value);
+			json_decref (value);
 
-		if (!s->has_error && json_object_set_new_nocheck(object, key, value)) {
-			set_error(s, "<internal>", json_error_out_of_memory,
+		if (!s->has_error && json_object_set_new_nocheck (object, key, value)) {
+			set_error (s, "<internal>", json_error_out_of_memory,
 					  "Unable to add key \"%s\"", key);
 			s->has_error = 1;
 		}
 
 		if (ours)
-			jsonp_free(key);
+			jsonp_free (key);
 
-		next_token(s);
+		next_token (s);
 	}
 
 	if (!s->has_error)
 		return object;
 
 error:
-	json_decref(object);
+	json_decref (object);
 	return NULL;
 
 }
 
 static json_t *pack_array (scanner_t *s, va_list *ap) {
 
-	json_t *array = json_array();
-	next_token(s);
+	json_t *array = json_array ();
+	next_token (s);
 
-	while (token(s) != ']') {
+	while (token (s) != ']') {
 		json_t *value;
 		char valueOptional;
 
-		if (!token(s)) {
-			set_error(s, "<format>", json_error_invalid_format,
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Unexpected end of format string");
 			/* Format string errors are unrecoverable. */
 			goto error;
 		}
 
-		next_token(s);
-		valueOptional = token(s);
-		prev_token(s);
+		next_token (s);
+		valueOptional = token (s);
+		prev_token (s);
 
-		value = pack(s, ap);
+		value = pack (s, ap);
 		if (!value) {
 			if (valueOptional != '*') {
 				s->has_error = 1;
 			}
 
-			next_token(s);
+			next_token (s);
 			continue;
 		}
 
 		if (s->has_error)
-			json_decref(value);
+			json_decref (value);
 
-		if (!s->has_error && json_array_append_new(array, value)) {
-			set_error(s, "<internal>", json_error_out_of_memory,
+		if (!s->has_error && json_array_append_new (array, value)) {
+			set_error (s, "<internal>", json_error_out_of_memory,
 					  "Unable to append to array");
 			s->has_error = 1;
 		}
 
-		next_token(s);
+		next_token (s);
 	}
 
 	if (!s->has_error)
 		return array;
 
 error:
-	json_decref(array);
+	json_decref (array);
 	return NULL;
 
 }
@@ -2460,16 +2460,16 @@ static json_t *pack_string (scanner_t *s, va_list *ap) {
 	int ours;
 	int optional;
 
-	next_token(s);
-	t = token(s);
+	next_token (s);
+	t = token (s);
 	optional = t == '?' || t == '*';
 	if (!optional)
-		prev_token(s);
+		prev_token (s);
 
-	str = read_string(s, ap, "string", &len, &ours, optional);
+	str = read_string (s, ap, "string", &len, &ours, optional);
 
 	if (!str)
-		return t == '?' && !s->has_error ? json_null() : NULL;
+		return t == '?' && !s->has_error ? json_null () : NULL;
 
 	if (s->has_error) {
 		/* It's impossible to reach this point if ours != 0, do not free str. */
@@ -2477,9 +2477,9 @@ static json_t *pack_string (scanner_t *s, va_list *ap) {
 	}
 
 	if (ours)
-		return jsonp_stringn_nocheck_own(str, len);
+		return jsonp_stringn_nocheck_own (str, len);
 
-	return json_stringn_nocheck(str, len);
+	return json_stringn_nocheck (str, len);
 
 }
 
@@ -2490,27 +2490,27 @@ static json_t *pack_object_inter (
 	json_t *json;
 	char ntoken;
 
-	next_token(s);
-	ntoken = token(s);
+	next_token (s);
+	ntoken = token (s);
 
 	if (ntoken != '?' && ntoken != '*')
-		prev_token(s);
+		prev_token (s);
 
-	json = va_arg(*ap, json_t *);
+	json = va_arg (*ap, json_t *);
 
 	if (json)
-		return need_incref ? json_incref(json) : json;
+		return need_incref ? json_incref (json) : json;
 
 	switch (ntoken) {
 		case '?':
-			return json_null();
+			return json_null ();
 		case '*':
 			return NULL;
 		default:
 			break;
 	}
 
-	set_error(s, "<args>", json_error_null_value, "NULL object");
+	set_error (s, "<args>", json_error_null_value, "NULL object");
 	s->has_error = 1;
 	return NULL;
 
@@ -2518,10 +2518,10 @@ static json_t *pack_object_inter (
 
 static json_t *pack_integer (scanner_t *s, json_int_t value) {
 
-	json_t *json = json_integer(value);
+	json_t *json = json_integer (value);
 
 	if (!json) {
-		set_error(s, "<internal>", json_error_out_of_memory, "Out of memory");
+		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		s->has_error = 1;
 	}
 
@@ -2532,19 +2532,19 @@ static json_t *pack_integer (scanner_t *s, json_int_t value) {
 static json_t *pack_real (scanner_t *s, double value) {
 
 	/* Allocate without setting value so we can identify OOM error. */
-	json_t *json = json_real(0.0);
+	json_t *json = json_real (0.0);
 
 	if (!json) {
-		set_error(s, "<internal>", json_error_out_of_memory, "Out of memory");
+		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		s->has_error = 1;
 
 		return NULL;
 	}
 
-	if (json_real_set(json, value)) {
-		json_decref(json);
+	if (json_real_set (json, value)) {
+		json_decref (json);
 
-		set_error(s, "<args>", json_error_numeric_overflow,
+		set_error (s, "<args>", json_error_numeric_overflow,
 				  "Invalid floating point value");
 		s->has_error = 1;
 
@@ -2557,40 +2557,40 @@ static json_t *pack_real (scanner_t *s, double value) {
 
 static json_t *pack (scanner_t *s, va_list *ap) {
 
-	switch (token(s)) {
+	switch (token (s)) {
 		case '{':
-			return pack_object(s, ap);
+			return pack_object (s, ap);
 
 		case '[':
-			return pack_array(s, ap);
+			return pack_array (s, ap);
 
 		case 's': /* string */
-			return pack_string(s, ap);
+			return pack_string (s, ap);
 
 		case 'n': /* null */
-			return json_null();
+			return json_null ();
 
 		case 'b': /* boolean */
-			return va_arg(*ap, int) ? json_true() : json_false();
+			return va_arg (*ap, int) ? json_true () : json_false ();
 
 		case 'i': /* integer from int */
-			return pack_integer(s, va_arg(*ap, int));
+			return pack_integer (s, va_arg (*ap, int));
 
 		case 'I': /* integer from json_int_t */
-			return pack_integer(s, va_arg(*ap, json_int_t));
+			return pack_integer (s, va_arg (*ap, json_int_t));
 
 		case 'f': /* real */
-			return pack_real(s, va_arg(*ap, double));
+			return pack_real (s, va_arg (*ap, double));
 
 		case 'O': /* a json_t object; increments refcount */
-			return pack_object_inter(s, ap, 1);
+			return pack_object_inter (s, ap, 1);
 
 		case 'o': /* a json_t object; doesn't increment refcount */
-			return pack_object_inter(s, ap, 0);
+			return pack_object_inter (s, ap, 0);
 
 		default:
-			set_error(s, "<format>", json_error_invalid_format,
-					  "Unexpected format character '%c'", token(s));
+			set_error (s, "<format>", json_error_invalid_format,
+					  "Unexpected format character '%c'", token (s));
 			s->has_error = 1;
 			return NULL;
 	}
@@ -2612,78 +2612,78 @@ static int unpack_object (scanner_t *s, json_t *root, va_list *ap) {
 	*/
 	hashtable_t key_set;
 
-	if (hashtable_init(&key_set)) {
-		set_error(s, "<internal>", json_error_out_of_memory, "Out of memory");
+	if (hashtable_init (&key_set)) {
+		set_error (s, "<internal>", json_error_out_of_memory, "Out of memory");
 		return -1;
 	}
 
-	if (root && !json_is_object(root)) {
-		set_error(s, "<validation>", json_error_wrong_type, "Expected object, got %s",
-				  type_name(root));
+	if (root && !json_is_object (root)) {
+		set_error (s, "<validation>", json_error_wrong_type, "Expected object, got %s",
+				  type_name (root));
 		goto out;
 	}
-	next_token(s);
+	next_token (s);
 
-	while (token(s) != '}') {
+	while (token (s) != '}') {
 		const char *key;
 		json_t *value;
 		int opt = 0;
 
 		if (strict != 0) {
-			set_error(s, "<format>", json_error_invalid_format,
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Expected '}' after '%c', got '%c'", (strict == 1 ? '!' : '*'),
-					  token(s));
+					  token (s));
 			goto out;
 		}
 
-		if (!token(s)) {
-			set_error(s, "<format>", json_error_invalid_format,
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Unexpected end of format string");
 			goto out;
 		}
 
-		if (token(s) == '!' || token(s) == '*') {
-			strict = (token(s) == '!' ? 1 : -1);
-			next_token(s);
+		if (token (s) == '!' || token (s) == '*') {
+			strict = (token (s) == '!' ? 1 : -1);
+			next_token (s);
 			continue;
 		}
 
-		if (token(s) != 's') {
-			set_error(s, "<format>", json_error_invalid_format,
-					  "Expected format 's', got '%c'", token(s));
+		if (token (s) != 's') {
+			set_error (s, "<format>", json_error_invalid_format,
+					  "Expected format 's', got '%c'", token (s));
 			goto out;
 		}
 
-		key = va_arg(*ap, const char *);
+		key = va_arg (*ap, const char *);
 		if (!key) {
-			set_error(s, "<args>", json_error_null_value, "NULL object key");
+			set_error (s, "<args>", json_error_null_value, "NULL object key");
 			goto out;
 		}
 
-		next_token(s);
+		next_token (s);
 
-		if (token(s) == '?') {
+		if (token (s) == '?') {
 			opt = gotopt = 1;
-			next_token(s);
+			next_token (s);
 		}
 
 		if (!root) {
 			/* skipping */
 			value = NULL;
 		} else {
-			value = json_object_get(root, key);
+			value = json_object_get (root, key);
 			if (!value && !opt) {
-				set_error(s, "<validation>", json_error_item_not_found,
+				set_error (s, "<validation>", json_error_item_not_found,
 						  "Object item not found: %s", key);
 				goto out;
 			}
 		}
 
-		if (unpack(s, value, ap))
+		if (unpack (s, value, ap))
 			goto out;
 
-		hashtable_set(&key_set, key, json_null());
-		next_token(s);
+		hashtable_set (&key_set, key, json_null ());
+		next_token (s);
 	}
 
 	if (strict == 0 && (s->flags & JSON_STRICT))
@@ -2698,29 +2698,29 @@ static int unpack_object (scanner_t *s, json_t *root, va_list *ap) {
 		json_t *value;
 		long unpacked = 0;
 
-		if (gotopt || json_object_size(root) != key_set.size) {
-			json_object_foreach(root, key, value) {
-				if (!hashtable_get(&key_set, key)) {
+		if (gotopt || json_object_size (root) != key_set.size) {
+			json_object_foreach (root, key, value) {
+				if (!hashtable_get (&key_set, key)) {
 					unpacked++;
 
 					/* Save unrecognized keys for the error message */
 					if (keys_res == 1) {
-						keys_res = strbuffer_init(&unrecognized_keys);
+						keys_res = strbuffer_init (&unrecognized_keys);
 					} else if (!keys_res) {
-						keys_res = strbuffer_append_bytes(&unrecognized_keys, ", ", 2);
+						keys_res = strbuffer_append_bytes (&unrecognized_keys, ", ", 2);
 					}
 
 					if (!keys_res)
 						keys_res =
-							strbuffer_append_bytes(&unrecognized_keys, key, strlen(key));
+							strbuffer_append_bytes (&unrecognized_keys, key, strlen (key));
 				}
 			}
 		}
 		if (unpacked) {
-			set_error(s, "<validation>", json_error_end_of_input_expected,
+			set_error (s, "<validation>", json_error_end_of_input_expected,
 					  "%li object item(s) left unpacked: %s", unpacked,
-					  keys_res ? "<unknown>" : strbuffer_value(&unrecognized_keys));
-			strbuffer_close(&unrecognized_keys);
+					  keys_res ? "<unknown>" : strbuffer_value (&unrecognized_keys));
+			strbuffer_close (&unrecognized_keys);
 			goto out;
 		}
 	}
@@ -2728,46 +2728,46 @@ static int unpack_object (scanner_t *s, json_t *root, va_list *ap) {
 	ret = 0;
 
 out:
-	hashtable_close(&key_set);
+	hashtable_close (&key_set);
 	return ret;
 }
 
-static int unpack_array(scanner_t *s, json_t *root, va_list *ap) {
+static int unpack_array (scanner_t *s, json_t *root, va_list *ap) {
 	size_t i = 0;
 	int strict = 0;
 
-	if (root && !json_is_array(root)) {
-		set_error(s, "<validation>", json_error_wrong_type, "Expected array, got %s",
-				  type_name(root));
+	if (root && !json_is_array (root)) {
+		set_error (s, "<validation>", json_error_wrong_type, "Expected array, got %s",
+				  type_name (root));
 		return -1;
 	}
-	next_token(s);
+	next_token (s);
 
-	while (token(s) != ']') {
+	while (token (s) != ']') {
 		json_t *value;
 
 		if (strict != 0) {
-			set_error(s, "<format>", json_error_invalid_format,
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Expected ']' after '%c', got '%c'", (strict == 1 ? '!' : '*'),
-					  token(s));
+					  token (s));
 			return -1;
 		}
 
-		if (!token(s)) {
-			set_error(s, "<format>", json_error_invalid_format,
+		if (!token (s)) {
+			set_error (s, "<format>", json_error_invalid_format,
 					  "Unexpected end of format string");
 			return -1;
 		}
 
-		if (token(s) == '!' || token(s) == '*') {
-			strict = (token(s) == '!' ? 1 : -1);
-			next_token(s);
+		if (token (s) == '!' || token (s) == '*') {
+			strict = (token (s) == '!' ? 1 : -1);
+			next_token (s);
 			continue;
 		}
 
-		if (!strchr(unpack_value_starters, token(s))) {
-			set_error(s, "<format>", json_error_invalid_format,
-					  "Unexpected format character '%c'", token(s));
+		if (!strchr (unpack_value_starters, token (s))) {
+			set_error (s, "<format>", json_error_invalid_format,
+					  "Unexpected format character '%c'", token (s));
 			return -1;
 		}
 
@@ -2775,27 +2775,27 @@ static int unpack_array(scanner_t *s, json_t *root, va_list *ap) {
 			/* skipping */
 			value = NULL;
 		} else {
-			value = json_array_get(root, i);
+			value = json_array_get (root, i);
 			if (!value) {
-				set_error(s, "<validation>", json_error_index_out_of_range,
+				set_error (s, "<validation>", json_error_index_out_of_range,
 						  "Array index %lu out of range", (unsigned long)i);
 				return -1;
 			}
 		}
 
-		if (unpack(s, value, ap))
+		if (unpack (s, value, ap))
 			return -1;
 
-		next_token(s);
+		next_token (s);
 		i++;
 	}
 
 	if (strict == 0 && (s->flags & JSON_STRICT))
 		strict = 1;
 
-	if (root && strict == 1 && i != json_array_size(root)) {
-		long diff = (long)json_array_size(root) - (long)i;
-		set_error(s, "<validation>", json_error_end_of_input_expected,
+	if (root && strict == 1 && i != json_array_size (root)) {
+		long diff = (long)json_array_size (root) - (long)i;
+		set_error (s, "<validation>", json_error_end_of_input_expected,
 				  "%li array item(s) left unpacked", diff);
 		return -1;
 	}
@@ -2805,17 +2805,17 @@ static int unpack_array(scanner_t *s, json_t *root, va_list *ap) {
 
 static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 
-	switch (token(s)) {
+	switch (token (s)) {
 		case '{':
-			return unpack_object(s, root, ap);
+			return unpack_object (s, root, ap);
 
 		case '[':
-			return unpack_array(s, root, ap);
+			return unpack_array (s, root, ap);
 
 		case 's':
-			if (root && !json_is_string(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected string, got %s", type_name(root));
+			if (root && !json_is_string (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected string, got %s", type_name (root));
 				return -1;
 			}
 
@@ -2823,115 +2823,115 @@ static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 				const char **str_target;
 				size_t *len_target = NULL;
 
-				str_target = va_arg(*ap, const char **);
+				str_target = va_arg (*ap, const char **);
 				if (!str_target) {
-					set_error(s, "<args>", json_error_null_value, "NULL string argument");
+					set_error (s, "<args>", json_error_null_value, "NULL string argument");
 					return -1;
 				}
 
-				next_token(s);
+				next_token (s);
 
-				if (token(s) == '%') {
-					len_target = va_arg(*ap, size_t *);
+				if (token (s) == '%') {
+					len_target = va_arg (*ap, size_t *);
 					if (!len_target) {
-						set_error(s, "<args>", json_error_null_value,
+						set_error (s, "<args>", json_error_null_value,
 								  "NULL string length argument");
 						return -1;
 					}
 				} else
-					prev_token(s);
+					prev_token (s);
 
 				if (root) {
-					*str_target = json_string_value(root);
+					*str_target = json_string_value (root);
 					if (len_target)
-						*len_target = json_string_length(root);
+						*len_target = json_string_length (root);
 				}
 			}
 			return 0;
 
 		case 'i':
-			if (root && !json_is_integer(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected integer, got %s", type_name(root));
+			if (root && !json_is_integer (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected integer, got %s", type_name (root));
 				return -1;
 			}
 
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				int *target = va_arg(*ap, int *);
+				int *target = va_arg (*ap, int *);
 				if (root)
-					*target = (int)json_integer_value(root);
+					*target = (int)json_integer_value (root);
 			}
 
 			return 0;
 
 		case 'I':
-			if (root && !json_is_integer(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected integer, got %s", type_name(root));
+			if (root && !json_is_integer (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected integer, got %s", type_name (root));
 				return -1;
 			}
 
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				json_int_t *target = va_arg(*ap, json_int_t *);
+				json_int_t *target = va_arg (*ap, json_int_t *);
 				if (root)
-					*target = json_integer_value(root);
+					*target = json_integer_value (root);
 			}
 
 			return 0;
 
 		case 'b':
-			if (root && !json_is_boolean(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected true or false, got %s", type_name(root));
+			if (root && !json_is_boolean (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected true or false, got %s", type_name (root));
 				return -1;
 			}
 
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				int *target = va_arg(*ap, int *);
+				int *target = va_arg (*ap, int *);
 				if (root)
-					*target = json_is_true(root);
+					*target = json_is_true (root);
 			}
 
 			return 0;
 
 		case 'f':
-			if (root && !json_is_real(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected real, got %s", type_name(root));
+			if (root && !json_is_real (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected real, got %s", type_name (root));
 				return -1;
 			}
 
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				double *target = va_arg(*ap, double *);
+				double *target = va_arg (*ap, double *);
 				if (root)
-					*target = json_real_value(root);
+					*target = json_real_value (root);
 			}
 
 			return 0;
 
 		case 'F':
-			if (root && !json_is_number(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected real or integer, got %s", type_name(root));
+			if (root && !json_is_number (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected real or integer, got %s", type_name (root));
 				return -1;
 			}
 
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				double *target = va_arg(*ap, double *);
+				double *target = va_arg (*ap, double *);
 				if (root)
-					*target = json_number_value(root);
+					*target = json_number_value (root);
 			}
 
 			return 0;
 
 		case 'O':
 			if (root && !(s->flags & JSON_VALIDATE_ONLY))
-				json_incref(root);
+				json_incref (root);
 			/* Fall through */
 
 		case 'o':
 			if (!(s->flags & JSON_VALIDATE_ONLY)) {
-				json_t **target = va_arg(*ap, json_t **);
+				json_t **target = va_arg (*ap, json_t **);
 				if (root)
 					*target = root;
 			}
@@ -2940,16 +2940,16 @@ static int unpack (scanner_t *s, json_t *root, va_list *ap) {
 
 		case 'n':
 			/* Never assign, just validate */
-			if (root && !json_is_null(root)) {
-				set_error(s, "<validation>", json_error_wrong_type,
-						  "Expected null, got %s", type_name(root));
+			if (root && !json_is_null (root)) {
+				set_error (s, "<validation>", json_error_wrong_type,
+						  "Expected null, got %s", type_name (root));
 				return -1;
 			}
 			return 0;
 
 		default:
-			set_error(s, "<format>", json_error_invalid_format,
-					  "Unexpected format character '%c'", token(s));
+			set_error (s, "<format>", json_error_invalid_format,
+					  "Unexpected format character '%c'", token (s));
 			return -1;
 	}
 }
@@ -2964,28 +2964,28 @@ json_t *json_vpack_ex (
 	json_t *value = NULL;
 
 	if (!fmt || !*fmt) {
-		jsonp_error_init(error, "<format>");
-		jsonp_error_set(error, -1, -1, 0, json_error_invalid_argument,
+		jsonp_error_init (error, "<format>");
+		jsonp_error_set (error, -1, -1, 0, json_error_invalid_argument,
 						"NULL or empty format string");
 		return NULL;
 	}
-	jsonp_error_init(error, NULL);
+	jsonp_error_init (error, NULL);
 
-	scanner_init(&s, error, flags, fmt);
-	next_token(&s);
+	scanner_init (&s, error, flags, fmt);
+	next_token (&s);
 
-	va_copy(ap_copy, ap);
-	value = pack(&s, &ap_copy);
-	va_end(ap_copy);
+	va_copy (ap_copy, ap);
+	value = pack (&s, &ap_copy);
+	va_end (ap_copy);
 
 	/* This will cover all situations where s.has_error is true */
 	if (!value)
 		return NULL;
 
-	next_token(&s);
-	if (token(&s)) {
-		json_decref(value);
-		set_error(&s, "<format>", json_error_invalid_format,
+	next_token (&s);
+	if (token (&s)) {
+		json_decref (value);
+		set_error (&s, "<format>", json_error_invalid_format,
 				  "Garbage after format string");
 		return NULL;
 	}
@@ -3030,32 +3030,32 @@ int json_vunpack_ex (
 	va_list ap_copy;
 
 	if (!root) {
-		jsonp_error_init(error, "<root>");
-		jsonp_error_set(error, -1, -1, 0, json_error_null_value, "NULL root value");
+		jsonp_error_init (error, "<root>");
+		jsonp_error_set (error, -1, -1, 0, json_error_null_value, "NULL root value");
 		return -1;
 	}
 
 	if (!fmt || !*fmt) {
-		jsonp_error_init(error, "<format>");
-		jsonp_error_set(error, -1, -1, 0, json_error_invalid_argument,
+		jsonp_error_init (error, "<format>");
+		jsonp_error_set (error, -1, -1, 0, json_error_invalid_argument,
 						"NULL or empty format string");
 		return -1;
 	}
-	jsonp_error_init(error, NULL);
+	jsonp_error_init (error, NULL);
 
-	scanner_init(&s, error, flags, fmt);
-	next_token(&s);
+	scanner_init (&s, error, flags, fmt);
+	next_token (&s);
 
-	va_copy(ap_copy, ap);
-	if (unpack(&s, root, &ap_copy)) {
-		va_end(ap_copy);
+	va_copy (ap_copy, ap);
+	if (unpack (&s, root, &ap_copy)) {
+		va_end (ap_copy);
 		return -1;
 	}
-	va_end(ap_copy);
+	va_end (ap_copy);
 
-	next_token(&s);
-	if (token(&s)) {
-		set_error(&s, "<format>", json_error_invalid_format,
+	next_token (&s);
+	if (token (&s)) {
+		set_error (&s, "<format>", json_error_invalid_format,
 				  "Garbage after format string");
 		return -1;
 	}

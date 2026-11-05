@@ -58,7 +58,7 @@ struct hashtable_t {
 typedef struct hashtable_t hashtable_t;
 
 #define hashtable_key_to_iter(key_)									\
-	(&(container_of(key_, struct hashtable_pair, key)->ordered_list))
+	(&(container_of (key_, struct hashtable_pair, key)->ordered_list))
 
 /**
  * hashtable_init - Initialize a hashtable object
@@ -72,7 +72,7 @@ typedef struct hashtable_t hashtable_t;
  */
 CERVER_PUBLIC int hashtable_init (
 	hashtable_t *hashtable
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 /**
  * hashtable_close - Release all resources used by a hashtable object

@@ -377,6 +377,82 @@ static void test_str_append_n_from_c_string (void) {
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
 
+	// the terminator must be written on every append
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+
+	str_delete (str);
+
+}
+
+// a body that arrives in many pieces is built with many appends
+static void test_str_append_n_from_c_string_many (void) {
+
+	const char *body = { "{\"name\": \"Erick Salas\", \"value\": 1234567890}" };
+	const size_t body_len = strlen (body);
+
+	// start from an empty string, as the HTTP body does
+	String *str = str_new (NULL);
+	test_check_ptr (str);
+
+	for (size_t i = 0; i < body_len; i += 3) {
+		const size_t n = ((body_len - i) < 3) ? (body_len - i) : 3;
+		str_append_n_from_c_string (str, body + i, n);
+
+		test_check_unsigned_eq (str->len, i + n, NULL);
+		test_check_int_eq ((int) str->str[str->len], 0, NULL);
+	}
+
+	test_check_str_eq (str->str, body, NULL);
+	test_check_unsigned_eq (str->len, body_len, NULL);
+
+	str_delete (str);
+
+}
+
+static void test_str_create_from_bytes (void) {
+
+	const char bytes[] = { 'a', '\0', 'b', '\0', 'c' };
+
+	String *str = str_create_from_bytes (bytes, sizeof (bytes));
+	test_check_ptr (str);
+	test_check_ptr (str->str);
+	test_check_unsigned_eq (str->len, sizeof (bytes), NULL);
+	test_check_int_eq (memcmp (str->str, bytes, sizeof (bytes)), 0, NULL);
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+	str_delete (str);
+
+	// an empty chunk creates an empty but valid string
+	String *empty = str_create_from_bytes (bytes, 0);
+	test_check_ptr (empty);
+	test_check_ptr (empty->str);
+	test_check_unsigned_eq (empty->len, 0, NULL);
+	test_check_str_eq (empty->str, "", NULL);
+	str_delete (empty);
+
+}
+
+static void test_str_append_bytes (void) {
+
+	const char first[] = { 'x', '\0', 'y' };
+	const char second[] = { '\0', 'z' };
+	const char result[] = { 'x', '\0', 'y', '\0', 'z' };
+
+	String *str = str_create_from_bytes (first, sizeof (first));
+	test_check_ptr (str);
+
+	test_check_int_eq (str_append_bytes (str, second, sizeof (second)), 0, NULL);
+	test_check_unsigned_eq (str->len, sizeof (result), NULL);
+	test_check_int_eq (memcmp (str->str, result, sizeof (result)), 0, NULL);
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+
+	// appending nothing keeps the string unchanged
+	test_check_int_eq (str_append_bytes (str, NULL, 0), 0, NULL);
+	test_check_unsigned_eq (str->len, sizeof (result), NULL);
+
+	// bad arguments
+	test_check_int_eq (str_append_bytes (NULL, second, sizeof (second)), 1, NULL);
+	test_check_int_eq (str_append_bytes (str, NULL, 1), 1, NULL);
+
 	str_delete (str);
 
 }
@@ -496,6 +572,9 @@ void types_tests_string (void) {
 	test_str_append_char ();
 	test_str_append_c_string ();
 	test_str_append_n_from_c_string ();
+	test_str_append_n_from_c_string_many ();
+	test_str_create_from_bytes ();
+	test_str_append_bytes ();
 	test_str_to_upper ();
 	test_str_to_lower ();
 	test_str_remove_char ();

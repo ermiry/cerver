@@ -30,7 +30,7 @@ char *input_get_line (void) {
 				len = lenmax;
 				char * linen = (char *) realloc (linep, lenmax *= 2);
 
-				if(linen == NULL) {
+				if (linen == NULL) {
 					free (linep);
 					return NULL;
 				}

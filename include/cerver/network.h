@@ -29,7 +29,7 @@ typedef enum Protocol {
 
 } Protocol;
 
-#define SOCK_SIZEOF_MEMBER(type, member) (sizeof(((type *) NULL)->member))
+#define SOCK_SIZEOF_MEMBER(type, member) (sizeof (((type *) NULL)->member))
 
 // gets the ip related to the hostname
 // returns a newly allocated c string if found

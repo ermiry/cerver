@@ -164,7 +164,7 @@ static void test_decode (
 	BEST_TIME (fast_avx2_base64_decode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
 
 	free (buffer);
-	if (verbose) (void) printf("\n");
+	if (verbose) (void) printf ("\n");
 
 }
 

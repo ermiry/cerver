@@ -82,7 +82,7 @@ static void test_jwt_validate_rs256 (void) {
 	jwt_valid_t *jwt_valid = NULL;
 	int ret = 0;
 
-	read_key("rsa_key_2048-pub.pem");
+	read_key ("rsa_key_2048-pub.pem");
 
 	ret = jwt_decode (&jwt, jwt_rs256_2048, key, key_len);
 	test_check_int_eq (ret, 0, NULL);
@@ -98,7 +98,7 @@ static void test_jwt_validate_rs256 (void) {
 	test_check_int_eq (ret, 0, NULL);
 
 	test_check_int_eq (
-		JWT_VALIDATION_SUCCESS, jwt_validate(jwt, jwt_valid), NULL
+		JWT_VALIDATION_SUCCESS, jwt_validate (jwt, jwt_valid), NULL
 	);
 
 	jwt_valid_free (jwt_valid);
@@ -157,9 +157,9 @@ static void test_jwt_encode_rsa_with_ec (void) {
 	int ret = 0;
 	char *out;
 
-	ALLOC_JWT(&jwt);
+	ALLOC_JWT (&jwt);
 
-	read_key("ec_key_secp384r1.pem");
+	read_key ("ec_key_secp384r1.pem");
 
 	ret = jwt_add_grant (jwt, "iss", "files.cyphre.com");
 	test_check_int_eq (ret, 0, NULL);
@@ -189,7 +189,7 @@ static void test_jwt_verify_invalid_token (void) {
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
-	read_key("rsa_key_2048.pem");
+	read_key ("rsa_key_2048.pem");
 
 	ret = jwt_decode (&jwt, jwt_rs256_invalid, key, JWT_ALG_RS512);
 	test_check_int_ne (ret, 0);

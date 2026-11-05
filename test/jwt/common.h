@@ -12,7 +12,7 @@
 	int __ret = jwt_new (__jwt);			\
 	test_check_int_eq (__ret, 0, NULL);		\
 	test_check (*__jwt != NULL, NULL);		\
-} while(0)
+} while (0)
 
 extern unsigned char key[16384];
 extern size_t key_len;

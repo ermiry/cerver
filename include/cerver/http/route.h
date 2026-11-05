@@ -195,6 +195,9 @@ struct _HttpRoute {
 	HttpRouteStats *stats[HTTP_HANDLERS_COUNT];
 	HttpRouteFileStats *file_stats;
 
+	// the authentication handler needs the request's body
+	bool authentication_with_body;
+
 };
 
 typedef struct _HttpRoute HttpRoute;
@@ -261,6 +264,15 @@ CERVER_EXPORT void http_route_set_authentication_handler (
 		const struct _HttpReceive *http_receive,
 		const HttpRequest *request
 	)
+);
+
+// by default a request is authenticated when its headers are complete,
+// before its body is received, so the files of a rejected request are never saved
+// a route whose authentication handler needs the body (its values or files)
+// authenticates after the body was received, and its files are saved before the authentication
+// the default value is false
+CERVER_EXPORT void http_route_set_authentication_with_body (
+	HttpRoute *route, const bool authentication_with_body
 );
 
 CERVER_EXPORT const void *http_route_get_custom_data (

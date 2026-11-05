@@ -42,15 +42,15 @@ extern volatile uint32_t hashtable_seed;
  * My best guess at if you are big-endian or little-endian.  This may
  * need adjustment.
  */
-#if (defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && \
+#if (defined (__BYTE_ORDER) && defined (__LITTLE_ENDIAN) && \
      __BYTE_ORDER == __LITTLE_ENDIAN) || \
-    (defined(i386) || defined(__i386__) || defined(__i486__) || \
-     defined(__i586__) || defined(__i686__) || defined(vax) || defined(MIPSEL))
+    (defined (i386) || defined (__i386__) || defined (__i486__) || \
+     defined (__i586__) || defined (__i686__) || defined (vax) || defined (MIPSEL))
 # define HASH_LITTLE_ENDIAN 1
 # define HASH_BIG_ENDIAN 0
-#elif (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && \
+#elif (defined (__BYTE_ORDER) && defined (__BIG_ENDIAN) && \
        __BYTE_ORDER == __BIG_ENDIAN) || \
-      (defined(sparc) || defined(POWERPC) || defined(mc68000) || defined(sel))
+      (defined (sparc) || defined (POWERPC) || defined (mc68000) || defined (sel))
 # define HASH_LITTLE_ENDIAN 0
 # define HASH_BIG_ENDIAN 1
 #else
@@ -59,7 +59,7 @@ extern volatile uint32_t hashtable_seed;
 #endif
 
 #define hashsize(n) ((uint32_t)1<<(n))
-#define hashmask(n) (hashsize(n)-1)
+#define hashmask(n) (hashsize (n)-1)
 #define rot(x,k) (((x)<<(k)) | ((x)>>(32-(k))))
 
 /*
@@ -108,12 +108,12 @@ rotates.
 */
 #define mix(a,b,c) \
 { \
-  a -= c;  a ^= rot(c, 4);  c += b; \
-  b -= a;  b ^= rot(a, 6);  a += c; \
-  c -= b;  c ^= rot(b, 8);  b += a; \
-  a -= c;  a ^= rot(c,16);  c += b; \
-  b -= a;  b ^= rot(a,19);  a += c; \
-  c -= b;  c ^= rot(b, 4);  b += a; \
+  a -= c;  a ^= rot (c, 4);  c += b; \
+  b -= a;  b ^= rot (a, 6);  a += c; \
+  c -= b;  c ^= rot (b, 8);  b += a; \
+  a -= c;  a ^= rot (c,16);  c += b; \
+  b -= a;  b ^= rot (a,19);  a += c; \
+  c -= b;  c ^= rot (b, 4);  b += a; \
 }
 
 /*
@@ -143,13 +143,13 @@ and these came close:
 */
 #define final(a,b,c) \
 { \
-  c ^= b; c -= rot(b,14); \
-  a ^= c; a -= rot(c,11); \
-  b ^= a; b -= rot(a,25); \
-  c ^= b; c -= rot(b,16); \
-  a ^= c; a -= rot(c,4);  \
-  b ^= a; b -= rot(a,14); \
-  c ^= b; c -= rot(b,24); \
+  c ^= b; c -= rot (b,14); \
+  a ^= c; a -= rot (c,11); \
+  b ^= a; b -= rot (a,25); \
+  c ^= b; c -= rot (b,16); \
+  a ^= c; a -= rot (c,4);  \
+  b ^= a; b -= rot (a,14); \
+  c ^= b; c -= rot (b,24); \
 }
 
 /*
@@ -179,7 +179,7 @@ acceptable.  Do NOT use for cryptographic purposes.
 -------------------------------------------------------------------------------
 */
 
-static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
+static uint32_t hashlittle (const void *key, size_t length, uint32_t initval)
 {
   uint32_t a,b,c;                                          /* internal state */
   union { const void *ptr; size_t i; } u;     /* needed for Mac Powerbook G4 */
@@ -195,12 +195,12 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
 #ifdef VALGRIND
 # define NO_MASKING_TRICK 1
 #else
-# if defined(__has_feature)  /* Clang */
-#  if __has_feature(address_sanitizer)  /* is ASAN enabled? */
+# if defined (__has_feature)  /* Clang */
+#  if __has_feature (address_sanitizer)  /* is ASAN enabled? */
 #   define NO_MASKING_TRICK 1
 #  endif
 # else
-#  if defined(__SANITIZE_ADDRESS__)  /* GCC 4.8.x, is ASAN enabled? */
+#  if defined (__SANITIZE_ADDRESS__)  /* GCC 4.8.x, is ASAN enabled? */
 #   define NO_MASKING_TRICK 1
 #  endif
 # endif
@@ -216,7 +216,7 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
       a += k[0];
       b += k[1];
       c += k[2];
-      mix(a,b,c);
+      mix (a,b,c);
       length -= 12;
       k += 3;
     }
@@ -233,7 +233,7 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
      */
 #ifndef NO_MASKING_TRICK
 
-    switch(length)
+    switch (length)
     {
     case 12: c+=k[2]; b+=k[1]; a+=k[0]; break;
     case 11: c+=k[2]&0xffffff; b+=k[1]; a+=k[0]; break;
@@ -253,7 +253,7 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
 #else /* make valgrind happy */
 
     k8 = (const uint8_t *)k;
-    switch(length)
+    switch (length)
     {
     case 12: c+=k[2]; b+=k[1]; a+=k[0]; break;
     case 11: c+=((uint32_t)k8[10])<<16;  /* fall through */
@@ -282,14 +282,14 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
       a += k[0] + (((uint32_t)k[1])<<16);
       b += k[2] + (((uint32_t)k[3])<<16);
       c += k[4] + (((uint32_t)k[5])<<16);
-      mix(a,b,c);
+      mix (a,b,c);
       length -= 12;
       k += 6;
     }
 
     /*----------------------------- handle the last (probably partial) block */
     k8 = (const uint8_t *)k;
-    switch(length)
+    switch (length)
     {
     case 12: c+=k[4]+(((uint32_t)k[5])<<16);
              b+=k[2]+(((uint32_t)k[3])<<16);
@@ -337,13 +337,13 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
       c += ((uint32_t)k[9])<<8;
       c += ((uint32_t)k[10])<<16;
       c += ((uint32_t)k[11])<<24;
-      mix(a,b,c);
+      mix (a,b,c);
       length -= 12;
       k += 12;
     }
 
     /*-------------------------------- last block: affect all 32 bits of (c) */
-    switch(length)                   /* all the case statements fall through */
+    switch (length)                   /* all the case statements fall through */
     {
     case 12: c+=((uint32_t)k[11])<<24; /* fall through */
     case 11: c+=((uint32_t)k[10])<<16; /* fall through */
@@ -362,60 +362,60 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
     }
   }
 
-  final(a,b,c);
+  final (a,b,c);
   return c;
   
 }
 
 #pragma endregion
 
-#define list_to_pair(list_)         container_of(list_, pair_t, list)
-#define ordered_list_to_pair(list_) container_of(list_, pair_t, ordered_list)
-#define hash_str(key)               ((size_t)hashlittle((key), strlen(key), hashtable_seed))
+#define list_to_pair(list_)         container_of (list_, pair_t, list)
+#define ordered_list_to_pair(list_) container_of (list_, pair_t, ordered_list)
+#define hash_str(key)               ((size_t)hashlittle ((key), strlen (key), hashtable_seed))
 
-static CERVER_INLINE void list_init(list_t *list) {
+static CERVER_INLINE void list_init (list_t *list) {
     list->next = list;
     list->prev = list;
 }
 
-static CERVER_INLINE void list_insert(list_t *list, list_t *node) {
+static CERVER_INLINE void list_insert (list_t *list, list_t *node) {
     node->next = list;
     node->prev = list->prev;
     list->prev->next = node;
     list->prev = node;
 }
 
-static CERVER_INLINE void list_remove(list_t *list) {
+static CERVER_INLINE void list_remove (list_t *list) {
     list->prev->next = list->next;
     list->next->prev = list->prev;
 }
 
-static CERVER_INLINE int bucket_is_empty(hashtable_t *hashtable, bucket_t *bucket) {
+static CERVER_INLINE int bucket_is_empty (hashtable_t *hashtable, bucket_t *bucket) {
     return bucket->first == &hashtable->list && bucket->first == bucket->last;
 }
 
-static void insert_to_bucket(hashtable_t *hashtable, bucket_t *bucket, list_t *list) {
-    if (bucket_is_empty(hashtable, bucket)) {
-        list_insert(&hashtable->list, list);
+static void insert_to_bucket (hashtable_t *hashtable, bucket_t *bucket, list_t *list) {
+    if (bucket_is_empty (hashtable, bucket)) {
+        list_insert (&hashtable->list, list);
         bucket->first = bucket->last = list;
     } else {
-        list_insert(bucket->first, list);
+        list_insert (bucket->first, list);
         bucket->first = list;
     }
 }
 
-static pair_t *hashtable_find_pair(hashtable_t *hashtable, bucket_t *bucket,
+static pair_t *hashtable_find_pair (hashtable_t *hashtable, bucket_t *bucket,
                                    const char *key, size_t hash) {
     list_t *list;
     pair_t *pair;
 
-    if (bucket_is_empty(hashtable, bucket))
+    if (bucket_is_empty (hashtable, bucket))
         return NULL;
 
     list = bucket->first;
     while (1) {
-        pair = list_to_pair(list);
-        if (pair->hash == hash && strcmp(pair->key, key) == 0)
+        pair = list_to_pair (list);
+        if (pair->hash == hash && strcmp (pair->key, key) == 0)
             return pair;
 
         if (list == bucket->last)
@@ -428,15 +428,15 @@ static pair_t *hashtable_find_pair(hashtable_t *hashtable, bucket_t *bucket,
 }
 
 /* returns 0 on success, -1 if key was not found */
-static int hashtable_do_del(hashtable_t *hashtable, const char *key, size_t hash) {
+static int hashtable_do_del (hashtable_t *hashtable, const char *key, size_t hash) {
     pair_t *pair;
     bucket_t *bucket;
     size_t index;
 
-    index = hash & hashmask(hashtable->order);
+    index = hash & hashmask (hashtable->order);
     bucket = &hashtable->buckets[index];
 
-    pair = hashtable_find_pair(hashtable, bucket, key, hash);
+    pair = hashtable_find_pair (hashtable, bucket, key, hash);
     if (!pair)
         return -1;
 
@@ -449,207 +449,207 @@ static int hashtable_do_del(hashtable_t *hashtable, const char *key, size_t hash
     else if (&pair->list == bucket->last)
         bucket->last = pair->list.prev;
 
-    list_remove(&pair->list);
-    list_remove(&pair->ordered_list);
-    json_decref(pair->value);
+    list_remove (&pair->list);
+    list_remove (&pair->ordered_list);
+    json_decref (pair->value);
 
-    jsonp_free(pair);
+    jsonp_free (pair);
     hashtable->size--;
 
     return 0;
 }
 
-static void hashtable_do_clear(hashtable_t *hashtable) {
+static void hashtable_do_clear (hashtable_t *hashtable) {
     list_t *list, *next;
     pair_t *pair;
 
     for (list = hashtable->list.next; list != &hashtable->list; list = next) {
         next = list->next;
-        pair = list_to_pair(list);
-        json_decref(pair->value);
-        jsonp_free(pair);
+        pair = list_to_pair (list);
+        json_decref (pair->value);
+        jsonp_free (pair);
     }
 }
 
-static int hashtable_do_rehash(hashtable_t *hashtable) {
+static int hashtable_do_rehash (hashtable_t *hashtable) {
     list_t *list, *next;
     pair_t *pair;
     size_t i, index, new_size, new_order;
     struct hashtable_bucket *new_buckets;
 
     new_order = hashtable->order + 1;
-    new_size = hashsize(new_order);
+    new_size = hashsize (new_order);
 
-    new_buckets = (struct hashtable_bucket *) jsonp_malloc(new_size * sizeof(bucket_t));
+    new_buckets = (struct hashtable_bucket *) jsonp_malloc (new_size * sizeof (bucket_t));
     if (!new_buckets)
         return -1;
 
-    jsonp_free(hashtable->buckets);
+    jsonp_free (hashtable->buckets);
     hashtable->buckets = new_buckets;
     hashtable->order = new_order;
 
-    for (i = 0; i < hashsize(hashtable->order); i++) {
+    for (i = 0; i < hashsize (hashtable->order); i++) {
         hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
     }
 
     list = hashtable->list.next;
-    list_init(&hashtable->list);
+    list_init (&hashtable->list);
 
     for (; list != &hashtable->list; list = next) {
         next = list->next;
-        pair = list_to_pair(list);
+        pair = list_to_pair (list);
         index = pair->hash % new_size;
-        insert_to_bucket(hashtable, &hashtable->buckets[index], &pair->list);
+        insert_to_bucket (hashtable, &hashtable->buckets[index], &pair->list);
     }
 
     return 0;
 }
 
-int hashtable_init(hashtable_t *hashtable) {
+int hashtable_init (hashtable_t *hashtable) {
     size_t i;
 
     hashtable->size = 0;
     hashtable->order = INITIAL_HASHTABLE_ORDER;
-    hashtable->buckets = (struct hashtable_bucket *) jsonp_malloc(hashsize(hashtable->order) * sizeof(bucket_t));
+    hashtable->buckets = (struct hashtable_bucket *) jsonp_malloc (hashsize (hashtable->order) * sizeof (bucket_t));
     if (!hashtable->buckets)
         return -1;
 
-    list_init(&hashtable->list);
-    list_init(&hashtable->ordered_list);
+    list_init (&hashtable->list);
+    list_init (&hashtable->ordered_list);
 
-    for (i = 0; i < hashsize(hashtable->order); i++) {
+    for (i = 0; i < hashsize (hashtable->order); i++) {
         hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
     }
 
     return 0;
 }
 
-void hashtable_close(hashtable_t *hashtable) {
-    hashtable_do_clear(hashtable);
-    jsonp_free(hashtable->buckets);
+void hashtable_close (hashtable_t *hashtable) {
+    hashtable_do_clear (hashtable);
+    jsonp_free (hashtable->buckets);
 }
 
-int hashtable_set(hashtable_t *hashtable, const char *key, json_t *value) {
+int hashtable_set (hashtable_t *hashtable, const char *key, json_t *value) {
     pair_t *pair;
     bucket_t *bucket;
     size_t hash, index;
 
     /* rehash if the load ratio exceeds 1 */
-    if (hashtable->size >= hashsize(hashtable->order))
-        if (hashtable_do_rehash(hashtable))
+    if (hashtable->size >= hashsize (hashtable->order))
+        if (hashtable_do_rehash (hashtable))
             return -1;
 
-    hash = hash_str(key);
-    index = hash & hashmask(hashtable->order);
+    hash = hash_str (key);
+    index = hash & hashmask (hashtable->order);
     bucket = &hashtable->buckets[index];
-    pair = hashtable_find_pair(hashtable, bucket, key, hash);
+    pair = hashtable_find_pair (hashtable, bucket, key, hash);
 
     if (pair) {
-        json_decref(pair->value);
+        json_decref (pair->value);
         pair->value = value;
     } else {
         /* offsetof(...) returns the size of pair_t without the last,
            flexible member. This way, the correct amount is
            allocated. */
 
-        size_t len = strlen(key);
-        if (len >= (size_t)-1 - offsetof(pair_t, key)) {
+        size_t len = strlen (key);
+        if (len >= (size_t)-1 - offsetof (pair_t, key)) {
             /* Avoid an overflow if the key is very long */
             return -1;
         }
 
-        pair = (pair_t *) jsonp_malloc(offsetof(pair_t, key) + len + 1);
+        pair = (pair_t *) jsonp_malloc (offsetof (pair_t, key) + len + 1);
         if (!pair)
             return -1;
 
         pair->hash = hash;
-        strncpy(pair->key, key, len + 1);
+        strncpy (pair->key, key, len + 1);
         pair->value = value;
-        list_init(&pair->list);
-        list_init(&pair->ordered_list);
+        list_init (&pair->list);
+        list_init (&pair->ordered_list);
 
-        insert_to_bucket(hashtable, bucket, &pair->list);
-        list_insert(&hashtable->ordered_list, &pair->ordered_list);
+        insert_to_bucket (hashtable, bucket, &pair->list);
+        list_insert (&hashtable->ordered_list, &pair->ordered_list);
 
         hashtable->size++;
     }
     return 0;
 }
 
-void *hashtable_get(hashtable_t *hashtable, const char *key) {
+void *hashtable_get (hashtable_t *hashtable, const char *key) {
     pair_t *pair;
     size_t hash;
     bucket_t *bucket;
 
-    hash = hash_str(key);
-    bucket = &hashtable->buckets[hash & hashmask(hashtable->order)];
+    hash = hash_str (key);
+    bucket = &hashtable->buckets[hash & hashmask (hashtable->order)];
 
-    pair = hashtable_find_pair(hashtable, bucket, key, hash);
+    pair = hashtable_find_pair (hashtable, bucket, key, hash);
     if (!pair)
         return NULL;
 
     return pair->value;
 }
 
-int hashtable_del(hashtable_t *hashtable, const char *key) {
-    size_t hash = hash_str(key);
-    return hashtable_do_del(hashtable, key, hash);
+int hashtable_del (hashtable_t *hashtable, const char *key) {
+    size_t hash = hash_str (key);
+    return hashtable_do_del (hashtable, key, hash);
 }
 
-void hashtable_clear(hashtable_t *hashtable) {
+void hashtable_clear (hashtable_t *hashtable) {
     size_t i;
 
-    hashtable_do_clear(hashtable);
+    hashtable_do_clear (hashtable);
 
-    for (i = 0; i < hashsize(hashtable->order); i++) {
+    for (i = 0; i < hashsize (hashtable->order); i++) {
         hashtable->buckets[i].first = hashtable->buckets[i].last = &hashtable->list;
     }
 
-    list_init(&hashtable->list);
-    list_init(&hashtable->ordered_list);
+    list_init (&hashtable->list);
+    list_init (&hashtable->ordered_list);
     hashtable->size = 0;
 }
 
-void *hashtable_iter(hashtable_t *hashtable) {
-    return hashtable_iter_next(hashtable, &hashtable->ordered_list);
+void *hashtable_iter (hashtable_t *hashtable) {
+    return hashtable_iter_next (hashtable, &hashtable->ordered_list);
 }
 
-void *hashtable_iter_at(hashtable_t *hashtable, const char *key) {
+void *hashtable_iter_at (hashtable_t *hashtable, const char *key) {
     pair_t *pair;
     size_t hash;
     bucket_t *bucket;
 
-    hash = hash_str(key);
-    bucket = &hashtable->buckets[hash & hashmask(hashtable->order)];
+    hash = hash_str (key);
+    bucket = &hashtable->buckets[hash & hashmask (hashtable->order)];
 
-    pair = hashtable_find_pair(hashtable, bucket, key, hash);
+    pair = hashtable_find_pair (hashtable, bucket, key, hash);
     if (!pair)
         return NULL;
 
     return &pair->ordered_list;
 }
 
-void *hashtable_iter_next(hashtable_t *hashtable, void *iter) {
+void *hashtable_iter_next (hashtable_t *hashtable, void *iter) {
     list_t *list = (list_t *)iter;
     if (list->next == &hashtable->ordered_list)
         return NULL;
     return list->next;
 }
 
-void *hashtable_iter_key(void *iter) {
-    pair_t *pair = ordered_list_to_pair((list_t *)iter);
+void *hashtable_iter_key (void *iter) {
+    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
     return pair->key;
 }
 
-void *hashtable_iter_value(void *iter) {
-    pair_t *pair = ordered_list_to_pair((list_t *)iter);
+void *hashtable_iter_value (void *iter) {
+    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
     return pair->value;
 }
 
-void hashtable_iter_set(void *iter, json_t *value) {
-    pair_t *pair = ordered_list_to_pair((list_t *)iter);
+void hashtable_iter_set (void *iter, json_t *value) {
+    pair_t *pair = ordered_list_to_pair ((list_t *)iter);
 
-    json_decref(pair->value);
+    json_decref (pair->value);
     pair->value = value;
 }
 
@@ -664,81 +664,81 @@ void hashtable_iter_set(void *iter, json_t *value) {
 // }
 
 /* /dev/urandom */
-#if !defined(_WIN32) && defined(USE_URANDOM)
-static int seed_from_urandom(uint32_t *seed) {
+#if !defined (_WIN32) && defined (USE_URANDOM)
+static int seed_from_urandom (uint32_t *seed) {
     /* Use unbuffered I/O if we have open(), close() and read(). Otherwise
        fall back to fopen() */
 
-    char data[sizeof(uint32_t)];
+    char data[sizeof (uint32_t)];
     int ok;
 
-#if defined(HAVE_OPEN) && defined(HAVE_CLOSE) && defined(HAVE_READ)
+#if defined (HAVE_OPEN) && defined (HAVE_CLOSE) && defined (HAVE_READ)
     int urandom;
-    urandom = open("/dev/urandom", O_RDONLY);
+    urandom = open ("/dev/urandom", O_RDONLY);
     if (urandom == -1)
         return 1;
 
-    ok = read(urandom, data, sizeof(uint32_t)) == sizeof(uint32_t);
-    close(urandom);
+    ok = read (urandom, data, sizeof (uint32_t)) == sizeof (uint32_t);
+    close (urandom);
 #else
     FILE *urandom;
 
-    urandom = fopen("/dev/urandom", "rb");
+    urandom = fopen ("/dev/urandom", "rb");
     if (!urandom)
         return 1;
 
-    ok = fread(data, 1, sizeof(uint32_t), urandom) == sizeof(uint32_t);
-    fclose(urandom);
+    ok = fread (data, 1, sizeof (uint32_t), urandom) == sizeof (uint32_t);
+    fclose (urandom);
 #endif
 
     if (!ok)
         return 1;
 
-    *seed = buf_to_uint32(data);
+    *seed = buf_to_uint32 (data);
     return 0;
 }
 #endif
 
 /* gettimeofday() and getpid() */
-static int seed_from_timestamp_and_pid(uint32_t *seed) {
+static int seed_from_timestamp_and_pid (uint32_t *seed) {
 #ifdef HAVE_GETTIMEOFDAY
     /* XOR of seconds and microseconds */
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    gettimeofday (&tv, NULL);
     *seed = (uint32_t)tv.tv_sec ^ (uint32_t)tv.tv_usec;
 #else
     /* Seconds only */
-    *seed = (uint32_t)time(NULL);
+    *seed = (uint32_t)time (NULL);
 #endif
 
     /* XOR with PID for more randomness */
-#if defined(_WIN32)
-    *seed ^= (uint32_t)GetCurrentProcessId();
-#elif defined(HAVE_GETPID)
-    *seed ^= (uint32_t)getpid();
+#if defined (_WIN32)
+    *seed ^= (uint32_t)GetCurrentProcessId ();
+#elif defined (HAVE_GETPID)
+    *seed ^= (uint32_t)getpid ();
 #endif
 
     return 0;
 }
 
-static uint32_t generate_seed() {
+static uint32_t generate_seed () {
     uint32_t seed = 0;
     int done = 0;
 
-#if !defined(_WIN32) && defined(USE_URANDOM)
-    if (seed_from_urandom(&seed) == 0)
+#if !defined (_WIN32) && defined (USE_URANDOM)
+    if (seed_from_urandom (&seed) == 0)
         done = 1;
 #endif
 
-#if defined(_WIN32) && defined(USE_WINDOWS_CRYPTOAPI)
-    if (seed_from_windows_cryptoapi(&seed) == 0)
+#if defined (_WIN32) && defined (USE_WINDOWS_CRYPTOAPI)
+    if (seed_from_windows_cryptoapi (&seed) == 0)
         done = 1;
 #endif
 
     if (!done) {
         /* Fall back to timestamp and PID if no better randomness is
            available */
-        seed_from_timestamp_and_pid(&seed);
+        seed_from_timestamp_and_pid (&seed);
     }
 
     /* Make sure the seed is never zero */
@@ -750,31 +750,31 @@ static uint32_t generate_seed() {
 
 volatile uint32_t hashtable_seed = 0;
 
-#if defined(HAVE_ATOMIC_BUILTINS) && (defined(HAVE_SCHED_YIELD) || !defined(_WIN32))
+#if defined (HAVE_ATOMIC_BUILTINS) && (defined (HAVE_SCHED_YIELD) || !defined (_WIN32))
 static volatile char seed_initialized = 0;
 
-void json_object_seed(size_t seed) {
+void json_object_seed (size_t seed) {
     uint32_t new_seed = (uint32_t)seed;
 
     if (hashtable_seed == 0) {
-        if (__atomic_test_and_set(&seed_initialized, __ATOMIC_RELAXED) == 0) {
+        if (__atomic_test_and_set (&seed_initialized, __ATOMIC_RELAXED) == 0) {
             /* Do the seeding ourselves */
             if (new_seed == 0)
-                new_seed = generate_seed();
+                new_seed = generate_seed ();
 
-            __atomic_store_n(&hashtable_seed, new_seed, __ATOMIC_RELEASE);
+            __atomic_store_n (&hashtable_seed, new_seed, __ATOMIC_RELEASE);
         } else {
             /* Wait for another thread to do the seeding */
             do {
 #ifdef HAVE_SCHED_YIELD
-                sched_yield();
+                sched_yield ();
 #endif
-            } while (__atomic_load_n(&hashtable_seed, __ATOMIC_ACQUIRE) == 0);
+            } while (__atomic_load_n (&hashtable_seed, __ATOMIC_ACQUIRE) == 0);
         }
     }
 }
-#elif defined(HAVE_SYNC_BUILTINS) && (defined(HAVE_SCHED_YIELD) || !defined(_WIN32))
-void json_object_seed(size_t seed) {
+#elif defined (HAVE_SYNC_BUILTINS) && (defined (HAVE_SCHED_YIELD) || !defined (_WIN32))
+void json_object_seed (size_t seed) {
     uint32_t new_seed = (uint32_t)seed;
 
     if (hashtable_seed == 0) {
@@ -783,17 +783,17 @@ void json_object_seed(size_t seed) {
                __sync builtins, so every thread getting here has to
                generate the seed value.
             */
-            new_seed = generate_seed();
+            new_seed = generate_seed ();
         }
 
         do {
-            if (__sync_bool_compare_and_swap(&hashtable_seed, 0, new_seed)) {
+            if (__sync_bool_compare_and_swap (&hashtable_seed, 0, new_seed)) {
                 /* We were the first to seed */
                 break;
             } else {
                 /* Wait for another thread to do the seeding */
 #ifdef HAVE_SCHED_YIELD
-                sched_yield();
+                sched_yield ();
 #endif
             }
         } while (hashtable_seed == 0);
@@ -801,12 +801,12 @@ void json_object_seed(size_t seed) {
 }
 #else
 /* Fall back to a thread-unsafe version */
-void json_object_seed(size_t seed) {
+void json_object_seed (size_t seed) {
     uint32_t new_seed = (uint32_t)seed;
 
     if (hashtable_seed == 0) {
         if (new_seed == 0)
-            new_seed = generate_seed();
+            new_seed = generate_seed ();
 
         hashtable_seed = new_seed;
     }

@@ -19,17 +19,17 @@ extern "C" {
 #endif
 
 #define json_typeof(json)     ((json)->type)
-#define json_is_object(json)  ((json) && json_typeof(json) == JSON_OBJECT)
-#define json_is_array(json)   ((json) && json_typeof(json) == JSON_ARRAY)
-#define json_is_string(json)  ((json) && json_typeof(json) == JSON_STRING)
-#define json_is_integer(json) ((json) && json_typeof(json) == JSON_INTEGER)
-#define json_is_real(json)    ((json) && json_typeof(json) == JSON_REAL)
-#define json_is_number(json)  (json_is_integer(json) || json_is_real(json))
-#define json_is_true(json)    ((json) && json_typeof(json) == JSON_TRUE)
-#define json_is_false(json)   ((json) && json_typeof(json) == JSON_FALSE)
+#define json_is_object(json)  ((json) && json_typeof (json) == JSON_OBJECT)
+#define json_is_array(json)   ((json) && json_typeof (json) == JSON_ARRAY)
+#define json_is_string(json)  ((json) && json_typeof (json) == JSON_STRING)
+#define json_is_integer(json) ((json) && json_typeof (json) == JSON_INTEGER)
+#define json_is_real(json)    ((json) && json_typeof (json) == JSON_REAL)
+#define json_is_number(json)  (json_is_integer (json) || json_is_real (json))
+#define json_is_true(json)    ((json) && json_typeof (json) == JSON_TRUE)
+#define json_is_false(json)   ((json) && json_typeof (json) == JSON_FALSE)
 #define json_boolean_value    json_is_true
-#define json_is_boolean(json) (json_is_true(json) || json_is_false(json))
-#define json_is_null(json)    ((json) && json_typeof(json) == JSON_NULL)
+#define json_is_boolean(json) (json_is_true (json) || json_is_false (json))
+#define json_is_null(json)    ((json) && json_typeof (json) == JSON_NULL)
 
 #pragma region errors
 
@@ -98,17 +98,17 @@ CERVER_PUBLIC void jsonp_error_vset (
 
 CERVER_PUBLIC json_t *json_pack (
 	const char *fmt, ...
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_pack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, ...
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_vpack_ex (
 	json_error_t *error, size_t flags,
 	const char *fmt, va_list ap
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 #pragma endregion
 
@@ -147,27 +147,27 @@ typedef size_t (*json_load_callback_t) (
 
 CERVER_PUBLIC json_t *json_loads (
 	const char *input, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_loadb (
 	const char *buffer, size_t buflen, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_loadf (
 	FILE *input, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_loadfd (
 	int input, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_load_file (
 	const char *path, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC json_t *json_load_callback (
 	json_load_callback_t callback, void *data, size_t flags, json_error_t *error
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 #pragma endregion
 
@@ -190,7 +190,7 @@ typedef int (*json_dump_callback_t) (
 
 CERVER_PUBLIC char *json_dumps (
 	const json_t *json, size_t flags
-) CERVER_ATTRS((warn_unused_result));
+) CERVER_ATTRS ((warn_unused_result));
 
 CERVER_PUBLIC size_t json_dumpb (
 	const json_t *json, char *buffer, size_t size, size_t flags

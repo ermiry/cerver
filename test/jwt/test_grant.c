@@ -154,7 +154,7 @@ static void test_jwt_grant_invalid (void) {
 	ret = jwt_add_grant (jwt, "iss", NULL);
 	test_check_int_eq (ret, EINVAL, NULL);
 
-	ret = jwt_add_grant_int (jwt, "", (long)time(NULL));
+	ret = jwt_add_grant_int (jwt, "", (long)time (NULL));
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	val = jwt_get_grant (jwt, NULL);

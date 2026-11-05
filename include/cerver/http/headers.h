@@ -54,7 +54,7 @@ extern "C" {
 	XX(26,  ORIGIN,								Origin, 							(Indicates where a fetch originates from.))																																									\
 	XX(27,  TIMING_ALLOW_ORIGIN,				Timing-Allow-Origin,				(Specifies origins that are allowed to see values of attributes retrieved via features of the Resource Timing API.))																						\
 	/* Downloads */																																																																				\
-	XX(28,  CONTENT_DISPOSITION,				Content-Disposition,				(Indicates if the resource should be handled like a download and the browser should present a “Save As” dialog.))																							\
+	XX(28,  CONTENT_DISPOSITION,				Content-Disposition,				(Indicates if the resource should be handled like a download and the browser should present a "Save As" dialog.))																							\
 	/* Message body information */																																																																\
 	XX(29,  CONTENT_LENGTH,						Content-Length,						(The size of the resource, in decimal number of bytes.))																																					\
 	XX(30,  CONTENT_TYPE,						Content-Type,						(Indicates the media type of the resource.))																																								\

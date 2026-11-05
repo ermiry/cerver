@@ -99,11 +99,9 @@ int pool_push (Pool *pool, void *data) {
 	int retval = 1;
 
 	if (pool && data) {
-		retval = dlist_insert_after (
-			pool->dlist,
-			dlist_end (pool->dlist),
-			data
-		);
+		// the end of the list must be read under the same lock as the insert,
+		// otherwise a concurrent pop can free that element before we insert after it
+		retval = dlist_insert_at_end (pool->dlist, data);
 	}
 
 	return retval;

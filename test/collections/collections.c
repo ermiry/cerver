@@ -31,6 +31,8 @@ int main (int argc, char **argv) {
 
 	collections_tests_htab ();
 
+	collections_tests_pool ();
+
 	(void) printf ("\nDone with COLLECTIONS tests!\n\n");
 
 	cerver_log_end ();

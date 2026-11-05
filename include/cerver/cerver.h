@@ -35,6 +35,7 @@
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 
 #define CERVER_DEFAULT_REUSABLE_FLAGS				false
+#define CERVER_DEFAULT_IGNORE_SIGPIPE				true
 
 #define CERVER_DEFAULT_POOL_THREADS					4
 
@@ -244,6 +245,7 @@ struct _Cerver {
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	bool blocking;                      // sokcet fd is blocking?
 	bool reusable;						// socket fd with reusable flags?
+	bool ignore_sigpipe;				// ignore SIGPIPE when the cerver starts?
 
 	void *cerver_data;
 	Action delete_cerver_data;
@@ -309,7 +311,7 @@ struct _Cerver {
 	// otherwise, it will be set to the default one
 	Action handle_received_buffer;
 
-	u32 receive_buffer_size;
+	size_t receive_buffer_size;
 	size_t max_received_packet_size;
 
 	// 27/05/2020 - changed form Action to Handler
@@ -386,6 +388,13 @@ CERVER_EXPORT void cerver_set_receive_buffer_size (
 // if TRUE, this can prevent failing when trying to bind address
 // the default value is CERVER_DEFAULT_REUSABLE_FLAGS
 CERVER_EXPORT void cerver_set_reusable_address_flags (
+	Cerver *cerver, bool value
+);
+
+// sets whether cerver_start () ignores SIGPIPE when the process has not set a handler for it,
+// writing to a connection that the client reset raises SIGPIPE, that by default kills the process
+// the default value is CERVER_DEFAULT_IGNORE_SIGPIPE
+CERVER_EXPORT void cerver_set_ignore_sigpipe (
 	Cerver *cerver, bool value
 );
 
