@@ -1,57 +1,55 @@
 ## General
-- Added sanitizer option in makefile to compile with fsanitize
-- Using gcc 13.4 & bookworm slim images in test Dockerfile
-- Added sanitizers matrix job in build workflow for unit tests
-- Added handler integration test step & codecov v4 in tests
-- Updated beta & production workflows to use latest actions
-- Updated builder & version workflows to use newer actions
-- Getting submodules with checkout v4 in docs workflow job
-- Using gh-release action in both pre-release & release jobs
-- Defining CERVER_INLINE as empty when compiling in C++
-- Added size definition for errno description buffers in errors
-- Added methods to create and append bytes in String type
-- Compiling base64 AVX methods only if they are supported
-- Updated network, input and serializer methods code style
-- Updated collections, threads and utils methods code style
-- Fixed bsem_reset() creating again its mutex and condition
-- Setting job queue handler thread id when creating a queue
-- Using dlist_insert_at_end() when pushing data into a pool
-- Fixed connection delete method removing socket too early
-- Added option to ignore SIGPIPE signals when cerver starts
-- Updated benchmarks code style with spaced method calls
-- Added roadmap file with the main framework work phases
-- Added CLAUDE.md with project build, tests & conventions
+- Added load target in makefile to build bench server & load
+- Requiring thread sanitizer & leak checks in build workflow
+- Requiring the handler integration test in the tests workflow
+- Added arena collection to allocate values in reused blocks
+- Added method to create a String with its bytes in an arena
+- Fixed AVL double rotations & removing nodes with children
+- Fixed dlist prev links, sorting and locks when reading data
+- Using FNV-1a hash & growing htab table when it is 3/4 full
+- Checking pool create method exists before producing data
+- Added queue init method & removed repeated pop header
+- Added joinable threads blocking process signals on create
+- Refactored thpool with a bounded queue & drain methods
+- Using dlist_insert_at_end() when pushing jobs to a queue
+- Fixed sock_set_blocking() & added a socket send timeout
+- Added references count to sockets used by many threads
+- Added receive handle buffer method to assemble packets
+- Using shared receive handle method in client receive loop
+- Fixed IPv6 connection connect and removed sockets pool
+- Added cerver overload & drain policies with ordered stops
+- Fixed auth session token copy reading past session id end
+- Using cerver_is_running() & stop requests in admin cerver
+- Updating cerver sent packets stats with atomic operations
+- Fixed game cerver unregister lobby removing the list start
+- Using dlist_insert_at_end() in files & game types methods
+- Added bench web server & load client to count allocations
+- Updated roadmap with phase 2 state and the next phases
+- Updated CLAUDE.md with thpool, lifecycle & receive flows
 
 ## HTTP
-- Replaced typographic quotes in HTTP headers map values
-- Added missing header include in HTTP URL dedicated file
-- Including JSON utf header in its sources to build with g++
-- Including JWT openssl header in sources to build with g++
-- Updated vendored HTTP parser sources with spaced calls
-- Updated vendored JSON headers and sources code style
-- Updated HTTP auth sources code style using spaced calls
-- Handling send errors & retries in HTTP responses sources
-- Added MultiPart error value to check if a file failed to save
-- Added option for routes to authenticate with request body
-- Handling HTTP tokens split between reads & receive limits
-- Added HTTP receive diagnostics & rejected requests logs
-- Fixed JWT base64 decode writing out of its buffer bounds
-
-## Examples
-- Updated examples sources with spaced method calls style
-- Setting web example auth route to authenticate with body
+- Added method to create HTTP requests in a handler arena
+- Added HTTP 503 unavailable response for full thread pools
+- Added HTTP headers, request timeouts and arena receives
+- Handling accept errors, receive deadlines & thread arenas
+- Using dlist_insert_at_end() when adding HTTP route child
 
 ## Tests
-- Authenticating custom web test route with multi-part body
-- Added pool collection unit tests using concurrent threads
-- Fixed dlist unit tests race condition when reading dlist end
-- Fixed htab unit tests double free when inserting final value
-- Added String create and append bytes methods unit tests
-- Added HTTP receive unit tests with requests split by bytes
-- Updated HTTP responses unit tests with Connection close
-- Fixed packets unit tests checking binary data with strlen()
-- Removed an overflowing case from c string copy unit tests
-- Checking random range inclusive values in math unit tests
-- Updated JSON unit tests sources with spaced calls styling
-- Updated JWT unit tests sources with spaced method calls
-- Running version unit test in the dedicated unit tests script
+- Copying post fields data in all web test client curl requests
+- Added collections unit tests helper to check the dlist links
+- Added arena collection unit tests with small & large values
+- Added dlist unit tests checking invariants after any change
+- Added AVL unit tests with random values & balance check
+- Added htab unit tests with colliding keys and table rehash
+- Added queue unit tests using concurrent producer threads
+- Registering the new collections unit tests in tests main file
+- Enabled dlist remove threads unit test removing end safely
+- Added pool unit test producing without any create method
+- Refactored thpool unit tests with full queue, wait and drain
+- Added joinable threads unit tests checking blocked signals
+- Added TCP receive unit tests with packets split at any byte
+- Added HTTP server unit tests with deadlines and overload
+- Running HTTP receive unit tests with requests in an arena
+- Fixed JWT encode unit tests leaking its test user after use
+- Fixed packets unit tests leaking the ping packet at the end
+- Fixed version unit test leaking the buffer of the version file
