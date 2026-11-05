@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <errno.h>
+#include <fcntl.h>
 
 #include <sys/sendfile.h>
 #include <sys/stat.h>
@@ -694,10 +695,19 @@ void http_response_print (const HttpResponse *response) {
 
 #pragma region send
 
+static bool http_response_socket_is_blocking (const int sock_fd) {
+
+	const int flags = fcntl (sock_fd, F_GETFL, 0);
+
+	return (flags >= 0) && !(flags & O_NONBLOCK);
+
+}
+
 // an interrupted send () is always retried,
-// a full socket buffer (EAGAIN) is retried up to HTTP_RESPONSE_SEND_RETRIES times
+// a full non blocking socket buffer (EAGAIN) is retried up to HTTP_RESPONSE_SEND_RETRIES times
+// in a blocking socket, EAGAIN means that SO_SNDTIMEO expired without any progress
 static bool http_response_send_can_retry (
-	const int error, unsigned int *retries
+	const int sock_fd, const int error, unsigned int *retries
 ) {
 
 	bool retry = false;
@@ -706,7 +716,10 @@ static bool http_response_send_can_retry (
 		retry = true;
 	}
 
-	else if ((error == EAGAIN) || (error == EWOULDBLOCK)) {
+	else if (
+		((error == EAGAIN) || (error == EWOULDBLOCK))
+		&& !http_response_socket_is_blocking (sock_fd)
+	) {
 		*retries += 1;
 		retry = (*retries <= HTTP_RESPONSE_SEND_RETRIES);
 	}
@@ -744,7 +757,7 @@ static u8 http_response_send_actual (
 		// MSG_NOSIGNAL: a client that reset the connection returns EPIPE instead of raising SIGPIPE
 		const ssize_t sent = send (socket->sock_fd, p, data_size, MSG_NOSIGNAL);
 		if (sent < 0) {
-			if (http_response_send_can_retry (errno, &retries)) continue;
+			if (http_response_send_can_retry (socket->sock_fd, errno, &retries)) continue;
 
 			http_response_send_failed (socket, "send", errno, data_size);
 
@@ -776,7 +789,7 @@ u8 http_response_send (
 				(char *) response->res, response->res_len
 			)) {
 				if (http_receive->cr->cerver)
-					http_receive->cr->cerver->stats->total_bytes_sent += response->res_len;
+					CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, response->res_len);
 
 				http_receive->cr->connection->stats->total_bytes_sent += response->res_len;
 
@@ -816,7 +829,7 @@ u8 http_response_send_split (
 					size_t total_size = response->header_len + response->data_len;
 
 					if (http_receive->cr->cerver)
-						http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+						CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_size);
 
 					http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
@@ -873,7 +886,7 @@ static u8 http_response_send_file_pipe (
 		}
 
 		else if (copied < 0) {
-			if (http_response_send_can_retry (errno, &retries)) continue;
+			if (http_response_send_can_retry (socket->sock_fd, errno, &retries)) continue;
 
 			http_response_send_failed (socket, "sendfile", errno, 0);
 			retval = 1;
@@ -902,7 +915,7 @@ static u8 http_response_send_file_actual (
 		);
 
 		// update stats
-		http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+		CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_sent);
 		http_receive->cr->connection->stats->total_bytes_sent += total_sent;
 
 		((HttpReceive *) http_receive)->status = response->status;
@@ -1047,7 +1060,7 @@ static u8 http_response_render_send (
 		)) {
 			size_t total_size = header_len + data_len;
 			if (http_receive->cr->cerver)
-				http_receive->cr->cerver->stats->total_bytes_sent += total_size;
+				CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_size);
 
 			http_receive->cr->connection->stats->total_bytes_sent += total_size;
 
@@ -1227,7 +1240,7 @@ static u8 http_response_handle_video_internal (
 			#endif
 
 			// update stats
-			http_receive->cr->cerver->stats->total_bytes_sent += total_sent;
+			CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_sent);
 			http_receive->cr->connection->stats->total_bytes_sent += total_sent;
 
 			((HttpReceive *) http_receive)->status = HTTP_STATUS_PARTIAL_CONTENT;
@@ -1973,6 +1986,30 @@ void http_responses_end (void) {
 
 	http_response_producer_delete (producer);
 	producer = NULL;
+
+}
+
+static const char http_response_service_unavailable[] = HTTP_RESPONSE_SERVICE_UNAVAILABLE;
+
+// sends HTTP_RESPONSE_SERVICE_UNAVAILABLE without blocking
+// returns 0 on success, 1 on error
+u8 http_response_send_service_unavailable (const int sock_fd) {
+
+	u8 retval = 1;
+
+	if (sock_fd >= 0) {
+		const size_t length = sizeof (http_response_service_unavailable) - 1;
+
+		const ssize_t sent = send (
+			sock_fd,
+			http_response_service_unavailable, length,
+			MSG_NOSIGNAL | MSG_DONTWAIT
+		);
+
+		retval = (sent == (ssize_t) length) ? 0 : 1;
+	}
+
+	return retval;
 
 }
 
