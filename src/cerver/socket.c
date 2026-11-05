@@ -18,33 +18,38 @@ Socket *socket_new (void) {
 
 		socket->read_mutex = NULL;
 		socket->write_mutex = NULL;
+
+		socket->references = 1;
 	}
 
 	return socket;
 
 }
 
+// takes a new reference to the socket
+Socket *socket_reference (Socket *socket) {
+
+	if (socket) {
+		(void) __atomic_add_fetch (&socket->references, 1, __ATOMIC_ACQ_REL);
+	}
+
+	return socket;
+
+}
+
+// releases a reference to the socket, it is deleted with the last one
 void socket_delete (void *socket_ptr) {
 
 	if (socket_ptr) {
 		Socket *socket = (Socket *) socket_ptr;
 
-		if (socket->read_mutex) (void) pthread_mutex_lock (socket->read_mutex);
-		if (socket->write_mutex) (void) pthread_mutex_lock (socket->write_mutex);
+		if (__atomic_sub_fetch (&socket->references, 1, __ATOMIC_ACQ_REL)) return;
 
 		if (socket->packet_buffer) free (socket->packet_buffer);
 
-		if (socket->read_mutex) {
-			(void) pthread_mutex_unlock (socket->read_mutex);
-			(void) pthread_mutex_destroy (socket->read_mutex);
-			free (socket->read_mutex);
-		}
-
-		if (socket->write_mutex) {
-			(void) pthread_mutex_unlock (socket->write_mutex);
-			(void) pthread_mutex_destroy (socket->write_mutex);
-			free (socket->write_mutex);
-		}
+		// the mutexes live inside the socket
+		if (socket->read_mutex) (void) pthread_mutex_destroy (socket->read_mutex);
+		if (socket->write_mutex) (void) pthread_mutex_destroy (socket->write_mutex);
 
 		free (socket_ptr);
 	}
@@ -55,10 +60,10 @@ void *socket_create_empty (void) {
 
 	Socket *socket = socket_new ();
 	if (socket) {
-		socket->read_mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+		socket->read_mutex = &socket->read_mutex_storage;
 		(void) pthread_mutex_init (socket->read_mutex, NULL);
 
-		socket->write_mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+		socket->write_mutex = &socket->write_mutex_storage;
 		(void) pthread_mutex_init (socket->write_mutex, NULL);
 	}
 
