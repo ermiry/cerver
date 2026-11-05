@@ -42,8 +42,8 @@ static void __teardown_jwt (void) {
 #define __VAL_EQ(__v, __e) do {									\
 	unsigned int __r = jwt_validate (jwt, __v);					\
 	test_check_int_eq (__r, __e, NULL);							\
-	test_check_int_eq (__e, jwt_valid_get_status(__v), NULL);	\
-} while(0);
+	test_check_int_eq (__e, jwt_valid_get_status (__v), NULL);	\
+} while (0);
 
 static void test_jwt_validate_errno (void) {
 
@@ -96,7 +96,7 @@ static void test_jwt_valid_algorithm (void) {
 	test_check (jwt_valid != NULL, NULL);
 
 	/* Starts with invalid */
-	test_check_int_eq (JWT_VALIDATION_ERROR, jwt_valid_get_status(jwt_valid), NULL);
+	test_check_int_eq (JWT_VALIDATION_ERROR, jwt_valid_get_status (jwt_valid), NULL);
 
 	__VAL_EQ (jwt_valid, JWT_VALIDATION_ALG_MISMATCH);
 
@@ -168,7 +168,7 @@ static void test_jwt_valid_nonmatch_grant (void) {
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
 
-	__setup_jwt();
+	__setup_jwt ();
 
 	ret = jwt_valid_new (&jwt_valid, JWT_ALG_NONE);
 	test_check_int_eq (ret, 0, NULL);
@@ -183,7 +183,7 @@ static void test_jwt_valid_nonmatch_grant (void) {
 	jwt_valid_del_grants (jwt_valid, NULL);
 
 	/* Invalid when required grants don't match (int) */
-	ret = jwt_valid_add_grant_int (jwt_valid, "iat", (long)time(NULL) + 1);
+	ret = jwt_valid_add_grant_int (jwt_valid, "iat", (long)time (NULL) + 1);
 	test_check_int_eq (ret, 0, NULL);
 
 	__VAL_EQ (jwt_valid, JWT_VALIDATION_GRANT_MISMATCH);
@@ -291,7 +291,7 @@ static void test_jwt_valid_invalid_grant (void) {
 	ret = jwt_valid_add_grant (jwt_valid, "iss", NULL);
 	test_check_int_eq (ret, EINVAL, NULL);
 
-	ret = jwt_valid_add_grant_int (jwt_valid, "", (long)time(NULL));
+	ret = jwt_valid_add_grant_int (jwt_valid, "", (long)time (NULL));
 	test_check_int_eq (ret, EINVAL, NULL);
 
 	val = jwt_valid_get_grant (jwt_valid, NULL);
@@ -315,7 +315,7 @@ static void test_jwt_valid_missing_grant (void) {
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
 
-	__setup_jwt();
+	__setup_jwt ();
 
 	ret = jwt_valid_new (&jwt_valid, JWT_ALG_NONE);
 	test_check_int_eq (ret, 0, NULL);
@@ -338,7 +338,7 @@ static void test_jwt_valid_missing_grant (void) {
 	/* JWT is invalid when required grants are not present (bool) */
 	ret = jwt_valid_add_grant_int (jwt_valid, "np-bool", 1);
 	test_check_int_eq (ret, 0, NULL);
-	__VAL_EQ(jwt_valid, JWT_VALIDATION_GRANT_MISSING);
+	__VAL_EQ (jwt_valid, JWT_VALIDATION_GRANT_MISSING);
 
 	jwt_valid_del_grants (jwt_valid, NULL);
 
@@ -415,7 +415,7 @@ static void test_jwt_valid_headers (void) {
 	jwt_valid_t *jwt_valid = NULL;
 	unsigned int ret = 0;
 
-	__setup_jwt();
+	__setup_jwt ();
 
 	ret = jwt_valid_new (&jwt_valid, JWT_ALG_NONE);
 	test_check_int_eq (ret, 0, NULL);

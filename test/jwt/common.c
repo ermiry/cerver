@@ -18,7 +18,7 @@ size_t key_len = 0;
 
 void read_key (const char *key_file) {
 
-	FILE *fp = fopen(key_file, "r");
+	FILE *fp = fopen (key_file, "r");
 	char *key_path;
 	int ret = 0;
 
@@ -87,9 +87,9 @@ void verify_alg_key (
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
-	read_key(key_file);
+	read_key (key_file);
 
-	ret = jwt_decode( &jwt, jwt_str, key, key_len);
+	ret = jwt_decode ( &jwt, jwt_str, key, key_len);
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 

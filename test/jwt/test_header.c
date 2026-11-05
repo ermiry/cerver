@@ -34,7 +34,7 @@ static void test_jwt_add_header (void) {
 	ret = jwt_add_header_int (jwt, "iat", (long) time (NULL));
 	test_check_int_eq (ret, EEXIST, NULL);
 
-	jwt_free(jwt);
+	jwt_free (jwt);
 
 }
 

@@ -169,7 +169,7 @@ static void test_jwt_decode_hs256_issue_1 (void) {
 	jwt_t *jwt = NULL;
 	int ret = 0;
 
-	ret = jwt_decode (&jwt, token, key256, sizeof(key256));
+	ret = jwt_decode (&jwt, token, key256, sizeof (key256));
 	test_check_int_eq (ret, 0, NULL);
 	test_check (jwt != NULL, NULL);
 
