@@ -79,11 +79,7 @@ int pool_init (
 			int errors = 0;
 
 			for (unsigned int i = 0; i < n_elements; i++) {
-				errors |= dlist_insert_after (
-					pool->dlist,
-					dlist_end (pool->dlist),
-					produce ()
-				);
+				errors |= dlist_insert_at_end (pool->dlist, produce ());
 			}
 
 			retval = errors;
@@ -118,7 +114,7 @@ void *pool_pop (Pool *pool) {
 			NULL
 		);
 
-		if (!retval && pool->produce) {
+		if (!retval && pool->produce && pool->create) {
 			retval = pool->create ();
 		}
 	}
