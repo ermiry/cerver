@@ -33,19 +33,19 @@ static void test_http_responses_init (void) {
 
 	(void) snprintf (
 		json_header, TEST_HEADER_LEN,
-		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nContent-Length: 128\r\nContent-Type: application/json\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nConnection: close\r\nContent-Length: 128\r\nContent-Type: application/json\r\n\r\n",
 		CERVER_VERSION
 	);
 
 	(void) snprintf (
 		header_content_len, TEST_HEADER_LEN,
-		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nContent-Length: 128\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nConnection: close\r\nContent-Length: 128\r\n\r\n",
 		CERVER_VERSION
 	);
 
 	(void) snprintf (
 		header_content_type, TEST_HEADER_LEN,
-		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nContent-Type: application/json\r\n\r\n",
+		"HTTP/1.1 200 OK\r\nServer: Cerver/%s\r\nConnection: close\r\nContent-Type: application/json\r\n\r\n",
 		CERVER_VERSION
 	);
 
