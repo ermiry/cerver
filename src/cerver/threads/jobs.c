@@ -348,11 +348,7 @@ static unsigned int job_queue_push_internal (
 
 	(void) pthread_mutex_lock (job_queue->rwmutex);
 
-	retval = dlist_insert_after (
-		job_queue->queue,
-		dlist_end (job_queue->queue),
-		job_ptr
-	);
+	retval = dlist_insert_at_end (job_queue->queue, job_ptr);
 
 	bsem_post (job_queue->has_jobs);
 
@@ -413,11 +409,7 @@ static unsigned int job_queue_push_job_with_id_internal (
 	}
 
 	else {
-		retval = dlist_insert_after (
-			job_queue->queue,
-			dlist_end (job_queue->queue),
-			job
-		);
+		retval = dlist_insert_at_end (job_queue->queue, job);
 	}
 
 	(void) pthread_mutex_unlock (job_queue->rwmutex);
