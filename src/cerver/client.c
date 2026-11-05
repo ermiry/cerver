@@ -585,9 +585,7 @@ void client_drop (Cerver *cerver, Client *client) {
 u8 client_connection_add (Client *client, Connection *connection) {
 
 	return (client && connection) ?
-		(u8) dlist_insert_after (
-			client->connections, dlist_end (client->connections), connection
-		) : 1;
+		(u8) dlist_insert_at_end (client->connections, connection) : 1;
 
 }
 
@@ -926,7 +924,7 @@ Client *client_remove_from_cerver (
 			);
 			#endif
 
-			cerver->stats->current_n_connected_clients--;
+			CERVER_STATS_SUBTRACT (cerver->stats->current_n_connected_clients, 1);
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
@@ -965,8 +963,8 @@ static void client_register_to_cerver_internal (
 	);
 	#endif
 
-	cerver->stats->total_n_clients++;
-	cerver->stats->current_n_connected_clients++;
+	CERVER_STATS_ADD (cerver->stats->total_n_clients, 1);
+	CERVER_STATS_ADD (cerver->stats->current_n_connected_clients, 1);
 
 	#ifdef CERVER_STATS
 	cerver_log (
@@ -1929,11 +1927,7 @@ int client_connection_register (
 	int retval = 1;
 
 	if (client && connection) {
-		retval =  dlist_insert_after (
-			client->connections,
-			dlist_end (client->connections),
-			connection
-		);
+		retval = dlist_insert_at_end (client->connections, connection);
 	}
 
 	return retval;
@@ -3287,424 +3281,26 @@ static u8 client_packet_handler (Packet *packet) {
 
 }
 
-static void client_receive_handle_buffer_actual (
-	ReceiveHandle *receive_handle,
-	char *end, size_t buffer_pos,
-	size_t remaining_buffer_size
+static u8 client_receive_dispatch (
+	ReceiveHandle *receive_handle, Packet *packet
 ) {
 
-	PacketHeader *header = NULL;
-	size_t packet_size = 0;
+	(void) receive_handle;
 
-	Packet *packet = NULL;
-
-	u8 stop_handler = 0;
-
-	#ifdef CLIENT_RECEIVE_DEBUG
-	(void) printf ("WHILE has started!\n\n");
-	#endif
-
-	do {
-		#ifdef CLIENT_RECEIVE_DEBUG
-		(void) printf ("[0] remaining_buffer_size: %lu\n", remaining_buffer_size);
-		(void) printf ("[0] buffer pos: %lu\n", buffer_pos);
-		#endif
-
-		switch (receive_handle->state) {
-			// check if we have a complete packet header in the buffer
-			case RECEIVE_HANDLE_STATE_NORMAL: {
-				if (remaining_buffer_size >= sizeof (PacketHeader)) {
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf (
-						"Complete header in current buffer\n"
-					);
-					#endif
-
-					header = (PacketHeader *) end;
-					end += sizeof (PacketHeader);
-					buffer_pos += sizeof (PacketHeader);
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					packet_header_print (header);
-					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
-					#endif
-
-					packet_size = header->packet_size;
-					remaining_buffer_size -= sizeof (PacketHeader);
-				}
-
-				// we need to handle just a part of the header
-				else {
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf (
-						"Only %lu of %lu header bytes left in buffer\n",
-						remaining_buffer_size, sizeof (PacketHeader)
-					);
-					#endif
-
-					// reset previous header
-					(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
-
-					// the remaining buffer must contain a part of the header
-					// so copy it to our aux structure
-					receive_handle->header_end = (char *) &receive_handle->header;
-					(void) memcpy (
-						receive_handle->header_end, (void *) end, remaining_buffer_size
-					);
-
-					// for (size_t i = 0; i < sizeof (PacketHeader); i++)
-					// 	printf ("%4x", (unsigned int) receive_handle->header_end[i]);
-
-					// printf ("\n");
-
-					// for (size_t i = 0; i < sizeof (PacketHeader); i++) {
-					// 	printf ("%4x", (unsigned int) *end);
-					// 	end += 1;
-					// }
-
-					// printf ("\n");
-
-					// packet_header_print (&receive_handle->header);
-
-					// pointer to the last byte of the new header
-					receive_handle->header_end += remaining_buffer_size;
-
-					// keep track of how much header's data we are missing
-					receive_handle->remaining_header =
-						sizeof (PacketHeader) - remaining_buffer_size;
-
-					buffer_pos += remaining_buffer_size;
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("[1] buffer pos: %lu\n", buffer_pos);
-					#endif
-
-					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_HEADER;
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("while loop should end now!\n");
-					#endif
-				}
-			} break;
-
-			// we already have a complete header from the spare packet
-			// we just need to check if it is correct
-			case RECEIVE_HANDLE_STATE_COMP_HEADER: {
-				header = &receive_handle->header;
-				packet_size = header->packet_size;
-				// remaining_buffer_size -= buffer_pos;
-
-				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
-			} break;
-
-			default: break;
-		}
-
-		#ifdef CLIENT_RECEIVE_DEBUG
-		(void) printf (
-			"State BEFORE CHECKING for packet size: %s\n",
-			receive_handle_state_to_string (receive_handle->state)
-		);
-		#endif
-
-		if (
-			(receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL)
-			|| (receive_handle->state == RECEIVE_HANDLE_STATE_LOST)
-		) {
-			// check that we have a valid packet size
-			if (
-				(packet_size > 0)
-				&& (packet_size <= receive_handle->client->max_received_packet_size)
-			) {
-				// we can safely process the complete packet
-				packet = packet_create_with_data (
-					header->packet_size - sizeof (PacketHeader)
-				);
-
-				// set packet's values
-				(void) memcpy (&packet->header, header, sizeof (PacketHeader));
-				// packet->cerver = receive_handle->cerver;
-				packet->client = receive_handle->client;
-				packet->connection = receive_handle->connection;
-				// packet->lobby = receive_handle->lobby;
-
-				packet->packet_size = packet->header.packet_size;
-
-				if (packet->data_size == 0) {
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf (
-						"Packet has no more data\n"
-					);
-					#endif
-
-					// we can safely handle the packet
-					stop_handler = client_packet_handler (packet);
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
-					#endif
-				}
-
-				// check how much of the packet's data is in the current buffer
-				else if (packet->data_size <= remaining_buffer_size) {
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf (
-						"Complete packet in current buffer\n"
-					);
-					#endif
-
-					// the full packet's data is in the current buffer
-					// so we can safely copy the complete packet
-					(void) memcpy (packet->data, end, packet->data_size);
-
-					// we can safely handle the packet
-					stop_handler = client_packet_handler (packet);
-
-					// update buffer positions & values
-					end += packet->data_size;
-					buffer_pos += packet->data_size;
-					remaining_buffer_size -= packet->data_size;
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("[2] buffer pos: %lu\n", buffer_pos);
-					#endif
-				}
-
-				else {
-					// just some part of the packet's data is in the current buffer
-					// we should copy all the remaining buffer and wait for the next read
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
-					#endif
-					
-					if (remaining_buffer_size > 0) {
-						#ifdef CLIENT_RECEIVE_DEBUG
-						(void) printf (
-							"We can only get %lu / %lu from the current buffer\n",
-							remaining_buffer_size, packet->data_size
-						);
-						#endif
-
-						// TODO: handle errors
-						(void) packet_add_data (
-							packet, end, remaining_buffer_size
-						);
-
-						// update buffer positions & values
-						end += packet->data_size;
-						buffer_pos += packet->data_size;
-						remaining_buffer_size -= packet->data_size;
-					}
-
-					else {
-						#ifdef CLIENT_RECEIVE_DEBUG
-						(void) printf (
-							"We have NO more data left in current buffer\n"
-						);
-						#endif
-					}
-
-					// set the newly created packet as spare
-					receive_handle->spare_packet = packet;
-
-					receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_PACKET;
-
-					#ifdef CLIENT_RECEIVE_DEBUG
-					(void) printf ("while loop should end now!\n");
-					#endif
-				}
-			}
-
-			else {
-				// we must likely have a bad packet
-				// we need to keep reading the buffer until we find
-				// the start of the next one and we can continue
-				#ifdef CLIENT_RECEIVE_DEBUG
-				cerver_log (
-					LOG_TYPE_WARNING, LOG_TYPE_PACKET,
-					"Got a packet of invalid size: %ld", packet_size
-				);
-				#endif
-
-				#ifdef CLIENT_RECEIVE_DEBUG
-				(void) printf ("\n\nWE ARE LOST!\n\n");
-				#endif
-
-				receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
-
-				// FIXME: this is just for testing!
-				break;
-			}
-		}
-
-		// reset common loop values
-		header = NULL;
-		packet = NULL;
-	} while ((buffer_pos < receive_handle->received_size) && !stop_handler);
-
-	#ifdef CLIENT_RECEIVE_DEBUG
-	(void) printf ("WHILE has ended!\n\n");
-	#endif
+	return client_packet_handler (packet);
 
 }
 
+// assembles packets from the received buffers, no matter where the buffers are split
 static void client_receive_handle_buffer (
 	ReceiveHandle *receive_handle
 ) {
 
-	char *end = receive_handle->buffer;
-	size_t buffer_pos = 0;
-
-	size_t remaining_buffer_size = receive_handle->received_size;
-
-	u8 stop_handler = 0;
-
-	#ifdef CLIENT_RECEIVE_DEBUG
-	(void) printf ("Received size: %lu\n", receive_handle->received_size);
-
-	(void) printf (
-		"State BEFORE checking for SPARE PARTS: %s\n",
-		receive_handle_state_to_string (receive_handle->state)
+	receive_handle_buffer (
+		receive_handle,
+		receive_handle->client->max_received_packet_size,
+		client_receive_dispatch
 	);
-	#endif
-
-		// check if we have any spare parts 
-	switch (receive_handle->state) {
-		// check if we have a spare header
-		// that was incompleted from the last buffer
-		case RECEIVE_HANDLE_STATE_SPLIT_HEADER: {
-			// copy the remaining header size
-			(void) memcpy (
-				receive_handle->header_end,
-				(void *) end,
-				receive_handle->remaining_header
-			);
-
-			#ifdef CLIENT_RECEIVE_DEBUG
-			(void) printf (
-				"Copied %u missing header bytes\n",
-				receive_handle->remaining_header
-			);
-			#endif
-
-			// receive_handle->header_end = (char *) &receive_handle->header;
-			// for (size_t i = 0; i < receive_handle->remaining_header; i++)
-			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
-
-			// (void) printf ("\n");
-			
-			#ifdef CLIENT_RECEIVE_DEBUG
-			packet_header_print (&receive_handle->header);
-			#endif
-
-			// update buffer positions
-			end += receive_handle->remaining_header;
-			buffer_pos += receive_handle->remaining_header;
-
-			// update how much we have still left to handle from the current buffer
-			remaining_buffer_size -= receive_handle->remaining_header;
-
-			// reset receive handler values
-			receive_handle->header_end = NULL;
-			receive_handle->remaining_header = 0;
-
-			// we can expect to get the packet's data from the current buffer
-			receive_handle->state = RECEIVE_HANDLE_STATE_COMP_HEADER;
-
-			#ifdef CLIENT_RECEIVE_DEBUG
-			(void) printf ("We have a COMPLETE HEADER!\n");
-			#endif
-		} break;
-
-		// check if we have a spare packet
-		case RECEIVE_HANDLE_STATE_SPLIT_PACKET: {
-			// check if the current buffer is big enough
-			if (
-				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
-			) {
-				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
-				
-				// copy packet's remaining data
-				(void) packet_add_data (
-					receive_handle->spare_packet,
-					end,
-					receive_handle->spare_packet->remaining_data
-				);
-
-				#ifdef CLIENT_RECEIVE_DEBUG
-				(void) printf (
-					"Copied %lu missing packet bytes\n",
-					to_copy_data_size
-				);
-
-				(void) printf ("Spare packet is COMPLETED!\n");
-				#endif
-
-				// we can safely handle the packet
-				stop_handler = client_packet_handler (
-					receive_handle->spare_packet
-				);
-
-				// update buffer positions
-				end += to_copy_data_size;
-				buffer_pos += to_copy_data_size;
-
-				// update how much we have still left to handle from the current buffer
-				remaining_buffer_size -= to_copy_data_size;
-
-				// we still need to process more data from the buffer
-				receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
-			}
-
-			else {
-				#ifdef CLIENT_RECEIVE_DEBUG
-				(void) printf (
-					"We can only get %lu / %lu of the remaining packet's data\n",
-					receive_handle->spare_packet->remaining_data,
-					receive_handle->received_size
-				);
-				#endif
-
-				// copy the complete buffer
-				(void) packet_add_data (
-					receive_handle->spare_packet,
-					end,
-					receive_handle->received_size
-				);
-
-				#ifdef CLIENT_RECEIVE_DEBUG
-				(void) printf (
-					"We are still missing %lu to complete the packet!\n",
-					receive_handle->spare_packet->remaining_data
-				);
-				#endif
-			}
-		} break;
-
-		default: break;
-	}
-
-	#ifdef CLIENT_RECEIVE_DEBUG
-	(void) printf (
-		"State BEFORE LOOP: %s\n",
-		receive_handle_state_to_string (receive_handle->state)
-	);
-	#endif
-
-	if (
-		!stop_handler
-		&& (buffer_pos < receive_handle->received_size)
-		&& (
-			receive_handle->state == RECEIVE_HANDLE_STATE_NORMAL
-			|| (receive_handle->state == RECEIVE_HANDLE_STATE_COMP_HEADER)
-		)
-	) {
-		client_receive_handle_buffer_actual (
-			receive_handle,
-			end, buffer_pos,
-			remaining_buffer_size
-		);
-	}
 
 }
 
