@@ -568,12 +568,16 @@ static void test_http_receive_new (void) {
 
 static void test_http_receive_create (void) {
 
+	// http_receive_create () reads the http cerver's configuration
 	HttpCerver http_cerver;
+	(void) memset (&http_cerver, 0, sizeof (HttpCerver));
 
 	Cerver cerver;
+	(void) memset (&cerver, 0, sizeof (Cerver));
 	cerver.cerver_data = &http_cerver;
 
 	CerverReceive cerver_receive;
+	(void) memset (&cerver_receive, 0, sizeof (CerverReceive));
 	cerver_receive.cerver = &cerver;
 
 	HttpReceive *http_receive = http_receive_create (&cerver_receive);
@@ -689,6 +693,9 @@ int main (int argc, char **argv) {
 	http_tests_jwt_decode ();
 
 	http_tests_admin ();
+
+	// the parser fed with every request split at every byte
+	http_tests_receive ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 
