@@ -70,7 +70,6 @@ jobs:
     name: Cerver tests with ${{ matrix.sanitizer }} sanitizer
     needs: build
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.sanitizer == 'thread' }}
     strategy:
       fail-fast: false
       matrix:
@@ -92,6 +91,7 @@ jobs:
 
       - name: Run tests
         env:
-          ASAN_OPTIONS: detect_leaks=0
+          ASAN_OPTIONS: detect_leaks=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          TSAN_OPTIONS: halt_on_error=1
         run: bash test/run.sh

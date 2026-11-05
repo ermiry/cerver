@@ -189,6 +189,32 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 
 #pragma endregion
 
+#pragma region context
+
+struct Arena;
+
+// the memory that a worker thread reuses between requests
+// the data of a request lives in the arena only while it is handled
+typedef struct HandlerThreadContext {
+
+	struct Arena *arena;
+
+	char *buffer;
+	size_t buffer_size;
+
+	String *url_buffer;
+	String *field_buffer;
+	String *value_buffer;
+
+} HandlerThreadContext;
+
+// returns the context of the current thread with a receive buffer of at least buffer_size,
+// it is created the first time and it is released when the thread exits
+// returns NULL if it can not be used, then every request allocates its own memory
+CERVER_PRIVATE HandlerThreadContext *handler_context_get (const size_t buffer_size);
+
+#pragma endregion
+
 #pragma region receive
 
 // the default timeout when handling a connection in dedicated thread

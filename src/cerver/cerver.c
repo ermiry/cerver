@@ -5,10 +5,13 @@
 
 #include "cerver/config.h"
 
+#include <errno.h>
 #include <pthread.h>
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <sys/socket.h>
 
 #include <sys/poll.h>
 
@@ -96,6 +99,62 @@ const char *cerver_handler_type_description (CerverHandlerType type) {
 	}
 
 	return cerver_handler_type_description (CERVER_HANDLER_TYPE_NONE);
+
+}
+
+const char *cerver_overload_policy_to_string (CerverOverloadPolicy policy) {
+
+	switch (policy) {
+		#define XX(num, name, string, description) case CERVER_OVERLOAD_POLICY_##name: return #string;
+		CERVER_OVERLOAD_POLICY_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return cerver_overload_policy_to_string (CERVER_OVERLOAD_POLICY_NONE);
+
+}
+
+const char *cerver_overload_policy_description (CerverOverloadPolicy policy) {
+
+	switch (policy) {
+		#define XX(num, name, string, description) case CERVER_OVERLOAD_POLICY_##name: return #description;
+		CERVER_OVERLOAD_POLICY_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return cerver_overload_policy_description (CERVER_OVERLOAD_POLICY_NONE);
+
+}
+
+const char *cerver_drain_policy_to_string (CerverDrainPolicy policy) {
+
+	switch (policy) {
+		#define XX(num, name, string, description) case CERVER_DRAIN_POLICY_##name: return #string;
+		CERVER_DRAIN_POLICY_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return cerver_drain_policy_to_string (CERVER_DRAIN_POLICY_NONE);
+
+}
+
+const char *cerver_drain_policy_description (CerverDrainPolicy policy) {
+
+	switch (policy) {
+		#define XX(num, name, string, description) case CERVER_DRAIN_POLICY_##name: return #description;
+		CERVER_DRAIN_POLICY_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return cerver_drain_policy_description (CERVER_DRAIN_POLICY_NONE);
 
 }
 
@@ -348,16 +407,26 @@ Cerver *cerver_new (void) {
 		cerver->isRunning = false;
 		cerver->blocking = true;
 		cerver->reusable = CERVER_DEFAULT_REUSABLE_FLAGS;
+		cerver->reusable_port = CERVER_DEFAULT_REUSABLE_PORT;
 		cerver->ignore_sigpipe = CERVER_DEFAULT_IGNORE_SIGPIPE;
 
 		cerver->cerver_data = NULL;
 		cerver->delete_cerver_data = NULL;
 
 		cerver->n_thpool_threads = CERVER_DEFAULT_POOL_THREADS;
+		cerver->thpool_queue_size = CERVER_DEFAULT_THPOOL_QUEUE_SIZE;
 		cerver->thpool = NULL;
 
-		cerver->sockets_pool_init = CERVER_DEFAULT_SOCKETS_INIT;
-		cerver->sockets_pool = NULL;
+		cerver->overload_policy = CERVER_DEFAULT_OVERLOAD_POLICY;
+
+		cerver->drain_policy = CERVER_DEFAULT_DRAIN_POLICY;
+		cerver->drain_timeout = CERVER_DEFAULT_DRAIN_TIMEOUT;
+		cerver->drained = true;
+
+		cerver->send_timeout = CERVER_DEFAULT_SEND_TIMEOUT;
+
+		cerver->stop_mutex = thread_mutex_new ();
+		cerver->stop_cond = thread_cond_new ();
 
 		cerver->clients = NULL;
 		cerver->client_sock_fd_map = NULL;
@@ -458,7 +527,8 @@ void cerver_delete (void *ptr) {
 			else free (cerver->cerver_data);
 		}
 
-		pool_delete (cerver->sockets_pool);
+		thread_mutex_delete (cerver->stop_mutex);
+		thread_cond_delete (cerver->stop_cond);
 
 		if (cerver->clients) avl_delete (cerver->clients);
 		if (cerver->client_sock_fd_map) htab_destroy (cerver->client_sock_fd_map);
@@ -562,6 +632,29 @@ void cerver_set_reusable_address_flags (
 
 }
 
+// sets the cerver's ability to share its port with other sockets (SO_REUSEPORT)
+// the default value is CERVER_DEFAULT_REUSABLE_PORT
+void cerver_set_reusable_port (
+	Cerver *cerver, bool value
+) {
+
+	if (cerver) cerver->reusable_port = value;
+
+}
+
+// returns true while the cerver is accepting connections
+bool cerver_is_running (const Cerver *cerver) {
+
+	return cerver ? __atomic_load_n (&cerver->isRunning, __ATOMIC_SEQ_CST) : false;
+
+}
+
+static void cerver_set_running (Cerver *cerver, bool value) {
+
+	__atomic_store_n (&cerver->isRunning, value, __ATOMIC_SEQ_CST);
+
+}
+
 // sets whether cerver_start () ignores SIGPIPE when the process has not set a handler for it,
 // writing to a connection that the client reset raises SIGPIPE, that by default kills the process
 // the default value is CERVER_DEFAULT_IGNORE_SIGPIPE
@@ -615,13 +708,68 @@ void cerver_set_thpool_n_threads (
 
 }
 
-// sets the initial number of sockets to be created in the cerver's sockets pool
-// the defauult value is 10
+// sets how many accepted connections can wait in the thpool queue
+// the default value is CERVER_DEFAULT_THPOOL_QUEUE_SIZE
+void cerver_set_thpool_queue_size (
+	Cerver *cerver, unsigned int queue_size
+) {
+
+	if (cerver) cerver->thpool_queue_size = queue_size;
+
+}
+
+// sets what happens with a new connection when the thpool queue is full
+// the default value is CERVER_DEFAULT_OVERLOAD_POLICY
+void cerver_set_overload_policy (
+	Cerver *cerver, CerverOverloadPolicy policy
+) {
+
+	if (cerver && (policy > CERVER_OVERLOAD_POLICY_NONE) && (policy < CERVER_OVERLOAD_POLICY_MAX)) {
+		cerver->overload_policy = policy;
+	}
+
+}
+
+// sets what happens with the queued connections when the cerver is drained
+// the default value is CERVER_DEFAULT_DRAIN_POLICY
+void cerver_set_drain_policy (
+	Cerver *cerver, CerverDrainPolicy policy
+) {
+
+	if (cerver && (policy > CERVER_DRAIN_POLICY_NONE) && (policy < CERVER_DRAIN_POLICY_MAX)) {
+		cerver->drain_policy = policy;
+	}
+
+}
+
+// sets how many secs the cerver waits for its connections when it is drained
+// the default value is CERVER_DEFAULT_DRAIN_TIMEOUT
+void cerver_set_drain_timeout (
+	Cerver *cerver, u32 drain_timeout
+) {
+
+	if (cerver) cerver->drain_timeout = drain_timeout;
+
+}
+
+// sets the SO_SNDTIMEO in secs for every accepted connection
+// the default value is CERVER_DEFAULT_SEND_TIMEOUT
+void cerver_set_send_timeout (
+	Cerver *cerver, u32 send_timeout
+) {
+
+	if (cerver) cerver->send_timeout = send_timeout;
+
+}
+
+// DEPRECATED: the sockets pool was removed,
+// every connection now owns its socket
 void cerver_set_sockets_pool_init (
 	Cerver *cerver, unsigned int n_sockets
 ) {
 
-	if (cerver) cerver->sockets_pool_init = n_sockets;
+	(void) cerver;
+	(void) n_sockets;
 
 }
 
@@ -967,98 +1115,6 @@ u8 cerver_set_admin_enable (Cerver *cerver) {
 	}
 
 	return retval;
-
-}
-
-#pragma endregion
-
-#pragma region sockets
-
-static int cerver_sockets_pool_init (Cerver *cerver) {
-
-	int retval = 1;
-
-	if (cerver) {
-		cerver->sockets_pool = pool_create (socket_delete);
-		if (cerver->sockets_pool) {
-			retval = pool_init (
-				cerver->sockets_pool,
-				socket_create_empty,
-				cerver->sockets_pool_init
-			);
-		}
-	}
-
-	return retval;
-
-}
-
-int cerver_sockets_pool_push (Cerver *cerver, Socket *socket) {
-
-	int retval = 1;
-
-	if (cerver && socket) {
-		#ifdef SOCKET_DEBUG
-		if (socket->sock_fd != -1) {
-			cerver_log_warning (
-				"cerver_sockets_pool_push () - socket still open - fd %d",
-				socket->sock_fd
-			);
-		}
-		#endif
-
-		retval = pool_push (cerver->sockets_pool, socket);
-	}
-
-	return retval;
-
-}
-
-Socket *cerver_sockets_pool_pop (Cerver *cerver) {
-
-	Socket *retval = NULL;
-
-	if (cerver) {
-		#ifdef SOCKET_DEBUG
-		if (cerver->sockets_pool && cerver->sockets_pool->dlist) {
-			DoubleList *sockets_list = cerver->sockets_pool->dlist;
-
-			(void) pthread_mutex_lock (sockets_list->mutex);
-			if (sockets_list->size && !sockets_list->start) {
-				cerver_log_warning (
-					"cerver_sockets_pool_pop () - pool corrupted - size %zu - start NULL",
-					sockets_list->size
-				);
-			}
-			(void) pthread_mutex_unlock (sockets_list->mutex);
-		}
-		#endif
-
-		void *value = pool_pop (cerver->sockets_pool);
-		if (value) {
-			retval = (Socket *) value;
-
-			#ifdef SOCKET_DEBUG
-			if (retval->sock_fd != -1) {
-				cerver_log_warning (
-					"cerver_sockets_pool_pop () - socket in use - fd %d",
-					retval->sock_fd
-				);
-			}
-			#endif
-		}
-	}
-
-	return retval;
-
-}
-
-static void cerver_sockets_pool_end (Cerver *cerver) {
-
-	if (cerver) {
-		pool_delete (cerver->sockets_pool);
-		cerver->sockets_pool = NULL;
-	}
 
 }
 
@@ -1418,6 +1474,15 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 		}
 	}
 
+	if (cerver->reusable_port) {
+		if (sock_set_reusable_port (cerver->sock)) {
+			cerver_log (
+				LOG_TYPE_WARNING, LOG_TYPE_CERVER,
+				"Failed to set cerver's sock fd reusable port flag"
+			);
+		}
+	}
+
 	if (!bind (
 		cerver->sock,
 		(const struct sockaddr *) &cerver->address,
@@ -1450,7 +1515,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 
 		case CERVER_HANDLER_TYPE_POLL: {
 			// set the socket to non blocking mode
-			if (sock_set_blocking (cerver->sock, cerver->blocking)) {
+			if (sock_set_blocking (cerver->sock, false)) {
 				cerver->blocking = false;
 				#ifdef CERVER_DEBUG
 				cerver_log (
@@ -1690,14 +1755,35 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 			#endif
 
 			cerver->thpool = thpool_create (cerver->n_thpool_threads);
-			thpool_set_name (cerver->thpool, cerver->info->name);
-			if (thpool_init (cerver->thpool)) {
+			if (cerver->thpool) {
+				thpool_set_name (cerver->thpool, cerver->info->name);
+
+				if (cerver->thpool_queue_size) {
+					errors |= thpool_set_queue_size (cerver->thpool, cerver->thpool_queue_size);
+				}
+
+				errors |= thpool_init (cerver->thpool);
+			}
+
+			else {
+				errors = 1;
+			}
+
+			if (errors) {
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_NONE,
 					"Failed to init cerver %s thpool!", cerver->info->name
 				);
+			}
 
-				errors = 1;
+			else {
+				cerver_log_msg (
+					"Cerver %s thpool: %u threads - %u queue size - %s overload policy",
+					cerver->info->name,
+					cerver->n_thpool_threads,
+					thpool_get_queue_size (cerver->thpool),
+					cerver_overload_policy_to_string (cerver->overload_policy)
+				);
 			}
 		}
 
@@ -1725,9 +1811,6 @@ static u8 cerver_one_time_init (Cerver *cerver) {
 				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
 				"Initialized cerver %s!", cerver->info->name
 			);
-
-			// 29/05/2020
-			errors |= cerver_sockets_pool_init (cerver);
 
 			// 28/05/2020
 			cerver->poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
@@ -2075,7 +2158,7 @@ static u8 cerver_update_start (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	if (!thread_create_detachable (
+	if (!thread_create_joinable (
 		&cerver->update_thread_id,
 		cerver_update,
 		cerver
@@ -2106,7 +2189,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	if (!thread_create_detachable (
+	if (!thread_create_joinable (
 		&cerver->update_interval_thread_id,
 		cerver_update_interval,
 		cerver
@@ -2133,24 +2216,75 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 }
 
-static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
+// sleeps the seconds or until the cerver is stopped
+static void cerver_sleep (Cerver *cerver, u32 seconds) {
 
-	cerver_inactive_check (node->right, cerver, current_time);
+	struct timespec deadline = { 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += seconds;
 
-	// check for client inactivity
-	if (node->id) {
-		Client *client = (Client *) node->id;
+	(void) pthread_mutex_lock (cerver->stop_mutex);
 
-		if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
-			// TODO: the client should be dropped
-			cerver_log_warning (
-				"Client %ld has been inactive more than %d secs and should be dropped",
-				client->id, cerver->max_inactive_time
-			);
-		}
+	int result = 0;
+	while (cerver_is_running (cerver) && (result != ETIMEDOUT)) {
+		result = pthread_cond_timedwait (cerver->stop_cond, cerver->stop_mutex, &deadline);
 	}
 
-	cerver_inactive_check (node->left, cerver, current_time);
+	(void) pthread_mutex_unlock (cerver->stop_mutex);
+
+}
+
+static void cerver_inactive_check_client (
+	const Client *client, const Cerver *cerver, time_t current_time
+) {
+
+	if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
+		// TODO: the client should be dropped
+		cerver_log_warning (
+			"Client %ld has been inactive more than %d secs and should be dropped",
+			client->id, cerver->max_inactive_time
+		);
+	}
+
+}
+
+// the recursion depth is the tree height, that is log (n) in an avl
+// must be called with the clients tree locked
+static void cerver_inactive_check (
+	const AVLNode *node, const Cerver *cerver, time_t current_time
+) {
+
+	if (node) {
+		cerver_inactive_check (node->right, cerver, current_time);
+
+		if (node->id) {
+			cerver_inactive_check_client ((const Client *) node->id, cerver, current_time);
+		}
+
+		cerver_inactive_check (node->left, cerver, current_time);
+	}
+
+}
+
+static void cerver_inactive_check_all (Cerver *cerver) {
+
+	cerver_log_debug (
+		"Checking for inactive clients in cerver %s...",
+		cerver->info->name
+	);
+
+	time_t current_time = time (NULL);
+
+	(void) pthread_mutex_lock (cerver->clients->mutex);
+
+	cerver_inactive_check (cerver->clients->root, cerver, current_time);
+
+	(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+	cerver_log_debug (
+		"Done checking for inactive clients in cerver %s",
+		cerver->info->name
+	);
 
 }
 
@@ -2160,27 +2294,12 @@ static void *cerver_inactive_thread (void *args) {
 	if (args) {
 		Cerver *cerver = (Cerver *) args;
 
-		u32 count = 0;
-		while (cerver->isRunning) {
-			if (count == cerver->check_inactive_interval) {
-				count = 0;
+		while (cerver_is_running (cerver)) {
+			cerver_sleep (cerver, cerver->check_inactive_interval);
 
-				cerver_log_debug (
-					"Checking for inactive clients in cerver %s...",
-					cerver->info->name
-				);
-
-				time_t current_time = time (NULL);
-				cerver_inactive_check (cerver->clients->root, cerver, current_time);
-
-				cerver_log_debug (
-					"Done checking for inactive clients in cerver %s",
-					cerver->info->name
-				);
+			if (cerver_is_running (cerver) && cerver->clients) {
+				cerver_inactive_check_all (cerver);
 			}
-
-			sleep (1);
-			count++;
 		}
 	}
 
@@ -2200,9 +2319,9 @@ static u8 cerver_start_inactive (Cerver *cerver) {
 			cerver->check_inactive_interval
 		);
 
-		if (!thread_create_detachable (
+		if (!thread_create_joinable (
 			&cerver->inactive_thread_id,
-			(void *(*) (void *)) cerver_inactive_thread,
+			cerver_inactive_thread,
 			cerver
 		)) {
 			cerver_log_success (
@@ -2345,8 +2464,8 @@ u8 cerver_start (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	if (!cerver->isRunning) {
-		cerver->isRunning = true;
+	if (!cerver_is_running (cerver)) {
+		cerver_set_running (cerver, true);
 
 		cerver_start_ignore_sigpipe (cerver);
 
@@ -2424,6 +2543,9 @@ u8 cerver_start (Cerver *cerver) {
 				cerver->info->name
 			);
 		}
+
+		// the accept loop has ended or the cerver failed to start
+		cerver_stop_request (cerver);
 	}
 
 	else {
@@ -2460,6 +2582,18 @@ void cerver_update_delete (void *cerver_update_ptr) {
 
 }
 
+static const i64 CERVER_MICROSECONDS_PER_SECOND = 1000000;
+static const i64 CERVER_NANOSECONDS_PER_MICROSECOND = 1000;
+
+static i64 cerver_timespec_diff_microseconds (
+	const struct timespec *start, const struct timespec *end
+) {
+
+	return ((i64) (end->tv_sec - start->tv_sec) * CERVER_MICROSECONDS_PER_SECOND)
+		+ ((i64) (end->tv_nsec - start->tv_nsec) / CERVER_NANOSECONDS_PER_MICROSECOND);
+
+}
+
 // called in a dedicated thread only if a user method was set
 // executes methods every tick
 static void *cerver_update (void *args) {
@@ -2476,42 +2610,22 @@ static void *cerver_update (void *args) {
 
 		CerverUpdate *cu = cerver_update_new (cerver, cerver->update_args);
 
-		u32 time_per_frame = 1000000 / cerver->update_ticks;
-		// printf ("time per frame: %d\n", time_per_frame);
-		u32 temp = 0;
-		i32 sleep_time = 0;
-		u64 delta_time = 0;
+		const i64 time_per_frame = CERVER_MICROSECONDS_PER_SECOND / (cerver->update_ticks ? cerver->update_ticks : 1);
+		i64 sleep_time = 0;
 
-		u64 delta_ticks = 0;
-		u32 fps = 0;
-		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
+		struct timespec start = { 0 }, middle = { 0 };
 
-		while (cerver->isRunning) {
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+		while (cerver_is_running (cerver)) {
+			(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
 			// do stuff
 			if (cerver->update) cerver->update (cu);
 
-			// limit the fps
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
-			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
-			// printf ("temp: %d\n", temp);
-			sleep_time = time_per_frame - temp;
-			// printf ("sleep time: %d\n", sleep_time);
+			// limit the fps, the full timespec is used to cross every second
+			(void) clock_gettime (CLOCK_MONOTONIC, &middle);
+			sleep_time = time_per_frame - cerver_timespec_diff_microseconds (&start, &middle);
 			if (sleep_time > 0) {
-				(void) usleep (sleep_time);
-			}
-
-			// count fps
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
-			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
-			delta_ticks += delta_time;
-			fps++;
-			// printf ("delta ticks: %ld\n", delta_ticks);
-			if (delta_ticks >= 1000) {
-				// printf ("cerver %s update fps: %i\n", cerver->info->name, fps);
-				delta_ticks = 0;
-				fps = 0;
+				(void) usleep ((useconds_t) sleep_time);
 			}
 		}
 
@@ -2553,10 +2667,10 @@ static void *cerver_update_interval (void *args) {
 			cerver, cerver->update_interval_args
 		);
 
-		while (cerver->isRunning) {
+		while (cerver_is_running (cerver)) {
 			if (cerver->update_interval) cerver->update_interval (cu);
 
-			(void) sleep (cerver->update_interval_secs);
+			cerver_sleep (cerver, cerver->update_interval_secs);
 		}
 
 		cerver_update_delete (cu);
@@ -2585,36 +2699,172 @@ static void *cerver_update_interval (void *args) {
 
 #pragma region end
 
-// disable socket I/O in both ways and stop any ongoing job
+static void cerver_stop_wake_threads (Cerver *cerver) {
+
+	if (cerver->stop_mutex && cerver->stop_cond) {
+		(void) pthread_mutex_lock (cerver->stop_mutex);
+		(void) pthread_cond_broadcast (cerver->stop_cond);
+		(void) pthread_mutex_unlock (cerver->stop_mutex);
+	}
+
+}
+
+// stops accepting new connections and wakes up cerver_start ()
+// the listening socket is only closed by cerver_teardown (),
+// so its fd can not be reused while another thread is inside accept ()
+void cerver_stop_request (Cerver *cerver) {
+
+	if (cerver) {
+		cerver_set_running (cerver, false);
+
+		// wakes up the threads blocked in accept () or poll ()
+		if (cerver->sock >= 0) {
+			(void) shutdown (cerver->sock, SHUT_RDWR);
+		}
+
+		cerver_stop_wake_threads (cerver);
+	}
+
+}
+
+// stops accepting new connections and wakes up cerver_start ()
+// it can be called after the cerver was stopped by a signal
 // returns 0 on success, 1 on error
 u8 cerver_shutdown (Cerver *cerver) {
 
-	if (cerver->isRunning) {
-		cerver->isRunning = false;
+	u8 retval = 1;
 
-		// close the cerver socket
-		if (!close (cerver->sock)) {
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				"The cerver %s socket has been closed.",
-				cerver->info->name
-			);
-			#endif
+	if (cerver) {
+		cerver_stop_request (cerver);
 
-			return 0;
-		}
+		#ifdef CERVER_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"The cerver %s has stopped accepting connections.",
+			cerver->info->name
+		);
+		#endif
 
-		else {
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void cerver_close_socket (Cerver *cerver) {
+
+	if (cerver->sock >= 0) {
+		if (close (cerver->sock)) {
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
 				"Failed to close cerver %s socket!",
 				cerver->info->name
 			);
 		}
+
+		cerver->sock = -1;
 	}
 
-	return 1;
+}
+
+static void cerver_thread_join (pthread_t *thread_id) {
+
+	if (*thread_id) {
+		(void) pthread_join (*thread_id, NULL);
+		*thread_id = 0;
+	}
+
+}
+
+// the update threads end as soon as the cerver is stopped
+static void cerver_stop_threads (Cerver *cerver) {
+
+	cerver_thread_join (&cerver->update_thread_id);
+	cerver_thread_join (&cerver->update_interval_thread_id);
+	cerver_thread_join (&cerver->inactive_thread_id);
+
+}
+
+static void cerver_shutdown_connection (void *connection_ptr, void *args) {
+
+	(void) args;
+
+	Connection *connection = (Connection *) connection_ptr;
+	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
+		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+	}
+
+}
+
+// must be called with the clients tree locked
+static void cerver_shutdown_clients_connections (const AVLNode *node) {
+
+	if (node) {
+		cerver_shutdown_clients_connections (node->left);
+
+		const Client *client = (const Client *) node->id;
+		if (client && client->connections) {
+			(void) dlist_traverse (client->connections, cerver_shutdown_connection, NULL);
+		}
+
+		cerver_shutdown_clients_connections (node->right);
+	}
+
+}
+
+// the clients keep their connections open, so their receive threads
+// only finish when the sockets are shutdown
+static void cerver_shutdown_clients (Cerver *cerver) {
+
+	if (cerver->clients) {
+		(void) pthread_mutex_lock (cerver->clients->mutex);
+
+		cerver_shutdown_clients_connections (cerver->clients->root);
+
+		(void) pthread_mutex_unlock (cerver->clients->mutex);
+	}
+
+}
+
+// waits for the connections in progress using the drain policy and timeout
+static void cerver_drain (Cerver *cerver) {
+
+	cerver->drained = true;
+
+	if (cerver->thpool) {
+		cerver_log_msg (
+			"Draining cerver %s - %u working - %u queued - %s policy - %u secs timeout",
+			cerver->info->name,
+			thpool_get_num_threads_working (cerver->thpool),
+			thpool_get_queued (cerver->thpool),
+			cerver_drain_policy_to_string (cerver->drain_policy),
+			cerver->drain_timeout
+		);
+
+		if (cerver->type != CERVER_TYPE_WEB) {
+			cerver_shutdown_clients (cerver);
+		}
+
+		cerver->drained = !thpool_drain (
+			cerver->thpool,
+			(cerver->drain_policy == CERVER_DRAIN_POLICY_RUN),
+			(time_t) cerver->drain_timeout
+		);
+
+		if (cerver->drained) {
+			cerver_log_success ("Cerver %s was drained!", cerver->info->name);
+		}
+
+		else {
+			cerver_log_warning (
+				"Cerver %s was NOT drained in %u secs - %u connections are still working, "
+				"the data they use will not be released",
+				cerver->info->name, cerver->drain_timeout,
+				thpool_get_num_threads_working (cerver->thpool)
+			);
+		}
+	}
 
 }
 
@@ -2665,8 +2915,77 @@ static void cerver_destroy_clients (Cerver *cerver) {
 
 }
 
+static void cerver_clean_thpool (Cerver *cerver) {
+
+	if (cerver->thpool) {
+		#ifdef CERVER_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Cerver %s active thpool threads: %i",
+			cerver->info->name,
+			thpool_get_num_threads_working (cerver->thpool)
+		);
+		#endif
+
+		thpool_destroy (cerver->thpool);
+
+		#ifdef CERVER_DEBUG
+		cerver_log (
+			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
+			"Destroyed cerver %s thpool!", cerver->info->name
+		);
+		#endif
+
+		cerver->thpool = NULL;
+	}
+
+	else {
+		#ifdef CERVER_DEBUG
+		cerver_log_debug (
+			"Cerver %s does NOT have a thpool to destroy",
+			cerver->info->name
+		);
+		#endif
+	}
+
+}
+
+static void cerver_clean_data (Cerver *cerver);
+
 // clean cerver data structures
+// the connections are drained before anything they use is released
 static void cerver_clean (Cerver *cerver) {
+
+	if (cerver) {
+		// stop accepting new connections
+		cerver_stop_request (cerver);
+
+		cerver_stop_threads (cerver);
+
+		cerver_drain (cerver);
+
+		if (cerver->drained) {
+			// stop any app / custom handler
+			if (!cerver_handlers_destroy (cerver)) {
+				cerver_log_success (
+					"Done destroying handlers in cerver %s",
+					cerver->info->name
+				);
+			}
+
+			cerver_clean_thpool (cerver);
+
+			cerver_clean_data (cerver);
+		}
+
+		cerver_close_socket (cerver);
+	}
+
+}
+
+// releases the data that the connections use
+// only after the thpool was drained and destroyed
+static void cerver_clean_data (Cerver *cerver) {
 
 	if (cerver) {
 		switch (cerver->type) {
@@ -2716,64 +3035,6 @@ static void cerver_clean (Cerver *cerver) {
 		#ifdef CERVER_DEBUG
 		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_CERVER, "Done cleaning up clients.");
 		#endif
-
-		// disable socket I/O in both ways and stop any ongoing job
-		if (!cerver_shutdown (cerver)) {
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-				"Cerver %s has been shutted down.", cerver->info->name
-			);
-			#endif
-		}
-
-		else {
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-				"Failed to shutdown cerver %s!", cerver->info->name
-			);
-			#endif
-		}
-
-		// stop any app / custom handler
-		if (!cerver_handlers_destroy (cerver)) {
-			cerver_log_success (
-				"Done destroying handlers in cerver %s",
-				cerver->info->name
-			);
-		}
-
-		if (cerver->thpool) {
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				"Cerver %s active thpool threads: %i",
-				cerver->info->name,
-				thpool_get_num_threads_working (cerver->thpool)
-			);
-			#endif
-
-			thpool_destroy (cerver->thpool);
-
-			#ifdef CERVER_DEBUG
-			cerver_log (
-				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				"Destroyed cerver %s thpool!", cerver->info->name
-			);
-			#endif
-
-			cerver->thpool = NULL;
-		}
-
-		else {
-			#ifdef CERVER_DEBUG
-			cerver_log_debug (
-				"Cerver %s does NOT have a thpool to destroy",
-				cerver->info->name
-			);
-			#endif
-		}
 	}
 
 }
@@ -2803,16 +3064,23 @@ u8 cerver_teardown (Cerver *cerver) {
 		// correctly end admin connections & stop admin handlers
 		admin_cerver_end (cerver->admin);
 
-		// 29/05/2020
-		cerver_sockets_pool_end (cerver);
+		if (cerver->drained) {
+			cerver_log (
+				LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
+				"Cerver %s teardown was successful!",
+				cerver->info->name
+			);
 
-		cerver_log (
-			LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
-			"Cerver %s teardown was successful!",
-			cerver->info->name
-		);
+			cerver_delete (cerver);
+		}
 
-		cerver_delete (cerver);
+		// the connections that are still working use the cerver
+		else {
+			cerver_log_warning (
+				"Cerver %s teardown ended without releasing its memory",
+				cerver->info->name
+			);
+		}
 
 		retval = 0;
 	}
@@ -2833,7 +3101,7 @@ u8 cerver_teardown (Cerver *cerver) {
 
 static CerverReport *cerver_report_new (void) {
 
-	CerverReport *cerver_report = (CerverReport *) malloc (sizeof (Cerver));
+	CerverReport *cerver_report = (CerverReport *) malloc (sizeof (CerverReport));
 	if (cerver_report) {
 		memset (cerver_report, 0, sizeof (CerverReport));
 

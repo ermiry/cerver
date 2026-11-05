@@ -33,8 +33,23 @@
 #define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
 
-// the times a send () to a full socket buffer (EAGAIN) is retried
+// the times a send () to a full non blocking socket buffer (EAGAIN) is retried
+// in a blocking socket, EAGAIN means that its send timeout (SO_SNDTIMEO) has expired
 #define HTTP_RESPONSE_SEND_RETRIES				(1 << 4)
+
+// the response sent by the cerver when it can not handle a new connection
+#define HTTP_RESPONSE_RETRY_AFTER_SECONDS		"1"
+
+#define HTTP_RESPONSE_SERVICE_UNAVAILABLE_BODY	"{\"error\": \"Service unavailable!\"}"
+
+#define HTTP_RESPONSE_SERVICE_UNAVAILABLE						\
+	"HTTP/1.1 503 Service Unavailable\r\n"						\
+	"Content-Type: application/json\r\n"						\
+	"Content-Length: 33\r\n"									\
+	"Retry-After: " HTTP_RESPONSE_RETRY_AFTER_SECONDS "\r\n"	\
+	HTTP_RESPONSE_CONNECTION_CLOSE_HEADER						\
+	"\r\n"														\
+	HTTP_RESPONSE_SERVICE_UNAVAILABLE_BODY
 
 #ifdef __cplusplus
 extern "C" {
@@ -474,6 +489,15 @@ CERVER_PRIVATE unsigned int http_responses_init (
 );
 
 CERVER_PRIVATE void http_responses_end (void);
+
+// sends HTTP_RESPONSE_SERVICE_UNAVAILABLE without blocking
+// to a connection that the cerver can not handle
+// (the thpool is full or the cerver is being drained)
+// the socket is not closed
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_send_service_unavailable (
+	const int sock_fd
+);
 
 #pragma endregion
 

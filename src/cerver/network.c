@@ -42,8 +42,7 @@ bool sock_set_blocking (int32_t fd, bool blocking) {
 	if (fd >= 0) {
 		int flags = fcntl (fd, F_GETFL, 0);
 		if (flags >= 0) {
-			// flags = isBlocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
-			flags = blocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+			flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
 
 			retval = (fcntl (fd, F_SETFL, flags) == 0) ? true : false;
 		}
@@ -180,19 +179,51 @@ int sock_set_timeout (int sock_fd, time_t timeout) {
 
 }
 
-// sets the socket's reusable options
+// sets a timeout (in seconds) for the socket's send operations
+// a send that can not make progress in that time fails with EAGAIN
+// returns 0 on success, 1 on error
+int sock_set_send_timeout (int sock_fd, time_t timeout) {
+
+	struct timeval tv = { 0 };
+	tv.tv_sec = timeout;
+	tv.tv_usec = 0;
+
+	return setsockopt (
+		sock_fd,
+		SOL_SOCKET, SO_SNDTIMEO,
+		(const char *) &tv, sizeof (struct timeval)
+	) ? 1 : 0;
+
+}
+
+// sets the socket's reusable address option (SO_REUSEADDR)
 // this should avoid errors when binding sockets
 // returns 0 on success, 1 on any error
 int sock_set_reusable (int sock_fd) {
 
-	int errors = 0;
-
 	int reusable = 1;
 
-	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEADDR, &reusable, sizeof (int));
+	return setsockopt (
+		sock_fd, SOL_SOCKET, SO_REUSEADDR, &reusable, sizeof (int)
+	) ? 1 : 0;
+
+}
+
+// sets the socket's reusable port option (SO_REUSEPORT)
+// other sockets can bind the same port, so the kernel balances them
+// returns 0 on success, 1 on any error
+int sock_set_reusable_port (int sock_fd) {
+
+	int errors = 1;
 
 	#ifdef SO_REUSEPORT
-	errors |= setsockopt (sock_fd, SOL_SOCKET, SO_REUSEPORT, &reusable, sizeof (int));
+	int reusable = 1;
+
+	errors = setsockopt (
+		sock_fd, SOL_SOCKET, SO_REUSEPORT, &reusable, sizeof (int)
+	) ? 1 : 0;
+	#else
+	(void) sock_fd;
 	#endif
 
 	return errors;

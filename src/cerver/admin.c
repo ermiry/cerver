@@ -970,9 +970,7 @@ u8 admin_cerver_register_admin (
 			admin_cerver,
 			(Connection *) dlist_start (admin->client->connections)->data
 		)) {
-			(void) dlist_insert_after (
-				admin_cerver->admins, dlist_end (admin_cerver->admins), admin
-			);
+			(void) dlist_insert_at_end (admin_cerver->admins, admin);
 
 			admin->admin_cerver = admin_cerver;
 
@@ -1086,7 +1084,7 @@ static void *admin_cerver_update (void *args) {
 		u32 fps = 0;
 		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
 
-		while (admin_cerver->cerver->isRunning) {
+		while (cerver_is_running (admin_cerver->cerver)) {
 			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
 
 			// do stuff
@@ -1153,7 +1151,7 @@ static void *admin_cerver_update_interval (void *args) {
 			admin_cerver->cerver, admin_cerver->update_interval_args
 		);
 
-		while (admin_cerver->cerver->isRunning) {
+		while (cerver_is_running (admin_cerver->cerver)) {
 			if (admin_cerver->update_interval)
 				admin_cerver->update_interval (cu);
 
@@ -2183,7 +2181,7 @@ static void *admin_poll (void *cerver_ptr) {
 			#endif
 
 			int poll_retval = 0;
-			while (cerver->isRunning) {
+			while (cerver_is_running (cerver)) {
 				poll_retval = poll (
 					admin_cerver->fds,
 					admin_cerver->max_n_fds,
@@ -2199,7 +2197,7 @@ static void *admin_poll (void *cerver_ptr) {
 						);
 
 						perror ("Error");
-						cerver->isRunning = false;
+						cerver_stop_request (cerver);
 					} break;
 
 					case 0: {

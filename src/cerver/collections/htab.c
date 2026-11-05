@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
 
@@ -6,19 +7,32 @@
 
 #include "cerver/collections/htab.h"
 
+// 64 bit FNV-1a parameters
+static const uint64_t HTAB_FNV_OFFSET_BASIS = 14695981039346656037ULL;
+static const uint64_t HTAB_FNV_PRIME = 1099511628211ULL;
+
+// the table grows when count > size * numerator / denominator
+static const size_t HTAB_LOAD_FACTOR_NUMERATOR = 3;
+static const size_t HTAB_LOAD_FACTOR_DENOMINATOR = 4;
+
+static const size_t HTAB_GROWTH_FACTOR = 2;
+
 #pragma region generic
 
 static size_t htab_generic_hash (
 	const void *key, size_t key_size, size_t table_size
 ) {
 
-	size_t i;
-	size_t sum = 0;
-	unsigned char *k = (unsigned char *) key;
-	for (i = 0; i < key_size; ++i)
-		sum = (sum + (int)k[i]) % table_size;
-	
-	return sum;
+	uint64_t hash = HTAB_FNV_OFFSET_BASIS;
+
+	const unsigned char *bytes = (const unsigned char *) key;
+	for (size_t i = 0; i < key_size; i++) {
+		hash ^= (uint64_t) bytes[i];
+		hash *= HTAB_FNV_PRIME;
+	}
+
+	return (size_t) (hash % (uint64_t) table_size);
+
 }
 
 static int htab_generic_compare (
@@ -37,7 +51,7 @@ static int htab_generic_compare (
 #pragma region internal
 
 static inline void *htab_internal_key_create (
-	void *(*key_create)(const void *), 
+	void *(*key_create)(const void *),
 	const void *key, size_t key_size
 ) {
 
@@ -46,7 +60,7 @@ static inline void *htab_internal_key_create (
 	if (key_create) retval = key_create (key);
 	else {
 		retval = malloc (key_size);
-		(void) memcpy (retval, key, key_size);
+		if (retval) (void) memcpy (retval, key, key_size);
 	}
 
 	return retval;
@@ -54,14 +68,14 @@ static inline void *htab_internal_key_create (
 }
 
 static inline int htab_internal_key_compare (
-	Htab *htab,
+	const Htab *htab,
 	const void *k1, size_t s1, const void *k2, size_t s2
 ) {
 
-	return htab->key_compare ? 
+	return htab->key_compare ?
 		htab->key_compare (k1, k2) :
 		htab_generic_compare (k1, s1, k2, s2);
-	
+
 }
 
 static HtabNode *htab_node_new (void) {
@@ -73,24 +87,6 @@ static HtabNode *htab_node_new (void) {
 		node->next = NULL;
 		node->key_size = 0;
 		node->val_size = 0;
-	}
-
-	return node;
-
-}
-
-static HtabNode *htab_node_create (
-	const void *key, size_t key_size, void *val, size_t val_size,
-	void *(*key_create)(void const *)
-) {
-
-	HtabNode *node = htab_node_new ();
-	if (node) {
-		node->key_size = key_size;
-		node->key = htab_internal_key_create (key_create, key, key_size);
-
-		node->val = val;
-		node->val_size = val_size;
 	}
 
 	return node;
@@ -118,6 +114,29 @@ static void htab_node_delete (
 
 }
 
+static HtabNode *htab_node_create (
+	const void *key, size_t key_size, void *val, size_t val_size,
+	void *(*key_create)(void const *)
+) {
+
+	HtabNode *node = htab_node_new ();
+	if (node) {
+		node->key_size = key_size;
+		node->key = htab_internal_key_create (key_create, key, key_size);
+
+		node->val = val;
+		node->val_size = val_size;
+
+		if (!node->key) {
+			free (node);
+			node = NULL;
+		}
+	}
+
+	return node;
+
+}
+
 static HtabBucket *htab_bucket_new (void) {
 
 	HtabBucket *bucket = (HtabBucket *) malloc (sizeof (HtabBucket));
@@ -131,30 +150,70 @@ static HtabBucket *htab_bucket_new (void) {
 }
 
 static void htab_bucket_delete (
-	HtabBucket *bucket, 
+	HtabBucket *bucket,
 	void (*key_delete)(void *),
 	void (*delete_data)(void *data)
 ) {
 
 	if (bucket) {
-		while (bucket->count) {
+		while (bucket->start) {
 			HtabNode *node = bucket->start;
 			bucket->start = bucket->start->next;
 
 			htab_node_delete (node, key_delete, delete_data);
-
-			bucket->count--;
 		}
+
+		bucket->count = 0;
 
 		free (bucket);
 	}
 
 }
 
+static void htab_table_delete (
+	HtabBucket **table, size_t size,
+	void (*key_delete)(void *),
+	void (*delete_data)(void *data)
+) {
+
+	if (table) {
+		for (size_t i = 0; i < size; i++) {
+			htab_bucket_delete (table[i], key_delete, delete_data);
+		}
+
+		free (table);
+	}
+
+}
+
+static HtabBucket **htab_table_create (size_t size) {
+
+	HtabBucket **table = (HtabBucket **) calloc (size, sizeof (HtabBucket *));
+	if (table) {
+		bool failed = false;
+		for (size_t i = 0; i < size; i++) {
+			table[i] = htab_bucket_new ();
+			if (!table[i]) failed = true;
+		}
+
+		if (failed) {
+			htab_table_delete (table, size, NULL, NULL);
+			table = NULL;
+		}
+	}
+
+	return table;
+
+}
+
 static void htab_delete (Htab *htab) {
 
 	if (htab) {
-		if (htab->table) free (htab->table);
+		if (htab->mutex) {
+			(void) pthread_mutex_destroy (htab->mutex);
+			free (htab->mutex);
+		}
+
 		free (htab);
 	}
 
@@ -165,7 +224,7 @@ static Htab *htab_new (void) {
 	Htab *htab = (Htab *) malloc (sizeof (Htab));
 	if (htab) {
 		htab->table = NULL;
-		
+
 		htab->size = 0;
 		htab->count = 0;
 
@@ -176,9 +235,114 @@ static Htab *htab_new (void) {
 		htab->key_compare = NULL;
 
 		htab->delete_data = NULL;
+
+		htab->mutex = NULL;
 	}
 
 	return htab;
+
+}
+
+// returns the smallest power of 2 that is >= size
+static size_t htab_internal_size_round (size_t size) {
+
+	size_t retval = 1;
+	while (retval < size) retval <<= 1;
+
+	return retval;
+
+}
+
+// searches the bucket for the key
+// returns the matching node and sets prev to the node before it
+static HtabNode *htab_internal_find (
+	const Htab *htab, const HtabBucket *bucket,
+	const void *key, size_t key_size,
+	HtabNode **prev
+) {
+
+	HtabNode *retval = NULL;
+
+	HtabNode *before = NULL;
+	HtabNode *node = bucket->start;
+	while (node) {
+		if (
+			(htab->key_compare || (node->key_size == key_size))
+			&& !htab_internal_key_compare (
+				htab, key, key_size, node->key, node->key_size
+			)
+		) {
+			retval = node;
+			break;
+		}
+
+		before = node;
+		node = node->next;
+	}
+
+	if (prev) *prev = before;
+
+	return retval;
+
+}
+
+// the stored keys can only be hashed again
+// when they are a byte copy of the original keys
+static inline bool htab_internal_can_grow (const Htab *htab) {
+
+	return (htab->key_create == NULL);
+
+}
+
+static void htab_internal_move_nodes (
+	Htab *htab, HtabBucket **table, size_t size
+) {
+
+	for (size_t i = 0; i < htab->size; i++) {
+		HtabNode *node = htab->table[i]->start;
+		while (node) {
+			HtabNode *next = node->next;
+
+			size_t index = htab->hash (node->key, node->key_size, size);
+			node->next = table[index]->start;
+			table[index]->start = node;
+			table[index]->count += 1;
+
+			node = next;
+		}
+
+		htab->table[i]->start = NULL;
+		htab->table[i]->count = 0;
+	}
+
+}
+
+// doubles the table size and moves every node to its new bucket
+// if the new table can not be allocated, the current one is kept
+static void htab_internal_grow (Htab *htab) {
+
+	size_t new_size = htab->size * HTAB_GROWTH_FACTOR;
+
+	HtabBucket **table = htab_table_create (new_size);
+	if (table) {
+		htab_internal_move_nodes (htab, table, new_size);
+
+		htab_table_delete (htab->table, htab->size, NULL, NULL);
+
+		htab->table = table;
+		htab->size = new_size;
+	}
+
+}
+
+static void htab_internal_check_grow (Htab *htab) {
+
+	if (
+		htab_internal_can_grow (htab)
+		&& (htab->count * HTAB_LOAD_FACTOR_DENOMINATOR) > (htab->size * HTAB_LOAD_FACTOR_NUMERATOR)
+	) {
+		htab_internal_grow (htab);
+	}
 
 }
 
@@ -225,6 +389,7 @@ void htab_set_key_comparator (
 
 // creates a new htab
 // size - how many buckets do you want - more buckets = less collisions
+// it is rounded up to a power of 2, and 0 uses HTAB_DEFAULT_INIT_SIZE
 // hash - custom method to hash the key for insertion, NULL for default
 // delete_data - custom method to delete your data, NULL for no delete when htab gets destroyed
 Htab *htab_create (
@@ -235,22 +400,24 @@ Htab *htab_create (
 
 	Htab *htab = htab_new ();
 	if (htab) {
-		if (size > 0) {
-			htab->size = size;
-			
-			htab->table = (HtabBucket **) calloc (htab->size, sizeof (HtabBucket));
-			if (htab->table) {
-				for (size_t i = 0; i < htab->size; i++)
-					htab->table[i] = htab_bucket_new ();
+		htab->size = htab_internal_size_round (
+			size ? size : HTAB_DEFAULT_INIT_SIZE
+		);
 
-				htab->hash = hash ? hash : htab_generic_hash;
-				// htab->compare = compare ? compare : htab_generic_compare;
+		htab->hash = hash ? hash : htab_generic_hash;
+		htab->delete_data = delete_data;
 
-				htab->delete_data = delete_data;
-			}
+		htab->table = htab_table_create (htab->size);
 
-			htab->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+		htab->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
+		if (htab->mutex) {
 			(void) pthread_mutex_init (htab->mutex, NULL);
+		}
+
+		if (!htab->table || !htab->mutex) {
+			htab_table_delete (htab->table, htab->size, NULL, NULL);
+			htab_delete (htab);
+			htab = NULL;
 		}
 	}
 
@@ -276,8 +443,8 @@ size_t htab_size (Htab *htab) {
 }
 
 // returns true if its empty (size == 0)
-bool htab_is_empty (Htab *htab) { 
-	
+bool htab_is_empty (Htab *htab) {
+
 	bool retval = true;
 
 	if (htab) {
@@ -289,7 +456,7 @@ bool htab_is_empty (Htab *htab) {
 	}
 
 	return retval;
-	
+
 }
 
 // returns true if its NOT empty (size > 0)
@@ -322,22 +489,9 @@ bool htab_contains_key (
 
 		size_t index = ht->hash (key, key_size, ht->size);
 
-		HtabNode *node = ht->table[index]->start;
-		while (node && node->key && node->val) {
-			if (node->key_size == key_size) {
-				if (!htab_internal_key_compare (
-					ht, 
-					key, key_size, node->key, node->key_size
-				)) {
-					retval = true;
-					break;
-				}
-
-				else node = node->next;
-			}
-
-			else node = node->next;
-		}
+		retval = (htab_internal_find (
+			ht, ht->table[index], key, key_size, NULL
+		) != NULL);
 
 		(void) pthread_mutex_unlock (ht->mutex);
 	}
@@ -347,7 +501,7 @@ bool htab_contains_key (
 }
 
 // inserts a new value to the htab associated with its key
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if the key already exists
 int htab_insert (
 	Htab *ht,
 	const void *key, size_t key_size,
@@ -360,50 +514,22 @@ int htab_insert (
 		(void) pthread_mutex_lock (ht->mutex);
 
 		size_t index = ht->hash (key, key_size, ht->size);
-		// printf ("size: %ld\n", ht->size);
-		// printf ("index: %ld\n", index);
-
 		HtabBucket *bucket = ht->table[index];
-		HtabNode *node = bucket->start;
-		if (node) {
-			while (
-				node->next
-				&& htab_internal_key_compare (
-					ht, key, key_size, node->key, node->key_size
-				)
-			) node = node->next;
 
-			if (htab_internal_key_compare (
-				ht,
-				key, key_size, node->key, node->key_size
-			)) {
-				node->next = htab_node_create (
-					key, key_size, val, val_size,
-					ht->key_create
-				);
-				
-				if (node->next) {
-					node = node->next;
-
-					bucket->count += 1;
-					ht->count += 1;
-
-					retval = 0;
-				}
-			}
-		}
-
-		else {
-			node = htab_node_create (
+		if (!htab_internal_find (ht, bucket, key, key_size, NULL)) {
+			HtabNode *node = htab_node_create (
 				key, key_size, val, val_size,
 				ht->key_create
 			);
 
 			if (node) {
+				node->next = bucket->start;
 				bucket->start = node;
 
 				bucket->count += 1;
 				ht->count += 1;
+
+				htab_internal_check_grow (ht);
 
 				retval = 0;
 			}
@@ -424,30 +550,16 @@ void *htab_get (
 
 	void *retval = NULL;
 
-	if (ht && key) {
+	if (ht && key && key_size) {
 		(void) pthread_mutex_lock (ht->mutex);
 
 		size_t index = ht->hash (key, key_size, ht->size);
-		HtabNode *node = ht->table[index]->start;  
-		while (node && node->key && node->val) {
-			if (node->key_size == key_size) {
-				if (!htab_internal_key_compare (
-					ht,
-					key, key_size, node->key, node->key_size
-				)) {
-					retval = node->val;
-					break;
-				}
 
-				else {
-					node = node->next;
-				} 
-			}
+		HtabNode *node = htab_internal_find (
+			ht, ht->table[index], key, key_size, NULL
+		);
 
-			else {
-				node = node->next;
-			}
-		}
+		if (node) retval = node->val;
 
 		(void) pthread_mutex_unlock (ht->mutex);
 	}
@@ -465,34 +577,25 @@ void *htab_remove (
 
 	void *retval = NULL;
 
-	if (ht && key && ht->hash) {
+	if (ht && key && key_size && ht->hash) {
 		(void) pthread_mutex_lock (ht->mutex);
 
 		size_t index = ht->hash (key, key_size, ht->size);
 		HtabBucket *bucket = ht->table[index];
-		HtabNode *node = bucket->start;
+
 		HtabNode *prev = NULL;
-		while (node) {
-			if (!htab_internal_key_compare (
-				ht, 
-				key, key_size, node->key, node->key_size
-			)) {
-				if (!prev) ht->table[index]->start = ht->table[index]->start->next;
-				else prev->next = node->next;
+		HtabNode *node = htab_internal_find (ht, bucket, key, key_size, &prev);
+		if (node) {
+			if (prev) prev->next = node->next;
+			else bucket->start = node->next;
 
-				retval = node->val;
+			retval = node->val;
 
-				node->val = NULL;
-				htab_node_delete (node, ht->key_delete, ht->delete_data);
+			node->val = NULL;
+			htab_node_delete (node, ht->key_delete, ht->delete_data);
 
-				bucket->count--;
-				ht->count--;
-
-				break;
-			}
-
-			prev = node;
-			node = node->next;
+			bucket->count--;
+			ht->count--;
 		}
 
 		(void) pthread_mutex_unlock (ht->mutex);
@@ -507,22 +610,15 @@ void htab_destroy (Htab *ht) {
 	if (ht) {
 		(void) pthread_mutex_lock (ht->mutex);
 
-		if (ht->table) {
-			for (size_t i = 0; i < ht->size; i++) {
-				if (ht->table[i]) {
-					htab_bucket_delete (
-						ht->table[i], 
-						ht->key_delete, 
-						ht->delete_data
-					);
-				}
-			}
-		}
+		htab_table_delete (
+			ht->table, ht->size,
+			ht->key_delete, ht->delete_data
+		);
+
+		ht->table = NULL;
 
 		(void) pthread_mutex_unlock (ht->mutex);
-		(void) pthread_mutex_destroy (ht->mutex);
-		free (ht->mutex);
-		
+
 		htab_delete (ht);
 	}
 
@@ -547,7 +643,7 @@ static void htab_bucket_print (
 		HtabNode *n = bucket->start;
 		while (n) {
 			htab_node_print (n);
-			
+
 			n = n->next;
 		}
 	}

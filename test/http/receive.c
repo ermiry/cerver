@@ -14,6 +14,8 @@
 #include <cerver/connection.h>
 #include <cerver/handler.h>
 
+#include <cerver/collections/arena.h>
+
 #include <cerver/http/headers.h>
 #include <cerver/http/http.h>
 #include <cerver/http/multipart.h>
@@ -60,6 +62,15 @@
 #define TEST_RECEIVE_DIRECTORY_MODE			0755
 
 #define TEST_RECEIVE_ROUTE_TOKENS			(DEFAULT_ROUTES_TOKENS_SIZE + 4)
+
+#define TEST_RECEIVE_URL_BUFFER				0
+#define TEST_RECEIVE_FIELD_BUFFER			1
+#define TEST_RECEIVE_VALUE_BUFFER			2
+#define TEST_RECEIVE_BUFFERS				3
+
+// when it is set, the requests are created like a worker thread does, in its arena
+static Arena *receive_arena = NULL;
+static String *receive_buffers[TEST_RECEIVE_BUFFERS] = { NULL, NULL, NULL };
 
 static const char *public_file_content = { "<html>public</html>" };
 static const char *secret_file_content = { "secret-content" };
@@ -491,7 +502,15 @@ static void test_receive_feed (
 	cerver_receive.socket = connection->socket;
 	cerver_receive.connection = connection;
 
-	HttpReceive *http_receive = http_receive_create (&cerver_receive);
+	// the same receive that a worker thread creates in its arena
+	HttpReceive *http_receive = receive_arena ?
+		http_receive_create_arena (
+			&cerver_receive, receive_arena,
+			receive_buffers[TEST_RECEIVE_URL_BUFFER],
+			receive_buffers[TEST_RECEIVE_FIELD_BUFFER],
+			receive_buffers[TEST_RECEIVE_VALUE_BUFFER]
+		) : http_receive_create (&cerver_receive);
+
 	test_check_ptr (http_receive);
 
 	size_t start = 0;
@@ -509,6 +528,8 @@ static void test_receive_feed (
 	test_receive_read_response (fds[TEST_RECEIVE_CLIENT]);
 
 	http_receive_delete (http_receive);
+	if (receive_arena) arena_reset (receive_arena);
+
 	connection_delete (connection);
 
 	(void) close (fds[TEST_RECEIVE_CLIENT]);
@@ -555,14 +576,11 @@ static void test_receive_feed_bytes (
 
 }
 
-// runs the request whole, split at every byte and one byte at a time
-static void test_receive_every_split (
-	Cerver *cerver, const char *name,
+static void test_receive_every_split_actual (
+	Cerver *cerver,
 	const char *request, const size_t request_len,
 	void (*check)(void)
 ) {
-
-	current_case = name;
 
 	test_receive_feed_whole (cerver, request, request_len);
 	check ();
@@ -574,6 +592,50 @@ static void test_receive_every_split (
 
 	test_receive_feed_bytes (cerver, request, request_len);
 	check ();
+
+}
+
+// runs the request whole, split at every byte and one byte at a time,
+// with its own memory and in the arena of the thread
+static void test_receive_every_split (
+	Cerver *cerver, const char *name,
+	const char *request, const size_t request_len,
+	void (*check)(void)
+) {
+
+	current_case = name;
+
+	Arena *arena = receive_arena;
+
+	receive_arena = NULL;
+	test_receive_every_split_actual (cerver, request, request_len, check);
+
+	receive_arena = arena;
+	test_receive_every_split_actual (cerver, request, request_len, check);
+
+}
+
+static void test_receive_arena_create (void) {
+
+	receive_arena = arena_create (ARENA_DEFAULT_CHUNK_SIZE);
+	test_check_ptr (receive_arena);
+
+	for (unsigned int i = 0; i < TEST_RECEIVE_BUFFERS; i++) {
+		receive_buffers[i] = str_new (NULL);
+		test_check_ptr (receive_buffers[i]);
+	}
+
+}
+
+static void test_receive_arena_delete (void) {
+
+	arena_delete (receive_arena);
+	receive_arena = NULL;
+
+	for (unsigned int i = 0; i < TEST_RECEIVE_BUFFERS; i++) {
+		str_delete (receive_buffers[i]);
+		receive_buffers[i] = NULL;
+	}
 
 }
 
@@ -1128,6 +1190,7 @@ void http_tests_receive (void) {
 	(void) printf ("Testing HTTP receive...\n");
 
 	test_receive_files_create ();
+	test_receive_arena_create ();
 
 	Cerver *cerver = test_receive_cerver_create ();
 
@@ -1145,6 +1208,7 @@ void http_tests_receive (void) {
 
 	(void) cerver_teardown (cerver);
 
+	test_receive_arena_delete ();
 	test_receive_files_delete ();
 
 	(void) printf ("Done! %zu requests were fed\n", n_fed_requests);

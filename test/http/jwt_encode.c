@@ -86,6 +86,8 @@ void http_tests_jwt_encode (void) {
 
 	http_cerver_auth_jwt_delete (http_jwt);
 
+	user_delete (user);
+
 	cerver_teardown (test_cerver);
 
 	(void) printf ("Done!\n");

@@ -35,6 +35,13 @@
 #define HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS		(1 << 10)
 #define HTTP_CERVER_DEFAULT_MAX_FILE_SIZE			(1 << 29)
 
+// secs to receive a request's headers, a slower request is answered with 408
+#define HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT			(1 << 4)
+
+// secs to receive a complete request, 0 disables the timeout,
+// so a body can take any time while it keeps making progress
+#define HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT			0
+
 // the most bytes read from a connection before closing it
 // when a request was rejected before its body was received
 #define HTTP_RECEIVE_DRAIN_SIZE						(1 << 16)
@@ -208,6 +215,12 @@ struct _HttpCerver {
 	size_t max_file_size;
 
 	size_t n_limited_requests;		// rejected because they exceeded a limit
+
+	// requests timeouts in secs, a value of 0 disables the timeout
+	unsigned int headers_timeout;
+	unsigned int request_timeout;
+
+	size_t n_timeout_requests;		// answered with 408
 
 };
 
@@ -440,6 +453,22 @@ CERVER_EXPORT void http_cerver_set_max_multipart_parts (
 // the default value is HTTP_CERVER_DEFAULT_MAX_FILE_SIZE, 0 disables the limit
 CERVER_EXPORT void http_cerver_set_max_file_size (
 	HttpCerver *http_cerver, const size_t max_file_size
+);
+
+// sets the secs to receive a request's headers
+// a client that is slower (like a slowloris) is answered with 408
+// the default value is HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, 0 disables the timeout
+CERVER_EXPORT void http_cerver_set_headers_timeout (
+	HttpCerver *http_cerver, const unsigned int headers_timeout
+);
+
+// sets the secs to receive a complete request (headers and body)
+// a slower request is answered with 408
+// while it is disabled, a body only needs to make progress every
+// CERVER_DEFAULT_SOCKET_RECV_TIMEOUT secs
+// the default value is HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT, 0 disables the timeout
+CERVER_EXPORT void http_cerver_set_request_timeout (
+	HttpCerver *http_cerver, const unsigned int request_timeout
 );
 
 #pragma endregion
@@ -743,11 +772,25 @@ struct _HttpReceive {
 	// the rest of the request is not handled
 	bool responded;
 
+	// the arena of the thread that handles the request,
+	// the receive, its parser and its request are released with it
+	struct Arena *arena;
+
+	// the token buffers belong to the thread and they are reused between requests
+	bool borrowed_buffers;
+
 };
 
 typedef struct _HttpReceive HttpReceive;
 
 CERVER_PRIVATE HttpReceive *http_receive_new (void);
+
+// creates the receive, its parser and its request in the arena of the thread
+// the token buffers are reused, they are emptied but never deleted
+CERVER_PRIVATE HttpReceive *http_receive_create_arena (
+	CerverReceive *cerver_receive, struct Arena *arena,
+	String *url_buffer, String *field_buffer, String *value_buffer
+);
 
 CERVER_PRIVATE HttpReceive *http_receive_create (
 	CerverReceive *cerver_receive
@@ -755,6 +798,22 @@ CERVER_PRIVATE HttpReceive *http_receive_create (
 
 CERVER_PRIVATE void http_receive_delete (
 	HttpReceive *http_receive
+);
+
+// reads, without waiting, the data that the client already sent
+// up to HTTP_RECEIVE_DRAIN_SIZE bytes, so a close () does not answer with a RST
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_receive_drain_available (const int sock_fd);
+
+// returns true while the request's headers have not been completed
+CERVER_PRIVATE bool http_receive_is_receiving_headers (
+	const HttpReceive *http_receive
+);
+
+// a request that did not arrive in time is answered with 408 and closed,
+// if the client did not send anything (received is false), it is only closed
+CERVER_PRIVATE void http_receive_handle_timeout (
+	HttpReceive *http_receive, const bool received
 );
 
 CERVER_EXPORT const CerverReceive *http_receive_get_cerver_receive (

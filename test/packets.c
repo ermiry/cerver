@@ -276,6 +276,8 @@ static void test_packets_create_ping (void) {
 
 	test_check_bool_eq (ping->packet_ref, true, NULL);
 
+	packet_delete (ping);
+
 }
 
 static void test_packets_append_data (void) {

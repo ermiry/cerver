@@ -89,16 +89,37 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
   - los validadores `validate_mparts_*` y `validate_query_*` caen al default en silencio y no reciben `errors`
     (`backlog/payloads-service-tests-findings.md` §2–3).
 
-## 3. Estado actual (rama `http`, sin commitear)
+## 3. Estado actual (rama `http`)
 
-**2026-11-05: las Fases 0 y 1 están implementadas y validadas en test** (sin commitear y sin bump). El detalle está en
-`percepthor-backend/docs/context/cerver-phases-0-1-session-context.md`. Lo que quedó para la Fase 2:
+**2026-11-05: la Fase 2 está implementada** sobre la Beta 2.0b-57 (Fases 0 y 1 commiteadas), sin commitear y sin
+bump. El detalle está en `percepthor-backend/docs/context/cerver-phase-2-session-context.md`.
 
-- las carreras de `thpool` que reporta TSan (`thpool_init` con espera activa, `thpool_destroy`);
-- los `dlist_insert_after (l, dlist_end (l), …)` restantes en `src`;
-- **la ruta TCP (no HTTP) pierde paquetes partidos entre `recv ()`**: `test/handler` recibe ~78 de 100 respuestas y se
-  cuelga (también en el tag `2.0b-56`). Es el equivalente del bug del body en `receive.c`;
-- las fugas de los propios tests (`collections`, `packets`, `threads`, `http`, `version`) que reporta valgrind.
+- **thpool:**
+  - una cola acotada (ring buffer) con las políticas `wait` / `reject`;
+  - hilos joinables y drenado con deadline;
+  - TSan limpio en todos los unit tests.
+- **Accept:**
+  - sin hilos desprendidos;
+  - EINTR = stop ordenado;
+  - fd de reserva para `EMFILE`;
+  - backlog `SOMAXCONN`;
+  - `SO_REUSEPORT` aparte.
+- **Apagado:**
+  - `cerver_teardown` drena antes de liberar;
+  - los hilos de cerver bloquean SIGINT / SIGTERM.
+- **Deadlines:** de cabeceras (408), total opcional y `SO_SNDTIMEO`.
+- **Memoria:**
+  - arenas por hilo para el request;
+  - `Socket` con contador de referencias, sin pool.
+- **Collections:** los bugs de dlist, AVL, htab y pool corregidos.
+- **TCP:** el ensamblado de paquetes se reescribió en `receive.c` (cerver y cliente), y `test/handler` recibe 100 de
+  100.
+
+Lo que queda para las fases siguientes:
+
+- la respuesta diferida desde otro hilo (la conexión se cierra cuando el handler termina);
+- las listas intrusivas;
+- la conexión web sin `ConnectionStats` / `PacketsPerType`, que son las 11 asignaciones restantes por GET.
 
 El estado previo a las Fases 0 y 1:
 
@@ -283,6 +304,15 @@ cerver suponen que cada llamada trae el token completo:
 **Criterio de salida:** el escenario de payloads de §6 pasa con buffers de 1024, 4096, 8192 y 16384 bytes.
 
 ### 4.2 Fase 2 — Concurrencia incremental (sobre el modelo actual)
+
+**Estado (2026-11-05): implementada y validada.**
+
+- La evidencia y las decisiones están en `percepthor-backend/docs/context/cerver-phase-2-session-context.md`.
+- Los puntos de esta sección describen el código **antes** de la fase.
+- Desviaciones del plan:
+  - `job_queue` (los Handlers) conserva su semáforo binario, porque cada cola tiene un solo consumidor;
+  - las arenas cubren el request (structs, URL, query y cabeceras conocidas) pero no el body ni multipart;
+  - el ensamblado TCP quedó en `receive.c`, compartido por el cerver y el cliente.
 
 **El modelo actual.**
 - Las cervers web **ignoran `handler_type`**: `cerver_register_new_connection_normal` (`handler.c:2852`) manda todo a

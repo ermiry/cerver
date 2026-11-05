@@ -182,8 +182,9 @@ CurlResult curl_simple_post (
 
 	curl_easy_setopt (curl, CURLOPT_URL, address);
 
-	curl_easy_setopt (curl, CURLOPT_POSTFIELDS, data);
+	// the data is copied, because the handle is reused after the caller releases it
 	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, datalen);
+	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, data);
 
 	// perfrom the request
 	result = curl_perform_request (curl, expected_status);
@@ -218,7 +219,9 @@ CurlResult curl_simple_post_json (
 
 	curl_easy_setopt (curl, CURLOPT_CUSTOMREQUEST, "POST");
 	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
-	curl_easy_setopt (curl, CURLOPT_POSTFIELDS, json);
+	// the json is copied, its size is taken with strlen ()
+	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, -1L);
+	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, json);
 
 	// set the destination address
 	curl_easy_setopt (curl, CURLOPT_URL, address);
@@ -258,8 +261,9 @@ CurlResult curl_simple_post_with_auth (
 
 	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
 
-	curl_easy_setopt (curl, CURLOPT_POSTFIELDS, data);
+	// the data is copied, because the handle is reused after the caller releases it
 	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, datalen);
+	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, data);
 
 	// perfrom the request
 	result = curl_perform_request (curl, expected_status);
@@ -283,8 +287,9 @@ CurlResult curl_simple_post_handle_data (
 
 	curl_easy_setopt (curl, CURLOPT_URL, address);
 
-	curl_easy_setopt (curl, CURLOPT_POSTFIELDS, data);
+	// the data is copied, because the handle is reused after the caller releases it
 	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, datalen);
+	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, data);
 
 	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
 	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);

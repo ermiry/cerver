@@ -1,9 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <stdarg.h>
 
 #include <errno.h>
+#include <signal.h>
 #include <pthread.h>
 
 #include <sys/prctl.h>
@@ -16,6 +18,79 @@
 
 #pragma region threads
 
+// the new thread inherits the signal mask of its creator,
+// so the signals are blocked only while the thread is created
+static void thread_signals_block (sigset_t *previous) {
+
+	sigset_t blocked;
+	(void) sigemptyset (&blocked);
+	(void) sigaddset (&blocked, SIGINT);
+	(void) sigaddset (&blocked, SIGTERM);
+
+	(void) pthread_sigmask (SIG_BLOCK, &blocked, previous);
+
+}
+
+static void thread_signals_restore (const sigset_t *previous) {
+
+	(void) pthread_sigmask (SIG_SETMASK, previous, NULL);
+
+}
+
+// returns the pthread_create () result
+static int thread_create_internal (
+	pthread_t *thread, int detach_state,
+	void *(*work) (void *), void *args
+) {
+
+	int retval = 1;
+
+	pthread_attr_t attr;
+	if (!pthread_attr_init (&attr)) {
+		if (!pthread_attr_setdetachstate (&attr, detach_state)) {
+			sigset_t previous;
+			thread_signals_block (&previous);
+
+			retval = pthread_create (thread, &attr, work, args);
+
+			thread_signals_restore (&previous);
+		}
+
+		(void) pthread_attr_destroy (&attr);
+	}
+
+	return retval;
+
+}
+
+// creates a joinable thread that must be joined with pthread_join ()
+// returns 0 on success, 1 on error
+unsigned int thread_create_joinable (
+	pthread_t *thread, void *(*work) (void *), void *args
+) {
+
+	unsigned int retval = 1;
+
+	if (thread && work) {
+		int result = thread_create_internal (
+			thread, PTHREAD_CREATE_JOINABLE, work, args
+		);
+
+		if (result == THREAD_OK) {
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"Failed to create joinable thread - %s", strerror (result)
+			);
+		}
+	}
+
+	return retval;
+
+}
+
 // creates a custom detachable thread (will go away on its own upon completion)
 // returns 0 on success, 1 on error
 unsigned int thread_create_detachable (
@@ -25,22 +100,18 @@ unsigned int thread_create_detachable (
 	unsigned int retval = 1;
 
 	if (thread && work) {
-		pthread_attr_t attr = { 0 };
-		if (!pthread_attr_init (&attr)) {
-			if (!pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED)) {
-				if (pthread_create (thread, &attr, work, args) == THREAD_OK) {
-					retval = 0;     // success
-				}
+		int result = thread_create_internal (
+			thread, PTHREAD_CREATE_DETACHED, work, args
+		);
 
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Failed to create detachable thread!"
-					);
+		if (result == THREAD_OK) {
+			retval = 0;     // success
+		}
 
-					perror ("Error");
-				}
-			}
+		else {
+			cerver_log_error (
+				"Failed to create detachable thread - %s", strerror (result)
+			);
 		}
 	}
 
@@ -52,16 +123,17 @@ pthread_t thread_create_detached (void *(*work) (void *), void *args) {
 
 	pthread_t thread_id = 0;
 
-	pthread_attr_t attr = { 0 };
-	if (!pthread_attr_init (&attr)) {
-		if (!pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED)) {
-			if (pthread_create (&thread_id, &attr, work, args)) {
-				cerver_log_error ("Failed to create detached thread!");
+	if (work) {
+		int result = thread_create_internal (
+			&thread_id, PTHREAD_CREATE_DETACHED, work, args
+		);
 
-				#ifdef THREADS_DEBUG
-				perror ("Error");
-				#endif
-			}
+		if (result != THREAD_OK) {
+			thread_id = 0;
+
+			cerver_log_error (
+				"Failed to create detached thread - %s", strerror (result)
+			);
 		}
 	}
 

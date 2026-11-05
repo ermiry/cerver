@@ -195,6 +195,9 @@ void connection_delete (void *connection_ptr) {
 		// connection_end () closes the socket, so it must run before deleting it
 		if (connection->active) connection_end (connection);
 
+		// a packet that was only partially received
+		receive_handle_end (&connection->receive_handle);
+
 		socket_delete (connection->socket);
 
 		cerver_report_delete (connection->cerver_report);
@@ -529,11 +532,15 @@ static u8 connection_try (
 	Connection *connection, const struct sockaddr_storage address
 ) {
 
+	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
+	const socklen_t address_size = (address.ss_family == AF_INET6) ?
+		sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
+
 	u32 numsec = 0;
 	for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
 		if (!connect (connection->socket->sock_fd,
 			(const struct sockaddr *) &address,
-			sizeof (struct sockaddr)))
+			address_size))
 			return 0;
 
 		if (numsec <= connection->max_sleep / 2) sleep (numsec);
@@ -582,17 +589,13 @@ void connection_end (Connection *connection) {
 
 void connection_drop (Cerver *cerver, Connection *connection) {
 
+	(void) cerver;
+
 	if (connection) {
 		// close the socket
 		connection_end (connection);
 
-		if (cerver) {
-			// move the socket to the cerver's socket pool to avoid destroying it
-			// to handle if any other thread is waiting to access the socket's mutex
-			cerver_sockets_pool_push (cerver, connection->socket);
-			connection->socket = NULL;
-		}
-
+		// every connection owns its socket, so it is deleted with it
 		connection_delete (connection);
 	}
 
@@ -685,7 +688,7 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 	u8 retval = 1;
 
 	if (client && connection) {
-		if (!dlist_insert_after (client->connections, dlist_end (client->connections), connection)) {
+		if (!dlist_insert_at_end (client->connections, connection)) {
 			#ifdef CERVER_DEBUG
 			if (client->session_id) {
 				cerver_log (

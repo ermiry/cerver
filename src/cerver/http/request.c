@@ -7,6 +7,8 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/collections/arena.h"
+
 #include "cerver/config.h"
 
 #include "cerver/http/content.h"
@@ -43,9 +45,34 @@ const char *http_request_method_str (
 
 }
 
+static void http_request_init (HttpRequest *http_request);
+
 HttpRequest *http_request_new (void) {
 
 	HttpRequest *http_request = (HttpRequest *) malloc (sizeof (HttpRequest));
+	if (http_request) {
+		http_request_init (http_request);
+	}
+
+	return http_request;
+
+}
+
+// creates a request in the arena, see HttpRequest arena
+HttpRequest *http_request_new_arena (Arena *arena) {
+
+	HttpRequest *http_request = (HttpRequest *) arena_alloc (arena, sizeof (HttpRequest));
+	if (http_request) {
+		http_request_init (http_request);
+		http_request->arena = arena;
+	}
+
+	return http_request;
+
+}
+
+static void http_request_init (HttpRequest *http_request) {
+
 	if (http_request) {
 		http_request->method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 
@@ -88,25 +115,34 @@ HttpRequest *http_request_new (void) {
 		http_request->body_values = NULL;
 
 		http_request->keep_files = false;
+
+		http_request->arena = NULL;
 	}
 
-	return http_request;
+}
+
+// the url, the query and the headers of a request in an arena are released with it
+static void http_request_delete_strings (HttpRequest *http_request) {
+
+	if (!http_request->arena) {
+		str_delete (http_request->url);
+		str_delete (http_request->query);
+
+		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
+			str_delete (http_request->headers[i]);
+	}
 
 }
 
 void http_request_delete (HttpRequest *http_request) {
 
 	if (http_request) {
-		str_delete (http_request->url);
-		str_delete (http_request->query);
+		http_request_delete_strings (http_request);
 
 		dlist_delete (http_request->query_params);
 
 		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
 			str_delete (http_request->params[i]);
-
-		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
-			str_delete (http_request->headers[i]);
 
 		http_request->current_custom_header = NULL;
 		dlist_delete (http_request->custom_headers);
@@ -127,7 +163,7 @@ void http_request_delete (HttpRequest *http_request) {
 
 		dlist_delete (http_request->body_values);
 
-		free (http_request);
+		if (!http_request->arena) free (http_request);
 	}
 
 }

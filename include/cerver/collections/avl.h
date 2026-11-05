@@ -14,7 +14,7 @@ extern "C" {
 typedef struct AVLNode {
 
 	void *id;
-	char balance;
+	signed char balance;
 	struct AVLNode *left, *right;
 
 } AVLNode;

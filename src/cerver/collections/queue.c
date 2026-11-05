@@ -44,6 +44,29 @@ Queue *queue_create (void (*destroy)(void *data)) {
 
 }
 
+// uses the create method to populate the queue with n elements
+// returns 0 on no error, 1 if at least one element failed to be inserted
+int queue_init (
+    Queue *queue,
+    void *(*create)(void), unsigned int n_elements
+) {
+
+    int retval = 1;
+
+    if (queue && create) {
+        int errors = 0;
+
+        for (unsigned int i = 0; i < n_elements; i++) {
+            errors |= dlist_insert_at_end (queue->dlist, create ());
+        }
+
+        retval = errors;
+    }
+
+    return retval;
+
+}
+
 void queue_delete (Queue *queue) {
 
     if (queue) {
@@ -79,11 +102,7 @@ unsigned int queue_push (Queue *queue, void *data) {
     unsigned int retval = 1;
 
     if (queue && data) {
-        retval = dlist_insert_after (
-            queue->dlist,
-            dlist_end (queue->dlist),
-            data
-        );
+        retval = dlist_insert_at_end (queue->dlist, data);
     }
 
     return retval;

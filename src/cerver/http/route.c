@@ -524,7 +524,7 @@ void http_route_init (HttpRoute *route) {
 void http_route_child_add (HttpRoute *parent, HttpRoute *child) {
 
 	if (parent && child) {
-		(void) dlist_insert_after (parent->children, dlist_end (parent->children), child);
+		(void) dlist_insert_at_end (parent->children, child);
 
 		// refactor child paths
 		str_delete (child->base);

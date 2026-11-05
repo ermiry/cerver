@@ -25,13 +25,23 @@ int main (int argc, char **argv) {
 		}
 	}
 
+	collections_tests_arena ();
+
 	collections_tests_avl ();
+
+	collections_tests_avl_balance ();
 
 	(void) collections_tests_dlist ();
 
+	collections_tests_dlist_invariants ();
+
 	collections_tests_htab ();
 
+	collections_tests_htab_hashing ();
+
 	collections_tests_pool ();
+
+	collections_tests_queue ();
 
 	(void) printf ("\nDone with COLLECTIONS tests!\n\n");
 

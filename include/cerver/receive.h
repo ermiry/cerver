@@ -110,6 +110,19 @@ CERVER_PRIVATE ReceiveHandle *receive_handle_new (void);
 
 CERVER_PRIVATE void receive_handle_delete (void *receive_ptr);
 
+// assembles the packets of the received buffer, no matter where the buffers are split
+// every complete packet is passed to dispatch, that returns 0 to keep handling the buffer,
+// or 1 to stop (when the connection was deleted, its receive handle is not used anymore)
+// a packet with an invalid size (smaller than its header or bigger than max_packet_size)
+// closes the connection
+CERVER_PRIVATE void receive_handle_buffer (
+	ReceiveHandle *receive_handle, const size_t max_packet_size,
+	u8 (*dispatch) (ReceiveHandle *receive_handle, struct _Packet *packet)
+);
+
+// releases the packet that was being assembled
+CERVER_PRIVATE void receive_handle_end (ReceiveHandle *receive_handle);
+
 #ifdef __cplusplus
 }
 #endif

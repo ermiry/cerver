@@ -569,9 +569,7 @@ DoubleList *files_get_from_dir (const char *dir) {
 				if (strcmp (ep->d_name, ".") && strcmp (ep->d_name, "..")) {
 					file = str_create ("%s/%s", dir, ep->d_name);
 
-					(void) dlist_insert_after (
-						images, dlist_end (images), file
-					);
+					(void) dlist_insert_at_end (images, file);
 				}
 			}
 

@@ -93,11 +93,19 @@ struct _HttpRequest {
 
 	bool keep_files;
 
+	// when the request lives in the arena of its thread,
+	// the request, its url, its query and its headers are released with the arena,
+	// so none of them must be used after the route handler returns
+	struct Arena *arena;
+
 };
 
 typedef struct _HttpRequest HttpRequest;
 
 CERVER_PUBLIC HttpRequest *http_request_new (void);
+
+// creates a request in the arena, see HttpRequest arena
+CERVER_PRIVATE HttpRequest *http_request_new_arena (struct Arena *arena);
 
 CERVER_PUBLIC void http_request_delete (
 	HttpRequest *http_request
