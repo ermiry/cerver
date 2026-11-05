@@ -19,6 +19,7 @@
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
+#include "cerver/collections/arena.h"
 #include "cerver/collections/pool.h"
 
 #include "cerver/connection.h"
@@ -64,6 +65,7 @@ static HttpResponse *catch_all = NULL;
 static HttpResponse *payload_too_large_error = NULL;
 static HttpResponse *uri_too_long_error = NULL;
 static HttpResponse *header_fields_too_large_error = NULL;
+static HttpResponse *request_timeout_error = NULL;
 
 static const char *expect_continue_value = { "100-continue" };
 static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
@@ -295,6 +297,11 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->max_file_size = HTTP_CERVER_DEFAULT_MAX_FILE_SIZE;
 
 		http_cerver->n_limited_requests = 0;
+
+		http_cerver->headers_timeout = HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT;
+		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT;
+
+		http_cerver->n_timeout_requests = 0;
 	}
 
 	return http_cerver;
@@ -426,6 +433,10 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE, "error", "Request header fields too large!"
 	);
 
+	request_timeout_error = http_response_create_json_key_value (
+		HTTP_STATUS_REQUEST_TIMEOUT, "error", "Request timeout!"
+	);
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
@@ -434,6 +445,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& catch_all
 		&& payload_too_large_error && uri_too_long_error
 		&& header_fields_too_large_error
+		&& request_timeout_error
 	) retval = 0;
 
 	return retval;
@@ -628,17 +640,31 @@ void http_cerver_end (HttpCerver *http_cerver) {
 
 		http_jwt_end_pool ();
 
+		// the responses are global, so they are reset
+		// for the next cerver that calls http_cerver_init ()
 		http_response_delete (oki_doki);
+		oki_doki = NULL;
 		http_response_delete (bad_request_error);
+		bad_request_error = NULL;
 		http_response_delete (bad_user_error);
+		bad_user_error = NULL;
 		http_response_delete (bad_auth_error);
+		bad_auth_error = NULL;
 		http_response_delete (not_found_error);
+		not_found_error = NULL;
 		http_response_delete (server_error);
+		server_error = NULL;
 		http_response_delete (catch_all);
+		catch_all = NULL;
 
 		http_response_delete (payload_too_large_error);
+		payload_too_large_error = NULL;
 		http_response_delete (uri_too_long_error);
+		uri_too_long_error = NULL;
 		http_response_delete (header_fields_too_large_error);
+		header_fields_too_large_error = NULL;
+		http_response_delete (request_timeout_error);
+		request_timeout_error = NULL;
 	}
 
 }
@@ -709,11 +735,7 @@ HttpStaticPath *http_cerver_static_path_add (
 	if (http_cerver && static_path) {
 		http_static_path = http_static_path_create (static_path);
 
-		(void) dlist_insert_after (
-			http_cerver->static_paths,
-			dlist_end (http_cerver->static_paths),
-			http_static_path
-		);
+		(void) dlist_insert_at_end (http_cerver->static_paths, http_static_path);
 	}
 
 	return http_static_path;
@@ -772,11 +794,7 @@ void http_cerver_route_register (
 ) {
 
 	if (http_cerver && route) {
-		(void) dlist_insert_after (
-			http_cerver->routes,
-			dlist_end (http_cerver->routes),
-			route
-		);
+		(void) dlist_insert_at_end (http_cerver->routes, route);
 	}
 
 }
@@ -1083,6 +1101,28 @@ void http_cerver_set_max_file_size (
 	if (http_cerver) {
 		http_cerver_limit_check_power_of_two ("max_file_size", max_file_size);
 		http_cerver->max_file_size = max_file_size;
+	}
+
+}
+
+void http_cerver_set_headers_timeout (
+	HttpCerver *http_cerver, const unsigned int headers_timeout
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("headers_timeout", headers_timeout);
+		http_cerver->headers_timeout = headers_timeout;
+	}
+
+}
+
+void http_cerver_set_request_timeout (
+	HttpCerver *http_cerver, const unsigned int request_timeout
+) {
+
+	if (http_cerver) {
+		http_cerver_limit_check_power_of_two ("request_timeout", request_timeout);
+		http_cerver->request_timeout = request_timeout;
 	}
 
 }
@@ -1736,6 +1776,17 @@ static inline int http_receive_buffer_append (
 }
 
 // splits the url that was received into the request's path and query
+// the url, the query and the headers of a request in an arena are created in it
+static String *http_receive_string_create (
+	const HttpReceive *http_receive, const char *bytes, const size_t length
+) {
+
+	return http_receive->request->arena ?
+		str_create_from_bytes_arena (http_receive->request->arena, bytes, length) :
+		str_create_from_bytes (bytes, length);
+
+}
+
 static void http_receive_close_url (HttpReceive *http_receive) {
 
 	HttpRequest *request = http_receive->request;
@@ -1748,12 +1799,12 @@ static void http_receive_close_url (HttpReceive *http_receive) {
 		const char *question = (const char *) memchr (start, '?', url_len);
 		const size_t path_len = question ? (size_t) (question - start) : url_len;
 
-		request->url = str_create_from_bytes (start, path_len);
+		request->url = http_receive_string_create (http_receive, start, path_len);
 
 		// the query does not include the '?'
 		if (question) {
-			request->query = str_create_from_bytes (
-				question + 1, url_len - path_len - 1
+			request->query = http_receive_string_create (
+				http_receive, question + 1, url_len - path_len - 1
 			);
 		}
 	}
@@ -1870,6 +1921,47 @@ static inline int http_header_values_join (
 
 }
 
+// a string in an arena can not grow, so the joined value is a new string in it
+static int http_header_values_join_arena (
+	Arena *arena, String **header, const char *value, const size_t value_len
+) {
+
+	int retval = 1;
+
+	const String *current = *header;
+	const size_t length = current->len + HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
+
+	// the same layout as str_create_from_bytes_arena ()
+	String *joined = (String *) arena_alloc (arena, sizeof (String) + length + 1);
+	if (joined) {
+		joined->max_len = 0;
+		joined->len = length;
+		joined->str = ((char *) joined) + sizeof (String);
+
+		(void) memcpy (joined->str, current->str, current->len);
+		(void) memcpy (joined->str + current->len, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN);
+		(void) memcpy (joined->str + current->len + HTTP_HEADER_VALUES_SEPARATOR_LEN, value, value_len);
+		joined->str[length] = '\0';
+
+		*header = joined;
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static int http_receive_header_join (
+	HttpRequest *request, const http_header type,
+	const char *value, const size_t value_len
+) {
+
+	return request->arena ?
+		http_header_values_join_arena (request->arena, &request->headers[type], value, value_len) :
+		http_header_values_join (request->headers[type], value, value_len);
+
+}
+
 // saves a header of the HTTP headers map
 // a repeated header is joined with HTTP_HEADER_VALUES_SEPARATOR, unless it must be unique
 // returns 0 on success, 1 if the request was rejected
@@ -1883,7 +1975,7 @@ static int http_receive_close_known_header (
 	HttpRequest *request = http_receive->request;
 
 	if (!request->headers[type]) {
-		request->headers[type] = str_create_from_bytes (value, value_len);
+		request->headers[type] = http_receive_string_create (http_receive, value, value_len);
 	}
 
 	else if (http_header_is_unique (type)) {
@@ -1892,7 +1984,7 @@ static int http_receive_close_known_header (
 		);
 	}
 
-	else if (http_header_values_join (request->headers[type], value, value_len)) {
+	else if (http_receive_header_join (request, type, value, value_len)) {
 		retval = http_receive_reject (
 			http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR
 		);
@@ -2023,9 +2115,8 @@ DoubleList *http_parse_query_into_pairs (
 					if (value_first != NULL) value_after = walk;
 					else key_after = walk;
 
-					(void) dlist_insert_after (
+					(void) dlist_insert_at_end (
 						pairs,
-						dlist_end (pairs),
 						key_value_pair_create_pieces (
 							key_first, key_after,
 							value_first, value_after
@@ -2057,9 +2148,8 @@ DoubleList *http_parse_query_into_pairs (
 		if (value_first != NULL) value_after = walk;
 		else key_after = walk;
 
-		(void) dlist_insert_after (
+		(void) dlist_insert_at_end (
 			pairs,
-			dlist_end (pairs),
 			key_value_pair_create_pieces (
 				key_first, key_after,
 				value_first, value_after
@@ -2233,9 +2323,8 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 		name = strsep (&pair, "=");
 		value = strsep (&pair, "=");
 
-		(void) dlist_insert_after (
+		(void) dlist_insert_at_end (
 			attributes,
-			dlist_end (attributes),
 			key_value_pair_create (
 				c_string_trim (name),
 				c_string_trim (c_string_strip_quotes (value))
@@ -2727,9 +2816,21 @@ const char *http_receive_status_str (
 
 }
 
+static void http_receive_init (HttpReceive *http_receive);
+
 HttpReceive *http_receive_new (void) {
 
 	HttpReceive *http_receive = (HttpReceive *) malloc (sizeof (HttpReceive));
+	if (http_receive) {
+		http_receive_init (http_receive);
+	}
+
+	return http_receive;
+
+}
+
+static void http_receive_init (HttpReceive *http_receive) {
+
 	if (http_receive) {
 		http_receive->receive_status = HTTP_RECEIVE_STATUS_NONE;
 
@@ -2770,11 +2871,14 @@ HttpReceive *http_receive_new (void) {
 		http_receive->n_parts = 0;
 
 		http_receive->responded = false;
+
+		http_receive->arena = NULL;
+		http_receive->borrowed_buffers = false;
 	}
 
-	return http_receive;
-
 }
+
+static void http_receive_settings_init (HttpReceive *http_receive);
 
 HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
@@ -2792,16 +2896,7 @@ HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 		// http_receive->parser->data = http_receive->request;
 		http_receive->parser->data = http_receive;
 
-		http_receive->settings.on_message_begin = NULL;
-		http_receive->settings.on_url = http_receive_handle_url;
-		http_receive->settings.on_status = NULL;
-		http_receive->settings.on_header_field = http_receive_handle_header_field;
-		http_receive->settings.on_header_value = http_receive_handle_header_value;
-		http_receive->settings.on_headers_complete = http_receive_handle_headers_completed;
-		http_receive->settings.on_body = http_receive_handle_body;
-		http_receive->settings.on_message_complete = http_receive_handle_message_completed;
-		http_receive->settings.on_chunk_header = NULL;
-		http_receive->settings.on_chunk_complete = NULL;
+		http_receive_settings_init (http_receive);
 
 		http_receive->request = http_request_new ();
 		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
@@ -2813,6 +2908,87 @@ HttpReceive *http_receive_create (CerverReceive *cerver_receive) {
 
 }
 
+static void http_receive_borrow_buffer (String **destination, String *buffer) {
+
+	http_receive_buffer_reset (buffer);
+	*destination = buffer;
+
+}
+
+// creates the receive, its parser and its request in the arena of the thread
+HttpReceive *http_receive_create_arena (
+	CerverReceive *cerver_receive, Arena *arena,
+	String *url_buffer, String *field_buffer, String *value_buffer
+) {
+
+	HttpReceive *http_receive = (HttpReceive *) arena_alloc (arena, sizeof (HttpReceive));
+	http_parser *parser = (http_parser *) arena_alloc (arena, sizeof (http_parser));
+	HttpRequest *request = http_request_new_arena (arena);
+
+	if (http_receive && parser && request && url_buffer && field_buffer && value_buffer) {
+		http_receive_init (http_receive);
+		http_receive->arena = arena;
+
+		http_receive->cr = cerver_receive;
+		http_receive->handler = http_receive_handle;
+		http_receive->http_cerver = (HttpCerver *) cerver_receive->cerver->cerver_data;
+
+		http_receive->parser = parser;
+		http_parser_init (http_receive->parser, HTTP_REQUEST);
+		http_receive->parser->data = http_receive;
+
+		http_receive_settings_init (http_receive);
+
+		http_receive->request = request;
+		http_receive->request->keep_files = !http_receive->http_cerver->uploads_delete_when_done;
+
+		http_receive->file_stats = http_route_file_stats_new ();
+
+		http_receive->borrowed_buffers = true;
+		http_receive_borrow_buffer (&http_receive->url_buffer, url_buffer);
+		http_receive_borrow_buffer (&http_receive->field_buffer, field_buffer);
+		http_receive_borrow_buffer (&http_receive->value_buffer, value_buffer);
+	}
+
+	else {
+		http_receive = NULL;
+	}
+
+	return http_receive;
+
+}
+
+static void http_receive_settings_init (HttpReceive *http_receive) {
+
+	if (http_receive) {
+		http_receive->settings.on_message_begin = NULL;
+		http_receive->settings.on_url = http_receive_handle_url;
+		http_receive->settings.on_status = NULL;
+		http_receive->settings.on_header_field = http_receive_handle_header_field;
+		http_receive->settings.on_header_value = http_receive_handle_header_value;
+		http_receive->settings.on_headers_complete = http_receive_handle_headers_completed;
+		http_receive->settings.on_body = http_receive_handle_body;
+		http_receive->settings.on_message_complete = http_receive_handle_message_completed;
+		http_receive->settings.on_chunk_header = NULL;
+		http_receive->settings.on_chunk_complete = NULL;
+	}
+
+}
+
+static void http_receive_delete_buffers (HttpReceive *http_receive) {
+
+	if (!http_receive->borrowed_buffers) {
+		str_delete (http_receive->url_buffer);
+		str_delete (http_receive->field_buffer);
+		str_delete (http_receive->value_buffer);
+	}
+
+	http_receive->url_buffer = NULL;
+	http_receive->field_buffer = NULL;
+	http_receive->value_buffer = NULL;
+
+}
+
 void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
@@ -2820,7 +2996,7 @@ void http_receive_delete (HttpReceive *http_receive) {
 
 		http_receive->http_cerver = NULL;
 
-		free (http_receive->parser);
+		if (!http_receive->arena) free (http_receive->parser);
 
 		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
@@ -2831,11 +3007,10 @@ void http_receive_delete (HttpReceive *http_receive) {
 		if (http_receive->mpart_parser)
 			multipart_parser_free (http_receive->mpart_parser);
 
-		str_delete (http_receive->url_buffer);
-		str_delete (http_receive->field_buffer);
-		str_delete (http_receive->value_buffer);
+		http_receive_delete_buffers (http_receive);
 
-		free (http_receive);
+		// the receive in an arena is released with it
+		if (!http_receive->arena) free (http_receive);
 	}
 
 }
@@ -3630,6 +3805,22 @@ static void http_receive_drain (const int sock_fd, const bool waiting) {
 
 }
 
+// reads, without waiting, the data that the client already sent
+// up to HTTP_RECEIVE_DRAIN_SIZE bytes
+// returns 0 on success, 1 on error
+u8 http_receive_drain_available (const int sock_fd) {
+
+	u8 retval = 1;
+
+	if (sock_fd > -1) {
+		http_receive_drain (sock_fd, false);
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // closes the connection after its response was sent
 // the data that the client already sent is read first,
 // because a close () with unread data answers with a RST that can destroy the response
@@ -3682,6 +3873,38 @@ static void http_receive_handle_parser_error (
 	}
 
 	http_receive_close (http_receive, true);
+
+}
+
+// returns true while the request's headers have not been completed
+// (HTTP_RECEIVE_STATUS_HEADERS is set when they are complete)
+bool http_receive_is_receiving_headers (const HttpReceive *http_receive) {
+
+	return (http_receive->receive_status == HTTP_RECEIVE_STATUS_NONE);
+
+}
+
+// a request that did not arrive in time is answered with 408
+// if the client did not send anything, the connection is only closed
+void http_receive_handle_timeout (
+	HttpReceive *http_receive, const bool received
+) {
+
+	if (received && !http_receive->responded) {
+		(void) http_receive_reject (
+			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT
+		);
+
+		(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
+		http_receive->http_cerver->n_timeout_requests += 1;
+		(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+	}
+
+	else if (!http_receive->responded) {
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_TIMEOUT;
+	}
+
+	http_receive_close (http_receive, false);
 
 }
 
