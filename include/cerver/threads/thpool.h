@@ -4,16 +4,37 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#include <time.h>
+
 #include "cerver/config.h"
 #include "cerver/threads/jobs.h"
 
-#define THPOOL_NAME_SIZE		64
+#define THPOOL_NAME_SIZE					64
+
+// the default queue size is the number of threads times this factor,
+// rounded up to a power of 2
+#define THPOOL_DEFAULT_QUEUE_SIZE_FACTOR	2
+
+// a drain timeout of 0 waits until every job has finished
+#define THPOOL_DRAIN_TIMEOUT_NONE			0
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct _PoolThread;
+
+// a job inside the thpool queue
+// reject is called instead of work when the job is dropped
+// (the thpool is drained with reject or it is destroyed),
+// so the args can always be released
+typedef struct ThpoolJob {
+
+	void (*work) (void *args);
+	void (*reject) (void *args);
+	void *args;
+
+} ThpoolJob;
 
 typedef struct Thpool {
 
@@ -23,23 +44,46 @@ typedef struct Thpool {
 	unsigned int n_threads;
 	struct _PoolThread **threads;
 
-	volatile bool keep_alive;
-	volatile unsigned int num_threads_alive;
-	volatile unsigned int num_threads_working;
+	// every field below is protected by the mutex
+	bool keep_alive;
+	bool accepting;
+	unsigned int num_threads_alive;
+	unsigned int num_threads_working;
+
+	// bounded ring buffer of jobs, allocated once
+	ThpoolJob *jobs;
+	unsigned int queue_size;
+	unsigned int queue_start;
+	unsigned int queue_count;
 
 	pthread_mutex_t *mutex;
+	pthread_cond_t *has_jobs;
+	pthread_cond_t *has_space;
 	pthread_cond_t *threads_all_idle;
 
-	JobQueue *job_queue;
+	// an eventfd that is written every time a full queue gets space,
+	// so a thread can wait for it with poll () and still be interrupted by a signal
+	int space_fd;
+	bool space_waiting;
 
 } Thpool;
 
 // creates a new thpool with n threads
+// the queue size defaults to n threads * THPOOL_DEFAULT_QUEUE_SIZE_FACTOR
 CERVER_EXPORT Thpool *thpool_create (unsigned int n_threads);
+
+// sets how many jobs can wait in the queue
+// it is always rounded up to a power of 2
+// must be called before thpool_init ()
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int thpool_set_queue_size (
+	Thpool *thpool, unsigned int queue_size
+);
 
 // initializes the thpool
 // must be called after thpool_create ()
-// returns 0 on success, 1 on error
+// waits until every thread is running
+// returns 0 on success, 1 on error (no thread is left running)
 CERVER_EXPORT unsigned int thpool_init (Thpool *thpool);
 
 // sets the name for the thpool
@@ -59,22 +103,64 @@ CERVER_EXPORT unsigned int thpool_get_num_threads_working (
 	Thpool *thpool
 );
 
+// gets how many jobs are waiting in the queue
+CERVER_EXPORT unsigned int thpool_get_queued (Thpool *thpool);
+
+// gets how many jobs can wait in the queue
+CERVER_EXPORT unsigned int thpool_get_queue_size (Thpool *thpool);
+
 // returns true if the thpool does NOT have any working thread
 CERVER_EXPORT bool thpool_is_empty (Thpool *thpool);
 
-// returns true if the thpool has ALL its threads working
+// returns true if a new job can NOT be queued right now
+// (the queue is full or the thpool is not accepting jobs)
 CERVER_EXPORT bool thpool_is_full (Thpool *thpool);
 
-// adds a work to the thpool's job queue
+// adds a work to the thpool's job queue without blocking
 // it will be executed once it is the next in line and a thread is free
+// returns 0 on success, 1 if the queue is full or the thpool is not accepting jobs
 CERVER_EXPORT int thpool_add_work (
 	Thpool *thpool, void (*work) (void *), void *args
 );
 
+// works like thpool_add_work () but reject is called
+// with the args if the job is dropped before it runs
+CERVER_EXPORT int thpool_add_work_with_reject (
+	Thpool *thpool,
+	void (*work) (void *), void (*reject) (void *),
+	void *args
+);
+
+// works like thpool_add_work_with_reject () but blocks
+// while the queue is full until there is space
+// returns 0 on success, 1 if the thpool stopped accepting jobs
+CERVER_EXPORT int thpool_add_work_wait (
+	Thpool *thpool,
+	void (*work) (void *), void (*reject) (void *),
+	void *args
+);
+
+// waits until a new job can be queued, the thpool stops accepting jobs,
+// the timeout (in ms) expires or a signal interrupts the wait
+// returns 0 when there is space, 1 on timeout or when the thpool is not accepting jobs
+// and -1 with errno set to EINTR when a signal interrupted the wait
+CERVER_EXPORT int thpool_wait_space (Thpool *thpool, int timeout);
+
 // wait until all jobs have finished
 CERVER_EXPORT void thpool_wait (Thpool *thpool);
 
-// destroys the thpool and deletes all of its data
+// stops accepting new jobs and waits for the current ones
+// if run_queued is false, the queued jobs are rejected right away,
+// otherwise they still run until the timeout (in seconds) is reached
+// when the timeout is reached, the jobs that are still queued are rejected
+// a timeout of THPOOL_DRAIN_TIMEOUT_NONE waits until every job has finished
+// returns 0 if every job finished, 1 if some threads are still working
+CERVER_EXPORT unsigned int thpool_drain (
+	Thpool *thpool, bool run_queued, time_t timeout
+);
+
+// stops the threads, waits for them to finish their current job
+// rejects every job that is still queued and deletes the thpool
 CERVER_EXPORT void thpool_destroy (Thpool *thpool);
 
 #ifdef __cplusplus
