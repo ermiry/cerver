@@ -56,8 +56,10 @@ Core flow:
 - `receive.c` → `packets.c` → `handler.c` — bytes are received per socket, assembled into `Packet`s (typed by `PacketType`), and dispatched to cerver-level handlers (`app_packet_handler`, `app_error_packet_handler`, `custom_packet_handler`). `Handler`s can run in dedicated threads with their own job queue.
 - `auth.c`, `sessions.c`, `admin.c` — optional authentication, session ids, and an admin cerver for managing clients.
 - `game/` — lobbies, players, game types for the game server template.
-- `threads/` — `thpool`, `jobs` (job queues), `worker`, `bsem`, thread helpers.
-- `collections/` — `dlist`, `avl`, `htab`, `pool`, `queue` used throughout instead of external containers.
+- `threads/` — `thpool` (bounded ring buffer queue, joinable threads, `thpool_drain`, overload `wait`/`reject`), `jobs` (job queues), `worker`, `bsem`, thread helpers (every thread created by cerver blocks SIGINT/SIGTERM).
+- `collections/` — `dlist`, `avl`, `htab`, `pool`, `queue`, `arena` used throughout instead of external containers.
+- Lifecycle: `cerver_stop_request` (EINTR in accept/poll = stop), `cerver_teardown` drains the thpool before releasing anything; web worker threads keep a `HandlerThreadContext` (arena + buffers) and the request data lives only during its handler.
+- `receive.c` — `receive_handle_buffer` assembles TCP packets split between `recv ()` calls, shared by the cerver and the client.
 - `types/string.c`, `utils/` (log, base64, sha256, misc) — shared helpers.
 
 HTTP layer (`http/`), used when the cerver type is `CERVER_TYPE_WEB`:
