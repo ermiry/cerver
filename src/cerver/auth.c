@@ -158,6 +158,18 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 #pragma region auth
 
+// only the bytes of the session id are copied, it is shorter than the token,
+// copying TOKEN_SIZE bytes read past its end
+static void auth_token_set (SToken *token, const String *session_id) {
+
+	const size_t token_len = (session_id->len < (TOKEN_SIZE - 1)) ?
+		session_id->len : (TOKEN_SIZE - 1);
+
+	(void) memcpy (token->token, session_id->str, token_len);
+	token->token[token_len] = '\0';
+
+}
+
 static void auth_send_success_packet (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
@@ -591,9 +603,8 @@ static CerverAuthError auth_try (Packet *packet) {
 				if (!client_register_to_cerver (packet->cerver, client)) {
 					// if we are successfull, send success packet
 					if (packet->cerver->use_sessions) {
-						SToken token = { 0 };
-						(void) memcpy (token.token, client->session_id->str, TOKEN_SIZE);
-						token.token[strlen (token.token)] = '\0';
+						SToken token = { { 0 } };
+						auth_token_set (&token, client->session_id);
 
 						auth_send_success_packet (
 							packet->cerver,
@@ -725,8 +736,8 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 					if (!admin_cerver_register_admin (packet->cerver->admin, admin)) {
 						// if we are successfull, send success packet
 						if (packet->cerver->use_sessions) {
-							SToken token = { 0 };
-							(void) memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+							SToken token = { { 0 } };
+							auth_token_set (&token, client->session_id);
 
 							auth_send_success_packet (
 								packet->cerver,
@@ -1122,9 +1133,6 @@ void on_hold_connection_drop (
 		// close the connection socket
 		connection_end (connection);
 
-		cerver_sockets_pool_push ((Cerver *) cerver, connection->socket);
-		connection->socket = NULL;
-
 		// we can now safely delete the connection
 		connection_delete (connection);
 
@@ -1182,7 +1190,7 @@ static u8 on_hold_poll_register_connection (
 			cerver->hold_fds[idx].events = POLLIN;
 			cerver->current_on_hold_nfds++;
 
-			cerver->stats->current_n_hold_connections++;
+			CERVER_STATS_ADD (cerver->stats->current_n_hold_connections, 1);
 
 			#ifdef AUTH_DEBUG
 			cerver_log (
@@ -1238,7 +1246,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			cerver->hold_fds[idx].revents = -1;
 			cerver->current_on_hold_nfds--;
 
-			cerver->stats->current_n_hold_connections--;
+			CERVER_STATS_SUBTRACT (cerver->stats->current_n_hold_connections, 1);
 
 			#ifdef AUTH_DEBUG
 			cerver_log (
@@ -1350,7 +1358,7 @@ void *on_hold_poll (void *cerver_ptr) {
 			#endif
 
 			int poll_retval = 0;
-			while (cerver->isRunning) {
+			while (cerver_is_running (cerver)) {
 				poll_retval = poll (
 					cerver->hold_fds,
 					cerver->max_on_hold_connections,
@@ -1366,7 +1374,7 @@ void *on_hold_poll (void *cerver_ptr) {
 						);
 
 						perror ("Error");
-						cerver->isRunning = false;
+						cerver_stop_request (cerver);
 					} break;
 
 					case 0: {
