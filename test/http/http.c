@@ -525,7 +525,10 @@ static void test_http_cerver_register_admin_worker (void) {
 	Worker *worker = worker_create ();
 	http_cerver_register_admin_worker (http_cerver, worker);
 
+	// the http cerver only keeps a reference to its admin workers
 	http_cerver_delete (http_cerver);
+
+	worker_delete (worker);
 
 }
 
@@ -696,6 +699,9 @@ int main (int argc, char **argv) {
 
 	// the parser fed with every request split at every byte
 	http_tests_receive ();
+
+	// a real cerver: deadlines, overload policies, drain and signals
+	http_tests_server ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 
