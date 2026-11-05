@@ -88,6 +88,11 @@ static void test_pool_push_pop_single (void) {
 	pool_test_check_list (pool, 0);
 	test_check_null_ptr (pool_pop (pool));
 
+	// produce without a create method returns NULL instead of calling NULL
+	pool_set_produce_if_empty (pool, true);
+	test_check_null_ptr (pool_pop (pool));
+	pool_set_produce_if_empty (pool, false);
+
 	// an empty pool that can produce creates a new element
 	pool_set_create (pool, pool_test_element_new);
 	pool_set_produce_if_empty (pool, true);
