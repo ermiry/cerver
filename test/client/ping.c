@@ -6,6 +6,8 @@
 
 #include "../test.h"
 
+#define PINGS				32
+
 static const char *client_name = { "test-client" };
 
 int main (int argc, const char **argv) {
@@ -34,25 +36,23 @@ int main (int argc, const char **argv) {
 	);
 
 	/*** send **/
-	unsigned int n_sent_packets = 0;
+	uint64_t n_sent_packets = 0;
 
-	// send 10 requests message every second for 3 seconds
-	for (unsigned int sec = 0; sec < 3; sec++) {
-		for (unsigned int i = 0; i < 10; i++) {
-			test_check_unsigned_eq (
-				packet_send_ping (NULL, client, connection, NULL), 0, NULL
-			);
+	for (unsigned int i = 0; i < PINGS; i++) {
+		test_check_unsigned_eq (
+			packet_send_ping (NULL, client, connection, NULL), 0, NULL
+		);
 
-			n_sent_packets += 1;
-		}
-
-		(void) sleep (1);
+		n_sent_packets += 1;
 	}
 
 	/*** check ***/
-	// check that we received matching responses
+	// wait until every response has arrived
 	test_check_unsigned_eq (
-		client->stats->received_packets->n_test_packets,
+		test_wait_counter_64 (
+			&client->stats->received_packets->n_test_packets,
+			n_sent_packets, TEST_WAIT_SECONDS
+		),
 		n_sent_packets,
 		NULL
 	);
