@@ -26,6 +26,7 @@
 #define CLIENT_DEFAULT_NAME							"no-name"
 
 #define CLIENT_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
+#define CLIENT_DEFAULT_MAX_BAD_PACKETS				16
 
 #ifdef __cplusplus
 extern "C" {
@@ -157,9 +158,19 @@ struct _Client {
 	size_t max_received_packet_size;
 
 	bool check_packets;              // enable / disbale packet checking
+	u8 max_bad_packets;              // bad packets of a connection before it is ended, 0 disables it
 
 	// general client lock
+	// it also protects the connections list against the update threads that remove their connections
 	pthread_mutex_t *lock;
+
+	// the connections' update threads that are alive, client_teardown () waits for them
+	unsigned int n_update_threads;
+	pthread_cond_t updates_cond;
+
+	// the async connect and request threads that use the client,
+	// client_teardown () waits for them before it ends the connections
+	unsigned int n_async_threads;
 
 	struct _ClientEvent *events[CLIENT_MAX_EVENTS];
 	struct _ClientError *errors[CLIENT_MAX_ERRORS];
@@ -252,6 +263,13 @@ CERVER_EXPORT void client_set_max_received_packet_size (
 // by default, this option is turned off
 CERVER_EXPORT void client_set_check_packets (
 	Client *client, bool check_packets
+);
+
+// sets how many bad packets a connection can receive before the client ends it,
+// a bad packet fails packet_check () or has an unknown type
+// 0 disables the limit, the default is CLIENT_DEFAULT_MAX_BAD_PACKETS
+CERVER_EXPORT void client_set_max_bad_packets (
+	Client *client, u8 max_bad_packets
 );
 
 // compare clients based on their client ids
@@ -591,6 +609,24 @@ CERVER_PRIVATE void client_connection_aux_delete (
 	ClientConnection *cc
 );
 
+// returns true while the client is running, it is read by its update threads
+CERVER_PUBLIC bool client_is_running (const Client *client);
+
+// completes the end of a connection that its update thread owns,
+// called by the update thread when its receive loop has ended
+CERVER_PRIVATE void client_connection_end_deferred (
+	Client *client, struct _Connection *connection
+);
+
+// an update thread of the client is about to be created (started is true)
+// or it failed to be created (started is false)
+CERVER_PRIVATE void client_update_thread_started (
+	Client *client, struct _Connection *connection, const bool started
+);
+
+// an update thread of the client has ended and it does not use the client anymore
+CERVER_PRIVATE void client_update_thread_ended (Client *client);
+
 // creates a new connection that is ready to connect and registers it to the client
 CERVER_EXPORT struct _Connection *client_connection_create (
 	Client *client,
@@ -689,11 +725,17 @@ CERVER_EXPORT unsigned int client_request_to_cerver (
 // this method will NOT block
 // this method only works if your response consists only of one packet
 // neither client nor the connection will be stopped after the request has ended, the request packet won't be deleted
+// CLIENT_EVENT_CONNECTION_DATA is triggered when the response was handled,
+// or wait for it with client_requests_wait ()
 // returns 0 on success request, 1 on error
 CERVER_EXPORT unsigned int client_request_to_cerver_async (
 	Client *client, struct _Connection *connection,
 	struct _Packet *request
 );
+
+// waits until every async request and connect of the client has ended
+// it can not be called from the client's handlers, they run in those threads
+CERVER_EXPORT void client_requests_wait (Client *client);
 
 /*** files ***/
 
