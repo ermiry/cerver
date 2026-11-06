@@ -5,6 +5,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sys/socket.h>
@@ -16,8 +17,10 @@
 
 #include <cerver/collections/arena.h>
 
+#include <cerver/http/auth.h>
 #include <cerver/http/headers.h>
 #include <cerver/http/http.h>
+#include <cerver/http/jwt/alg.h>
 #include <cerver/http/multipart.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
@@ -40,8 +43,9 @@
 // - two files with the same filename in a request overwrote each other
 // - a pipelined request was parsed after the connection was closed
 // - a static file path with ".." was served from outside the static path
-// coverage gaps: the bearer JWT validation with real keys (see jwt_decode.c),
-// the receive loop of handler.c (see the web integration tests)
+// - a multi-part filename that was empty or ".." after it was sanitized pointed to the uploads directory
+// - a dirname generator without an uploads path created its directory at the filesystem root
+// coverage gaps: the receive loop of handler.c (see the web integration tests)
 
 #define TEST_RECEIVE_RESPONSE_SIZE			(1 << 16)
 #define TEST_RECEIVE_VALUE_SIZE				(1 << 12)
@@ -61,7 +65,11 @@
 
 #define TEST_RECEIVE_DIRECTORY_MODE			0755
 
-#define TEST_RECEIVE_ROUTE_TOKENS			(DEFAULT_ROUTES_TOKENS_SIZE + 4)
+#define TEST_RECEIVE_ROUTE_TOKENS			(HTTP_TREE_DEFAULT_MAX_PARAMS + 4)
+
+#define TEST_RECEIVE_ENDPOINT_MAX_BODY		(1 << 3)
+
+#define TEST_RECEIVE_ALLOWED_ORIGIN			"http://allowed.com"
 
 #define TEST_RECEIVE_URL_BUFFER				0
 #define TEST_RECEIVE_FIELD_BUFFER			1
@@ -227,6 +235,116 @@ static void test_receive_param_handler (
 
 }
 
+static const char *group_custom_data = { "group-data" };
+static const char *render_json_body = { "{\"render\": true}" };
+static const char *forbidden_body = { "{\"error\": \"forbidden\"}" };
+static const char *custom_not_allowed_body = { "{\"error\": \"custom 405\"}" };
+
+// GET /v2/items/:id, GET /v2/users/:name
+static void test_receive_named_param_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	observed.n_handled += 1;
+
+	test_receive_copy (observed.param, http_request_get_param (request, "id"));
+	if (!observed.param[0]) test_receive_copy (observed.param, http_request_get_param (request, "name"));
+
+	test_receive_copy_c_string (observed.custom, (const char *) http_receive_get_route_custom_data (http_receive));
+	test_receive_copy (observed.accept, http_request_get_header (request, HTTP_HEADER_REQUEST_ID));
+
+	(void) http_response_send (oki_doki, http_receive);
+
+}
+
+// PATCH /v2/items/:id, the response is sent from its header and its data
+static void test_receive_patch_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	observed.n_handled += 1;
+
+	test_receive_observe_body (request);
+	test_receive_copy (observed.param, http_request_get_param (request, "id"));
+
+	(void) http_response_json_custom_reference_send (
+		http_receive, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
+	);
+
+}
+
+// GET /v2/render
+static void test_receive_render_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	observed.n_handled += 1;
+
+	(void) http_response_render_json (
+		http_receive, HTTP_STATUS_OK, render_json_body, strlen (render_json_body)
+	);
+
+}
+
+static unsigned int observed_before = 0;
+static unsigned int observed_after = 0;
+
+static HttpMiddlewareResult test_receive_count_before (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+	observed_before += 1;
+
+	return HTTP_MIDDLEWARE_RESULT_CONTINUE;
+
+}
+
+static void test_receive_count_after (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+	observed_after += 1;
+
+}
+
+// answers the request, so the handler never runs
+static HttpMiddlewareResult test_receive_forbid_before (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) http_response_render_json (
+		http_receive, HTTP_STATUS_FORBIDDEN, forbidden_body, strlen (forbidden_body)
+	);
+
+	return HTTP_MIDDLEWARE_RESULT_STOP;
+
+}
+
+static void test_receive_method_not_allowed_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	test_receive_copy_c_string (observed.query, http_receive_get_allow (http_receive));
+
+	(void) http_response_render_json (
+		http_receive, HTTP_STATUS_METHOD_NOT_ALLOWED,
+		custom_not_allowed_body, strlen (custom_not_allowed_body)
+	);
+
+}
+
 // reads the saved file while the request exists (the files are deleted when it ends)
 static void test_receive_observe_file (const MultiPart *multi_part) {
 
@@ -377,6 +495,38 @@ static HttpRoute *test_receive_child_route (
 
 }
 
+// the routes of the groups API, next to the ones of the first API
+static void test_receive_groups_create (HttpCerver *http_cerver) {
+
+	HttpGroup *v2 = http_cerver_group_create (http_cerver, "v2");
+	test_check_ptr (v2);
+
+	http_group_set_custom_data (v2, (void *) group_custom_data, NULL);
+	test_check_unsigned_eq (http_group_add_before (v2, test_receive_count_before), 0, NULL);
+	test_check_unsigned_eq (http_group_add_after (v2, test_receive_count_after), 0, NULL);
+
+	test_check_ptr (http_group_get (v2, "items/:id", test_receive_named_param_handler));
+	test_check_ptr (http_group_patch (v2, "items/:id", test_receive_patch_handler));
+	test_check_ptr (http_group_get (v2, "users/:name", test_receive_named_param_handler));
+	test_check_ptr (http_group_get (v2, "render", test_receive_render_handler));
+
+	HttpEndpoint *forbidden = http_group_post (v2, "items/:id", test_receive_echo_handler);
+	test_check_unsigned_eq (http_endpoint_add_before (forbidden, test_receive_forbid_before), 0, NULL);
+
+	HttpEndpoint *limited = http_group_post (v2, "limited", test_receive_echo_handler);
+	http_endpoint_set_max_body_size (limited, TEST_RECEIVE_ENDPOINT_MAX_BODY);
+
+	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
+	http_endpoint_set_modifier (socket, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
+
+	HttpGroup *cors = http_group_create (v2, "cors");
+	http_group_set_cors (cors, true);
+	test_check_ptr (http_group_get (cors, "resource", test_receive_echo_handler));
+
+	test_check_unsigned_eq (http_cerver_add_origin_to_whitelist (http_cerver, TEST_RECEIVE_ALLOWED_ORIGIN), 0, NULL);
+
+}
+
 static Cerver *test_receive_cerver_create (void) {
 
 	Cerver *cerver = cerver_create (
@@ -409,6 +559,8 @@ static Cerver *test_receive_cerver_create (void) {
 	http_route_set_authentication_with_body (body_route, true);
 
 	http_cerver_route_register (http_cerver, main_route);
+
+	test_receive_groups_create (http_cerver);
 
 	http_cerver_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
 	http_cerver_set_default_uploads_filename_generator (http_cerver);
@@ -1169,6 +1321,280 @@ static void test_receive_numbered_filenames (Cerver *cerver) {
 
 }
 
+#define TEST_RECEIVE_UNSAFE_REQUEST_SIZE	(1 << 11)
+#define TEST_RECEIVE_ESCAPED_FILE			TEST_RECEIVE_ROOT_PATH "/escape.txt"
+
+static const char *unsafe_filenames_body = {
+	"------CerverBoundary7MA4YWxk\r\n"
+	"Content-Disposition: form-data; name=\"empty\"; filename=\"\"\r\n"
+	"Content-Type: application/octet-stream\r\n"
+	"\r\n"
+	"ignored-content\r\n"
+	"------CerverBoundary7MA4YWxk\r\n"
+	"Content-Disposition: form-data; name=\"parent\"; filename=\"../escape.txt\"\r\n"
+	"\r\n"
+	"parent-content\r\n"
+	"------CerverBoundary7MA4YWxk\r\n"
+	"Content-Disposition: form-data; name=\"up\"; filename=\"..\"\r\n"
+	"\r\n"
+	"up-content\r\n"
+	"------CerverBoundary7MA4YWxk\r\n"
+	"Content-Disposition: form-data; name=\"current\"; filename=\".\"\r\n"
+	"\r\n"
+	"current-content\r\n"
+	"------CerverBoundary7MA4YWxk--\r\n"
+};
+
+static bool test_receive_saved_as (const unsigned int idx, const char *filename) {
+
+	const char *saved = observed.files[idx].saved_filename;
+	const char *name = strrchr (saved, '/');
+
+	return !strncmp (saved, TEST_RECEIVE_UPLOADS_PATH "/", strlen (TEST_RECEIVE_UPLOADS_PATH "/"))
+		&& name && !strcmp (name + 1, filename);
+
+}
+
+// an empty filename saves nothing, and every other name is saved inside the uploads path
+static void test_receive_unsafe_filenames (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_set_uploads_filename_generator (http_cerver, NULL);
+
+	char request[TEST_RECEIVE_UNSAFE_REQUEST_SIZE];
+	(void) snprintf (
+		request, TEST_RECEIVE_UNSAFE_REQUEST_SIZE,
+		"POST /test/upload HTTP/1.1\r\n"
+		"Host: localhost:8080\r\n"
+		"Content-Type: multipart/form-data; boundary=----CerverBoundary7MA4YWxk\r\n"
+		"Content-Length: %zu\r\n"
+		"\r\n"
+		"%s",
+		strlen (unsafe_filenames_body), unsafe_filenames_body
+	);
+
+	test_receive_whole_case (cerver, "unsafe filenames", request);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_parts == 4);
+	test_receive_expect (observed.n_files == 4);
+
+	// the file input without a file
+	test_receive_expect (!strlen (observed.files[0].saved_filename));
+	test_receive_expect (observed.files[0].size == 0);
+
+	test_receive_expect (test_receive_saved_as (1, "..escape.txt"));
+	test_receive_expect (!strcmp (observed.files[1].content, "parent-content"));
+
+	test_receive_expect (test_receive_saved_as (2, HTTP_MULTI_PART_DEFAULT_FILENAME));
+	test_receive_expect (!strcmp (observed.files[2].content, "up-content"));
+
+	test_receive_expect (test_receive_saved_as (3, HTTP_MULTI_PART_DEFAULT_FILENAME "-1"));
+	test_receive_expect (!strcmp (observed.files[3].content, "current-content"));
+
+	test_receive_expect (access (TEST_RECEIVE_ESCAPED_FILE, F_OK) != 0);
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+	http_cerver_set_default_uploads_filename_generator (http_cerver);
+
+}
+
+#define TEST_RECEIVE_DIRNAME				"cerver-test-receive-dirname"
+#define TEST_RECEIVE_ROOT_DIRNAME			"/" TEST_RECEIVE_DIRNAME
+#define TEST_RECEIVE_UPLOADS_DIRNAME		TEST_RECEIVE_UPLOADS_PATH "/" TEST_RECEIVE_DIRNAME
+
+static unsigned int n_generated_dirnames = 0;
+
+static void test_receive_counting_dirname_generator (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	n_generated_dirnames += 1;
+
+	http_request_set_dirname (request, "%s", TEST_RECEIVE_DIRNAME);
+
+}
+
+// without an uploads path the dirname was generated and its directory was created at the filesystem root
+static void test_receive_dirname_without_uploads_path (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver->uploads_path_len = 0;
+	(void) memset (http_cerver->uploads_path, 0, HTTP_CERVER_UPLOADS_PATH_SIZE);
+
+	n_generated_dirnames = 0;
+	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
+
+	test_receive_whole_case (cerver, "a dirname generator without an uploads path", multipart_request);
+
+	const bool created_at_root = (access (TEST_RECEIVE_ROOT_DIRNAME, F_OK) == 0);
+	if (created_at_root) (void) rmdir (TEST_RECEIVE_ROOT_DIRNAME);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+	http_cerver_set_uploads_path (http_cerver, TEST_RECEIVE_UPLOADS_PATH);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (n_generated_dirnames == 0);
+	test_receive_expect (!created_at_root);
+
+}
+
+// with an uploads path the files of the request are saved inside its generated directory
+static void test_receive_dirname_with_uploads_path (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	n_generated_dirnames = 0;
+	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_counting_dirname_generator);
+
+	test_receive_whole_case (cerver, "a dirname generator with an uploads path", multipart_request);
+
+	const bool created_in_uploads = (access (TEST_RECEIVE_UPLOADS_DIRNAME, F_OK) == 0);
+	if (created_in_uploads) (void) rmdir (TEST_RECEIVE_UPLOADS_DIRNAME);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (n_generated_dirnames == 1);
+	test_receive_expect (created_in_uploads);
+	test_receive_expect (observed.n_files == 2);
+	test_receive_expect (!strncmp (
+		observed.files[0].saved_filename,
+		TEST_RECEIVE_UPLOADS_DIRNAME "/", strlen (TEST_RECEIVE_UPLOADS_DIRNAME "/")
+	));
+	test_receive_expect (!strcmp (observed.files[0].content, "first-file-content"));
+	test_receive_expect (access (TEST_RECEIVE_ROOT_DIRNAME, F_OK) != 0);
+
+}
+
+// an attribute without a value dereferenced NULL (found by the multipart fuzzer)
+static void test_receive_attribute_without_value (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "a multi-part attribute without a value",
+		"POST /test/upload HTTP/1.1\r\n"
+		"Host: localhost:8080\r\n"
+		"Content-Type: multipart/form-data; boundary=----CerverBoundary7MA4YWxk\r\n"
+		"Content-Length: 109\r\n"
+		"\r\n"
+		"------CerverBoundary7MA4YWxk\r\n"
+		"Content-Disposition: form-data; name\r\n"
+		"\r\n"
+		"hello\r\n"
+		"------CerverBoundary7MA4YWxk--\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+}
+
+#define TEST_RECEIVE_BEARER_REQUEST_SIZE	(1 << 12)
+#define TEST_RECEIVE_JWT_EXPIRED_SECONDS	3600
+#define TEST_RECEIVE_JWT_VALID_SECONDS		3600
+
+static const char *bearer_keys_request_format = {
+	"POST /bearer HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"%s"
+	"Content-Length: 0\r\n"
+	"\r\n"
+};
+
+static Cerver *test_receive_bearer_cerver_create (void) {
+
+	Cerver *cerver = cerver_create (
+		CERVER_TYPE_WEB, "test-receive-bearer", 8080, PROTOCOL_TCP, false, 2
+	);
+
+	test_check_ptr (cerver);
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	HttpRoute *bearer_route = http_route_create (REQUEST_METHOD_POST, "bearer", test_receive_echo_handler);
+	http_route_set_auth (bearer_route, HTTP_ROUTE_AUTH_TYPE_BEARER);
+	http_cerver_route_register (http_cerver, bearer_route);
+
+	http_cerver_auth_set_jwt_algorithm (http_cerver, JWT_ALG_RS256);
+	http_cerver_auth_set_jwt_priv_key_filename (http_cerver, private_key);
+	http_cerver_auth_set_jwt_pub_key_filename (http_cerver, public_key);
+
+	test_check_unsigned_eq (http_cerver_init (http_cerver), 0, NULL);
+
+	return cerver;
+
+}
+
+// a token signed with the cerver's private key that expires at the given time
+static void test_receive_bearer_token (
+	HttpCerver *http_cerver, const time_t expires, char *bearer
+) {
+
+	HttpJwt *http_jwt = http_cerver_auth_jwt_new ();
+	test_check_ptr (http_jwt);
+
+	http_cerver_auth_jwt_add_value (http_jwt, "id", "receive-test");
+	http_cerver_auth_jwt_add_value_int (http_jwt, "exp", (int) expires);
+
+	test_check_unsigned_eq (http_cerver_auth_generate_bearer_jwt (http_cerver, http_jwt), 0, NULL);
+
+	(void) snprintf (bearer, HTTP_JWT_BEARER_SIZE, "%s", http_jwt->bearer);
+
+	http_cerver_auth_jwt_delete (http_jwt);
+
+}
+
+static void test_receive_bearer_case (
+	Cerver *cerver, const char *name, const char *authorization, const char *status
+) {
+
+	char header[HTTP_JWT_BEARER_SIZE + TEST_RECEIVE_PATH_SIZE] = { 0 };
+	if (authorization) {
+		(void) snprintf (header, sizeof (header), "Authorization: %s\r\n", authorization);
+	}
+
+	char request[TEST_RECEIVE_BEARER_REQUEST_SIZE];
+	(void) snprintf (request, TEST_RECEIVE_BEARER_REQUEST_SIZE, bearer_keys_request_format, header);
+
+	test_receive_whole_case (cerver, name, request);
+
+	test_receive_expect (test_receive_status_is (status));
+
+}
+
+// the bearer JWT validated with real RS256 keys through the receive
+static void test_receive_bearer_keys (void) {
+
+	Cerver *cerver = test_receive_bearer_cerver_create ();
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	const time_t now = time (NULL);
+
+	char valid[HTTP_JWT_BEARER_SIZE];
+	test_receive_bearer_token (http_cerver, now + TEST_RECEIVE_JWT_VALID_SECONDS, valid);
+
+	char expired[HTTP_JWT_BEARER_SIZE];
+	test_receive_bearer_token (http_cerver, now - TEST_RECEIVE_JWT_EXPIRED_SECONDS, expired);
+
+	// the first character of the signature changes (the last one has bits that are not used)
+	char tampered[HTTP_JWT_BEARER_SIZE];
+	(void) snprintf (tampered, HTTP_JWT_BEARER_SIZE, "%s", valid);
+	char *signature = strrchr (tampered, '.') + 1;
+	signature[0] = (signature[0] == 'A') ? 'B' : 'A';
+
+	test_receive_bearer_case (cerver, "a valid bearer", valid, "200");
+	test_receive_bearer_case (cerver, "an expired bearer", expired, "401");
+	test_receive_bearer_case (cerver, "a bearer with a bad signature", tampered, "401");
+	test_receive_bearer_case (cerver, "a bearer that is not a jwt", "Bearer not-a-jwt", "401");
+	test_receive_bearer_case (cerver, "a request without a bearer", NULL, "401");
+
+	(void) cerver_teardown (cerver);
+
+}
+
 static void test_receive_upload_error (Cerver *cerver) {
 
 	http_cerver_set_uploads_path ((HttpCerver *) cerver->cerver_data, TEST_RECEIVE_MISSING_PATH);
@@ -1180,6 +1606,248 @@ static void test_receive_upload_error (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 
 	test_receive_limits_reset ((HttpCerver *) cerver->cerver_data);
+
+}
+
+static const char *named_param_request = {
+	"GET /v2/items/abc%20123?x=1 HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"X-Request-Id: request-7\r\n"
+	"\r\n"
+};
+
+static void test_receive_check_named_param (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.param, "abc 123"));
+	test_receive_expect (!strcmp (observed.custom, group_custom_data));
+	test_receive_expect (!strcmp (observed.accept, "request-7"));
+
+}
+
+static bool test_receive_has_header (const char *header) {
+
+	return strstr (result.response, header) != NULL;
+
+}
+
+// the routes of the groups API: params by name, HEAD, OPTIONS, PATCH and middlewares
+static void test_receive_groups (Cerver *cerver) {
+
+	test_receive_every_split (
+		cerver, "param by name",
+		named_param_request, strlen (named_param_request), test_receive_check_named_param
+	);
+
+	observed_before = observed_after = 0;
+	test_receive_whole_case (
+		cerver, "HEAD with the GET handler",
+		"HEAD /v2/items/abc HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (test_receive_has_header ("Content-Length: 15"));
+	test_receive_expect (!test_receive_has_header ("doki"));
+	test_receive_expect ((observed_before == 1) && (observed_after == 1));
+
+	test_receive_whole_case (
+		cerver, "HEAD with a rendered response",
+		"HEAD /v2/render HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!test_receive_has_header (render_json_body));
+
+	test_receive_whole_case (
+		cerver, "OPTIONS answered by the cerver",
+		"OPTIONS /v2/items/abc HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("204"));
+	test_receive_expect (test_receive_has_header ("Allow: GET, HEAD, POST, OPTIONS, PATCH\r\n"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_whole_case (
+		cerver, "PATCH",
+		"PATCH /v2/items/abc HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 2\r\n\r\nhi"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.param, "abc"));
+	test_receive_expect (!strcmp (observed.body, "hi"));
+	test_receive_expect (test_receive_has_header (render_json_body));
+
+	observed_before = observed_after = 0;
+	test_receive_whole_case (
+		cerver, "a middleware that answers the request",
+		"POST /v2/items/abc HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("403"));
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect ((observed_before == 1) && (observed_after == 1));
+
+	test_receive_whole_case (
+		cerver, "a path with a dot is a route before a static file",
+		"GET /v2/users/john.doe HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.param, "john.doe"));
+
+	test_receive_whole_case (
+		cerver, "the body limit of an endpoint",
+		"POST /v2/limited HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 32\r\n\r\n"
+		"0123456789abcdef0123456789abcdef"
+	);
+
+	test_receive_expect (test_receive_status_is ("413"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_whole_case (
+		cerver, "websocket routes are not implemented",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("501"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_whole_case (
+		cerver, "a custom header without case",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nx-custom: lower\r\nContent-Length: 0\r\n\r\n"
+	);
+
+	test_receive_expect (!strcmp (observed.custom, "lower"));
+
+}
+
+// a path without a handler for the method: catch all by default, 405 when it is enabled
+static void test_receive_method_not_allowed (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	const char *request = "DELETE /v2/items/abc HTTP/1.1\r\nHost: localhost:8080\r\n\r\n";
+
+	test_receive_whole_case (cerver, "a method without handler goes to the catch all", request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
+
+	http_cerver_set_method_not_allowed (http_cerver, true);
+
+	test_receive_whole_case (cerver, "405 with the Allow header", request);
+	test_receive_expect (test_receive_status_is ("405"));
+	test_receive_expect (test_receive_has_header ("Allow: GET, HEAD, POST, OPTIONS, PATCH\r\n"));
+	test_receive_expect (test_receive_has_header ("Method not allowed!"));
+
+	test_receive_whole_case (
+		cerver, "an unknown path is still not found",
+		"DELETE /v2/missing HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
+
+	http_cerver_set_method_not_allowed_handler (http_cerver, test_receive_method_not_allowed_handler);
+
+	test_receive_whole_case (cerver, "405 with a custom handler", request);
+	test_receive_expect (test_receive_status_is ("405"));
+	test_receive_expect (test_receive_has_header (custom_not_allowed_body));
+	test_receive_expect (!strcmp (observed.query, "GET, HEAD, POST, OPTIONS, PATCH"));
+
+	http_cerver_set_method_not_allowed_handler (http_cerver, NULL);
+	http_cerver_set_method_not_allowed (http_cerver, false);
+
+}
+
+// tolerant (the default), strict and redirect
+static void test_receive_trailing_slash (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	const char *request = "GET /v2/items/abc/?x=1 HTTP/1.1\r\nHost: localhost:8080\r\n\r\n";
+
+	test_receive_whole_case (cerver, "a tolerated trailing slash", request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!strcmp (observed.param, "abc"));
+
+	test_receive_whole_case (
+		cerver, "a first API route with a trailing slash",
+		"POST /test/echo/ HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n"
+	);
+
+	test_receive_expect (observed.n_handled == 1);
+
+	test_receive_whole_case (
+		cerver, "an empty segment never matches",
+		"GET /v2//items/abc HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+	);
+
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
+
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_STRICT);
+
+	test_receive_whole_case (cerver, "a strict trailing slash", request);
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect (strstr (result.response, catch_all_message) != NULL);
+
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_REDIRECT);
+
+	test_receive_whole_case (cerver, "a redirected trailing slash", request);
+	test_receive_expect (test_receive_status_is ("308"));
+	test_receive_expect (test_receive_has_header ("Location: /v2/items/abc?x=1\r\n"));
+	test_receive_expect (observed.n_handled == 0);
+
+	// an invalid policy is ignored
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_MAX);
+	test_receive_expect (http_cerver->tree->trailing_slash == HTTP_TRAILING_SLASH_REDIRECT);
+
+	http_cerver_set_trailing_slash (http_cerver, HTTP_TRAILING_SLASH_TOLERANT);
+
+}
+
+// a preflight from a whitelisted origin gets the CORS headers
+static void test_receive_cors_preflight (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "a preflight from an allowed origin",
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\n"
+		"Host: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\n"
+		"Access-Control-Request-Method: GET\r\n"
+		"Access-Control-Request-Headers: authorization\r\n"
+		"\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("204"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Origin: " TEST_RECEIVE_ALLOWED_ORIGIN));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Methods: GET, HEAD, OPTIONS"));
+	test_receive_expect (test_receive_has_header ("Access-Control-Allow-Headers: authorization"));
+
+	test_receive_whole_case (
+		cerver, "a preflight from another origin",
+		"OPTIONS /v2/cors/resource HTTP/1.1\r\n"
+		"Host: localhost:8080\r\n"
+		"Origin: http://other.com\r\n"
+		"Access-Control-Request-Method: GET\r\n"
+		"\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("204"));
+	test_receive_expect (!test_receive_has_header ("Access-Control-Allow-Origin"));
+
+	test_receive_whole_case (
+		cerver, "a preflight to a route without CORS",
+		"OPTIONS /v2/items/abc HTTP/1.1\r\n"
+		"Host: localhost:8080\r\n"
+		"Origin: " TEST_RECEIVE_ALLOWED_ORIGIN "\r\n"
+		"Access-Control-Request-Method: GET\r\n"
+		"\r\n"
+	);
+
+	test_receive_expect (!test_receive_has_header ("Access-Control-Allow-Origin"));
 
 }
 
@@ -1204,9 +1872,20 @@ void http_tests_receive (void) {
 	test_receive_custom_header_too_large (cerver);
 	test_receive_authentication_with_body (cerver);
 	test_receive_numbered_filenames (cerver);
+	test_receive_unsafe_filenames (cerver);
+	test_receive_dirname_without_uploads_path (cerver);
+	test_receive_dirname_with_uploads_path (cerver);
+	test_receive_attribute_without_value (cerver);
 	test_receive_upload_error (cerver);
 
+	test_receive_groups (cerver);
+	test_receive_method_not_allowed (cerver);
+	test_receive_trailing_slash (cerver);
+	test_receive_cors_preflight (cerver);
+
 	(void) cerver_teardown (cerver);
+
+	test_receive_bearer_keys ();
 
 	test_receive_arena_delete ();
 	test_receive_files_delete ();
