@@ -155,9 +155,15 @@ struct _PacketHeader {
 
 	u16 sock_fd;				// used in when working with load balancers
 
+	// the protocol of the sender, packet_check () validates it with the local one
+	PacketVersion version;
+
 };
 
 typedef struct _PacketHeader PacketHeader;
+
+// the protocol id and version of this process, to send them in every header
+CERVER_PUBLIC PacketVersion packet_version_local (void);
 
 CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
@@ -517,7 +523,9 @@ CERVER_PUBLIC u8 packet_route_between_connections (
 	PacketHeader *header, size_t *sent
 );
 
-// check if packet has a compatible protocol id and a version
+// check if packet has a compatible protocol id and a version:
+// the same protocol id and major, and a minor that is not newer than the local one
+// the version is not part of the packet header, so a received packet has the initial one
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (const Packet *packet);
 

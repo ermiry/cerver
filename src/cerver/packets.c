@@ -26,6 +26,8 @@
 #include "cerver/utils/log.h"
 #endif
 
+#define PACKET_ROUTE_BUFFER_SIZE			4096
+
 #pragma region protocol
 
 static ProtocolID protocol_id = 0;
@@ -50,9 +52,17 @@ ProtocolVersion packets_get_protocol_version (void) {
 }
 
 void packets_set_protocol_version (ProtocolVersion version) {
-	
+
 	protocol_version = version;
-	
+
+}
+
+PacketVersion packet_version_local (void) {
+
+	PacketVersion version = { protocol_id, protocol_version };
+
+	return version;
+
 }
 
 #pragma endregion
@@ -152,18 +162,18 @@ void packets_per_type_print (
 ) {
 
 	if (packets_per_type) {
-		cerver_log_msg ("Cerver:            %ld", packets_per_type->n_cerver_packets);
-		cerver_log_msg ("Client:            %ld", packets_per_type->n_client_packets);
-		cerver_log_msg ("Error:             %ld", packets_per_type->n_error_packets);
-		cerver_log_msg ("Request:           %ld", packets_per_type->n_request_packets);
-		cerver_log_msg ("Auth:              %ld", packets_per_type->n_auth_packets);
-		cerver_log_msg ("Game:              %ld", packets_per_type->n_game_packets);
-		cerver_log_msg ("App:               %ld", packets_per_type->n_app_packets);
-		cerver_log_msg ("App Error:         %ld", packets_per_type->n_app_error_packets);
-		cerver_log_msg ("Custom:            %ld", packets_per_type->n_custom_packets);
-		cerver_log_msg ("Test:              %ld", packets_per_type->n_test_packets);
-		cerver_log_msg ("Unknown:           %ld", packets_per_type->n_unknown_packets);
-		cerver_log_msg ("Bad:               %ld", packets_per_type->n_bad_packets);
+		cerver_log_msg ("Cerver:            %ld", CERVER_STATS_GET (packets_per_type->n_cerver_packets));
+		cerver_log_msg ("Client:            %ld", CERVER_STATS_GET (packets_per_type->n_client_packets));
+		cerver_log_msg ("Error:             %ld", CERVER_STATS_GET (packets_per_type->n_error_packets));
+		cerver_log_msg ("Request:           %ld", CERVER_STATS_GET (packets_per_type->n_request_packets));
+		cerver_log_msg ("Auth:              %ld", CERVER_STATS_GET (packets_per_type->n_auth_packets));
+		cerver_log_msg ("Game:              %ld", CERVER_STATS_GET (packets_per_type->n_game_packets));
+		cerver_log_msg ("App:               %ld", CERVER_STATS_GET (packets_per_type->n_app_packets));
+		cerver_log_msg ("App Error:         %ld", CERVER_STATS_GET (packets_per_type->n_app_error_packets));
+		cerver_log_msg ("Custom:            %ld", CERVER_STATS_GET (packets_per_type->n_custom_packets));
+		cerver_log_msg ("Test:              %ld", CERVER_STATS_GET (packets_per_type->n_test_packets));
+		cerver_log_msg ("Unknown:           %ld", CERVER_STATS_GET (packets_per_type->n_unknown_packets));
+		cerver_log_msg ("Bad:               %ld", CERVER_STATS_GET (packets_per_type->n_bad_packets));
 	}
 
 }
@@ -223,6 +233,8 @@ PacketHeader *packet_header_create (
 		header->request_type = req_type;
 
 		header->sock_fd = 0;
+
+		header->version = packet_version_local ();
 	}
 
 	return header;
@@ -315,16 +327,12 @@ Packet *packet_new (void) {
 			.packet_size = 0,
 			.handler_id = 0,
 			.request_type = 0,
-			.sock_fd = 0
+			.sock_fd = 0,
+			.version = packet_version_local ()
 		};
 
-		packet->version = (PacketVersion) {
-			.protocol_id = 0,
-			.protocol_version = {
-				.major = 0,
-				.minor = 0
-			}
-		};
+		// a received packet takes the version of its header
+		packet->version = packet_version_local ();
 
 		packet->packet_size = 0;
 		packet->packet = NULL;
@@ -701,17 +709,21 @@ u8 packet_generate (Packet *packet) {
 	u8 retval = 0;
 
 	if (packet) {
-		if (packet->packet) {
+		// a request packet references its own header
+		if (packet->packet && !packet->packet_ref) {
 			free (packet->packet);
-			packet->packet = NULL;
-			packet->packet_size = 0;
 		}
+
+		packet->packet = NULL;
+		packet->packet_size = 0;
+		packet->packet_ref = false;
 
 		packet->packet_size = sizeof (PacketHeader) + packet->data_size;
 
 		packet->header.packet_type = packet->packet_type;
 		packet->header.packet_size = packet->packet_size;
 		packet->header.request_type = packet->req_type;
+		packet->header.version = packet_version_local ();
 
 		// create the packet buffer to be sent
 		packet->packet = malloc (packet->packet_size);
@@ -764,8 +776,12 @@ Packet *packet_create_request (
 
 				.request_type = request_type,
 
-				.sock_fd = 0
+				.sock_fd = 0,
+
+				.version = packet_version_local ()
 			},
+
+			.version = packet_version_local (),
 
 			.packet_size = sizeof (PacketHeader),
 			.packet = (void *) &packet->header,
@@ -950,8 +966,8 @@ static void packet_send_update_stats (
 
 	#ifdef CLIENT_STATS
 	if (client) {
-		client->stats->n_packets_sent += 1;
-		client->stats->total_bytes_sent += sent;
+		CERVER_STATS_ADD (client->stats->n_packets_sent, 1);
+		CERVER_STATS_ADD (client->stats->total_bytes_sent, sent);
 	}
 	#endif
 
@@ -1294,17 +1310,16 @@ u8 packet_send_pieces (
 			flags,
 			&actual_sent
 		)) {
-			// send the pieces of data
-			for (u32 i = 0; i < n_pieces; i++) {
-				(void) packet_send_pieces_actual (
+			// send the pieces of data, a failed one stops the packet
+			retval = 0;
+			for (u32 i = 0; (i < n_pieces) && !retval; i++) {
+				retval = packet_send_pieces_actual (
 					packet->connection->socket,
 					(char *) pieces[i], sizes[i],
 					flags,
 					&actual_sent
 				);
 			}
-
-			retval = 0;
 		}
 
 		packet_send_update_stats (
@@ -1394,15 +1409,11 @@ u8 packet_send_request (
 			.request_type = request_type,
 
 			.sock_fd = 0,
+
+			.version = packet_version_local ()
 		},
 
-		.version = (PacketVersion) {
-			.protocol_id = 0,
-			.protocol_version = {
-				.major = 0,
-				.minor = 0
-			}
-		},
+		.version = packet_version_local (),
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &request.header,
@@ -1536,6 +1547,29 @@ static inline u8 packet_route_between_connections_move (
 
 }
 
+// moves the pending bytes from the pipe to the destination,
+// splice () can move less bytes than the ones in the pipe
+static u8 packet_route_between_connections_move_all (
+	int pipefd, int to_fd, size_t pending, size_t *sent
+) {
+
+	u8 retval = 0;
+
+	ssize_t moved = 0;
+	while (pending > 0) {
+		if (packet_route_between_connections_move (pipefd, to_fd, (int) pending, &moved)) {
+			retval = 1;
+			break;
+		}
+
+		if (sent) *sent += (size_t) moved;
+		pending -= (size_t) moved;
+	}
+
+	return retval;
+
+}
+
 // routes a packet from one connection's sock fd to another connection's sock fd
 // the header is sent first and then the packet's body (if any) is handled directly between fds
 // by calling the splice method using a pipe as the middleman
@@ -1554,13 +1588,14 @@ u8 packet_route_between_connections (
 		// first send the header
 		ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
 		if (s > 0) {
+			if (sent) *sent = (size_t) s;
+
 			size_t left = header->packet_size - sizeof (PacketHeader);
 			if (left) {
 				int pipefds[2] = { 0 };
 				if (!pipe (pipefds)) {
 					ssize_t received = 0;
-					ssize_t moved = 0;
-					size_t buff_size = 4096;
+					size_t buff_size = PACKET_ROUTE_BUFFER_SIZE;
 					while (left > 0) {
 						if (buff_size > left) buff_size = left;
 
@@ -1568,13 +1603,12 @@ u8 packet_route_between_connections (
 							from->socket->sock_fd, pipefds[1], buff_size, &received
 						)) break;
 
-						if (packet_route_between_connections_move (
-							pipefds[0], to->socket->sock_fd, buff_size, &moved
+						// everything that entered the pipe leaves it in this round
+						if (packet_route_between_connections_move_all (
+							pipefds[0], to->socket->sock_fd, (size_t) received, sent
 						)) break;
 
-						if (sent) *sent += moved;
-
-						left -= received;
+						left -= (size_t) received;
 					}
 
 					// we are done!
@@ -1617,9 +1651,10 @@ bool packet_check (const Packet *packet) {
 
 	if (packet) {
 		if (packet->version.protocol_id == protocol_id) {
+			// the same major, and a minor that is not newer than the local one
 			if (
-				(packet->version.protocol_version.major <= protocol_version.major)
-				&& (packet->version.protocol_version.minor >= protocol_version.minor)
+				(packet->version.protocol_version.major == protocol_version.major)
+				&& (packet->version.protocol_version.minor <= protocol_version.minor)
 			) {
 				retval = true;
 			}
