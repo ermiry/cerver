@@ -5,8 +5,12 @@
 
 #include "cerver/config.h"
 
-#define HTTP_HEADERS_MAX				55
+#define HTTP_HEADERS_MAX				62
 #define HTTP_HEADERS_SIZE				64
+
+// the open addressing table that finds a header type by its name,
+// a power of 2 bigger than twice the number of headers
+#define HTTP_HEADERS_TABLE_SIZE			128
 
 #define HTTP_HEADER_VALUE_SIZE			256
 
@@ -89,6 +93,16 @@ extern "C" {
 	/* Other */																																																																					\
 	XX(53,  DATE,								Date,								(Contains the date and time at which the message was originated.))																																			\
 	XX(54,  UPGRADE,							Upgrade,							(The standard establishes rules for upgrading or changing to a different protocol on the current client, server, transport protocol connection.))															\
+	/* Transfer coding */																																																																		\
+	XX(55,  TRANSFER_ENCODING,					Transfer-Encoding,					(Specifies the form of encoding used to safely transfer the payload body to the user.))																														\
+	/* Conditionals */																																																																			\
+	XX(56,  IF_NONE_MATCH,						If-None-Match,						(Makes the request conditional, the resource is sent only if none of the given ETags match.))																												\
+	XX(57,  IF_MODIFIED_SINCE,					If-Modified-Since,					(Makes the request conditional, the resource is sent only if it has been modified after the given date.))																									\
+	XX(58,  ETAG,								ETag,								(A unique string identifying the version of the resource.))																																					\
+	XX(59,  LAST_MODIFIED,						Last-Modified,						(The last modification date of the resource, used to compare several versions of the same resource.))																										\
+	/* Tracing */																																																																				\
+	XX(60,  REQUEST_ID,							X-Request-Id,						(Identifies a request between the client, the proxies and the servers.))																																	\
+	XX(61,  FORWARDED_FOR,						X-Forwarded-For,					(Identifies the originating IP addresses of a client connecting through a proxy.))																															\
 	XX(63,  UNDEFINED,							Undefined,							(Undefined Header))																																															\
 
 typedef enum http_header {
