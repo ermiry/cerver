@@ -36,7 +36,7 @@ static unsigned int json_request_post_json (
 		size_t json_len = 0;
 		char *json_data = file_read (json_filename, &json_len);
 		if (json_data) {
-			curl_simple_post_json (
+			retval = curl_simple_post_json (
 				curl, actual_address,
 				HTTP_STATUS_OK, json_data, json_len,
 				json_request_all_data_handler, data_buffer
@@ -70,13 +70,13 @@ static unsigned int json_request_all_actual (
 	);
 
 	// POST /json
-	json_request_post_json (
+	errors |= json_request_post_json (
 		actual_address, data_buffer, "./test/data/small.json"
 	);
 
 	// POST /json/big
 	(void) snprintf (actual_address, ADDRESS_SIZE, "%s/json/big", address);
-	json_request_post_json (
+	errors |= json_request_post_json (
 		actual_address, data_buffer, "./test/data/big.json"
 	);
 
