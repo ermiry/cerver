@@ -1,0 +1,12 @@
+Ausers/:id<int>
+Ausers/:name
+Bitems/:id<uuid>/update
+Efiles/*
+A
+
+/users/12
+/users/john
+/items/0b6c7c0e-8f5a-4c4b-9d8e-3f2a1b0c9d8e/update
+/files/a/b
+//
+/users/

@@ -1,0 +1,9 @@
+#--FuzzBoundary
+Content-Disposition: form-data; name="empty"; filename=""
+
+
+--FuzzBoundary
+Content-Disposition: form-data; name="up"; filename="../.."
+
+x
+--FuzzBoundary--

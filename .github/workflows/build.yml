@@ -66,6 +66,26 @@ jobs:
       - name: g++ run tests
         run: bash test/run.sh
 
+  valgrind:
+    name: Cerver tests with valgrind
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev valgrind
+
+      - name: Library
+        run: make TYPE=test
+      - name: Tests
+        run: make TYPE=test test
+
+      - name: Run tests
+        env:
+          RUNNER: valgrind --error-exitcode=1 --leak-check=full --errors-for-leak-kinds=definite,indirect --quiet
+        run: bash test/run.sh
+
   sanitizers:
     name: Cerver tests with ${{ matrix.sanitizer }} sanitizer
     needs: build

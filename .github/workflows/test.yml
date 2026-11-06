@@ -16,9 +16,6 @@ jobs:
       - name: Install Dependencies
         run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
-      - name: Build Docker Image
-        run: sudo docker build -t ermiry/cerver:test -f Dockerfile.test .
-
       - name: Compile Sources
         run: make TYPE=test COVERAGE=1
 
@@ -28,133 +25,8 @@ jobs:
       - name: Unit Tests
         run: bash test/run.sh
 
-      - name: Ping Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/ping
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Packets Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/packets
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/packets
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Requests Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/requests
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/requests
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Auth Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/auth
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/auth
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Sessions Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/sessions
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/sessions
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Threads Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/threads
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/threads
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Handler Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/handler/cerver
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/handler/client
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/web
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/web
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: JSON Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/json
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/json
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Auth Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/auth
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/auth
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web API Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/api
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/api
-          sudo docker kill $(sudo docker ps -q)
-      
-      - name: Web Upload Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/upload
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/upload
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Multiple Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/multiple
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/multiple
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Jobs Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/jobs
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/jobs
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Worker Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/worker
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/worker
-          sudo docker kill $(sudo docker ps -q)
-
-      - name: Web Admin Integration Test
-        run: |
-          sudo docker run -d --name test --rm -p 8080:8080 ermiry/cerver:test ./bin/web/admin
-          sleep 2
-          sudo docker inspect test --format='{{.State.ExitCode}}'
-          ./test/bin/client/web/admin
-          sudo docker kill $(sudo docker ps -q)
+      - name: Integration Tests
+        run: bash test/integration.sh
 
       - name: Coverage
         run: make coverage
@@ -168,3 +40,35 @@ jobs:
           name: build
           fail_ci_if_error: true
           # verbose: true
+
+  integration-sanitizers:
+    name: Cerver integration tests with address and undefined sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Integration Tests
+        env:
+          SANITIZER: address,undefined
+        run: bash test/integration.sh
+
+  fuzz:
+    name: Cerver fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fuzzing
+        env:
+          SECONDS_PER_TARGET: 30
+        run: bash test/fuzz.sh
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: ./fuzz-artifacts/
+          retention-days: 7

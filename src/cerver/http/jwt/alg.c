@@ -17,6 +17,9 @@ const char *jwt_alg_str (const jwt_alg_t alg) {
 
 jwt_alg_t jwt_str_alg (const char *alg) {
 
+	// a token header without "alg", like upstream
+	if (!alg) return JWT_ALG_INVAL;
+
 	if (!strcasecmp (alg, "none")) return JWT_ALG_NONE;
 	else if (!strcasecmp (alg, "HS256")) return JWT_ALG_HS256;
 	else if (!strcasecmp (alg, "HS384")) return JWT_ALG_HS384;

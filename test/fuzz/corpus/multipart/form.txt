@@ -1,0 +1,10 @@
+A--FuzzBoundary
+Content-Disposition: form-data; name="field"
+
+hello
+--FuzzBoundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+file-content
+--FuzzBoundary--

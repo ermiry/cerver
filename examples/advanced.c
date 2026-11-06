@@ -171,16 +171,19 @@ static void *on_client_close_connection (void *event_data_ptr) {
 
 #pragma region main
 
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
-	
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
-	}
 
-	cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
+
+}
+
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
 
 }
 
@@ -260,7 +263,11 @@ int main (void) {
 		String *interval = str_create ("Update interval: %d", interval_value);
 		cerver_set_update_interval (my_cerver, update_interval_thread, interval, str_delete, interval_value);
 
-		if (cerver_start (my_cerver)) {
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				my_cerver->info->name

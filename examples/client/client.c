@@ -34,16 +34,19 @@ static Cerver *client_cerver = NULL;
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (client_cerver) {
-		cerver_stats_print (client_cerver, true, true);
-		cerver_teardown (client_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (client_cerver) (void) cerver_shutdown (client_cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	cerver_stats_print (client_cerver, true, true);
+	(void) cerver_teardown (client_cerver);
 
 }
 
@@ -168,7 +171,7 @@ static int request_message (Client *client, Connection *connection) {
 	Packet *packet = packet_new ();
 	if (packet) {
 		size_t packet_len = sizeof (PacketHeader);
-		packet->packet = malloc (packet_len);
+		packet->packet = calloc (1, packet_len);
 		packet->packet_size = packet_len;
 
 		char *end = (char *) packet->packet;
@@ -177,6 +180,7 @@ static int request_message (Client *client, Connection *connection) {
 		header->packet_size = packet_len;
 		header->handler_id = 0;
 		header->request_type = GET_MSG;
+		header->version = packet_version_local ();
 
 		printf ("Requesting to cerver...\n");
 		if (client_request_to_cerver (client, connection, packet)) {
@@ -368,7 +372,11 @@ int main (void) {
 		// thread_create_detachable (&client_thread, cerver_client_request, NULL);
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
-		if (cerver_start (client_cerver)) {
+		if (!cerver_start (client_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				client_cerver->info->name

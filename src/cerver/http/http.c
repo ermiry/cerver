@@ -66,6 +66,15 @@ static HttpResponse *payload_too_large_error = NULL;
 static HttpResponse *uri_too_long_error = NULL;
 static HttpResponse *header_fields_too_large_error = NULL;
 static HttpResponse *request_timeout_error = NULL;
+static HttpResponse *method_not_allowed_error = NULL;
+static HttpResponse *not_implemented_error = NULL;
+
+static const char *form_urlencoded_value = { "application/x-www-form-urlencoded" };
+static const size_t form_urlencoded_value_len = 33;
+
+static const char *query_separator = { "?" };
+
+static const char static_file_extension_separator = '.';
 
 static const char *expect_continue_value = { "100-continue" };
 static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
@@ -223,6 +232,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->main_route = NULL;
 
+		http_cerver->tree = NULL;
+
 		http_cerver->default_handler = NULL;
 
 		http_cerver->not_found_handler = false;
@@ -267,6 +278,7 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->n_failed_auth_requests = 0;
 
 		http_cerver->enable_admin_routes = HTTP_CERVER_DEFAULT_ENABLE_ADMIN;
+		http_cerver->admin_routes_ready = false;
 		http_cerver->enable_admin_info_route = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_INFO;
 		http_cerver->enable_admin_head_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_HEADS;
 		http_cerver->enable_admin_options_handlers = HTTP_CERVER_DEFAULT_ENABLE_ADMIN_OPTIONS;
@@ -314,6 +326,9 @@ void http_cerver_delete (void *http_cerver_ptr) {
 		HttpCerver *http_cerver = (HttpCerver *) http_cerver_ptr;
 
 		dlist_delete (http_cerver->static_paths);
+
+		// the endpoints of the first routes API keep references to their routes
+		http_tree_delete (http_cerver->tree);
 
 		dlist_delete (http_cerver->routes);
 
@@ -367,6 +382,8 @@ HttpCerver *http_cerver_create (Cerver *cerver) {
 		);
 
 		http_cerver->routes = dlist_init (http_route_delete, NULL);
+
+		http_cerver->tree = http_tree_create (http_cerver);
 
 		http_cerver->default_handler = http_receive_handle_default_route;
 
@@ -437,6 +454,14 @@ static unsigned int http_cerver_init_responses (void) {
 		HTTP_STATUS_REQUEST_TIMEOUT, "error", "Request timeout!"
 	);
 
+	method_not_allowed_error = http_response_create_json_key_value (
+		HTTP_STATUS_METHOD_NOT_ALLOWED, "error", "Method not allowed!"
+	);
+
+	not_implemented_error = http_response_create_json_key_value (
+		HTTP_STATUS_NOT_IMPLEMENTED, "error", "Not implemented!"
+	);
+
 	if (
 		oki_doki
 		&& bad_request_error && bad_user_error
@@ -446,6 +471,7 @@ static unsigned int http_cerver_init_responses (void) {
 		&& payload_too_large_error && uri_too_long_error
 		&& header_fields_too_large_error
 		&& request_timeout_error
+		&& method_not_allowed_error && not_implemented_error
 	) retval = 0;
 
 	return retval;
@@ -577,7 +603,42 @@ static unsigned int http_cerver_init_internal (
 
 }
 
-static void http_cerver_init_routes (
+// the admin routes are children of the main route of the first routes API,
+// or endpoints of the first top level group if the cerver only uses groups
+// they are added only once, the routes can be compiled before the cerver starts
+static void http_cerver_init_admin_routes (
+	HttpCerver *http_cerver
+) {
+
+	if (dlist_size (http_cerver->routes)) {
+		if (!http_cerver->main_route) {
+			http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
+		}
+	}
+
+	if (http_cerver->enable_admin_routes && !http_cerver->admin_routes_ready) {
+		if (http_cerver->main_route) {
+			(void) http_cerver_admin_init (
+				http_cerver,
+				(HttpRoute *) http_cerver->main_route
+			);
+		}
+
+		else if (dlist_size (http_cerver->tree->groups)) {
+			(void) http_cerver_admin_group_init (
+				http_cerver,
+				(HttpGroup *) dlist_start (http_cerver->tree->groups)->data
+			);
+		}
+
+		http_cerver->admin_routes_ready = true;
+	}
+
+}
+
+// builds the routes tree, a registration error stops the cerver
+// returns 0 on success, 1 on error
+static u8 http_cerver_init_routes (
 	HttpCerver *http_cerver
 ) {
 
@@ -585,32 +646,19 @@ static void http_cerver_init_routes (
 	cerver_log_msg ("Loading HTTP routes...");
 	#endif
 
-	if (!http_cerver->main_route) {
-		http_cerver->main_route = (HttpRoute *) dlist_start (http_cerver->routes)->data;
+	http_cerver_init_admin_routes (http_cerver);
+
+	const u8 retval = http_tree_compile (http_cerver->tree);
+
+	if (!retval) {
+		http_tree_print (http_cerver->tree);
+
+		#ifdef HTTP_DEBUG
+		cerver_log_success ("Done loading HTTP routes!");
+		#endif
 	}
 
-	if (http_cerver->enable_admin_routes) {
-		(void) http_cerver_admin_init (
-			http_cerver,
-			(HttpRoute *) http_cerver->main_route
-		);
-	}
-
-	// init top level routes
-	HttpRoute *route = NULL;
-	for (
-		ListElement *le = dlist_start (http_cerver->routes);
-		le; le = le->next
-	) {
-		route = (HttpRoute *) le->data;
-
-		http_route_init (route);
-		http_route_print (route);
-	}
-
-	#ifdef HTTP_DEBUG
-	cerver_log_success ("Done loading HTTP routes!");
-	#endif
+	return retval;
 
 }
 
@@ -620,11 +668,7 @@ u8 http_cerver_init (HttpCerver *http_cerver) {
 
 	if (http_cerver) {
 		if (!http_cerver_init_internal (http_cerver)) {
-			if (dlist_size (http_cerver->routes)) {
-				http_cerver_init_routes (http_cerver);
-			}
-
-			retval = 0;
+			retval = http_cerver_init_routes (http_cerver);
 		}
 	}
 
@@ -665,6 +709,10 @@ void http_cerver_end (HttpCerver *http_cerver) {
 		header_fields_too_large_error = NULL;
 		http_response_delete (request_timeout_error);
 		request_timeout_error = NULL;
+		http_response_delete (method_not_allowed_error);
+		method_not_allowed_error = NULL;
+		http_response_delete (not_implemented_error);
+		not_implemented_error = NULL;
 	}
 
 }
@@ -751,20 +799,21 @@ u8 http_receive_public_path_remove (
 	u8 retval = 1;
 
 	if (http_cerver && static_path) {
-		String *query = str_new (static_path);
+		// the list's comparator receives static paths
+		HttpStaticPath *query = http_static_path_create (static_path);
 
-		void *data = dlist_remove (
+		void *data = query ? dlist_remove (
 			http_cerver->static_paths,
 			query,
 			NULL
-		);
+		) : NULL;
 
 		if (data) {
 			http_static_path_delete (data);
 			retval = 0;
 		}
 
-		str_delete (query);
+		http_static_path_delete (query);
 	}
 
 	return retval;
@@ -840,6 +889,137 @@ void http_cerver_set_not_found_route (
 		http_cerver->not_found = not_found;
 		http_cerver->not_found_handler = true;
 	}
+
+}
+
+void http_cerver_set_method_not_allowed (
+	HttpCerver *http_cerver, const bool method_not_allowed
+) {
+
+	if (http_cerver) {
+		http_cerver->tree->method_not_allowed = method_not_allowed;
+	}
+
+}
+
+void http_cerver_set_method_not_allowed_handler (
+	HttpCerver *http_cerver, const HttpHandler handler
+) {
+
+	if (http_cerver) {
+		http_cerver->tree->method_not_allowed_handler = handler;
+	}
+
+}
+
+void http_cerver_set_trailing_slash (
+	HttpCerver *http_cerver, const HttpTrailingSlash trailing_slash
+) {
+
+	if (
+		http_cerver
+		&& (trailing_slash > HTTP_TRAILING_SLASH_NONE)
+		&& (trailing_slash < HTTP_TRAILING_SLASH_MAX)
+	) {
+		http_cerver->tree->trailing_slash = trailing_slash;
+	}
+
+}
+
+void http_cerver_set_max_route_params (
+	HttpCerver *http_cerver, const unsigned int max_params
+) {
+
+	if (http_cerver && max_params) {
+		http_cerver->tree->max_params = max_params;
+	}
+
+}
+
+u8 http_cerver_register_param_validator (
+	HttpCerver *http_cerver, const char *name, const HttpParamValidate validate
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver) {
+		HttpParamValidator *validator = http_param_validator_create (name, validate);
+		if (validator) {
+			retval = (u8) dlist_insert_at_end_unsafe (http_cerver->tree->validators, validator);
+		}
+	}
+
+	return retval;
+
+}
+
+u8 http_cerver_add_before (
+	HttpCerver *http_cerver, const HttpBeforeMiddleware middleware
+) {
+
+	return http_cerver ? http_middlewares_add_before (&http_cerver->tree->middlewares, middleware) : 1;
+
+}
+
+u8 http_cerver_add_after (
+	HttpCerver *http_cerver, const HttpAfterMiddleware middleware
+) {
+
+	return http_cerver ? http_middlewares_add_after (&http_cerver->tree->middlewares, middleware) : 1;
+
+}
+
+const char *http_cerver_routes_error (
+	const HttpCerver *http_cerver
+) {
+
+	return (http_cerver && http_cerver->tree->n_errors) ? http_cerver->tree->error : NULL;
+
+}
+
+size_t http_cerver_routes_errors_count (
+	const HttpCerver *http_cerver
+) {
+
+	return http_cerver ? http_cerver->tree->n_errors : 0;
+
+}
+
+u8 http_cerver_routes_compile (
+	HttpCerver *http_cerver
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver) {
+		http_cerver_init_admin_routes (http_cerver);
+
+		retval = http_tree_compile (http_cerver->tree);
+	}
+
+	return retval;
+
+}
+
+void http_cerver_routes_print (
+	const HttpCerver *http_cerver
+) {
+
+	if (http_cerver) http_tree_print (http_cerver->tree);
+
+}
+
+char *http_cerver_routes_generate_json (
+	const HttpCerver *http_cerver
+) {
+
+	return http_cerver ? http_tree_generate_json (http_cerver->tree) : NULL;
+
+}
+
+void http_cerver_routes_json_delete (char *json) {
+
+	free (json);
 
 }
 
@@ -1357,8 +1537,13 @@ void http_cerver_routes_stats_print (const HttpCerver *http_cerver) {
 }
 
 static void http_cerver_route_handler_stats_print (
-	const RequestMethod method, const HttpRouteStats *stats
+	const RequestMethod method, const HttpRouteStats *route_stats
 ) {
+
+	HttpRouteStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteStats));
+	http_route_stats_snapshot (route_stats, &snapshot);
+	const HttpRouteStats *stats = &snapshot;
 
 	cerver_log_msg (
 		"\t\t%s\t%ld",
@@ -1382,8 +1567,13 @@ static void http_cerver_route_handler_stats_print (
 }
 
 static void http_cerver_route_file_stats_print (
-	const HttpRouteFileStats *file_stats
+	const HttpRouteFileStats *route_file_stats
 ) {
+
+	HttpRouteFileStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteFileStats));
+	http_route_file_stats_snapshot (route_file_stats, &snapshot);
+	const HttpRouteFileStats *file_stats = &snapshot;
 
 	cerver_log_line_break ();
 	cerver_log_msg ("\t\tUploaded files: %ld", file_stats->n_uploaded_files);
@@ -1399,8 +1589,13 @@ static void http_cerver_route_file_stats_print (
 }
 
 static void http_cerver_child_route_handler_stats_print (
-	const RequestMethod method, const HttpRouteStats *stats
+	const RequestMethod method, const HttpRouteStats *route_stats
 ) {
+
+	HttpRouteStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteStats));
+	http_route_stats_snapshot (route_stats, &snapshot);
+	const HttpRouteStats *stats = &snapshot;
 
 	cerver_log_msg (
 		"\t\t\t%s\t%ld",
@@ -1423,8 +1618,13 @@ static void http_cerver_child_route_handler_stats_print (
 }
 
 static void http_cerver_child_route_file_stats_print (
-	const HttpRouteFileStats *file_stats
+	const HttpRouteFileStats *route_file_stats
 ) {
+
+	HttpRouteFileStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteFileStats));
+	http_route_file_stats_snapshot (route_file_stats, &snapshot);
+	const HttpRouteFileStats *file_stats = &snapshot;
 
 	cerver_log_msg ("\t\t\tUploaded files: %ld", file_stats->n_uploaded_files);
 
@@ -1521,11 +1721,11 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 		}
 
 		// print general stats
-		cerver_log_msg ("Incompleted requests: %ld", http_cerver->n_incompleted_requests);
-		cerver_log_msg ("Unhandled requests: %ld", http_cerver->n_unhandled_requests);
+		cerver_log_msg ("Incompleted requests: %ld", CERVER_STATS_GET (http_cerver->n_incompleted_requests));
+		cerver_log_msg ("Unhandled requests: %ld", CERVER_STATS_GET (http_cerver->n_unhandled_requests));
 
-		cerver_log_msg ("Catch requests: %ld", http_cerver->n_catch_all_requests);
-		cerver_log_msg ("Failed auth requests: %ld", http_cerver->n_failed_auth_requests);
+		cerver_log_msg ("Catch requests: %ld", CERVER_STATS_GET (http_cerver->n_catch_all_requests));
+		cerver_log_msg ("Failed auth requests: %ld", CERVER_STATS_GET (http_cerver->n_failed_auth_requests));
 	}
 
 }
@@ -1821,46 +2021,25 @@ static inline bool http_header_is_unique (const http_header type) {
 
 }
 
-static HttpCustomHeader *http_request_custom_header_find (
-	const HttpRequest *request, const char *header
-) {
-
-	HttpCustomHeader *found = NULL;
-
-	if (request->custom_headers) {
-		ListElement *le = NULL;
-		dlist_for_each (request->custom_headers, le) {
-			if (!strcasecmp (((HttpCustomHeader *) le->data)->header, header)) {
-				found = (HttpCustomHeader *) le->data;
-				break;
-			}
-		}
-	}
-
-	return found;
-
-}
+static int http_header_values_join_arena (
+	Arena *arena, String **header, const char *value, const size_t value_len
+);
 
 // joins a new value to a custom header that was already received
 // returns 0 on success, 1 if the joined value does not fit
 static int http_receive_join_custom_header (
+	HttpRequest *request,
 	HttpCustomHeader *existing, const char *value, const size_t value_len
 ) {
 
 	int retval = 1;
 
-	const size_t new_len = existing->header_value_len
+	const size_t new_len = existing->value->len
 		+ HTTP_HEADER_VALUES_SEPARATOR_LEN + value_len;
 
-	if (new_len < HTTP_CUSTOM_HEADER_VALUE_SIZE) {
-		char *end = existing->header_value + existing->header_value_len;
-		(void) memcpy (end, HTTP_HEADER_VALUES_SEPARATOR, HTTP_HEADER_VALUES_SEPARATOR_LEN);
-		(void) memcpy (end + HTTP_HEADER_VALUES_SEPARATOR_LEN, value, value_len);
-
-		existing->header_value[new_len] = '\0';
-		existing->header_value_len = (unsigned int) new_len;
-
-		retval = 0;
+	Arena *arena = http_request_get_arena (request);
+	if (arena && (new_len < HTTP_CUSTOM_HEADER_VALUE_SIZE)) {
+		retval = http_header_values_join_arena (arena, &existing->value, value, value_len);
 	}
 
 	return retval;
@@ -1876,16 +2055,14 @@ static int http_receive_add_custom_header (
 
 	int retval = 1;
 
-	if (value_len < HTTP_CUSTOM_HEADER_VALUE_SIZE) {
+	Arena *arena = http_request_get_arena (request);
+	if (arena && (value_len < HTTP_CUSTOM_HEADER_VALUE_SIZE)) {
+		HttpCustomHeader *previous = request->current_custom_header;
 		http_request_set_current_custom_header (request, field->str);
 
 		HttpCustomHeader *custom_header = request->current_custom_header;
-		if (custom_header) {
-			(void) memcpy (custom_header->header_value, value, value_len);
-			custom_header->header_value[value_len] = '\0';
-			custom_header->header_value_len = (unsigned int) value_len;
-
-			retval = 0;
+		if (custom_header && (custom_header != previous)) {
+			retval = (int) http_custom_header_set_value (arena, custom_header, value, value_len);
 		}
 	}
 
@@ -1905,7 +2082,7 @@ static int http_receive_close_custom_header (
 	HttpCustomHeader *existing = http_request_custom_header_find (request, field->str);
 
 	return existing ?
-		http_receive_join_custom_header (existing, value, value_len) :
+		http_receive_join_custom_header (request, existing, value, value_len) :
 		http_receive_add_custom_header (request, field, value, value_len);
 
 }
@@ -2054,7 +2231,7 @@ static int http_receive_check_body_size (
 
 	http_receive->body_size += length;
 
-	const size_t max_body_size = http_receive->http_cerver->max_body_size;
+	const size_t max_body_size = http_receive->max_body_size;
 
 	return (max_body_size && (http_receive->body_size > max_body_size)) ?
 		http_receive_reject (
@@ -2322,6 +2499,9 @@ static DoubleList *http_mpart_attributes_parse (char *str) {
 	while ((pair = strsep (&header_str, ";")) && pair != NULL) {
 		name = strsep (&pair, "=");
 		value = strsep (&pair, "=");
+
+		// an attribute without a value ("form-data; name") is ignored
+		if (!value) continue;
 
 		(void) dlist_insert_at_end (
 			attributes,
@@ -2605,6 +2785,30 @@ static int http_receive_handle_mpart_header_value (
 
 }
 
+// the data of the part is ignored
+static int http_receive_mpart_discard (MultiPart *multi_part) {
+
+	multi_part->discard = true;
+
+	return 0;
+
+}
+
+// a name that is empty after it was sanitized, or that refers to a directory,
+// is replaced, so the file is always saved inside the uploads path
+static void http_receive_mpart_filename_fallback (MultiPart *multi_part) {
+
+	const char *filename = multi_part->filename;
+
+	if (!filename[0] || !strcmp (filename, ".") || !strcmp (filename, "..")) {
+		(void) snprintf (
+			multi_part->filename, HTTP_MULTI_PART_FILENAME_SIZE,
+			"%s", HTTP_MULTI_PART_DEFAULT_FILENAME
+		);
+	}
+
+}
+
 static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -2636,6 +2840,9 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 			if (original_filename) {
 				multi_part->type = MULTI_PART_TYPE_FILE;
 
+				// a file input without a file, there is nothing to save
+				if (!original_filename->len) return http_receive_mpart_discard (multi_part);
+
 				// stats
 				http_receive->file_stats->n_uploaded_files += 1;
 
@@ -2646,6 +2853,7 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				);
 
 				files_sanitize_filename (multi_part->filename);
+				http_receive_mpart_filename_fallback (multi_part);
 
 				multi_part->filename_len = (int) strlen (multi_part->filename);
 
@@ -2747,6 +2955,8 @@ static int http_receive_handle_mpart_data (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 	MultiPart *multi_part = http_receive->request->current_part;
+
+	if (multi_part->discard) return 0;
 
 	return (multi_part->fd != -1) ?
 		http_receive_mpart_file_write (http_receive, multi_part, at, length) :
@@ -2851,8 +3061,14 @@ static void http_receive_init (HttpReceive *http_receive) {
 		http_receive->request = NULL;
 
 		http_receive->type = HTTP_RECEIVE_TYPE_NONE;
+		http_receive->dispatch = HTTP_RECEIVE_DISPATCH_NONE;
+		http_receive->node = NULL;
+		http_receive->endpoint = NULL;
 		http_receive->route = NULL;
 		http_receive->served_file = NULL;
+
+		http_receive->head = false;
+		http_receive->max_body_size = 0;
 
 		http_receive->status = HTTP_STATUS_NONE;
 		http_receive->sent = 0;
@@ -3001,6 +3217,8 @@ void http_receive_delete (HttpReceive *http_receive) {
 		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
 
+		http_receive->node = NULL;
+		http_receive->endpoint = NULL;
 		http_receive->route = NULL;
 		http_route_file_stats_delete (http_receive->file_stats);
 
@@ -3039,6 +3257,59 @@ const HttpCerver *http_receive_get_cerver (
 
 }
 
+const HttpEndpoint *http_receive_get_endpoint (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive ? http_receive->endpoint : NULL;
+
+}
+
+const void *http_receive_get_route_custom_data (
+	const HttpReceive *http_receive
+) {
+
+	const void *custom_data = NULL;
+
+	if (http_receive) {
+		if (http_receive->endpoint) {
+			custom_data = http_endpoint_get_custom_data (http_receive->endpoint);
+		}
+
+		else if (http_receive->route) {
+			custom_data = http_receive->route->custom_data;
+		}
+	}
+
+	return custom_data;
+
+}
+
+const void *http_receive_get_cerver_custom_data (
+	const HttpReceive *http_receive
+) {
+
+	return (http_receive && http_receive->http_cerver) ?
+		http_receive->http_cerver->custom_data : NULL;
+
+}
+
+bool http_receive_is_head (
+	const HttpReceive *http_receive
+) {
+
+	return http_receive ? http_receive->head : false;
+
+}
+
+const char *http_receive_get_allow (
+	const HttpReceive *http_receive
+) {
+
+	return (http_receive && http_receive->node) ? http_receive->node->allow : NULL;
+
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
@@ -3067,11 +3338,13 @@ static void http_receive_handle_catch_all (
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_UNHANDLED;
 
+	#ifdef HTTP_RECEIVE_DEBUG
 	cerver_log_warning (
 		"No matching route for %s %s",
 		http_method_str ((enum http_method) request->method),
 		request->url->str
 	);
+	#endif
 
 	if (http_cerver->not_found_handler) {
 		// handle with not found route
@@ -3082,174 +3355,87 @@ static void http_receive_handle_catch_all (
 		// handle with default route
 		http_cerver->default_handler (http_receive, request);
 
-		(void) pthread_mutex_lock (http_cerver->mutex);
-		http_cerver->n_catch_all_requests += 1;
-		(void) pthread_mutex_unlock (http_cerver->mutex);
+		CERVER_STATS_ADD (http_cerver->n_catch_all_requests, 1);
 	}
 
 }
 
-// handles an actual route match
-// selects the right handler based on the request's method
+// parses the query of the request into its query params
+static void http_receive_parse_query (HttpRequest *request) {
+
+	char *real_query = http_url_decode (request->query->str);
+
+	// the decoded query is shorter than the original one
+	if (real_query) {
+		request->query_params = http_parse_query_into_pairs (
+			real_query,
+			real_query + strlen (real_query)
+		);
+
+		free (real_query);
+	}
+
+}
+
+// a x-www-form-urlencoded body is parsed into the request's body values
+static void http_receive_parse_body_values (HttpRequest *request) {
+
+	const String *content_type = request->headers[HTTP_HEADER_CONTENT_TYPE];
+	if (
+		content_type
+		&& !strncmp (form_urlencoded_value, content_type->str, form_urlencoded_value_len)
+	) {
+		char *real_body = http_url_decode (request->body->str);
+
+		// the decoded body is shorter than the original one
+		if (real_body) {
+			request->body_values = http_parse_query_into_pairs (
+				real_body,
+				real_body + strlen (real_body)
+			);
+
+			free (real_body);
+		}
+	}
+
+}
+
+// runs the before middlewares, the handler and the after middlewares
+static void http_receive_handle_endpoint (
+	HttpReceive *http_receive, HttpRequest *request, const HttpEndpoint *endpoint
+) {
+
+	const HttpMiddlewares *middlewares = &endpoint->resolved.middlewares;
+
+	if (http_middlewares_run_before (middlewares, http_receive, request)) {
+		endpoint->handler (http_receive, request);
+	}
+
+	http_middlewares_run_after (middlewares, http_receive, request);
+
+}
+
+// handles the request with its endpoint
 static void http_receive_handle_match (
-	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
 	HttpRequest *request,
-	HttpRoute *found
+	const HttpEndpoint *endpoint
 ) {
 
-	if (request->method < HTTP_HANDLERS_COUNT) {
-		if (found->handlers[request->method]) {
-			// parse query values
-			if (request->query) {
-				char *real_query = http_url_decode (request->query->str);
+	if (request->query) http_receive_parse_query (request);
 
-				// the decoded query is shorter than the original one
-				if (real_query) {
-					request->query_params = http_parse_query_into_pairs (
-						real_query,
-						real_query + strlen (real_query)
-					);
+	if (request->body) http_receive_parse_body_values (request);
 
-					free (real_query);
-				}
-			}
+	switch (endpoint->resolved.modifier) {
+		// the websocket connections are not supported yet
+		case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
+			(void) http_response_send (not_implemented_error, http_receive);
+			break;
 
-			// handle body based on header
-			if (request->body) {
-				if (request->headers[HTTP_HEADER_CONTENT_TYPE]) {
-					if (!strncmp (
-						"application/x-www-form-urlencoded",
-						request->headers[HTTP_HEADER_CONTENT_TYPE]->str, 33
-					)) {
-						char *real_body = http_url_decode (request->body->str);
-
-						// the decoded body is shorter than the original one
-						if (real_body) {
-							request->body_values = http_parse_query_into_pairs (
-								real_body,
-								real_body + strlen (real_body)
-							);
-
-							free (real_body);
-						}
-					}
-				}
-			}
-
-			switch (found->modifier) {
-				case HTTP_ROUTE_MODIFIER_NONE:
-				case HTTP_ROUTE_MODIFIER_MULTI_PART:
-					found->handlers[request->method] (http_receive, request);
-					break;
-
-				case HTTP_ROUTE_MODIFIER_WEB_SOCKET:
-
-					break;
-			}
-
-			// 25/11/2020 - handled by http_route_stats_update ()
-			// found->stats[request->method]->n_requests += 1;
-		}
-
-		else {
-			http_receive_handle_catch_all (http_cerver, http_receive, request);
-		}
+		default:
+			http_receive_handle_endpoint (http_receive, request, endpoint);
+			break;
 	}
-
-	else {
-		http_receive_handle_catch_all (http_cerver, http_receive, request);
-	}
-
-}
-
-static inline bool http_receive_handle_select_children (
-	HttpRoute *route, HttpRequest *request, HttpRoute **found
-) {
-
-	bool retval = false;
-
-	size_t n_tokens = 0;
-	char **tokens = NULL;
-
-	// printf ("request->url->str: %s\n", request->url->str);
-	char *start_sub = strstr (request->url->str, route->route->str);
-	if (start_sub) {
-		// match and still some path left
-		char *end_sub = request->url->str;
-		if (strcmp ("/", route->route->str)) {
-			end_sub += route->route->len;
-		}
-
-		// printf ("first end_sub: %s\n", end_sub);
-
-		tokens = c_string_split (end_sub, '/', &n_tokens);
-
-		if (tokens) {
-			// routes are grouped by their number of tokens,
-			// a url with more tokens than any route can not match
-			HttpRoutesTokens *routes_tokens = (
-				(n_tokens > 0) && (n_tokens <= DEFAULT_ROUTES_TOKENS_SIZE)
-			) ? route->routes_tokens[n_tokens - 1] : NULL;
-
-			if (routes_tokens && routes_tokens->n_routes) {
-				// match all url tokens with existing route tokens
-				bool fail = false;
-				for (unsigned int main_idx = 0; main_idx < routes_tokens->n_routes; main_idx++) {
-					// printf ("testing route %s\n", routes_tokens->routes[main_idx]->route->str);
-
-					if (routes_tokens->tokens[main_idx]) {
-						fail = false;
-						// printf ("routes_tokens->id: %d\n", routes_tokens->id);
-						for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
-							// printf ("%s\n", routes_tokens->tokens[main_idx][sub_idx]);
-							if (routes_tokens->tokens[main_idx][sub_idx][0] != '*') {
-								if (strcmp (routes_tokens->tokens[main_idx][sub_idx], tokens[sub_idx])) {
-									// printf ("fail!\n");
-									fail = true;
-									break;
-								}
-							}
-
-							// else {
-							// 	printf ("*\n");
-							// }
-						}
-
-						if (!fail) {
-							// we have found our route!
-							retval = true;
-
-							// get route params
-							for (unsigned int sub_idx = 0; sub_idx < routes_tokens->id; sub_idx++) {
-								if (
-									(routes_tokens->tokens[main_idx][sub_idx][0] == '*')
-									&& (request->n_params < REQUEST_PARAMS_SIZE)
-								) {
-									request->params[request->n_params] = str_new (tokens[sub_idx]);
-									request->n_params++;
-								}
-							}
-
-							// routes_tokens->routes[main_idx]->handler (cr, request);
-							*found = routes_tokens->routes[main_idx];
-
-							break;
-						}
-					}
-				}
-			}
-
-			else {
-				// printf ("\nno routes!\n");
-			}
-
-			for (size_t i = 0; i < n_tokens; i++) if (tokens[i]) free (tokens[i]);
-			free (tokens);
-		}
-	}
-
-	return retval;
 
 }
 
@@ -3261,9 +3447,7 @@ static void http_receive_handle_select_failed_auth (
 		http_receive, bad_auth_error, HTTP_RECEIVE_STATUS_REJECTED
 	);
 
-	(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
-	http_receive->http_cerver->n_failed_auth_requests += 1;
-	(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+	CERVER_STATS_ADD (http_receive->http_cerver->n_failed_auth_requests, 1);
 
 }
 
@@ -3275,17 +3459,19 @@ static const size_t bearer_prefix_len = 7;
 static bool http_receive_handle_select_auth_bearer (
 	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
-	HttpRoute *found, HttpRequest *request
+	const HttpRouteSettings *found, HttpRequest *request
 ) {
 
 	bool authenticated = false;
 
 	// the header must be "Bearer <token>"
+	// and a token can only be validated with the cerver's public key
 	const String *authorization = request->headers[HTTP_HEADER_AUTHORIZATION];
 	if (
 		!authorization
 		|| (authorization->len <= bearer_prefix_len)
 		|| strncmp (authorization->str, bearer_prefix, bearer_prefix_len)
+		|| !http_cerver->jwt_public_key
 	) {
 		http_receive_handle_select_failed_auth (http_receive);
 		return authenticated;
@@ -3353,7 +3539,7 @@ static bool http_receive_handle_select_auth_bearer (
 // returns true if the route's custom authentication handler accepts the request
 static bool http_receive_handle_select_auth_custom (
 	HttpReceive *http_receive,
-	HttpRoute *found, HttpRequest *request
+	const HttpRouteSettings *found, HttpRequest *request
 ) {
 
 	bool authenticated = false;
@@ -3397,7 +3583,7 @@ static bool http_receive_handle_select_auth_custom (
 static bool http_receive_handle_authenticate (
 	HttpCerver *http_cerver,
 	HttpReceive *http_receive,
-	HttpRoute *found, HttpRequest *request
+	const HttpRouteSettings *found, HttpRequest *request
 ) {
 
 	bool authenticated = false;
@@ -3431,42 +3617,106 @@ static bool http_receive_handle_authenticate (
 
 }
 
-// selects the route that will handle the request
-// returns NULL if no route matches the request's url
-static HttpRoute *http_receive_handle_select_route (
-	HttpCerver *http_cerver, HttpRequest *request
+// matches the request's path with the routes tree, with the trailing slash policy
+// redirect is set when the path only matches without its trailing slash
+static bool http_receive_select_node (
+	const HttpTree *tree, const HttpRequest *request,
+	HttpRequestParam *params, HttpRouteMatch *match, bool *redirect
 ) {
 
-	bool match = false;
-	HttpRoute *found = NULL;
+	const char *path = request->url->str;
+	const size_t path_len = request->url->len;
+	const bool trailing = (path_len > 1) && (path[path_len - 1] == HTTP_TREE_PATH_SEPARATOR);
 
-	// search top level routes at the start of the url
-	HttpRoute *route = NULL;
-	ListElement *le = dlist_start (http_cerver->routes);
-	while (!match && le) {
-		route = (HttpRoute *) le->data;
+	bool found = false;
 
-		if (route->route->len == request->url->len) {
-			if (!strcmp (route->route->str, request->url->str)) {
-				// we have a direct match
-				match = true;
-				found = route;
-				break;
-			}
+	switch (tree->trailing_slash) {
+		case HTTP_TRAILING_SLASH_TOLERANT:
+			found = http_tree_match (tree, path, trailing ? path_len - 1 : path_len, params, match);
+			break;
+
+		case HTTP_TRAILING_SLASH_REDIRECT:
+			found = http_tree_match (tree, path, path_len, params, match);
+			*redirect = !found && trailing && http_tree_match (tree, path, path_len - 1, params, match);
+			found = found || *redirect;
+			break;
+
+		default:
+			found = http_tree_match (tree, path, path_len, params, match);
+			break;
+	}
+
+	return found;
+
+}
+
+// selects the endpoint of the request's method in the node that matched its path
+// a HEAD request uses the GET endpoint, an OPTIONS request without endpoint is answered by the cerver
+static void http_receive_select_method (
+	HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	const HttpRouteNode *node = http_receive->node;
+	const RequestMethod method = request->method;
+
+	HttpEndpoint *endpoint = http_request_method_is_valid (method) ? node->endpoints[method] : NULL;
+	if (!endpoint && (method == REQUEST_METHOD_HEAD) && node->endpoints[REQUEST_METHOD_GET]) {
+		endpoint = node->endpoints[REQUEST_METHOD_GET];
+		http_receive->head = true;
+	}
+
+	http_receive->endpoint = endpoint;
+	http_receive->route = endpoint ? endpoint->route : NULL;
+
+	if (endpoint) http_receive->dispatch = HTTP_RECEIVE_DISPATCH_ENDPOINT;
+	else if (method == REQUEST_METHOD_OPTIONS) http_receive->dispatch = HTTP_RECEIVE_DISPATCH_OPTIONS;
+	else if (http_receive->http_cerver->tree->method_not_allowed) http_receive->dispatch = HTTP_RECEIVE_DISPATCH_METHOD_NOT_ALLOWED;
+	else http_receive->dispatch = HTTP_RECEIVE_DISPATCH_CATCH_ALL;
+
+}
+
+// selects how the request will be answered with the routes tree
+static void http_receive_select (HttpReceive *http_receive) {
+
+	HttpRequest *request = http_receive->request;
+	const HttpTree *tree = http_receive->http_cerver->tree;
+
+	http_receive->dispatch = HTTP_RECEIVE_DISPATCH_CATCH_ALL;
+
+	Arena *arena = http_request_get_arena (request);
+	HttpRequestParam *params = arena ? (HttpRequestParam *) arena_alloc (
+		arena, tree->max_params * sizeof (HttpRequestParam)
+	) : NULL;
+
+	bool redirect = false;
+	HttpRouteMatch match = { NULL, 0 };
+	if (params && http_receive_select_node (tree, request, params, &match, &redirect)) {
+		http_receive->node = match.node;
+
+		if (redirect) {
+			http_receive->dispatch = HTTP_RECEIVE_DISPATCH_REDIRECT;
 		}
 
 		else {
-			if (route->children->size) {
-				match = http_receive_handle_select_children (
-					route, request, &found
-				);
-			}
-		}
+			http_receive_select_method (http_receive, request);
 
-		le = le->next;
+			request->params = params;
+			request->n_params = match.n_params;
+			request->params_names = http_receive->endpoint ? http_receive->endpoint->params_names : NULL;
+		}
 	}
 
-	return match ? found : NULL;
+}
+
+// a GET (or HEAD) with a file extension that no endpoint handles is served from the static paths
+static bool http_receive_is_static_file (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	return (http_receive->dispatch != HTTP_RECEIVE_DISPATCH_ENDPOINT)
+		&& ((request->method == REQUEST_METHOD_GET) || (request->method == REQUEST_METHOD_HEAD))
+		&& http_receive->http_cerver->static_paths->size
+		&& strrchr (request->url->str, static_file_extension_separator);
 
 }
 
@@ -3493,7 +3743,7 @@ static void http_receive_init_mpart_parser (
 
 	// TODO: handler errors
 	if (http_receive->http_cerver->uploads_dirname_generator) {
-		if (http_receive->http_cerver->uploads_path) {
+		if (http_receive->http_cerver->uploads_path_len > 0) {
 			http_receive->http_cerver->uploads_dirname_generator (
 				http_receive, http_receive->request
 			);
@@ -3603,11 +3853,20 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	);
 	#endif
 
+	http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
+	http_receive_select (http_receive);
+
+	const HttpEndpoint *endpoint = http_receive->endpoint;
+
+	// an endpoint can have its own body limit
+	http_receive->max_body_size = (endpoint && endpoint->resolved.max_body_size) ?
+		endpoint->resolved.max_body_size : http_cerver->max_body_size;
+
 	// a body bigger than the limit is rejected before receiving it
 	if (
-		http_cerver->max_body_size
+		http_receive->max_body_size
 		&& (parser->content_length != (uint64_t) -1)
-		&& (parser->content_length > http_cerver->max_body_size)
+		&& (parser->content_length > http_receive->max_body_size)
 	) {
 		(void) http_receive_reject (
 			http_receive, payload_too_large_error, HTTP_RECEIVE_STATUS_LIMIT
@@ -3616,38 +3875,28 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 		return -1;
 	}
 
-	// a GET with a file extension is served from the static paths
-	if (
-		(request->method == REQUEST_METHOD_GET)
-		&& http_cerver->static_paths->size
-		&& strrchr (request->url->str, '.')
-	) {
-		http_receive->type = HTTP_RECEIVE_TYPE_FILE;
+	if (endpoint) {
+		// the authentication handler can use the request's endpoint
+		if (
+			!endpoint->resolved.authentication_with_body
+			&& !http_receive_handle_authenticate (http_cerver, http_receive, &endpoint->resolved, request)
+		) {
+			return -1;
+		}
+
+		if (http_receive_handle_headers_multi_part (http_receive)) {
+			return -1;
+		}
 	}
 
+	// a request that no endpoint handles never saves its body
 	else {
-		http_receive->type = HTTP_RECEIVE_TYPE_ROUTE;
-
-		HttpRoute *found = http_receive_handle_select_route (http_cerver, request);
-		if (found) {
-			// the authentication handler can use the request's route
-			http_receive->route = found;
-
-			if (
-				!found->authentication_with_body
-				&& !http_receive_handle_authenticate (http_cerver, http_receive, found, request)
-			) {
-				return -1;
-			}
-
-			if (http_receive_handle_headers_multi_part (http_receive)) {
-				return -1;
-			}
+		if (http_receive_is_static_file (http_receive, request)) {
+			http_receive->type = HTTP_RECEIVE_TYPE_FILE;
+			http_receive->head = (request->method == REQUEST_METHOD_HEAD);
 		}
 
-		else {
-			http_receive->settings.on_body = http_receive_handle_body_discard;
-		}
+		http_receive->settings.on_body = http_receive_handle_body_discard;
 	}
 
 	http_receive_handle_expect_continue (http_receive);
@@ -3719,10 +3968,12 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 	}
 
 	if (!found) {
+		#ifdef HTTP_RECEIVE_DEBUG
 		cerver_log_warning (
 			"Unable to find file %s",
 			http_receive->request->url->str
 		);
+		#endif
 
 		http_receive_handle_catch_all (
 			http_receive->http_cerver,
@@ -3732,28 +3983,143 @@ static void http_receive_handle_serve_file (HttpReceive *http_receive) {
 
 }
 
-// a route whose authentication needs the body is authenticated now,
-// any other route was authenticated in on_headers_complete
+// an endpoint whose authentication needs the body is authenticated now,
+// any other endpoint was authenticated in on_headers_complete
 static void http_receive_handle_route (HttpReceive *http_receive) {
 
-	HttpRoute *route = http_receive->route;
+	const HttpEndpoint *endpoint = http_receive->endpoint;
 
 	if (
-		route->authentication_with_body
+		endpoint->resolved.authentication_with_body
 		&& !http_receive_handle_authenticate (
-			http_receive->http_cerver, http_receive, route, http_receive->request
+			http_receive->http_cerver, http_receive, &endpoint->resolved, http_receive->request
 		)
 	) {
 		return;
 	}
 
-	http_receive_handle_match (
-		http_receive->http_cerver, http_receive, http_receive->request, route
-	);
+	http_receive_handle_match (http_receive, http_receive->request, endpoint);
 
 }
 
-// the route and its authentication were resolved in on_headers_complete,
+// adds the CORS headers of a preflight request from a whitelisted origin
+static void http_receive_handle_preflight (
+	const HttpReceive *http_receive, HttpResponse *response
+) {
+
+	const HttpRequest *request = http_receive->request;
+
+	if (
+		request->headers[HTTP_HEADER_ACCESS_CONTROL_REQUEST_METHOD]
+		&& !http_response_add_whitelist_cors_header_from_request (http_receive, response)
+	) {
+		(void) http_response_add_cors_allow_methods_header (response, http_receive->node->allow);
+
+		const String *request_headers = request->headers[HTTP_HEADER_ACCESS_CONTROL_REQUEST_HEADERS];
+		if (request_headers) {
+			(void) http_response_add_header (
+				response, HTTP_HEADER_ACCESS_CONTROL_ALLOW_HEADERS, request_headers->str
+			);
+		}
+	}
+
+}
+
+// a path without an OPTIONS handler is answered with its Allow header
+// and, when its endpoints enabled CORS, with the preflight headers
+static void http_receive_handle_options (HttpReceive *http_receive) {
+
+	HttpResponse *response = http_response_create (HTTP_STATUS_NO_CONTENT, NULL, 0);
+	if (response) {
+		(void) http_response_add_header (response, HTTP_HEADER_ALLOW, http_receive->node->allow);
+
+		if (http_receive->node->cors) http_receive_handle_preflight (http_receive, response);
+
+		(void) http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+}
+
+// a path without a handler for the request's method,
+// answered with the custom handler or with the default 405 response
+static void http_receive_handle_method_not_allowed (HttpReceive *http_receive) {
+
+	const HttpHandler handler = http_receive->http_cerver->tree->method_not_allowed_handler;
+	if (handler) {
+		handler (http_receive, http_receive->request);
+		return;
+	}
+
+	HttpResponse *response = http_response_create (
+		HTTP_STATUS_METHOD_NOT_ALLOWED,
+		method_not_allowed_error->data, method_not_allowed_error->data_len
+	);
+
+	if (response) {
+		(void) http_response_add_header (response, HTTP_HEADER_ALLOW, http_receive->node->allow);
+		(void) http_response_add_content_type_header (response, HTTP_CONTENT_TYPE_JSON);
+		(void) http_response_add_content_length_header (response, response->data_len);
+
+		(void) http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+}
+
+// a path with a trailing slash is redirected with 308 (that keeps the method and the body)
+static void http_receive_handle_redirect (HttpReceive *http_receive) {
+
+	const HttpRequest *request = http_receive->request;
+
+	HttpResponse *response = http_response_create (HTTP_STATUS_PERMANENT_REDIRECT, NULL, 0);
+	if (response) {
+		(void) http_response_add_custom_header (
+			response, HTTP_HEADER_LOCATION, "%.*s%s%s",
+			(int) (request->url->len - 1), request->url->str,
+			request->query ? query_separator : "",
+			request->query ? request->query->str : ""
+		);
+
+		(void) http_response_add_content_length_header (response, 0);
+
+		(void) http_response_send (response, http_receive);
+		http_response_delete (response);
+	}
+
+}
+
+// answers a request that matched a path of the routes tree, or the catch all handler
+static void http_receive_handle_dispatch (HttpReceive *http_receive) {
+
+	switch (http_receive->dispatch) {
+		case HTTP_RECEIVE_DISPATCH_ENDPOINT:
+			http_receive_handle_route (http_receive);
+			break;
+
+		case HTTP_RECEIVE_DISPATCH_OPTIONS:
+			http_receive_handle_options (http_receive);
+			break;
+
+		case HTTP_RECEIVE_DISPATCH_METHOD_NOT_ALLOWED:
+			http_receive_handle_method_not_allowed (http_receive);
+			break;
+
+		case HTTP_RECEIVE_DISPATCH_REDIRECT:
+			http_receive_handle_redirect (http_receive);
+			break;
+
+		default:
+			http_receive_handle_catch_all (
+				http_receive->http_cerver,
+				http_receive, http_receive->request
+			);
+			break;
+	}
+
+}
+
+// the endpoint and its authentication were resolved in on_headers_complete,
 // now that the body is complete the request is handled
 static int http_receive_handle_message_completed (http_parser *parser) {
 
@@ -3762,22 +4128,13 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
 
 	switch (http_receive->type) {
-		case HTTP_RECEIVE_TYPE_FILE: {
+		case HTTP_RECEIVE_TYPE_FILE:
 			http_receive_handle_serve_file (http_receive);
-		} break;
+			break;
 
-		default: {
-			if (http_receive->route) {
-				http_receive_handle_route (http_receive);
-			}
-
-			else {
-				http_receive_handle_catch_all (
-					http_receive->http_cerver,
-					http_receive, http_receive->request
-				);
-			}
-		} break;
+		default:
+			http_receive_handle_dispatch (http_receive);
+			break;
 	}
 
 	// only one request is handled by connection,

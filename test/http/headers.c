@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <ctype.h>
+
 #include <cerver/http/headers.h>
 
 #include "../test.h"
@@ -231,9 +233,49 @@ static void test_http_header_print (void) {
 
 }
 
+#define TEST_HEADERS_NAME_SIZE				64
+
+static void test_http_headers_swap_case (char *name) {
+
+	for (char *ch = name; *ch; ch++) {
+		*ch = islower ((unsigned char) *ch) ? (char) toupper ((unsigned char) *ch) : (char) tolower ((unsigned char) *ch);
+	}
+
+}
+
+// the hash lookup finds every header of the map with any case, like strcasecmp ()
+static void test_http_header_type_by_string_hash (void) {
+
+	#define XX(num, name, string, description)													\
+		if (HTTP_HEADER_##name != HTTP_HEADER_UNDEFINED) {										\
+			char swapped[TEST_HEADERS_NAME_SIZE] = { 0 };										\
+			(void) snprintf (swapped, TEST_HEADERS_NAME_SIZE, "%s", #string);					\
+			test_http_headers_swap_case (swapped);												\
+			test_check_unsigned_eq (http_header_type_by_string (#string), HTTP_HEADER_##name, NULL);	\
+			test_check_unsigned_eq (http_header_type_by_string (swapped), HTTP_HEADER_##name, NULL);	\
+		}
+	HTTP_HEADERS_MAP(XX)
+	#undef XX
+
+	// the new headers of the map
+	test_check_unsigned_eq (http_header_type_by_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("etag"), HTTP_HEADER_ETAG, NULL);
+
+	// a prefix, a longer name or an unknown one is not a header of the map
+	test_check_unsigned_eq (http_header_type_by_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("Content-Types"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("X-Custom"), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string (""), HTTP_HEADER_UNDEFINED, NULL);
+	test_check_unsigned_eq (http_header_type_by_string (NULL), HTTP_HEADER_UNDEFINED, NULL);
+
+}
+
 void http_tests_headers (void) {
 
 	(void) printf ("Testing HTTP headers...\n");
+
+	test_http_header_type_by_string_hash ();
 
 	test_http_headers_get_string ();
 

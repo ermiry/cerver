@@ -12,8 +12,6 @@
 
 #include "cerver/http/request.h"
 
-#define DEFAULT_ROUTES_TOKENS_SIZE				16
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -63,24 +61,23 @@ CERVER_PUBLIC const char *http_route_auth_type_description (
 	const HttpRouteAuthType type
 );
 
-struct _HttpRoutesTokens {
-
-	unsigned int id;
-	unsigned int n_routes;
-	struct _HttpRoute **routes;
-	char ***tokens;
-
-};
-
-typedef struct _HttpRoutesTokens HttpRoutesTokens;
-
-#define HTTP_HANDLERS_COUNT					8
+// a table with a handler for each request method
+#define HTTP_HANDLERS_COUNT					REQUEST_METHOD_SIZE
 
 typedef void (*HttpHandler)(
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
 );
 
+// the authentication handler of a route with HTTP_ROUTE_AUTH_TYPE_CUSTOM
+// returns 0 on success and 1 on error
+typedef unsigned int (*HttpAuthenticationHandler)(
+	const struct _HttpReceive *http_receive,
+	const HttpRequest *request
+);
+
+// the values are updated with atomic operations by the threads that handle the requests,
+// so they are read with http_route_stats_snapshot ()
 struct _HttpRouteStats {
 
 	bool first;
@@ -102,8 +99,6 @@ struct _HttpRouteStats {
 	size_t sum_response_sizes;
 	size_t mean_response_size;
 
-	pthread_mutex_t *mutex;
-
 };
 
 typedef struct _HttpRouteStats HttpRouteStats;
@@ -118,6 +113,11 @@ CERVER_PRIVATE void http_route_stats_update (
 	HttpRouteStats *route_stats,
 	const double process_time,
 	const size_t request_size, const size_t response_size
+);
+
+// copies the current values of the stats, the means are computed from the sums
+CERVER_PUBLIC void http_route_stats_snapshot (
+	const HttpRouteStats *route_stats, HttpRouteStats *snapshot
 );
 
 struct _HttpRouteFileStats {
@@ -158,6 +158,15 @@ CERVER_PRIVATE void http_route_file_stats_update (
 	const HttpRouteFileStats *new_file_stats
 );
 
+// copies the current values of the file stats
+CERVER_PUBLIC void http_route_file_stats_snapshot (
+	const HttpRouteFileStats *file_stats, HttpRouteFileStats *snapshot
+);
+
+// the route of the first routes API, it is still supported:
+// when the cerver starts, each method of each route (and of its children at any depth)
+// is translated to an endpoint of the routes tree (see router.h and compatibility.h),
+// so new code should use groups and endpoints instead
 struct _HttpRoute {
 
 	// eg. /api/users/login
@@ -165,12 +174,7 @@ struct _HttpRoute {
 	String *actual;				// the actual route "login"
 	String *route;				// the complete route "/api/users/login"
 
-	size_t n_tokens;
-	char **tokens;
-
-	DoubleList *children;		// children routes of a top level one
-
-	HttpRoutesTokens **routes_tokens;
+	DoubleList *children;		// children routes
 
 	HttpRouteModifier modifier;
 
@@ -206,11 +210,7 @@ CERVER_PUBLIC HttpRoute *http_route_new (void);
 
 CERVER_PUBLIC void http_route_delete (void *route_ptr);
 
-CERVER_PUBLIC int http_route_comparator_by_n_tokens (
-	const void *a, const void *b
-);
-
-// creates a new route that can be registered to be sued by an http cerver
+// creates a new route that can be registered to be used by an http cerver
 CERVER_EXPORT HttpRoute *http_route_create ( 
 	const RequestMethod method, 
 	const char *actual_route, 
@@ -224,9 +224,9 @@ CERVER_EXPORT void http_route_set_handler (
 	const HttpHandler handler
 );
 
-CERVER_PRIVATE void http_route_init (HttpRoute *route);
-
 // registers a route as a child of a parent route
+// the complete path of a child is resolved when the cerver starts,
+// so children can be added in any order and at any depth
 CERVER_EXPORT void http_route_child_add (
 	HttpRoute *parent, HttpRoute *child
 );
@@ -289,6 +289,15 @@ CERVER_EXPORT void http_route_set_delete_custom_data (
 
 CERVER_EXPORT void http_route_print (
 	const HttpRoute *route
+);
+
+// fits every method of REQUEST_METHOD_MAP with its separator
+#define HTTP_ROUTE_METHODS_STRING_SIZE		128
+
+// writes in buffer the methods with a handler, separated with ", "
+// returns the length of the string
+CERVER_PUBLIC size_t http_route_methods_string (
+	HttpHandler const *handlers, char *buffer, const size_t buffer_size
 );
 
 #ifdef __cplusplus

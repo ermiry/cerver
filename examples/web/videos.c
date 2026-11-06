@@ -24,17 +24,20 @@ Cerver *videos_service = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 
-	if (videos_service) {
-		cerver_stats_print (videos_service, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) videos_service->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (videos_service);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (videos_service) (void) cerver_shutdown (videos_service);
 
-	exit (0);
+}
+
+// the signals only stop the cerver, it is released when cerver_start () returns
+static void finish (void) {
+
+	cerver_stats_print (videos_service, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) videos_service->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (videos_service);
 
 }
 
@@ -124,7 +127,11 @@ int main (int argc, char **argv) {
 		HttpRoute *video_route = http_route_create (REQUEST_METHOD_GET, "video", video_handler);
 		http_cerver_route_register (http_cerver, video_route);
 
-		if (cerver_start (videos_service)) {
+		if (!cerver_start (videos_service)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				videos_service->info->name

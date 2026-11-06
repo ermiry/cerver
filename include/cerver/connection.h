@@ -92,7 +92,15 @@ struct _Connection {
 
 	u32 max_sleep;
 	bool active;
+
+	// the connection has a thread in connection_update (), set before the thread is created
 	bool updating;
+
+	// the end of the connection belongs to the first thread that asks for it,
+	// a deferred end is completed by the update thread when its receive loop ends
+	// the three values are protected by the connection's mutex
+	bool ending;
+	bool end_deferred;
 
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
@@ -256,6 +264,13 @@ CERVER_PRIVATE void connection_drop (
 	struct _Cerver *cerver, Connection *connection
 );
 
+// asks the cerver to drop the connection, it can be called from any packet handler:
+// the socket is shut down (the packets that were already sent still arrive),
+// and the receive loop ends and removes the connection when the handler returns,
+// like when the client closes it, so the connection must not be used after this call
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 connection_drop_request (Connection *connection);
+
 // gets the connection from the on hold connections map in cerver
 CERVER_PRIVATE Connection *connection_get_by_sock_fd_from_on_hold (
 	struct _Cerver *cerver, const i32 sock_fd
@@ -328,7 +343,20 @@ CERVER_PRIVATE u8 connection_remove_from_cerver (
 );
 
 // starts listening and receiving data in the connection sock
+// the connection's updating value must be set before creating the thread
 CERVER_PRIVATE void *connection_update (void *ptr);
+
+// returns true if the current thread is the update thread of the connection,
+// like a packet handler with direct handle that runs in it
+CERVER_PRIVATE bool connection_is_update_thread (
+	const Connection *connection
+);
+
+// wakes up the update thread of the connection that is blocked in recv (),
+// the socket is shut down but it is only closed by connection_end (),
+// so its fd can not be reused while the update thread uses it
+// the connection's mutex must be held
+CERVER_PRIVATE void connection_wake_update (Connection *connection);
 
 #ifdef __cplusplus
 }

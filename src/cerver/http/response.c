@@ -5,7 +5,9 @@
 #include <fcntl.h>
 
 #include <sys/sendfile.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -554,14 +556,21 @@ static void http_response_compile_single_header (
 ) {
 
 	response->header = (char *) calloc (HTTP_RESPONSE_MAIN_HEADER_SIZE, sizeof (char));
+	if (!response->header) return;
 
-	response->header_len = (size_t) snprintf (
-		response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
+	const int written = snprintf (
+		(char *) response->header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
 		"\r\n",
 		response->status, http_status_string (response->status),
 		CERVER_VERSION
+	);
+
+	// a truncated header is never sent beyond its buffer
+	response->header_len = (written < 0) ? 0 : (
+		((size_t) written < HTTP_RESPONSE_MAIN_HEADER_SIZE) ?
+			(size_t) written : HTTP_RESPONSE_MAIN_HEADER_SIZE - 1
 	);
 
 }
@@ -773,7 +782,105 @@ static u8 http_response_send_actual (
 
 }
 
-// sends a response through the connection's socket
+// skips the parts that were sent completely and moves the start of a partial one
+static void http_response_parts_advance (
+	struct iovec **parts, int *n_parts, size_t sent
+) {
+
+	while ((*n_parts > 0) && (sent >= (*parts)->iov_len)) {
+		sent -= (*parts)->iov_len;
+		*parts += 1;
+		*n_parts -= 1;
+	}
+
+	if ((*n_parts > 0) && sent) {
+		(*parts)->iov_base = ((char *) (*parts)->iov_base) + sent;
+		(*parts)->iov_len -= sent;
+	}
+
+}
+
+// sends all the parts with a single system call when the socket takes them,
+// like writev (), but with MSG_NOSIGNAL
+// returns 0 on success, 1 on error
+static u8 http_response_send_vector (
+	const Socket *socket, struct iovec *parts, int n_parts
+) {
+
+	u8 retval = 0;
+
+	unsigned int retries = 0;
+	while (n_parts > 0) {
+		struct msghdr message;
+		(void) memset (&message, 0, sizeof (struct msghdr));
+		message.msg_iov = parts;
+		message.msg_iovlen = (size_t) n_parts;
+
+		// MSG_NOSIGNAL: a client that reset the connection returns EPIPE instead of raising SIGPIPE
+		const ssize_t sent = sendmsg (socket->sock_fd, &message, MSG_NOSIGNAL);
+		if (sent < 0) {
+			if (http_response_send_can_retry (socket->sock_fd, errno, &retries)) continue;
+
+			http_response_send_failed (socket, "sendmsg", errno, parts->iov_len);
+
+			retval = 1;
+			break;
+		}
+
+		http_response_parts_advance (&parts, &n_parts, (size_t) sent);
+	}
+
+	return retval;
+
+}
+
+static void http_response_sent (
+	const HttpReceive *http_receive,
+	const http_status status, const size_t total_size
+) {
+
+	if (http_receive->cr->cerver)
+		CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_size);
+
+	http_receive->cr->connection->stats->total_bytes_sent += total_size;
+
+	((HttpReceive *) http_receive)->status = status;
+	((HttpReceive *) http_receive)->sent = total_size;
+
+}
+
+// sends the header and the data without copying them into a single buffer
+// the response to a HEAD request is sent without its data
+// returns 0 on success, 1 on error
+static u8 http_response_send_parts (
+	const HttpReceive *http_receive, const http_status status,
+	const void *header, const size_t header_len,
+	const void *data, const size_t data_len
+) {
+
+	const size_t body_len = (http_receive->head || !data) ? 0 : data_len;
+
+	struct iovec parts[HTTP_RESPONSE_PARTS];
+	parts[0].iov_base = (void *) header;
+	parts[0].iov_len = header_len;
+	parts[1].iov_base = (void *) data;
+	parts[1].iov_len = body_len;
+
+	const int n_parts = body_len ? HTTP_RESPONSE_PARTS : 1;
+
+	const u8 retval = http_response_send_vector (
+		http_receive->cr->connection->socket, parts, n_parts
+	);
+
+	if (!retval) http_response_sent (http_receive, status, header_len + body_len);
+
+	return retval;
+
+}
+
+// sends a response through the connection's socket,
+// a compiled response is sent from its single buffer,
+// any other is sent from its header and its data (the header is compiled if needed)
 // returns 0 on success, 1 on error
 u8 http_response_send (
 	HttpResponse *response,
@@ -784,19 +891,24 @@ u8 http_response_send (
 
 	if (response && http_receive->cr->connection) {
 		if (response->res) {
-			if (!http_response_send_actual (
-				http_receive->cr->connection->socket,
-				(char *) response->res, response->res_len
-			)) {
-				if (http_receive->cr->cerver)
-					CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, response->res_len);
+			// the compiled buffer starts with the header
+			const size_t length = (http_receive->head && (response->header_len <= response->res_len)) ?
+				response->header_len : response->res_len;
 
-				http_receive->cr->connection->stats->total_bytes_sent += response->res_len;
+			retval = http_response_send_parts (
+				http_receive, response->status, response->res, length, NULL, 0
+			);
+		}
 
-				((HttpReceive *) http_receive)->status = response->status;
-				((HttpReceive *) http_receive)->sent = response->res_len;
+		else {
+			if (!response->header) http_response_compile_header (response);
 
-				retval = 0;
+			if (response->header) {
+				retval = http_response_send_parts (
+					http_receive, response->status,
+					response->header, response->header_len,
+					response->data, response->data_len
+				);
 			}
 		}
 	}
@@ -818,27 +930,11 @@ u8 http_response_send_split (
 
 	if (response && http_receive->cr->connection) {
 		if (response->header && response->data) {
-			if (!http_response_send_actual (
-				http_receive->cr->connection->socket,
-				(char *) response->header, response->header_len
-			)) {
-				if (!http_response_send_actual (
-					http_receive->cr->connection->socket,
-					(char *) response->data, response->data_len
-				)) {
-					size_t total_size = response->header_len + response->data_len;
-
-					if (http_receive->cr->cerver)
-						CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_size);
-
-					http_receive->cr->connection->stats->total_bytes_sent += total_size;
-
-					((HttpReceive *) http_receive)->status = response->status;
-					((HttpReceive *) http_receive)->sent = total_size;
-
-					retval = 0;
-				}
-			}
+			retval = http_response_send_parts (
+				http_receive, response->status,
+				response->header, response->header_len,
+				response->data, response->data_len
+			);
 		}
 	}
 
@@ -946,6 +1042,7 @@ u8 http_response_send_file_internal (
 
 	// create response
 	HttpResponse *response = http_response_get ();
+	if (!response) return retval;
 
 	// generate header
 	response->status = status;
@@ -961,8 +1058,15 @@ u8 http_response_send_file_internal (
 	cerver_log_msg ("\n%s\n", response->header);
 	#endif
 
+	// a HEAD request only receives the header
+	if (http_receive->head) {
+		retval = http_response_send_parts (
+			http_receive, status, response->header, response->header_len, NULL, 0
+		);
+	}
+
 	// pipe header
-	if (!http_response_send_actual (
+	else if (!http_response_send_actual (
 		http_receive->cr->connection->socket,
 		response->header, response->header_len
 	)) {
@@ -1048,30 +1152,9 @@ static u8 http_response_render_send (
 	const char *data, const size_t data_len
 ) {
 
-	u8 retval = 1;
-
-	if (!http_response_send_actual (
-		http_receive->cr->connection->socket,
-		header, header_len
-	)) {
-		if (!http_response_send_actual (
-			http_receive->cr->connection->socket,
-			data, data_len
-		)) {
-			size_t total_size = header_len + data_len;
-			if (http_receive->cr->cerver)
-				CERVER_STATS_ADD (http_receive->cr->cerver->stats->total_bytes_sent, total_size);
-
-			http_receive->cr->connection->stats->total_bytes_sent += total_size;
-
-			((HttpReceive *) http_receive)->status = status;
-			((HttpReceive *) http_receive)->sent = total_size;
-
-			retval = 0;
-		}
-	}
-
-	return retval;
+	return http_receive->cr->connection ? http_response_send_parts (
+		http_receive, status, header, header_len, data, data_len
+	) : 1;
 
 }
 
@@ -1419,7 +1502,9 @@ HttpResponse *http_response_create_json_key_value (
 				status, json, strlen (json)
 			);
 
-			free (json);
+			// the response owns the json, so its data is never left dangling
+			if (response) response->data_ref = false;
+			else free (json);
 		}
 	}
 
@@ -1680,9 +1765,19 @@ static HttpResponse *http_response_json_internal (
 		);
 
 		response->header_len = strlen ((const char *) response->header);
-
-		(void) http_response_compile (response);
 	}
+
+	return response;
+
+}
+
+// the responses that are returned to be reused are compiled into a single buffer
+static HttpResponse *http_response_json_internal_compiled (
+	const http_status status, const char *key, const char *value
+) {
+
+	HttpResponse *response = http_response_json_internal (status, key, value);
+	if (response) (void) http_response_compile (response);
 
 	return response;
 
@@ -1694,7 +1789,7 @@ HttpResponse *http_response_json_msg (
 	const http_status status, const char *msg
 ) {
 
-	return msg ? http_response_json_internal (status, "msg", msg) : NULL;
+	return msg ? http_response_json_internal_compiled (status, "msg", msg) : NULL;
 
 }
 
@@ -1707,7 +1802,7 @@ u8 http_response_json_msg_send (
 
 	u8 retval = 1;
 
-	HttpResponse *response = http_response_json_msg (status, msg);
+	HttpResponse *response = msg ? http_response_json_internal (status, "msg", msg) : NULL;
 	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (response);
@@ -1726,7 +1821,7 @@ HttpResponse *http_response_json_error (
 	const http_status status, const char *error_msg
 ) {
 
-	return error_msg ? http_response_json_internal (status, "error", error_msg) : NULL;
+	return error_msg ? http_response_json_internal_compiled (status, "error", error_msg) : NULL;
 
 }
 
@@ -1739,7 +1834,7 @@ u8 http_response_json_error_send (
 
 	u8 retval = 1;
 
-	HttpResponse *response = http_response_json_error (status, error_msg);
+	HttpResponse *response = error_msg ? http_response_json_internal (status, "error", error_msg) : NULL;
 	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (response);
@@ -1758,7 +1853,7 @@ HttpResponse *http_response_json_key_value (
 	const http_status status, const char *key, const char *value
 ) {
 
-	return (key && value) ? http_response_json_internal (status, key, value) : NULL;
+	return (key && value) ? http_response_json_internal_compiled (status, key, value) : NULL;
 
 }
 
@@ -1771,7 +1866,7 @@ u8 http_response_json_key_value_send (
 
 	u8 retval = 1;
 
-	HttpResponse *response = http_response_json_key_value (status, key, value);
+	HttpResponse *response = (key && value) ? http_response_json_internal (status, key, value) : NULL;
 	if (response) {
 		#ifdef HTTP_RESPONSE_DEBUG
 		http_response_print (response);

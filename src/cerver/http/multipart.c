@@ -41,6 +41,7 @@ void *http_multi_part_new (void) {
 		(void) memset (multi_part->generated_filename, 0, HTTP_MULTI_PART_GENERATED_FILENAME_SIZE);
 
 		multi_part->fd = -1;
+		multi_part->discard = false;
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
 
@@ -99,6 +100,7 @@ void http_multi_part_reset (MultiPart *multi_part) {
 		if (multi_part->fd != -1) (void) close (multi_part->fd);
 
 		multi_part->fd = -1;
+		multi_part->discard = false;
 		multi_part->n_reads = 0;
 		multi_part->total_wrote = 0;
 

@@ -1000,7 +1000,8 @@ static u8 file_send_header (
 	if (packet) {
 		size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
 
-		packet->packet = malloc (packet_len);
+		// zeroed, the whole buffer is sent
+		packet->packet = calloc (1, packet_len);
 		packet->packet_size = packet_len;
 
 		char *end = (char *) packet->packet;
@@ -1009,6 +1010,7 @@ static u8 file_send_header (
 		header->packet_size = packet_len;
 
 		header->request_type = REQUEST_PACKET_TYPE_SEND_FILE;
+		header->version = packet_version_local ();
 
 		end += sizeof (PacketHeader);
 

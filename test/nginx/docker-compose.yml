@@ -1,0 +1,12 @@
+services:
+  cerver:
+    image: ${IMAGE:-ermiry/cerver:test}
+    working_dir: /opt/cerver/test/web
+    command: ["../bin/web/router"]
+
+  nginx:
+    image: nginx:1.27.3-alpine
+    depends_on:
+      - cerver
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro

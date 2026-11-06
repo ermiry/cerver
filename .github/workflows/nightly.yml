@@ -1,0 +1,90 @@
+name: Cerver Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  integration-thread:
+    name: Cerver integration tests with thread sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Integration Tests
+        env:
+          SANITIZER: thread
+        run: bash test/integration.sh
+
+  repeat:
+    name: Cerver flaky hunter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Threads pair
+        run: bash test/repeat.sh cerver/threads 200
+
+      - name: Client lifecycle
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/lifecycle 200
+
+      - name: Cerver core
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/core 50
+
+      - name: HTTP
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/http 50
+
+  fuzz:
+    name: Cerver long fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fuzzing
+        env:
+          SECONDS_PER_TARGET: 300
+        run: bash test/fuzz.sh
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: ./fuzz-artifacts/
+          retention-days: 14
+
+  performance:
+    name: Cerver performance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev valgrind
+
+      - name: Performance
+        run: bash test/performance.sh
+
+  nginx:
+    name: Cerver behind nginx
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: nginx
+        run: bash test/nginx/run.sh

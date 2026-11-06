@@ -94,16 +94,19 @@ static void app_data_print (AppData *app_data) {
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (my_cerver) {
-		cerver_stats_print (my_cerver, true, true);
-		cerver_teardown (my_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (my_cerver) (void) cerver_shutdown (my_cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	cerver_stats_print (my_cerver, true, true);
+	(void) cerver_teardown (my_cerver);
 
 }
 
@@ -285,7 +288,11 @@ int main (void) {
 			false, false
 		);
 
-		if (cerver_start (my_cerver)) {
+		if (!cerver_start (my_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				my_cerver->info->name

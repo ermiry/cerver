@@ -5,6 +5,8 @@
 
 #include <cerver/http/auth.h>
 #include <cerver/http/http.h>
+#include <cerver/http/jwt/alg.h>
+#include <cerver/http/jwt/jwt.h>
 
 #include "../test.h"
 #include "http.h"
@@ -254,9 +256,30 @@ static void test_http_jwt_generate_bearer (void) {
 	
 }
 
+// {"typ": "JWT"} as the header, a token without "alg" (found by the jwt fuzzer)
+static const char *token_without_alg = { "eyJ0eXAiOiJKV1QifQ.e30." };
+
+static const char *jwt_test_key = { "not-a-key" };
+
+static void test_http_jwt_decode_without_alg (void) {
+
+	jwt_t *jwt = NULL;
+	test_check_int_ne (
+		jwt_decode (&jwt, token_without_alg, (const unsigned char *) jwt_test_key, (int) strlen (jwt_test_key)),
+		0
+	);
+
+	test_check_null_ptr (jwt);
+
+	test_check_int_eq (jwt_str_alg (NULL), JWT_ALG_INVAL, NULL);
+
+}
+
 void http_tests_jwt (void) {
 
 	(void) printf ("Testing HTTP jwt...\n");
+
+	test_http_jwt_decode_without_alg ();
 
 	test_http_jwt_add_value ();
 

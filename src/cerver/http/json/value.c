@@ -991,9 +991,14 @@ int json_real_set (json_t *json, double value) {
 
 static void json_delete_real (json_real_t *real) { jsonp_free (real); }
 
+// exact, like upstream: float_compare () takes floats, so a double out of their range
+// was infinite (and never equal) and close doubles were equal
 static int json_real_equal (const json_t *real1, const json_t *real2) {
 
-    return float_compare (json_real_value (real1), json_real_value (real2));
+    const double value1 = json_real_value (real1);
+    const double value2 = json_real_value (real2);
+
+    return !((value1 < value2) || (value1 > value2));
 
 }
 

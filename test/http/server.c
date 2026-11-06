@@ -72,6 +72,10 @@
 // a response that does not fit in the socket buffers
 #define SERVER_TEST_BIG_RESPONSE_SIZE		(1 << 24)
 
+// a response that the client reads completely
+#define SERVER_TEST_LARGE_RESPONSE_SIZE		(1 << 22)
+#define SERVER_TEST_LARGE_ALPHABET			26
+
 #define SERVER_TEST_FILES_LIMIT				(1 << 5)
 #define SERVER_TEST_FILES_CONNECTIONS		(1 << 6)
 
@@ -80,6 +84,13 @@
 
 // generous, so the suite also passes under valgrind
 #define SERVER_TEST_JOIN_TIMEOUT			32
+
+#define SERVER_TEST_HUGE_BODY_SIZE			((size_t) 100 << 20)
+#define SERVER_TEST_HUGE_SLOW_BODY_SIZE		((size_t) 16 << 20)
+#define SERVER_TEST_HUGE_BLOCK_SIZE			(SERVER_TEST_LARGE_ALPHABET * 4096)
+
+#define SERVER_TEST_POLL_REQUESTS			(1 << 4)
+#define SERVER_TEST_RESETS					(1 << 3)
 
 #define SERVER_TEST_ALARM					256
 
@@ -101,6 +112,12 @@ static const char *big_request = {
 	"\r\n"
 };
 
+static const char *large_request = {
+	"GET /group/large HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
 static const char *slow_headers_request = {
 	"GET /ok HTTP/1.1\r\n"
 	"Host: localhost\r\n"
@@ -118,7 +135,15 @@ static const char *slow_body_headers = {
 
 static const char *slow_body = { "12345678" };
 
+static const char *huge_request_format = {
+	"POST /huge HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Content-Length: %zu\r\n"
+	"\r\n"
+};
+
 static const char *status_ok = { "HTTP/1.1 200" };
+static const char *status_payload_too_large = { "HTTP/1.1 413" };
 static const char *status_request_timeout = { "HTTP/1.1 408" };
 static const char *status_service_unavailable = { "HTTP/1.1 503" };
 static const char *retry_after_header = { "Retry-After: " HTTP_RESPONSE_RETRY_AFTER_SECONDS };
@@ -250,6 +275,45 @@ static void server_test_echo_handler (
 
 }
 
+// the huge body repeats a block whose size is a multiple of the alphabet,
+// so it is written and checked a block at a time (a byte at a time is too slow with TSan)
+static char server_test_huge_block[SERVER_TEST_HUGE_BLOCK_SIZE];
+
+static size_t server_test_huge_size = SERVER_TEST_HUGE_BODY_SIZE;
+
+static void server_test_huge_block_create (void) {
+
+	for (size_t idx = 0; idx < SERVER_TEST_HUGE_BLOCK_SIZE; idx++) {
+		server_test_huge_block[idx] = (char) ('a' + (idx % SERVER_TEST_LARGE_ALPHABET));
+	}
+
+}
+
+// writes or checks size bytes of the body, starting at a block boundary
+static size_t server_test_huge_part (const size_t position) {
+
+	const size_t left = server_test_huge_size - position;
+
+	return (left < SERVER_TEST_HUGE_BLOCK_SIZE) ? left : SERVER_TEST_HUGE_BLOCK_SIZE;
+
+}
+
+// POST /huge checks every byte of the body
+static void server_test_huge_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	const String *body = http_request_get_body (request);
+
+	bool intact = body && (body->len == server_test_huge_size);
+	for (size_t position = 0; intact && (position < server_test_huge_size); position += SERVER_TEST_HUGE_BLOCK_SIZE) {
+		intact = !memcmp (body->str + position, server_test_huge_block, server_test_huge_part (position));
+	}
+
+	(void) http_response_send (intact ? oki_doki : bad_request_error, http_receive);
+
+}
+
 #pragma endregion
 
 #pragma region server
@@ -268,6 +332,8 @@ typedef struct ServerTestOptions {
 
 	unsigned int headers_timeout;
 	unsigned int request_timeout;
+
+	CerverHandlerType handler_type;
 
 } ServerTestOptions;
 
@@ -289,7 +355,8 @@ static ServerTestOptions server_test_options_default (void) {
 		CERVER_OVERLOAD_POLICY_WAIT,
 		CERVER_DRAIN_POLICY_RUN, SERVER_TEST_DRAIN_TIMEOUT,
 		CERVER_DEFAULT_SEND_TIMEOUT,
-		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT
+		HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT, HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT,
+		CERVER_HANDLER_TYPE_THREADS
 	};
 
 	return options;
@@ -303,6 +370,39 @@ static void *server_test_thread (void *server_ptr) {
 	server->start_result = cerver_start (server->cerver);
 
 	return NULL;
+
+}
+
+// a byte of the large response, so a part sent twice or skipped is found
+static char server_test_large_byte (const size_t position) {
+
+	return (char) ('a' + (position % SERVER_TEST_LARGE_ALPHABET));
+
+}
+
+// GET /group/large, a response bigger than the socket buffer is sent in many partial writes
+static void server_test_large_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	char *body = (char *) malloc (SERVER_TEST_LARGE_RESPONSE_SIZE);
+	if (body) {
+		for (size_t idx = 0; idx < SERVER_TEST_LARGE_RESPONSE_SIZE; idx++) {
+			body[idx] = server_test_large_byte (idx);
+		}
+
+		// the response is never compiled, so it is sent from its header and its data
+		HttpResponse *response = http_response_create (HTTP_STATUS_OK, body, SERVER_TEST_LARGE_RESPONSE_SIZE);
+		if (response) {
+			(void) http_response_add_content_length_header (response, SERVER_TEST_LARGE_RESPONSE_SIZE);
+			(void) http_response_send (response, http_receive);
+			http_response_delete (response);
+		}
+
+		free (body);
+	}
 
 }
 
@@ -320,6 +420,12 @@ static void server_test_routes (HttpCerver *http_cerver) {
 	HttpRoute *echo_route = http_route_create (REQUEST_METHOD_POST, "echo", server_test_echo_handler);
 	http_cerver_route_register (http_cerver, echo_route);
 
+	HttpRoute *huge_route = http_route_create (REQUEST_METHOD_POST, "huge", server_test_huge_handler);
+	http_cerver_route_register (http_cerver, huge_route);
+
+	HttpGroup *group = http_cerver_group_create (http_cerver, "group");
+	test_check_ptr (http_group_get (group, "large", server_test_large_handler));
+
 }
 
 static Cerver *server_test_cerver_create (
@@ -329,7 +435,7 @@ static Cerver *server_test_cerver_create (
 	Cerver *cerver = cerver_create_web ("server-test", port, CERVER_DEFAULT_CONNECTION_QUEUE);
 	test_check_ptr (cerver);
 
-	cerver_set_handler_type (cerver, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handler_type (cerver, options->handler_type);
 	cerver_set_reusable_address_flags (cerver, true);
 
 	cerver_set_thpool_n_threads (cerver, options->threads);
@@ -523,6 +629,193 @@ static void test_server_ok (void) {
 	ServerTest *server = server_test_start (&options);
 
 	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+// reads the whole response in a buffer of its exact maximum size
+static size_t server_test_read_large (const int fd, char *response, const size_t size) {
+
+	size_t total = 0;
+	ssize_t received = 0;
+	while ((total < size) && ((received = recv (fd, response + total, size - total, 0)) > 0)) {
+		total += (size_t) received;
+	}
+
+	return total;
+
+}
+
+// a routes registration error stops the cerver before it listens
+static void test_server_routes_error (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	const u16 port = (u16) server_test_port++;
+
+	Cerver *cerver = server_test_cerver_create (port, &options);
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	HttpGroup *group = http_cerver_group_create (http_cerver, "broken");
+	test_check_ptr (http_group_get (group, "items", server_test_ok_handler));
+	test_check_ptr (http_group_get (group, "items", server_test_ok_handler));
+
+	test_check_unsigned_ne (cerver_start (cerver), 0);
+	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 1, NULL);
+	test_check_ptr (strstr (http_cerver_routes_error (http_cerver), "already registered"));
+
+	// nothing listens in its port
+	test_check_int_eq (server_test_connect_once (port), -1, NULL);
+
+	(void) cerver_teardown (cerver);
+
+}
+
+// every byte of a response bigger than the socket buffer arrives once and in order
+static void test_server_large_response (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	const size_t size = SERVER_TEST_LARGE_RESPONSE_SIZE + SERVER_TEST_RESPONSE_SIZE;
+	char *response = (char *) malloc (size);
+	test_check_ptr (response);
+
+	int fd = server_test_connect (server->port);
+	server_test_send (fd, large_request);
+	const size_t total = server_test_read_large (fd, response, size);
+	(void) close (fd);
+
+	test_check (server_test_starts_with (response, status_ok), "the large response is not 200");
+
+	const char *end = strstr (response, headers_end);
+	test_check_ptr (end);
+
+	const char *body = end + strlen (headers_end);
+	const size_t body_len = total - (size_t) (body - response);
+	test_check_unsigned_eq (body_len, SERVER_TEST_LARGE_RESPONSE_SIZE, NULL);
+
+	bool intact = true;
+	for (size_t idx = 0; intact && (idx < body_len); idx++) {
+		intact = (body[idx] == server_test_large_byte (idx));
+	}
+
+	test_check (intact, "the large response arrived with wrong bytes");
+
+	free (response);
+
+	server_test_stop (server);
+
+}
+
+// the POLL handler serves the same requests as the THREADS one
+static void test_server_poll (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	options.handler_type = CERVER_HANDLER_TYPE_POLL;
+
+	ServerTest *server = server_test_start (&options);
+
+	for (unsigned int i = 0; i < SERVER_TEST_POLL_REQUESTS; i++) {
+		server_test_request (server->port, ok_request, status_ok);
+	}
+
+	server_test_stop (server);
+
+}
+
+// the client resets the connection while a large response is being sent:
+// the cerver does not die from SIGPIPE, releases the connection and keeps serving
+static void test_server_reset_during_response (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	const struct linger reset = { 1, 0 };
+
+	for (unsigned int i = 0; i < SERVER_TEST_RESETS; i++) {
+		int fd = server_test_connect (server->port);
+		server_test_send (fd, large_request);
+
+		test_check (recv (fd, response, SERVER_TEST_RESPONSE_SIZE, 0) > 0, "the large response did not start");
+
+		// a close with a zero linger sends a RST
+		(void) setsockopt (fd, SOL_SOCKET, SO_LINGER, &reset, sizeof (struct linger));
+		(void) close (fd);
+	}
+
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+static void server_test_send_all (const int fd, const char *data, const size_t size) {
+
+	size_t total = 0;
+	while (total < size) {
+		const ssize_t sent = send (fd, data + total, size - total, MSG_NOSIGNAL);
+		test_check (sent > 0, "failed to send the huge body");
+		total += (size_t) sent;
+	}
+
+}
+
+static void server_test_huge_headers (const int fd) {
+
+	char headers[SERVER_TEST_RESPONSE_SIZE];
+	(void) snprintf (headers, SERVER_TEST_RESPONSE_SIZE, huge_request_format, server_test_huge_size);
+
+	server_test_send (fd, headers);
+
+}
+
+// TSan and valgrind make every byte of the body slow, so they send a smaller one
+static size_t server_test_huge_body_size (void) {
+
+	#if defined(__SANITIZE_THREAD__)
+	return SERVER_TEST_HUGE_SLOW_BODY_SIZE;
+	#else
+	const char *preload = getenv (SERVER_TEST_PRELOAD_VARIABLE);
+	return (preload && strstr (preload, SERVER_TEST_VALGRIND_PRELOAD)) ?
+		SERVER_TEST_HUGE_SLOW_BODY_SIZE : SERVER_TEST_HUGE_BODY_SIZE;
+	#endif
+
+}
+
+// a body of 100 MB arrives complete with the default limit,
+// and a lower limit rejects it with 413 from its Content-Length, before the body is sent
+static void test_server_huge_body (void) {
+
+	server_test_huge_size = server_test_huge_body_size ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	server_test_huge_block_create ();
+
+	char *body = (char *) malloc (server_test_huge_size);
+	test_check_ptr (body);
+	for (size_t position = 0; position < server_test_huge_size; position += SERVER_TEST_HUGE_BLOCK_SIZE) {
+		(void) memcpy (body + position, server_test_huge_block, server_test_huge_part (position));
+	}
+
+	int fd = server_test_connect (server->port);
+	server_test_huge_headers (fd);
+	server_test_send_all (fd, body, server_test_huge_size);
+	server_test_expect (fd, status_ok);
+	(void) close (fd);
+
+	// half of the body
+	http_cerver_set_max_body_size ((HttpCerver *) server->cerver->cerver_data, server_test_huge_size >> 1);
+
+	fd = server_test_connect (server->port);
+	server_test_huge_headers (fd);
+	server_test_expect (fd, status_payload_too_large);
+	(void) close (fd);
+
+	free (body);
 
 	server_test_stop (server);
 
@@ -901,6 +1194,19 @@ static void test_server_signal (void) {
 
 #pragma region files
 
+static Cerver *server_test_files_cerver = NULL;
+
+// a SIGTERM that arrives while the main thread is not inside accept () does not interrupt it,
+// so the handler also stops the cerver, like the handler of the services calls cerver_shutdown ()
+// the cerver has no update threads, so its stop mutex is never held when the signal arrives
+static void server_test_files_signal_handler (int signal_number) {
+
+	(void) signal_number;
+
+	cerver_stop_request (server_test_files_cerver);
+
+}
+
 // the child runs out of fds, the cerver must keep accepting (and closing)
 // connections and serve again when the fds are released
 static void server_test_files_child (const u16 port) {
@@ -908,23 +1214,23 @@ static void server_test_files_child (const u16 port) {
 	struct rlimit limit = { SERVER_TEST_FILES_LIMIT, SERVER_TEST_FILES_LIMIT };
 	if (setrlimit (RLIMIT_NOFILE, &limit)) _exit (EXIT_FAILURE);
 
-	// SIGTERM interrupts accept () and stops the cerver, like in the services
-	struct sigaction action;
-	(void) memset (&action, 0, sizeof (struct sigaction));
-	action.sa_handler = server_test_signal_handler;
-	(void) sigemptyset (&action.sa_mask);
-	(void) sigaction (SIGTERM, &action, NULL);
-
 	// every accepted connection is queued, so the cerver runs out of fds
 	ServerTestOptions options = server_test_options_default ();
 	options.threads = 2;
 	options.queue_size = SERVER_TEST_FILES_CONNECTIONS;
 	options.overload_policy = CERVER_OVERLOAD_POLICY_REJECT;
 
-	Cerver *cerver = server_test_cerver_create (port, &options);
+	server_test_files_cerver = server_test_cerver_create (port, &options);
 
-	(void) cerver_start (cerver);
-	(void) cerver_teardown (cerver);
+	// SIGTERM stops the cerver, like in the services
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (struct sigaction));
+	action.sa_handler = server_test_files_signal_handler;
+	(void) sigemptyset (&action.sa_mask);
+	(void) sigaction (SIGTERM, &action, NULL);
+
+	(void) cerver_start (server_test_files_cerver);
+	(void) cerver_teardown (server_test_files_cerver);
 
 	_exit (EXIT_SUCCESS);
 
@@ -1086,6 +1392,11 @@ void http_tests_server (void) {
 	test_server_policies_strings ();
 
 	test_server_ok ();
+	test_server_routes_error ();
+	test_server_large_response ();
+	test_server_poll ();
+	test_server_reset_during_response ();
+	test_server_huge_body ();
 	test_server_slowloris ();
 	test_server_idle ();
 	test_server_slow_body ();

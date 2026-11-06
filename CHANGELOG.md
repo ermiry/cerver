@@ -1,55 +1,92 @@
 ## General
-- Added load target in makefile to build bench server & load
-- Requiring thread sanitizer & leak checks in build workflow
-- Requiring the handler integration test in the tests workflow
-- Added arena collection to allocate values in reused blocks
-- Added method to create a String with its bytes in an arena
-- Fixed AVL double rotations & removing nodes with children
-- Fixed dlist prev links, sorting and locks when reading data
-- Using FNV-1a hash & growing htab table when it is 3/4 full
-- Checking pool create method exists before producing data
-- Added queue init method & removed repeated pop header
-- Added joinable threads blocking process signals on create
-- Refactored thpool with a bounded queue & drain methods
-- Using dlist_insert_at_end() when pushing jobs to a queue
-- Fixed sock_set_blocking() & added a socket send timeout
-- Added references count to sockets used by many threads
-- Added receive handle buffer method to assemble packets
-- Using shared receive handle method in client receive loop
-- Fixed IPv6 connection connect and removed sockets pool
-- Added cerver overload & drain policies with ordered stops
-- Fixed auth session token copy reading past session id end
-- Using cerver_is_running() & stop requests in admin cerver
-- Updating cerver sent packets stats with atomic operations
-- Fixed game cerver unregister lobby removing the list start
-- Using dlist_insert_at_end() in files & game types methods
-- Added bench web server & load client to count allocations
-- Updated roadmap with phase 2 state and the next phases
-- Updated CLAUDE.md with thpool, lifecycle & receive flows
+- Added fuzz & tree targets & the new unit tests to makefile
+- Ignoring fuzz artifacts & build outputs in git & docker files
+- Using a single stage test image with sanitizers & gdb tools
+- Added fuzz Dockerfile to build libFuzzer targets with clang
+- Added a valgrind job in build workflow to run the unit tests
+- Running integration pairs with sanitizers & fuzzing in tests
+- Added nightly workflow with TSan, fuzzing & performance
+- Adding line break after the changelog in release workflows
+- Running the integration pairs script in the main tests script
+- Using a clock name instead of a number in timer timespec
+- Waiting for socket sends to finish before deleting its locks
+- Sending zeroed error & file packets with the packet version
+- Sending packet version in headers & fixing packet_check()
+- Reporting the packets bigger than max size as bad packets
+- Added connection drop request & update thread end flags
+- Fixed client connection end with a single owner of the end
+- Added cerver on hold timeout and max bad packets option
+- Fixed on hold packets check & dropping slow connections
+- Fixed admin cerver packets checks & polling a copy of fds
+- Handling bad packets & polling a copy of all registered fds
+- Joining job queue thread when stopping the queue of jobs
+- Fixed game types search & refactored scores with clamps
+- Added routes tree benchmark with synthetic routes tables
+- Added aarch64 req/s baseline for the performance checks
+- Added tests roadmap with the integration & fuzzing stages
+- Updated roadmap with phase 3 state and the next phases
+- Updated CLAUDE.md with routes tree, test suite & fuzzing
 
 ## HTTP
-- Added method to create HTTP requests in a handler arena
-- Added HTTP 503 unavailable response for full thread pools
-- Added HTTP headers, request timeouts and arena receives
-- Handling accept errors, receive deadlines & thread arenas
-- Using dlist_insert_at_end() when adding HTTP route child
+- Added URL path decode method and copying bad escapes
+- Finding HTTP headers by name using a FNV-1a hash table
+- Creating HTTP custom headers in the arena of the request
+- Added request params as url slices and the PATCH method
+- Sending HTTP response parts with a single sendmsg() call
+- Added multi-part discard value for file inputs without files
+- Fixed JSON reals equal check & JWT tokens without an alg
+- Added HTTP route param validators for ids, ints and uuids
+- Added HTTP before & after middleware chains for groups
+- Added HTTP routes tree with groups & endpoints to match
+- Updating HTTP route stats with atomics & methods string
+- Added compatibility layer to translate routes to endpoints
+- Added HTTP admin routes as endpoints of a routes group
+- Selecting HTTP endpoints from tree with 405 & OPTIONS
+
+## Examples
+- Stopping cerver examples in signals & releasing them after
+- Stopping client examples in signals & zeroed packets data
+- Stopping web examples in signals and releasing on return
 
 ## Tests
-- Copying post fields data in all web test client curl requests
-- Added collections unit tests helper to check the dlist links
-- Added arena collection unit tests with small & large values
-- Added dlist unit tests checking invariants after any change
-- Added AVL unit tests with random values & balance check
-- Added htab unit tests with colliding keys and table rehash
-- Added queue unit tests using concurrent producer threads
-- Registering the new collections unit tests in tests main file
-- Enabled dlist remove threads unit test removing end safely
-- Added pool unit test producing without any create method
-- Refactored thpool unit tests with full queue, wait and drain
-- Added joinable threads unit tests checking blocked signals
-- Added TCP receive unit tests with packets split at any byte
-- Added HTTP server unit tests with deadlines and overload
-- Running HTTP receive unit tests with requests in an arena
-- Fixed JWT encode unit tests leaking its test user after use
-- Fixed packets unit tests leaking the ping packet at the end
-- Fixed version unit test leaking the buffer of the version file
+- Added test helpers to wait for counters instead of sleeping
+- Running unit tests in an optional runner & the new binaries
+- Added integration scripts to run every pair in one container
+- Added flaky hunter script to repeat tests & save gdb stack
+- Added performance script with allocations & req/s checks
+- Added nginx test running the router pair behind the proxy
+- Added fuzz targets header to feed bytes to HTTP receives
+- Added HTTP request fuzz target with its seed request files
+- Added multi-part fuzz target with form & unsafe file seeds
+- Added HTTP URL fuzz target with escapes & utf seed files
+- Added JSON fuzz target with the array & object seed files
+- Added JWT fuzz target decoding tokens with seed tokens
+- Added routes tree fuzz target with seed routes to register
+- Added fuzz script to run every libFuzzer target from seeds
+- Sending zeroed auth data from test app & removing prints
+- Added packets unit tests with pieces, requests and routes
+- Added files unit test getting the image type of missing files
+- Added JSON equal unit test with reals out of a float range
+- Added timer unit tests checking strings and elapsed times
+- Added serializer unit tests with relative pointers and arrays
+- Registering timer & serializer unit tests in utils main source
+- Added game unit tests for scores, types, players & lobbies
+- Added URL unit tests with NULL strings & invalid escapes
+- Added HTTP headers unit test finding names by their hash
+- Added HTTP requests unit tests with params and methods
+- Added HTTP route unit tests with stats and methods string
+- Added JWT unit test decoding a token header without alg
+- Added routes tree unit tests with matches and registration
+- Registering the routes tree unit tests in the HTTP main file
+- Added HTTP receive unit tests with groups & unsafe paths
+- Added HTTP server unit tests with big responses & bodies
+- Added in process TCP cerver tests with auth and handlers
+- Added client lifecycle unit tests against a fake TCP cerver
+- Stopping test cervers in signals & checking their teardown
+- Checking the handler integration responses with a counter
+- Waiting for the client integration responses using counters
+- Stopping web test cervers in signals & releasing on return
+- Added router integration pair checking groups & endpoints
+- Added timeouts to web test client curl requests & headers
+- Checking routes & endpoints stats in web admin test client
+- Checking the JSON test client requests results for an error

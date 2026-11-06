@@ -9,13 +9,36 @@
 #include "curl.h"
 
 #define AUTHORIZATION_HEADER_SIZE		1024
-#define CONTENT_LENGTH_HEADER_SIZE		256
+
+#define CURL_REQUEST_TIMEOUT_SECONDS	32L
+#define CURL_CONNECT_TIMEOUT_SECONDS	8L
+
+// performs the request with custom headers
+// and removes them from the handle before releasing them
+static CurlResult curl_perform_request_with_headers (
+	CURL *curl, const http_status expected_status,
+	struct curl_slist *headers
+) {
+
+	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
+
+	CurlResult result = curl_perform_request (curl, expected_status);
+
+	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, NULL);
+	curl_slist_free_all (headers);
+
+	return result;
+
+}
 
 CurlResult curl_perform_request (
 	CURL *curl, const http_status expected_status
 ) {
 
 	CurlResult result = CURL_RESULT_NONE;
+
+	curl_easy_setopt (curl, CURLOPT_TIMEOUT, CURL_REQUEST_TIMEOUT_SECONDS);
+	curl_easy_setopt (curl, CURLOPT_CONNECTTIMEOUT, CURL_CONNECT_TIMEOUT_SECONDS);
 
 	CURLcode res = curl_easy_perform (curl);
 
@@ -134,13 +157,11 @@ CurlResult curl_simple_with_auth (
 
 	headers = curl_slist_append (headers, auth_header);
 
-	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
-
 	curl_easy_setopt (curl, CURLOPT_URL, address);
 	curl_easy_setopt (curl, CURLOPT_CUSTOMREQUEST, "GET");
 
 	// perfrom the request
-	result = curl_perform_request (curl, expected_status);
+	result = curl_perform_request_with_headers (curl, expected_status, headers);
 
 	return result;
 
@@ -204,23 +225,13 @@ CurlResult curl_simple_post_json (
 
 	CurlResult result = CURL_RESULT_NONE;
 
-	char content_length[CONTENT_LENGTH_HEADER_SIZE] = { 0 };
-	(void) snprintf (
-		content_length, CONTENT_LENGTH_HEADER_SIZE - 1,
-		"Content-Length: %lu",
-		json_len
-	);
-
 	struct curl_slist *headers = NULL;
-	(void) curl_slist_append (headers, "Accept: application/json");
-	(void) curl_slist_append (headers, "Content-Type: application/json");
-	(void) curl_slist_append (headers, content_length);
-	// (void) curl_slist_append (headers, "charset: utf-8");
+	headers = curl_slist_append (headers, "Accept: application/json");
+	headers = curl_slist_append (headers, "Content-Type: application/json");
 
 	curl_easy_setopt (curl, CURLOPT_CUSTOMREQUEST, "POST");
-	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
-	// the json is copied, its size is taken with strlen ()
-	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, -1L);
+	// the json is copied, curl sends its length as the Content-Length
+	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, (long) json_len);
 	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, json);
 
 	// set the destination address
@@ -230,7 +241,7 @@ CurlResult curl_simple_post_json (
 	curl_easy_setopt (curl, CURLOPT_WRITEDATA, buffer);
 
 	// perfrom the request
-	result = curl_perform_request (curl, expected_status);
+	result = curl_perform_request_with_headers (curl, expected_status, headers);
 
 	return result;
 
@@ -259,16 +270,12 @@ CurlResult curl_simple_post_with_auth (
 
 	headers = curl_slist_append (headers, auth_header);
 
-	curl_easy_setopt (curl, CURLOPT_HTTPHEADER, headers);
-
 	// the data is copied, because the handle is reused after the caller releases it
 	curl_easy_setopt (curl, CURLOPT_POSTFIELDSIZE, datalen);
 	curl_easy_setopt (curl, CURLOPT_COPYPOSTFIELDS, data);
 
 	// perfrom the request
-	result = curl_perform_request (curl, expected_status);
-
-	curl_slist_free_all (headers);
+	result = curl_perform_request_with_headers (curl, expected_status, headers);
 
 	return result;
 

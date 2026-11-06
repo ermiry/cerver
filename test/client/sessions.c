@@ -23,7 +23,6 @@ static const char *second_connection_name = "second-connection";
 
 static Client *client = NULL;
 
-static pthread_mutex_t *responses_lock = NULL; 
 static unsigned int responses = 0;
 
 static void app_handler (void *packet_ptr) {
@@ -34,11 +33,9 @@ static void app_handler (void *packet_ptr) {
 		switch (packet->header.request_type) {
 			case APP_REQUEST_NONE: break;
 
-			case APP_REQUEST_TEST: {
-				(void) pthread_mutex_lock (responses_lock);
-				responses += 1;
-				(void) pthread_mutex_unlock (responses_lock);
-			} break;
+			case APP_REQUEST_TEST:
+				test_counter_add (&responses);
+				break;
 
 			case APP_REQUEST_MESSAGE: break;
 
@@ -66,15 +63,16 @@ static void *connect_with_session (void *args) {
 	connection_set_max_sleep (connection, 30);
 
 	// set the received session id as the connection's auth data
-	test_check_ptr (client->session_id);
+	const char *session_id = (const char *) args;
+	test_check (session_id[0] != '\0', "No session id was received!");
 
-	SToken *s_token = (SToken *) malloc (sizeof (SToken));
-	strncpy (s_token->token, client->session_id->str, TOKEN_SIZE);
+	SToken *s_token = (SToken *) calloc (1, sizeof (SToken));
+	(void) strncpy (s_token->token, session_id, TOKEN_SIZE - 1);
 
 	connection_set_auth_data (
-		connection, 
-		s_token, sizeof (SToken), 
-		NULL,
+		connection,
+		s_token, sizeof (SToken),
+		free,
 		false
 	);
 
@@ -84,8 +82,11 @@ static void *connect_with_session (void *args) {
 		"Failed to connect to cerver!"
 	);
 
-	// wait to be authenticated with cerver
-	(void) sleep (3);
+	// wait to be authenticated with cerver, after the main connection
+	test_check_unsigned_eq (
+		test_wait_counter (&client_events_success_auth, 2, TEST_WAIT_SECONDS),
+		2, "Failed to authenticate!"
+	);
 
 	test_check_bool_eq (
 		connection->authenticated, true, "Failed to authenticate!"
@@ -123,8 +124,6 @@ static void *connect_with_session (void *args) {
 int main (int argc, const char **argv) {
 
 	(void) printf ("Testing CLIENT sessions...\n");
-
-	responses_lock = thread_mutex_new ();
 
 	client = client_create ();
 
@@ -209,16 +208,22 @@ int main (int argc, const char **argv) {
 	);
 
 	// wait to be authenticated with cerver
-	(void) sleep (3);
+	test_check_unsigned_eq (
+		test_wait_counter (&client_events_success_auth, 1, TEST_WAIT_SECONDS),
+		1, "Failed to authenticate!"
+	);
 
 	test_check_bool_eq (
 		connection->authenticated, true, "Failed to authenticate!"
 	);
 
+	static char session_id[CLIENT_TEST_SESSION_ID_SIZE] = { 0 };
+	(void) strncpy (session_id, client_session_id, CLIENT_TEST_SESSION_ID_SIZE - 1);
+
 	/*** session ***/
 	pthread_t thread_id = 0;
 	test_check_int_eq (
-		pthread_create (&thread_id, NULL, connect_with_session, NULL),
+		pthread_create (&thread_id, NULL, connect_with_session, session_id),
 		0, "Failed to create sessions thread!"
 	);
 
@@ -248,22 +253,18 @@ int main (int argc, const char **argv) {
 	// wait for sessions thread to finish
 	(void) pthread_join (thread_id, NULL);
 
-	// wait for any missing response
-	(void) sleep (8);
-
-	(void) printf ("\n\nDone waiting!\n\n");
-
 	/*** check ***/
-	// check that we have received all the responses
+	// wait until every response has arrived
 	test_check_unsigned_eq (
-		responses, MAIN_REQUESTS + SECOND_REQUESTS, NULL
+		test_wait_counter (&responses, MAIN_REQUESTS + SECOND_REQUESTS, TEST_WAIT_SECONDS),
+		MAIN_REQUESTS + SECOND_REQUESTS, NULL
 	);
+
+	test_check_unsigned_eq (client_errors_failed_auth, 0, NULL);
 
 	/*** end ***/
 	client_connection_end (client, connection);
 	client_teardown (client);
-
-	thread_mutex_delete (responses_lock);
 
 	(void) printf ("Done!\n\n");
 

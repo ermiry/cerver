@@ -1,31 +1,43 @@
 #!/bin/bash
 
-./test/bin/types || { exit 1; }
+RUNNER=${RUNNER:-}
 
-./test/bin/cerver/test || { exit 1; }
+run () {
+	$RUNNER "$@" || { echo "$1 failed"; exit 1; }
+}
 
-./test/bin/client/test || { exit 1; }
+run ./test/bin/types
 
-./test/bin/connection || { exit 1; }
+run ./test/bin/cerver/test
 
-./test/bin/collections --quiet || { exit 1; }
+run ./test/bin/cerver/core
 
-./test/bin/files || { exit 1; }
+run ./test/bin/client/test
 
-./test/bin/packets || { exit 1; }
+run ./test/bin/client/lifecycle
 
-./test/bin/receive || { exit 1; }
+run ./test/bin/connection
 
-./test/bin/system || { exit 1; }
+run ./test/bin/collections --quiet
 
-./test/bin/threads || { exit 1; }
+run ./test/bin/files
 
-./test/bin/utils || { exit 1; }
+run ./test/bin/game
 
-./test/bin/http || { exit 1; }
+run ./test/bin/packets
 
-./test/bin/json || { exit 1; }
+run ./test/bin/receive
 
-./test/bin/jwt || { exit 1; }
+run ./test/bin/system
 
-./test/bin/version || { exit 1; }
+run ./test/bin/threads
+
+run ./test/bin/utils
+
+run ./test/bin/http
+
+run ./test/bin/json
+
+run ./test/bin/jwt
+
+run ./test/bin/version

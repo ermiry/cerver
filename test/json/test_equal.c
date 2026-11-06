@@ -200,10 +200,36 @@ static void test_equal_complex () {
 	json_decref (value3);
 }
 
+#define TEST_EQUAL_BIG_REAL			-3e40
+#define TEST_EQUAL_CLOSE_REAL		1.0000001
+#define TEST_EQUAL_OTHER_REAL		1.0000002
+
+// the reals were compared as floats with a tolerance (found by the json fuzzer):
+// a double out of the range of a float was never equal to itself, and close doubles were equal
+static void test_equal_reals_precision () {
+
+	json_t *big = json_real (TEST_EQUAL_BIG_REAL);
+	json_t *big_copy = json_real (TEST_EQUAL_BIG_REAL);
+	if (!json_equal (big, big_copy))
+		fail ("json_equal fails for two equal reals out of the float range");
+
+	json_t *near_real = json_real (TEST_EQUAL_CLOSE_REAL);
+	json_t *other_real = json_real (TEST_EQUAL_OTHER_REAL);
+	if (json_equal (near_real, other_real))
+		fail ("json_equal fails for two close but different reals");
+
+	json_decref (big);
+	json_decref (big_copy);
+	json_decref (near_real);
+	json_decref (other_real);
+
+}
+
 void json_tests_equal (void) {
 
 	(void) printf ("Testing JSON equal...\n");
 
+	test_equal_reals_precision ();
 	test_equal_simple ();
 	test_equal_array ();
 	test_equal_object ();
