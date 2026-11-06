@@ -294,6 +294,15 @@ static void test_files_image_extension_is_png (void) {
 
 }
 
+// a missing filename or file is not an image, the bindings of python pass NULL for it
+static void test_files_image_get_type_without_file (void) {
+
+	test_check_unsigned_eq (files_image_get_type (NULL), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type ("/tmp/cerver-test-missing.png"), IMAGE_TYPE_NONE, NULL);
+	test_check_bool_eq (file_exists (NULL), false, NULL);
+
+}
+
 #pragma endregion
 
 int main (int argc, char **argv) {
@@ -313,6 +322,7 @@ int main (int argc, char **argv) {
 	test_files_image_get_type_by_extension ();
 	test_files_image_extension_is_jpeg ();
 	test_files_image_extension_is_png ();
+	test_files_image_get_type_without_file ();
 
 	(void) printf ("\nDone with FILES tests!\n\n");
 
