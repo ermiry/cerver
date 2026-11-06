@@ -17,11 +17,21 @@
 
 #define REQUEST_DIRNAME_SIZE			512
 
-#define REQUEST_METHOD_UNDEFINED		8
+// the values of the methods are the ones of the HTTP parser (method.h),
+// any method outside REQUEST_METHOD_MAP is undefined
+#define REQUEST_METHOD_UNDEFINED		34
+
+// the size of the tables indexed by a request method (the highest value + 1)
+#define REQUEST_METHOD_SIZE				29
+
+// the arena of a request that was not created in the arena of its thread
+#define REQUEST_ARENA_CHUNK_SIZE		(1 << 10)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct Arena;
 
 #define REQUEST_METHOD_MAP(XX)			\
 	XX(0,  DELETE,      DELETE)			\
@@ -31,7 +41,8 @@ extern "C" {
 	XX(4,  PUT,         PUT)			\
 	XX(5,  CONNECT,     CONNECT)		\
 	XX(6,  OPTIONS,     OPTIONS)		\
-	XX(7,  TRACE,       TRACE)
+	XX(7,  TRACE,       TRACE)			\
+	XX(28, PATCH,       PATCH)
 
 typedef enum RequestMethod {
 
@@ -46,7 +57,21 @@ CERVER_PUBLIC const char *http_request_method_str (
 	const RequestMethod request_method
 );
 
-#define REQUEST_PARAMS_SIZE				8
+// returns true if the method is one of REQUEST_METHOD_MAP
+CERVER_PUBLIC bool http_request_method_is_valid (
+	const RequestMethod request_method
+);
+
+// a route param is a slice of the request's url,
+// its percent-decoded value is created in the request's arena when it is requested
+typedef struct HttpRequestParam {
+
+	const char *value;
+	size_t len;
+
+	String *decoded;
+
+} HttpRequestParam;
 
 struct _HttpRequest {
 
@@ -58,14 +83,18 @@ struct _HttpRequest {
 	// parsed query params (key-value pairs)
 	DoubleList *query_params;
 
+	// the route params, the names are the ones of the matched endpoint
 	unsigned int n_params;
-	String *params[REQUEST_PARAMS_SIZE];
+	HttpRequestParam *params;
+	char *const *params_names;
 
 	http_header next_header;
 	String *headers[HTTP_HEADERS_SIZE];
 
+	// the custom headers live in the request's arena
+	size_t n_custom_headers;
+	HttpCustomHeader *custom_headers;
 	HttpCustomHeader *current_custom_header;
-	DoubleList *custom_headers;
 
 	// JWT decoded data
 	void *decoded_data;
@@ -98,9 +127,18 @@ struct _HttpRequest {
 	// so none of them must be used after the route handler returns
 	struct Arena *arena;
 
+	// the arena of a request that was not created in an arena,
+	// it holds its params, its custom headers and their strings
+	struct Arena *own_arena;
+
 };
 
 typedef struct _HttpRequest HttpRequest;
+
+// returns the arena where the request's params and custom headers are created
+CERVER_PRIVATE struct Arena *http_request_get_arena (
+	HttpRequest *http_request
+);
 
 CERVER_PUBLIC HttpRequest *http_request_new (void);
 
@@ -138,13 +176,25 @@ CERVER_EXPORT const DoubleList *http_request_get_query_params (
 	const HttpRequest *http_request
 );
 
-// gets how many query params are in the HTTP request
+// gets how many route params are in the HTTP request
 CERVER_EXPORT const unsigned int http_request_get_n_params (
 	const HttpRequest *http_request
 );
 
-// gets the HTTP request's x query param
+// gets the HTTP request's x route param, percent-decoded
+// the string lives only while the route handler runs
 CERVER_EXPORT const String *http_request_get_param_at_idx (
+	const HttpRequest *http_request, const unsigned int idx
+);
+
+// gets the route param with the name of the matched route (":id" is "id"),
+// percent-decoded, the string lives only while the route handler runs
+CERVER_EXPORT const String *http_request_get_param (
+	const HttpRequest *http_request, const char *name
+);
+
+// gets the name of the x route param, NULL if it has no name
+CERVER_EXPORT const char *http_request_get_param_name_at_idx (
 	const HttpRequest *http_request, const unsigned int idx
 );
 
@@ -161,12 +211,18 @@ CERVER_PRIVATE void http_request_set_current_custom_header_value (
 	HttpRequest *http_request, const char *header_value
 );
 
+// returns the custom header with the name, compared without case
+CERVER_PRIVATE HttpCustomHeader *http_request_custom_header_find (
+	const HttpRequest *http_request, const char *header
+);
+
 // gets the HTTP request's custom headers count
 CERVER_EXPORT const size_t http_request_get_custom_headers_count (
 	const HttpRequest *http_request
 );
 
 // gets the specified custom header actual value
+// the name is compared without case, like the HTTP parser does
 CERVER_EXPORT const char *http_request_get_custom_header (
 	const HttpRequest *http_request, const char *header
 );

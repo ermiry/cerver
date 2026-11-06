@@ -3,6 +3,8 @@
 #include <stdbool.h>
 
 #include <stdarg.h>
+#include <string.h>
+#include <strings.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -16,6 +18,7 @@
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/request.h"
+#include "cerver/http/url.h"
 #include "cerver/http/utils.h"
 
 #include "cerver/utils/utils.h"
@@ -23,13 +26,7 @@
 // static const char *http_request_bytes_range = "bytes=";
 static const size_t http_request_bytes_range_len = 6;
 
-static const char *request_method_strings[] = {
-
-	#define XX(num, name, string) #string,
-	REQUEST_METHOD_MAP(XX)
-	#undef XX
-
-};
+static const char *request_method_undefined = { "Undefined" };
 
 void http_request_multi_part_discard_files (
 	const HttpRequest *http_request
@@ -39,9 +36,28 @@ const char *http_request_method_str (
 	const RequestMethod request_method
 ) {
 
-	return ARRAY_ELEM_AT (
-		request_method_strings, request_method, "Undefined"
-	);
+	switch (request_method) {
+		#define XX(num, name, string) case REQUEST_METHOD_##name: return #string;
+		REQUEST_METHOD_MAP(XX)
+		#undef XX
+	}
+
+	return request_method_undefined;
+
+}
+
+// returns true if the method is one of REQUEST_METHOD_MAP
+bool http_request_method_is_valid (
+	const RequestMethod request_method
+) {
+
+	switch (request_method) {
+		#define XX(num, name, string) case REQUEST_METHOD_##name: return true;
+		REQUEST_METHOD_MAP(XX)
+		#undef XX
+	}
+
+	return false;
 
 }
 
@@ -82,17 +98,17 @@ static void http_request_init (HttpRequest *http_request) {
 		http_request->query_params = NULL;
 
 		http_request->n_params = 0;
-
-		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
-			http_request->params[i] = NULL;
+		http_request->params = NULL;
+		http_request->params_names = NULL;
 
 		http_request->next_header = HTTP_HEADER_UNDEFINED;
 
 		for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 			http_request->headers[i] = NULL;
 
-		http_request->current_custom_header = NULL;
+		http_request->n_custom_headers = 0;
 		http_request->custom_headers = NULL;
+		http_request->current_custom_header = NULL;
 
 		http_request->decoded_data = NULL;
 		http_request->delete_decoded_data = NULL;
@@ -117,7 +133,21 @@ static void http_request_init (HttpRequest *http_request) {
 		http_request->keep_files = false;
 
 		http_request->arena = NULL;
+		http_request->own_arena = NULL;
 	}
+
+}
+
+// returns the arena where the request's params and custom headers are created
+Arena *http_request_get_arena (HttpRequest *http_request) {
+
+	if (http_request->arena) return http_request->arena;
+
+	if (!http_request->own_arena) {
+		http_request->own_arena = arena_create (REQUEST_ARENA_CHUNK_SIZE);
+	}
+
+	return http_request->own_arena;
 
 }
 
@@ -141,11 +171,10 @@ void http_request_delete (HttpRequest *http_request) {
 
 		dlist_delete (http_request->query_params);
 
-		for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
-			str_delete (http_request->params[i]);
-
+		// the params and the custom headers live in an arena
+		http_request->params = NULL;
+		http_request->custom_headers = NULL;
 		http_request->current_custom_header = NULL;
-		dlist_delete (http_request->custom_headers);
 
 		if (http_request->decoded_data) {
 			if (http_request->delete_decoded_data)
@@ -162,6 +191,8 @@ void http_request_delete (HttpRequest *http_request) {
 		dlist_delete (http_request->multi_parts);
 
 		dlist_delete (http_request->body_values);
+
+		arena_delete (http_request->own_arena);
 
 		if (!http_request->arena) free (http_request);
 	}
@@ -225,12 +256,59 @@ const unsigned int http_request_get_n_params (
 
 }
 
+// the decoded value of a param is created once, in the request's arena
+static const String *http_request_param_decode (
+	const HttpRequest *http_request, HttpRequestParam *param
+) {
+
+	if (!param->decoded) {
+		Arena *arena = http_request_get_arena ((HttpRequest *) http_request);
+		String *decoded = arena ? str_create_from_bytes_arena (arena, param->value, param->len) : NULL;
+		if (decoded) {
+			decoded->len = http_url_decode_path (decoded->str, param->value, param->len);
+			decoded->str[decoded->len] = '\0';
+			param->decoded = decoded;
+		}
+	}
+
+	return param->decoded;
+
+}
+
 const String *http_request_get_param_at_idx (
 	const HttpRequest *http_request, const unsigned int idx
 ) {
 
 	return (idx < http_request->n_params) ?
-		http_request->params[idx] : NULL;
+		http_request_param_decode (http_request, &http_request->params[idx]) : NULL;
+
+}
+
+const String *http_request_get_param (
+	const HttpRequest *http_request, const char *name
+) {
+
+	const String *param = NULL;
+
+	if (http_request->params_names && name) {
+		for (unsigned int idx = 0; idx < http_request->n_params; idx++) {
+			if (http_request->params_names[idx] && !strcmp (http_request->params_names[idx], name)) {
+				param = http_request_param_decode (http_request, &http_request->params[idx]);
+				break;
+			}
+		}
+	}
+
+	return param;
+
+}
+
+const char *http_request_get_param_name_at_idx (
+	const HttpRequest *http_request, const unsigned int idx
+) {
+
+	return (http_request->params_names && (idx < http_request->n_params)) ?
+		http_request->params_names[idx] : NULL;
 
 }
 
@@ -238,7 +316,8 @@ const String *http_request_get_header (
 	const HttpRequest *http_request, const http_header header
 ) {
 
-	return http_request->headers[header];
+	return ((header >= 0) && (header < HTTP_HEADERS_SIZE)) ?
+		http_request->headers[header] : NULL;
 
 }
 
@@ -246,19 +325,21 @@ void http_request_set_current_custom_header (
 	HttpRequest *http_request, const char *header
 ) {
 
-	HttpCustomHeader *custom_header = http_custom_header_create (header);
-	if (custom_header) {
-		http_request->current_custom_header = custom_header;
+	Arena *arena = http_request_get_arena (http_request);
+	HttpCustomHeader *custom_header = arena ?
+		http_custom_header_create (arena, header, strlen (header)) : NULL;
 
-		if (!http_request->custom_headers) {
-			http_request->custom_headers = dlist_init (
-				http_custom_header_delete, NULL
-			);
+	if (custom_header) {
+		if (http_request->current_custom_header) {
+			http_request->current_custom_header->next = custom_header;
 		}
 
-		(void) dlist_insert_at_end_unsafe (
-			http_request->custom_headers, custom_header
-		);
+		else {
+			http_request->custom_headers = custom_header;
+		}
+
+		http_request->current_custom_header = custom_header;
+		http_request->n_custom_headers += 1;
 	}
 
 }
@@ -267,15 +348,11 @@ void http_request_set_current_custom_header_value (
 	HttpRequest *http_request, const char *header_value
 ) {
 
-	if (http_request->current_custom_header) {
-		(void) strncpy (
-			http_request->current_custom_header->header_value,
-			header_value,
-			HTTP_CUSTOM_HEADER_VALUE_SIZE - 1
-		);
-
-		http_request->current_custom_header->header_value_len = (unsigned int) strlen (
-			http_request->current_custom_header->header_value
+	Arena *arena = http_request_get_arena (http_request);
+	if (arena && http_request->current_custom_header) {
+		(void) http_custom_header_set_value (
+			arena, http_request->current_custom_header,
+			header_value, strlen (header_value)
 		);
 	}
 
@@ -285,13 +362,28 @@ const size_t http_request_get_custom_headers_count (
 	const HttpRequest *http_request
 ) {
 
-	size_t count = 0;
+	return http_request->n_custom_headers;
 
-	if (http_request->custom_headers) {
-		count = http_request->custom_headers->size;
+}
+
+// returns the custom header with the name, compared without case
+HttpCustomHeader *http_request_custom_header_find (
+	const HttpRequest *http_request, const char *header
+) {
+
+	HttpCustomHeader *found = NULL;
+
+	for (
+		HttpCustomHeader *custom_header = http_request->custom_headers;
+		custom_header; custom_header = custom_header->next
+	) {
+		if (!strcasecmp (custom_header->header->str, header)) {
+			found = custom_header;
+			break;
+		}
 	}
 
-	return count;
+	return found;
 
 }
 
@@ -299,22 +391,25 @@ const char *http_request_get_custom_header (
 	const HttpRequest *http_request, const char *header
 ) {
 
-	const char *result = NULL;
+	const char *value = NULL;
 
-	if (http_request->custom_headers) {
-		ListElement *le = NULL;
-		HttpCustomHeader *custom_header = NULL;
-		dlist_for_each (http_request->custom_headers, le) {
-			custom_header = (HttpCustomHeader *) le->data;
+	if (header) {
+		const HttpCustomHeader *custom_header = http_request_custom_header_find (http_request, header);
+		if (custom_header) {
+			value = custom_header->value->str;
+		}
 
-			if (!strcmp (custom_header->header, header)) {
-				result = custom_header->header_value;
-				break;
-			}
+		// a header that became part of the HTTP headers map is still found by its name
+		else {
+			const String *known = http_request_get_header (
+				http_request, http_header_type_by_string (header)
+			);
+
+			if (known) value = known->str;
 		}
 	}
 
-	return result;
+	return value;
 
 }
 
