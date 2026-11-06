@@ -3,13 +3,18 @@
 
 #include <sys/socket.h>
 
+#include "cerver/cerver.h"
+#include "cerver/client.h"
 #include "cerver/connection.h"
+#include "cerver/errors.h"
 #include "cerver/handler.h"
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
 #include "cerver/utils/log.h"
+
+static const char *receive_bad_packet_size = { "The packet is bigger than the maximum size" };
 
 const char *receive_error_to_string (
 	const ReceiveError error
@@ -128,9 +133,31 @@ static int receive_handle_sock_fd (const ReceiveHandle *receive_handle) {
 // a packet with an invalid size means that the stream is corrupted,
 // so the rest of the connection can not be parsed and it is closed:
 // recv () returns 0 and the receive loop drops it as usual
+// a packet with an invalid size is a bad packet, the cerver tells its sender why
+static void receive_handle_lost_report (ReceiveHandle *receive_handle) {
+
+	if (receive_handle->connection) receive_handle->connection->bad_packets += 1;
+
+	if (receive_handle->cerver && receive_handle->connection) {
+		CERVER_STATS_ADD (receive_handle->cerver->stats->received_packets->n_bad_packets, 1);
+
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, receive_bad_packet_size,
+			receive_handle->cerver, receive_handle->client, receive_handle->connection
+		);
+	}
+
+	else if (receive_handle->client) {
+		CERVER_STATS_ADD (receive_handle->client->stats->received_packets->n_bad_packets, 1);
+	}
+
+}
+
 static u8 receive_handle_lost (
 	ReceiveHandle *receive_handle, const size_t packet_size
 ) {
+
+	receive_handle_lost_report (receive_handle);
 
 	const int sock_fd = receive_handle_sock_fd (receive_handle);
 
@@ -206,6 +233,10 @@ static void receive_packet_set_values (
 ) {
 
 	(void) memcpy (&packet->header, header, sizeof (PacketHeader));
+
+	// the version of the sender, that packet_check () validates
+	packet->version = header->version;
+
 	packet->cerver = receive_handle->cerver;
 	packet->client = receive_handle->client;
 	packet->connection = receive_handle->connection;
