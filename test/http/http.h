@@ -22,6 +22,8 @@ extern void http_tests_origins (void);
 
 extern void http_tests_routes (void);
 
+extern void http_tests_tree (void);
+
 extern void http_tests_requests (void);
 
 extern void http_tests_responses (void);

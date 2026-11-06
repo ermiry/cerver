@@ -34,6 +34,8 @@ static void test_http_cerver_new (void) {
 
 	test_check_null_ptr (http_cerver->main_route);
 
+	test_check_null_ptr (http_cerver->tree);
+
 	test_check_null_ptr (http_cerver->default_handler);
 
 	test_check_false (http_cerver->not_found_handler);
@@ -123,6 +125,8 @@ static HttpCerver *test_http_cerver_create (void) {
 	test_check_ptr (http_cerver->routes);
 
 	test_check_null_ptr (http_cerver->main_route);
+
+	test_check_ptr (http_cerver->tree);
 
 	test_check_ptr (http_cerver->default_handler);
 
@@ -682,6 +686,7 @@ int main (int argc, char **argv) {
 	http_tests_contents ();
 	http_tests_origins ();
 	http_tests_routes ();
+	http_tests_tree ();
 	http_tests_requests ();
 	http_tests_responses ();
 	http_tests_multiparts ();
