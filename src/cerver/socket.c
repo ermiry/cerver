@@ -47,9 +47,14 @@ void socket_delete (void *socket_ptr) {
 
 		if (socket->packet_buffer) free (socket->packet_buffer);
 
-		// the mutexes live inside the socket
+		// the mutexes live inside the socket,
+		// a send that another thread started finishes before they are destroyed
 		if (socket->read_mutex) (void) pthread_mutex_destroy (socket->read_mutex);
-		if (socket->write_mutex) (void) pthread_mutex_destroy (socket->write_mutex);
+		if (socket->write_mutex) {
+			(void) pthread_mutex_lock (socket->write_mutex);
+			(void) pthread_mutex_unlock (socket->write_mutex);
+			(void) pthread_mutex_destroy (socket->write_mutex);
+		}
 
 		free (socket_ptr);
 	}
