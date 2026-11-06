@@ -91,8 +91,26 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
 
 ## 3. Estado actual (rama `http`)
 
-**2026-11-05: la Fase 2 está implementada** sobre la Beta 2.0b-57 (Fases 0 y 1 commiteadas), sin commitear y sin
-bump. El detalle está en `percepthor-backend/docs/context/cerver-phase-2-session-context.md`.
+**2026-11-05: la Fase 3 está implementada en cerver, pycerver, pypercepthor y libauth** sobre la Beta 2.0b-58 (Fase 2
+commiteada), sin commitear y sin bump. Falta la migración de gepp, balance y payloads y la validación en test. El
+detalle está en `percepthor-backend/docs/context/cerver-phase-3-session-context.md`.
+
+- **Rutas:**
+  - árbol radix (`http/tree.c`) compilado en `cerver_start`, con prioridad estático > parámetro > comodín;
+  - grupos con herencia y endpoints por `(ruta, método)`, params por nombre y validadores;
+  - middlewares `before` / `after`;
+  - la API vieja (`http_route_*`) se traduce al árbol (`http/compatibility.c`).
+- **Semántica:**
+  - `PATCH`, HEAD desde GET, OPTIONS automático, 405 opt-in;
+  - política del `/` final;
+  - `max_body` por endpoint.
+- **Rendimiento:**
+  - match sin asignaciones (~40 ns contra ~180–230 ns con las rutas reales de gepp e indicators);
+  - lookup de cabeceras por hash;
+  - cabeceras custom en la arena;
+  - respuestas con un solo `sendmsg`.
+
+**La Fase 2** (sobre la Beta 2.0b-57) quedó así:
 
 - **thpool:**
   - una cola acotada (ring buffer) con las políticas `wait` / `reject`;
@@ -424,6 +442,34 @@ listas intrusivas, arenas por petición y locks solo donde de verdad se comparte
 
 ### 4.3 Fase 3 — Capacidades HTTP, con el registro de rutas como eje
 
+**Estado (2026-11-05): implementada** en cerver, pycerver, pypercepthor y libauth, y **migrados** gepp, balance,
+payloads y tickets (§4.3.4). tickets ya corre en test con la imagen devel; falta validar en test los otros tres.
+
+**Alcance real:** el router y su semántica, más las cabeceras zero-copy y el envío con un solo `sendmsg`. Chunked,
+Date / ETag / 304, request id, métricas y WebSocket pasan a la Fase 3b (§4.3.5).
+
+**Decisiones de la planeación:**
+
+| Tema | Decisión |
+|---|---|
+| Compatibilidad | La API vieja se conserva en `http/compatibility.c`, obsoleta. Se quita en la 3.0 (§4.4) |
+| Prioridad | Estático > parámetro > comodín para todos, compat incluida. Las 11 rutas tapadas de los servicios empiezan a responder |
+| Errores de registro | Fatales en la API nueva (`cerver_start` falla); warning en compat (gana la primera) |
+| Nombres de parámetro | Viven en el endpoint, así que una posición puede tener varios nombres |
+| `/` final | Tolerante por default; `strict` y `redirect` (308) configurables; `//` responde 404 |
+| 405 | Opt-in, con un handler configurable y `http_receive_get_allow ()` |
+| OPTIONS / CORS | OPTIONS automático (204 + `Allow`); el preflight CORS por grupo / endpoint es opt-in |
+| Validadores | `objectid`, `int`, `uuid` y custom; un valor rechazado no hace match (404) |
+| Middlewares | `before` / `after` en C y en Python, por cerver, grupo y endpoint |
+| Python | Grupos + funciones y decoradores encima, en pycerver y pypercepthor |
+| Archivos | Una palabra por archivo: `tree.c`, `middleware.c`, `validator.c`, `compatibility.c` |
+
+**El diagnóstico de abajo corregido con el código de la Fase 2:**
+- los desbordes de más de 16 segmentos y de más de 8 parámetros ya estaban protegidos;
+- gepp registra 256 rutas (las ~500 son de indicators-service, en 11 top-level);
+- `http_route_set_handler` sí se usa (8 llamadas en 6 servicios);
+- las citas de línea se movieron.
+
 #### 4.3.1 Rutas: el diagnóstico
 
 Fuentes: `http/route.c`, `include/cerver/http/route.h`, y `http_receive_handle_select` /
@@ -539,15 +585,47 @@ Fuentes: `http/route.c`, `include/cerver/http/route.h`, y `http_receive_handle_s
 
 #### 4.3.3 El resto de las capacidades HTTP
 
-- **Cabeceras zero-copy:** slices `(ptr, len)` sobre un buffer por petición en lugar de una `String` con `malloc` por
-  cabecera, y lookup por hash en lugar de los 56 `strcasecmp` lineales (`http/headers.c:40`).
-- **Respuestas sin copias:** `http_response_compile` hace `malloc` y `memcpy` de las cabeceras más el body
-  (`http/response.c:643-676`). Se reemplaza por `writev`.
-- Bodies chunked de entrada (hoy los callbacks de chunk son NULL, `http/http.c:2339-2340`), y respuestas chunked y en
-  streaming.
-- Cabecera `Date`, ETag, `Last-Modified` y 304, compresión opcional.
+Lo que entró en la Fase 3:
+- **Cabeceras:**
+  - lookup por hash en lugar de los 56 `strcasecmp`;
+  - las cabeceras custom viven en la arena, sin un `malloc` de 776 B cada una;
+  - las conocidas ya estaban en la arena desde la Fase 2, una copia por cabecera, porque el buffer de `recv` se
+    reutiliza.
+- **Respuestas sin copias:** un solo `sendmsg` con la cabecera y el body (un `writev` con `MSG_NOSIGNAL`), en lugar de
+  `malloc` + `memcpy`. Las respuestas ya compiladas se envían de su buffer.
+
+#### 4.3.4 La migración de gepp, balance, payloads y tickets (hecha, 2026-11-05)
+
+- El registro de sus `service/api/*.py` pasó a grupos + `percepthor_route` (pypercepthor), y salió de `service.py`
+  a `service/api/service.py`. Los handlers, los paths y las respuestas no cambiaron; los parámetros se siguen leyendo
+  por índice y las rutas no usan validadores.
+- **La raíz de un grupo se registra al crearlo**: `percepthor_subgroup_create (api, "refris", REQUEST_METHOD_GET,
+  refris_handler, **settings)` (y lo mismo `percepthor_group_create`), sobre `http_group_root_add (group, method,
+  handler)` en C y `HttpGroup.create / subgroup / root` en pycerver. Nunca un `""` en un `percepthor_route`.
+- **Admin en grupos**: un cerver sin rutas de la API vieja cuelga `cerver/info`, `cerver/stats`,
+  `cerver/stats/filesystems` y `cerver/stats/workers` del primer grupo top-level (`http_cerver_admin_group_init`),
+  con el auth de admin y no el del grupo; `http_cerver_init_admin_routes` es idempotente (`admin_routes_ready`) y
+  `http_cerver_routes_compile` también la llama.
+- **El dump del árbol**: `http_cerver_routes_generate_json` / `http_cerver_routes_json_delete` (pycerver:
+  `http_cerver_routes_json`), más los bindings de `http_route_auth_type_to_string` y `http_route_modifier_to_string`.
+- **La equivalencia la prueba cada servicio**: `tests/routes_expected.py` (método, path, handler, auth/acción,
+  multipart) se generó del registro viejo y se cruzó con el árbol que compiló la compat; `tests/unit/test_api_routes.py`
+  lo compara contra el árbol real. Verificado con tres mutaciones (un path, un `public`, un duplicado).
+- Las dos rutas duplicadas de payloads pasaron a `:id/status/update/internal` y `dynamic/:id/status/update/internal`,
+  como decían sus comentarios.
+- Las suites se construyen con `PERCEPTHOR_IMAGE=itpercepthor/percepthor:devel ./tests/build.sh` (ARG en
+  `tests/Dockerfile`) hasta publicar pypercepthor 0.7.0 y reconstruir `percepthor:latest`.
+- Los otros 41 servicios corren con la capa de compatibilidad.
+- Contexto completo: `percepthor-backend/docs/context/cerver-services-migration-session-context.md`.
+
+#### 4.3.5 Fase 3b — Capacidades HTTP restantes
+
+- Bodies chunked de entrada (los callbacks de chunk siguen en NULL), y respuestas chunked y en streaming.
+- Cabecera `Date`, ETag, `Last-Modified` y 304, compresión opcional. Las cabeceras de esos conditionals ya están en el
+  mapa.
 - Request id (que se propaga a los logs) y métricas exportables (formato Prometheus) además de las del admin.
-- WebSocket: el modifier existe, pero su handler está vacío (`http/http.c:2509-2511`).
+- WebSocket: las rutas con ese modifier responden 501 hasta entonces.
+- Las cabeceras CORS automáticas en las respuestas (hoy solo el preflight es automático).
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
@@ -566,6 +644,14 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
 - `writev` y `sendfile` no bloqueantes. Respuestas diferidas desde otros hilos, con un ciclo de vida seguro.
 - TLS en proceso (OpenSSL ya se enlaza, hoy solo para JWT) y, más adelante, HTTP/2.
 - **pycerver 1.0** alineado con la API 3.0.
+- **La migración completa, sin retrocompatibilidad:**
+  - los 47 servicios registran sus rutas con grupos y endpoints;
+  - se quitan `http/compatibility.c` y la API `http_route_*` vieja (`HttpRoute`, `http_cerver_route_register`,
+    `http_route_child_add`, los params solo por índice);
+  - pycerver y pypercepthor quitan sus bindings viejos (`percepthor_*_route_create`).
+
+  En la 3.0 también se puede rediseñar la firma del handler (un contexto único en lugar de `(HttpReceive *,
+  HttpRequest *)`), porque todos los servicios se migran a la vez.
 
 ### 4.5 Fase 5 — En cada fase
 
@@ -584,7 +670,8 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
 | 1 | Fase 0 | sin tests confiables, ni sanitizers, ni la cadena devel, ninguna otra fase se puede validar |
 | 2 | Fase 1 (body y seguridad) | es el bug que todos los servicios pagan con el buffer, y hay crashes y escrituras remotas |
 | 3 | Fase 2 (thpool, apagado, collections) | balance y los handlers síncronos agotan el pool; el rolling deploy necesita drenado |
-| 4 | Fase 3 (rutas y HTTP) | las ~500 rutas de gepp en match lineal, la trampa del orden, 405 / `PATCH` / `HEAD` |
+| 4 | Fase 3 (rutas y HTTP) | las ~500 rutas de indicators y las 256 de gepp en match lineal, la trampa del orden, 405 / `PATCH` / `HEAD` |
+| 4b | Fase 3b (chunked, ETag, request id, métricas, WebSocket) | lo que completa HTTP/1.1 antes del event loop |
 | 5 | Fase 4 (event loop) | el techo de rendimiento, cuando lo anterior esté estable |
 
 ---
@@ -605,13 +692,12 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
 - **`benchmarks/`:** `http-parser.c` (el parser con callbacks vacíos), `base64.c` y `web.c` (libcurl contra
   `localhost.com:8080`).
 
-### Lo que no está cubierto
+### Estado (la suite de tests)
 
-- El parseo HTTP de punta a punta: `test/http/http.c` solo cubre `http_receive_new` / `create`.
-- El match de rutas, el auth, los estáticos, multipart con bodies reales, `send` y `sendfile`.
-- Poll y accept, el pool de sockets, `pool`, `queue`, las rotaciones dobles y los borrados del AVL, las colisiones de
-  htab, las inserciones en medio de una dlist y los invariantes de sort y merge.
-- **Ningún test de concurrencia:** `dlist_test_remove_threads` está comentado ("segfault some times").
+Las Fases 0–3 y la suite de tests cubrieron casi todo lo que esta sección listaba como hueco: el parseo HTTP de
+punta a punta, el árbol de rutas, multipart, el cerver TCP en proceso, el ciclo de vida del cliente, los sanitizers en
+la integración, el fuzzing, la regresión de rendimiento y nginx delante. El detalle, lo que quedó pendiente y los bugs
+que encontró están en [`test/roadmap.md`](test/roadmap.md).
 
 ### Tests nuevos
 
