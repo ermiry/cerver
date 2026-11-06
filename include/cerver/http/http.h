@@ -13,10 +13,13 @@
 
 #include "cerver/http/headers.h"
 #include "cerver/http/http_parser.h"
+#include "cerver/http/middleware.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/origin.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
+#include "cerver/http/tree.h"
+#include "cerver/http/validator.h"
 
 #include "cerver/http/jwt/alg.h"
 
@@ -114,10 +117,14 @@ struct _HttpCerver {
 	// paths to serve static files
 	DoubleList *static_paths;
 
-	// list of top level routes
+	// list of top level routes of the first routes API,
+	// they are translated to endpoints of the routes tree when the cerver starts
 	DoubleList *routes;
 
 	const HttpRoute *main_route;
+
+	// the groups, the endpoints and the compiled routes tree
+	HttpTree *tree;
 
 	// catch all route (/*)
 	void (*default_handler)(
@@ -180,6 +187,7 @@ struct _HttpCerver {
 
 	// admins
 	bool enable_admin_routes;
+	bool admin_routes_ready;		// the admin routes were added to the routes
 	bool enable_admin_info_route;
 	bool enable_admin_head_handlers;
 	bool enable_admin_options_handlers;
@@ -322,6 +330,79 @@ CERVER_EXPORT void http_cerver_set_not_found_route (
 		const HttpRequest *request
 	)
 );
+
+// answers with 405 and the Allow header a request whose path exists
+// but has no handler for its method, instead of the catch all handler
+// the default value is false
+CERVER_EXPORT void http_cerver_set_method_not_allowed (
+	HttpCerver *http_cerver, const bool method_not_allowed
+);
+
+// sets a handler that sends the 405 response (with any body),
+// it gets the value of the Allow header with http_receive_get_allow ()
+CERVER_EXPORT void http_cerver_set_method_not_allowed_handler (
+	HttpCerver *http_cerver, const HttpHandler handler
+);
+
+// sets how a path with a trailing slash is matched
+// the default value is HTTP_TRAILING_SLASH_TOLERANT
+CERVER_EXPORT void http_cerver_set_trailing_slash (
+	HttpCerver *http_cerver, const HttpTrailingSlash trailing_slash
+);
+
+// sets the most params of a route, a route with more is a registration error
+// the default value is HTTP_TREE_DEFAULT_MAX_PARAMS
+CERVER_EXPORT void http_cerver_set_max_route_params (
+	HttpCerver *http_cerver, const unsigned int max_params
+);
+
+// registers a validator that a route param uses with ":name<validator>"
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_register_param_validator (
+	HttpCerver *http_cerver, const char *name, const HttpParamValidate validate
+);
+
+// adds a middleware that runs before the handler of every endpoint
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_add_before (
+	HttpCerver *http_cerver, const HttpBeforeMiddleware middleware
+);
+
+// adds a middleware that runs after the handler of every endpoint
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_add_after (
+	HttpCerver *http_cerver, const HttpAfterMiddleware middleware
+);
+
+// returns the first routes registration error, NULL if there is none
+CERVER_EXPORT const char *http_cerver_routes_error (
+	const HttpCerver *http_cerver
+);
+
+// returns the number of routes registration errors
+CERVER_EXPORT size_t http_cerver_routes_errors_count (
+	const HttpCerver *http_cerver
+);
+
+// builds the routes tree with the admin routes, it is done when the cerver starts
+// returns 0 on success, 1 on a registration error
+CERVER_EXPORT u8 http_cerver_routes_compile (
+	HttpCerver *http_cerver
+);
+
+// prints the compiled routes tree
+CERVER_EXPORT void http_cerver_routes_print (
+	const HttpCerver *http_cerver
+);
+
+// the compiled endpoints as a json string, NULL if the routes are not compiled
+// {"n_endpoints": N, "endpoints": [{"method", "path", "auth", "modifier", "compatibility"}]}
+// it is deleted with http_cerver_routes_json_delete ()
+CERVER_EXPORT char *http_cerver_routes_generate_json (
+	const HttpCerver *http_cerver
+);
+
+CERVER_EXPORT void http_cerver_routes_json_delete (char *json);
 
 #pragma endregion
 
@@ -708,6 +789,20 @@ typedef enum HttpReceiveType {
 
 } HttpReceiveType;
 
+// how a request that matched a path of the routes tree is answered
+typedef enum HttpReceiveDispatch {
+
+	HTTP_RECEIVE_DISPATCH_NONE					= 0,
+	HTTP_RECEIVE_DISPATCH_ENDPOINT				= 1,
+	HTTP_RECEIVE_DISPATCH_OPTIONS				= 2,
+	HTTP_RECEIVE_DISPATCH_METHOD_NOT_ALLOWED	= 3,
+	HTTP_RECEIVE_DISPATCH_CATCH_ALL				= 4,
+	HTTP_RECEIVE_DISPATCH_REDIRECT				= 5,
+
+	HTTP_RECEIVE_DISPATCH_MAX					= 6
+
+} HttpReceiveDispatch;
+
 // the token that the parser is building between callbacks,
 // a token can arrive in many pieces when it is split between two recv ()
 typedef enum HttpReceiveToken {
@@ -747,8 +842,20 @@ struct _HttpReceive {
 
 	// found
 	HttpReceiveType type;
+	HttpReceiveDispatch dispatch;
+	const HttpRouteNode *node;
+	HttpEndpoint *endpoint;
+
+	// the route of the first routes API of the endpoint, NULL for the new endpoints
 	HttpRoute *route;
+
 	const char *served_file;
+
+	// a HEAD request handled by the GET handler, the responses are sent without their body
+	bool head;
+
+	// the body limit of the request, the endpoint's one or the cerver's
+	size_t max_body_size;
 
 	http_status status;
 	size_t sent;
@@ -825,6 +932,34 @@ CERVER_EXPORT const int http_receive_get_sock_fd (
 );
 
 CERVER_EXPORT const HttpCerver *http_receive_get_cerver (
+	const HttpReceive *http_receive
+);
+
+// the endpoint that handles the request, NULL if no endpoint matched
+CERVER_EXPORT const HttpEndpoint *http_receive_get_endpoint (
+	const HttpReceive *http_receive
+);
+
+// the custom data of the endpoint that handles the request
+// (its own, the one that it inherits from its groups or the one of its first API route)
+CERVER_EXPORT const void *http_receive_get_route_custom_data (
+	const HttpReceive *http_receive
+);
+
+// the custom data of the HTTP cerver that received the request
+CERVER_EXPORT const void *http_receive_get_cerver_custom_data (
+	const HttpReceive *http_receive
+);
+
+// true if the request is a HEAD handled by the GET handler,
+// its responses are sent without their body
+CERVER_EXPORT bool http_receive_is_head (
+	const HttpReceive *http_receive
+);
+
+// the methods that the request's path accepts (the value of the Allow header),
+// NULL if the path did not match any route
+CERVER_EXPORT const char *http_receive_get_allow (
 	const HttpReceive *http_receive
 );
 
