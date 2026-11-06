@@ -34,19 +34,22 @@ static Cerver *api_cerver = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 
-	if (api_cerver) {
-		cerver_stats_print (api_cerver, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (api_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (api_cerver) (void) cerver_shutdown (api_cerver);
+
+}
+
+// the signals only stop the cerver, it is released when cerver_start () returns
+static void finish (void) {
+
+	cerver_stats_print (api_cerver, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) api_cerver->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (api_cerver);
 
 	users_end ();
-
-	exit (0);
 
 }
 
@@ -142,7 +145,11 @@ int main (int argc, char **argv) {
 		// add a catch all route
 		http_cerver_set_catch_all_route (http_cerver, catch_all_handler);
 
-		if (cerver_start (api_cerver)) {
+		if (!cerver_start (api_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				api_cerver->info->name

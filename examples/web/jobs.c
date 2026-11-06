@@ -27,21 +27,24 @@ static JobQueue *job_queue = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 
-	if (web_cerver) {
-		cerver_stats_print (web_cerver, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (web_cerver);
-	}
+	(void) dummy;
 
-	job_queue_stop (job_queue);
-	(void) sleep (1);
+	if (web_cerver) (void) cerver_shutdown (web_cerver);
+
+}
+
+// the signals only stop the cerver, it is released when cerver_start () returns
+static void finish (void) {
+
+	cerver_stats_print (web_cerver, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (web_cerver);
+
+	// stopping the queue waits for its thread
+	(void) job_queue_stop (job_queue);
 	job_queue_delete (job_queue);
-
-	cerver_end ();
-
-	exit (0);
 
 }
 
@@ -162,7 +165,11 @@ int main (int argc, char **argv) {
 		job_queue_set_handler (job_queue, custom_handler_method);
 		job_queue_start (job_queue);
 
-		if (cerver_start (web_cerver)) {
+		if (!cerver_start (web_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				web_cerver->info->name
