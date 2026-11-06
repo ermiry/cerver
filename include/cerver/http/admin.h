@@ -15,6 +15,7 @@ extern "C" {
 #endif
 
 struct _HttpCerver;
+struct _HttpGroup;
 struct _HttpRoute;
 
 typedef struct HttpAdminFileSystemStats {
@@ -53,6 +54,13 @@ CERVER_PRIVATE char *http_cerver_admin_generate_workers_json (
 CERVER_PRIVATE u8 http_cerver_admin_init (
 	const struct _HttpCerver *http_cerver,
 	struct _HttpRoute *top_level_route
+);
+
+// the admin routes as endpoints of a group of the routes tree
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_cerver_admin_group_init (
+	const struct _HttpCerver *http_cerver,
+	struct _HttpGroup *group
 );
 
 #ifdef __cplusplus

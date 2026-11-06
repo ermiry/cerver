@@ -13,6 +13,7 @@
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
+#include "cerver/http/tree.h"
 
 #include "cerver/http/json/json.h"
 #include "cerver/http/json/value.h"
@@ -151,8 +152,14 @@ static void http_cerver_admin_handler_general_stats (
 }
 
 static json_t *http_cerver_admin_handler_single_route_handler_stats (
-	const RequestMethod method, const HttpRouteStats *stats
+	const RequestMethod method, const HttpRouteStats *route_stats
 ) {
+
+	// the stats are updated with atomic operations while the requests are handled
+	HttpRouteStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteStats));
+	http_route_stats_snapshot (route_stats, &snapshot);
+	const HttpRouteStats *stats = &snapshot;
 
 	json_t *handler_object = json_object ();
 
@@ -205,8 +212,13 @@ static json_t *http_cerver_admin_handler_single_route_handler_stats (
 }
 
 static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
-	const HttpRouteFileStats *file_stats
+	const HttpRouteFileStats *route_file_stats
 ) {
+
+	HttpRouteFileStats snapshot;
+	(void) memset (&snapshot, 0, sizeof (HttpRouteFileStats));
+	http_route_file_stats_snapshot (route_file_stats, &snapshot);
+	const HttpRouteFileStats *file_stats = &snapshot;
 
 	json_t *files_object = json_object ();
 
@@ -215,7 +227,7 @@ static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
 	);
 
 	(void) json_object_set_new (
-		files_object, "min_n_files", json_integer ((json_int_t) file_stats->first ? 0 : file_stats->min_n_files)
+		files_object, "min_n_files", json_integer ((json_int_t) file_stats->min_n_files)
 	);
 
 	(void) json_object_set_new (
@@ -227,7 +239,7 @@ static json_t *http_cerver_admin_handler_single_route_handler_files_stats (
 	);
 
 	(void) json_object_set_new (
-		files_object, "min_file_size", json_integer ((json_int_t) file_stats->first ? 0 : file_stats->min_file_size)
+		files_object, "min_file_size", json_integer ((json_int_t) file_stats->min_file_size)
 	);
 
 	(void) json_object_set_new (
@@ -251,7 +263,7 @@ static json_t *http_cerver_admin_handler_single_route_handlers_stats (
 	json_t *handler_object = NULL;
 	RequestMethod method = (RequestMethod) REQUEST_METHOD_UNDEFINED;
 	for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-		if (route->handlers[i]) {
+		if (route->handlers[i] && route->stats[i]) {
 			method = (RequestMethod) i;
 			handler_object = http_cerver_admin_handler_single_route_handler_stats (
 				method, route->stats[i]
@@ -371,24 +383,82 @@ static void http_cerver_admin_handler_routes_stats (
 
 }
 
+static json_t *http_cerver_admin_handler_endpoint_stats (
+	const HttpEndpoint *endpoint
+) {
+
+	json_t *endpoint_object = http_cerver_admin_handler_single_route_handler_stats (
+		endpoint->method, endpoint->stats
+	);
+
+	(void) json_object_set_new (
+		endpoint_object, "route", json_string (endpoint->path->str)
+	);
+
+	if (endpoint->resolved.modifier == HTTP_ROUTE_MODIFIER_MULTI_PART) {
+		(void) json_object_set_new (
+			endpoint_object, "files",
+			http_cerver_admin_handler_single_route_handler_files_stats (endpoint->file_stats)
+		);
+	}
+
+	return endpoint_object;
+
+}
+
+// the endpoints of a group and of its subgroups
+static void http_cerver_admin_handler_group_stats (
+	const HttpGroup *group, json_t *endpoints_array
+) {
+
+	for (ListElement *le = dlist_start (group->endpoints); le; le = le->next) {
+		(void) json_array_append_new (
+			endpoints_array,
+			http_cerver_admin_handler_endpoint_stats ((const HttpEndpoint *) le->data)
+		);
+	}
+
+	for (ListElement *le = dlist_start (group->groups); le; le = le->next) {
+		http_cerver_admin_handler_group_stats ((const HttpGroup *) le->data, endpoints_array);
+	}
+
+}
+
+// the endpoints that were registered with groups
+static void http_cerver_admin_handler_endpoints_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	json_t *endpoints_array = json_array ();
+
+	for (ListElement *le = dlist_start (http_cerver->tree->groups); le; le = le->next) {
+		http_cerver_admin_handler_group_stats ((const HttpGroup *) le->data, endpoints_array);
+	}
+
+	(void) json_object_set_new (
+		json, "endpoints", endpoints_array
+	);
+
+}
+
 static void http_cerver_admin_handler_requests_stats (
 	const HttpCerver *http_cerver, json_t *json
 ) {
 
 	(void) json_object_set_new (
-		json, "n_incompleted_requests", json_integer ((json_int_t) http_cerver->n_incompleted_requests)
+		json, "n_incompleted_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_incompleted_requests))
 	);
 
 	(void) json_object_set_new (
-		json, "n_unhandled_requests", json_integer ((json_int_t) http_cerver->n_unhandled_requests)
+		json, "n_unhandled_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_unhandled_requests))
 	);
 
 	(void) json_object_set_new (
-		json, "n_catch_all_requests", json_integer ((json_int_t) http_cerver->n_catch_all_requests)
+		json, "n_catch_all_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_catch_all_requests))
 	);
 
 	(void) json_object_set_new (
-		json, "n_failed_auth_requests", json_integer ((json_int_t) http_cerver->n_failed_auth_requests)
+		json, "n_failed_auth_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_failed_auth_requests))
 	);
 
 }
@@ -404,6 +474,8 @@ char *http_cerver_admin_generate_routes_stats_json (
 		http_cerver_admin_handler_general_stats (http_cerver, json);
 
 		http_cerver_admin_handler_routes_stats (http_cerver, json);
+
+		http_cerver_admin_handler_endpoints_stats (http_cerver, json);
 
 		http_cerver_admin_handler_requests_stats (http_cerver, json);
 
@@ -1137,6 +1209,124 @@ u8 http_cerver_admin_init (
 		// GET [top level]/cerver/stats/workers
 		http_cerver_admin_set_workers_route (
 			http_cerver, top_level_route
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// the same auth of the admin routes of the first routes API,
+// without its own auth an admin endpoint would inherit the one of its group
+static void http_cerver_admin_endpoint_set_auth (
+	const HttpCerver *http_cerver, HttpEndpoint *endpoint
+) {
+
+	if (http_cerver->enable_admin_routes_auth) {
+		switch (http_cerver->admin_auth_type) {
+			case HTTP_ROUTE_AUTH_TYPE_BEARER: {
+				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_BEARER);
+				http_endpoint_set_decode_data (
+					endpoint,
+					http_cerver->admin_decode_data,
+					http_cerver->admin_delete_decoded_data
+				);
+			} break;
+
+			case HTTP_ROUTE_AUTH_TYPE_CUSTOM: {
+				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
+				http_endpoint_set_authentication_handler (
+					endpoint, http_cerver->admin_auth_handler
+				);
+			} break;
+
+			default: {
+				http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
+			} break;
+		}
+	}
+
+	else {
+		http_endpoint_set_auth (endpoint, HTTP_ROUTE_AUTH_TYPE_NONE);
+	}
+
+	// the cerver owns the admin custom data
+	http_endpoint_set_custom_data (
+		endpoint, http_cerver->admin_routes_custom_data, NULL
+	);
+
+}
+
+static void http_cerver_admin_group_endpoint (
+	const HttpCerver *http_cerver, HttpGroup *group,
+	const RequestMethod method, const char *path, const HttpHandler handler
+) {
+
+	HttpEndpoint *endpoint = http_group_route_add (group, method, path, handler);
+	if (endpoint) {
+		http_cerver_admin_endpoint_set_auth (http_cerver, endpoint);
+	}
+
+}
+
+// the GET endpoint of the path, with its HEAD and OPTIONS if they are enabled
+static void http_cerver_admin_group_route (
+	const HttpCerver *http_cerver, HttpGroup *group, const char *path,
+	const HttpHandler handler, const HttpHandler head_handler
+) {
+
+	http_cerver_admin_group_endpoint (
+		http_cerver, group, REQUEST_METHOD_GET, path, handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_cerver_admin_group_endpoint (
+			http_cerver, group, REQUEST_METHOD_HEAD, path, head_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_cerver_admin_group_endpoint (
+			http_cerver, group, REQUEST_METHOD_OPTIONS, path, http_cerver_admin_options_handler
+		);
+	}
+
+}
+
+u8 http_cerver_admin_group_init (
+	const HttpCerver *http_cerver,
+	HttpGroup *group
+) {
+
+	u8 retval = 1;
+
+	if (group) {
+		// GET [group]/cerver/info
+		if (http_cerver->enable_admin_info_route) {
+			http_cerver_admin_group_route (
+				http_cerver, group, "cerver/info",
+				http_cerver_admin_info_handler, http_cerver_admin_info_head_handler
+			);
+		}
+
+		// GET [group]/cerver/stats
+		http_cerver_admin_group_route (
+			http_cerver, group, "cerver/stats",
+			http_cerver_admin_stats_handler, http_cerver_admin_stats_head_handler
+		);
+
+		// GET [group]/cerver/stats/filesystems
+		http_cerver_admin_group_route (
+			http_cerver, group, "cerver/stats/filesystems",
+			http_cerver_admin_file_systems_handler, http_cerver_admin_file_systems_head_handler
+		);
+
+		// GET [group]/cerver/stats/workers
+		http_cerver_admin_group_route (
+			http_cerver, group, "cerver/stats/workers",
+			http_cerver_admin_workers_handler, http_cerver_admin_workers_head_handler
 		);
 
 		retval = 0;
