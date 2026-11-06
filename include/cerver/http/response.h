@@ -30,6 +30,9 @@
 #define HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE	256
 #define HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE	256
 
+// a response is sent as its header and its data, in a single system call
+#define HTTP_RESPONSE_PARTS						2
+
 #define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
 
