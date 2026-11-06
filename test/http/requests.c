@@ -5,6 +5,7 @@
 #include <cerver/version.h>
 
 #include <cerver/http/http.h>
+#include <cerver/http/method.h>
 #include <cerver/http/request.h>
 
 #include <cerver/http/json/json.h>
@@ -29,15 +30,18 @@ static HttpRequest *test_http_request_new (void) {
 	test_check_null_ptr (request->query_params);
 
 	test_check_unsigned_eq (request->n_params, 0, NULL);
-	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
-		test_check_null_ptr (request->params[i]);
+	test_check_null_ptr (request->params);
+	test_check_null_ptr (request->params_names);
 
 	test_check_unsigned_eq (request->next_header, HTTP_HEADER_UNDEFINED, NULL);
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (request->headers[i]);
 
+	test_check_unsigned_eq (request->n_custom_headers, 0, NULL);
 	test_check_null_ptr (request->current_custom_header);
 	test_check_null_ptr (request->custom_headers);
+
+	test_check_null_ptr (request->own_arena);
 
 	test_check_null_ptr (request->decoded_data);
 	test_check_null_ptr (request->delete_decoded_data);
@@ -77,8 +81,14 @@ static void test_http_request_create (void) {
 	test_check_null_ptr (http_request_get_query_params (request));
 
 	test_check_unsigned_eq (http_request_get_n_params (request), 0, NULL);
-	for (u8 i = 0; i < REQUEST_PARAMS_SIZE; i++)
+	for (u8 i = 0; i < HTTP_TREE_DEFAULT_MAX_PARAMS; i++)
 		test_check_null_ptr (http_request_get_param_at_idx (request, i));
+
+	test_check_null_ptr (http_request_get_param (request, "id"));
+	test_check_null_ptr (http_request_get_param_name_at_idx (request, 0));
+
+	// a header outside the table is never read
+	test_check_null_ptr (http_request_get_header (request, (const http_header) HTTP_HEADERS_SIZE));
 
 	for (u8 i = 0; i < HTTP_HEADERS_SIZE; i++)
 		test_check_null_ptr (http_request_get_header (request, (const http_header) i));
@@ -177,7 +187,93 @@ static void test_http_request_get_custom_header (void) {
 		http_request_get_custom_header (request, another_header), another_header_value, NULL
 	);
 
+	// the name is compared without case, like the parser does when it joins repeated headers
+	test_check_str_eq (
+		http_request_get_custom_header (request, "custom-header"), custom_header_value, NULL
+	);
+
+	test_check_str_eq (
+		http_request_get_custom_header (request, "ANOTHER-HEADER"), another_header_value, NULL
+	);
+
 	http_request_delete (request);
+
+}
+
+// a header that became part of the HTTP headers map is still found by its name
+static void test_http_request_get_custom_header_known (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	request->headers[HTTP_HEADER_REQUEST_ID] = str_new ("request-id");
+	request->headers[HTTP_HEADER_FORWARDED_FOR] = str_new ("10.0.0.1");
+
+	test_check_str_eq (http_request_get_custom_header (request, "X-Request-Id"), "request-id", NULL);
+	test_check_str_eq (http_request_get_custom_header (request, "x-forwarded-for"), "10.0.0.1", NULL);
+	test_check_null_ptr (http_request_get_custom_header (request, "Transfer-Encoding"));
+
+	http_request_delete (request);
+
+}
+
+// a param is a slice of the url, percent-decoded when it is requested, and found by its name
+static void test_http_request_params (void) {
+
+	HttpRequest *request = test_http_request_new ();
+
+	static const char *url = "/users/john%20doe/items/a+b%2Fc/%zz";
+	static char *names[] = { (char *) "user", (char *) "item", NULL };
+
+	HttpRequestParam params[3];
+	params[0].value = url + 7;
+	params[0].len = 10;
+	params[0].decoded = NULL;
+	params[1].value = url + 24;
+	params[1].len = 7;
+	params[1].decoded = NULL;
+	params[2].value = url + 32;
+	params[2].len = 3;
+	params[2].decoded = NULL;
+
+	request->params = params;
+	request->n_params = 3;
+	request->params_names = names;
+
+	test_check_str_eq (http_request_get_param_at_idx (request, 0)->str, "john doe", NULL);
+	test_check_str_eq (http_request_get_param (request, "item")->str, "a+b/c", NULL);
+
+	// an invalid escape is kept as it is
+	test_check_str_eq (http_request_get_param_at_idx (request, 2)->str, "%zz", NULL);
+
+	// the decoded value is created once
+	test_check_ptr_eq (http_request_get_param_at_idx (request, 0), http_request_get_param (request, "user"));
+
+	test_check_null_ptr (http_request_get_param (request, "missing"));
+	test_check_null_ptr (http_request_get_param_at_idx (request, 3));
+	test_check_str_eq (http_request_get_param_name_at_idx (request, 1), "item", NULL);
+	test_check_null_ptr (http_request_get_param_name_at_idx (request, 2));
+
+	// the request does not own the params array
+	request->params = NULL;
+	request->n_params = 0;
+
+	http_request_delete (request);
+
+}
+
+// the methods have the values of the HTTP parser, PATCH is 28
+static void test_http_request_methods (void) {
+
+	test_check_str_eq (http_request_method_str (REQUEST_METHOD_PATCH), "PATCH", NULL);
+	test_check_str_eq (http_request_method_str (REQUEST_METHOD_GET), "GET", NULL);
+	test_check_str_eq (http_request_method_str ((RequestMethod) 8), "Undefined", NULL);
+
+	test_check_true (http_request_method_is_valid (REQUEST_METHOD_PATCH));
+	test_check_true (http_request_method_is_valid (REQUEST_METHOD_TRACE));
+	test_check_false (http_request_method_is_valid ((RequestMethod) 8));
+	test_check_false (http_request_method_is_valid ((RequestMethod) REQUEST_METHOD_UNDEFINED));
+
+	test_check_int_eq ((int) REQUEST_METHOD_PATCH, (int) HTTP_METHOD_PATCH, NULL);
 
 }
 
@@ -303,6 +399,9 @@ void http_tests_requests (void) {
 	test_http_request_set_current_custom_header_value ();
 	test_http_request_get_custom_headers_count ();
 	test_http_request_get_custom_header ();
+	test_http_request_get_custom_header_known ();
+	test_http_request_params ();
+	test_http_request_methods ();
 
 	test_http_request_set_decoded_data ();
 	test_http_request_set_default_delete_decoded_data ();
