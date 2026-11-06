@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#include <sys/socket.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -119,6 +121,8 @@ Connection *connection_new (void) {
 		connection->max_sleep = CONNECTION_DEFAULT_MAX_SLEEP;
 		connection->active = false;
 		connection->updating = false;
+		connection->ending = false;
+		connection->end_deferred = false;
 
 		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
@@ -601,6 +605,20 @@ void connection_drop (Cerver *cerver, Connection *connection) {
 
 }
 
+// only shuts down the socket, the fd is closed by the receive loop when it removes the connection,
+// so it can not be reused while the handler or the loop still use it
+u8 connection_drop_request (Connection *connection) {
+
+	u8 retval = 1;
+
+	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
+		retval = (u8) (shutdown (connection->socket->sock_fd, SHUT_RDWR) != 0);
+	}
+
+	return retval;
+
+}
+
 // gets the connection from the on hold connections map in cerver
 Connection *connection_get_by_sock_fd_from_on_hold (
 	Cerver *cerver, const i32 sock_fd
@@ -871,11 +889,56 @@ static inline void connection_custom_receive_data_delete (void *custom_data_ptr)
 
 #pragma GCC diagnostic pop
 
+// the connection that the current thread updates, NULL in any other thread
+static __thread const Connection *connection_update_current = NULL;
+
+// returns true if the current thread is the update thread of the connection,
+// like a packet handler with direct handle that runs in it
+bool connection_is_update_thread (const Connection *connection) {
+
+	return connection && (connection_update_current == connection);
+
+}
+
+// wakes up the update thread of the connection that is blocked in recv (),
+// the socket is shut down but it is only closed by connection_end (),
+// so its fd can not be reused while the update thread uses it
+// the connection's mutex must be held
+void connection_wake_update (Connection *connection) {
+
+	if (connection->socket && (connection->socket->sock_fd >= 0)) {
+		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+	}
+
+}
+
+// the receive loop has ended: the thread that waits for it is woken up,
+// and a deferred end (the cerver closed the connection) is completed here
+static void connection_update_end (Client *client, Connection *connection) {
+
+	(void) pthread_mutex_lock (connection->mutex);
+	connection->updating = false;
+	const bool deferred = connection->end_deferred;
+	(void) pthread_cond_broadcast (connection->cond);
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	// any other thread that ends the connection waits for updating, so it must not be used after it,
+	// unless this thread owns its end
+	if (deferred) client_connection_end_deferred (client, connection);
+
+	connection_update_current = NULL;
+
+	client_update_thread_ended (client);
+
+}
+
 // starts listening and receiving data in the connection sock
 void *connection_update (void *client_connection_ptr) {
 
 	if (client_connection_ptr) {
 		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+
+		connection_update_current = cc->connection;
 
 		char client_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
 		char connection_name[THREAD_NAME_BUFFER_SIZE] = { 0 };
@@ -913,8 +976,6 @@ void *connection_update (void *client_connection_ptr) {
 				cc->connection->update_timeout
 			);
 
-			cc->connection->updating = true;
-
 			// check if we have a custom receive method
 			if (cc->connection->custom_receive) {
 				ConnectionCustomReceiveData custom_data = {
@@ -924,7 +985,7 @@ void *connection_update (void *client_connection_ptr) {
 				};
 
 				while (
-					cc->client->running
+					client_is_running (cc->client)
 					&& cc->connection->active
 					&& !cc->connection->custom_receive (
 						&custom_data,
@@ -937,7 +998,7 @@ void *connection_update (void *client_connection_ptr) {
 			// that handles cerver type packages
 			else {
 				while (
-					cc->client->running
+					client_is_running (cc->client)
 					&& cc->connection->active
 					&& !client_receive_internal (
 						cc->client, cc->connection,
@@ -958,13 +1019,12 @@ void *connection_update (void *client_connection_ptr) {
 			);
 		}
 
-		// signal waiting thread
-		(void) pthread_mutex_lock (cc->connection->mutex);
-		cc->connection->updating = false;
-		(void) pthread_cond_signal (cc->connection->cond);
-		(void) pthread_mutex_unlock (cc->connection->mutex);
+		Client *client = cc->client;
+		Connection *connection = cc->connection;
 
 		client_connection_aux_delete (cc);
+
+		connection_update_end (client, connection);
 
 		#ifdef CONNECTION_DEBUG
 		cerver_log (
