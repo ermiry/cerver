@@ -71,6 +71,9 @@
 #define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
 #define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
 #define CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE	4096
+#define CERVER_DEFAULT_ON_HOLD_SECONDS				16
+
+#define CERVER_DEFAULT_MAX_BAD_PACKETS				16
 
 #define CERVER_DEFAULT_USE_SESSIONS					false
 
@@ -250,6 +253,7 @@ CERVER_PUBLIC u8 cerver_info_send_info_packet (
 // the stats are updated from many threads at the same time
 #define CERVER_STATS_ADD(field, value) ((void) __atomic_add_fetch (&(field), (value), __ATOMIC_RELAXED))
 #define CERVER_STATS_SUBTRACT(field, value) ((void) __atomic_sub_fetch (&(field), (value), __ATOMIC_RELAXED))
+#define CERVER_STATS_GET(field) (__atomic_load_n (&(field), __ATOMIC_RELAXED))
 
 typedef struct CerverStats {
 
@@ -381,6 +385,7 @@ struct _Cerver {
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
 	size_t on_hold_receive_buffer_size;
+	u32 on_hold_timeout;                // secs to authenticate before being dropped, 0 disables it
 
 	// allow the clients to use sessions (have multiple connections)
 	bool use_sessions;
@@ -416,6 +421,7 @@ struct _Cerver {
 	// pthread_cond_t *handlers_wait;
 
 	bool check_packets;                     // enable / disbale packet checking
+	u8 max_bad_packets;                     // bad packets of a connection before it is dropped, 0 disables it
 
 	pthread_t update_thread_id;
 	Action update;                          // method to be executed every tick
@@ -611,6 +617,13 @@ CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
 	Cerver *cerver, u32 on_hold_poll_timeout
 );
 
+// sets the secs that a new connection has to authenticate,
+// after them it is dropped (CERVER_EVENT_ON_HOLD_DROPPED), 0 disables it
+// it is checked every on hold poll timeout, the default is CERVER_DEFAULT_ON_HOLD_SECONDS
+CERVER_EXPORT void cerver_set_on_hold_timeout (
+	Cerver *cerver, u32 on_hold_timeout
+);
+
 // sets the max number of bad packets to tolerate from an ON HOLD connection before being dropped,
 // the default is DEFAULT_ON_HOLD_MAX_BAD_PACKETS
 // a bad packet is anyone which can't be handle by the cerver because there is no handle,
@@ -636,6 +649,7 @@ CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
 // or you can use it to allow different connections from different devices using a token
 // you can pass your own session generator method that must take a SessionData as the argument
 // and must return a char * representing the session id (token) for the client
+// allocated with malloc (), cerver copies it and releases it with free ()
 // or use the default one
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_sessions (
@@ -696,11 +710,19 @@ CERVER_EXPORT int cerver_set_multiple_handlers (
 
 // set whether to check or not incoming packets
 // check packet's header protocol id & version compatibility
-// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// if packets do not pass the checks, they are bad packets
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
 CERVER_EXPORT void cerver_set_check_packets (
 	Cerver *cerver, bool check_packets
+);
+
+// sets how many bad packets an authenticated connection can send before it is dropped,
+// a bad packet fails packet_check () or has an unknown type, and its sender gets a CERVER_ERROR_PACKET_ERROR
+// a packet bigger than max_received_packet_size closes the connection right away
+// 0 disables the limit, the default is CERVER_DEFAULT_MAX_BAD_PACKETS
+CERVER_EXPORT void cerver_set_max_bad_packets (
+	Cerver *cerver, u8 max_bad_packets
 );
 
 // sets a custom cerver update function to be executed every n ticks
@@ -813,6 +835,9 @@ CERVER_PRIVATE void cerver_stop_request (Cerver *cerver);
 // it can be called after the cerver was stopped by a signal
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_shutdown (Cerver *cerver);
+
+// sleeps the seconds or until the cerver is stopped
+CERVER_PRIVATE void cerver_sleep (Cerver *cerver, u32 seconds);
 
 // teardown a server -> stop the server, drain the connections
 // using the drain policy and timeout, and clean all of its data
