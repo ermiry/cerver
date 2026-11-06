@@ -44,6 +44,8 @@ static void app_handler_test (const Packet *packet) {
 			.request_type = APP_REQUEST_TEST,
 
 			.sock_fd = packet->header.sock_fd,
+
+			.version = packet_version_local ()
 		},
 
 		.version = (PacketVersion) {
@@ -66,14 +68,26 @@ static void app_handler_test (const Packet *packet) {
 
 // echo the same message back
 static void app_handler_message (const Packet *packet) {
-	
+
+	if (!packet->data || (packet->data_size < sizeof (AppMessage))) {
+		cerver_log_error (
+			"Message packet of %lu bytes is too small!", packet->data_size
+		);
+
+		return;
+	}
+
 	AppMessage *app_message = (AppMessage *) (char *) packet->data;
+
+	if (strncmp (MESSAGE, app_message->message, APP_MESSAGE_LEN)) {
+		cerver_log_error ("Message [%lu] mismatch!", app_message->id);
+	}
 
 	Packet *response = packet_new ();
 
 	// generate the packet
 	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	response->packet = malloc (packet_len);
+	response->packet = calloc (1, packet_len);
 	response->packet_size = packet_len;
 
 	char *end = (char *) response->packet;
@@ -82,23 +96,11 @@ static void app_handler_message (const Packet *packet) {
 	header->packet_size = packet_len;
 
 	header->request_type = APP_REQUEST_MESSAGE;
+	header->version = packet_version_local ();
 
 	header->sock_fd = packet->header.sock_fd;
 
 	end += sizeof (PacketHeader);
-
-	// print the client's message
-	// #ifdef EXAMPLE_APP_DEBUG
-	// (void) printf ("|%s|\n", end);
-	// #endif
-
-	AppMessage *original_app_message = (AppMessage *) end;
-	if (strcmp (MESSAGE, original_app_message->message)) {
-		cerver_log_error (
-			"Message [%lu] mismatch!",
-			original_app_message->id
-		);
-	}
 
 	(void) memcpy (end, app_message, sizeof (AppMessage));
 
