@@ -23,6 +23,7 @@ jobs:
           {
             echo "changes<<CHANGELOG_END"
             cat CHANGELOG.md
+            echo
             echo "CHANGELOG_END"
           } >> "$GITHUB_OUTPUT"
 
