@@ -21,20 +21,22 @@ static Cerver *web_cerver = NULL;
 
 #pragma region end
 
-// correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (web_cerver) {
-		cerver_stats_print (web_cerver, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (web_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (web_cerver) (void) cerver_shutdown (web_cerver);
 
-	exit (0);
+}
+
+static void web_finish (void) {
+
+	cerver_stats_print (web_cerver, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (web_cerver);
 
 }
 
@@ -141,7 +143,11 @@ int main (int argc, char **argv) {
 		HttpRoute *render_json_route = http_route_create (REQUEST_METHOD_GET, "render/json", json_render_handler);
 		http_cerver_route_register (http_cerver, render_json_route);
 
-		if (cerver_start (web_cerver)) {
+		if (!cerver_start (web_cerver)) {
+			web_finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				web_cerver->info->name

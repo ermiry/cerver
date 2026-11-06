@@ -27,17 +27,19 @@ static Cerver *auth_cerver = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 
-	if (auth_cerver) {
-		cerver_stats_print (auth_cerver, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) auth_cerver->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (auth_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (auth_cerver) (void) cerver_shutdown (auth_cerver);
 
-	exit (0);
+}
+
+static void auth_finish (void) {
+
+	cerver_stats_print (auth_cerver, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) auth_cerver->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (auth_cerver);
 
 }
 
@@ -188,7 +190,11 @@ int main (int argc, char **argv) {
 
 		http_cerver_route_register (http_cerver, auth_custom_route);
 
-		if (cerver_start (auth_cerver)) {
+		if (!cerver_start (auth_cerver)) {
+			auth_finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				auth_cerver->info->name

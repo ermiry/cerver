@@ -26,17 +26,19 @@ Cerver *web_cerver = NULL;
 // correctly closes any on-going server and process when quitting the appplication
 void end (int dummy) {
 
-	if (web_cerver) {
-		cerver_stats_print (web_cerver, false, false);
-		cerver_log_msg ("\nHTTP Cerver stats:\n");
-		http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
-		cerver_log_line_break ();
-		cerver_teardown (web_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (web_cerver) (void) cerver_shutdown (web_cerver);
 
-	exit (0);
+}
+
+static void json_finish (void) {
+
+	cerver_stats_print (web_cerver, false, false);
+	cerver_log_msg ("\nHTTP Cerver stats:\n");
+	http_cerver_all_stats_print ((HttpCerver *) web_cerver->cerver_data);
+	cerver_log_line_break ();
+	(void) cerver_teardown (web_cerver);
 
 }
 
@@ -589,7 +591,11 @@ int main (int argc, char **argv) {
 		HttpRoute *reference_create_route = http_route_create (REQUEST_METHOD_GET, "reference/create", reference_create_handler);
 		http_route_child_add (json_route, reference_create_route);
 
-		if (cerver_start (web_cerver)) {
+		if (!cerver_start (web_cerver)) {
+			json_finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				web_cerver->info->name
