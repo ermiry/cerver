@@ -1,0 +1,3 @@
+AGET /api/users/12 HTTP/1.1
+Host: localhost
+

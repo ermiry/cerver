@@ -1,0 +1,7 @@
+!GET /api/private HTTP/1.1
+Host: localhost
+Authorization: Bearer abc.def.ghi
+
+GET /api/users/john%20doe?x=1&y=%41 HTTP/1.1
+Host: localhost
+
