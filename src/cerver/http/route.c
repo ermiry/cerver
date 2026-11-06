@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <limits.h>
@@ -75,52 +77,70 @@ const char *http_route_auth_type_description (
 
 }
 
-#pragma region tokens
-
-static HttpRoutesTokens *http_routes_tokens_new (void) {
-
-	HttpRoutesTokens *http_routes_tokens = (HttpRoutesTokens *) malloc (sizeof (HttpRoutesTokens));
-	if (http_routes_tokens) {
-		http_routes_tokens->id = 0;
-		http_routes_tokens->n_routes = 0;
-		http_routes_tokens->routes = NULL;
-		http_routes_tokens->tokens = NULL;
-	}
-
-	return http_routes_tokens;
-
-}
-
-static void http_routes_tokens_delete (void *http_routes_tokens_ptr) {
-
-	if (http_routes_tokens_ptr) {
-		HttpRoutesTokens *http_routes_tokens = (HttpRoutesTokens *) http_routes_tokens_ptr;
-
-		if (http_routes_tokens->routes) free (http_routes_tokens->routes);
-
-		if (http_routes_tokens->tokens) {
-			for (unsigned int i = 0; i < http_routes_tokens->n_routes; i++) {
-				if (http_routes_tokens->tokens[i]) {
-					for (unsigned int j = 0; j < http_routes_tokens->id; j++) {
-						if (http_routes_tokens->tokens[i][j])
-							free (http_routes_tokens->tokens[i][j]);
-					}
-
-					free (http_routes_tokens->tokens[i]);
-				}
-			}
-
-			free (http_routes_tokens->tokens);
-		}
-
-		free (http_routes_tokens_ptr);
-	}
-
-}
-
-#pragma endregion
+static const char *http_route_methods_separator = { ", " };
 
 #pragma region stats
+
+// the generic atomic builtins are used for doubles, the _n ones only take integers
+static double http_route_stats_double_load (const double *value) {
+
+	double current = 0;
+	__atomic_load (value, &current, __ATOMIC_RELAXED);
+
+	return current;
+
+}
+
+// the doubles are updated with compare and swap, there is no atomic add for them
+static void http_route_stats_double_add (double *value, const double amount) {
+
+	double current = http_route_stats_double_load (value);
+	double updated = current + amount;
+	while (!__atomic_compare_exchange (
+		value, &current, &updated, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
+	)) {
+		updated = current + amount;
+	}
+
+}
+
+static void http_route_stats_double_min (double *value, const double candidate) {
+
+	double desired = candidate;
+	double current = http_route_stats_double_load (value);
+	while ((desired < current) && !__atomic_compare_exchange (
+		value, &current, &desired, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
+	));
+
+}
+
+static void http_route_stats_double_max (double *value, const double candidate) {
+
+	double desired = candidate;
+	double current = http_route_stats_double_load (value);
+	while ((desired > current) && !__atomic_compare_exchange (
+		value, &current, &desired, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
+	));
+
+}
+
+static void http_route_stats_size_min (size_t *value, const size_t candidate) {
+
+	size_t current = __atomic_load_n (value, __ATOMIC_RELAXED);
+	while ((candidate < current) && !__atomic_compare_exchange_n (
+		value, &current, candidate, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
+	));
+
+}
+
+static void http_route_stats_size_max (size_t *value, const size_t candidate) {
+
+	size_t current = __atomic_load_n (value, __ATOMIC_RELAXED);
+	while ((candidate > current) && !__atomic_compare_exchange_n (
+		value, &current, candidate, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED
+	));
+
+}
 
 HttpRouteStats *http_route_stats_new (void) {
 
@@ -132,11 +152,9 @@ HttpRouteStats *http_route_stats_new (void) {
 
 		route_stats->min_process_time = __DBL_MAX__;
 
-		route_stats->min_request_size = LONG_MAX;
+		route_stats->min_request_size = SIZE_MAX;
 
-		route_stats->min_response_size = LONG_MAX;
-
-		route_stats->mutex = thread_mutex_new ();
+		route_stats->min_response_size = SIZE_MAX;
 	}
 
 	return route_stats;
@@ -146,10 +164,6 @@ HttpRouteStats *http_route_stats_new (void) {
 void http_route_stats_delete (void *route_stats_ptr) {
 
 	if (route_stats_ptr) {
-		HttpRouteStats *route_stats = (HttpRouteStats *) route_stats_ptr;
-
-		thread_mutex_delete (route_stats->mutex);
-
 		free (route_stats_ptr);
 	}
 
@@ -164,49 +178,57 @@ void http_route_stats_update (
 ) {
 
 	if (route_stats) {
-		(void) pthread_mutex_lock (route_stats->mutex);
+		__atomic_store_n (&route_stats->first, false, __ATOMIC_RELAXED);
 
-		if (route_stats->first) route_stats->first = false;
+		(void) __atomic_add_fetch (&route_stats->n_requests, 1, __ATOMIC_RELAXED);
 
-		route_stats->n_requests += 1;
+		http_route_stats_double_min (&route_stats->min_process_time, process_time);
+		http_route_stats_double_max (&route_stats->max_process_time, process_time);
+		http_route_stats_double_add (&route_stats->sum_process_times, process_time);
 
-		// process
-		if (process_time < route_stats->min_process_time)
-			route_stats->min_process_time = process_time;
+		http_route_stats_size_min (&route_stats->min_request_size, request_size);
+		http_route_stats_size_max (&route_stats->max_request_size, request_size);
+		(void) __atomic_add_fetch (&route_stats->sum_request_sizes, request_size, __ATOMIC_RELAXED);
 
-		if (process_time > route_stats->max_process_time)
-			route_stats->max_process_time = process_time;
+		http_route_stats_size_min (&route_stats->min_response_size, response_size);
+		http_route_stats_size_max (&route_stats->max_response_size, response_size);
+		(void) __atomic_add_fetch (&route_stats->sum_response_sizes, response_size, __ATOMIC_RELAXED);
+	}
 
-		route_stats->sum_process_times += process_time;
-		route_stats->mean_process_time = (
-			route_stats->sum_process_times / route_stats->n_requests
-		);
+}
 
-		// request size
-		if (request_size < route_stats->min_request_size)
-			route_stats->min_request_size = request_size;
+// copies the current values of the stats, the means are computed from the sums
+void http_route_stats_snapshot (
+	const HttpRouteStats *route_stats, HttpRouteStats *snapshot
+) {
 
-		if (request_size > route_stats->max_request_size)
-			route_stats->max_request_size = request_size;
+	if (route_stats && snapshot) {
+		snapshot->first = __atomic_load_n (&route_stats->first, __ATOMIC_RELAXED);
+		snapshot->n_requests = __atomic_load_n (&route_stats->n_requests, __ATOMIC_RELAXED);
 
-		route_stats->sum_request_sizes += request_size;
-		route_stats->mean_request_size = (
-			route_stats->sum_request_sizes / route_stats->n_requests
-		);
+		snapshot->min_process_time = http_route_stats_double_load (&route_stats->min_process_time);
+		snapshot->max_process_time = http_route_stats_double_load (&route_stats->max_process_time);
+		snapshot->sum_process_times = http_route_stats_double_load (&route_stats->sum_process_times);
 
-		// response size
-		if (response_size < route_stats->min_response_size)
-			route_stats->min_response_size = response_size;
+		snapshot->min_request_size = __atomic_load_n (&route_stats->min_request_size, __ATOMIC_RELAXED);
+		snapshot->max_request_size = __atomic_load_n (&route_stats->max_request_size, __ATOMIC_RELAXED);
+		snapshot->sum_request_sizes = __atomic_load_n (&route_stats->sum_request_sizes, __ATOMIC_RELAXED);
 
-		if (response_size > route_stats->max_response_size)
-			route_stats->max_response_size = response_size;
+		snapshot->min_response_size = __atomic_load_n (&route_stats->min_response_size, __ATOMIC_RELAXED);
+		snapshot->max_response_size = __atomic_load_n (&route_stats->max_response_size, __ATOMIC_RELAXED);
+		snapshot->sum_response_sizes = __atomic_load_n (&route_stats->sum_response_sizes, __ATOMIC_RELAXED);
 
-		route_stats->sum_response_sizes += response_size;
-		route_stats->mean_response_size = (
-			route_stats->sum_response_sizes / route_stats->n_requests
-		);
+		const size_t n_requests = snapshot->n_requests;
+		snapshot->mean_process_time = n_requests ? snapshot->sum_process_times / (double) n_requests : 0;
+		snapshot->mean_request_size = n_requests ? snapshot->sum_request_sizes / n_requests : 0;
+		snapshot->mean_response_size = n_requests ? snapshot->sum_response_sizes / n_requests : 0;
 
-		(void) pthread_mutex_unlock (route_stats->mutex);
+		// a route without requests shows zeros instead of the initial minimums
+		if (!n_requests) {
+			snapshot->min_process_time = 0;
+			snapshot->min_request_size = 0;
+			snapshot->min_response_size = 0;
+		}
 	}
 
 }
@@ -219,9 +241,9 @@ HttpRouteFileStats *http_route_file_stats_new (void) {
 
 		route_file_stats->first = true;
 
-		route_file_stats->min_n_files = LONG_MAX;
+		route_file_stats->min_n_files = SIZE_MAX;
 
-		route_file_stats->min_file_size = LONG_MAX;
+		route_file_stats->min_file_size = SIZE_MAX;
 
 		route_file_stats->mutex = NULL;
 	}
@@ -288,11 +310,31 @@ void http_route_file_stats_update (
 			file_stats->max_file_size = new_file_stats->max_file_size;
 
 		file_stats->sum_file_size += new_file_stats->sum_file_size;
-		file_stats->mean_file_size = (
-			(double) file_stats->sum_n_files / (double) file_stats->n_uploaded_files
-		);
+		file_stats->mean_file_size = file_stats->n_uploaded_files ? (
+			(double) file_stats->sum_file_size / (double) file_stats->n_uploaded_files
+		) : 0;
 
 		(void) pthread_mutex_unlock (file_stats->mutex);
+	}
+
+}
+
+// copies the current values of the file stats
+void http_route_file_stats_snapshot (
+	const HttpRouteFileStats *file_stats, HttpRouteFileStats *snapshot
+) {
+
+	if (file_stats && snapshot) {
+		(void) pthread_mutex_lock (file_stats->mutex);
+		*snapshot = *file_stats;
+		(void) pthread_mutex_unlock (file_stats->mutex);
+
+		snapshot->mutex = NULL;
+
+		if (!snapshot->n_requests) {
+			snapshot->min_n_files = 0;
+			snapshot->min_file_size = 0;
+		}
 	}
 
 }
@@ -309,12 +351,7 @@ HttpRoute *http_route_new (void) {
 		route->actual = NULL;
 		route->route = NULL;
 
-		route->n_tokens = 0;
-		route->tokens = NULL;
-
 		route->children = NULL;
-
-		route->routes_tokens = NULL;
 
 		route->modifier = HTTP_ROUTE_MODIFIER_NONE;
 
@@ -351,18 +388,7 @@ void http_route_delete (void *route_ptr) {
 		str_delete (route->actual);
 		str_delete (route->route);
 
-		// 03/08/2020 - deleted in http_routes_tokens_delete ()
-		// free (route->tokens);
-
 		dlist_delete (route->children);
-
-		if (route->routes_tokens) {
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
-				if (route->routes_tokens[i]) http_routes_tokens_delete (route->routes_tokens[i]);
-			}
-
-			free (route->routes_tokens);
-		}
 
 		if (route->custom_data) {
 			if (route->delete_custom_data) {
@@ -381,13 +407,29 @@ void http_route_delete (void *route_ptr) {
 
 }
 
-int http_route_comparator_by_n_tokens (const void *a, const void *b) {
+// a handler for a method outside REQUEST_METHOD_MAP is never registered
+static void http_route_set_method_handler (
+	HttpRoute *route, const RequestMethod method, const HttpHandler handler
+) {
 
-	return ((HttpRoute *) a)->n_tokens - ((HttpRoute *) b)->n_tokens;
+	if (http_request_method_is_valid (method)) {
+		route->handlers[method] = handler;
+
+		if (!route->stats[method]) {
+			route->stats[method] = http_route_stats_new ();
+		}
+	}
+
+	else {
+		cerver_log_error (
+			"http_route_set_handler () - route %s can not handle the invalid method %d",
+			route->route ? route->route->str : "", (int) method
+		);
+	}
 
 }
 
-// creates a new route that can be registered to be sued by an http cerver
+// creates a new route that can be registered to be used by an http cerver
 HttpRoute *http_route_create (
 	const RequestMethod method,
 	const char *actual_route,
@@ -409,11 +451,7 @@ HttpRoute *http_route_create (
 
 			route->children = dlist_init (http_route_delete, NULL);
 
-			route->handlers[method] = handler;
-
-			for (unsigned int i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-				route->stats[i] = http_route_stats_new ();
-			}
+			http_route_set_method_handler (route, method, handler);
 
 			route->file_stats = http_route_file_stats_create ();
 		}
@@ -429,94 +467,7 @@ void http_route_set_handler (
 ) {
 
 	if (route) {
-		route->handlers[method] = handler;
-	}
-
-}
-
-// a child route with more tokens than DEFAULT_ROUTES_TOKENS_SIZE can never match
-static void http_route_init_too_many_tokens (
-	const HttpRoute *route, const HttpRoute *child
-) {
-
-	cerver_log_error (
-		"http_route_init () - route %s has %zu tokens, the max is %d - it is not registered in %s",
-		child->route->str, child->n_tokens, DEFAULT_ROUTES_TOKENS_SIZE, route->route->str
-	);
-
-}
-
-void http_route_init (HttpRoute *route) {
-
-	if (route) {
-		if (route->children) {
-			route->routes_tokens = (HttpRoutesTokens **) calloc (DEFAULT_ROUTES_TOKENS_SIZE, sizeof (HttpRoutesTokens *));
-
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
-				route->routes_tokens[i] = http_routes_tokens_new ();
-				route->routes_tokens[i]->id = i + 1;
-			}
-
-			// prepare children routes
-			HttpRoute *child = NULL;
-			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-				child = (HttpRoute *) le->data;
-
-				child->tokens = c_string_split (child->actual->str, '/', &child->n_tokens);
-				if (!child->tokens) {
-					child->tokens = (char **) calloc (1, sizeof (char *));
-					child->tokens[0] = strdup (child->actual->str);
-					child->n_tokens = 1;
-				}
-
-				// printf ("%s -> n_tokens: %ld\n", child->actual->str, child->n_tokens);
-
-				// check if route params have been setup
-				for (unsigned int i = 0; i < child->n_tokens; i++) {
-					if (c_string_count_tokens (child->tokens[i], ':')) {
-						free (child->tokens[i]);
-
-						child->tokens[i] = (char *) calloc (2, sizeof (char));
-						child->tokens[i][0] = '*';
-						child->tokens[i][1] = '\0';
-					}
-				}
-
-				// routes are grouped by their number of tokens
-				if (child->n_tokens > DEFAULT_ROUTES_TOKENS_SIZE) {
-					http_route_init_too_many_tokens (route, child);
-				}
-
-				else {
-					route->routes_tokens[child->n_tokens - 1]->n_routes += 1;
-				}
-			}
-
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
-				route->routes_tokens[i]->routes = (HttpRoute **) calloc (route->routes_tokens[i]->n_routes, sizeof (HttpRoute));
-				route->routes_tokens[i]->tokens = (char ***) calloc (route->routes_tokens[i]->n_routes, sizeof (char **));
-
-				for (unsigned int route_idx = 0; route_idx < route->routes_tokens[i]->n_routes; route_idx++) {
-					route->routes_tokens[i]->routes[route_idx] = NULL;
-					route->routes_tokens[i]->tokens[route_idx] = NULL;
-				}
-			}
-
-			for (unsigned int i = 0; i < DEFAULT_ROUTES_TOKENS_SIZE; i++) {
-				unsigned int n_tokens = i + 1;
-				unsigned int idx = 0;
-				for (ListElement *le = dlist_start (route->children); le; le = le->next) {
-					child = (HttpRoute *) le->data;
-
-					if (child->n_tokens == n_tokens) {
-						// printf ("%s\n", child->actual->str);
-						route->routes_tokens[n_tokens - 1]->routes[idx] = child;
-						route->routes_tokens[n_tokens - 1]->tokens[idx] = child->tokens;
-						idx++;
-					}
-				}
-			}
-		}
+		http_route_set_method_handler (route, method, handler);
 	}
 
 }
@@ -619,7 +570,7 @@ const void *http_route_get_custom_data (
 	const HttpRoute *route
 ) {
 
-	return route->custom_data;
+	return route ? route->custom_data : NULL;
 
 }
 
@@ -627,7 +578,7 @@ void http_route_set_custom_data (
 	HttpRoute *route, void *custom_data
 ) {
 
-	route->custom_data = custom_data;
+	if (route) route->custom_data = custom_data;
 
 }
 
@@ -635,27 +586,37 @@ void http_route_set_delete_custom_data (
 	HttpRoute *route, void (*delete_custom_data)(void *)
 ) {
 
-	route->delete_custom_data = delete_custom_data;
+	if (route) route->delete_custom_data = delete_custom_data;
 
 }
 
-static void http_route_get_methods_string (
-	const HttpRoute *route, const char *route_methods_str
+// writes in buffer the methods with a handler, separated with ", "
+// returns the length of the string
+size_t http_route_methods_string (
+	HttpHandler const *handlers, char *buffer, const size_t buffer_size
 ) {
 
-	char *end = (char *) route_methods_str;
-	char *method_name = NULL;
-	size_t method_name_len = 0;
-	for (u8 i = 0; i < HTTP_HANDLERS_COUNT; i++) {
-		if (route->handlers[i]) {
-			method_name = (char *) http_request_method_str ((RequestMethod) i);
-			method_name_len = strlen (method_name);
-			(void) memcpy (end, method_name, method_name_len);
-			end += method_name_len += 1;
+	size_t length = 0;
+
+	if (buffer && buffer_size) {
+		buffer[0] = '\0';
+
+		for (unsigned int method = 0; method < HTTP_HANDLERS_COUNT; method++) {
+			if (!handlers[method]) continue;
+
+			const int written = snprintf (
+				buffer + length, buffer_size - length, "%s%s",
+				length ? http_route_methods_separator : "",
+				http_request_method_str ((RequestMethod) method)
+			);
+
+			if ((written < 0) || ((size_t) written >= (buffer_size - length))) break;
+
+			length += (size_t) written;
 		}
 	}
 
-	*end = '\0';
+	return length;
 
 }
 
@@ -663,8 +624,8 @@ static void http_route_print_child (const HttpRoute *child) {
 
 	cerver_log_msg ("\t\tRoute: %s", child->route->str);
 
-	char route_methods_str[128] = { 0 };
-	http_route_get_methods_string (child, route_methods_str);
+	char route_methods_str[HTTP_ROUTE_METHODS_STRING_SIZE] = { 0 };
+	(void) http_route_methods_string (child->handlers, route_methods_str, HTTP_ROUTE_METHODS_STRING_SIZE);
 
 	cerver_log_msg ("\t\tMethods: %s", route_methods_str);
 
@@ -678,8 +639,8 @@ void http_route_print (const HttpRoute *route) {
 	if (route) {
 		cerver_log_msg ("Route: %s", route->route->str);
 
-		char route_methods_str[128] = { 0 };
-		http_route_get_methods_string (route, route_methods_str);
+		char route_methods_str[HTTP_ROUTE_METHODS_STRING_SIZE] = { 0 };
+		(void) http_route_methods_string (route->handlers, route_methods_str, HTTP_ROUTE_METHODS_STRING_SIZE);
 
 		cerver_log_msg ("\tMethods: %s", route_methods_str);
 
