@@ -28,6 +28,9 @@
 // the numbers that are tried when a saved filename already exists ("name-1.png", ...)
 #define HTTP_MULTI_PART_FILENAME_NUMBERS				(1 << 6)
 
+// the name of a file whose name is empty after it was sanitized, or that refers to a directory
+#define HTTP_MULTI_PART_DEFAULT_FILENAME				"file"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -77,6 +80,7 @@ struct _MultiPart {
 	char generated_filename[HTTP_MULTI_PART_GENERATED_FILENAME_SIZE];
 
 	int fd;
+	bool discard;				// a file input without a file, its data is ignored
 	u32 n_reads;				// amount of loops it took to read the file - based on cerver receive value
 	u32 total_wrote;			// the total ammount of bytes written to the file
 
