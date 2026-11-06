@@ -29,14 +29,19 @@ static String *filename = NULL;
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (client_cerver) {
-		cerver_stats_print (client_cerver, true, true);
-		cerver_teardown (client_cerver);
-	}
+	(void) dummy;
 
-	exit (0);
+	if (client_cerver) (void) cerver_shutdown (client_cerver);
+
+}
+
+static void finish (void) {
+
+	cerver_stats_print (client_cerver, true, true);
+	(void) cerver_teardown (client_cerver);
 
 }
 
@@ -271,7 +276,11 @@ static void start (void) {
 		pthread_t client_thread = 0;
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
 
-		if (cerver_start (client_cerver)) {
+		if (!cerver_start (client_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				client_cerver->info->name
