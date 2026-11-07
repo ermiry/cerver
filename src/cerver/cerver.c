@@ -2071,22 +2071,25 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 static void cerver_inactive_check (AVLNode *node, Cerver *cerver, time_t current_time) {
 
-	cerver_inactive_check (node->right, cerver, current_time);
+	// the recursion ends on the leaves children
+	if (node) {
+		cerver_inactive_check (node->right, cerver, current_time);
 
-	// check for client inactivity
-	if (node->id) {
-		Client *client = (Client *) node->id;
+		// check for client inactivity
+		if (node->id) {
+			Client *client = (Client *) node->id;
 
-		if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
-			// TODO: the client should be dropped
-			cerver_log_warning (
-				"Client %ld has been inactive more than %d secs and should be dropped",
-				client->id, cerver->max_inactive_time
-			);
+			if ((current_time - client->last_activity) >= cerver->max_inactive_time) {
+				// TODO: the client should be dropped
+				cerver_log_warning (
+					"Client %ld has been inactive more than %d secs and should be dropped",
+					client->id, cerver->max_inactive_time
+				);
+			}
 		}
-	}
 
-	cerver_inactive_check (node->left, cerver, current_time);
+		cerver_inactive_check (node->left, cerver, current_time);
+	}
 
 }
 
