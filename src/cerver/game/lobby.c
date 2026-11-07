@@ -115,14 +115,14 @@ void lobby_stats_print (Lobby *lobby) {
     if (lobby) {
         if (lobby->stats) {
             printf ("\nLobby's %s stats: ", lobby->id->str);
-            printf ("\nThreshold time:            %ld\n", lobby->stats->threshold_time);
+            printf ("\nThreshold time:              %ld\n", lobby->stats->threshold_time);
 
-            printf ("Total packets received:        %ld\n", lobby->stats->n_packets_received);
-            printf ("Total receives done:           %ld\n", lobby->stats->n_receives_done);
-            printf ("Total bytes received:          %ld\n\n", lobby->stats->bytes_received);
+            printf ("Total packets received:        %lu\n", lobby->stats->n_packets_received);
+            printf ("Total receives done:           %lu\n", lobby->stats->n_receives_done);
+            printf ("Total bytes received:          %lu\n\n", lobby->stats->bytes_received);
 
-            printf ("N packets sent:                %ld\n", lobby->stats->n_packets_sent);
-            printf ("Total bytes sent:              %ld\n", lobby->stats->bytes_sent);
+            printf ("N packets sent:                %lu\n", lobby->stats->n_packets_sent);
+            printf ("Total bytes sent:              %lu\n", lobby->stats->bytes_sent);
 
             printf ("\nReceived packets:\n");
             packets_per_type_print (lobby->stats->received_packets);

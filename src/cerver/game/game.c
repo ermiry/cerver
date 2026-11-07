@@ -49,8 +49,8 @@ void game_cerver_stats_print (Cerver *cerver) {
         if (cerver->type == CERVER_TYPE_GAME) {
             GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
-            printf ("Current active lobbys:         %d\n", game_cerver->stats->current_active_lobbys);
-            printf ("Total lobbys created:          %d\n", game_cerver->stats->lobbys_created);
+            printf ("Current active lobbys:         %u\n", game_cerver->stats->current_active_lobbys);
+            printf ("Total lobbys created:          %u\n", game_cerver->stats->lobbys_created);
         }
 
         else {
