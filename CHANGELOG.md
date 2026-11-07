@@ -1,92 +1,54 @@
 ## General
-- Added fuzz & tree targets & the new unit tests to makefile
-- Ignoring fuzz artifacts & build outputs in git & docker files
-- Using a single stage test image with sanitizers & gdb tools
-- Added fuzz Dockerfile to build libFuzzer targets with clang
-- Added a valgrind job in build workflow to run the unit tests
-- Running integration pairs with sanitizers & fuzzing in tests
-- Added nightly workflow with TSan, fuzzing & performance
-- Adding line break after the changelog in release workflows
-- Running the integration pairs script in the main tests script
-- Using a clock name instead of a number in timer timespec
-- Waiting for socket sends to finish before deleting its locks
-- Sending zeroed error & file packets with the packet version
-- Sending packet version in headers & fixing packet_check()
-- Reporting the packets bigger than max size as bad packets
-- Added connection drop request & update thread end flags
-- Fixed client connection end with a single owner of the end
-- Added cerver on hold timeout and max bad packets option
-- Fixed on hold packets check & dropping slow connections
-- Fixed admin cerver packets checks & polling a copy of fds
-- Handling bad packets & polling a copy of all registered fds
-- Joining job queue thread when stopping the queue of jobs
-- Fixed game types search & refactored scores with clamps
-- Added routes tree benchmark with synthetic routes tables
-- Added aarch64 req/s baseline for the performance checks
-- Added tests roadmap with the integration & fuzzing stages
-- Updated roadmap with phase 3 state and the next phases
-- Updated CLAUDE.md with routes tree, test suite & fuzzing
+- Building with an optional zlib to compress HTTP responses
+- Ignoring integration coverage outputs in git & docker files
+- Building the test image with zlib and an optional coverage
+- Building fuzz targets with zlib in the fuzz Dockerfile image
+- Added Codecov coverage targets & ignoring the tests files
+- Uploading integration coverage to Codecov in the test job
+- Creating the release tags on the commit of each workflow
+- Growing strings geometrically with a str_reserve() method
+- Checking a NULL filename before reading the image type
+- Sending the packet header padding zeroed in each packet
+- Cancelling a cerver start with a prior stop & atomic socket
+- Logging HTTP requests with client's address & request id
+- Updated roadmap with phase 3b and the phase 4 changes
+- Updated CLAUDE.md with zlib, features & the HTTP state
 
 ## HTTP
-- Added URL path decode method and copying bad escapes
-- Finding HTTP headers by name using a FNV-1a hash table
-- Creating HTTP custom headers in the arena of the request
-- Added request params as url slices and the PATCH method
-- Sending HTTP response parts with a single sendmsg() call
-- Added multi-part discard value for file inputs without files
-- Fixed JSON reals equal check & JWT tokens without an alg
-- Added HTTP route param validators for ids, ints and uuids
-- Added HTTP before & after middleware chains for groups
-- Added HTTP routes tree with groups & endpoints to match
-- Updating HTTP route stats with atomics & methods string
-- Added compatibility layer to translate routes to endpoints
-- Added HTTP admin routes as endpoints of a routes group
-- Selecting HTTP endpoints from tree with 405 & OPTIONS
-
-## Examples
-- Stopping cerver examples in signals & releasing them after
-- Stopping client examples in signals & zeroed packets data
-- Stopping web examples in signals and releasing on return
+- Added X-Real-IP header & finding headers in a raw buffer
+- Added HTTP Date header with a per thread cache & parse
+- Added HTTP ETag & Last-Modified with 304 Not Modified
+- Added HTTP gzip compression of responses by endpoints
+- Added HTTP response streams with the chunked encoding
+- Added HTTP client address from trusted proxies' headers
+- Added HTTP request ids from X-Request-Id or a new UUID
+- Added latency histogram buckets to the HTTP route stats
+- Added Prometheus metrics text of cerver & its endpoints
+- Sending HTTP responses with request headers in one call
+- Added etag & compression settings & old style routes print
+- Added HTTP metrics admin route with the Prometheus text
+- Sharing HTTP state between the web cervers of a process
 
 ## Tests
-- Added test helpers to wait for counters instead of sleeping
-- Running unit tests in an optional runner & the new binaries
-- Added integration scripts to run every pair in one container
-- Added flaky hunter script to repeat tests & save gdb stack
-- Added performance script with allocations & req/s checks
-- Added nginx test running the router pair behind the proxy
-- Added fuzz targets header to feed bytes to HTTP receives
-- Added HTTP request fuzz target with its seed request files
-- Added multi-part fuzz target with form & unsafe file seeds
-- Added HTTP URL fuzz target with escapes & utf seed files
-- Added JSON fuzz target with the array & object seed files
-- Added JWT fuzz target decoding tokens with seed tokens
-- Added routes tree fuzz target with seed routes to register
-- Added fuzz script to run every libFuzzer target from seeds
-- Sending zeroed auth data from test app & removing prints
-- Added packets unit tests with pieces, requests and routes
-- Added files unit test getting the image type of missing files
-- Added JSON equal unit test with reals out of a float range
-- Added timer unit tests checking strings and elapsed times
-- Added serializer unit tests with relative pointers and arrays
-- Registering timer & serializer unit tests in utils main source
-- Added game unit tests for scores, types, players & lobbies
-- Added URL unit tests with NULL strings & invalid escapes
-- Added HTTP headers unit test finding names by their hash
-- Added HTTP requests unit tests with params and methods
-- Added HTTP route unit tests with stats and methods string
-- Added JWT unit test decoding a token header without alg
-- Added routes tree unit tests with matches and registration
-- Registering the routes tree unit tests in the HTTP main file
-- Added HTTP receive unit tests with groups & unsafe paths
-- Added HTTP server unit tests with big responses & bodies
-- Added in process TCP cerver tests with auth and handlers
-- Added client lifecycle unit tests against a fake TCP cerver
-- Stopping test cervers in signals & checking their teardown
-- Checking the handler integration responses with a counter
-- Waiting for the client integration responses using counters
-- Stopping web test cervers in signals & releasing on return
-- Added router integration pair checking groups & endpoints
-- Added timeouts to web test client curl requests & headers
-- Checking routes & endpoints stats in web admin test client
-- Checking the JSON test client requests results for an error
+- Added a test helper to buffer the unit tests stdout by lines
+- Buffering stdout by lines in every main source of unit tests
+- Added packet header padding unit test with zeroed bytes
+- Added string growth, reserve and capacity reset unit tests
+- Added cerver core tests with stops before & while starting
+- Added HTTP Date header unit tests with formats & parses
+- Added HTTP conditional unit tests with entity tags & dates
+- Added HTTP compression unit tests with gzip & encodings
+- Added HTTP proxy unit tests with CIDRs & forwarded IPs
+- Checking X-Real-IP header in HTTP headers hash unit test
+- Added HTTP request id unit tests with the given & new ids
+- Checking metrics route & json settings in routes tree tests
+- Added HTTP receive unit tests with chunked body trailers
+- Added HTTP server tests with two cervers in one process
+- Added HTTP features tests in a process with a web cerver
+- Registering the new HTTP unit tests in the HTTP main file
+- Added web features integration pair with headers & proxy
+- Running the features pair & collecting integration coverage
+- Running nginx test with features pair in two nginx versions
+- Lowered the allocations per request in performance script
+- Enabling CORS, ETag, gzip & trusted proxies in fuzz cerver
+- Added fuzz request seeds with conditional, proxy & trailers
