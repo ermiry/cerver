@@ -49,6 +49,35 @@ static void test_packet_header_create (void) {
 
 }
 
+// a header is sent as it is in memory, so the bytes of its padding must be zeroed:
+// they sent uninitialized memory of the process (found by valgrind in the core tests)
+static void test_packet_header_padding (void) {
+
+	PacketHeader expected;
+	(void) memset (&expected, 0, sizeof (PacketHeader));
+	expected.packet_type = PACKET_TYPE_APP;
+	expected.packet_size = sizeof (PacketHeader);
+	expected.request_type = SEND_REQUEST_TYPE;
+	expected.version = packet_version_local ();
+
+	// the memory that is reused, with garbage where the padding is
+	PacketHeader *dirty = (PacketHeader *) malloc (sizeof (PacketHeader));
+	test_check_ptr (dirty);
+	(void) memset (dirty, 0xff, sizeof (PacketHeader));
+	free (dirty);
+
+	PacketHeader *header = packet_header_create (PACKET_TYPE_APP, sizeof (PacketHeader), SEND_REQUEST_TYPE);
+	test_check_ptr (header);
+	test_check (!memcmp (header, &expected, sizeof (PacketHeader)), "the created header has garbage");
+	packet_header_delete (header);
+
+	Packet *request = packet_create_request (PACKET_TYPE_APP, SEND_REQUEST_TYPE);
+	test_check_ptr (request);
+	test_check (!memcmp (&request->header, &expected, sizeof (PacketHeader)), "the request header has garbage");
+	packet_delete (request);
+
+}
+
 static void test_packet_header_create_from (void) {
 
 	u32 request_type = 10;
@@ -857,6 +886,8 @@ static void test_packets_check (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing PACKETS...\n");
 
 	// a closed peer must fail the send, not kill the test
@@ -864,6 +895,7 @@ int main (int argc, char **argv) {
 
 	// header
 	test_packet_header_create ();
+	test_packet_header_padding ();
 	test_packet_header_create_from ();
 	test_packet_header_copy ();
 
