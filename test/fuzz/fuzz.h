@@ -3,6 +3,7 @@
 
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -35,6 +36,9 @@
 #define FUZZ_CLIENT						1
 
 #define FUZZ_SEND_TIMEOUT_SECONDS		1
+
+#define FUZZ_PROXY_ADDRESS				"10.0.0.2"
+#define FUZZ_ORIGIN						"http://allowed.com"
 #define FUZZ_RESPONSE_BUFFER_SIZE		(1 << 12)
 
 static Cerver *fuzz_cerver = NULL;
@@ -52,6 +56,11 @@ static void fuzz_ok_handler (
 static void fuzz_routes (HttpCerver *http_cerver) {
 
 	HttpGroup *api = http_cerver_group_create (http_cerver, "api");
+
+	// the conditional requests, the compression and the CORS of every response
+	http_group_set_cors (api, true);
+	http_group_set_etag (api, true);
+	http_group_set_compression (api, true);
 
 	(void) http_group_get (api, "users/:id<int>", fuzz_ok_handler);
 	(void) http_group_get (api, "users/:name", fuzz_ok_handler);
@@ -82,6 +91,11 @@ static void fuzz_cerver_create (void) {
 	HttpCerver *http_cerver = (HttpCerver *) fuzz_cerver->cerver_data;
 
 	fuzz_routes (http_cerver);
+
+	// the request id, and the client's address from X-Forwarded-For and X-Real-IP
+	http_cerver_set_request_id (http_cerver, true);
+	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
+	(void) http_cerver_add_origin_to_whitelist (http_cerver, FUZZ_ORIGIN);
 
 	(void) mkdir (FUZZ_UPLOADS_PATH, FUZZ_DIRECTORY_MODE);
 	http_cerver_set_uploads_path (http_cerver, FUZZ_UPLOADS_PATH);
@@ -122,6 +136,9 @@ static Connection *fuzz_connection_create (const int sock_fd) {
 
 	connection->socket->sock_fd = sock_fd;
 	connection->active = true;
+
+	// a socket pair has no address, the one of a proxy uses the forwarded headers
+	(void) snprintf (connection->ip, CONNECTION_IP_SIZE, "%s", FUZZ_PROXY_ADDRESS);
 
 	// a response that does not fit in the socket fails instead of blocking
 	const struct timeval timeout = { FUZZ_SEND_TIMEOUT_SECONDS, 0 };
