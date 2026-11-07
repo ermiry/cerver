@@ -14,8 +14,13 @@ extern "C" {
 
 struct Arena;
 
+#define STRING_MIN_CAPACITY				(1 << 4)
+#define STRING_GROWTH_FACTOR			2
+
 typedef struct String {
 
+	// the bytes allocated for str, including the '\0',
+	// 0 if they are exactly len + 1
 	size_t max_len;
 	size_t len;
 	char *str;
@@ -111,8 +116,17 @@ CERVER_PUBLIC String *str_create_from_bytes_arena (
 	struct Arena *arena, const char *bytes, const size_t n
 );
 
+// makes sure that the string has at least capacity bytes allocated
+// (including the '\0'), so the next appends that fit do not reallocate it
+// it never shrinks the string
+// returns 0 on success, 1 on error (the string is kept unchanged)
+CERVER_PUBLIC int str_reserve (
+	String *str, const size_t capacity
+);
+
 // appends exactly n bytes at the end of the string,
 // bytes may contain '\0' and the result is always terminated with '\0'
+// the string grows geometrically, so many appends are not quadratic
 // returns 0 on success, 1 on error (the string is kept unchanged)
 CERVER_PUBLIC int str_append_bytes (
 	String *str, const char *bytes, const size_t n
