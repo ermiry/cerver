@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: System Information
         run: gcc --version && g++ --version
@@ -33,7 +33,7 @@ jobs:
         run: make CC=g++ examples
 
       - name: Archive Shared Library
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: cerver-lib
           path: ./bin/libcerver.so
@@ -44,10 +44,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Get Shared Library
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: cerver-lib
           path: ./bin

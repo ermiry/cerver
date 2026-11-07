@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Build Docker Image
-        run: docker build -t ermiry/cerver:test -f Dockerfile.test .
+        run: sudo docker build -t ermiry/cerver:test -f Dockerfile.test .
 
       - name: Compile Sources
         run: make TYPE=test COVERAGE=1
@@ -27,7 +27,7 @@ jobs:
 
       - name: Ping Integration Test
         run: |
-          docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
+          sudo docker run -d --name test --rm -p 7000:7000 ermiry/cerver:test ./bin/cerver/ping
           sleep 2
           sudo docker inspect test --format='{{.State.ExitCode}}'
           ./test/bin/client/ping
@@ -110,7 +110,7 @@ jobs:
         run: make coverage
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./coverage/
