@@ -1,0 +1,7 @@
+AGET /api/users/42 HTTP/1.1
+Host: localhost
+If-None-Match: W/"a", "b", *
+If-Modified-Since: Sun, 06 Nov 1994 08:49:37 GMT
+Accept-Encoding: br;q=1.0, gzip;q=0.5, *;q=0
+Origin: http://allowed.com
+

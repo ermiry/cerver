@@ -1,0 +1,12 @@
+BPOST /api/items/123e4567-e89b-42d3-a456-426614174000/update HTTP/1.1
+Host: localhost
+Transfer-Encoding: chunked
+
+4;ext=1
+Wiki
+5
+pedia
+0
+X-Forwarded-For: 1.2.3.4
+Authorization: Bearer x
+
