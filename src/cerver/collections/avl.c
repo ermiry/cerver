@@ -247,6 +247,7 @@ unsigned int avl_clear_tree (
 		void (*actual_destroy)(void *) = destroy ? destroy : tree->destroy;
 
 		avl_internal_clear_tree (&tree->root, actual_destroy);
+		tree->size = 0;
 
 		(void) pthread_mutex_unlock (tree->mutex);
 
@@ -375,11 +376,12 @@ static void avl_treat_left_insertion (
 			
 			else {
 				if ((*parent)->left->right) {
+					// the grandchild balance must be read before rotating
+					int dependency = (*parent)->left->right->balance;
+
 					avl_left_rotation (&(*parent)->left);
 					avl_right_rotation (parent);
-					avl_balance_fix (
-						*parent, (*parent)->left->right->balance
-					);
+					avl_balance_fix (*parent, dependency);
 				}
 			}
 
@@ -410,11 +412,12 @@ static void avl_treat_right_insertion (
 			
 			else {
 				if ((*parent)->right->left) {
+					// the grandchild balance must be read before rotating
+					int dependency = (*parent)->right->left->balance;
+
 					avl_right_rotation (&(*parent)->right);
 					avl_left_rotation (parent);
-					avl_balance_fix (
-						*parent, (*parent)->right->left->balance
-					);
+					avl_balance_fix (*parent, dependency);
 				}
 			}
 
@@ -521,10 +524,11 @@ static unsigned int avl_insert_node_r (
 	// we are on a leaf, create node and set flag
 	if (*parent == NULL){
 		*parent = avl_node_new (id);
-		*flag = 1;
-
-		retval = 0;
-	} 
+		if (*parent) {
+			*flag = 1;
+			retval = 0;
+		}
+	}
 	
 	else {
 		if (comparator ((*parent)->id, id) > 0) {
@@ -588,9 +592,12 @@ static void *avl_remove_node_r (
 				(*parent)->id = ptr->id;
 				ptr->id = copy.id;
 
-				return avl_remove_node_r (
+				void *data = avl_remove_node_r (
 					tree, &(*parent)->right, comparator, id, flag
 				);
+
+				if (*flag == 1) avl_treat_right_reduction (&(*parent), flag);
+				return data;
 			}
 			
 			else {
