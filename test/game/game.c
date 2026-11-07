@@ -244,6 +244,8 @@ static void test_game_lobbies (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) argc;
 	(void) argv;
 

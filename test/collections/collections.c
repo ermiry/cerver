@@ -9,7 +9,11 @@
 
 #include "collections.h"
 
+#include "../test.h"
+
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	srand ((unsigned) time (NULL));
 

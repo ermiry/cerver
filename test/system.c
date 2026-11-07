@@ -5,6 +5,8 @@
 
 #include <cerver/system.h>
 
+#include "test.h"
+
 static void test_system_get_available_space (void) {
 
 	unsigned long available_space = 0;
@@ -30,6 +32,8 @@ static void test_system_get_stats (void) {
 }
 
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	(void) printf ("Testing SYSTEM...\n");
 

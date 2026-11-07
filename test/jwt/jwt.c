@@ -3,7 +3,11 @@
 
 #include "jwt.h"
 
+#include "../test.h"
+
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	(void) printf ("Testing JWT...\n");
 
