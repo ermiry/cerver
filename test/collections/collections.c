@@ -27,7 +27,11 @@ int main (int argc, char **argv) {
 
 	collections_tests_avl ();
 
+	collections_tests_avl_balance ();
+
 	(void) collections_tests_dlist ();
+
+	collections_tests_dlist_invariants ();
 
 	collections_tests_htab ();
 
