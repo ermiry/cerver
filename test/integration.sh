@@ -5,6 +5,13 @@ SANITIZER=${SANITIZER:-}
 BUILD=${BUILD:-1}
 CLIENT_SECONDS=${CLIENT_SECONDS:-120}
 
+COVERAGE=${COVERAGE:-0}
+COVERAGE_VOLUME=${COVERAGE_VOLUME:-cerver-coverage}
+COVERAGE_OUTPUT=${COVERAGE_OUTPUT:-$(pwd)/coverage-integration}
+COVERAGE_DATA=/coverage-data
+COVERAGE_DESTINATION=/coverage-output
+IMAGE_ROOT=/opt/cerver
+
 PAIRS=(
 	cerver/ping
 	cerver/packets
@@ -24,13 +31,20 @@ PAIRS=(
 	web/worker
 	web/admin
 	web/router
+	web/features
 )
 
+TAG=test
+
 if [ -n "$SANITIZER" ]; then
-	IMAGE=${IMAGE:-ermiry/cerver:test-$(echo "$SANITIZER" | tr ',' '-')}
-else
-	IMAGE=${IMAGE:-ermiry/cerver:test}
+	TAG="$TAG-$(echo "$SANITIZER" | tr ',' '-')"
 fi
+
+if [ "$COVERAGE" -ne 0 ]; then
+	TAG="$TAG-coverage"
+fi
+
+IMAGE=${IMAGE:-ermiry/cerver:$TAG}
 
 if [ $# -gt 0 ]; then
 	PAIRS=("$@")
@@ -38,7 +52,7 @@ fi
 
 if [ "$BUILD" -ne 0 ]; then
 	echo "Building $IMAGE..."
-	$DOCKER build -t "$IMAGE" --build-arg SANITIZER="$SANITIZER" -f Dockerfile.test . || exit 1
+	$DOCKER build -t "$IMAGE" --build-arg SANITIZER="$SANITIZER" --build-arg COVERAGE="$COVERAGE" -f Dockerfile.test . || exit 1
 fi
 
 RUN_FLAGS=(
@@ -51,6 +65,38 @@ RUN_FLAGS=(
 	-e TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1}"
 )
 
+coverage_init () {
+	$DOCKER volume rm -f "$COVERAGE_VOLUME" > /dev/null
+	$DOCKER volume create "$COVERAGE_VOLUME" > /dev/null || exit 1
+
+	RUN_FLAGS+=(
+		-e GCOV_PREFIX="$COVERAGE_DATA"
+		-v "$COVERAGE_VOLUME:$COVERAGE_DATA"
+	)
+}
+
+coverage_report () {
+	echo "Generating integration coverage in $COVERAGE_OUTPUT..."
+
+	mkdir -p "$COVERAGE_OUTPUT"
+
+	$DOCKER run --rm \
+		-v "$COVERAGE_VOLUME:$COVERAGE_DATA" \
+		-v "$COVERAGE_OUTPUT:$COVERAGE_DESTINATION" \
+		"$IMAGE" bash -c "
+			cp -r $COVERAGE_DATA$IMAGE_ROOT/. $IMAGE_ROOT/ \
+			&& { make TYPE=test COVERAGE=1 coverage > /tmp/coverage.log 2>&1 || { tail -n 32 /tmp/coverage.log; exit 1; }; } \
+			&& rm -rf $COVERAGE_DESTINATION/* \
+			&& cp -r coverage/. $COVERAGE_DESTINATION/
+		" || exit 1
+
+	$DOCKER volume rm -f "$COVERAGE_VOLUME" > /dev/null
+}
+
+if [ "$COVERAGE" -ne 0 ]; then
+	coverage_init
+fi
+
 FAILED=()
 for pair in "${PAIRS[@]}"; do
 	echo "Integration test $pair..."
@@ -58,6 +104,10 @@ for pair in "${PAIRS[@]}"; do
 		FAILED+=("$pair")
 	fi
 done
+
+if [ "$COVERAGE" -ne 0 ]; then
+	coverage_report
+fi
 
 printf "\n%d pairs - %d failed\n" "${#PAIRS[@]}" "${#FAILED[@]}"
 
