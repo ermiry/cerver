@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
 #include <time.h>
 
 #include <sys/socket.h>
@@ -33,15 +34,18 @@
 
 #include "cerver/http/admin.h"
 #include "cerver/http/auth.h"
+#include "cerver/http/compression.h"
 #include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
 #include "cerver/http/http_parser.h"
 #include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
+#include "cerver/http/proxy.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
+#include "cerver/http/stream.h"
 #include "cerver/http/url.h"
 
 #include "cerver/http/json/json.h"
@@ -82,6 +86,10 @@ static const size_t continue_response_len = 25;
 
 static Pool *multi_parts_pool = NULL;
 
+// the HTTP cervers of the process that hold a reference to the shared state
+static DoubleList *http_cervers = NULL;
+static pthread_mutex_t http_cervers_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static const char *multi_part_header_value = { "multipart/form-data;" };
 static const size_t multi_part_header_value_len = 20;
 
@@ -102,6 +110,8 @@ static void http_receive_handle_not_found_route (
 );
 
 static unsigned int http_multi_parts_init_pool (void);
+
+static void http_multi_parts_end_pool (void);
 
 static void http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
@@ -271,6 +281,8 @@ HttpCerver *http_cerver_new (void) {
 			HTTP_HEADERS_SIZE * sizeof (HttpHeader)
 		);
 
+		http_cerver->global_reference = false;
+
 		http_cerver->n_incompleted_requests = 0;
 		http_cerver->n_unhandled_requests = 0;
 
@@ -314,6 +326,24 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT;
 
 		http_cerver->n_timeout_requests = 0;
+
+		http_cerver->date_header = HTTP_CERVER_DEFAULT_DATE_HEADER;
+		http_cerver->request_id = HTTP_CERVER_DEFAULT_REQUEST_ID;
+
+		http_cerver->compression_min_size = HTTP_COMPRESSION_DEFAULT_MIN_SIZE;
+		http_cerver->compression_level = HTTP_COMPRESSION_DEFAULT_LEVEL;
+
+		http_cerver->trusted_proxies = HTTP_CERVER_DEFAULT_TRUSTED_PROXIES;
+		http_cerver->n_trusted_proxies = 0;
+		(void) memset (
+			http_cerver->trusted_proxies_networks, 0,
+			HTTP_TRUSTED_PROXIES_SIZE * sizeof (HttpProxyNetwork)
+		);
+
+		(void) memset (
+			http_cerver->n_responses_by_status, 0,
+			HTTP_CERVER_RESPONSES_STATUS_SIZE * sizeof (size_t)
+		);
 	}
 
 	return http_cerver;
@@ -574,6 +604,141 @@ static unsigned int http_cerver_init_load_jwt_keys (
 
 }
 
+// the common responses are global, so they are reset
+// for the next cerver that calls http_cerver_init ()
+static void http_cerver_end_responses (void) {
+
+	http_response_delete (oki_doki);
+	oki_doki = NULL;
+	http_response_delete (bad_request_error);
+	bad_request_error = NULL;
+	http_response_delete (bad_user_error);
+	bad_user_error = NULL;
+	http_response_delete (bad_auth_error);
+	bad_auth_error = NULL;
+	http_response_delete (not_found_error);
+	not_found_error = NULL;
+	http_response_delete (server_error);
+	server_error = NULL;
+	http_response_delete (catch_all);
+	catch_all = NULL;
+
+	http_response_delete (payload_too_large_error);
+	payload_too_large_error = NULL;
+	http_response_delete (uri_too_long_error);
+	uri_too_long_error = NULL;
+	http_response_delete (header_fields_too_large_error);
+	header_fields_too_large_error = NULL;
+	http_response_delete (request_timeout_error);
+	request_timeout_error = NULL;
+	http_response_delete (method_not_allowed_error);
+	method_not_allowed_error = NULL;
+	http_response_delete (not_implemented_error);
+	not_implemented_error = NULL;
+
+}
+
+// releases the state shared by every HTTP cerver of the process
+static void http_cerver_global_end (void) {
+
+	http_responses_end ();
+
+	http_jwt_end_pool ();
+
+	http_cerver_end_responses ();
+
+	http_multi_parts_end_pool ();
+
+}
+
+// creates the state shared by every HTTP cerver of the process,
+// the common responses are compiled with the default headers of this cerver
+// what was created is released if something fails
+static unsigned int http_cerver_global_init (
+	const HttpCerver *http_cerver
+) {
+
+	unsigned int errors = 0;
+
+	// init HTTP jwt pool
+	errors |= http_jwt_init_pool ();
+
+	// init HTTP responses pool
+	errors |= http_responses_init (http_cerver);
+
+	// init common responses
+	errors |= http_cerver_init_responses ();
+
+	// init multi-parts pool
+	errors |= http_multi_parts_init_pool ();
+
+	if (errors) http_cerver_global_end ();
+
+	return errors;
+
+}
+
+static int http_cervers_compare (const void *one, const void *two) {
+
+	return (one == two) ? 0 : 1;
+
+}
+
+// the shared state lives while the list has a cerver
+static void http_cervers_release (void) {
+
+	http_cerver_global_end ();
+
+	dlist_delete (http_cervers);
+	http_cervers = NULL;
+
+}
+
+// the first HTTP cerver of the process creates the shared state,
+// every cerver takes a reference to it
+// returns 0 on success, 1 on error
+static unsigned int http_cervers_add (
+	HttpCerver *http_cerver
+) {
+
+	unsigned int errors = 0;
+
+	(void) pthread_mutex_lock (&http_cervers_mutex);
+
+	if (!http_cervers) http_cervers = dlist_init (NULL, http_cervers_compare);
+
+	if (dlist_is_empty (http_cervers)) errors |= http_cerver_global_init (http_cerver);
+
+	if (!errors) errors |= (unsigned int) dlist_insert_at_end_unsafe (http_cervers, http_cerver);
+
+	http_cerver->global_reference = !errors;
+
+	(void) pthread_mutex_unlock (&http_cervers_mutex);
+
+	return errors;
+
+}
+
+// the last HTTP cerver of the process releases the shared state,
+// otherwise the responses producer follows a cerver that is still alive
+static void http_cervers_remove (
+	HttpCerver *http_cerver
+) {
+
+	(void) pthread_mutex_lock (&http_cervers_mutex);
+
+	(void) dlist_remove (http_cervers, http_cerver, NULL);
+
+	if (dlist_is_empty (http_cervers)) http_cervers_release ();
+
+	else http_responses_follow (http_cerver, (const HttpCerver *) dlist_start (http_cervers)->data);
+
+	http_cerver->global_reference = false;
+
+	(void) pthread_mutex_unlock (&http_cervers_mutex);
+
+}
+
 static unsigned int http_cerver_init_internal (
 	HttpCerver *http_cerver
 ) {
@@ -584,20 +749,11 @@ static unsigned int http_cerver_init_internal (
 	cerver_log_msg ("Initializing HTTP cerver...");
 	#endif
 
-	// init HTTP jwt pool
-	errors |= http_jwt_init_pool ();
+	// the jwt pool, the responses and the multi-parts pool
+	if (!http_cerver->global_reference) errors |= http_cervers_add (http_cerver);
 
 	// load jwt keys
 	errors |= http_cerver_init_load_jwt_keys (http_cerver);
-
-	// init HTTP responses pool
-	errors |= http_responses_init (http_cerver);
-
-	// init common responses
-	errors |= http_cerver_init_responses ();
-
-	// init multi-parts pool
-	errors |= http_multi_parts_init_pool ();
 
 	return errors;
 
@@ -676,43 +832,13 @@ u8 http_cerver_init (HttpCerver *http_cerver) {
 
 }
 
-// destroy values allocated in http_cerver_init ()
+// destroy values allocated in http_cerver_init (),
+// the shared state is released by the last HTTP cerver of the process
+// a cerver that never started has no reference
 void http_cerver_end (HttpCerver *http_cerver) {
 
-	if (http_cerver) {
-		http_responses_end ();
-
-		http_jwt_end_pool ();
-
-		// the responses are global, so they are reset
-		// for the next cerver that calls http_cerver_init ()
-		http_response_delete (oki_doki);
-		oki_doki = NULL;
-		http_response_delete (bad_request_error);
-		bad_request_error = NULL;
-		http_response_delete (bad_user_error);
-		bad_user_error = NULL;
-		http_response_delete (bad_auth_error);
-		bad_auth_error = NULL;
-		http_response_delete (not_found_error);
-		not_found_error = NULL;
-		http_response_delete (server_error);
-		server_error = NULL;
-		http_response_delete (catch_all);
-		catch_all = NULL;
-
-		http_response_delete (payload_too_large_error);
-		payload_too_large_error = NULL;
-		http_response_delete (uri_too_long_error);
-		uri_too_long_error = NULL;
-		http_response_delete (header_fields_too_large_error);
-		header_fields_too_large_error = NULL;
-		http_response_delete (request_timeout_error);
-		request_timeout_error = NULL;
-		http_response_delete (method_not_allowed_error);
-		method_not_allowed_error = NULL;
-		http_response_delete (not_implemented_error);
-		not_implemented_error = NULL;
+	if (http_cerver && http_cerver->global_reference) {
+		http_cervers_remove (http_cerver);
 	}
 
 }
@@ -1304,6 +1430,98 @@ void http_cerver_set_request_timeout (
 		http_cerver_limit_check_power_of_two ("request_timeout", request_timeout);
 		http_cerver->request_timeout = request_timeout;
 	}
+
+}
+
+#pragma endregion
+
+#pragma region headers
+
+void http_cerver_set_date_header (
+	HttpCerver *http_cerver, const bool date_header
+) {
+
+	if (http_cerver) http_cerver->date_header = date_header;
+
+}
+
+void http_cerver_set_request_id (
+	HttpCerver *http_cerver, const bool request_id
+) {
+
+	if (http_cerver) http_cerver->request_id = request_id;
+
+}
+
+void http_cerver_set_compression_min_size (
+	HttpCerver *http_cerver, const size_t min_size
+) {
+
+	if (http_cerver) http_cerver->compression_min_size = min_size;
+
+}
+
+void http_cerver_set_compression_level (
+	HttpCerver *http_cerver, const int level
+) {
+
+	if (http_cerver) {
+		if ((level >= HTTP_COMPRESSION_MIN_LEVEL) && (level <= HTTP_COMPRESSION_MAX_LEVEL)) {
+			http_cerver->compression_level = level;
+		}
+
+		else {
+			cerver_log_warning (
+				"http_cerver_set_compression_level () - %d is not between %d and %d",
+				level, HTTP_COMPRESSION_MIN_LEVEL, HTTP_COMPRESSION_MAX_LEVEL
+			);
+		}
+	}
+
+}
+
+#pragma endregion
+
+#pragma region proxies
+
+void http_cerver_set_trusted_proxies (
+	HttpCerver *http_cerver, const HttpTrustedProxies trusted_proxies
+) {
+
+	if (http_cerver) http_cerver->trusted_proxies = trusted_proxies;
+
+}
+
+u8 http_cerver_add_trusted_proxy (
+	HttpCerver *http_cerver, const char *cidr
+) {
+
+	u8 retval = 1;
+
+	if (http_cerver) {
+		if (http_cerver->n_trusted_proxies >= HTTP_TRUSTED_PROXIES_SIZE) {
+			http_tree_error (
+				http_cerver->tree, "Trusted proxy %s exceeds the %d networks",
+				cidr ? cidr : "NULL", HTTP_TRUSTED_PROXIES_SIZE
+			);
+		}
+
+		else if (!http_proxy_network_parse (
+			cidr, &http_cerver->trusted_proxies_networks[http_cerver->n_trusted_proxies]
+		)) {
+			http_tree_error (
+				http_cerver->tree, "Trusted proxy %s is not a valid network",
+				cidr ? cidr : "NULL"
+			);
+		}
+
+		else {
+			http_cerver->n_trusted_proxies += 1;
+			retval = 0;
+		}
+	}
+
+	return retval;
 
 }
 
@@ -2240,18 +2458,59 @@ static int http_receive_check_body_size (
 
 }
 
+// the bytes to reserve for the body when its first part arrives,
+// the parser has already discounted the part from its content length
+// a chunked body or one without Content-Length is not reserved
+static size_t http_request_body_reserve_size (
+	const HttpReceive *http_receive, const size_t length
+) {
+
+	const http_parser *parser = http_receive->parser;
+
+	if ((parser->flags & F_CHUNKED) || (parser->content_length == (uint64_t) -1)) return 0;
+
+	uint64_t reserve = (uint64_t) length + parser->content_length;
+
+	if (reserve > HTTP_REQUEST_BODY_RESERVE_LIMIT) reserve = HTTP_REQUEST_BODY_RESERVE_LIMIT;
+
+	const size_t max_body_size = http_receive->max_body_size;
+	if (max_body_size && (reserve > max_body_size)) reserve = max_body_size;
+
+	// the '\0' of the body
+	return (size_t) reserve + 1;
+
+}
+
+// creates the body with the bytes of its Content-Length reserved,
+// so its next parts do not reallocate it
+// returns 0 on success, 1 on error
+static int http_request_body_create (
+	HttpReceive *http_receive, const char *at, const size_t length
+) {
+
+	HttpRequest *request = http_receive->request;
+
+	request->body = str_new (NULL);
+	if (!request->body) return 1;
+
+	const size_t reserve = http_request_body_reserve_size (http_receive, length);
+	if (reserve && str_reserve (request->body, reserve)) return 1;
+
+	return str_append_bytes (request->body, at, length);
+
+}
+
 // the body is binary, it can contain '\0', and it is always terminated with '\0'
 // returns 0 on success, 1 on error
 static int http_request_body_append (
-	HttpRequest *request, const char *at, const size_t length
+	HttpReceive *http_receive, const char *at, const size_t length
 ) {
 
-	if (!request->body) {
-		request->body = str_create_from_bytes (at, length);
-		return request->body ? 0 : 1;
-	}
+	HttpRequest *request = http_receive->request;
 
-	return str_append_bytes (request->body, at, length);
+	return request->body ?
+		str_append_bytes (request->body, at, length) :
+		http_request_body_create (http_receive, at, length);
 
 }
 
@@ -2374,6 +2633,13 @@ static int http_receive_handle_url (
 
 }
 
+// the fields that the parser finds after on_headers_complete are the trailers of a chunked body
+static inline bool http_receive_headers_are_complete (const HttpReceive *http_receive) {
+
+	return http_receive->receive_status != HTTP_RECEIVE_STATUS_NONE;
+
+}
+
 // a header field can arrive in many pieces,
 // a new field after a value closes the previous header
 static int http_receive_handle_header_field (
@@ -2381,6 +2647,9 @@ static int http_receive_handle_header_field (
 ) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
+
+	// the trailers of a chunked body are not used
+	if (http_receive_headers_are_complete (http_receive)) return 0;
 
 	if (http_receive->token == HTTP_RECEIVE_TOKEN_VALUE) {
 		if (http_receive_close_header (http_receive)) return 1;
@@ -2403,6 +2672,8 @@ static int http_receive_handle_header_value (
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
+	if (http_receive_headers_are_complete (http_receive)) return 0;
+
 	http_receive->token = HTTP_RECEIVE_TOKEN_VALUE;
 
 	if (http_receive_check_header_size (http_receive, length)) return 1;
@@ -2420,7 +2691,7 @@ static int http_receive_handle_body (
 
 	if (http_receive_check_body_size (http_receive, length)) return 1;
 
-	return http_request_body_append (http_receive->request, at, length) ?
+	return http_request_body_append (http_receive, at, length) ?
 		http_receive_reject (http_receive, server_error, HTTP_RECEIVE_STATUS_PARSER_ERROR) : 0;
 
 }
@@ -2432,9 +2703,6 @@ static int http_receive_handle_body (
 static unsigned int http_multi_parts_init_pool (void) {
 
 	unsigned int retval = 1;
-
-	// the pool is shared by every HTTP cerver in the process
-	if (multi_parts_pool) return 0;
 
 	multi_parts_pool = pool_create (http_multi_part_delete);
 	if (multi_parts_pool) {
@@ -2458,6 +2726,14 @@ static unsigned int http_multi_parts_init_pool (void) {
 	}
 
 	return retval;
+
+}
+
+// released by the last HTTP cerver of the process, after its requests ended
+static void http_multi_parts_end_pool (void) {
+
+	pool_delete (multi_parts_pool);
+	multi_parts_pool = NULL;
 
 }
 
@@ -3088,6 +3364,9 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->responded = false;
 
+		http_receive->stream.state = HTTP_STREAM_STATE_NONE;
+		http_receive->stream.chunked = false;
+
 		http_receive->arena = NULL;
 		http_receive->borrowed_buffers = false;
 	}
@@ -3412,6 +3691,11 @@ static void http_receive_handle_endpoint (
 	}
 
 	http_middlewares_run_after (middlewares, http_receive, request);
+
+	// a stream that the handler did not end is ended by cerver
+	if (http_response_stream_is_active (http_receive)) {
+		(void) http_response_stream_end (http_receive);
+	}
 
 }
 
@@ -3822,6 +4106,23 @@ static int http_receive_handle_body_discard (
 
 }
 
+// the request's id and the client's address,
+// they are resolved with the headers, so the rejected requests also have them
+static void http_receive_identify (HttpReceive *http_receive) {
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	HttpRequest *request = http_receive->request;
+
+	if (http_cerver->request_id) http_request_resolve_id (request);
+
+	http_proxy_resolve_client_ip (
+		http_cerver,
+		http_receive->cr->connection ? http_receive->cr->connection->ip : NULL,
+		request, request->client_ip
+	);
+
+}
+
 // the url and the headers are complete: the route is selected
 // and the request is authenticated before its body is received,
 // so the files of a rejected request are never saved
@@ -3843,6 +4144,8 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	http_receive_close_url (http_receive);
 
 	request->method = (RequestMethod) parser->method;
+
+	http_receive_identify (http_receive);
 
 	#ifdef HTTP_DEBUG
 	cerver_log (
