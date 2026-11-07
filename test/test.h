@@ -6,6 +6,17 @@
 #include <stdint.h>
 #include <time.h>
 
+// setvbuf () allocates the buffer with its default size
+#define TEST_OUTPUT_DEFAULT_BUFFER_SIZE		0
+
+// stdout is buffered by lines even in a pipe, so a test that is killed
+// (alarm, deadline or crash) still shows how far it went
+static inline void test_output_init (void) {
+
+	(void) setvbuf (stdout, NULL, _IOLBF, TEST_OUTPUT_DEFAULT_BUFFER_SIZE);
+
+}
+
 #define where (void) fprintf (stderr, "%s:%d -> ", __FILE__, __LINE__)
 
 #define											\
