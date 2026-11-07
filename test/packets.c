@@ -219,7 +219,18 @@ static void test_packets_add_data_multiple (void) {
 		}
 	}
 
-	test_check_str_len (packet->data, n_copies * buffer_len, NULL);
+	// the packet data is binary and is not terminated with '\0',
+	// so check the copies byte by byte instead of using strlen ()
+	test_check_unsigned_eq (
+		(size_t) ((char *) packet->data_end - (char *) packet->data),
+		n_copies * buffer_len, NULL
+	);
+
+	for (size_t i = 0; i < n_copies; i++) {
+		test_check_int_eq (
+			memcmp ((char *) packet->data + (i * buffer_len), buffer, buffer_len), 0, NULL
+		);
+	}
 
 	test_check_unsigned_eq (packet->data_size, data_size, NULL);
 	test_check_unsigned_eq (packet->remaining_data, BUFFER_SIZE % buffer_len, NULL);
