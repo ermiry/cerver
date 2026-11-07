@@ -666,36 +666,9 @@ static u8 balancer_service_test (
 
 	u8 retval = 1;
 
-	Packet ping = (Packet) {
-		.cerver = NULL,
-		.client = NULL,
-		.connection = NULL,
-		.lobby = NULL,
-
-		.packet_type = PACKET_TYPE_TEST,
-		.req_type = 0,
-
-		.data_size = 0,
-		.data = NULL,
-		.data_ptr = NULL,
-		.data_end = NULL,
-		.data_ref = false,
-
-		.header = (PacketHeader) {
-			.packet_type = PACKET_TYPE_TEST,
-			.packet_size = sizeof (PacketHeader),
-
-			.handler_id = 0,
-
-			.request_type = 0,
-
-			.sock_fd = 0
-		},
-
-		.packet_size = sizeof (PacketHeader),
-		.packet = (void *) &ping.header,
-		.packet_ref = true
-	};
+	// the ping header is initialized with its padding zeroed
+	Packet ping;
+	packet_init_ping (&ping);
 
 	if (!client_request_to_cerver (
 		balancer->client, service->connection, &ping

@@ -207,6 +207,24 @@ void packet_header_delete (PacketHeader *header) {
 	
 }
 
+// a header is sent as it is in memory, so its padding is zeroed too,
+// it would send uninitialized bytes of the process otherwise
+static void packet_header_init (
+	PacketHeader *header,
+	const PacketType packet_type,
+	const size_t packet_size,
+	const u32 req_type
+) {
+
+	(void) memset (header, 0, sizeof (PacketHeader));
+
+	header->packet_type = packet_type;
+	header->packet_size = packet_size;
+
+	header->request_type = req_type;
+
+}
+
 PacketHeader *packet_header_create (
 	const PacketType packet_type,
 	const size_t packet_size,
@@ -215,14 +233,7 @@ PacketHeader *packet_header_create (
 
 	PacketHeader *header = (PacketHeader *) malloc (sizeof (PacketHeader));
 	if (header) {
-		header->packet_type = packet_type;
-		header->packet_size = packet_size;
-
-		header->handler_id = 0;
-
-		header->request_type = req_type;
-
-		header->sock_fd = 0;
+		packet_header_init (header, packet_type, packet_size, req_type);
 	}
 
 	return header;
@@ -310,13 +321,7 @@ Packet *packet_new (void) {
 
 		packet->remaining_data = 0;
 
-		packet->header = (PacketHeader) {
-			.packet_type = PACKET_TYPE_NONE,
-			.packet_size = 0,
-			.handler_id = 0,
-			.request_type = 0,
-			.sock_fd = 0
-		};
+		packet_header_init (&packet->header, PACKET_TYPE_NONE, 0, 0);
 
 		packet->version = (PacketVersion) {
 			.protocol_id = 0,
@@ -768,6 +773,9 @@ void packet_init_request (
 		.packet = (void *) &packet->header,
 		.packet_ref = true
 	};
+
+	// the header is sent from the packet itself, the literal does not zero its padding
+	packet_header_init (&packet->header, packet_type, sizeof (PacketHeader), request_type);
 
 }
 
@@ -1458,6 +1466,9 @@ u8 packet_send_request (
 		.packet = (void *) &request.header,
 		.packet_ref = true
 	};
+
+	// the header is sent from the packet itself, the literal does not zero its padding
+	packet_header_init (&request.header, packet_type, sizeof (PacketHeader), request_type);
 
 	size_t sent = 0;
 	if (!packet_send (&request, 0, &sent, false)) {
