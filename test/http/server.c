@@ -44,6 +44,8 @@
 // - cerver_teardown () released the routes while the threads still used them
 // - the queued connections were freed without closing their fds at teardown
 // - sock_set_blocking () was inverted and SO_REUSEADDR also set SO_REUSEPORT
+// - the first of two HTTP cervers in a process released the common responses
+//   and the pools of the other, and the multi-parts pool was never released
 // coverage holes:
 // - a drain that times out keeps the cerver memory on purpose (see thpool.c)
 
@@ -1380,6 +1382,58 @@ static void test_server_policies_strings (void) {
 
 #pragma endregion
 
+#pragma region process
+
+// two HTTP cervers in the same process share the common responses and the pools:
+// the one that ends first leaves them to the other, the last one releases them (ASan checks it),
+// and a cerver that starts after both ended creates them again
+static void test_server_two_cervers (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+
+	ServerTest *first = server_test_start (&options);
+	ServerTest *second = server_test_start (&options);
+
+	server_test_request (first->port, ok_request, status_ok);
+	server_test_request (second->port, ok_request, status_ok);
+
+	server_test_stop (first);
+
+	server_test_request (second->port, ok_request, status_ok);
+
+	server_test_stop (second);
+
+	ServerTest *third = server_test_start (&options);
+
+	server_test_request (third->port, ok_request, status_ok);
+
+	server_test_stop (third);
+
+}
+
+// a web cerver that was stopped before it started never takes the shared state
+static void test_server_stop_before_start (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+
+	const u16 port = (u16) server_test_port++;
+	Cerver *cerver = server_test_cerver_create (port, &options);
+
+	test_check_unsigned_eq (cerver_shutdown (cerver), 0, NULL);
+	test_check_unsigned_eq (cerver_start (cerver), 0, NULL);
+	test_check (!((HttpCerver *) cerver->cerver_data)->global_reference, "a stopped cerver took the shared state");
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+	ServerTest *server = server_test_start (&options);
+
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+}
+
+#pragma endregion
+
 void http_tests_server (void) {
 
 	(void) printf ("Testing HTTP server...\n");
@@ -1410,6 +1464,9 @@ void http_tests_server (void) {
 	test_server_drain_reject ();
 
 	test_server_signal ();
+
+	test_server_two_cervers ();
+	test_server_stop_before_start ();
 
 	test_server_out_of_fds ();
 
