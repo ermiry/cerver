@@ -54,7 +54,11 @@ void player_delete (void *player_ptr) {
 // sets the player id
 void player_set_id (Player *player, const char *id) {
 
-    if (player) player->id = str_new (id);
+    if (player) {
+        // a second id replaces the first one
+        str_delete (player->id);
+        player->id = str_new (id);
+    }
 
 }
 
