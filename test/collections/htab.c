@@ -272,8 +272,10 @@ static void test_htab_int_remove_multiple (void) {
 	test_check_false (htab_is_not_empty (map));
 
 	// insert a new value
+	// a new data is needed because every previous one was already deleted
 	unsigned int final_value = 18;
 	key = &final_value;
+	data = data_new (final_value, value);
 	int result = htab_insert (
 		map,
 		key, sizeof (unsigned int),
