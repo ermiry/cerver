@@ -66,21 +66,6 @@ static u64 next_client_id = 0;
 
 #pragma region aux
 
-static ClientConnection *client_connection_aux_new (
-	Client *client, Connection *connection
-) {
-
-	ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
-	if (cc) {
-		cc->connection_thread_id = 0;
-		cc->client = client;
-		cc->connection = connection;
-	}
-
-	return cc;
-
-}
-
 void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 #pragma endregion
@@ -473,7 +458,7 @@ void client_set_custom_handler (
 }
 
 // only handle packets with size <= max_received_packet_size
-// if the packet is bigger it will be considered a bad packet 
+// if the packet is bigger it will be considered a bad packet
 void client_set_max_received_packet_size (
 	Client *client, size_t max_received_packet_size
 ) {
@@ -1668,7 +1653,8 @@ Packet *client_error_packet_generate (
 	if (packet) {
 		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
 
-		packet->packet = malloc (packet_len);
+		// zeroed, the header fields that are not set and the padding are sent too
+		packet->packet = calloc (1, packet_len);
 		packet->packet_size = packet_len;
 
 		char *end = (char *) packet->packet;
@@ -1683,8 +1669,7 @@ Packet *client_error_packet_generate (
 		SError *s_error = (SError *) end;
 		s_error->error_type = type;
 		s_error->timestamp = time (NULL);
-		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
-		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
 	}
 
 	return packet;
@@ -2614,7 +2599,8 @@ u8 client_file_get (
 			if (packet) {
 				size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
 
-				packet->packet = malloc (packet_len);
+				// zeroed, the header fields that are not set and the padding are sent too
+				packet->packet = calloc (1, packet_len);
 				packet->packet_size = packet_len;
 
 				char *end = (char *) packet->packet;
@@ -3199,7 +3185,7 @@ static ClientHandlerError client_packet_handler_actual (
 	Packet *packet
 ) {
 
-	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;	
+	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;
 
 	switch (packet->header.packet_type) {
 		case PACKET_TYPE_NONE: break;
@@ -3304,7 +3290,7 @@ static ClientHandlerError client_packet_handler_check_version (
 	if (packet->data) {
 		(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
 		packet->data_ptr += sizeof (PacketVersion);
-		
+
 		// TODO: return errors to cerver/client
 		// TODO: drop client on max bad packets
 		if (packet_check (packet)) {
@@ -3316,7 +3302,7 @@ static ClientHandlerError client_packet_handler_check_version (
 		cerver_log_error (
 			"client_packet_handler () - No packet version to check!"
 		);
-		
+
 		// TODO: add to bad packets count
 
 		error = CLIENT_HANDLER_ERROR_PACKET;
@@ -3545,7 +3531,7 @@ static void client_receive_handle_buffer_actual (
 					#ifdef CLIENT_RECEIVE_DEBUG
 					(void) printf ("RECEIVE_HANDLE_STATE_SPLIT_PACKET\n");
 					#endif
-					
+
 					if (remaining_buffer_size > 0) {
 						#ifdef CLIENT_RECEIVE_DEBUG
 						(void) printf (
@@ -3637,7 +3623,7 @@ static void client_receive_handle_buffer (
 	);
 	#endif
 
-		// check if we have any spare parts 
+		// check if we have any spare parts
 	switch (receive_handle->state) {
 		// check if we have a spare header
 		// that was incompleted from the last buffer
@@ -3661,7 +3647,7 @@ static void client_receive_handle_buffer (
 			// 	(void) printf ("%4x", (unsigned int) receive_handle->header_end[i]);
 
 			// (void) printf ("\n");
-			
+
 			#ifdef CLIENT_RECEIVE_DEBUG
 			packet_header_print (&receive_handle->header);
 			#endif
@@ -3691,8 +3677,8 @@ static void client_receive_handle_buffer (
 			if (
 				receive_handle->spare_packet->remaining_data <= receive_handle->received_size
 			) {
-				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data; 
-				
+				size_t to_copy_data_size = receive_handle->spare_packet->remaining_data;
+
 				// copy packet's remaining data
 				(void) packet_add_data (
 					receive_handle->spare_packet,
@@ -3939,7 +3925,7 @@ unsigned int client_receive_internal (
 	unsigned int retval = 1;
 
 	size_t received = 0;
-	
+
 	ReceiveError error = client_receive_actual (
 		client, connection,
 		buffer, buffer_size,

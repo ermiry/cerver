@@ -246,12 +246,14 @@ void connection_delete (void *connection_ptr) {
 
 		connection->client = NULL;
 
+		// connection_end () closes the socket and sets the state,
+		// so it must run before deleting both of them
+		if (connection->active) connection_end (connection);
+
 		socket_delete (connection->socket);
 
 		if (connection->state_mutex)
 			thread_mutex_delete (connection->state_mutex);
-
-		if (connection->active) connection_end (connection);
 
 		cerver_report_delete (connection->cerver_report);
 
@@ -293,6 +295,8 @@ Connection *connection_create_empty (void) {
 
 		connection->socket = (Socket *) socket_create_empty ();
 
+		connection->state_mutex = thread_mutex_new ();
+
 		connection->stats = connection_stats_new ();
 	}
 
@@ -304,8 +308,6 @@ Connection *connection_create_complete (void) {
 
 	Connection *connection = connection_create_empty ();
 	if (connection) {
-		connection->state_mutex = thread_mutex_new ();
-
 		connection->cond = thread_cond_new ();
 		connection->mutex = thread_mutex_new ();
 	}
@@ -654,6 +656,9 @@ unsigned int connection_init (Connection *connection) {
 			if (connection_init_socket (connection)) {
 				connection_init_address (connection);
 
+				// reset connection state
+				connection_set_state (connection, CONNECTION_STATE_NONE);
+
 				retval = 0;		// connection setup was successfull
 			}
 
@@ -965,8 +970,10 @@ void connection_end (Connection *connection) {
 
 	if (connection) {
 		if (connection->active) {
-			close (connection->socket->sock_fd);
+			(void) close (connection->socket->sock_fd);
 			connection->socket->sock_fd = -1;
+
+			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
 			connection->active = false;
 		}
 	}
@@ -1443,6 +1450,7 @@ static void *connection_send_thread (void *connection_ptr) {
 static void *connection_reconnect_thread (void *connection_ptr) {
 
 	// TODO:
+	(void) connection_ptr;
 
 	return NULL;
 

@@ -3,7 +3,11 @@
 
 extern void collections_tests_avl (void);
 
+extern void collections_tests_avl_balance (void);
+
 extern int collections_tests_dlist (void);
+
+extern void collections_tests_dlist_invariants (void);
 
 extern void collections_tests_htab (void);
 

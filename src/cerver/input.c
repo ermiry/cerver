@@ -28,14 +28,17 @@ char *input_get_line (void) {
 
 			if (--len == 0) {
 				len = lenmax;
-				char * linen = (char *) realloc (linep, lenmax *= 2);
 
-				if(linen == NULL) {
+				// the offset is taken before realloc () frees the old buffer
+				const size_t offset = (size_t) (line - linep);
+				char *linen = (char *) realloc (linep, lenmax *= 2);
+
+				if (linen == NULL) {
 					free (linep);
 					return NULL;
 				}
 
-				line = linen + (line - linep);
+				line = linen + offset;
 				linep = linen;
 			}
 

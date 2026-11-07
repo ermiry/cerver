@@ -11,8 +11,6 @@ static const char *sanitize_complete_one = { "hola/adios/1234567890-hola.png" };
 static const char *sanitize_complete_two = { "1234567890-hola/adios/hola.png.res" };
 static const char *sanitize_complete_three = { "12345!67`890-ho#la@/ad$^ios&/h*o)l)a.p+=ng.res" };
 
-static const char *bmp_extension = { "bmp" };
-static const char *gif_extension = { "gif" };
 static const char *png_extension = { "png" };
 static const char *jpg_extension = { "jpg" };
 static const char *jpeg_extension = { "jpeg" };

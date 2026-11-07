@@ -54,7 +54,11 @@ void player_delete (void *player_ptr) {
 // sets the player id
 void player_set_id (Player *player, const char *id) {
 
-    if (player) player->id = str_new (id);
+    if (player) {
+        // a second id replaces the first one
+        str_delete (player->id);
+        player->id = str_new (id);
+    }
 
 }
 
@@ -254,6 +258,9 @@ Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
 // broadcasts a packet to all the players in the lobby
 void player_broadcast_to_all (Cerver *cerver, const Lobby *lobby, Packet *packet, 
     Protocol protocol, int flags) {
+
+    // the protocol is taken from each player's connection
+    (void) protocol;
 
     if (lobby && packet) {
         Player *player = NULL;

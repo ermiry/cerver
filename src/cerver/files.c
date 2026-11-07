@@ -877,6 +877,8 @@ ImageType files_image_get_type (const char *filename) {
 
 	ImageType type = IMAGE_TYPE_NONE;
 
+	if (!filename) return type;
+
 	FILE *file = fopen (filename, "rb");
 	if (file) {
 		type = files_image_get_type_from_file (file);
@@ -1002,7 +1004,8 @@ static u8 file_send_header (
 	if (packet) {
 		size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
 
-		packet->packet = malloc (packet_len);
+		// zeroed, the header fields that are not set and the padding are sent too
+		packet->packet = calloc (1, packet_len);
 		packet->packet_size = packet_len;
 
 		char *end = (char *) packet->packet;

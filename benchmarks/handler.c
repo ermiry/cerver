@@ -77,7 +77,7 @@ int main (int argc, char **argv) {
 				packet_offset += to_copy_size;
 			}
 		} while (buffer_pos >= BUFFER_SIZE);
-		
+
 		// parse the packet
 		cerver_receive_handle_buffer (receive_handle);
 

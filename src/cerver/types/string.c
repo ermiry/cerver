@@ -206,22 +206,30 @@ String *str_concat (const String *s1, const String *s2) {
 
 }
 
+// appends exactly n bytes at the end of the string,
+// the result is always terminated with '\0'
+// if the realloc fails, the string is kept unchanged
+static void str_append_internal (
+	String *str, const char *bytes, const size_t n
+) {
+
+	char *new_str = (char *) realloc (str->str, str->len + n + 1);
+	if (new_str) {
+		if (n) (void) memcpy (new_str + str->len, bytes, n);
+		new_str[str->len + n] = '\0';
+
+		str->str = new_str;
+		str->len += n;
+	}
+
+}
+
 // appends a char to the end of the string
 // reallocates the same string
 void str_append_char (String *str, const char c) {
 
 	if (str) {
-		const size_t new_len = str->len + 1;
-
-		str->str = (char *) realloc (str->str, new_len);
-		if (str->str) {
-			char *des = str->str + str->len;
-			*des = c;
-			des += 1;
-			*des = '\0';
-
-			str->len = new_len;
-		}
+		str_append_internal (str, &c, 1);
 	}
 
 }
@@ -231,30 +239,19 @@ void str_append_char (String *str, const char c) {
 void str_append_c_string (String *str, const char *c_str) {
 
 	if (str && c_str) {
-		const size_t c_str_len = strlen (c_str);
-		const size_t new_len = str->len + c_str_len + 1;
-
-		str->str = (char *) realloc (str->str, new_len);
-		if (str->str) {
-			(void) strncpy (str->str + str->len, c_str, c_str_len);
-			str->len = new_len - 1;
-		}
+		str_append_internal (str, c_str, strlen (c_str));
 	}
 
 }
 
+// appends the first n chars of c_str at the end of the string
+// reallocates the same string
 void str_append_n_from_c_string (
 	String *str, const char *c_str, const size_t n
 ) {
 
 	if (str && c_str) {
-		const size_t out_len = str->len + n + 1;
-
-		str->str = (char *) realloc (str->str, out_len);
-		if (str->str) {
-			(void) strncpy (str->str + str->len, c_str, n);
-			str->len = out_len - 1;
-		}
+		str_append_internal (str, c_str, n);
 	}
 
 }

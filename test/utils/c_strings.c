@@ -25,9 +25,8 @@ static void test_c_string_copy (void) {
 	test_check_int_eq ((int) strlen (string), 31, NULL);
 	test_check_str_eq (string, "holayadiosholayadiosholayadios1", NULL);
 
-	// this causes an overflow
-	c_string_copy (string, "holayadiosholayadiosholayadios1234567890");
-	test_check_int_eq ((int) strlen (string), 40, NULL);
+	// c_string_copy () does not check the destination size,
+	// so a source longer than STRING_LEN - 1 is not tested (it overflows)
 
 }
 

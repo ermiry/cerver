@@ -194,8 +194,14 @@ void game_cerver_register_lobby (GameCerver *game_cerver, Lobby *lobby) {
 void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 
     if (game_cerver && lobby) {
-        void *lobby_data = dlist_remove_element (game_cerver->current_lobbys, 
-                dlist_get_element (game_cerver->current_lobbys, lobby, NULL));
+        // dlist_remove_element () with a NULL element removes the start of the list
+        ListElement *lobby_element = dlist_get_element (
+            game_cerver->current_lobbys, lobby, NULL
+        );
+
+        void *lobby_data = lobby_element ? dlist_remove_element (
+            game_cerver->current_lobbys, lobby_element
+        ) : NULL;
 
         if (lobby_data) {
             #ifdef CERVER_DEBUG
@@ -491,6 +497,7 @@ static void game_lobby_leave (Packet *packet) {
 static void game_lobby_init (Packet *packet) {
 
     // TODO:
+    (void) packet;
 
 }
 

@@ -9,6 +9,9 @@
 
 #define BUFFER_SIZE			128
 
+#define PADDING_REQUEST_TYPE		10
+#define PADDING_GARBAGE_BYTE		0xff
+
 #pragma region header
 
 static void test_packet_header_create (void) {
@@ -30,6 +33,34 @@ static void test_packet_header_create (void) {
 	test_check_unsigned_eq (header->sock_fd, 0, NULL);
 
 	packet_header_delete (header);
+
+}
+
+// a header is sent as it is in memory, so the bytes of its padding must be zeroed,
+// otherwise they send uninitialized memory of the process
+static void test_packet_header_padding (void) {
+
+	PacketHeader expected;
+	(void) memset (&expected, 0, sizeof (PacketHeader));
+	expected.packet_type = PACKET_TYPE_APP;
+	expected.packet_size = sizeof (PacketHeader);
+	expected.request_type = PADDING_REQUEST_TYPE;
+
+	// the memory that is reused, with garbage where the padding is
+	PacketHeader *dirty = (PacketHeader *) malloc (sizeof (PacketHeader));
+	test_check_ptr (dirty);
+	(void) memset (dirty, PADDING_GARBAGE_BYTE, sizeof (PacketHeader));
+	free (dirty);
+
+	PacketHeader *header = packet_header_create (PACKET_TYPE_APP, sizeof (PacketHeader), PADDING_REQUEST_TYPE);
+	test_check_ptr (header);
+	test_check (!memcmp (header, &expected, sizeof (PacketHeader)), "the created header has garbage");
+	packet_header_delete (header);
+
+	Packet *request = packet_create_request (PACKET_TYPE_APP, PADDING_REQUEST_TYPE);
+	test_check_ptr (request);
+	test_check (!memcmp (&request->header, &expected, sizeof (PacketHeader)), "the request header has garbage");
+	packet_delete (request);
 
 }
 
@@ -219,7 +250,18 @@ static void test_packets_add_data_multiple (void) {
 		}
 	}
 
-	test_check_str_len (packet->data, n_copies * buffer_len, NULL);
+	// the packet data is binary and is not terminated with '\0',
+	// so check the copies byte by byte instead of using strlen ()
+	test_check_unsigned_eq (
+		(size_t) ((char *) packet->data_end - (char *) packet->data),
+		n_copies * buffer_len, NULL
+	);
+
+	for (size_t i = 0; i < n_copies; i++) {
+		test_check_int_eq (
+			memcmp ((char *) packet->data + (i * buffer_len), buffer, buffer_len), 0, NULL
+		);
+	}
 
 	test_check_unsigned_eq (packet->data_size, data_size, NULL);
 	test_check_unsigned_eq (packet->remaining_data, BUFFER_SIZE % buffer_len, NULL);
@@ -523,6 +565,7 @@ int main (int argc, char **argv) {
 
 	// header
 	test_packet_header_create ();
+	test_packet_header_padding ();
 	test_packet_header_create_from ();
 	test_packet_header_copy ();
 

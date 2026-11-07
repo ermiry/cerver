@@ -228,7 +228,7 @@ void sha256_calc (
 }
 
 void sha256_hash_to_string (
-	char string[65], const uint8_t hash[32]
+	char string[], const uint8_t hash[32]
 ) {
 
 	for (size_t i = 0; i < 32; i++)

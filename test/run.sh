@@ -8,9 +8,15 @@
 
 ./test/bin/connection || { exit 1; }
 
+./test/bin/balancer || { exit 1; }
+
 ./test/bin/collections --quiet || { exit 1; }
 
 ./test/bin/files || { exit 1; }
+
+./test/bin/game || { exit 1; }
+
+./test/bin/network || { exit 1; }
 
 ./test/bin/packets || { exit 1; }
 

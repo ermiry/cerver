@@ -90,6 +90,7 @@ static void dlist_internal_insert_after_actual (
 
 	else {
 		if (element->next == NULL) dlist->end = le;
+		else element->next->prev = le;
 
 		le->next = element->next;
 		le->prev = element;
@@ -252,6 +253,7 @@ static void dlist_internal_merge_two (
 	if (one->size) {
 		if (two->size) {
 			one->end->next = two->start;
+			two->start->prev = one->end;
 			one->end = two->end;
 		}
 		
@@ -600,7 +602,7 @@ int dlist_insert_at (
 	if (dlist && data) {
 		// insert at the start of the list
 		if (pos == 0) retval = dlist_insert_before (dlist, NULL, data);
-		else if (pos > dlist->size) {
+		else if (pos >= dlist->size) {
 			// insert at the end of the list
 			retval = dlist_insert_after (dlist, dlist_end (dlist), data);
 		}
@@ -701,21 +703,17 @@ static inline int dlist_insert_in_order_actual (
 
 	int retval = 1;
 
-	switch (dlist->compare (le->data, data)) {
-		case -1:
-		case 0: {
-			if (le == dlist->end) {
-				retval = dlist_internal_insert_after (
-					dlist, le, data
-				);
-			}
-		} break;
+	// any positive value means that the element is greater than the data
+	if (dlist->compare (le->data, data) > 0) {
+		retval = dlist_internal_insert_before (
+			dlist, first ? NULL : le, data
+		);
+	}
 
-		case 1: {
-			retval = dlist_internal_insert_before (
-				dlist, first ? NULL : le, data
-			);
-		} break;
+	else if (le == dlist->end) {
+		retval = dlist_internal_insert_after (
+			dlist, le, data
+		);
 	}
 
 	return retval;
@@ -1045,7 +1043,7 @@ ListElement *dlist_get_element (
 		if (comp) {
 			ListElement *ptr = dlist_start (dlist);
 			while (ptr != NULL) {
-				if (!dlist->compare (ptr->data, data)) return ptr;
+				if (!comp (ptr->data, data)) return ptr;
 				ptr = ptr->next;
 			}
 		}
@@ -1108,34 +1106,48 @@ static ListElement *dllist_merge_sort_split (ListElement *head) {
 
 }  
 
-// Function to merge two linked lists 
+// merges two sorted lists iteratively (only the next links are set)
+// the merge is stable, equal elements keep the first list order
 static ListElement *dllist_merge_sort_merge (
-	int (*compare)(const void *one, const void *two), 
+	int (*compare)(const void *one, const void *two),
 	ListElement *first, ListElement *second
 ) {
 
-	// If first linked dlist is empty 
-	if (!first) return second; 
-  
-	// If second linked dlist is empty 
-	if (!second) return first; 
+	ListElement head = { NULL, NULL, NULL };
+	ListElement *tail = &head;
 
-	// Pick the smallest value 
-	if (compare (first->data, second->data) <= 0) {
-		first->next = dllist_merge_sort_merge (compare, first->next, second); 
-		first->next->prev = first; 
-		first->prev = NULL; 
-		return first; 
+	while (first && second) {
+		if (compare (first->data, second->data) <= 0) {
+			tail->next = first;
+			first = first->next;
+		}
+
+		else {
+			tail->next = second;
+			second = second->next;
+		}
+
+		tail = tail->next;
 	}
 
-	else {
-		second->next = dllist_merge_sort_merge (compare, first, second->next); 
-		second->next->prev = second; 
-		second->prev = NULL; 
-		return second; 
+	tail->next = first ? first : second;
+
+	return head.next;
+
+}
+
+// rebuilds the prev links and the end of the dlist after a sort
+static void dlist_merge_sort_relink (DoubleList *dlist) {
+
+	ListElement *prev = NULL;
+	for (ListElement *le = dlist->start; le; le = le->next) {
+		le->prev = prev;
+		prev = le;
 	}
 
-} 
+	dlist->end = prev;
+
+}
 
 // merge sort
 static ListElement *dlist_merge_sort (
@@ -1165,21 +1177,19 @@ int dlist_sort (
 
 	int retval = 1;
 
-	if (dlist && dlist->compare) {
-		if (dlist->size > 1) {
-			int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
+	if (dlist) {
+		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
-			if (comp) {
-				(void) pthread_mutex_lock (dlist->mutex);
+		if (comp) {
+			(void) pthread_mutex_lock (dlist->mutex);
 
+			if (dlist->size > 1) {
 				dlist->start = dlist_merge_sort (dlist->start, comp);
-				retval = 0;
-
-				(void) pthread_mutex_unlock (dlist->mutex);
+				dlist_merge_sort_relink (dlist);
 			}
-		}
 
-		else {
+			(void) pthread_mutex_unlock (dlist->mutex);
+
 			retval = 0;
 		}
 	}
@@ -1286,13 +1296,15 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 			size_t half_count = dlist->size / 2;
 			half_count += carry;
 			size_t count = 0;
-			for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+			for (ListElement *le = dlist_start (dlist); half && le; le = le->next) {
 				if (count == half_count) {
+					// the second half keeps the original end
+					half->start = le;
+					half->end = dlist->end;
+
 					dlist->end = le->prev;
 					le->prev->next = NULL;
 					le->prev = NULL;
-
-					half->start = le;
 
 					half->size = dlist->size - half_count;
 					dlist->size = half_count;

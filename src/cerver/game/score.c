@@ -54,7 +54,7 @@ ScoreBoard *game_score_create (u8 playersNum, u8 scoresNum, ...) {
 
         // FIXME: pass delete data
         sb->scores = htab_create (
-            10,
+            playersNum ? playersNum : DEFAULT_SCORE_SIZE,
             NULL, NULL
         );
 
@@ -176,7 +176,7 @@ u8 game_score_remove_scoreType (ScoreBoard *sb, char *oldScore) {
 u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
 
     if (sb && playerName) {
-        if (htab_contains_key (sb->scores, playerName, sizeof (playerName))) {
+        if (htab_contains_key (sb->scores, playerName, strlen (playerName))) {
             #ifdef CERVER_DEBUG
             cerver_log (
                 LOG_TYPE_ERROR, LOG_TYPE_GAME,
@@ -191,12 +191,12 @@ u8 game_score_add_player (ScoreBoard *sb, char *playerName) {
             // FIXME: correctly destroy this
             Htab *newHt = htab_create (sb->scoresNum, NULL, NULL);
             if (newHt) {
-                if (!htab_insert (sb->scores, playerName, sizeof (playerName), newHt, sizeof (Htab))) {
+                if (!htab_insert (sb->scores, playerName, strlen (playerName), newHt, sizeof (Htab))) {
                     // insert each score type in the player's dictionary
                     u32 zero = 0;
                     for (int i = 0; i < sb->scoresNum; i++) 
                         htab_insert (newHt, sb->scoreTypes[i], 
-                            sizeof (sb->scoreTypes[i]), &zero, sizeof (int));
+                            strlen (sb->scoreTypes[i]), &zero, sizeof (int));
 
                     sb->registeredPlayers++;
 
@@ -229,15 +229,15 @@ void game_score_add_lobby_players (ScoreBoard *sb, AVLNode *playerNode) {
 u8 game_score_remove_player (ScoreBoard *sb, char *playerName) {
 
     if (sb && playerName) {
-        if (htab_contains_key (sb->scores, playerName, sizeof (playerName))) {
+        if (htab_contains_key (sb->scores, playerName, strlen (playerName))) {
             // size_t htab_size = sizeof (Htab);
-            void *htab = htab_get (sb->scores, playerName, sizeof (playerName));
+            void *htab = htab_get (sb->scores, playerName, strlen (playerName));
             
             // destroy player's scores htab
             if (htab) htab_destroy ((Htab *) htab);
 
             // remove th player from the scoreboard
-            htab_remove (sb->scores, playerName, sizeof (playerName));
+            htab_remove (sb->scores, playerName, strlen (playerName));
 
             sb->registeredPlayers--;
         }
@@ -261,11 +261,11 @@ void game_score_set (ScoreBoard *sb, char *playerName, char *scoreType, i32 valu
 
     if (sb && playerName && scoreType) {
         // size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_get (sb->scores, playerName, sizeof (playerName));
+        void *playerScores = htab_get (sb->scores, playerName, strlen (playerName));
         if (playerScores) {
             // size_t int_size = sizeof (unsigned int);
             void *currValue = htab_get ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType));
+                scoreType, strlen (scoreType));
 
             // replace the old value with the new one
             if (currValue) {
@@ -292,11 +292,11 @@ i32 game_score_get (ScoreBoard *sb, char *playerName, char *scoreType) {
 
     if (sb && playerName && scoreType) {
         // size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_get (sb->scores, playerName, sizeof (playerName));
+        void *playerScores = htab_get (sb->scores, playerName, strlen (playerName));
         if (playerScores) {
             // size_t int_size = sizeof (unsigned int);
             void *value = htab_get ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType));
+                scoreType, strlen (scoreType));
 
             if (value) {
                 u32 *retval = (u32 *) value;
@@ -323,17 +323,18 @@ void game_score_update (ScoreBoard *sb, char *playerName, char *scoreType, i32 v
 
     if (sb && playerName && scoreType) {
         // size_t htab_size = sizeof (Htab);
-        void *playerScores = htab_get (sb->scores, playerName, sizeof (playerName));
+        void *playerScores = htab_get (sb->scores, playerName, strlen (playerName));
         if (playerScores) {
             // size_t int_size = sizeof (unsigned int);
             void *currValue = htab_get ((Htab *) playerScores, 
-                scoreType, sizeof (scoreType));
+                scoreType, strlen (scoreType));
             
-            // directly update the score value adding the new value
-            if (value) {
+            // directly update the score value adding the new value,
+            // the sum is done with a wider signed type to clamp it to 0
+            if (value && currValue) {
                 u32 *current = (u32 *) currValue;
-                if ((*current += value) < 0) *current = 0;
-                else *current += value;
+                const i64 result = (i64) *current + (i64) value;
+                *current = (result > 0) ? (u32) result : 0;
             }
         }
 
@@ -354,14 +355,14 @@ void game_score_reset (ScoreBoard *sb, char *playerName) {
 
     if (sb && playerName) {
         // size_t htab_size = sizeof (Htab);
-        void *data = htab_get (sb->scores, playerName, sizeof (playerName));
+        void *data = htab_get (sb->scores, playerName, strlen (playerName));
         if (data) {
             Htab *playerScores = (Htab *) data;
             void *scoreData = NULL;
             // size_t score_size = sizeof (u32);
             for (int i = 0; i < sb->scoresNum; i++) {
                 scoreData = htab_get (playerScores, 
-                    sb->scoreTypes[i], sizeof (sb->scoreTypes[i]));
+                    sb->scoreTypes[i], strlen (sb->scoreTypes[i]));
 
                 if (scoreData) {
                     u32 *current = (u32 *) scoreData;

@@ -3,7 +3,7 @@
 
 #include <time.h>
 
-#define APP_MESSAGE_LEN			512
+#define APP_MESSAGE_SIZE			512
 
 #define APP_REQUEST_MAP(XX)					\
 	XX(0,	NONE, 		None)				\
@@ -26,7 +26,7 @@ typedef struct AppMessage {
 	size_t id;
 
 	size_t len;
-	char message[APP_MESSAGE_LEN];
+	char message[APP_MESSAGE_SIZE];
 
 } AppMessage;
 

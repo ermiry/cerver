@@ -158,6 +158,18 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 #pragma region auth
 
+// only the bytes of the session id are copied, it is shorter than the token,
+// copying TOKEN_SIZE bytes read past its end
+static void auth_token_set (SToken *token, const String *session_id) {
+
+	const size_t token_len = (session_id->len < (TOKEN_SIZE - 1)) ?
+		session_id->len : (TOKEN_SIZE - 1);
+
+	(void) memcpy (token->token, session_id->str, token_len);
+	token->token[token_len] = '\0';
+
+}
+
 static void auth_send_success_packet (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
@@ -591,8 +603,8 @@ static CerverAuthError auth_try (Packet *packet) {
 				if (!client_register_to_cerver (packet->cerver, client)) {
 					// if we are successfull, send success packet
 					if (packet->cerver->use_sessions) {
-						SToken token = { 0 };
-						(void) memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+						SToken token = { { 0 } };
+						auth_token_set (&token, client->session_id);
 						token.token[strlen (token.token)] = '\0';
 
 						auth_send_success_packet (
@@ -725,8 +737,8 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 					if (!admin_cerver_register_admin (packet->cerver->admin, admin)) {
 						// if we are successfull, send success packet
 						if (packet->cerver->use_sessions) {
-							SToken token = { 0 };
-							(void) memcpy (token.token, client->session_id->str, TOKEN_SIZE);
+							SToken token = { { 0 } };
+							auth_token_set (&token, client->session_id);
 
 							auth_send_success_packet (
 								packet->cerver,

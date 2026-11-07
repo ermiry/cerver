@@ -298,7 +298,8 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 	if (packet) {
 		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
 
-		packet->packet = malloc (packet_len);
+		// zeroed, the header fields that are not set and the padding are sent too
+		packet->packet = calloc (1, packet_len);
 		packet->packet_size = packet_len;
 
 		char *end = (char *) packet->packet;
@@ -313,8 +314,7 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 		SError *s_error = (SError *) end;
 		s_error->error_type = type;
 		s_error->timestamp = time (NULL);
-		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
-		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
 	}
 
 	return packet;

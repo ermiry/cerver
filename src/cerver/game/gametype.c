@@ -120,8 +120,10 @@ int game_type_unregister (DoubleList *game_types, const char *name) {
         for (ListElement *le = dlist_start (game_types); le; le = le->next) {
             game_type = (GameType *) le->data;
             if (!strcmp (name, game_type->name->str)) {
+                // the element is released, the loop can not continue with it
                 game_type_delete (dlist_remove_element (game_types, le));
                 retval = 0;
+                break;
             }
         }
     }
@@ -133,15 +135,16 @@ int game_type_unregister (DoubleList *game_types, const char *name) {
 // gets a registered game type by its name
 GameType *game_type_get_by_name (DoubleList *game_types, const char *name) {
 
-    GameType *game_type = NULL;
+    GameType *found = NULL;
 
     if (name) {
-        for (ListElement *le = dlist_start (game_types); le; le = le->next) {
-            game_type = (GameType *) le->data;
-            if (!strcmp (name, game_type->name->str)) break;
+        for (ListElement *le = dlist_start (game_types); le && !found; le = le->next) {
+            GameType *game_type = (GameType *) le->data;
+            if (!strcmp (name, game_type->name->str)) found = game_type;
         }
     }
 
-    return game_type;
+    // it used to return the last game type when none matched
+    return found;
 
 }
