@@ -14,6 +14,8 @@
 
 ./test/bin/files || { exit 1; }
 
+./test/bin/game || { exit 1; }
+
 ./test/bin/network || { exit 1; }
 
 ./test/bin/packets || { exit 1; }
