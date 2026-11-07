@@ -2055,6 +2055,49 @@ static inline u8 cerver_receive_http_actual (
 
 static const char *http_receive_unknown_path = { "-" };
 
+// the address of the client and the one of the proxy that forwarded its request
+#define CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE		((2 * CONNECTION_IP_SIZE) + 8)
+
+static const char *http_receive_log_id_separator = { " - " };
+static const char *http_receive_log_empty = { "" };
+
+// writes the client's address, with " via <peer>" when a proxy forwarded the request
+static void cerver_receive_http_log_client (
+	const CerverReceive *cr, const HttpReceive *http_receive, char *client
+) {
+
+	const char *peer = cr->connection->ip;
+	const HttpRequest *request = http_receive->request;
+	const char *ip = (request && request->client_ip[0]) ? request->client_ip : peer;
+
+	if (strcmp (ip, peer)) {
+		(void) snprintf (client, CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE, "%s via %s", ip, peer);
+	}
+
+	else {
+		(void) snprintf (client, CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE, "%s", ip);
+	}
+
+}
+
+static inline bool cerver_receive_http_log_has_id (const HttpReceive *http_receive) {
+
+	return http_receive->request && http_receive->request->id[0];
+
+}
+
+static inline const char *cerver_receive_http_log_id_separator (const HttpReceive *http_receive) {
+
+	return cerver_receive_http_log_has_id (http_receive) ? http_receive_log_id_separator : http_receive_log_empty;
+
+}
+
+static inline const char *cerver_receive_http_log_id (const HttpReceive *http_receive) {
+
+	return cerver_receive_http_log_has_id (http_receive) ? http_receive->request->id : http_receive_log_empty;
+
+}
+
 // logs a request that was answered by an endpoint and updates its stats,
 // an OPTIONS, a 405 or a redirect answered by the cerver only logs the url
 static void cerver_receive_http_log_completed_route (
@@ -2064,15 +2107,20 @@ static void cerver_receive_http_log_completed_route (
 
 	const HttpEndpoint *endpoint = http_receive->endpoint;
 
+	char client[CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE] = { 0 };
+	cerver_receive_http_log_client (cr, http_receive, client);
+
 	cerver_log_with_date (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"%s -> [%s] %s - %zu -> %fs -> %d - %zu",
-		cr->connection->ip,
+		"%s -> [%s] %s - %zu -> %fs -> %d - %zu%s%s",
+		client,
 		http_request_method_str (http_receive->request->method),
 		endpoint ? endpoint->path->str : http_receive->request->url->str,
 		total_received,
 		process_time,
-		http_receive->status, http_receive->sent
+		http_receive->status, http_receive->sent,
+		cerver_receive_http_log_id_separator (http_receive),
+		cerver_receive_http_log_id (http_receive)
 	);
 
 	if (endpoint) {
@@ -2101,16 +2149,21 @@ static void cerver_receive_http_log_rejected (
 	if (http_receive->endpoint) path = http_receive->endpoint->path->str;
 	else if (http_receive->request->url) path = http_receive->request->url->str;
 
+	char client[CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE] = { 0 };
+	cerver_receive_http_log_client (cr, http_receive, client);
+
 	cerver_log_with_date (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
-		"%s -> [%s] %s - %zu -> %fs -> %s -> %d - %zu",
-		cr->connection->ip,
+		"%s -> [%s] %s - %zu -> %fs -> %s -> %d - %zu%s%s",
+		client,
 		http_request_method_str ((RequestMethod) http_receive->parser->method),
 		path,
 		total_received,
 		process_time,
 		http_receive_status_str (http_receive->receive_status),
-		http_receive->status, http_receive->sent
+		http_receive->status, http_receive->sent,
+		cerver_receive_http_log_id_separator (http_receive),
+		cerver_receive_http_log_id (http_receive)
 	);
 
 }
