@@ -409,6 +409,7 @@ Cerver *cerver_new (void) {
 		cerver->connection_queue = CERVER_DEFAULT_CONNECTION_QUEUE;
 
 		cerver->isRunning = false;
+		cerver->stop_requested = false;
 		cerver->blocking = true;
 		cerver->reusable = CERVER_DEFAULT_REUSABLE_FLAGS;
 		cerver->reusable_port = CERVER_DEFAULT_REUSABLE_PORT;
@@ -1578,35 +1579,46 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 
 }
 
+// creates the socket with the selected protocol
+static i32 cerver_network_create_socket (const Cerver *cerver) {
+
+	i32 sock = -1;
+
+	switch (cerver->protocol) {
+		case IPPROTO_TCP: {
+			sock = socket (
+				(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_STREAM, 0
+			);
+		} break;
+
+		case IPPROTO_UDP: {
+			sock = socket (
+				(cerver->use_ipv6 ? AF_INET6 : AF_INET),
+				SOCK_DGRAM, 0
+			);
+		} break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+				"Unknown protocol type!"
+			);
+			break;
+	}
+
+	return sock;
+
+}
+
 // inits the cerver networking capabilities
+// the socket is stored with __atomic, cerver_stop_request () can read it from another thread
 static u8 cerver_network_init (Cerver *cerver) {
 
 	u8 retval = 1;
 
 	if (cerver) {
-		// init the cerver with the selected protocol
-		switch (cerver->protocol) {
-			case IPPROTO_TCP: {
-				cerver->sock = socket (
-					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
-					SOCK_STREAM, 0
-				);
-			} break;
-
-			case IPPROTO_UDP: {
-				cerver->sock = socket (
-					(cerver->use_ipv6 ? AF_INET6 : AF_INET),
-					SOCK_DGRAM, 0
-				);
-			} break;
-
-			default: 
-				cerver_log (
-					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
-					"Unknown protocol type!"
-				);
-				break;
-		}
+		__atomic_store_n (&cerver->sock, cerver_network_create_socket (cerver), __ATOMIC_SEQ_CST);
 
 		if (cerver->sock >= 0) {
 			#ifdef CERVER_DEBUG
@@ -2502,8 +2514,30 @@ static u8 cerver_start_udp (Cerver *cerver) {
 }
 
 // tell the cerver to start listening for connections and packets
+// a stop requested before cerver_start (), or while it was setting the running flag, cancels it
+// cerver_stop_request () sets stop_requested before it clears the running flag,
+// so with sequential consistency every order of the two ends with the cerver stopped
+static bool cerver_start_cancelled (Cerver *cerver) {
+
+	const bool cancelled = __atomic_load_n (&cerver->stop_requested, __ATOMIC_SEQ_CST);
+
+	if (cancelled) {
+		cerver_set_running (cerver, false);
+
+		cerver_log (
+			LOG_TYPE_WARNING, LOG_TYPE_CERVER,
+			"The cerver %s was stopped before it started!",
+			cerver->info->name
+		);
+	}
+
+	return cancelled;
+
+}
+
 // initializes cerver's structures like thpool (if any)
 // and any other processes that have been configured before
+// a cerver is started only once, a stop requested before cancels it
 // returns 0 on success, 1 on error
 u8 cerver_start (Cerver *cerver) {
 
@@ -2511,6 +2545,8 @@ u8 cerver_start (Cerver *cerver) {
 
 	if (!cerver_is_running (cerver)) {
 		cerver_set_running (cerver, true);
+
+		if (cerver_start_cancelled (cerver)) return 0;
 
 		cerver_start_ignore_sigpipe (cerver);
 
@@ -2757,14 +2793,19 @@ static void cerver_stop_wake_threads (Cerver *cerver) {
 // stops accepting new connections and wakes up cerver_start ()
 // the listening socket is only closed by cerver_teardown (),
 // so its fd can not be reused while another thread is inside accept ()
+// a request before cerver_start () cancels the start
 void cerver_stop_request (Cerver *cerver) {
 
 	if (cerver) {
+		__atomic_store_n (&cerver->stop_requested, true, __ATOMIC_SEQ_CST);
+
 		cerver_set_running (cerver, false);
 
-		// wakes up the threads blocked in accept () or poll ()
-		if (cerver->sock >= 0) {
-			(void) shutdown (cerver->sock, SHUT_RDWR);
+		// wakes up the threads blocked in accept () or poll (),
+		// a socket created after this load is never listened in
+		const i32 sock = __atomic_load_n (&cerver->sock, __ATOMIC_SEQ_CST);
+		if (sock >= 0) {
+			(void) shutdown (sock, SHUT_RDWR);
 		}
 
 		cerver_stop_wake_threads (cerver);
