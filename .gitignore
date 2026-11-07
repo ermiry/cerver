@@ -3,6 +3,7 @@
 bin
 
 coverage
+coverage-integration
 data
 
 fuzz-artifacts
