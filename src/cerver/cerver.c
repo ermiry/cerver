@@ -2013,7 +2013,7 @@ static u8 cerver_update_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_thread_id,
-		(void *(*) (void *)) cerver_update,
+		cerver_update,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
@@ -2044,7 +2044,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 
 	if (!thread_create_detachable (
 		&cerver->update_interval_thread_id,
-		(void *(*) (void *)) cerver_update_interval,
+		cerver_update_interval,
 		cerver
 	)) {
 		#ifdef CERVER_DEBUG
