@@ -336,6 +336,9 @@ static void test_str_append_char (void) {
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
 
+	// the string is terminated right after its length
+	test_check_int_eq (str->str[str->len], '\0', NULL);
+
 	str_delete (str);
 
 }
@@ -355,6 +358,9 @@ static void test_str_append_c_string (void) {
 	test_check_unsigned_eq (str->len, strlen (result), NULL);
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
+
+	// the string is terminated right after its length
+	test_check_int_eq (str->str[str->len], '\0', NULL);
 
 	str_delete (str);
 
@@ -376,6 +382,9 @@ static void test_str_append_n_from_c_string (void) {
 	test_check_unsigned_eq (str->len, strlen (result), NULL);
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
+
+	// only n chars are appended and the string is terminated after them
+	test_check_int_eq (str->str[str->len], '\0', NULL);
 
 	str_delete (str);
 
