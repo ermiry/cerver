@@ -877,6 +877,8 @@ ImageType files_image_get_type (const char *filename) {
 
 	ImageType type = IMAGE_TYPE_NONE;
 
+	if (!filename) return type;
+
 	FILE *file = fopen (filename, "rb");
 	if (file) {
 		type = files_image_get_type_from_file (file);
