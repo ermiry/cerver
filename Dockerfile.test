@@ -1,13 +1,15 @@
 FROM gcc:13.4
 
 ARG SANITIZER=''
+ARG COVERAGE=0
+ARG ZLIB=1
 
-RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev gdb && apt-get clean
+RUN apt-get update && apt-get install -y libssl-dev libcurl4-openssl-dev zlib1g-dev gdb && apt-get clean
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make TYPE=test SANITIZER=${SANITIZER} -j4 && make TYPE=test SANITIZER=${SANITIZER} -j4 test
+RUN make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} ZLIB=${ZLIB} -j4 && make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} ZLIB=${ZLIB} -j4 test
 RUN if [ -z "${SANITIZER}" ]; then make TYPE=test load; fi
 
 ENV LD_LIBRARY_PATH=/opt/cerver/bin:/opt/cerver/test/bin/app
