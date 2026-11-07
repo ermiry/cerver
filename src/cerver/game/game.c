@@ -497,6 +497,7 @@ static void game_lobby_leave (Packet *packet) {
 static void game_lobby_init (Packet *packet) {
 
     // TODO:
+    (void) packet;
 
 }
 

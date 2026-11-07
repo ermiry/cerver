@@ -1450,6 +1450,7 @@ static void *connection_send_thread (void *connection_ptr) {
 static void *connection_reconnect_thread (void *connection_ptr) {
 
 	// TODO:
+	(void) connection_ptr;
 
 	return NULL;
 

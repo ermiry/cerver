@@ -66,21 +66,6 @@ static u64 next_client_id = 0;
 
 #pragma region aux
 
-static ClientConnection *client_connection_aux_new (
-	Client *client, Connection *connection
-) {
-
-	ClientConnection *cc = (ClientConnection *) malloc (sizeof (ClientConnection));
-	if (cc) {
-		cc->connection_thread_id = 0;
-		cc->client = client;
-		cc->connection = connection;
-	}
-
-	return cc;
-
-}
-
 void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 #pragma endregion
