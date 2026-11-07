@@ -261,6 +261,7 @@ static void test_http_header_type_by_string_hash (void) {
 	test_check_unsigned_eq (http_header_type_by_string ("x-request-id"), HTTP_HEADER_REQUEST_ID, NULL);
 	test_check_unsigned_eq (http_header_type_by_string ("TRANSFER-ENCODING"), HTTP_HEADER_TRANSFER_ENCODING, NULL);
 	test_check_unsigned_eq (http_header_type_by_string ("etag"), HTTP_HEADER_ETAG, NULL);
+	test_check_unsigned_eq (http_header_type_by_string ("x-real-ip"), HTTP_HEADER_REAL_IP, NULL);
 
 	// a prefix, a longer name or an unknown one is not a header of the map
 	test_check_unsigned_eq (http_header_type_by_string ("Content"), HTTP_HEADER_UNDEFINED, NULL);
