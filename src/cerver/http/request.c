@@ -6,6 +6,10 @@
 #include <string.h>
 #include <strings.h>
 
+#include <ctype.h>
+
+#include <openssl/rand.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -132,6 +136,9 @@ static void http_request_init (HttpRequest *http_request) {
 
 		http_request->keep_files = false;
 
+		http_request->id[0] = '\0';
+		http_request->client_ip[0] = '\0';
+
 		http_request->arena = NULL;
 		http_request->own_arena = NULL;
 	}
@@ -221,6 +228,127 @@ const RequestMethod http_request_get_method (
 ) {
 
 	return http_request->method;
+
+}
+
+const char *http_request_get_id (
+	const HttpRequest *http_request
+) {
+
+	return http_request->id;
+
+}
+
+const char *http_request_get_client_ip (
+	const HttpRequest *http_request
+) {
+
+	return http_request->client_ip;
+
+}
+
+static const char http_request_id_symbols[] = { "._-" };
+
+bool http_request_id_is_valid (
+	const char *value, const size_t length
+) {
+
+	bool valid = value && length && (length <= HTTP_REQUEST_ID_LENGTH);
+
+	// strchr () also finds the '\0' of the symbols
+	for (size_t i = 0; valid && (i < length); i++) {
+		valid = isalnum ((unsigned char) value[i])
+			|| (value[i] && strchr (http_request_id_symbols, value[i]));
+	}
+
+	return valid;
+
+}
+
+// the bytes of a UUID, the version (4) and the variant (10xx) bits
+#define HTTP_REQUEST_ID_UUID_BYTES				16
+#define HTTP_REQUEST_ID_UUID_VERSION_BYTE		6
+#define HTTP_REQUEST_ID_UUID_VARIANT_BYTE		8
+#define HTTP_REQUEST_ID_UUID_VERSION_MASK		0x0fu
+#define HTTP_REQUEST_ID_UUID_VERSION			0x40u
+#define HTTP_REQUEST_ID_UUID_VARIANT_MASK		0x3fu
+#define HTTP_REQUEST_ID_UUID_VARIANT			0x80u
+
+#define HTTP_REQUEST_ID_HEX_SHIFT				4
+#define HTTP_REQUEST_ID_HEX_MASK				0x0fu
+
+static const char http_request_id_hex_digits[] = { "0123456789abcdef" };
+
+static const char http_request_id_uuid_separator = '-';
+
+// a separator goes before these bytes, "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+static const unsigned int http_request_id_uuid_groups[] = { 4, 6, 8, 10 };
+static const unsigned int http_request_id_uuid_n_groups = 4;
+
+static bool http_request_id_uuid_group_starts (const unsigned int byte) {
+
+	bool starts = false;
+	for (unsigned int i = 0; !starts && (i < http_request_id_uuid_n_groups); i++) {
+		starts = (http_request_id_uuid_groups[i] == byte);
+	}
+
+	return starts;
+
+}
+
+static void http_request_id_uuid_write (
+	const unsigned char *bytes, char *id
+) {
+
+	char *end = id;
+	for (unsigned int i = 0; i < HTTP_REQUEST_ID_UUID_BYTES; i++) {
+		if (http_request_id_uuid_group_starts (i)) *end++ = http_request_id_uuid_separator;
+
+		*end++ = http_request_id_hex_digits[(bytes[i] >> HTTP_REQUEST_ID_HEX_SHIFT) & HTTP_REQUEST_ID_HEX_MASK];
+		*end++ = http_request_id_hex_digits[bytes[i] & HTTP_REQUEST_ID_HEX_MASK];
+	}
+
+	*end = '\0';
+
+}
+
+u8 http_request_id_generate (char *id) {
+
+	u8 retval = 1;
+
+	unsigned char bytes[HTTP_REQUEST_ID_UUID_BYTES] = { 0 };
+	if (id && (RAND_bytes (bytes, HTTP_REQUEST_ID_UUID_BYTES) == 1)) {
+		bytes[HTTP_REQUEST_ID_UUID_VERSION_BYTE] = (unsigned char) (
+			(bytes[HTTP_REQUEST_ID_UUID_VERSION_BYTE] & HTTP_REQUEST_ID_UUID_VERSION_MASK)
+			| HTTP_REQUEST_ID_UUID_VERSION
+		);
+
+		bytes[HTTP_REQUEST_ID_UUID_VARIANT_BYTE] = (unsigned char) (
+			(bytes[HTTP_REQUEST_ID_UUID_VARIANT_BYTE] & HTTP_REQUEST_ID_UUID_VARIANT_MASK)
+			| HTTP_REQUEST_ID_UUID_VARIANT
+		);
+
+		http_request_id_uuid_write (bytes, id);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+void http_request_resolve_id (HttpRequest *http_request) {
+
+	const String *incoming = http_request->headers[HTTP_HEADER_REQUEST_ID];
+
+	if (incoming && http_request_id_is_valid (incoming->str, incoming->len)) {
+		(void) memcpy (http_request->id, incoming->str, incoming->len);
+		http_request->id[incoming->len] = '\0';
+	}
+
+	else if (http_request_id_generate (http_request->id)) {
+		http_request->id[0] = '\0';
+	}
 
 }
 

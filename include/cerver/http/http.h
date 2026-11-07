@@ -16,8 +16,10 @@
 #include "cerver/http/middleware.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/origin.h"
+#include "cerver/http/proxy.h"
 #include "cerver/http/request.h"
 #include "cerver/http/route.h"
+#include "cerver/http/stream.h"
 #include "cerver/http/tree.h"
 #include "cerver/http/validator.h"
 
@@ -37,6 +39,10 @@
 #define HTTP_CERVER_DEFAULT_MAX_HEADERS				(1 << 7)
 #define HTTP_CERVER_DEFAULT_MAX_MULTIPART_PARTS		(1 << 10)
 #define HTTP_CERVER_DEFAULT_MAX_FILE_SIZE			(1 << 29)
+
+// the most that is reserved at once for a body from its Content-Length,
+// a bigger body grows geometrically as its bytes arrive
+#define HTTP_REQUEST_BODY_RESERVE_LIMIT				(1 << 24)
 
 // secs to receive a request's headers, a slower request is answered with 408
 #define HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT			(1 << 4)
@@ -65,6 +71,15 @@
 #define HTTP_CERVER_DEFAULT_ENABLE_ADMIN_CORS		false
 
 #define HTTP_CERVER_STATIC_FILE_SIZE				256
+
+// every response has a Date header (RFC 9110 section 6.6.1)
+#define HTTP_CERVER_DEFAULT_DATE_HEADER				true
+
+// the requests are not identified unless the cerver enables it
+#define HTTP_CERVER_DEFAULT_REQUEST_ID				false
+
+// the responses are counted by their status code, from 100 to 599
+#define HTTP_CERVER_RESPONSES_STATUS_SIZE			600
 
 #ifdef __cplusplus
 extern "C" {
@@ -178,6 +193,11 @@ struct _HttpCerver {
 	u8 n_response_headers;
 	HttpHeader response_headers[HTTP_HEADERS_SIZE];
 
+	// holds a reference to the state shared by every HTTP cerver of the process:
+	// the jwt pool, the responses producer, the common responses and the multi-parts pool,
+	// created by the first HTTP cerver that starts and released by the last one that ends
+	bool global_reference;
+
 	// stats
 	size_t n_incompleted_requests;	// the request wasn't parsed completely
 	size_t n_unhandled_requests;	// failed to get matching route
@@ -229,6 +249,22 @@ struct _HttpCerver {
 	unsigned int request_timeout;
 
 	size_t n_timeout_requests;		// answered with 408
+
+	// the headers that cerver adds to every response
+	bool date_header;
+	bool request_id;
+
+	// the compression of the endpoints with the compression setting
+	size_t compression_min_size;
+	int compression_level;
+
+	// the peers whose X-Forwarded-For and X-Real-IP are used to find the client's address
+	HttpTrustedProxies trusted_proxies;
+	unsigned int n_trusted_proxies;
+	HttpProxyNetwork trusted_proxies_networks[HTTP_TRUSTED_PROXIES_SIZE];
+
+	// the responses sent by their status code, updated with atomic operations
+	size_t n_responses_by_status[HTTP_CERVER_RESPONSES_STATUS_SIZE];
 
 };
 
@@ -396,7 +432,7 @@ CERVER_EXPORT void http_cerver_routes_print (
 );
 
 // the compiled endpoints as a json string, NULL if the routes are not compiled
-// {"n_endpoints": N, "endpoints": [{"method", "path", "auth", "modifier", "compatibility"}]}
+// {"n_endpoints": N, "endpoints": [{"method", "path", "auth", "modifier", "compatibility", "cors", "etag", "compression"}]}
 // it is deleted with http_cerver_routes_json_delete ()
 CERVER_EXPORT char *http_cerver_routes_generate_json (
 	const HttpCerver *http_cerver
@@ -550,6 +586,55 @@ CERVER_EXPORT void http_cerver_set_headers_timeout (
 // the default value is HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT, 0 disables the timeout
 CERVER_EXPORT void http_cerver_set_request_timeout (
 	HttpCerver *http_cerver, const unsigned int request_timeout
+);
+
+#pragma endregion
+
+#pragma region headers
+
+// adds the Date header to every response
+// the default value is HTTP_CERVER_DEFAULT_DATE_HEADER
+CERVER_EXPORT void http_cerver_set_date_header (
+	HttpCerver *http_cerver, const bool date_header
+);
+
+// identifies every request with the X-Request-Id that it has
+// (up to HTTP_REQUEST_ID_LENGTH characters of [A-Za-z0-9._-]) or with a new UUID v4,
+// the id is sent back in the X-Request-Id of the response and it is logged with the request
+// the default value is HTTP_CERVER_DEFAULT_REQUEST_ID
+CERVER_EXPORT void http_cerver_set_request_id (
+	HttpCerver *http_cerver, const bool request_id
+);
+
+// the smallest body that is compressed
+// the default value is HTTP_COMPRESSION_DEFAULT_MIN_SIZE
+CERVER_EXPORT void http_cerver_set_compression_min_size (
+	HttpCerver *http_cerver, const size_t min_size
+);
+
+// the zlib level, from HTTP_COMPRESSION_MIN_LEVEL to HTTP_COMPRESSION_MAX_LEVEL
+// the default value is HTTP_COMPRESSION_DEFAULT_LEVEL
+CERVER_EXPORT void http_cerver_set_compression_level (
+	HttpCerver *http_cerver, const int level
+);
+
+#pragma endregion
+
+#pragma region proxies
+
+// sets from which peers the X-Forwarded-For and X-Real-IP headers are used
+// to find the client's address (http_request_get_client_ip ())
+// the default value is HTTP_CERVER_DEFAULT_TRUSTED_PROXIES
+CERVER_EXPORT void http_cerver_set_trusted_proxies (
+	HttpCerver *http_cerver, const HttpTrustedProxies trusted_proxies
+);
+
+// adds a network in CIDR notation ("172.16.0.0/12", "fc00::/7" or a single address)
+// to the trusted proxies of HTTP_TRUSTED_PROXIES_LIST
+// an invalid network or more than HTTP_TRUSTED_PROXIES_SIZE stop the cerver when it starts
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 http_cerver_add_trusted_proxy (
+	HttpCerver *http_cerver, const char *cidr
 );
 
 #pragma endregion
@@ -878,6 +963,9 @@ struct _HttpReceive {
 	// a response was already sent before the request was completed,
 	// the rest of the request is not handled
 	bool responded;
+
+	// the response that the handler sends in pieces
+	HttpStream stream;
 
 	// the arena of the thread that handles the request,
 	// the receive, its parser and its request are released with it

@@ -77,6 +77,8 @@ CERVER_PUBLIC const char *http_trailing_slash_description (
 #define HTTP_ROUTE_SETTING_CUSTOM_DATA				(1 << 5)
 #define HTTP_ROUTE_SETTING_MAX_BODY_SIZE			(1 << 6)
 #define HTTP_ROUTE_SETTING_CORS						(1 << 7)
+#define HTTP_ROUTE_SETTING_ETAG						(1 << 8)
+#define HTTP_ROUTE_SETTING_COMPRESSION				(1 << 9)
 
 struct _HttpRouteSettings {
 
@@ -102,8 +104,17 @@ struct _HttpRouteSettings {
 	// 0 uses the cerver's max body size
 	size_t max_body_size;
 
-	// answers the CORS preflight requests (OPTIONS) with the origins whitelist
+	// answers the CORS preflight requests (OPTIONS) with the origins whitelist,
+	// and adds the Access-Control-Allow-Origin of a whitelisted origin to every response
 	bool cors;
+
+	// the GET and HEAD responses with 200 have the entity tag of their body,
+	// and they are answered with 304 when the request's If-None-Match matches it
+	bool etag;
+
+	// the responses are compressed with gzip when the request accepts it
+	// (only when cerver was compiled with zlib)
+	bool compression;
 
 	HttpMiddlewares middlewares;
 
@@ -202,6 +213,14 @@ CERVER_EXPORT void http_endpoint_set_max_body_size (
 
 CERVER_EXPORT void http_endpoint_set_cors (
 	HttpEndpoint *endpoint, const bool cors
+);
+
+CERVER_EXPORT void http_endpoint_set_etag (
+	HttpEndpoint *endpoint, const bool etag
+);
+
+CERVER_EXPORT void http_endpoint_set_compression (
+	HttpEndpoint *endpoint, const bool compression
 );
 
 // returns 0 on success, 1 on error
@@ -325,6 +344,14 @@ CERVER_EXPORT void http_group_set_max_body_size (
 
 CERVER_EXPORT void http_group_set_cors (
 	HttpGroup *group, const bool cors
+);
+
+CERVER_EXPORT void http_group_set_etag (
+	HttpGroup *group, const bool etag
+);
+
+CERVER_EXPORT void http_group_set_compression (
+	HttpGroup *group, const bool compression
 );
 
 // returns 0 on success, 1 on error

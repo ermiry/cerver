@@ -2,10 +2,12 @@
 #define _CERVER_HTTP_HEADERS_H_
 
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 #include "cerver/config.h"
 
-#define HTTP_HEADERS_MAX				62
+#define HTTP_HEADERS_MAX				63
 #define HTTP_HEADERS_SIZE				64
 
 // the open addressing table that finds a header type by its name,
@@ -103,6 +105,7 @@ extern "C" {
 	/* Tracing */																																																																				\
 	XX(60,  REQUEST_ID,							X-Request-Id,						(Identifies a request between the client, the proxies and the servers.))																																	\
 	XX(61,  FORWARDED_FOR,						X-Forwarded-For,					(Identifies the originating IP addresses of a client connecting through a proxy.))																															\
+	XX(62,  REAL_IP,							X-Real-IP,							(The IP address of the client that a proxy received the request from.))																																		\
 	XX(63,  UNDEFINED,							Undefined,							(Undefined Header))																																															\
 
 typedef enum http_header {
@@ -152,6 +155,15 @@ CERVER_PRIVATE void http_response_header_set_with_type_and_args (
 
 CERVER_PUBLIC void http_header_print (
 	const HttpHeader *header
+);
+
+// finds a header in a compiled header ("Name: value\r\n" lines after its status line),
+// the name is compared without case and it stops at the empty line that ends the header
+// returns true if it was found, and sets its value without the surrounding spaces
+CERVER_PUBLIC bool http_headers_buffer_find (
+	const char *buffer, const size_t length,
+	const char *name, const size_t name_length,
+	const char **value, size_t *value_length
 );
 
 #ifdef __cplusplus

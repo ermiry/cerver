@@ -142,6 +142,30 @@ static void http_route_stats_size_max (size_t *value, const size_t candidate) {
 
 }
 
+static const double http_route_stats_buckets[HTTP_ROUTE_STATS_DURATION_BUCKETS] = {
+	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+};
+
+const double *http_route_stats_duration_buckets (void) {
+
+	return http_route_stats_buckets;
+
+}
+
+// counts the process time in the first bucket that it fits in
+static void http_route_stats_duration_update (
+	HttpRouteStats *route_stats, const double process_time
+) {
+
+	for (unsigned int i = 0; i < HTTP_ROUTE_STATS_DURATION_BUCKETS; i++) {
+		if (process_time <= http_route_stats_buckets[i]) {
+			(void) __atomic_add_fetch (&route_stats->duration_buckets[i], 1, __ATOMIC_RELAXED);
+			break;
+		}
+	}
+
+}
+
 HttpRouteStats *http_route_stats_new (void) {
 
 	HttpRouteStats *route_stats = (HttpRouteStats *) malloc (sizeof (HttpRouteStats));
@@ -185,6 +209,7 @@ void http_route_stats_update (
 		http_route_stats_double_min (&route_stats->min_process_time, process_time);
 		http_route_stats_double_max (&route_stats->max_process_time, process_time);
 		http_route_stats_double_add (&route_stats->sum_process_times, process_time);
+		http_route_stats_duration_update (route_stats, process_time);
 
 		http_route_stats_size_min (&route_stats->min_request_size, request_size);
 		http_route_stats_size_max (&route_stats->max_request_size, request_size);
@@ -217,6 +242,10 @@ void http_route_stats_snapshot (
 		snapshot->min_response_size = __atomic_load_n (&route_stats->min_response_size, __ATOMIC_RELAXED);
 		snapshot->max_response_size = __atomic_load_n (&route_stats->max_response_size, __ATOMIC_RELAXED);
 		snapshot->sum_response_sizes = __atomic_load_n (&route_stats->sum_response_sizes, __ATOMIC_RELAXED);
+
+		for (unsigned int i = 0; i < HTTP_ROUTE_STATS_DURATION_BUCKETS; i++) {
+			snapshot->duration_buckets[i] = __atomic_load_n (&route_stats->duration_buckets[i], __ATOMIC_RELAXED);
+		}
 
 		const size_t n_requests = snapshot->n_requests;
 		snapshot->mean_process_time = n_requests ? snapshot->sum_process_times / (double) n_requests : 0;

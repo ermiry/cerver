@@ -388,9 +388,85 @@ static void test_http_request_set_full_dirname (void) {
 
 }
 
+static bool test_http_request_id_valid (const char *id) {
+
+	return http_request_id_is_valid (id, strlen (id));
+
+}
+
+// "xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx"
+static void test_http_request_id_check_uuid (const char *id) {
+
+	test_check_unsigned_eq (strlen (id), HTTP_REQUEST_ID_UUID_LENGTH, NULL);
+
+	for (size_t i = 0; i < HTTP_REQUEST_ID_UUID_LENGTH; i++) {
+		if ((i == 8) || (i == 13) || (i == 18) || (i == 23)) test_check (id[i] == '-', NULL);
+		else test_check (strchr ("0123456789abcdef", id[i]) != NULL, NULL);
+	}
+
+	test_check (id[14] == '4', "the UUID is not a version 4");
+	test_check (strchr ("89ab", id[19]) != NULL, "the UUID does not have the RFC 4122 variant");
+
+}
+
+static void test_http_request_id (void) {
+
+	test_check_true (test_http_request_id_valid ("abc-123_DEF.456"));
+	test_check_true (test_http_request_id_valid ("7f9c2ba4e88f827d616045507605853e"));
+
+	char longest[HTTP_REQUEST_ID_SIZE + 1] = { 0 };
+	(void) memset (longest, 'a', HTTP_REQUEST_ID_LENGTH);
+	test_check_true (test_http_request_id_valid (longest));
+	longest[HTTP_REQUEST_ID_LENGTH] = 'a';
+	test_check_false (test_http_request_id_valid (longest));
+
+	test_check_false (test_http_request_id_valid (""));
+	test_check_false (test_http_request_id_valid ("with space"));
+	test_check_false (test_http_request_id_valid ("new\r\nline"));
+	test_check_false (test_http_request_id_valid ("quote\""));
+	test_check_false (http_request_id_is_valid ("ab\0cd", 5));
+	test_check_false (http_request_id_is_valid (NULL, 4));
+
+	// a new id is a random UUID v4
+	char first[HTTP_REQUEST_ID_SIZE] = { 0 };
+	char second[HTTP_REQUEST_ID_SIZE] = { 0 };
+	test_check_unsigned_eq (http_request_id_generate (first), 0, NULL);
+	test_check_unsigned_eq (http_request_id_generate (second), 0, NULL);
+	test_http_request_id_check_uuid (first);
+	test_http_request_id_check_uuid (second);
+	test_check (strcmp (first, second), "two ids are the same");
+	test_check_unsigned_eq (http_request_id_generate (NULL), 1, NULL);
+
+	// the request keeps a valid X-Request-Id
+	HttpRequest *request = http_request_new ();
+	test_check_str_eq (http_request_get_id (request), "", NULL);
+
+	request->headers[HTTP_HEADER_REQUEST_ID] = str_new ("nginx-0123456789abcdef");
+	http_request_resolve_id (request);
+	test_check_str_eq (http_request_get_id (request), "nginx-0123456789abcdef", NULL);
+
+	// and replaces an invalid one
+	str_delete (request->headers[HTTP_HEADER_REQUEST_ID]);
+	request->headers[HTTP_HEADER_REQUEST_ID] = str_new ("bad id");
+	http_request_resolve_id (request);
+	test_http_request_id_check_uuid (http_request_get_id (request));
+
+	str_delete (request->headers[HTTP_HEADER_REQUEST_ID]);
+	request->headers[HTTP_HEADER_REQUEST_ID] = NULL;
+	http_request_resolve_id (request);
+	test_http_request_id_check_uuid (http_request_get_id (request));
+
+	test_check_str_eq (http_request_get_client_ip (request), "", NULL);
+
+	http_request_delete (request);
+
+}
+
 void http_tests_requests (void) {
 
 	(void) printf ("Testing HTTP requests...\n");
+
+	test_http_request_id ();
 
 	// main
 	test_http_request_create ();

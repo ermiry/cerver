@@ -2,6 +2,7 @@
 #define _CERVER_HTTP_RESPONSE_H_
 
 #include <sys/stat.h>
+#include <sys/uio.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -32,6 +33,23 @@
 
 // a response is sent as its header and its data, in a single system call
 #define HTTP_RESPONSE_PARTS						2
+
+// a response is sent as its header (without the empty line that ends it),
+// the headers that cerver adds for the request, the empty line and its data
+#define HTTP_RESPONSE_MESSAGE_PARTS				4
+
+// the most bytes of the headers that cerver adds to a response:
+// Date, X-Request-Id, Access-Control-Allow-Origin, Vary, ETag, Content-Encoding
+#define HTTP_RESPONSE_EXTRA_HEADERS_SIZE		(1 << 10)
+
+// the endpoint's entity tag and compression can be applied to the response
+#define HTTP_RESPONSE_SEND_OPTION_TRANSFORM		(1 << 0)
+
+// the header starts a stream
+#define HTTP_RESPONSE_SEND_OPTION_STREAM		(1 << 1)
+
+// only the header is sent, its body is sent after it (a file)
+#define HTTP_RESPONSE_SEND_OPTION_HEADER_ONLY	(1 << 2)
 
 #define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
@@ -248,6 +266,31 @@ CERVER_PUBLIC void http_response_print (
 #pragma endregion
 
 #pragma region send
+
+// sends a complete header (it ends with an empty line) and its data
+// with the headers that cerver adds for the request (Date, X-Request-Id, CORS, Vary),
+// and with the endpoint's entity tag and compression when the options have TRANSFORM
+// a header that does not end with an empty line is sent as it is
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_send_message (
+	const struct _HttpReceive *http_receive, const http_status status,
+	const void *header, const size_t header_len,
+	const void *data, const size_t data_len,
+	const unsigned int options
+);
+
+// answers with 304 Not Modified, with the headers of the response that it replaces
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_send_not_modified_header (
+	const struct _HttpReceive *http_receive,
+	const void *header, const size_t header_len
+);
+
+// sends the parts with a single system call and adds them to the sent bytes
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 http_response_send_pieces (
+	const struct _HttpReceive *http_receive, struct iovec *parts, const int n_parts
+);
 
 // sends a response to the connection's socket
 // returns 0 on success, 1 on error
@@ -487,8 +530,16 @@ CERVER_EXPORT u8 http_response_json_custom_reference_send (
 
 #pragma region main
 
+// the responses producer is shared by every HTTP cerver of the process,
+// the origins whitelist and the default response headers of its compiled responses
+// are the ones of the first HTTP cerver that started
 CERVER_PRIVATE unsigned int http_responses_init (
 	const struct _HttpCerver *http_cerver
+);
+
+// moves the producer to a cerver that is still alive when its own one ends
+CERVER_PRIVATE void http_responses_follow (
+	const struct _HttpCerver *ended, const struct _HttpCerver *alive
 );
 
 CERVER_PRIVATE void http_responses_end (void);

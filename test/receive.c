@@ -426,6 +426,8 @@ static void test_receive_buffer (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing RECEIVE HANDLE...\n");
 
 	test_receive_error_to_string ();

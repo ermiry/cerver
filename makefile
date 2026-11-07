@@ -9,6 +9,9 @@ DEBUG		:= 0
 # address, thread or undefined
 SANITIZER	:=
 
+# 1 compiles the gzip compression of the HTTP responses with zlib
+ZLIB		:= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -29,6 +32,8 @@ PTHREAD 	:= -l pthread
 MATH		:= -lm
 
 OPENSSL		:= -l ssl -l crypto
+
+ZLIBLIB		:= -l z
 
 CURL		:= -l curl
 
@@ -126,6 +131,11 @@ endif
 CFLAGS += -fPIC $(COMMON) $(SANITIZERFLAGS)
 
 LIB         := -L /usr/local/lib $(PTHREAD) $(MATH) $(OPENSSL) $(SANITIZERFLAGS)
+
+ifeq ($(ZLIB), 1)
+	CFLAGS += -D CERVER_ZLIB
+	LIB += $(ZLIBLIB)
+endif
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -365,6 +375,7 @@ integration-web:
 	$(CC) $(TESTINC) $(INTWEBIN)/admin.o -o $(INTWEBOUT)/admin $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/api.o -o $(INTWEBOUT)/api $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/auth.o -o $(INTWEBOUT)/auth $(INTWEBLIBS)
+	$(CC) $(TESTINC) $(INTWEBIN)/features.o -o $(INTWEBOUT)/features $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/jobs.o -o $(INTWEBOUT)/jobs $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/json.o -o $(INTWEBOUT)/json $(INTWEBLIBS)
 	$(CC) $(TESTINC) $(INTWEBIN)/multi.o -o $(INTWEBOUT)/multi $(INTWEBLIBS)
@@ -383,6 +394,7 @@ integration-web-client:
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/admin.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/admin $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/api.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/api $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/auth.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/auth $(INTWEBCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/features.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/features $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/jobs.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/jobs $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/json.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/json $(INTWEBCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTWEBCLIENTIN)/multi.o $(INTWEBCLIENTIN)/curl.o -o $(INTWEBCLIENTOUT)/multi $(INTWEBCLIENTLIBS)
@@ -508,6 +520,11 @@ FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer-no-l
 FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
+
+ifeq ($(ZLIB), 1)
+	FUZZLIBFLAGS += -D CERVER_ZLIB
+	FUZZLIBS += $(ZLIBLIB)
+endif
 
 FUZZERS			:= $(shell find $(FUZZDIR) -maxdepth 1 -type f -name *.$(SRCEXT) 2> /dev/null)
 FUZZLIBOBJS		:= $(patsubst $(SRCDIR)/%,$(FUZZBUILD)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))

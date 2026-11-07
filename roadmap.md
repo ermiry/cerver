@@ -7,7 +7,7 @@
 > |---|---|
 > | **Fecha** | 2026-11-04 |
 > | **Rama base** | `http`: idéntica al tag `2.0b-56` más los arreglos sin commitear de §3 |
-> | **Contexto** | `percepthor-backend/docs/context/cerver-roadmap-session-context.md` (el handoff de esta sesión) y `percepthor-backend/docs/context/gepp-cerver-connection-reset-session-context.md` (el 502 de gepp) |
+> | **Contexto** | `percepthor-backend/docs/context/cerver-module-context.md` (el estado del módulo, las fases, las versiones y el 502 de gepp) |
 > | **Alcance** | cerver (`/Users/ermiry/Documents/cerver`), pycerver (`/Users/ermiry/Documents/py-cerver`), la imagen devel (`percepthor-devops`) y los servicios de validación (gepp, balance, payloads) |
 
 Las citas `archivo:línea` son relativas a `src/cerver/` salvo que se indique otra cosa, y corresponden al estado de la rama
@@ -91,9 +91,10 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
 
 ## 3. Estado actual (rama `http`)
 
-**2026-11-05: la Fase 3 está implementada en cerver, pycerver, pypercepthor y libauth** sobre la Beta 2.0b-58 (Fase 2
-commiteada), sin commitear y sin bump. Falta la migración de gepp, balance y payloads y la validación en test. El
-detalle está en `percepthor-backend/docs/context/cerver-phase-3-session-context.md`.
+**2026-11-06: la Fase 3 y la suite de tests se publicaron en la Beta 2.0b-59**, con la migración de gepp, balance,
+payloads y tickets validada en test (§4.3.4). La siguiente es la Beta 2.0b-60: la Fase 3b (§4.3.5), sin WebSocket, y
+los arreglos de CI de 2.0b-59 (el crecimiento geométrico de `String` y la reserva del body). El detalle está en
+`percepthor-backend/docs/context/cerver-module-context.md`.
 
 - **Rutas:**
   - árbol radix (`http/tree.c`) compilado en `cerver_start`, con prioridad estático > parámetro > comodín;
@@ -137,7 +138,8 @@ Lo que queda para las fases siguientes:
 
 - la respuesta diferida desde otro hilo (la conexión se cierra cuando el handler termina);
 - las listas intrusivas;
-- la conexión web sin `ConnectionStats` / `PacketsPerType`, que son las 11 asignaciones restantes por GET.
+- la conexión web sin `ConnectionStats` / `PacketsPerType`, la mayor parte de las 8 asignaciones restantes por GET
+  (eran 11 antes de 2.0b-60; POST JSON pasó de 35 a 28).
 
 El estado previo a las Fases 0 y 1:
 
@@ -298,7 +300,7 @@ cerver suponen que cada llamada trae el token completo:
 | **Lectura del Bearer fuera de límites.** `str + sizeof ("Bearer")` sin verificar el prefijo ni la longitud | `http/http.c:2635` | validar `"Bearer "` y la longitud |
 | **Índice de tokens de ruta.** Una URL con más de 16 segmentos lee `routes_tokens[n_tokens - 1]` fuera del arreglo: un crash remoto | `http/http.c:2555` | el límite se verifica (y en la Fase 3 desaparecen las cubetas) |
 | **Multipart antes del auth.** Los archivos se abren y escriben en los callbacks (`http/http.c:2091-2095`, `:2157`), antes del match de ruta y del auth, que corren en `on_message_complete`. Un cliente sin autenticar escribe en disco en cualquier ruta | `http/http.c` | resolver ruta y auth en `on_headers_complete`, antes de aceptar el body |
-| Archivos de upload con `O_CREAT \| O_WRONLY`, sin `O_TRUNC` ni `O_EXCL` y con modo 0777 | `http/http.c:2093`, `include/cerver/http/http.h:27-28` | `O_EXCL` y 0640 por omisión. Reintentar las escrituras cortas |
+| Archivos de upload con `O_CREAT \| O_WRONLY`, sin `O_TRUNC` ni `O_EXCL` y con modo 0777 | `http/http.c:2093`, `include/cerver/http/http.h:27-28` | `O_EXCL` y 0644 por omisión (directorios 0755). Reintentar las escrituras cortas |
 | Upload truncado reportado como éxito (el tmpfs lleno) | escritura de multipart | si falla el `write`, se marca la parte con error y el request queda en error (hoy los servicios lo detectan a mano) |
 | Se ignora el retorno de `multipart_parser_execute` | `http/http.c:2213`, `:2249` | un boundary inválido se convierte en 400 |
 | La búsqueda de boundary de respaldo (`http_receive_handle_mpart_body_look_for_boundary`) busca chunk por chunk (no ve un boundary partido), descarta lo anterior y lee `found + 24` más allá de `length` | `http/http.c:2219-2254` | se elimina: con el bug 2 arreglado, el boundary siempre sale de la cabecera |
@@ -325,7 +327,7 @@ cerver suponen que cada llamada trae el token completo:
 
 **Estado (2026-11-05): implementada y validada.**
 
-- La evidencia y las decisiones están en `percepthor-backend/docs/context/cerver-phase-2-session-context.md`.
+- La evidencia y las decisiones están en `percepthor-backend/docs/context/cerver-module-context.md` §3.5.
 - Los puntos de esta sección describen el código **antes** de la fase.
 - Desviaciones del plan:
   - `job_queue` (los Handlers) conserva su semáforo binario, porque cada cola tiene un solo consumidor;
@@ -618,14 +620,34 @@ Lo que entró en la Fase 3:
 - Los otros 41 servicios corren con la capa de compatibilidad.
 - Contexto completo: `percepthor-backend/docs/context/cerver-services-migration-session-context.md`.
 
-#### 4.3.5 Fase 3b — Capacidades HTTP restantes
+#### 4.3.5 Fase 3b — Capacidades HTTP restantes (Beta 2.0b-60)
 
-- Bodies chunked de entrada (los callbacks de chunk siguen en NULL), y respuestas chunked y en streaming.
-- Cabecera `Date`, ETag, `Last-Modified` y 304, compresión opcional. Las cabeceras de esos conditionals ya están en el
-  mapa.
-- Request id (que se propaga a los logs) y métricas exportables (formato Prometheus) además de las del admin.
-- WebSocket: las rutas con ese modifier responden 501 hasta entonces.
-- Las cabeceras CORS automáticas en las respuestas (hoy solo el preflight es automático).
+El uso principal de cerver es detrás de nginx: cada capacidad se prueba standalone y detrás de nginx (la versión de
+producción, 1.31.6, y la stable), con el upstream en `keepalive`.
+
+- **Cabeceras por petición.** Todas las respuestas salen por un solo `sendmsg` de cuatro partes: la cabecera compilada
+  sin su `\r\n` final, las cabeceras de la petición, `\r\n` y el body. Así una respuesta compilada una vez (las de los
+  servicios, las de error de cerver) recibe `Date`, `X-Request-Id`, CORS, `ETag` o `Content-Encoding` sin
+  recompilarse y sin asignaciones. Una cabecera que la respuesta o el cerver ya tienen no se repite.
+- **`Date`** siempre (RFC 9110 §6.6.1), cacheada por hilo y por segundo; `http_cerver_set_date_header` la apaga.
+- **Chunked de entrada.** http_parser ya decodifica los chunks y rechaza `Transfer-Encoding` + `Content-Length`; los
+  trailers se ignoran. Se prueba partido en cada byte, con multipart y con `Expect: 100-continue`.
+- **Streaming:** `http_response_stream_begin / write / end` (chunked en HTTP/1.1, delimitado por el cierre en 1.0;
+  HEAD sin body). Si el handler no lo termina, cerver lo termina.
+- **ETag y 304:** los estáticos con ETag débil (tamaño y mtime) y `Last-Modified`; los handlers con el setting
+  heredable `etag` (FNV-1a del body). `If-None-Match` manda sobre `If-Modified-Since`.
+- **Compresión gzip** opcional (`ZLIB=1` en el makefile), con el setting heredable `compression`, un tamaño mínimo y
+  los tipos comprimibles. Sin zlib la API existe y no comprime.
+- **Request id** opt-in por cerver: el `X-Request-Id` entrante si es válido o un UUID v4; en la respuesta, en el log y
+  con `http_request_get_id`.
+- **Métricas Prometheus** en `[top level]/cerver/metrics` con el auth de admin: los stats actuales, las respuestas por
+  código y un histograma de latencia por endpoint.
+- **CORS automático:** los endpoints con `cors` agregan `Access-Control-Allow-Origin` y `Vary: Origin` a todas sus
+  respuestas.
+- **La IP real del cliente** detrás de proxies: `X-Forwarded-For` (de derecha a izquierda) o `X-Real-IP`, solo desde
+  un proxy de confianza (`NONE` por default, una lista CIDR, las redes privadas o todos). En el log, con
+  `http_request_get_client_ip`, y libauth la reenvía al servicio de auth.
+- **`Connection: close` se mantiene** hasta el keep-alive de la Fase 4.
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
@@ -643,6 +665,10 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
   los handlers. Tiene backpressure: si el pool y su cola están llenos, se responde 503 sin ocupar un hilo de I/O.
 - `writev` y `sendfile` no bloqueantes. Respuestas diferidas desde otros hilos, con un ciclo de vida seguro.
 - TLS en proceso (OpenSSL ya se enlaza, hoy solo para JWT) y, más adelante, HTTP/2.
+- **WebSocket** (movido de la Fase 3b): en el modelo de un hilo por conexión, cada WebSocket ocuparía un hilo del
+  thpool toda su vida. Con el event loop es una conexión más. Las rutas con ese modifier responden 501 hasta entonces.
+- **Una ruta de healthcheck fuera del pool** (movida del backlog): hoy, con la política `wait`, `/version` espera en
+  la cola y el contenedor queda `unhealthy` mientras dura la saturación.
 - **pycerver 1.0** alineado con la API 3.0.
 - **La migración completa, sin retrocompatibilidad:**
   - los 47 servicios registran sus rutas con grupos y endpoints;
@@ -671,7 +697,7 @@ Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en pro
 | 2 | Fase 1 (body y seguridad) | es el bug que todos los servicios pagan con el buffer, y hay crashes y escrituras remotas |
 | 3 | Fase 2 (thpool, apagado, collections) | balance y los handlers síncronos agotan el pool; el rolling deploy necesita drenado |
 | 4 | Fase 3 (rutas y HTTP) | las ~500 rutas de indicators y las 256 de gepp en match lineal, la trampa del orden, 405 / `PATCH` / `HEAD` |
-| 4b | Fase 3b (chunked, ETag, request id, métricas, WebSocket) | lo que completa HTTP/1.1 antes del event loop |
+| 4b | Fase 3b (chunked, streaming, `Date`, ETag, compresión, request id, métricas, CORS, la IP real) | lo que completa HTTP/1.1 detrás de nginx antes del event loop |
 | 5 | Fase 4 (event loop) | el techo de rendimiento, cuando lo anterior esté estable |
 
 ---

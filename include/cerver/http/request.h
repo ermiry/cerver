@@ -27,6 +27,16 @@
 // the arena of a request that was not created in the arena of its thread
 #define REQUEST_ARENA_CHUNK_SIZE		(1 << 10)
 
+// the longest X-Request-Id that is accepted, a longer one is replaced with a new id
+#define HTTP_REQUEST_ID_LENGTH			64
+#define HTTP_REQUEST_ID_SIZE			(HTTP_REQUEST_ID_LENGTH + 1)
+
+// the length of a UUID v4, "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+#define HTTP_REQUEST_ID_UUID_LENGTH		36
+
+// the longest client address (an IPv6) and its '\0', the same as HTTP_CLIENT_IP_SIZE
+#define HTTP_REQUEST_CLIENT_IP_SIZE		46
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -122,6 +132,12 @@ struct _HttpRequest {
 
 	bool keep_files;
 
+	// the request's id when the cerver identifies its requests, "" if it does not
+	char id[HTTP_REQUEST_ID_SIZE];
+
+	// the address of the client, the peer or the one forwarded by a trusted proxy
+	char client_ip[HTTP_REQUEST_CLIENT_IP_SIZE];
+
 	// when the request lives in the arena of its thread,
 	// the request, its url, its query and its headers are released with the arena,
 	// so none of them must be used after the route handler returns
@@ -160,6 +176,33 @@ CERVER_PRIVATE void http_request_destroy (
 CERVER_EXPORT const RequestMethod http_request_get_method (
 	const HttpRequest *http_request
 );
+
+// gets the request's id (its X-Request-Id or a new UUID v4)
+// when the cerver identifies its requests (http_cerver_set_request_id ()), "" otherwise
+CERVER_EXPORT const char *http_request_get_id (
+	const HttpRequest *http_request
+);
+
+// gets the address of the client that sent the request:
+// the peer, or the address forwarded by a trusted proxy (http_cerver_set_trusted_proxies ())
+CERVER_EXPORT const char *http_request_get_client_ip (
+	const HttpRequest *http_request
+);
+
+// sets the request's id: the X-Request-Id of the request if it is valid
+// (up to HTTP_REQUEST_ID_LENGTH characters of [A-Za-z0-9._-]) or a new UUID v4
+CERVER_PRIVATE void http_request_resolve_id (
+	HttpRequest *http_request
+);
+
+// returns true if the value can be used as a request's id
+CERVER_PUBLIC bool http_request_id_is_valid (
+	const char *value, const size_t length
+);
+
+// writes a new UUID v4 of HTTP_REQUEST_ID_UUID_LENGTH characters and its '\0' in id
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 http_request_id_generate (char *id);
 
 // gets the HTTP request's url string value
 CERVER_EXPORT const String *http_request_get_url (

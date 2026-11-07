@@ -307,6 +307,8 @@ static void test_files_image_get_type_without_file (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing FILES...\n");
 
 	// main

@@ -147,6 +147,8 @@ static void threads_tests_main (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing THREADS...\n");
 
 	threads_tests_main ();

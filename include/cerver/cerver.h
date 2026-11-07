@@ -317,7 +317,9 @@ struct _Cerver {
 
 	// read and written with __atomic, use cerver_is_running ()
 	bool isRunning;                     // the server is recieving and/or sending packetss
-	bool blocking;                      // sokcet fd is blocking?
+	// read and written with __atomic, a stop requested before cerver_start () cancels it
+	bool stop_requested;
+	bool blocking;                     // sokcet fd is blocking?
 	bool reusable;						// socket fd with reusable flags?
 	bool reusable_port;					// socket fd with SO_REUSEPORT?
 	bool ignore_sigpipe;				// ignore SIGPIPE when the cerver starts?

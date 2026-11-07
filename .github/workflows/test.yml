@@ -14,18 +14,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
+        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev zlib1g-dev
 
       - name: Compile Sources
-        run: make TYPE=test COVERAGE=1
+        run: make TYPE=test COVERAGE=1 ZLIB=1
 
       - name: Compile Tests
-        run: make TYPE=test COVERAGE=1 test
+        run: make TYPE=test COVERAGE=1 ZLIB=1 test
 
       - name: Unit Tests
         run: bash test/run.sh
 
       - name: Integration Tests
+        env:
+          COVERAGE: 1
         run: bash test/integration.sh
 
       - name: Coverage
@@ -40,6 +42,15 @@ jobs:
           name: build
           fail_ci_if_error: true
           # verbose: true
+
+      - name: Upload integration coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: ./coverage-integration/
+          flags: integration
+          name: integration
+          fail_ci_if_error: true
 
   integration-sanitizers:
     name: Cerver integration tests with address and undefined sanitizers

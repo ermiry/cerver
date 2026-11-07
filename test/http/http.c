@@ -676,6 +676,8 @@ static void http_tests_main (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing HTTP...\n");
 
 	http_tests_main ();
@@ -692,7 +694,11 @@ int main (int argc, char **argv) {
 	http_tests_multiparts ();
 	http_tests_urls ();
 	http_tests_utils ();
-	
+	http_tests_date ();
+	http_tests_conditional ();
+	http_tests_compression ();
+	http_tests_proxy ();
+
 	http_tests_jwt ();
 
 	// integration tests
@@ -707,6 +713,9 @@ int main (int argc, char **argv) {
 
 	// a real cerver: deadlines, overload policies, drain and signals
 	http_tests_server ();
+
+	// the headers that cerver adds, entity tags, compression, streams and metrics
+	http_tests_features ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 

@@ -37,6 +37,8 @@ static void test_connection_base_configuration (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) printf ("Testing CONNECTION...\n");
 
 	test_connection_base_configuration ();

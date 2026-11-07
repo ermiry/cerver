@@ -34,6 +34,14 @@ extern void http_tests_urls (void);
 
 extern void http_tests_utils (void);
 
+extern void http_tests_date (void);
+
+extern void http_tests_conditional (void);
+
+extern void http_tests_compression (void);
+
+extern void http_tests_proxy (void);
+
 /*** integration ***/
 
 extern void http_tests_origins_whitelist (void);
@@ -49,5 +57,7 @@ extern void http_tests_admin (void);
 extern void http_tests_receive (void);
 
 extern void http_tests_server (void);
+
+extern void http_tests_features (void);
 
 #endif

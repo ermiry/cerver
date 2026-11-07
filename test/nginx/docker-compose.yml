@@ -2,10 +2,10 @@ services:
   cerver:
     image: ${IMAGE:-ermiry/cerver:test}
     working_dir: /opt/cerver/test/web
-    command: ["../bin/web/router"]
+    command: ["../bin/web/features"]
 
   nginx:
-    image: nginx:1.27.3-alpine
+    image: ${NGINX_IMAGE:-nginx:1.31.6-alpine}
     depends_on:
       - cerver
     volumes:

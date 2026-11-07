@@ -10,6 +10,7 @@
 
 #include "cerver/http/admin.h"
 #include "cerver/http/http.h"
+#include "cerver/http/metrics.h"
 #include "cerver/http/request.h"
 #include "cerver/http/response.h"
 #include "cerver/http/route.h"
@@ -1012,6 +1013,47 @@ static void http_cerver_admin_workers_handler (
 
 }
 
+static void http_cerver_admin_send_metrics (
+	const HttpReceive *http_receive, const String *metrics
+) {
+
+	HttpResponse *response = http_response_get ();
+	if (response) {
+		http_response_set_status (response, HTTP_STATUS_OK);
+		(void) http_response_add_header (response, HTTP_HEADER_CONTENT_TYPE, HTTP_METRICS_CONTENT_TYPE);
+		(void) http_response_add_content_length_header (response, metrics->len);
+
+		http_cerver_admin_response_set_cors_headers (http_receive, response);
+
+		(void) http_response_set_data_ref (response, metrics->str, metrics->len);
+
+		(void) http_response_send (response, http_receive);
+
+		http_response_return (response);
+	}
+
+}
+
+// GET [top level]/cerver/metrics
+// HEAD [top level]/cerver/metrics
+static void http_cerver_admin_metrics_handler (
+	const HttpReceive *http_receive,
+	const HttpRequest *request
+) {
+
+	String *metrics = http_cerver_metrics_generate (http_receive->http_cerver);
+	if (metrics) {
+		http_cerver_admin_send_metrics (http_receive, metrics);
+
+		str_delete (metrics);
+	}
+
+	else {
+		(void) http_response_send (server_error, http_receive);
+	}
+
+}
+
 #pragma GCC diagnostic pop
 
 static void http_cerver_admin_route_set_auth (
@@ -1181,6 +1223,39 @@ static void http_cerver_admin_set_workers_route (
 
 }
 
+static void http_cerver_admin_set_metrics_route (
+	const HttpCerver *http_cerver, HttpRoute *top_level_route
+) {
+
+	// GET [top level]/cerver/metrics
+	HttpRoute *metrics_route = http_route_create (
+		REQUEST_METHOD_GET, "cerver/metrics", http_cerver_admin_metrics_handler
+	);
+
+	if (http_cerver->enable_admin_head_handlers) {
+		http_route_set_handler (
+			metrics_route,
+			REQUEST_METHOD_HEAD,
+			http_cerver_admin_metrics_handler
+		);
+	}
+
+	if (http_cerver->enable_admin_options_handlers) {
+		http_route_set_handler (
+			metrics_route,
+			REQUEST_METHOD_OPTIONS,
+			http_cerver_admin_options_handler
+		);
+	}
+
+	http_cerver_admin_route_set_auth (http_cerver, metrics_route);
+
+	http_route_set_custom_data (metrics_route, http_cerver->admin_routes_custom_data);
+
+	http_route_child_add (top_level_route, metrics_route);
+
+}
+
 u8 http_cerver_admin_init (
 	const HttpCerver *http_cerver,
 	HttpRoute *top_level_route
@@ -1208,6 +1283,11 @@ u8 http_cerver_admin_init (
 
 		// GET [top level]/cerver/stats/workers
 		http_cerver_admin_set_workers_route (
+			http_cerver, top_level_route
+		);
+
+		// GET [top level]/cerver/metrics
+		http_cerver_admin_set_metrics_route (
 			http_cerver, top_level_route
 		);
 
@@ -1327,6 +1407,12 @@ u8 http_cerver_admin_group_init (
 		http_cerver_admin_group_route (
 			http_cerver, group, "cerver/stats/workers",
 			http_cerver_admin_workers_handler, http_cerver_admin_workers_head_handler
+		);
+
+		// GET [group]/cerver/metrics, a HEAD is answered without the body by the same handler
+		http_cerver_admin_group_route (
+			http_cerver, group, "cerver/metrics",
+			http_cerver_admin_metrics_handler, http_cerver_admin_metrics_handler
 		);
 
 		retval = 0;

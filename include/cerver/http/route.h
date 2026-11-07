@@ -76,6 +76,13 @@ typedef unsigned int (*HttpAuthenticationHandler)(
 	const HttpRequest *request
 );
 
+// the buckets of the histogram of the process times, the ones of the Prometheus clients,
+// a time bigger than the last bucket is only counted in n_requests (the "+Inf" bucket)
+#define HTTP_ROUTE_STATS_DURATION_BUCKETS		11
+
+// the upper bound in secs of each bucket of the process times
+CERVER_PUBLIC const double *http_route_stats_duration_buckets (void);
+
 // the values are updated with atomic operations by the threads that handle the requests,
 // so they are read with http_route_stats_snapshot ()
 struct _HttpRouteStats {
@@ -98,6 +105,9 @@ struct _HttpRouteStats {
 	size_t max_response_size;
 	size_t sum_response_sizes;
 	size_t mean_response_size;
+
+	// the requests whose process time was inside each bucket (they are not cumulative)
+	size_t duration_buckets[HTTP_ROUTE_STATS_DURATION_BUCKETS];
 
 };
 

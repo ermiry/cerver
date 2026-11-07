@@ -109,6 +109,7 @@ typedef struct TestReceiveObserved {
 
 	bool has_body;
 	size_t body_len;
+	size_t body_capacity;
 	char body[TEST_RECEIVE_VALUE_SIZE];
 
 	char content_type[TEST_RECEIVE_VALUE_SIZE];
@@ -187,6 +188,7 @@ static void test_receive_observe_body (const HttpRequest *request) {
 	if (body) {
 		observed.has_body = true;
 		observed.body_len = body->len;
+		observed.body_capacity = body->max_len;
 		(void) memcpy (
 			observed.body, body->str,
 			(body->len < TEST_RECEIVE_VALUE_SIZE) ? body->len : TEST_RECEIVE_VALUE_SIZE
@@ -837,6 +839,8 @@ static void test_receive_check_echo_json (void) {
 	test_receive_expect (observed.has_body);
 	test_receive_expect (observed.body_len == strlen (echo_json_body));
 	test_receive_expect (!strcmp (observed.body, echo_json_body));
+	// reserved once from its Content-Length, whatever the pieces it arrived in
+	test_receive_expect (observed.body_capacity == (strlen (echo_json_body) + 1));
 	test_receive_expect (!strcmp (observed.content_type, "application/json"));
 	test_receive_expect (!strcmp (observed.custom, "custom-value"));
 	test_receive_expect (!strcmp (observed.query, "key=value%20x&other=1"));
@@ -863,6 +867,7 @@ static void test_receive_check_binary (void) {
 	test_receive_expect (!strcmp (observed.param, "abc123"));
 	test_receive_expect (observed.body_len == sizeof (binary_body));
 	test_receive_expect (!memcmp (observed.body, binary_body, sizeof (binary_body)));
+	test_receive_expect (observed.body_capacity == (sizeof (binary_body) + 1));
 
 }
 
@@ -982,9 +987,101 @@ static void test_receive_check_expect_continue (void) {
 
 }
 
+// a chunked body with a chunk extension and trailers,
+// a trailer is not a header of the request, even with the name of one
+static const char *chunked_request = {
+	"POST /test/echo HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Content-Type: application/json\r\n"
+	"X-Custom: custom-value\r\n"
+	"Transfer-Encoding: chunked\r\n"
+	"\r\n"
+	"10\r\n"
+	"{\"name\": \"cerver\r\n"
+	"7;extension=value\r\n"
+	"\", \"val\r\n"
+	"10\r\n"
+	"ues\": [1, 2, 3]}\r\n"
+	"0\r\n"
+	"X-Custom: trailer-value\r\n"
+	"Content-Type: text/plain\r\n"
+	"\r\n"
+};
+
+static void test_receive_check_chunked (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (observed.has_body);
+	test_receive_expect (observed.body_len == strlen (echo_json_body));
+	test_receive_expect (!strcmp (observed.body, echo_json_body));
+	test_receive_expect (!strcmp (observed.content_type, "application/json"));
+	test_receive_expect (!strcmp (observed.custom, "custom-value"));
+
+}
+
+// the parts of a chunked multi-part body arrive in pieces of the chunks
+static const char *chunked_multipart_request = {
+	"POST /test/upload HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Content-Type: multipart/form-data; boundary=----CerverBoundary7MA4YWxk\r\n"
+	"Transfer-Encoding: chunked\r\n"
+	"\r\n"
+	"4E\r\n"
+	"------CerverBoundary7MA4YWxk\r\n"
+	"Content-Disposition: form-data; name=\"field\"\r\n"
+	"\r\n"
+	"\r\n"
+	"27\r\n"
+	"hello\r\n"
+	"------CerverBoundary7MA4YWxk--\r\n"
+	"\r\n"
+	"0\r\n"
+	"\r\n"
+};
+
+static void test_receive_check_chunked_multipart (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.part_value, "hello"));
+
+}
+
+static const char *chunked_expect_continue_request = {
+	"POST /test/echo HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Expect: 100-continue\r\n"
+	"Transfer-Encoding: chunked\r\n"
+	"\r\n"
+	"4\r\n"
+	"data\r\n"
+	"0\r\n"
+	"\r\n"
+};
+
 #pragma endregion
 
 #pragma region cases
+
+static void test_receive_splits_chunked (Cerver *cerver) {
+
+	test_receive_every_split (
+		cerver, "chunked body with an extension and trailers",
+		chunked_request, strlen (chunked_request), test_receive_check_chunked
+	);
+
+	test_receive_every_split (
+		cerver, "chunked multi-part",
+		chunked_multipart_request, strlen (chunked_multipart_request), test_receive_check_chunked_multipart
+	);
+
+	test_receive_every_split (
+		cerver, "chunked body with expect 100-continue",
+		chunked_expect_continue_request, strlen (chunked_expect_continue_request), test_receive_check_expect_continue
+	);
+
+}
 
 static void test_receive_splits (Cerver *cerver) {
 
@@ -1022,6 +1119,8 @@ static void test_receive_splits (Cerver *cerver) {
 		cerver, "expect 100-continue",
 		expect_continue_request, strlen (expect_continue_request), test_receive_check_expect_continue
 	);
+
+	test_receive_splits_chunked (cerver);
 
 }
 

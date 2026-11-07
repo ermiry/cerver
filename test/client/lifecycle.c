@@ -771,6 +771,8 @@ static void test_lifecycle_many_clients (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	(void) argc;
 	(void) argv;
 

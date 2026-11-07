@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -138,6 +139,7 @@ void str_copy (String *to, const String *from) {
 
 	if (to && from) {
 		if (to->str) free (to->str);
+		to->max_len = 0;
 		to->len = from->len;
 		to->str = (char *) calloc (to->len + 1, sizeof (char));
 		(void) strncpy (to->str, from->str, from->len);
@@ -149,6 +151,7 @@ void str_n_copy (String *to, const String *from, const size_t n) {
 
 	if (to && from) {
 		if (to->str) free (to->str);
+		to->max_len = 0;
 		to->len = n;
 		to->str = (char *) calloc (to->len + 1, sizeof (char));
 		(void) strncpy (to->str, from->str, n);
@@ -169,6 +172,7 @@ void str_replace (String *str, const char *format, ...) {
 		va_start (args, format);
 
 		if (str->str) free (str->str);
+		str->max_len = 0;
 
 		(void) vasprintf (&str->str, format, args);
 		str->len = strlen (str->str);
@@ -182,6 +186,7 @@ void str_replace_with (String *str, const char *c_str) {
 
 	if (str && c_str) {
 		if (str->str) free (str->str);
+		str->max_len = 0;
 		str->len = strlen (c_str);
 		str->str = (char *) calloc (str->len + 1, sizeof (char));
 		(void) strncpy (str->str, c_str, str->len);
@@ -195,6 +200,7 @@ void str_n_replace_with (
 
 	if (str && c_str) {
 		if (str->str) free (str->str);
+		str->max_len = 0;
 		str->len = n;
 		str->str = (char *) calloc (str->len + 1, sizeof (char));
 		(void) strncpy (str->str, c_str, n);
@@ -277,27 +283,82 @@ String *str_create_from_bytes_arena (
 
 }
 
+// the bytes allocated for the string, including the '\0'
+static size_t str_capacity (const String *str) {
+
+	if (!str->str) return 0;
+
+	return (str->max_len > str->len) ? str->max_len : str->len + 1;
+
+}
+
+// the next capacity grows geometrically and always fits needed bytes
+static size_t str_next_capacity (const size_t capacity, const size_t needed) {
+
+	size_t next = (capacity > (SIZE_MAX / STRING_GROWTH_FACTOR)) ?
+		needed : capacity * STRING_GROWTH_FACTOR;
+
+	if (next < STRING_MIN_CAPACITY) next = STRING_MIN_CAPACITY;
+
+	return (next < needed) ? needed : next;
+
+}
+
+// reallocates the string to exactly capacity bytes, bigger than its len
+// returns 0 on success, 1 on error (the string is kept unchanged)
+static int str_resize (String *str, const size_t capacity) {
+
+	char *new_str = (char *) realloc (str->str, capacity);
+	if (!new_str) return 1;
+
+	new_str[str->len] = '\0';
+
+	str->str = new_str;
+	str->max_len = capacity;
+
+	return 0;
+
+}
+
+// makes sure that the string has at least capacity bytes allocated
+// (including the '\0'), so the next appends that fit do not reallocate it
+// it never shrinks the string
+// returns 0 on success, 1 on error (the string is kept unchanged)
+int str_reserve (String *str, const size_t capacity) {
+
+	if (!str) return 1;
+
+	if (capacity <= str_capacity (str)) return 0;
+
+	return str_resize (str, capacity);
+
+}
+
 // appends exactly n bytes at the end of the string,
 // bytes may contain '\0' and the result is always terminated with '\0'
+// the string grows geometrically, so many appends are not quadratic
 // returns 0 on success, 1 on error (the string is kept unchanged)
 int str_append_bytes (String *str, const char *bytes, const size_t n) {
 
-	int retval = 1;
+	if (!str || (!bytes && n)) return 1;
 
-	if (str && (bytes || !n)) {
-		char *new_str = (char *) realloc (str->str, str->len + n + 1);
-		if (new_str) {
-			if (n) (void) memcpy (new_str + str->len, bytes, n);
-			new_str[str->len + n] = '\0';
+	if (n > (SIZE_MAX - str->len - 1)) return 1;
 
-			str->str = new_str;
-			str->len += n;
+	const size_t needed = str->len + n + 1;
+	const size_t capacity = str_capacity (str);
 
-			retval = 0;
-		}
+	if (
+		(needed > capacity)
+		&& str_resize (str, str_next_capacity (capacity, needed))
+	) {
+		return 1;
 	}
 
-	return retval;
+	if (n) (void) memcpy (str->str + str->len, bytes, n);
+	str->len += n;
+	str->str[str->len] = '\0';
+
+	return 0;
 
 }
 
@@ -425,6 +486,7 @@ void str_remove_last_char (String *s) {
 			if (s->str) {
 				s->str[s->len - 1] = '\0';
 				s->len = new_len - 1;
+				s->max_len = 0;
 			}
 		}
 	}

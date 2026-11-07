@@ -27,6 +27,7 @@
 // - inactive clients are closed by the cerver
 // - the update and interval threads run and stop with the cerver
 // - the teardown with connected clients, that see the remote close
+// - a stop requested before or while cerver_start () runs ends with the cerver stopped
 // - every cerver event is triggered once
 
 #define CORE_ADDRESS					"127.0.0.1"
@@ -37,6 +38,8 @@
 #define CORE_POLL_TIMEOUT				200
 #define CORE_JOIN_SECONDS				8
 #define CORE_TEARDOWN_MAX_SECONDS		4
+#define CORE_START_STOP_ROUNDS			32
+#define CORE_START_STOP_STEP_NANOSECONDS	(1 << 17)
 
 #define CORE_PACKETS					32
 #define CORE_CLIENTS					4
@@ -278,8 +281,9 @@ static void *core_cerver_thread (void *core_ptr) {
 
 }
 
-// the cerver thread writes its result in the caller's structure
-static void core_cerver_start (CoreCerver *core, Cerver *cerver, const u16 port) {
+// the cerver thread is created without waiting for the cerver to start,
+// it writes its result in the caller's structure
+static void core_cerver_launch (CoreCerver *core, Cerver *cerver, const u16 port) {
 
 	core->cerver = cerver;
 	core->port = port;
@@ -287,10 +291,28 @@ static void core_cerver_start (CoreCerver *core, Cerver *cerver, const u16 port)
 
 	test_check_int_eq (pthread_create (&core->thread, NULL, core_cerver_thread, core), 0, NULL);
 
+}
+
+static void core_cerver_start (CoreCerver *core, Cerver *cerver, const u16 port) {
+
+	core_cerver_launch (core, cerver, port);
+
 	test_check_unsigned_eq (
 		test_wait_counter (&events[CERVER_EVENT_STARTED], 1, TEST_WAIT_SECONDS),
 		1, "the cerver did not start"
 	);
+
+}
+
+// cerver_start () returns in time after the cerver was stopped
+static void core_cerver_join (CoreCerver *core) {
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += CORE_JOIN_SECONDS;
+
+	test_check_int_eq (pthread_timedjoin_np (core->thread, NULL, &deadline), 0, "cerver_start () did not return");
+	test_check_unsigned_eq (core->start_result, 0, NULL);
 
 }
 
@@ -302,12 +324,7 @@ static void core_cerver_stop (CoreCerver *core) {
 
 	test_check_unsigned_eq (cerver_shutdown (core->cerver), 0, NULL);
 
-	struct timespec deadline = { 0, 0 };
-	(void) clock_gettime (CLOCK_REALTIME, &deadline);
-	deadline.tv_sec += CORE_JOIN_SECONDS;
-
-	test_check_int_eq (pthread_timedjoin_np (core->thread, NULL, &deadline), 0, "cerver_start () did not return");
-	test_check_unsigned_eq (core->start_result, 0, NULL);
+	core_cerver_join (core);
 
 	test_check_unsigned_eq (cerver_teardown (core->cerver), 0, NULL);
 
@@ -1119,9 +1136,68 @@ static void test_core_teardown_connected (void) {
 
 }
 
+// a stop requested before cerver_start () cancels it, the cerver never listens
+static void test_core_stop_before_start (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, handler_type);
+
+	test_check_unsigned_eq (cerver_shutdown (cerver), 0, NULL);
+
+	CoreCerver core;
+	core_cerver_launch (&core, cerver, port);
+	core_cerver_join (&core);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_STARTED], 0, "a stopped cerver started");
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+static void test_core_stop_before_start_poll (void) {
+
+	test_core_stop_before_start (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_stop_before_start_threads (void) {
+
+	test_core_stop_before_start (CERVER_HANDLER_TYPE_THREADS);
+
+}
+
+// a stop that races with cerver_start () always ends with the cerver stopped,
+// whether it arrives before the running flag, before listen () or inside accept (),
+// each round waits a bit longer before the stop to land in a later moment of the start
+static void test_core_stop_while_starting (void) {
+
+	for (unsigned int round = 0; round < CORE_START_STOP_ROUNDS; round++) {
+		core_counters_reset ();
+
+		const u16 port = core_port++;
+		const struct timespec wait = { 0, (long) round * CORE_START_STOP_STEP_NANOSECONDS };
+
+		CoreCerver core;
+		core_cerver_launch (&core, core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS), port);
+
+		(void) nanosleep (&wait, NULL);
+
+		test_check_unsigned_eq (cerver_shutdown (core.cerver), 0, NULL);
+
+		core_cerver_join (&core);
+
+		test_check_unsigned_eq (cerver_teardown (core.cerver), 0, NULL);
+	}
+
+}
+
 #pragma endregion
 
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	(void) argc;
 	(void) argv;
@@ -1150,6 +1226,9 @@ int main (int argc, char **argv) {
 	test_core_inactive_clients ();
 	test_core_update ();
 	test_core_teardown_connected ();
+	test_core_stop_before_start_poll ();
+	test_core_stop_before_start_threads ();
+	test_core_stop_while_starting ();
 
 	(void) printf ("\nDone with CERVER core tests!\n\n");
 
