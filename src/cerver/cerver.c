@@ -1377,7 +1377,7 @@ static u8 cerver_network_init_block_socket (Cerver *cerver) {
 
 		case CERVER_HANDLER_TYPE_POLL: {
 			// set the socket to non blocking mode
-			if (sock_set_blocking (cerver->sock, cerver->blocking)) {
+			if (sock_set_blocking (cerver->sock, false)) {
 				cerver->blocking = false;
 				#ifdef CERVER_DEBUG
 				cerver_log (

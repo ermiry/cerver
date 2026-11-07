@@ -42,8 +42,7 @@ bool sock_set_blocking (int32_t fd, bool blocking) {
 	if (fd >= 0) {
 		int flags = fcntl (fd, F_GETFL, 0);
 		if (flags >= 0) {
-			// flags = isBlocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
-			flags = blocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK);
+			flags = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
 
 			retval = (fcntl (fd, F_SETFL, flags) == 0) ? true : false;
 		}
