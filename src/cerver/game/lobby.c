@@ -35,6 +35,9 @@ void lobby_poll (void *ptr);
 
 void *lobby_default_id_generator (const void *data_ptr) {
 
+    // the default id does not depend on the data
+    (void) data_ptr;
+
     time_t rawtime = time (NULL);
     struct tm *timeinfo = localtime (&rawtime);
     // we generate the string timestamp in order to generate the lobby id
@@ -668,6 +671,12 @@ Lobby *lobby_create (Cerver *cerver, Client *client,
                     }
                 }
 
+                // the custom handler was ignored before
+                else if (custom_handler) {
+                    lobby->handler = custom_handler;
+                    lobby->default_handler = false;
+                }
+
                 // make the client that make the request, the lobby owner
                 Player *owner = player_new ();
                 if (owner) {
@@ -851,6 +860,26 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 
 }
 
+// the lobby handler & update are actions that return void,
+// so they are called from threads with the signature that pthread expects
+static void *lobby_handler_thread (void *cerver_lobby_ptr) {
+
+    CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+    cerver_lobby->lobby->handler (cerver_lobby_ptr);
+
+    return NULL;
+
+}
+
+static void *lobby_update_thread (void *cerver_lobby_ptr) {
+
+    CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+    cerver_lobby->lobby->update (cerver_lobby_ptr);
+
+    return NULL;
+
+}
+
 // starts the lobby's handler and/or update method in the cervers thpool
 u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
@@ -882,7 +911,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
             if (thread_create_detachable (
                 &lobby->handler_thread_id,
-                (void *(*)(void *)) lobby->handler, 
+                lobby_handler_thread,
                 cerver_lobby
             )) {
                 cerver_log_error (
@@ -921,7 +950,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
             if (thread_create_detachable (
                 &lobby->update_thread_id,
-                (void *(*)(void *)) lobby->update, 
+                lobby_update_thread,
                 cerver_lobby
             )) {
                 cerver_log_error (
