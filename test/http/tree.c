@@ -770,8 +770,11 @@ static void test_tree_admin_groups (void) {
 	test_check_unsigned_eq (http_cerver_routes_compile (http_cerver), 0, NULL);
 	test_check_unsigned_eq (http_cerver_routes_errors_count (http_cerver), 0, NULL);
 
-	// 2 endpoints and the 4 admin routes with their HEAD
-	test_check_unsigned_eq (http_tree_get_n_endpoints (http_cerver->tree), 10, NULL);
+	// 2 endpoints and the 5 admin routes with their HEAD
+	test_check_unsigned_eq (http_tree_get_n_endpoints (http_cerver->tree), 12, NULL);
+
+	test_tree_expect_auth (http_cerver, REQUEST_METHOD_GET, "/api/service/cerver/metrics", HTTP_ROUTE_AUTH_TYPE_NONE);
+	test_tree_expect_auth (http_cerver, REQUEST_METHOD_HEAD, "/api/service/cerver/metrics", HTTP_ROUTE_AUTH_TYPE_NONE);
 
 	test_tree_expect_auth (http_cerver, REQUEST_METHOD_GET, "/api/service/cerver/info", HTTP_ROUTE_AUTH_TYPE_NONE);
 	test_tree_expect_auth (http_cerver, REQUEST_METHOD_GET, "/api/service/cerver/stats", HTTP_ROUTE_AUTH_TYPE_NONE);
@@ -821,8 +824,9 @@ static void test_tree_admin_groups (void) {
 	test_check_unsigned_eq (http_cerver_routes_compile (http_cerver), 0, NULL);
 
 	test_tree_expect_path (http_cerver, REQUEST_METHOD_GET, "/api/main/cerver/stats", "/api/main/cerver/stats");
+	test_tree_expect_path (http_cerver, REQUEST_METHOD_GET, "/api/main/cerver/metrics", "/api/main/cerver/metrics");
 	test_tree_expect_path (http_cerver, REQUEST_METHOD_GET, "/api/service/cerver/stats", NULL);
-	test_check_unsigned_eq (dlist_size (main_route->children), 4, NULL);
+	test_check_unsigned_eq (dlist_size (main_route->children), 5, NULL);
 
 	http_cerver_delete (http_cerver);
 
@@ -859,11 +863,16 @@ static void test_tree_json (void) {
 	HttpGroup *api = http_cerver_group_create (http_cerver, "api/service");
 	http_group_set_auth (api, HTTP_ROUTE_AUTH_TYPE_CUSTOM);
 	http_group_set_authentication_handler (api, test_tree_authentication);
+	http_group_set_etag (api, true);
+	http_group_set_compression (api, true);
 	test_check_ptr (http_group_root_add (api, REQUEST_METHOD_GET, test_tree_handler));
 
 	HttpEndpoint *upload = http_group_post (api, "upload", test_tree_handler);
 	test_check_ptr (upload);
 	http_endpoint_set_modifier (upload, HTTP_ROUTE_MODIFIER_MULTI_PART);
+	http_endpoint_set_compression (upload, false);
+	http_endpoint_set_cors (upload, true);
+	http_endpoint_set_etag (upload, false);
 
 	HttpEndpoint *internal = http_group_post (api, "internal", test_tree_handler);
 	test_check_ptr (internal);
@@ -890,9 +899,17 @@ static void test_tree_json (void) {
 	test_check_str_eq (json_string_value (json_object_get (root, "auth")), http_route_auth_type_to_string (HTTP_ROUTE_AUTH_TYPE_CUSTOM), NULL);
 	test_check (json_is_false (json_object_get (root, "compatibility")), NULL);
 
+	// the settings of the group are inherited, an endpoint can replace them
+	test_check (json_is_true (json_object_get (root, "etag")), NULL);
+	test_check (json_is_true (json_object_get (root, "compression")), NULL);
+	test_check (json_is_false (json_object_get (root, "cors")), NULL);
+
 	const json_t *upload_json = test_tree_json_endpoint (endpoints, "POST", "/api/service/upload");
 	test_check_ptr (upload_json);
 	test_check_str_eq (json_string_value (json_object_get (upload_json, "modifier")), http_route_modifier_to_string (HTTP_ROUTE_MODIFIER_MULTI_PART), NULL);
+	test_check (json_is_false (json_object_get (upload_json, "etag")), NULL);
+	test_check (json_is_false (json_object_get (upload_json, "compression")), NULL);
+	test_check (json_is_true (json_object_get (upload_json, "cors")), NULL);
 
 	const json_t *internal_json = test_tree_json_endpoint (endpoints, "POST", "/api/service/internal");
 	test_check_ptr (internal_json);
