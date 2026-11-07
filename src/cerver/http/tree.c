@@ -27,10 +27,15 @@
 static const char *http_tree_root_path = { "/" };
 static const char *http_tree_empty_path = { "" };
 
-static const char *http_tree_indent = { "\t" };
+// a level of the printed routes, the indentation of the first routes API print
+static const char *http_tree_indent = { "    " };
+static const char *http_tree_values_separator = { ", " };
 
 // the depth of the tree that is printed with indentation
 #define HTTP_TREE_PRINT_INDENT_SIZE			64
+
+// the methods or the per method values of a printed route
+#define HTTP_TREE_PRINT_VALUES_SIZE			256
 
 // the slices of a segment of a path
 typedef struct HttpTreeSegment {
@@ -111,6 +116,10 @@ static void http_route_settings_init (HttpRouteSettings *settings) {
 
 	settings->cors = false;
 
+	settings->etag = false;
+
+	settings->compression = false;
+
 	http_middlewares_init (&settings->middlewares);
 
 }
@@ -160,6 +169,10 @@ static void http_route_settings_inherit (
 	if (missing & HTTP_ROUTE_SETTING_MAX_BODY_SIZE) resolved->max_body_size = source->max_body_size;
 
 	if (missing & HTTP_ROUTE_SETTING_CORS) resolved->cors = source->cors;
+
+	if (missing & HTTP_ROUTE_SETTING_ETAG) resolved->etag = source->etag;
+
+	if (missing & HTTP_ROUTE_SETTING_COMPRESSION) resolved->compression = source->compression;
 
 	resolved->set |= missing;
 
@@ -379,6 +392,28 @@ void http_endpoint_set_cors (
 	if (endpoint) {
 		endpoint->settings.cors = cors;
 		endpoint->settings.set |= HTTP_ROUTE_SETTING_CORS;
+	}
+
+}
+
+void http_endpoint_set_etag (
+	HttpEndpoint *endpoint, const bool etag
+) {
+
+	if (endpoint) {
+		endpoint->settings.etag = etag;
+		endpoint->settings.set |= HTTP_ROUTE_SETTING_ETAG;
+	}
+
+}
+
+void http_endpoint_set_compression (
+	HttpEndpoint *endpoint, const bool compression
+) {
+
+	if (endpoint) {
+		endpoint->settings.compression = compression;
+		endpoint->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
 	}
 
 }
@@ -887,6 +922,28 @@ void http_group_set_cors (
 	if (group) {
 		group->settings.cors = cors;
 		group->settings.set |= HTTP_ROUTE_SETTING_CORS;
+	}
+
+}
+
+void http_group_set_etag (
+	HttpGroup *group, const bool etag
+) {
+
+	if (group) {
+		group->settings.etag = etag;
+		group->settings.set |= HTTP_ROUTE_SETTING_ETAG;
+	}
+
+}
+
+void http_group_set_compression (
+	HttpGroup *group, const bool compression
+) {
+
+	if (group) {
+		group->settings.compression = compression;
+		group->settings.set |= HTTP_ROUTE_SETTING_COMPRESSION;
 	}
 
 }
@@ -1682,22 +1739,176 @@ bool http_tree_match (
 
 #pragma region print
 
-static void http_tree_print_endpoints (
-	const HttpRouteNode *node, const char *indent
+// every route is printed like the first routes API did: a block with its path, methods,
+// modifier and auth, and the closest routes below it with an endpoint as its children,
+// the path segments without an endpoint add no level
+
+static size_t http_tree_print_count_children (const HttpRouteNode *node);
+
+// a child without an endpoint is replaced by the closest routes below it that have one
+static size_t http_tree_print_count_node (const HttpRouteNode *node) {
+
+	return node->n_endpoints ? 1 : http_tree_print_count_children (node);
+
+}
+
+static size_t http_tree_print_count_children (const HttpRouteNode *node) {
+
+	size_t count = 0;
+
+	for (size_t idx = 0; idx < node->n_statics; idx++) {
+		count += http_tree_print_count_node (node->statics[idx]);
+	}
+
+	for (size_t idx = 0; idx < node->n_params; idx++) {
+		count += http_tree_print_count_node (node->params[idx]);
+	}
+
+	if (node->wildcard) count += http_tree_print_count_node (node->wildcard);
+
+	return count;
+
+}
+
+static const HttpEndpoint *http_tree_print_first_endpoint (const HttpRouteNode *node) {
+
+	const HttpEndpoint *first = NULL;
+	for (unsigned int method = 0; (method < REQUEST_METHOD_SIZE) && !first; method++) {
+		first = node->endpoints[method];
+	}
+
+	return first;
+
+}
+
+static void http_tree_print_append (
+	char *values, size_t *length, const char *value
 ) {
 
-	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
-		const HttpEndpoint *endpoint = node->endpoints[method];
-		if (!endpoint) continue;
+	const int written = snprintf (
+		values + *length, HTTP_TREE_PRINT_VALUES_SIZE - *length, "%s%s",
+		*length ? http_tree_values_separator : http_tree_empty_path, value
+	);
 
-		cerver_log_msg (
-			"%s%s %s - auth: %s - modifier: %s%s",
-			indent, http_request_method_str (endpoint->method), endpoint->path->str,
-			http_route_auth_type_to_string (endpoint->resolved.auth_type),
-			http_route_modifier_to_string (endpoint->resolved.modifier),
-			endpoint->route ? " (compatibility)" : ""
-		);
+	if (written > 0) {
+		*length += (size_t) written;
+		if (*length >= HTTP_TREE_PRINT_VALUES_SIZE) *length = HTTP_TREE_PRINT_VALUES_SIZE - 1;
 	}
+
+}
+
+static void http_tree_print_methods (const HttpRouteNode *node, const char *indent) {
+
+	char methods[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
+	size_t length = 0;
+
+	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
+		if (node->endpoints[method]) {
+			http_tree_print_append (methods, &length, http_request_method_str (node->endpoints[method]->method));
+		}
+	}
+
+	cerver_log_msg ("%sMethods: %s", indent, methods);
+
+}
+
+// the auth type or the modifier of the endpoints of a route,
+// one value when every method agrees, or "METHOD value" for each one
+static void http_tree_print_value (
+	const HttpRouteNode *node, const char *indent, const char *name,
+	const char *(*value)(const HttpEndpoint *endpoint)
+) {
+
+	const char *first = value (http_tree_print_first_endpoint (node));
+
+	bool same = true;
+	for (unsigned int method = 0; method < REQUEST_METHOD_SIZE; method++) {
+		if (node->endpoints[method] && strcmp (value (node->endpoints[method]), first)) same = false;
+	}
+
+	char values[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
+	size_t length = 0;
+
+	for (unsigned int method = 0; (method < REQUEST_METHOD_SIZE) && !same; method++) {
+		if (!node->endpoints[method]) continue;
+
+		char method_value[HTTP_TREE_PRINT_VALUES_SIZE] = { 0 };
+		(void) snprintf (
+			method_value, HTTP_TREE_PRINT_VALUES_SIZE, "%s %s",
+			http_request_method_str (node->endpoints[method]->method), value (node->endpoints[method])
+		);
+
+		http_tree_print_append (values, &length, method_value);
+	}
+
+	cerver_log_msg ("%s%s: %s", indent, name, same ? first : values);
+
+}
+
+static const char *http_tree_print_modifier (const HttpEndpoint *endpoint) {
+
+	return http_route_modifier_to_string (endpoint->resolved.modifier);
+
+}
+
+static const char *http_tree_print_auth (const HttpEndpoint *endpoint) {
+
+	return http_route_auth_type_to_string (endpoint->resolved.auth_type);
+
+}
+
+static void http_tree_print_node (
+	const HttpRouteNode *node, char *indent, const size_t depth
+);
+
+// the children of a route are printed two levels deeper, below its "Children" line
+static void http_tree_print_children (
+	const HttpRouteNode *node, char *indent, const size_t depth
+) {
+
+	for (size_t idx = 0; idx < node->n_statics; idx++) {
+		http_tree_print_node (node->statics[idx], indent, depth);
+	}
+
+	for (size_t idx = 0; idx < node->n_params; idx++) {
+		http_tree_print_node (node->params[idx], indent, depth);
+	}
+
+	if (node->wildcard) http_tree_print_node (node->wildcard, indent, depth);
+
+}
+
+// the indentation of a level deeper than depth, capped at HTTP_TREE_PRINT_INDENT_SIZE
+static size_t http_tree_print_deeper (char *indent, const size_t depth) {
+
+	const size_t indent_len = strlen (http_tree_indent);
+	const bool deeper = (depth + indent_len) < HTTP_TREE_PRINT_INDENT_SIZE;
+	if (deeper) (void) memcpy (indent + depth, http_tree_indent, indent_len + 1);
+
+	return deeper ? depth + indent_len : depth;
+
+}
+
+static void http_tree_print_route (
+	const HttpRouteNode *node, char *indent, const size_t depth
+) {
+
+	cerver_log_msg ("%sRoute: %s", indent, http_tree_print_first_endpoint (node)->path->str);
+
+	const size_t values_depth = http_tree_print_deeper (indent, depth);
+
+	http_tree_print_methods (node, indent);
+	http_tree_print_value (node, indent, "Modifier", http_tree_print_modifier);
+	http_tree_print_value (node, indent, "Auth", http_tree_print_auth);
+
+	const size_t n_children = http_tree_print_count_children (node);
+	if (n_children) {
+		cerver_log_msg ("%sChildren (%zu):", indent, n_children);
+
+		http_tree_print_children (node, indent, http_tree_print_deeper (indent, values_depth));
+	}
+
+	indent[depth] = '\0';
 
 }
 
@@ -1705,25 +1916,9 @@ static void http_tree_print_node (
 	const HttpRouteNode *node, char *indent, const size_t depth
 ) {
 
-	http_tree_print_endpoints (node, indent);
+	if (node->n_endpoints) http_tree_print_route (node, indent, depth);
 
-	const size_t indent_len = strlen (http_tree_indent);
-	const bool deeper = (depth + indent_len) < HTTP_TREE_PRINT_INDENT_SIZE;
-	if (deeper) (void) memcpy (indent + depth, http_tree_indent, indent_len + 1);
-
-	const size_t next_depth = deeper ? depth + indent_len : depth;
-
-	for (size_t idx = 0; idx < node->n_statics; idx++) {
-		http_tree_print_node (node->statics[idx], indent, next_depth);
-	}
-
-	for (size_t idx = 0; idx < node->n_params; idx++) {
-		http_tree_print_node (node->params[idx], indent, next_depth);
-	}
-
-	if (node->wildcard) http_tree_print_node (node->wildcard, indent, next_depth);
-
-	indent[depth] = '\0';
+	else http_tree_print_children (node, indent, depth);
 
 }
 
@@ -1734,9 +1929,8 @@ void http_tree_print (const HttpTree *tree) {
 		cerver_log_msg ("HTTP routes (%zu endpoints):", tree->n_endpoints);
 
 		char indent[HTTP_TREE_PRINT_INDENT_SIZE + 1] = { 0 };
-		(void) memcpy (indent, http_tree_indent, strlen (http_tree_indent) + 1);
 
-		http_tree_print_node (tree->root, indent, strlen (http_tree_indent));
+		http_tree_print_node (tree->root, indent, 0);
 	}
 
 }
@@ -1776,6 +1970,12 @@ static json_t *http_tree_endpoint_json (const HttpEndpoint *endpoint) {
 
 		(void) json_object_set_new (
 			endpoint_object, "compatibility", json_boolean (endpoint->route != NULL)
+		);
+
+		(void) json_object_set_new (endpoint_object, "cors", json_boolean (endpoint->resolved.cors));
+		(void) json_object_set_new (endpoint_object, "etag", json_boolean (endpoint->resolved.etag));
+		(void) json_object_set_new (
+			endpoint_object, "compression", json_boolean (endpoint->resolved.compression)
 		);
 	}
 
