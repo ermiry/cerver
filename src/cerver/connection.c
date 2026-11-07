@@ -246,12 +246,14 @@ void connection_delete (void *connection_ptr) {
 
 		connection->client = NULL;
 
+		// connection_end () closes the socket and sets the state,
+		// so it must run before deleting both of them
+		if (connection->active) connection_end (connection);
+
 		socket_delete (connection->socket);
 
 		if (connection->state_mutex)
 			thread_mutex_delete (connection->state_mutex);
-
-		if (connection->active) connection_end (connection);
 
 		cerver_report_delete (connection->cerver_report);
 
