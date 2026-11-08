@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include <pthread.h>
+
 #include <cerver/collections/dlist.h>
 
 #include "../test.h"
@@ -18,15 +20,16 @@
 //   and its recursive merge could overflow the stack with long lists
 // - merge_two did not set the prev link of the joined element
 // - split_half did not set the end of the new dlist
-// not covered in 1.x (the read locks and the guards are in 2.0):
-// - concurrent writers and readers in the same dlist
-// - merging a dlist with itself
-// - converting an empty dlist to an array
+// - remove_at, get_at, search, get_element, to_array, copy and clone did not lock
+// coverage holes:
+// - dlist_internal_move_matches with concurrent writers in both dlists
 
 #define INVARIANTS_SMALL_SIZE				16
 #define INVARIANTS_RANDOM_SIZE				1024
 #define INVARIANTS_RANDOM_RANGE				256
 #define INVARIANTS_LONG_SIZE				65536
+#define INVARIANTS_THREADS					8
+#define INVARIANTS_THREAD_ITERATIONS		4096
 
 // returns any magnitude, not only -1, 0 and 1, like memcmp () or strcmp ()
 static int data_difference_comparator (const void *a, const void *b) {
@@ -328,6 +331,10 @@ static void test_invariants_merge_two (void) {
 	dlist_merge_two (empty, two);
 	invariants_check_values (empty, expected, 6);
 
+	// merging a dlist with itself does nothing
+	dlist_merge_two (empty, empty);
+	invariants_check_values (empty, expected, 6);
+
 	dlist_delete (one);
 	dlist_delete (two);
 	dlist_delete (empty);
@@ -407,7 +414,7 @@ static void test_invariants_merge_many (void) {
 
 }
 
-static void test_invariants_copy_array (void) {
+static void test_invariants_copy_clone_array (void) {
 
 	DoubleList *dlist = invariants_dlist_create (INVARIANTS_SMALL_SIZE);
 
@@ -422,6 +429,70 @@ static void test_invariants_copy_array (void) {
 	test_check (count == INVARIANTS_SMALL_SIZE, NULL);
 	test_check_ptr_eq (array[count - 1], dlist->end->data);
 	free (array);
+
+	DoubleList *empty = dlist_init (data_delete, data_comparator);
+	test_check_null_ptr (dlist_to_array (empty, &count));
+	test_check (count == 0, NULL);
+	dlist_delete (empty);
+
+	dlist_delete (dlist);
+
+}
+
+typedef struct InvariantsThreadArgs {
+
+	DoubleList *dlist;
+	unsigned int thread;
+
+} InvariantsThreadArgs;
+
+// every thread inserts at both ends, in order and in the middle
+// and removes the same number of elements it inserted
+static void *invariants_thread_mixed (void *args_ptr) {
+
+	InvariantsThreadArgs *args = (InvariantsThreadArgs *) args_ptr;
+	DoubleList *dlist = args->dlist;
+
+	for (unsigned int i = 0; i < INVARIANTS_THREAD_ITERATIONS; i++) {
+		unsigned int value = (args->thread * INVARIANTS_THREAD_ITERATIONS) + i;
+
+		switch (i % 4) {
+			case 0: (void) dlist_insert_at_end (dlist, data_new (value, value)); break;
+			case 1: (void) dlist_insert_at_start (dlist, data_new (value, value)); break;
+			case 2: (void) dlist_insert_in_order (dlist, data_new (value, value)); break;
+			default: (void) dlist_insert_at (dlist, data_new (value, value), i); break;
+		}
+
+		if (i % 2) {
+			data_delete (dlist_remove_end (dlist));
+			data_delete (dlist_remove_start (dlist));
+		}
+
+		(void) dlist_get_at (dlist, i);
+	}
+
+	return NULL;
+
+}
+
+static void test_invariants_threads (void) {
+
+	DoubleList *dlist = dlist_init (data_delete, data_comparator);
+
+	pthread_t threads[INVARIANTS_THREADS];
+	InvariantsThreadArgs args[INVARIANTS_THREADS];
+	for (unsigned int i = 0; i < INVARIANTS_THREADS; i++) {
+		args[i].dlist = dlist;
+		args[i].thread = i;
+		test_check_int_eq (pthread_create (&threads[i], NULL, invariants_thread_mixed, &args[i]), 0, NULL);
+	}
+
+	for (unsigned int i = 0; i < INVARIANTS_THREADS; i++) {
+		(void) pthread_join (threads[i], NULL);
+	}
+
+	// every iteration inserts one and every odd iteration removes two
+	collections_check_dlist (dlist, 0);
 
 	dlist_delete (dlist);
 
@@ -444,7 +515,8 @@ void collections_tests_dlist_invariants (void) {
 	test_invariants_split_half ();
 	test_invariants_conditions ();
 	test_invariants_merge_many ();
-	test_invariants_copy_array ();
+	test_invariants_copy_clone_array ();
+	test_invariants_threads ();
 
 	(void) printf ("Done!\n");
 

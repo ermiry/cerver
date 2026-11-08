@@ -11,6 +11,8 @@
 
 #include <cerver/utils/log.h>
 
+#include "../test.h"
+
 #pragma region integer
 
 typedef struct { int value; } Integer;
@@ -566,7 +568,7 @@ static int dlist_test_remove (void) {
 	Integer query = { 0 };
 	for (unsigned int i = 0; i < 10; i++) {
 		query.value = i;
-		dlist_remove (dlist, &query, NULL) ;
+		integer_delete (dlist_remove (dlist, &query, NULL));
 	}
 
 	cerver_log_raw ("dlist_remove () dlist size after removed all: %ld", dlist->size);
@@ -596,7 +598,7 @@ static int dlist_test_remove_start (void) {
 	// }
 
 	for (unsigned int i = 0; i < 10; i++) {
-		dlist_remove_start (dlist);
+		integer_delete (dlist_remove_start (dlist));
 	}
 
 	cerver_log_raw ("dlist_remove_start () dlist size after removed all: %ld", dlist->size);
@@ -626,7 +628,7 @@ static int dlist_test_remove_start_unsafe (void) {
 	// }
 
 	for (unsigned int i = 0; i < 10; i++) {
-		dlist_remove_start_unsafe (dlist);
+		integer_delete (dlist_remove_start_unsafe (dlist));
 	}
 
 	cerver_log_raw ("dlist_remove_start_unsafe () dlist size after removed all: %ld", dlist->size);
@@ -656,7 +658,7 @@ static int dlist_test_remove_end (void) {
 	// }
 
 	for (unsigned int i = 0; i < 10; i++) {
-		dlist_remove_end (dlist);
+		integer_delete (dlist_remove_end (dlist));
 	}
 
 	cerver_log_raw ("dlist_remove_end () dlist size after removed all: %ld", dlist->size);
@@ -686,7 +688,7 @@ static int dlist_test_remove_end_unsafe (void) {
 	// }
 
 	for (unsigned int i = 0; i < 10; i++) {
-		dlist_remove_end_unsafe (dlist);
+		integer_delete (dlist_remove_end_unsafe (dlist));
 	}
 
 	cerver_log_raw ("dlist_remove_end_unsafe () dlist size after removed all: %ld", dlist->size);
@@ -1130,17 +1132,19 @@ static void *test_thread_add (void *args) {
 
 }
 
-// static void *test_thread_remove (void *args) {
+// the end must be read under the list's lock, so dlist_remove_end () is used
+// instead of dlist_remove_element (dlist, dlist->end) that segfaulted some times
+static void *test_thread_remove (void *args) {
 
-// 	DoubleList *dlist = (DoubleList *) args;
+	DoubleList *dlist = (DoubleList *) args;
 
-// 	for (unsigned int i = 0; i < 10; i++) {
-// 		integer_delete (dlist_remove_element (dlist, dlist->end));
-// 	}
+	for (unsigned int i = 0; i < 10; i++) {
+		integer_delete (dlist_remove_end (dlist));
+	}
 
-// 	return NULL;
+	return NULL;
 
-// }
+}
 
 static int dlist_test_insert_threads (void) {
 
@@ -1175,44 +1179,51 @@ static int dlist_test_insert_threads (void) {
 
 }
 
-// static int dlist_test_remove_threads (void) {
+static int dlist_test_remove_threads (void) {
 
-// 	cerver_log_raw ("dlist_test_remove_threads ()\n");
+	cerver_log_raw ("dlist_test_remove_threads ()\n");
 
-// 	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
+	DoubleList *dlist = dlist_init (integer_delete, integer_comparator);
 
-// 	Integer *integer = NULL;
-// 	for (unsigned int i = 0; i < 50; i++) {
-// 		integer = integer_new (i);
-// 		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
-// 	}
+	Integer *integer = NULL;
+	for (unsigned int i = 0; i < 50; i++) {
+		integer = integer_new (i);
+		(void) dlist_insert_at_end_unsafe (dlist, integer);
+	}
 
-// 	// create threads
-// 	const unsigned int N_THREADS = 4;
-// 	pthread_t threads[N_THREADS];
+	// create threads
+	const unsigned int N_THREADS = 4;
+	pthread_t threads[N_THREADS];
 
-//  	(void) pthread_create (&threads[0], NULL, test_thread_remove, dlist);
-//  	(void) pthread_create (&threads[1], NULL, test_thread_remove, dlist);
-//  	(void) pthread_create (&threads[2], NULL, test_thread_remove, dlist);
-//  	(void) pthread_create (&threads[3], NULL, test_thread_remove, dlist);
-//  	(void) pthread_join (threads[0], NULL);
-//  	(void) pthread_join (threads[1], NULL);
-//  	(void) pthread_join (threads[2], NULL);
-//  	(void) pthread_join (threads[3], NULL);
+ 	(void) pthread_create (&threads[0], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[1], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[2], NULL, test_thread_remove, dlist);
+ 	(void) pthread_create (&threads[3], NULL, test_thread_remove, dlist);
+ 	(void) pthread_join (threads[0], NULL);
+ 	(void) pthread_join (threads[1], NULL);
+ 	(void) pthread_join (threads[2], NULL);
+ 	(void) pthread_join (threads[3], NULL);
 
-// 	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
+	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
 
-// 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
-// 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
-// 	}
+	test_check_int_eq ((int) dlist->size, 10, NULL);
 
-// 	dlist_delete (dlist);
+	// the remaining elements are the first ten, still in order
+	int expected = 0;
+	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+		test_check_int_eq (((Integer *) le->data)->value, expected, NULL);
+		expected++;
+	}
 
-// 	cerver_log_raw ("\n\n----------------------------------------\n");
+	test_check_ptr_eq (dlist->end->data, dlist_get_at (dlist, 9));
 
-// 	return 0;
+	dlist_delete (dlist);
 
-// }
+	cerver_log_raw ("\n\n----------------------------------------\n");
+
+	return 0;
+
+}
 
 #pragma endregion
 
@@ -1750,8 +1761,7 @@ int collections_tests_dlist (void) {
 
 	res |= dlist_test_insert_threads ();
 
-	// TODO: segfault some times, gdb with no issues
-	// res |= dlist_test_remove_threads ();
+	res |= dlist_test_remove_threads ();
 
 	/*** other ***/
 
