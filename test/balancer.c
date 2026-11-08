@@ -68,13 +68,8 @@ static Service *test_balancer_service_create (void) {
 
 	test_check_null_ptr (service->connection);
 	test_check_unsigned_eq (service->reconnect_wait_time, SERVICE_DEFAULT_WAIT_TIME, NULL);
+	test_check_bool_eq (service->reconnect_thread_running, false, NULL);
 	test_check_unsigned_eq (service->reconnect_thread_id, 0, NULL);
-
-	test_check_int_eq (service->forward_pipe_fds[0], 0, NULL);
-	test_check_int_eq (service->forward_pipe_fds[1], 0, NULL);
-
-	test_check_int_eq (service->receive_pipe_fds[0], 0, NULL);
-	test_check_int_eq (service->receive_pipe_fds[1], 0, NULL);
 
 	test_check_ptr (service->stats);
 
