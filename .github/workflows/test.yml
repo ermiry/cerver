@@ -9,12 +9,10 @@ jobs:
   test:
     name: Cerver tests
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev zlib1g-dev
 
       - name: Compile Sources
         run: make TYPE=test COVERAGE=1 ZLIB=1
@@ -24,11 +22,6 @@ jobs:
 
       - name: Unit Tests
         run: bash test/run.sh
-
-      - name: Integration Tests
-        env:
-          COVERAGE: 1
-        run: bash test/integration.sh
 
       - name: Coverage
         run: make coverage
@@ -42,6 +35,18 @@ jobs:
           name: build
           fail_ci_if_error: true
           # verbose: true
+
+  integration:
+    name: Cerver integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Integration Tests
+        env:
+          COVERAGE: 1
+        run: bash test/integration.sh
 
       - name: Upload integration coverage to Codecov
         uses: codecov/codecov-action@v4

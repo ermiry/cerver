@@ -14,6 +14,7 @@ jobs:
   build:
     name: Cerver build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -43,11 +44,9 @@ jobs:
     name: Cerver tests
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
       - name: gcc library
         run: make TYPE=test
@@ -70,11 +69,12 @@ jobs:
     name: Cerver tests with valgrind
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev valgrind
+        run: apt-get update && apt-get install -y valgrind
 
       - name: Library
         run: make TYPE=test
@@ -97,21 +97,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
-
       - name: Disable address randomization
         if: matrix.sanitizer == 'thread'
         run: sudo sysctl vm.mmap_rnd_bits=28
 
-      - name: Library
-        run: make TYPE=test SANITIZER=${{ matrix.sanitizer }}
-      - name: Tests
-        run: make TYPE=test SANITIZER=${{ matrix.sanitizer }} test
-
       - name: Run tests
-        env:
-          ASAN_OPTIONS: detect_leaks=1
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-          TSAN_OPTIONS: halt_on_error=1
-        run: bash test/run.sh
+        run: |
+          docker run --rm -v "$PWD":/opt/cerver -w /opt/cerver \
+            -e ASAN_OPTIONS=detect_leaks=1 \
+            -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+            -e TSAN_OPTIONS=halt_on_error=1 \
+            gcc:16.2 bash -c 'make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
