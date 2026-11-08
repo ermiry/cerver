@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <poll.h>
 
 #include "cerver/types/types.h"
@@ -238,6 +239,9 @@ static Client *auth_create_new_client (
 				);
 				#endif
 				client_set_session_id (client, session_id);
+
+				// the client keeps its own copy
+				free (session_id);
 			}
 
 			else {
@@ -605,7 +609,6 @@ static CerverAuthError auth_try (Packet *packet) {
 					if (packet->cerver->use_sessions) {
 						SToken token = { { 0 } };
 						auth_token_set (&token, client->session_id);
-						token.token[strlen (token.token)] = '\0';
 
 						auth_send_success_packet (
 							packet->cerver,
@@ -622,13 +625,8 @@ static CerverAuthError auth_try (Packet *packet) {
 						);
 					}
 
-					// FIXME: this is a quick fix
-					// we should have a better way when after we refactor handler methods
-					// create a dedicated thread to handle connection if needed
-					(void) cerver_register_new_connection_normal_default_select_handler (
-						packet->cerver, client, packet->connection
-					);
-
+					// the events run before the handler owns the connection,
+					// its receive thread can delete it as soon as it starts
 					cerver_event_trigger (
 						CERVER_EVENT_CLIENT_SUCCESS_AUTH,
 						packet->cerver,
@@ -639,6 +637,13 @@ static CerverAuthError auth_try (Packet *packet) {
 						CERVER_EVENT_CLIENT_CONNECTED,
 						packet->cerver,
 						client, packet->connection
+					);
+
+					// FIXME: this is a quick fix
+					// we should have a better way when after we refactor handler methods
+					// create a dedicated thread to handle connection if needed
+					(void) cerver_register_new_connection_normal_default_select_handler (
+						packet->cerver, client, packet->connection
 					);
 				}
 
@@ -673,12 +678,6 @@ static CerverAuthError auth_try (Packet *packet) {
 				);
 
 				if (match) {
-					// select how client connection will be handled
-					// based on cerver's handler type
-					(void) cerver_handler_register_connection (
-						packet->cerver, match, packet->connection
-					);
-
 					// send success auth packet to client
 					auth_send_success_packet (
 						packet->cerver,
@@ -686,10 +685,17 @@ static CerverAuthError auth_try (Packet *packet) {
 						NULL, 0
 					);
 
+					// the event runs before the handler owns the connection
 					cerver_event_trigger (
 						CERVER_EVENT_CLIENT_NEW_CONNECTION,
 						packet->cerver,
 						match, packet->connection
+					);
+
+					// select how client connection will be handled
+					// based on cerver's handler type
+					(void) cerver_handler_register_connection (
+						packet->cerver, match, packet->connection
 					);
 				}
 			}
@@ -849,11 +855,24 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 
 #pragma region handler
 
+static const char *on_hold_bad_auth_request = { "The auth packet has an unknown request type" };
+static const char *on_hold_bad_auth_data = { "The auth packet does not have data" };
+static const char *on_hold_bad_type = { "The packet can not be handled before the authentication" };
+static const char *on_hold_bad_version = { "The packet has an incompatible version" };
+
+// a bad packet of an on hold connection: its sender gets an error,
+// and the connection is dropped when it reaches the on hold limit
 static CerverAuthError cerver_on_hold_handle_max_bad_packets (
-	Cerver *cerver, Connection *connection
+	Cerver *cerver, Connection *connection, const char *reason
 ) {
 
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
+
+	CERVER_STATS_ADD (cerver->stats->received_packets->n_bad_packets, 1);
+
+	(void) error_packet_generate_and_send (
+		CERVER_ERROR_PACKET_ERROR, reason, cerver, NULL, connection
+	);
 
 	connection->bad_packets += 1;
 
@@ -900,7 +919,7 @@ static CerverAuthError cerver_auth_packet_handler (Packet *packet) {
 				#endif
 
 				error = cerver_on_hold_handle_max_bad_packets (
-					packet->cerver, packet->connection
+					packet->cerver, packet->connection, on_hold_bad_auth_request
 				);
 			} break;
 		}
@@ -909,7 +928,7 @@ static CerverAuthError cerver_auth_packet_handler (Packet *packet) {
 	else {
 		// bad packet
 		error = cerver_on_hold_handle_max_bad_packets (
-			packet->cerver, packet->connection
+			packet->cerver, packet->connection, on_hold_bad_auth_data
 		);
 	}
 
@@ -944,7 +963,7 @@ static CerverAuthError on_hold_packet_handler_actual (Packet *packet) {
 			#endif
 
 			error = cerver_on_hold_handle_max_bad_packets (
-				packet->cerver, packet->connection
+				packet->cerver, packet->connection, on_hold_bad_type
 			);
 		} break;
 	}
@@ -959,30 +978,12 @@ static CerverAuthError on_hold_packet_handler_check_version (
 
 	CerverAuthError error = CERVER_AUTH_ERROR_NONE;
 
-	if (packet->cerver->on_hold_check_packets) {
-		// we expect the packet version in the packet's data
-		if (packet->data) {
-			(void) memcpy (&packet->version, packet->data_ptr, sizeof (PacketVersion));
-			packet->data_ptr += sizeof (PacketVersion);
-
-			// TODO: return errors to client
-			if (packet_check (packet)) {
-				error = cerver_on_hold_handle_max_bad_packets (
-					packet->cerver, packet->connection
-				);
-			}
-		}
-
-		else {
-			cerver_log_error (
-				"on_hold_packet_handler () - No packet version to check!"
-			);
-
-			// bad packet
-			error = cerver_on_hold_handle_max_bad_packets (
-				packet->cerver, packet->connection
-			);
-		}
+	// the version came in the header, it used to be expected in the data,
+	// and the check was inverted, so every valid packet was a bad one
+	if (packet->cerver->on_hold_check_packets && !packet_check (packet)) {
+		error = cerver_on_hold_handle_max_bad_packets (
+			packet->cerver, packet->connection, on_hold_bad_version
+		);
 	}
 
 	return error;
@@ -1022,37 +1023,51 @@ u8 on_hold_packet_handler (Packet *packet) {
 // if the cerver requires authentication, we put the connection on hold
 // until it has a sucess or failed authentication
 // returns 0 on success, 1 on error
+// removes the connection from the on hold maps when its fd could not be polled
+static void on_hold_connection_unmap (const Cerver *cerver, Connection *connection) {
+
+	Connection *query = connection_new ();
+	query->socket = socket_new ();
+	if (query->socket) query->socket->sock_fd = connection->socket->sock_fd;
+
+	(void) avl_remove_node (cerver->on_hold_connections, query);
+
+	connection_delete (query);
+
+	const void *key = &connection->socket->sock_fd;
+	(void) htab_remove (cerver->on_hold_connection_sock_fd_map, key, sizeof (i32));
+
+}
+
 u8 on_hold_connection (Cerver *cerver, Connection *connection) {
 
 	u8 retval = 1;
 
 	if (cerver && connection) {
 		if (cerver->on_hold_connections) {
-			if (!on_hold_poll_register_connection (cerver, connection)) {
+			// set before the on hold poll can handle its auth packets
+			connection->auth_tries = cerver->max_auth_tries;
+			(void) time (&connection->connected_timestamp);
+
+			// the poll thread finds the connection in the maps,
+			// so its fd is registered in the poll after them
+			const void *key = &connection->socket->sock_fd;
+			if (!htab_insert (
+				cerver->on_hold_connection_sock_fd_map,
+				key, sizeof (i32),
+				connection, sizeof (Connection)
+			)) {
 				avl_insert_node (cerver->on_hold_connections, connection);
 
-				const void *key = &connection->socket->sock_fd;
-				if (!htab_insert (
-					cerver->on_hold_connection_sock_fd_map,
-					key, sizeof (i32),
-					connection, sizeof (Connection)
-				)) {
-					#ifdef AUTH_DEBUG
-					cerver_log_debug (
-						"on_hold_connection () - "
-						"inserted connection in on_hold_connection_sock_fd_map htab"
-					);
-					#endif
+				retval = on_hold_poll_register_connection (cerver, connection);
+				if (retval) on_hold_connection_unmap (cerver, connection);
+			}
 
-					retval = 0;     // success
-				}
-
-				else {
-					cerver_log_error (
-						"on_hold_connection () - "
-						"failed to insert connection in on_hold_connection_sock_fd_map htab!"
-					);
-				}
+			else {
+				cerver_log_error (
+					"on_hold_connection () - "
+					"failed to insert connection in on_hold_connection_sock_fd_map htab!"
+				);
 			}
 		}
 	}
@@ -1134,9 +1149,6 @@ void on_hold_connection_drop (
 		// close the connection socket
 		connection_end (connection);
 
-		cerver_sockets_pool_push ((Cerver *) cerver, connection->socket);
-		connection->socket = NULL;
-
 		// we can now safely delete the connection
 		connection_delete (connection);
 
@@ -1186,7 +1198,7 @@ static u8 on_hold_poll_register_connection (
 	u8 retval = 1;
 
 	if (cerver && connection) {
-		// pthread_mutex_lock (cerver->on_hold_poll_lock);
+		(void) pthread_mutex_lock (cerver->on_hold_poll_lock);
 
 		i32 idx = on_hold_get_free_idx (cerver);
 		if (idx >= 0) {
@@ -1194,7 +1206,7 @@ static u8 on_hold_poll_register_connection (
 			cerver->hold_fds[idx].events = POLLIN;
 			cerver->current_on_hold_nfds++;
 
-			cerver->stats->current_n_hold_connections++;
+			CERVER_STATS_ADD (cerver->stats->current_n_hold_connections, 1);
 
 			#ifdef AUTH_DEBUG
 			cerver_log (
@@ -1225,7 +1237,7 @@ static u8 on_hold_poll_register_connection (
 			#endif
 		}
 
-		// pthread_mutex_unlock (cerver->on_hold_poll_lock);
+		(void) pthread_mutex_unlock (cerver->on_hold_poll_lock);
 	}
 
 	return retval;
@@ -1241,7 +1253,7 @@ u8 on_hold_poll_unregister_sock_fd (
 	u8 retval = 1;
 
 	if (cerver) {
-		// pthread_mutex_lock (cerver->on_hold_poll_lock);
+		(void) pthread_mutex_lock (cerver->on_hold_poll_lock);
 
 		i32 idx = on_hold_poll_get_idx_by_sock_fd (cerver, sock_fd);
 		if (idx >= 0) {
@@ -1250,7 +1262,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			cerver->hold_fds[idx].revents = -1;
 			cerver->current_on_hold_nfds--;
 
-			cerver->stats->current_n_hold_connections--;
+			CERVER_STATS_SUBTRACT (cerver->stats->current_n_hold_connections, 1);
 
 			#ifdef AUTH_DEBUG
 			cerver_log (
@@ -1282,7 +1294,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			// #endif
 		}
 
-		// pthread_mutex_unlock (cerver->on_hold_poll_lock);
+		(void) pthread_mutex_unlock (cerver->on_hold_poll_lock);
 	}
 
 	return retval;
@@ -1300,36 +1312,95 @@ static u8 on_hold_poll_unregister_connection (
 
 }
 
+// the poll thread works with its own copy of the fds,
+// because the accept thread registers new connections while it polls
+static void on_hold_poll_copy_fds (
+	Cerver *cerver, struct pollfd *polled_fds
+) {
+
+	(void) pthread_mutex_lock (cerver->on_hold_poll_lock);
+
+	(void) memcpy (
+		polled_fds, cerver->hold_fds,
+		sizeof (struct pollfd) * cerver->max_on_hold_connections
+	);
+
+	(void) pthread_mutex_unlock (cerver->on_hold_poll_lock);
+
+}
+
+static void on_hold_poll_handle_fd (
+	Cerver *cerver, char *packet_buffer,
+	const struct pollfd *polled_fd
+) {
+
+	CerverReceive *cr = cerver_receive_create (
+		RECEIVE_TYPE_ON_HOLD, cerver, polled_fd->fd
+	);
+
+	if (cr) {
+		if (polled_fd->revents == POLLIN) {
+			cerver_receive_internal (
+				cr,
+				packet_buffer,
+				cerver->on_hold_receive_buffer_size
+			);
+		}
+
+		else {
+			cerver_receive_handle_failed (cr);
+		}
+
+		cerver_receive_delete (cr);
+	}
+
+}
+
+static void on_hold_poll_expire_fd (
+	Cerver *cerver, const i32 sock_fd, const time_t now
+) {
+
+	// a connection that was handled in this round is not on hold anymore
+	Connection *connection = connection_get_by_sock_fd_from_on_hold (cerver, sock_fd);
+
+	if (connection && ((now - connection->connected_timestamp) >= (time_t) cerver->on_hold_timeout)) {
+		cerver_log_warning (
+			"Cerver %s ON HOLD connection %d did not authenticate in %u secs - dropping...",
+			cerver->info->name, sock_fd, cerver->on_hold_timeout
+		);
+
+		on_hold_connection_drop (cerver, connection);
+	}
+
+}
+
+// drops the on hold connections that did not authenticate in time,
+// only this thread handles them, so they are not in use
+static void on_hold_poll_expire (
+	Cerver *cerver, const struct pollfd *polled_fds
+) {
+
+	if (!cerver->on_hold_timeout) return;
+
+	const time_t now = time (NULL);
+
+	for (u32 idx = 0; idx < cerver->max_on_hold_connections; idx++) {
+		if (polled_fds[idx].fd > -1) {
+			on_hold_poll_expire_fd (cerver, polled_fds[idx].fd, now);
+		}
+	}
+
+}
+
 static inline void on_hold_poll_handle (
-	Cerver *cerver, char *packet_buffer
+	Cerver *cerver, char *packet_buffer,
+	const struct pollfd *polled_fds
 ) {
 
 	// one or more fd(s) are readable, need to determine which ones they are
 	for (u32 idx = 0; idx < cerver->max_on_hold_connections; idx++) {
-		if (cerver->hold_fds[idx].fd > -1) {
-			CerverReceive *cr = cerver_receive_create (
-				RECEIVE_TYPE_ON_HOLD, cerver, cerver->hold_fds[idx].fd
-			);
-
-			if (cr) {
-				switch (cerver->hold_fds[idx].revents) {
-					case POLLIN: {
-						cerver_receive_internal (
-							cr,
-							packet_buffer,
-							cerver->on_hold_receive_buffer_size
-						);
-					} break;
-
-					default: {
-						if (cerver->hold_fds[idx].revents != 0) {
-							cerver_receive_handle_failed (cr);
-						}
-					} break;
-				}
-
-				cerver_receive_delete (cr);
-			}
+		if ((polled_fds[idx].fd > -1) && polled_fds[idx].revents) {
+			on_hold_poll_handle_fd (cerver, packet_buffer, &polled_fds[idx]);
 		}
 	}
 
@@ -1353,7 +1424,11 @@ void *on_hold_poll (void *cerver_ptr) {
 			cerver->on_hold_receive_buffer_size, sizeof (char)
 		);
 
-		if (packet_buffer) {
+		struct pollfd *polled_fds = (struct pollfd *) calloc (
+			cerver->max_on_hold_connections, sizeof (struct pollfd)
+		);
+
+		if (packet_buffer && polled_fds) {
 			#ifdef AUTH_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
@@ -1362,9 +1437,11 @@ void *on_hold_poll (void *cerver_ptr) {
 			#endif
 
 			int poll_retval = 0;
-			while (cerver->isRunning) {
+			while (cerver_is_running (cerver)) {
+				on_hold_poll_copy_fds (cerver, polled_fds);
+
 				poll_retval = poll (
-					cerver->hold_fds,
+					polled_fds,
 					cerver->max_on_hold_connections,
 					cerver->on_hold_poll_timeout
 				);
@@ -1378,7 +1455,7 @@ void *on_hold_poll (void *cerver_ptr) {
 						);
 
 						perror ("Error");
-						cerver->isRunning = false;
+						cerver_stop_request (cerver);
 					} break;
 
 					case 0: {
@@ -1392,14 +1469,15 @@ void *on_hold_poll (void *cerver_ptr) {
 					} break;
 
 					default: {
-						if (cerver->current_on_hold_nfds) {
-							on_hold_poll_handle (
-								cerver,
-								packet_buffer
-							);
-						}
+						on_hold_poll_handle (
+							cerver,
+							packet_buffer,
+							polled_fds
+						);
 					} break;
 				}
+
+				on_hold_poll_expire (cerver, polled_fds);
 			}
 
 			#ifdef AUTH_DEBUG
@@ -1410,7 +1488,6 @@ void *on_hold_poll (void *cerver_ptr) {
 			);
 			#endif
 
-			free (packet_buffer);
 		}
 
 		else {
@@ -1418,6 +1495,9 @@ void *on_hold_poll (void *cerver_ptr) {
 				"Failed to allocate cerver ON HOLD poll's packet buffer!"
 			);
 		}
+
+		free (packet_buffer);
+		free (polled_fds);
 	}
 
 	else {
