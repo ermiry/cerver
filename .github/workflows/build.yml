@@ -108,3 +108,30 @@ jobs:
             -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
             -e TSAN_OPTIONS=halt_on_error=1 \
             gcc:16.2 bash -c 'make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 && make TYPE=test SANITIZER=${{ matrix.sanitizer }} -j4 test && bash test/run.sh'
+
+  nightly-image:
+    name: Nightly docker image
+    needs: test
+    if: github.event_name == 'push' && github.ref_name == 'nightly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image tags
+        id: tags
+        run: echo "tags=ermiry/cerver:nightly,ermiry/cerver:nightly-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker Nightly Image
+        id: docker_build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.beta
+          tags: ${{ steps.tags.outputs.tags }}
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
