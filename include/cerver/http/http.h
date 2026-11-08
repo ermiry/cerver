@@ -173,6 +173,10 @@ struct _HttpCerver {
 	// delete uploaded files when the request ends
 	bool uploads_delete_when_done;
 
+	// the last number given to a request by the default uploads generators,
+	// so their names are unique even if a fd is reused in the same second
+	size_t uploads_sequence;
+
 	// auth
 	jwt_alg_t jwt_alg;
 
@@ -249,6 +253,8 @@ struct _HttpCerver {
 	unsigned int request_timeout;
 
 	size_t n_timeout_requests;		// answered with 408
+
+	size_t n_unanswered_requests;	// answered with 500 because the handler did not respond
 
 	// the headers that cerver adds to every response
 	bool date_header;
@@ -463,8 +469,9 @@ CERVER_EXPORT void http_cerver_set_uploads_file_mode (
 );
 
 // method that can be used to generate multi-part uploads filenames
-// with format "%d-%ld-%u-%s" using "sock_fd-time (NULL)-file index-multi_part->filename"
-// the file index keeps unique the files of a request that have the same filename
+// with format "%d-%ld-%zu-%u-%s" using "sock_fd-time (NULL)-sequence-file index-multi_part->filename"
+// the sequence is unique for each request of the cerver, even if its fd is reused in the same second,
+// and the file index keeps unique the files of a request that have the same filename
 CERVER_EXPORT void http_cerver_default_uploads_filename_generator (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
@@ -495,7 +502,8 @@ CERVER_EXPORT void http_cerver_set_uploads_dir_mode (
 );
 
 // method that can be used to generate multi-part uploads dirnames
-// with format "%d-%ld" using "sock_fd-time (NULL)"
+// with format "%d-%ld-%zu" using "sock_fd-time (NULL)-sequence"
+// the files of the request share its sequence
 CERVER_EXPORT void http_cerver_default_uploads_dirname_generator (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
@@ -948,6 +956,9 @@ struct _HttpReceive {
 	bool is_multi_part;
 	struct _HttpRouteFileStats *file_stats;
 
+	// the number of the request in the default uploads generators, 0 until one asks for it
+	size_t upload_sequence;
+
 	// the pieces of the token that is being built
 	HttpReceiveToken token;
 	String *url_buffer;
@@ -960,8 +971,9 @@ struct _HttpReceive {
 	size_t body_size;
 	unsigned int n_parts;
 
-	// a response was already sent before the request was completed,
-	// the rest of the request is not handled
+	// cerver already tried to send a response, even if it failed:
+	// before the request was completed, the rest of the request is not handled,
+	// after its handler, a request without one is answered with 500
 	bool responded;
 
 	// the response that the handler sends in pieces

@@ -459,6 +459,19 @@ static unsigned int features_client_chunked_upload (CURL *curl) {
 
 }
 
+// a handler without a response is answered with 500, also behind a proxy (instead of a 502)
+static unsigned int features_client_unanswered (CURL *curl) {
+
+	unsigned int errors = features_client_request (
+		curl, "GET", "", "/features/unanswered", NULL, HTTP_STATUS_INTERNAL_SERVER_ERROR
+	);
+
+	errors |= features_client_expect_body ("unanswered", "Internal error!");
+
+	return errors;
+
+}
+
 static unsigned int features_client_metrics (CURL *curl) {
 
 	unsigned int errors = features_client_request (curl, "GET", "", "/features/cerver/metrics", NULL, HTTP_STATUS_OK);
@@ -466,6 +479,7 @@ static unsigned int features_client_metrics (CURL *curl) {
 	errors |= features_client_expect_body ("metrics", "cerver_info{version=\"");
 	errors |= features_client_expect_body ("metrics", "cerver_http_responses_total{code=\"304\"} ");
 	errors |= features_client_expect_body ("metrics", "cerver_http_request_duration_seconds_count{method=\"GET\",path=\"/features/small\"} ");
+	errors |= features_client_expect_body ("metrics", "cerver_http_requests_unanswered_total ");
 
 	return errors;
 
@@ -511,6 +525,7 @@ int main (int argc, char **argv) {
 		errors |= features_client_compression (curl);
 		errors |= features_client_stream (curl);
 		errors |= features_client_chunked_upload (curl);
+		errors |= features_client_unanswered (curl);
 		errors |= features_client_metrics (curl);
 
 		curl_easy_cleanup (curl);

@@ -1,4 +1,4 @@
-FROM gcc as builder
+FROM gcc:16.2 as builder
 
 WORKDIR /opt/cerver
 
@@ -9,7 +9,7 @@ COPY . .
 RUN make TYPE=production -j4
 
 ############
-FROM ubuntu:bionic
+FROM debian:trixie-slim
 
 ARG RUNTIME_DEPS='libssl-dev'
 

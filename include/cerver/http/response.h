@@ -54,9 +54,11 @@
 #define HTTP_RESPONSE_FILE_CHUNK_SIZE			2097152
 #define HTTP_RESPONSE_VIDEO_CHUNK_SIZE			2097152
 
-// the times a send () to a full non blocking socket buffer (EAGAIN) is retried
+// a send () to a full non blocking socket buffer (EAGAIN) waits with poll ()
+// until the socket is writable, up to the cerver's send timeout for the whole response
 // in a blocking socket, EAGAIN means that its send timeout (SO_SNDTIMEO) has expired
-#define HTTP_RESPONSE_SEND_RETRIES				(1 << 4)
+#define HTTP_RESPONSE_MILLISECONDS_PER_SECOND		1000
+#define HTTP_RESPONSE_NANOSECONDS_PER_MILLISECOND	1000000
 
 // the response sent by the cerver when it can not handle a new connection
 #define HTTP_RESPONSE_RETRY_AFTER_SECONDS		"1"

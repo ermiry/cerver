@@ -74,6 +74,10 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_requests_timeout_total", "The requests that were answered with 408.",
 		offsetof (HttpCerver, n_timeout_requests)
+	},
+	{
+		"cerver_http_requests_unanswered_total", "The requests that were answered with 500 because their handler did not respond.",
+		offsetof (HttpCerver, n_unanswered_requests)
 	}
 };
 
