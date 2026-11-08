@@ -1,54 +1,18 @@
 ## General
-- Building with an optional zlib to compress HTTP responses
-- Ignoring integration coverage outputs in git & docker files
-- Building the test image with zlib and an optional coverage
-- Building fuzz targets with zlib in the fuzz Dockerfile image
-- Added Codecov coverage targets & ignoring the tests files
-- Uploading integration coverage to Codecov in the test job
-- Creating the release tags on the commit of each workflow
-- Growing strings geometrically with a str_reserve() method
-- Checking a NULL filename before reading the image type
-- Sending the packet header padding zeroed in each packet
-- Cancelling a cerver start with a prior stop & atomic socket
-- Logging HTTP requests with client's address & request id
-- Updated roadmap with phase 3b and the phase 4 changes
-- Updated CLAUDE.md with zlib, features & the HTTP state
+- Using gcc 16.2 instead of 13.4 in the test Dockerfile image
+- Using gcc 16.2 & trixie slim images in the other Dockerfiles
+- Fixed file_read_internal () reading every piece at the start
+- Removed unused fps counter from admin_cerver_update ()
+- Updated tests roadmap with the 2.0b-61 new server tests
+- Updated roadmap with the 2.0b-61 fixes before the 2.1 line
+- Updated CLAUDE.md with the send waits, 500 & sequence
 
 ## HTTP
-- Added X-Real-IP header & finding headers in a raw buffer
-- Added HTTP Date header with a per thread cache & parse
-- Added HTTP ETag & Last-Modified with 304 Not Modified
-- Added HTTP gzip compression of responses by endpoints
-- Added HTTP response streams with the chunked encoding
-- Added HTTP client address from trusted proxies' headers
-- Added HTTP request ids from X-Request-Id or a new UUID
-- Added latency histogram buckets to the HTTP route stats
-- Added Prometheus metrics text of cerver & its endpoints
-- Sending HTTP responses with request headers in one call
-- Added etag & compression settings & old style routes print
-- Added HTTP metrics admin route with the Prometheus text
-- Sharing HTTP state between the web cervers of a process
+- Using poll () & a send deadline when a socket buffer is full
+- Answering with 500 the requests a handler did not answer
+- Added the request sequence in the default uploads names
 
 ## Tests
-- Added a test helper to buffer the unit tests stdout by lines
-- Buffering stdout by lines in every main source of unit tests
-- Added packet header padding unit test with zeroed bytes
-- Added string growth, reserve and capacity reset unit tests
-- Added cerver core tests with stops before & while starting
-- Added HTTP Date header unit tests with formats & parses
-- Added HTTP conditional unit tests with entity tags & dates
-- Added HTTP compression unit tests with gzip & encodings
-- Added HTTP proxy unit tests with CIDRs & forwarded IPs
-- Checking X-Real-IP header in HTTP headers hash unit test
-- Added HTTP request id unit tests with the given & new ids
-- Checking metrics route & json settings in routes tree tests
-- Added HTTP receive unit tests with chunked body trailers
-- Added HTTP server tests with two cervers in one process
-- Added HTTP features tests in a process with a web cerver
-- Registering the new HTTP unit tests in the HTTP main file
-- Added web features integration pair with headers & proxy
-- Running the features pair & collecting integration coverage
-- Running nginx test with features pair in two nginx versions
-- Lowered the allocations per request in performance script
-- Enabling CORS, ETag, gzip & trusted proxies in fuzz cerver
-- Added fuzz request seeds with conditional, proxy & trailers
+- Added server tests of unanswered, full socket & fd 0 sends
+- Added receive test of the uploads dirnames in one second
+- Added an unanswered route in the features integration pair
