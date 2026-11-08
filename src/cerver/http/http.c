@@ -260,6 +260,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->uploads_delete_when_done = HTTP_CERVER_DEFAULT_UPLOADS_DELETE;
 
+		http_cerver->uploads_sequence = 0;
+
 		http_cerver->jwt_alg = JWT_ALG_NONE;
 
 		http_cerver->jwt_opt_key_name = NULL;
@@ -1207,9 +1209,27 @@ void http_cerver_set_uploads_file_mode (
 
 }
 
+// gives the request its number in the cerver the first time that a generator asks for it,
+// so the directory and the files of a request share it
+// a receive without its HTTP cerver has the number 0
+static size_t http_receive_upload_sequence (const HttpReceive *http_receive) {
+
+	HttpReceive *receive = (HttpReceive *) http_receive;
+
+	if (!receive->upload_sequence && receive->http_cerver) {
+		receive->upload_sequence = __atomic_add_fetch (
+			&receive->http_cerver->uploads_sequence, 1, __ATOMIC_RELAXED
+		);
+	}
+
+	return receive->upload_sequence;
+
+}
+
 // method that can be used to generate multi-part uploads filenames
-// with format "%d-%ld-%u-%s" using "sock_fd-time (NULL)-file index-multi_part->filename"
-// the file index keeps unique the files of a request that have the same filename
+// with format "%d-%ld-%zu-%u-%s" using "sock_fd-time (NULL)-sequence-file index-multi_part->filename"
+// the sequence is unique for each request of the cerver, even if its fd is reused in the same second,
+// and the file index keeps unique the files of a request that have the same filename
 void http_cerver_default_uploads_filename_generator (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
@@ -1219,9 +1239,10 @@ void http_cerver_default_uploads_filename_generator (
 
 	http_multi_part_set_generated_filename (
 		mpart,
-		"%d-%ld-%u-%s",
+		"%d-%ld-%zu-%u-%s",
 		http_receive->cr->connection->socket->sock_fd,
 		time (NULL),
+		http_receive_upload_sequence (http_receive),
 		(unsigned int) request->n_files,
 		http_multi_part_get_filename (mpart)
 	);
@@ -1271,7 +1292,8 @@ void http_cerver_set_uploads_dir_mode (
 }
 
 // method that can be used to generate multi-part uploads dirnames
-// with format "%d-%ld" using "sock_fd-time (NULL)"
+// with format "%d-%ld-%zu" using "sock_fd-time (NULL)-sequence"
+// the files of the request share its sequence
 void http_cerver_default_uploads_dirname_generator (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
@@ -1279,9 +1301,10 @@ void http_cerver_default_uploads_dirname_generator (
 
 	http_request_set_dirname (
 		request,
-		"%d-%ld",
+		"%d-%ld-%zu",
 		http_receive->cr->connection->socket->sock_fd,
-		time (NULL)
+		time (NULL),
+		http_receive_upload_sequence (http_receive)
 	);
 
 }
@@ -3353,6 +3376,8 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->is_multi_part = false;
 		http_receive->file_stats = NULL;
+
+		http_receive->upload_sequence = 0;
 
 		http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
 		http_receive->url_buffer = NULL;
