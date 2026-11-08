@@ -2,9 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef PACKETS_DEBUG
 #include <errno.h>
-#endif
 
 #include "cerver/config.h"
 
@@ -25,6 +23,8 @@
 #ifdef PACKETS_DEBUG
 #include "cerver/utils/log.h"
 #endif
+
+#define PACKET_ROUTE_BUFFER_SIZE			4096
 
 #pragma region protocol
 
@@ -50,9 +50,17 @@ ProtocolVersion packets_get_protocol_version (void) {
 }
 
 void packets_set_protocol_version (ProtocolVersion version) {
-	
+
 	protocol_version = version;
-	
+
+}
+
+PacketVersion packet_version_local (void) {
+
+	PacketVersion version = { protocol_id, protocol_version };
+
+	return version;
+
 }
 
 #pragma endregion
@@ -152,18 +160,18 @@ void packets_per_type_print (
 ) {
 
 	if (packets_per_type) {
-		cerver_log_msg ("Cerver:            %lu", packets_per_type->n_cerver_packets);
-		cerver_log_msg ("Client:            %lu", packets_per_type->n_client_packets);
-		cerver_log_msg ("Error:             %lu", packets_per_type->n_error_packets);
-		cerver_log_msg ("Request:           %lu", packets_per_type->n_request_packets);
-		cerver_log_msg ("Auth:              %lu", packets_per_type->n_auth_packets);
-		cerver_log_msg ("Game:              %lu", packets_per_type->n_game_packets);
-		cerver_log_msg ("App:               %lu", packets_per_type->n_app_packets);
-		cerver_log_msg ("App Error:         %lu", packets_per_type->n_app_error_packets);
-		cerver_log_msg ("Custom:            %lu", packets_per_type->n_custom_packets);
-		cerver_log_msg ("Test:              %lu", packets_per_type->n_test_packets);
-		cerver_log_msg ("Unknown:           %lu", packets_per_type->n_unknown_packets);
-		cerver_log_msg ("Bad:               %lu", packets_per_type->n_bad_packets);
+		cerver_log_msg ("Cerver:            %ld", CERVER_STATS_GET (packets_per_type->n_cerver_packets));
+		cerver_log_msg ("Client:            %ld", CERVER_STATS_GET (packets_per_type->n_client_packets));
+		cerver_log_msg ("Error:             %ld", CERVER_STATS_GET (packets_per_type->n_error_packets));
+		cerver_log_msg ("Request:           %ld", CERVER_STATS_GET (packets_per_type->n_request_packets));
+		cerver_log_msg ("Auth:              %ld", CERVER_STATS_GET (packets_per_type->n_auth_packets));
+		cerver_log_msg ("Game:              %ld", CERVER_STATS_GET (packets_per_type->n_game_packets));
+		cerver_log_msg ("App:               %ld", CERVER_STATS_GET (packets_per_type->n_app_packets));
+		cerver_log_msg ("App Error:         %ld", CERVER_STATS_GET (packets_per_type->n_app_error_packets));
+		cerver_log_msg ("Custom:            %ld", CERVER_STATS_GET (packets_per_type->n_custom_packets));
+		cerver_log_msg ("Test:              %ld", CERVER_STATS_GET (packets_per_type->n_test_packets));
+		cerver_log_msg ("Unknown:           %ld", CERVER_STATS_GET (packets_per_type->n_unknown_packets));
+		cerver_log_msg ("Bad:               %ld", CERVER_STATS_GET (packets_per_type->n_bad_packets));
 	}
 
 }
@@ -172,17 +180,17 @@ void packets_per_type_array_print (
 	const u64 packets[PACKETS_MAX_TYPES]
 ) {
 
-	cerver_log_msg ("\tCerver:              %lu", packets[PACKET_TYPE_CERVER]);
-	cerver_log_msg ("\tClient:              %lu", packets[PACKET_TYPE_CLIENT]);
-	cerver_log_msg ("\tError:               %lu", packets[PACKET_TYPE_ERROR]);
-	cerver_log_msg ("\tRequest:             %lu", packets[PACKET_TYPE_REQUEST]);
-	cerver_log_msg ("\tAuth:                %lu", packets[PACKET_TYPE_AUTH]);
-	cerver_log_msg ("\tGame:                %lu", packets[PACKET_TYPE_GAME]);
-	cerver_log_msg ("\tApp:                 %lu", packets[PACKET_TYPE_APP]);
-	cerver_log_msg ("\tApp Error:           %lu", packets[PACKET_TYPE_APP_ERROR]);
-	cerver_log_msg ("\tCustom:              %lu", packets[PACKET_TYPE_CUSTOM]);
-	cerver_log_msg ("\tTest:                %lu", packets[PACKET_TYPE_TEST]);
-	cerver_log_msg ("\tBad:                 %lu", packets[PACKET_TYPE_BAD]);
+	cerver_log_msg ("\tCerver:              %ld", packets[PACKET_TYPE_CERVER]);
+	cerver_log_msg ("\tClient:              %ld", packets[PACKET_TYPE_CLIENT]);
+	cerver_log_msg ("\tError:               %ld", packets[PACKET_TYPE_ERROR]);
+	cerver_log_msg ("\tRequest:             %ld", packets[PACKET_TYPE_REQUEST]);
+	cerver_log_msg ("\tAuth:                %ld", packets[PACKET_TYPE_AUTH]);
+	cerver_log_msg ("\tGame:                %ld", packets[PACKET_TYPE_GAME]);
+	cerver_log_msg ("\tApp:                 %ld", packets[PACKET_TYPE_APP]);
+	cerver_log_msg ("\tApp Error:           %ld", packets[PACKET_TYPE_APP_ERROR]);
+	cerver_log_msg ("\tCustom:              %ld", packets[PACKET_TYPE_CUSTOM]);
+	cerver_log_msg ("\tTest:                %ld", packets[PACKET_TYPE_TEST]);
+	cerver_log_msg ("\tBad:                 %ld", packets[PACKET_TYPE_BAD]);
 
 }
 
@@ -222,6 +230,8 @@ static void packet_header_init (
 	header->packet_size = packet_size;
 
 	header->request_type = req_type;
+
+	header->version = packet_version_local ();
 
 }
 
@@ -323,13 +333,8 @@ Packet *packet_new (void) {
 
 		packet_header_init (&packet->header, PACKET_TYPE_NONE, 0, 0);
 
-		packet->version = (PacketVersion) {
-			.protocol_id = 0,
-			.protocol_version = {
-				.major = 0,
-				.minor = 0
-			}
-		};
+		// a received packet takes the version of its header
+		packet->version = packet_version_local ();
 
 		packet->packet_size = 0;
 		packet->packet = NULL;
@@ -706,17 +711,21 @@ u8 packet_generate (Packet *packet) {
 	u8 retval = 0;
 
 	if (packet) {
-		if (packet->packet) {
+		// a request packet references its own header
+		if (packet->packet && !packet->packet_ref) {
 			free (packet->packet);
-			packet->packet = NULL;
-			packet->packet_size = 0;
 		}
+
+		packet->packet = NULL;
+		packet->packet_size = 0;
+		packet->packet_ref = false;
 
 		packet->packet_size = sizeof (PacketHeader) + packet->data_size;
 
 		packet->header.packet_type = packet->packet_type;
 		packet->header.packet_size = packet->packet_size;
 		packet->header.request_type = packet->req_type;
+		packet->header.version = packet_version_local ();
 
 		// create the packet buffer to be sent
 		packet->packet = malloc (packet->packet_size);
@@ -737,6 +746,67 @@ u8 packet_generate (Packet *packet) {
 
 }
 
+// creates a request packet that is ready to be sent
+// returns a newly allocated packet
+Packet *packet_create_request (
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	Packet *packet = (Packet *) malloc (sizeof (Packet));
+	if (packet) {
+		*packet = (Packet) {
+			.cerver = NULL,
+			.client = NULL,
+			.connection = NULL,
+			.lobby = NULL,
+
+			.packet_type = packet_type,
+			.req_type = request_type,
+
+			.data_size = 0,
+			.data = NULL,
+			.data_ptr = NULL,
+			.data_end = NULL,
+			.data_ref = false,
+
+			.header = (PacketHeader) {
+				.packet_type = packet_type,
+				.packet_size = sizeof (PacketHeader),
+
+				.handler_id = 0,
+
+				.request_type = request_type,
+
+				.sock_fd = 0,
+
+				.version = packet_version_local ()
+			},
+
+			.version = packet_version_local (),
+
+			.packet_size = sizeof (PacketHeader),
+			.packet = (void *) &packet->header,
+			.packet_ref = true
+		};
+
+		// the header is sent from the packet itself, the literal does not zero its padding
+		packet_header_init (&packet->header, packet_type, sizeof (PacketHeader), request_type);
+	}
+
+	return packet;
+
+}
+
+// creates a new ping packet (PACKET_TYPE_TEST)
+// returns a newly allocated packet
+Packet *packet_create_ping (void) {
+
+	return packet_create_request (PACKET_TYPE_TEST, 0);
+
+}
+
+// initializes an already allocated packet with request related values
 void packet_init_request (
 	Packet *packet,
 	const PacketType packet_type,
@@ -758,16 +828,7 @@ void packet_init_request (
 		.data_end = NULL,
 		.data_ref = false,
 
-		.header = (PacketHeader) {
-			.packet_type = packet_type,
-			.packet_size = sizeof (PacketHeader),
-
-			.handler_id = 0,
-
-			.request_type = request_type,
-
-			.sock_fd = 0
-		},
+		.version = packet_version_local (),
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &packet->header,
@@ -779,39 +840,10 @@ void packet_init_request (
 
 }
 
+// initializes an already allocated packet as a ping request
 void packet_init_ping (Packet *packet) {
 
-	packet_init_request (
-		packet,
-		PACKET_TYPE_TEST, 0
-	);
-
-}
-
-// creates a request packet that is ready to be sent
-// returns a newly allocated packet
-Packet *packet_create_request (
-	const PacketType packet_type,
-	const u32 request_type
-) {
-
-	Packet *packet = (Packet *) malloc (sizeof (Packet));
-	if (packet) {
-		packet_init_request (
-			packet,
-			packet_type, request_type
-		);
-	}
-
-	return packet;
-
-}
-
-// creates a new ping packet (PACKET_TYPE_TEST)
-// returns a newly allocated packet
-Packet *packet_create_ping (void) {
-
-	return packet_create_request (PACKET_TYPE_TEST, 0);
+	packet_init_request (packet, PACKET_TYPE_TEST, 0);
 
 }
 
@@ -854,20 +886,24 @@ static inline u8 packet_send_tcp_actual (
 ) {
 
 	ssize_t sent = 0;
+	size_t total = 0;
 	char *p = raw ? (char *) packet->data : (char *) packet->packet;
 	size_t packet_size = raw ? packet->data_size : packet->packet_size;
 
 	while (packet_size > 0) {
 		sent = send (connection->socket->sock_fd, p, packet_size, flags);
 		if (sent < 0) {
+			if (errno == EINTR) continue;
 			return 1;
 		}
 
 		p += sent;
+		total += (size_t) sent;
 		packet_size -= (size_t) sent;
 	}
 
-	if (total_sent) *total_sent = (size_t) sent;
+	// every byte that was sent, send () can send the packet in many parts
+	if (total_sent) *total_sent = total;
 
 	return 0;
 
@@ -966,9 +1002,6 @@ static u8 packet_send_split_tcp (
 // }
 // #pragma GCC diagnostic pop
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 static void packet_send_update_stats (
 	PacketType packet_type, size_t sent,
 	Cerver *cerver,
@@ -976,15 +1009,19 @@ static void packet_send_update_stats (
 	Lobby *lobby
 ) {
 
+	// they are only used with CLIENT_STATS and CONNECTION_STATS
+	(void) client;
+	(void) connection;
+
 	if (cerver) {
-		cerver->stats->n_packets_sent += 1;
-		cerver->stats->total_bytes_sent += sent;
+		CERVER_STATS_ADD (cerver->stats->n_packets_sent, 1);
+		CERVER_STATS_ADD (cerver->stats->total_bytes_sent, sent);
 	}
 
 	#ifdef CLIENT_STATS
 	if (client) {
-		client->stats->n_packets_sent += 1;
-		client->stats->total_bytes_sent += sent;
+		CERVER_STATS_ADD (client->stats->n_packets_sent, 1);
+		CERVER_STATS_ADD (client->stats->total_bytes_sent, sent);
 	}
 	#endif
 
@@ -1002,7 +1039,7 @@ static void packet_send_update_stats (
 		case PACKET_TYPE_NONE: break;
 
 		case PACKET_TYPE_CERVER:
-			if (cerver) cerver->stats->sent_packets->n_cerver_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_cerver_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_cerver_packets += 1;
 			#endif
@@ -1013,7 +1050,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_CLIENT:
-			if (cerver) cerver->stats->sent_packets->n_client_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_client_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_client_packets += 1;
 			#endif
@@ -1024,7 +1061,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_ERROR:
-			if (cerver) cerver->stats->sent_packets->n_error_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_error_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_error_packets += 1;
 			#endif
@@ -1035,7 +1072,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_REQUEST:
-			if (cerver) cerver->stats->sent_packets->n_request_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_request_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_request_packets += 1;
 			#endif
@@ -1046,7 +1083,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_AUTH:
-			if (cerver) cerver->stats->sent_packets->n_auth_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_auth_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_auth_packets += 1;
 			#endif
@@ -1057,7 +1094,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_GAME:
-			if (cerver) cerver->stats->sent_packets->n_game_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_game_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_game_packets += 1;
 			#endif
@@ -1068,7 +1105,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_APP:
-			if (cerver) cerver->stats->sent_packets->n_app_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_app_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_packets += 1;
 			#endif
@@ -1079,7 +1116,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
-			if (cerver) cerver->stats->sent_packets->n_app_error_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_app_error_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_app_error_packets += 1;
 			#endif
@@ -1090,7 +1127,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_CUSTOM:
-			if (cerver) cerver->stats->sent_packets->n_custom_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_custom_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_custom_packets += 1;
 			#endif
@@ -1101,7 +1138,7 @@ static void packet_send_update_stats (
 			break;
 
 		case PACKET_TYPE_TEST:
-			if (cerver) cerver->stats->sent_packets->n_test_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_test_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_test_packets += 1;
 			#endif
@@ -1112,7 +1149,7 @@ static void packet_send_update_stats (
 			break;
 
 		default:
-			if (cerver) cerver->stats->sent_packets->n_unknown_packets += 1;
+			if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_unknown_packets, 1);
 			#ifdef CLIENT_STATS
 			if (client) client->stats->sent_packets->n_unknown_packets += 1;
 			#endif
@@ -1125,8 +1162,9 @@ static void packet_send_update_stats (
 
 }
 
-#pragma GCC diagnostic pop
-
+// sends a packet of a connection's send queue,
+// the socket's write mutex is held so the packet is not mixed with others
+// returns 0 on success, 1 on error
 u8 packet_send_actual (
 	const Packet *packet,
 	int flags, size_t *total_sent,
@@ -1135,11 +1173,12 @@ u8 packet_send_actual (
 
 	u8 retval = 1;
 
-	if (!packet_send_tcp_actual (
-		packet, connection, flags, total_sent, false
-	)) {
+	size_t sent = 0;
+	if (!packet_send_tcp (packet, connection, flags, &sent, false)) {
+		if (total_sent) *total_sent = sent;
+
 		packet_send_update_stats (
-			packet->packet_type, *total_sent,
+			packet->packet_type, sent,
 			NULL, client, connection, NULL
 		);
 
@@ -1187,7 +1226,7 @@ static inline u8 packet_send_internal (
 					printf ("\n");
 					#endif
 
-					if (cerver) cerver->stats->sent_packets->n_bad_packets += 1;
+					if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_bad_packets, 1);
 
 					#ifdef CLIENT_STATS
 					if (client) client->stats->sent_packets->n_bad_packets += 1;
@@ -1352,17 +1391,16 @@ u8 packet_send_pieces (
 			flags,
 			&actual_sent
 		)) {
-			// send the pieces of data
-			for (u32 i = 0; i < n_pieces; i++) {
-				(void) packet_send_pieces_actual (
+			// send the pieces of data, a failed one stops the packet
+			retval = 0;
+			for (u32 i = 0; (i < n_pieces) && !retval; i++) {
+				retval = packet_send_pieces_actual (
 					packet->connection->socket,
 					(char *) pieces[i], sizes[i],
 					flags,
 					&actual_sent
 				);
 			}
-
-			retval = 0;
 		}
 
 		packet_send_update_stats (
@@ -1452,15 +1490,11 @@ u8 packet_send_request (
 			.request_type = request_type,
 
 			.sock_fd = 0,
+
+			.version = packet_version_local ()
 		},
 
-		.version = (PacketVersion) {
-			.protocol_id = 0,
-			.protocol_version = {
-				.major = 0,
-				.minor = 0
-			}
-		},
+		.version = packet_version_local (),
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &request.header,
@@ -1597,6 +1631,29 @@ static inline u8 packet_route_between_connections_move (
 
 }
 
+// moves the pending bytes from the pipe to the destination,
+// splice () can move less bytes than the ones in the pipe
+static u8 packet_route_between_connections_move_all (
+	int pipefd, int to_fd, size_t pending, size_t *sent
+) {
+
+	u8 retval = 0;
+
+	ssize_t moved = 0;
+	while (pending > 0) {
+		if (packet_route_between_connections_move (pipefd, to_fd, (int) pending, &moved)) {
+			retval = 1;
+			break;
+		}
+
+		if (sent) *sent += (size_t) moved;
+		pending -= (size_t) moved;
+	}
+
+	return retval;
+
+}
+
 // routes a packet from one connection's sock fd to another connection's sock fd
 // the header is sent first and then the packet's body (if any) is handled directly between fds
 // by calling the splice method using a pipe as the middleman
@@ -1615,13 +1672,14 @@ u8 packet_route_between_connections (
 		// first send the header
 		ssize_t s = send (to->socket->sock_fd, header, sizeof (PacketHeader), 0);
 		if (s > 0) {
+			if (sent) *sent = (size_t) s;
+
 			size_t left = header->packet_size - sizeof (PacketHeader);
 			if (left) {
 				int pipefds[2] = { 0 };
 				if (!pipe (pipefds)) {
 					ssize_t received = 0;
-					ssize_t moved = 0;
-					size_t buff_size = 4096;
+					size_t buff_size = PACKET_ROUTE_BUFFER_SIZE;
 					while (left > 0) {
 						if (buff_size > left) buff_size = left;
 
@@ -1629,13 +1687,12 @@ u8 packet_route_between_connections (
 							from->socket->sock_fd, pipefds[1], buff_size, &received
 						)) break;
 
-						if (packet_route_between_connections_move (
-							pipefds[0], to->socket->sock_fd, buff_size, &moved
+						// everything that entered the pipe leaves it in this round
+						if (packet_route_between_connections_move_all (
+							pipefds[0], to->socket->sock_fd, (size_t) received, sent
 						)) break;
 
-						if (sent) *sent += moved;
-
-						left -= received;
+						left -= (size_t) received;
 					}
 
 					// we are done!
@@ -1678,9 +1735,10 @@ bool packet_check (const Packet *packet) {
 
 	if (packet) {
 		if (packet->version.protocol_id == protocol_id) {
+			// the same major, and a minor that is not newer than the local one
 			if (
-				(packet->version.protocol_version.major <= protocol_version.major)
-				&& (packet->version.protocol_version.minor >= protocol_version.minor)
+				(packet->version.protocol_version.major == protocol_version.major)
+				&& (packet->version.protocol_version.minor <= protocol_version.minor)
 			) {
 				retval = true;
 			}

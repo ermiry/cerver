@@ -308,6 +308,7 @@ Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 		header->packet_size = packet_len;
 
 		header->request_type = REQUEST_PACKET_TYPE_NONE;
+		header->version = packet_version_local ();
 
 		end += sizeof (PacketHeader);
 
