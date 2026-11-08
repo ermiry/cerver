@@ -1,945 +1,622 @@
-# cerver — Roadmap
+# cerver — Roadmap de la línea 2.1 (`nightly`)
 
-> El plan de trabajo principal para llevar cerver de la versión `2.0b-56` a un framework capaz de competir en las
-> grandes ligas.
+> El plan de trabajo de la línea experimental de cerver: el event loop con epoll, el keep-alive real y los pools de
+> handlers separados del I/O. Después, llhttp, WebSocket, la auth asíncrona, TLS y HTTP/2.
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-04 |
-> | **Rama base** | `http`: idéntica al tag `2.0b-56` más los arreglos sin commitear de §3 |
-> | **Contexto** | `percepthor-backend/docs/context/cerver-module-context.md` (el estado del módulo, las fases, las versiones y el 502 de gepp) |
-> | **Alcance** | cerver (`/Users/ermiry/Documents/cerver`), pycerver (`/Users/ermiry/Documents/py-cerver`), la imagen devel (`percepthor-devops`) y los servicios de validación (gepp, balance, payloads) |
+> | **Fecha** | 2026-11-08 (F0) |
+> | **Rama base** | `http` en la 2.0b-61 |
+> | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
+> | **Estado** | F0 en curso: la línea, sus merges y su CI (§4.0) |
 
-Las citas `archivo:línea` son relativas a `src/cerver/` salvo que se indique otra cosa, y corresponden al estado de la rama
-`http` el 2026-11-04. Hay que re-verificarlas antes de tocar cada zona, porque cada fase mueve las líneas.
+**Las citas `archivo:línea`:**
+
+- son relativas a `src/cerver/` salvo que se indique otra cosa;
+- corresponden a `http` en la 2.0b-60;
+- cada fase mueve las líneas, así que se re-verifican antes de tocar cada zona.
 
 ---
 
 ## 1. Visión y principios
 
-cerver nació para ser un framework **ligero, enfocado al máximo rendimiento y que se pueda personalizar** según las
-necesidades de cada servidor. La meta es competir con h2o, drogon, nginx-unit o los servidores sobre libuv o
-libevent, y ser mejor que ellos en su nicho: un núcleo C pequeño que también se pueda usar desde Python (pycerver).
+**`http` / `http-beta` es la línea estable.** Recibe arreglos de bugs y de rendimiento, sin breaking changes.
 
-Principios que guían cada fase:
+**`nightly` es un desarrollo aparte** para funcionalidad más radical: cambia el modelo de I/O del core HTTP. Por eso
+pasa un gate más estricto (§5), y llega a la línea estable solo cuando se integra a `http` como la 2.1.
 
-1. **Correcto antes que rápido.** Un framework rápido que pierde bodies o resetea conexiones no compite. Las Fases
-   0–2 arreglan lo que hoy falla.
-2. **Cero copias y cero asignaciones en el camino caliente.** Hoy cada petición hace unos 15 `malloc` (§4.2).
-3. **Nada de perillas de correctitud.** Ningún valor de configuración debe decidir si un body llega bien.
-   `CERVER_RECEIVE_BUFFER_SIZE` debe ser solo una perilla de rendimiento.
-4. **Límites explícitos y backpressure.** Todo recurso tiene un máximo configurable, y al llenarse se rechaza con un
-   código claro (413, 431, 503), en lugar de crecer sin límite.
-5. **Todo configurable, medible y probado.** Cada bug arreglado lleva su test. Cada fase cierra con una validación
-   real en test (§6).
-6. **Sin dependencias nuevas.** Las únicas siguen siendo pthreads, OpenSSL y libm.
-7. **C11 y C++11.** El código debe compilar con gcc y g++ (`compile.sh`), así que los atómicos se escriben con
-   `__atomic_*`, no con `<stdatomic.h>`.
+Los principios de cerver se conservan: ligero, enfocado al rendimiento y personalizable. Se suman:
 
-## 2. Necesidades del sistema que fijan la prioridad
+1. **Sin romper la API.** Todo en 2.1 es aditivo:
+   - el modelo nuevo es un handler type nuevo (`CERVER_HANDLER_TYPE_EVENTS`), opt-in y solo para `CERVER_TYPE_WEB`;
+   - se conservan THREADS, la API vieja (`http_route_*` y la capa de compatibilidad), la firma del handler
+     `(const HttpReceive *, const HttpRequest *)` y el protocolo TCP;
+   - la API vieja y THREADS para web quedan **obsoletos en 2.1** (warning al registrar) y se quitan en una 2.x
+     posterior.
+2. **Un hilo solo para trabajo.** Ningún hilo espera por la red: ni por cabeceras, ni por un body lento, ni por una
+   conexión ociosa. Los hilos del pool solo corren la auth y los handlers.
+3. **Cada salto reutiliza su conexión:** proxy → aplicación y aplicación → aplicación.
+4. **La saturación es explícita.** Esperar no cuesta un hilo, y cada espera tiene un timeout y un 503 con
+   `Retry-After`.
+5. **Probado en los dos modelos.** Cada test de HTTP corre en THREADS y en EVENTS.
+6. **La 3.0 es otro cerver**, fuera de este roadmap. Todo HTTP es 2.x.
 
-cerver sostiene todo el backend de Percepthor por pycerver (ctypes sobre `/usr/local/lib/libcerver.so`). Todos los
-servicios se configuran igual: `cerver_create_web`, `cerver_set_receive_buffer_size`, `cerver_set_thpool_n_threads`,
-`cerver_set_handler_type (THREADS)`, `cerver_set_reusable_address_flags`, uploads a `/var/uploads` (tmpfs) y el árbol de
-rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.py:175-230`.
+## 2. Lo que fija la prioridad
 
-| Servicio | Tráfico | Lo que exige a cerver |
-|---|---|---|
-| **gepp-service** (`:5060`, 2 réplicas, 32 hilos / cola 64) | Multipart de fotos (`refris/upload` con 1–6 JPEG de 21–44 KB, `censos/v2/upload`). Meta GEPP: 250 k tiendas por semana, 3.5 subidas/s en el pico de 4 h, 7/s de holgura, `breakpoint` hasta 28/s | multipart confiable, nada de RST bajo concurrencia, poca latencia de cerver (el GIL ya serializa a los 32 hilos) |
-| **payloads-service** (`:5032`, 16 hilos / cola 32, **buffer 16384**) | Payloads de encuestas: `/upload` de un solo envío, o por chunks `/upload/start` → `/chunk` → `/end`. Una encuesta abandonada deja ~20 MB | bodies grandes y multipart con muchas partes. Es el servicio con el buffer más grande "porque así funciona" |
-| **balance-service** (`:6000`, 2 réplicas, **64 hilos / cola 128**) | Proxy de inferencia: reenvía el multipart del cliente a los thors on-prem o a la nube, con timeouts de hasta 180 s | hilos ocupados mucho tiempo: el pool se agota y entonces cerver crea hilos desprendidos sin límite (§4.3) |
-| nginx 1.31.6 delante de todos | HTTP/1.1 hacia los upstreams, **reutiliza conexiones**. `client_max_body_size` de 16M (gepp) y 64M (payloads) | `Connection: close` correcto hoy, keep-alive real mañana |
+- **La saturación con THREADS:** cada conexión en espera necesita un hilo o un lugar en el backlog del kernel. Con
+  handlers lentos, el backlog se desborda (`ListenOverflows`) aunque el proceso tenga CPU libre.
+- **El healthcheck** espera en la misma cola que los handlers más lentos: bajo saturación, una aplicación sana se ve
+  caída.
+- **Una conexión TCP nueva por petición en cada salto:** el `keepalive` de un proxy no sirve si cada respuesta dice
+  `Connection: close`.
+- **Las rutas lentas y las rápidas comparten slots:** un handler de minutos ocupa los mismos hilos que una consulta de
+  milisegundos.
+- **Un handler que no responde** cerraba la conexión vacía y el proxy daba 502. Se arregló en la 2.0b-61 en `http`
+  (500 + close).
 
-**La configuración de `CERVER_RECEIVE_BUFFER_SIZE` / `CERVER_POOL_THREADS` / `CERVER_CONNECTION_QUEUE`**, por compose
-(en `percepthor-backend/` salvo que se indique otra cosa):
+## 3. Estado actual: el modelo de I/O de un cerver web (`http`, 2.0b-60)
 
-| Compose | Servicios | Buffer / hilos / cola |
-|---|---|---|
-| `docker-compose.yml` (prod) | la mayoría | 8192 / 8 / 8 |
-| | payloads, surveys | 16384 / 16 / 32 |
-| | exports | 16384 / 4 / 8 |
-| | auth, images, results | 8192 / 32 / 64 |
-| | controller, recon | 8192 / 32 / 32 |
-| `docker-compose.test.yml` | todos | 8192 / 4 / 4 |
-| `docker-compose.dev.yml`, `.devel.yml` | todos | 4096 / 4 / 4 |
-| `docker-compose.clients.yml` (prod) | gepp | 8192 / 32 / 64 |
-| `docker-compose.balance.yml` (prod) | balance | 8192 / 64 / 128 |
-| `docker-compose.fifco.yml` | fifco-payloads | 16384 / 16 / 32 |
-| `docker-compose.core.yml` | optical | 16384 / 8 / 8 |
-| `docker-compose.recon.yml` | recon | 4096 / 8–16 / igual |
-| `*/tests/Dockerfile` | todas las suites | 4096 / 4 / 4 |
+**Una conexión = un job del thpool, de principio a fin:**
 
-- El commit `d4590b5` del backend (2022-11-23, "Refactored production services custom receive buffer size") subió 31
-  servicios de 4096 a 8192 y uno a 16384, sin dejar razón escrita.
-- **La razón real está en §4.1.** No existe un valor correcto: el bug depende de dónde se parte la petición entre
-  `recv ()`, y eso lo decide la red, no el buffer.
-
-**Problemas de cerver que el backend ya documentó** (en `percepthor-backend/docs/`):
-- Uploads truncados cuando se llena el tmpfs: cerver reporta éxito y `saved_filename`. Los servicios comparan contra
-  `http_multi_part_get_total_wrote`. Ver `context/payloads-uploads-recovery-module-context.md` §5 y
-  `operations/uploads-maintenance.md`.
-- Apagado: el handler de SIGTERM puede no correr mientras `cerver_start` bloquea, y `cerver_shutdown` no espera a los
-  handlers en curso. Ver `context/client-rolling-deploy-session-context.md`.
-- Agotamiento del pool por handlers síncronos de 15–25 s. Ver `context/client-findings-module-context.md` §3.8.
-- La trampa del orden de rutas: `:id/{literal}` hace match con cualquier primer segmento. Ver
-  `context/virtual-cycles-session-context.md:542`.
-- Multipart:
-  - `content_type` siempre es None (`backlog/modules-service-tests-findings.md:21`);
-  - `mpart_has_field` reinicia el iterador;
-  - los validadores `validate_mparts_*` y `validate_query_*` caen al default en silencio y no reciben `errors`
-    (`backlog/payloads-service-tests-findings.md` §2–3).
-
-## 3. Estado actual (rama `http`)
-
-**2026-11-06: la Fase 3 y la suite de tests se publicaron en la Beta 2.0b-59**, con la migración de gepp, balance,
-payloads y tickets validada en test (§4.3.4). La Beta 2.0b-60 publicó la Fase 3b (§4.3.5), sin WebSocket, y los
-arreglos de CI de 2.0b-59 (el crecimiento geométrico de `String` y la reserva del body).
-
-**2026-11-08: la Beta 2.0b-61** (§4.3.6) trae los tres arreglos que no necesitan el event loop: el 500 de un handler
-sin respuesta, la espera con `poll` en un socket no bloqueante lleno y la secuencia de los uploads; además, `gcc:16.2`
-en los Dockerfiles. La Fase 4 pasó a ser la línea 2.1 (`nightly`), que nace de `http` después de esta beta. El
-detalle está en `percepthor-backend/docs/context/cerver-http-module-context.md`.
-
-- **Rutas:**
-  - árbol radix (`http/tree.c`) compilado en `cerver_start`, con prioridad estático > parámetro > comodín;
-  - grupos con herencia y endpoints por `(ruta, método)`, params por nombre y validadores;
-  - middlewares `before` / `after`;
-  - la API vieja (`http_route_*`) se traduce al árbol (`http/compatibility.c`).
-- **Semántica:**
-  - `PATCH`, HEAD desde GET, OPTIONS automático, 405 opt-in;
-  - política del `/` final;
-  - `max_body` por endpoint.
-- **Rendimiento:**
-  - match sin asignaciones (~40 ns contra ~180–230 ns con las rutas reales de gepp e indicators);
-  - lookup de cabeceras por hash;
-  - cabeceras custom en la arena;
-  - respuestas con un solo `sendmsg`.
-
-**La Fase 2** (sobre la Beta 2.0b-57) quedó así:
-
-- **thpool:**
-  - una cola acotada (ring buffer) con las políticas `wait` / `reject`;
-  - hilos joinables y drenado con deadline;
-  - TSan limpio en todos los unit tests.
-- **Accept:**
-  - sin hilos desprendidos;
-  - EINTR = stop ordenado;
-  - fd de reserva para `EMFILE`;
-  - backlog `SOMAXCONN`;
-  - `SO_REUSEPORT` aparte.
-- **Apagado:**
-  - `cerver_teardown` drena antes de liberar;
-  - los hilos de cerver bloquean SIGINT / SIGTERM.
-- **Deadlines:** de cabeceras (408), total opcional y `SO_SNDTIMEO`.
-- **Memoria:**
-  - arenas por hilo para el request;
-  - `Socket` con contador de referencias, sin pool.
-- **Collections:** los bugs de dlist, AVL, htab y pool corregidos.
-- **TCP:** el ensamblado de paquetes se reescribió en `receive.c` (cerver y cliente), y `test/handler` recibe 100 de
-  100.
-
-Lo que queda para las fases siguientes:
-
-- la respuesta diferida desde otro hilo (la conexión se cierra cuando el handler termina);
-- las listas intrusivas;
-- la conexión web sin `ConnectionStats` / `PacketsPerType`, la mayor parte de las 8 asignaciones restantes por GET
-  (eran 11 antes de 2.0b-60; POST JSON pasó de 35 a 28).
-
-El estado previo a las Fases 0 y 1:
-
-| Cambio | Archivos | Estado |
-|---|---|---|
-| **`Connection: close` en todas las respuestas.** cerver cierra después de cada petición, pero respondía `HTTP/1.1` sin decirlo; nginx reutilizaba la conexión y recibía RST → 502 | `include/cerver/http/response.h` (`HTTP_RESPONSE_CONNECTION_CLOSE_HEADER`), los 7 constructores de cabeceras en `http/response.c`, `test/http/responses.c` | arreglo definitivo hasta la Fase 4 |
-| **Lock de `pool_push`.** `dlist_end ()` se leía fuera del mutex que protege la inserción | `collections/pool.c:99-115` | arreglo definitivo |
-| Instrumentación `CERVER_DIAGNOSTICS` | `cerver.c`, `connection.c`, `handler.c`, `http/http.c`, `http/response.c` | provisional: se integra en la Fase 0 |
-
-Validado en test con `gepp-service:devel`: el reproductor pasó de 2–3 % de 502 a 0 de 640, y `peak` de 0.90 % de
-errores a 0 de 12,610.
-
----
+- `cerver_register_new_connection_normal_web` (`handler.c:2581-2615`) encola `cerver_receive_http_work` con
+  `thpool_add_work_with_reject`. Con la cola llena: 503 no bloqueante y cierre.
+- **Ninguna conexión web entra al `poll`:** POLL y THREADS solo difieren en el accept. POLL acepta en su loop
+  (`handler.c:3341-3349`) y THREADS en `cerver_threads` (`:3574`). En los dos, `cerver_accept_wait_space` bloquea el
+  accept con la política `wait`.
+- **`cerver_receive_http` (`handler.c:2174-2366`):**
+  - toma el `HandlerThreadContext` del hilo (arena + buffers de tokens, `handler.c:2374-2462`);
+  - pone `SO_RCVTIMEO` de 5 s, ajustado por la deadline de cabeceras (`:1907-1932`);
+  - hace `recv` bloqueante (`:1979`) y alimenta `http_receive_handle` (`http/http.c:4571-4594`).
+- **El handler corre dentro del parser:** `on_message_complete` (`http/http.c:4427-4449`) despacha. La endpoint corre
+  middlewares before, handler, middlewares after y el fin de stream (`:3683-3700`), y después `http_parser_pause`.
+- **El cierre llega al terminar el handler, no al responder:** `HPE_PAUSED` → `http_receive_close` (`:4488-4507`):
+  `shutdown (SHUT_WR)`, drenado de hasta 64 KiB, `connection_end`. Después, el log y los stats, `connection_drop`,
+  `http_receive_delete` y `arena_reset`, una vez por conexión (`handler.c:2281-2353`).
+- **`Connection: close` va compilado en cada respuesta:** en `http/response.c`, en el 503 estático de
+  `include/cerver/http/response.h` y en las respuestas compartidas de cerver.
+- **`HttpReceive.keep_alive` siempre es falso** (`http/http.c:3325`).
+- **La escritura es bloqueante, desde el hilo del handler:** `http_response_send_vector` hace un
+  `sendmsg (MSG_NOSIGNAL)` en loop. Desde la 2.0b-61, un socket lleno espera con `poll (POLLOUT)` hasta la deadline
+  de `send_timeout`.
+- **La auth custom también bloquea:** corre en `on_headers_complete` (`http/http.c:4182-4189`), antes del body, en el
+  hilo de la conexión.
+- **Multipart:** se escribe a disco dentro del parser (`O_EXCL`, `http/http.c:2882-2943`). Desde la 2.0b-61, los
+  generadores default de nombres llevan una secuencia por petición, que sigue siendo única con keep-alive.
+- **Asignaciones por conexión:** `Connection`, `Socket`, `ConnectionStats` + 2 `PacketsPerType`, `CerverReceive` y
+  `file_stats`. Son 8 asignaciones por GET (`test/performance.sh`).
+- **Lo que ya sirve para el loop:**
+  - el parser ya es incremental y push-based (`test/http/receive.c` lo alimenta partido en cada byte);
+  - `sendmsg` ya maneja escrituras parciales (`http_response_parts_advance`);
+  - el thpool ya tiene cola acotada, `reject` y `drain` (`threads/thpool.c`).
+- **El protocolo TCP no comparte nada de esto:** la web no crea `Client` ni usa el poll, `ReceiveHandle` ni los
+  `Handler`. Los puntos de corte son `cerver_register_new_connection_normal` (`handler.c:2783`) y `cerver_start_tcp`
+  (`cerver.c:2404`). El enum está en `include/cerver/cerver.h:130-141`.
+- **Lo que trajeron las ramas viejas (F0):**
+  - de `http-optimizations`, llhttp (`src/cerver/http/parser/`), fuera del build hasta F2;
+  - de `ws`, solo la historia: su handshake y `http_web_sockets_send_compile_frame` sirven de referencia para F6
+    (`git show ws:src/cerver/http/websockets.c`). Su parser de frames lee un frame por `recv`, sin límites.
 
 ## 4. Fases
 
-Cada fase cierra con:
-1. compilación con `TYPE=development|test|beta|production` y `CC=g++`, sin warnings nuevos;
-2. `bash test/run.sh` en verde (y desde la Fase 0, con sanitizers);
-3. los bindings de pycerver al día (§4.6);
-4. la validación devel en test (§6);
-5. el commit dedicado de versión ("Updated version to Beta 2.0b-N") con su `CHANGELOG.md`;
-6. un documento de contexto en `percepthor-backend/docs/context/`.
+**Cada fase es una beta 2.1b-N** de `nightly` → `nightly-beta`, y cierra con:
 
-### 4.0 Fase 0 — Integración y base de pruebas
+1. gcc con `TYPE=development|test|beta|production` y `CC=g++` sin warnings nuevos, sobre `gcc:16.2` /
+   `debian:trixie-slim`;
+2. el gate de `nightly` en verde (§5);
+3. los bindings al día cuando la fase cambia la API;
+4. la validación con aplicaciones reales fuera del repositorio (§6);
+5. el commit dedicado «Updated version to Beta 2.1b-N» con su `CHANGELOG.md`;
+6. el estado al día en este roadmap.
 
-**Objetivo:** dejar los arreglos actuales integrados con las convenciones del repo, tener tests confiables y la
-cadena devel lista para validar las fases siguientes.
+| Fase | Beta | Contenido | Prerrequisito |
+|---|---|---|---|
+| **F0** | 2.1b-7 | Ramas, merges de `ws` y `http-optimizations`, `.gitattributes`, CI por rama en `gcc:16.2`, este roadmap | 2.0b-61 publicada en `http` |
+| **F1** | 2.1b-8 | Preparación sin cambio de comportamiento | F0 |
+| **F2** | 2.1b-9 | llhttp | F1 |
+| **F3** | 2.1b-10 | Event loop, cerrando por petición | F2 + la beta de `http` con el port de la 1.8, ya mergeada en `nightly` |
+| **F4** | 2.1b-11 | Keep-alive real | F3 |
+| **F5** | 2.1b-12 | Pools nombrados, health / ready, métricas | F4 |
+| **F6** | 2.1b-13 | WebSocket sobre el loop | F4 |
+| **F7** | 2.1b-14 | Auth asíncrona | F5 |
+| **F8** | 2.1b-15 | TLS en proceso | F4 |
+| **F9** | 2.1b-16+ | HTTP/2 | F8 |
+| **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
-**0.1 Integrar la instrumentación.** Desaparece `CERVER_DIAGNOSTICS`. Cada log pasa al define de su módulo, y los
-errores reales se loguean siempre. Se quita el prefijo `[DIAGNOSTICS]` y se usa el formato existente,
-`función () - detalle`.
+### 4.0 F0 — La línea (2.1b-7)
 
-| Archivo | Bloque actual | Destino |
+**Antes, en la línea estable (`http`, 2.0b-61):** los tres arreglos que no necesitan el loop, con su test: el 500
+cuando el handler no responde, `poll (POLLOUT)` en `EAGAIN` con la deadline de `send_timeout`, y la secuencia por
+petición en los nombres default de uploads.
+
+**F0 en `nightly`:**
+
+1. **La rama:** `nightly` nace de `http` en la 2.0b-61.
+2. **El merge de `ws`** (la línea 2.1b-1…6 de 2020), con `-s ours`: registra su historia sin traer contenido. Su
+   código no compila con la API actual y su contenido entraría en silencio (el `HttpCerver` cambiaría de ABI). Se
+   mergea la punta de `ws-beta` (`707e4133`, 2.1b-6), que contiene a `ws` y a los merges de las betas 2.1b-5 y 2.1b-6.
+3. **llhttp:**
+   - un commit siembra los seis archivos de `http-optimizations` (`src/cerver/http/parser/{llhttp,api,http}.c` y
+     `include/cerver/http/parser/{llhttp,api,helpers}.h`);
+   - el `makefile` los deja fuera de `SOURCES` (`LLHTTPDIR`) hasta F2;
+   - después, el merge de `http-optimizations` con `-s ours`. Así no entran el borrado de `http_parser.h`, el
+     `-Wpedantic` comentado ni el test y el benchmark del parser nuevo.
+4. **`.gitattributes` con `merge=ours`,** solo en `nightly`, para `version.txt`, `include/cerver/version.h`,
+   `Dockerfile`, `cerver-install.sh`, `CHANGELOG.md` y `roadmap.md`. Necesita `git config merge.ours.driver true` en
+   cada clon (`CLAUDE.md`).
+5. **El CI:** los jobs que compilan en el runner corren en `container: gcc:16.2`; los sanitizers corren en un
+   `docker run` de esa imagen (TSan necesita el `sysctl` del host). La integración y el fuzz ya corren en
+   `Dockerfile.test` y `Dockerfile.fuzz`, sobre `gcc:16.2` desde la 2.0b-61.
+6. **Los workflows por rama** (§7): `scheduled.yml`, los nombres y las imágenes de cada beta, la imagen `nightly`.
+7. **Este roadmap** reemplaza al de `http` en `nightly`.
+8. **«Updated version to Beta 2.1b-7»,** que continúa los tags `2.1b-1…6` de `ws`.
+9. **`nightly-beta`** nace de la 2.0b-61 de `http-beta`, y el PR `nightly` → `nightly-beta` crea `2.1b-7`
+   («Nightly Beta 2.1b-7»).
+10. **Los tags `archive/ws`, `archive/ws-beta` y `archive/http-optimizations`.** Esas ramas ya no reciben trabajo.
+
+### 4.1 F1 — Preparación (2.1b-8)
+
+No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» de lo que es «por petición».
+
+- **`Connection: close` fuera de las cabeceras compiladas** de `response.c`. Se agrega en la parte por petición de
+  `http_response_send_message` cuando se va a cerrar, y en THREADS siempre. El 503 estático lo conserva.
+  `test/http/responses.c` se actualiza (el orden de la cabecera cambia).
+- **`HttpReceive.framed`:** si la respuesta va delimitada (Content-Length o chunked completo). Una respuesta cruda sin
+  `\r\n\r\n` (`send_raw`) o un stream de HTTP/1.0 no lo está.
+- **`http_receive_reset`,** que reinicia todo lo de una petición (lista en §4.4).
+- **`HttpReceive` independiente de `HandlerThreadContext`:** la arena y los buffers de tokens se inyectan.
+  `http_receive_create_arena` los recibe en lugar de tomarlos del hilo.
+- **El log y los stats por petición,** fuera de `cerver_receive_http`: `start_time` y las deadlines van por petición.
+- **La conexión web sin `ConnectionStats` / `PacketsPerType`:** menos asignaciones por conexión.
+
+### 4.2 F2 — llhttp (2.1b-9)
+
+- **El parser.** Se activan los archivos de `src/cerver/http/parser/` (se quita `LLHTTPDIR` del `makefile`),
+  actualizados a la versión estable de llhttp que se fije en F2, y se quita `http_parser.c`.
+- **Se migran los callbacks de la Fase 1:**
+  - la acumulación de tokens de `url`, `field` y `value`;
+  - los límites 413, 414 y 431;
+  - `on_headers_complete` con su rechazo temprano y `Expect: 100-continue`;
+  - la pausa: `llhttp_pause` / `llhttp_resume`, con `llhttp_get_error_pos` para saber dónde quedaron los bytes sin
+    parsear;
+  - `llhttp_should_keep_alive`;
+  - chunked con trailers;
+  - el rechazo de `Transfer-Encoding` + `Content-Length`.
+- **Modo estricto** (sin lenient). Es más estricto con cabeceras inválidas y con LF solo: cada diferencia con
+  http_parser se documenta en esta sección, caso por caso.
+- **El gate:**
+  - los cortes en cada byte de `test/http/receive.c` dan los mismos resultados;
+  - el fuzz pasa con su corpus actual;
+  - `benchmarks/http-parser.c` queda igual o mejor.
+- La pausa por petición de llhttp es lo que usan F3 (auth y dispatch) y F4 (pipelining).
+
+### 4.3 F3 — El event loop (2.1b-10)
+
+**El prerrequisito.** `http` tiene que recibir el port de la 1.8 (connect async, estados, cola de envío, reconexión,
+el balancer), que cambia `cerver.c`, `handler.c`, `client.c` y `connection.c`. F3 empieza después de mergear a
+`nightly` la beta de `http` que lo trae, para resolver esos conflictos una sola vez.
+
+**La arquitectura:**
+
+```
+             SO_REUSEPORT (1 listen fd por loop)
+                       │
+   ┌───────────────────▼────────────────────┐        ┌─────────────── pools (F5: nombrados) ─────────┐
+   │ loop de I/O (1..N hilos, epoll LT)     │  job   │ "default" (CERVER_POOL_THREADS)               │
+   │  accept4 · leer · parsear · timers     ├───────►│  etapa auth · handler · estáticos             │
+   │  respuestas cortas de cerver           │        │  el handler escribe al fd (poll en EAGAIN)    │
+   │  health / ready (F5) · WebSocket (F6)  │◄───────┤                                               │
+   └────────────────────────────────────────┘ done   └───────────────────────────────────────────────┘
+          (cola MPSC + eventfd por loop)
+```
+
+**Estados de la conexión:**
+
+```
+READ_HEADERS ─(auth custom)─► AUTH [pool, sin EPOLLIN] ─ok─► READ_BODY ─► (PARKED) ─► DISPATCHED [pool dueño]
+   ▲  └─(400/404/405/408/413/414/431)──────┴─rechazo─► WRITE_LOOP ─┐                    │ el handler regresa
+   └──── IDLE (idle timer; pending = pipelining) ◄─────────────────┴── keep-alive ? IDLE : CLOSING ◄┘
+```
+
+- **El handler type `EVENTS`:**
+  - es una entrada nueva en `CERVER_HANDLER_TYPE_MAP` (`include/cerver/cerver.h:130-141`), solo para
+    `CERVER_TYPE_WEB`; con otro tipo de cerver, `cerver_start` falla;
+  - `cerver_start_tcp` (`cerver.c:2404`) arranca N loops, `CERVER_IO_THREADS=1` por default.
+- **Los loops:**
+  - cada uno tiene su `epoll` (level-triggered), su listen fd con `SO_REUSEPORT` y su `eventfd` de despertar;
+  - aceptan con `accept4 (SOCK_NONBLOCK | SOCK_CLOEXEC)`, reutilizando el fd de reserva y el backoff de
+    `EMFILE` / `ENFILE` y los errores que se ignoran hoy en `handler.c`.
+- **El hilo principal** no corre un loop. Espera con `poll` sobre un `eventfd` de stop, con las señales desbloqueadas,
+  así que `EINTR` = `cerver_stop_request`, como hoy en `accept`. Así `cerver_start` regresa y el signal handler de la
+  aplicación corre sin cambios.
+- **La lectura:**
+  - `recv` no bloqueante sobre un buffer por loop (2^16);
+  - los tokens se acumulan en los buffers de la conexión;
+  - lo que sobra tras una pausa va a `pending`.
+- **El traspaso al pool:**
+  1. el loop deja de vigilar el fd (`EPOLLONESHOT` sin re-armar);
+  2. la conexión pasa al pool por la cola del thpool, cuyo mutex hace de barrera de memoria;
+  3. el hilo del pool, al terminar, la empuja a la cola de completados del loop dueño y escribe su `eventfd`;
+  4. el loop decide (en F3, siempre cierre) y re-arma con `EPOLL_CTL_MOD`.
+
+  **Nunca dos hilos tocan la misma conexión.**
+- **La escritura (decisión: el handler escribe).** Mientras el handler corre, la conexión es suya: escribe directo al
+  fd no bloqueante, con `poll (POLLOUT)` en `EAGAIN` hasta `send_timeout`. Por eso:
+  - «regresa 0 = enviado» sigue siendo cierto;
+  - `sendfile`, las respuestas compiladas compartidas, las cabeceras en la pila y `http_response_delete` justo después
+    de enviar siguen igual.
+- **Lo que escribe el loop:** solo las respuestas cortas de cerver (400, 404, 405, 408, 413, 414, 431, 503,
+  100-continue, OPTIONS automático, 308). Son precompiladas, con buffer de salida y `EPOLLOUT` si hay `EAGAIN`. Los
+  estáticos (`sendfile`), admin y métricas van al pool.
+- **La auth custom en el pool (decisión).** Al completar las cabeceras de una ruta con auth custom:
+  1. llhttp se pausa y el loop quita `EPOLLIN`;
+  2. un job de auth corre en el pool;
+  3. si rechaza, la respuesta sale antes del body y la conexión se cierra (se conserva el rechazo temprano de la
+     Fase 1); si acepta, el loop retoma la lectura del body y despacha el handler.
+
+  La auth Bearer JWT es CPU y se queda en el loop. Con `authentication_with_body`, la auth corre como primera etapa del
+  job del handler.
+- **El backpressure (las políticas de hoy, sin ocupar hilos):**
+  - `reject`: con la cola del pool llena, 503 desde el loop;
+  - `wait`: la conexión **se estaciona en el loop** (FIFO acotada, estado `PARKED`) hasta que un completado libere
+    lugar o venza `wait_timeout`, que responde 503 + `Retry-After`;
+  - el accept nunca se bloquea; el límite global es `CERVER_MAX_CONNECTIONS` (2^14).
+- **Los timers:** una rueda por loop con ticks de 2^8 ms y una deadline activa por conexión: cabeceras (16 s, 408),
+  request total (opcional), idle (F4), escritura del loop y espera estacionada.
+- **El apagado:**
+  1. stop;
+  2. los loops cierran sus listen fds;
+  3. las conexiones que leen terminan su petición (con su deadline);
+  4. las DISPATCHED responden;
+  5. `thpool_drain` con la política y el timeout de hoy;
+  6. join de los loops y teardown.
+- **Multipart en el loop (decisión).** La escritura a disco se queda en el loop: un proxy delante bufferea los bodies
+  y las escrituras van a page cache o tmpfs. Se mide el tiempo de escritura en las métricas; si un percentil supera el
+  umbral, pasa al pool en una fase posterior.
+
+**El código central (borrador):**
+
+```c
+// include/cerver/events/loop.h
+typedef enum HttpConnectionState {
+	HTTP_CONNECTION_STATE_READ_HEADERS = 0, HTTP_CONNECTION_STATE_AUTH, HTTP_CONNECTION_STATE_READ_BODY,
+	HTTP_CONNECTION_STATE_PARKED, HTTP_CONNECTION_STATE_DISPATCHED, HTTP_CONNECTION_STATE_WRITE_LOOP,
+	HTTP_CONNECTION_STATE_IDLE, HTTP_CONNECTION_STATE_CLOSING
+} HttpConnectionState;
+
+typedef struct HttpConnection {
+	int fd; struct EventLoop *loop; HttpConnectionState state;
+	char ip[46]; struct sockaddr_storage address;
+	HttpReceive *receive;                 // reutilizado entre peticiones (http_receive_reset)
+	struct Arena *arena;                  // por conexión, de un pool del loop; arena_reset por petición
+	String *url_buffer, *field_buffer, *value_buffer;
+	char *pending; size_t pending_len;    // bytes sin parsear tras la pausa (auth / pipelining)
+	char *out; size_t out_len, out_sent;  // respuestas del loop (y frames de WebSocket en F6)
+	unsigned int n_requests; struct HttpPool *pool;
+	struct TimerEntry timer; struct HttpConnection *next;   // lista intrusiva (estacionadas / completadas)
+} HttpConnection;
+
+typedef struct EventLoop {
+	int epoll_fd, wake_fd, listen_fd; pthread_t thread; struct Cerver *cerver;
+	char *read_buffer; size_t read_buffer_size;   // uno por loop, no por conexión
+	pthread_mutex_t done_mutex; HttpConnection *done_head, *done_tail;
+	struct TimerWheel *timers; struct ArenaPool *arenas;
+	unsigned int n_connections;
+} EventLoop;
+```
+
+```c
+static void http_connection_readable (EventLoop *loop, HttpConnection *connection) {
+
+	ssize_t rc = 0;
+	while ((rc = recv (connection->fd, loop->read_buffer, loop->read_buffer_size, 0)) > 0) {
+		http_receive_handle (connection->receive, rc, loop->read_buffer);
+		if ((connection->state != HTTP_CONNECTION_STATE_READ_HEADERS)
+			&& (connection->state != HTTP_CONNECTION_STATE_READ_BODY)) break;    // pausado: auth, dispatch o error
+	}
+
+	if (rc == 0) http_connection_close (loop, connection, false);
+	else if ((rc < 0) && (errno != EAGAIN) && (errno != EINTR)) http_connection_close (loop, connection, true);
+
+}
+```
+
+**Los archivos:**
+
+- Nuevos: `src/cerver/events/{loop,timers,dispatch}.c`, `src/cerver/http/connection.c` y sus headers espejo.
+- Cambian:
+  - `cerver.h`, y `cerver.c` (start, stop, teardown);
+  - `http/http.c` (las pausas, la entrada, la auth y el dispatch);
+  - `http/response.c`, `http/stream.c`, `handler.c`.
+
+**La API:**
+
+```c
+CERVER_EXPORT void cerver_set_io_threads (Cerver *cerver, unsigned int n_threads);            // 1
+CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max);              // 2^14
+```
+
+### 4.4 F4 — Keep-alive real (2.1b-11)
+
+**`http_receive_reset`, entre peticiones de una conexión:**
+
+- reinicia `receive_status`, `type`, `dispatch`, `node`, `endpoint`, `route`, `served_file`, `head`,
+  `max_body_size`, `status`, `sent`, `is_multi_part`, `token`, `header_size`, `n_headers`, `body_size`, `n_parts`,
+  `responded`, `framed` y `stream`;
+- `settings.on_body` vuelve a `http_receive_handle_body`;
+- libera `mpart_parser` y `file_stats`;
+- destruye el `HttpRequest`: los archivos, y los deleters de `decoded_data` / `custom_data`;
+- crea uno nuevo en la arena reiniciada.
+
+**La decisión:**
+
+```c
+static bool http_receive_keep_alive (const HttpConnection *connection, const HttpReceive *receive) {
+
+	return (receive->http_cerver->keep_alive)                                    // default: true en EVENTS
+		&& (llhttp_should_keep_alive (receive->parser))                           // 1.1 sin close, 1.0 con keep-alive
+		&& (connection->n_requests < receive->http_cerver->keep_alive_requests)  // 2^10
+		&& (receive->responded) && (receive->framed)                             // Content-Length o chunked completo
+		&& (receive->receive_status == HTTP_RECEIVE_STATUS_COMPLETED)            // body completo (un rechazo cierra)
+		&& (!cerver_is_stopping (receive->http_cerver->cerver));
+
+}
+```
+
+- **La cabecera:** lo que se conoce antes de enviar la decide. Va `Connection: close` cuando se cierra; nada en 1.1 al
+  mantener; `Connection: keep-alive` en 1.0.
+- **Una respuesta sin delimitar** fuerza el cierre.
+- **Un stop durante el handler** cierra después de la respuesta completa.
+- **Pipelining:** las peticiones se responden en orden desde `pending`. Hoy se descarta todo después de la primera
+  (`test/http/receive.c` lo prueba con «pipelined requests», que pasa a esperar las dos respuestas).
+- **La regla anti-502 detrás de un proxy:**
+  - el idle de cerver (`CERVER_KEEP_ALIVE_TIMEOUT`, default 2^7 = 128 s) es **mayor** que el `keepalive_timeout` del
+    upstream del proxy (60 s en nginx);
+  - el `keepalive_requests` del proxy (1000 en nginx) es **menor** que el de cerver (2^10);
+  - así el proxy siempre cierra primero una conexión ociosa;
+  - si cerver llega a su máximo, lo anuncia con `Connection: close` en esa respuesta.
+- **El drenado:** FIN a las conexiones ociosas. El proxy las saca de su caché al ver el EOF.
+- **nginx en los tests:** `test/nginx/` pasa a `proxy_http_version 1.1` + `proxy_set_header Connection ""`. Hoy su
+  `keepalive 32` solo funciona porque cada respuesta dice close.
+
+**La API:**
+
+```c
+CERVER_EXPORT void http_cerver_set_keep_alive (HttpCerver *http_cerver, bool enable);          // true en EVENTS
+CERVER_EXPORT void http_cerver_set_keep_alive_timeout (HttpCerver *http_cerver, unsigned int seconds);   // 2^7
+CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver, unsigned int max);      // 2^10
+```
+
+### 4.5 F5 — Pools nombrados, health y métricas (2.1b-12)
+
+**Los pools nombrados (decisión).**
+
+- `HttpPool` es un wrapper sobre el `Thpool` actual (ring buffer, `reject`, `drain`). El default es el thpool de hoy
+  (`CERVER_POOL_THREADS`).
+- Un grupo, un endpoint o una ruta compat elige su pool. Cada pool tiene su cola, su política y su `wait_timeout`.
+- Un pool desconocido es un error de registro (`http_tree_error`), como un CIDR inválido.
+- En THREADS, pools y health se ignoran con un warning.
+- Uso previsto: aislar los handlers de minutos en su propio pool, para que las rutas rápidas y el healthcheck no
+  compitan con ellos.
+
+**La ruta de salud nativa (decisión).**
+
+- `http_cerver_set_health_route` responde 200 precompilado **desde el loop**, sin pool: mide «el proceso vive».
+- `http_cerver_set_ready_route` responde 503 si algún pool está lleno o estacionando: mide la saturación.
+
+**Las métricas** (en `cerver/metrics`):
+
+- conexiones abiertas e IDLE;
+- reusos de keep-alive;
+- peticiones por conexión;
+- cola, estacionadas y espera (histograma) por pool;
+- tiempo de escritura de uploads;
+- respuestas que faltaron.
+
+**La API:**
+
+```c
+CERVER_EXPORT HttpPool *http_cerver_pool_create (HttpCerver *http_cerver, const char *name, unsigned int n_threads);
+CERVER_EXPORT void http_pool_set_queue_size (HttpPool *pool, unsigned int size);
+CERVER_EXPORT void http_pool_set_overload_policy (HttpPool *pool, CerverOverloadPolicy policy);
+CERVER_EXPORT void http_pool_set_wait_timeout (HttpPool *pool, unsigned int seconds);          // 2^5
+CERVER_EXPORT void http_group_set_pool (HttpGroup *group, const char *name);                   // heredable
+CERVER_EXPORT void http_endpoint_set_pool (HttpEndpoint *endpoint, const char *name);
+CERVER_EXPORT void http_route_set_pool (HttpRoute *route, const char *name);                   // compat
+CERVER_EXPORT void http_cerver_set_health_route (HttpCerver *http_cerver, const char *path);
+CERVER_EXPORT void http_cerver_set_ready_route (HttpCerver *http_cerver, const char *path);
+```
+
+### 4.6 F6 — WebSocket sobre el loop (2.1b-13)
+
+**De `ws` se reusan:**
+
+- el handshake (`Sec-WebSocket-Key` + GUID, SHA1, base64, 101);
+- el encoder de frames (`http_web_sockets_send_compile_frame`).
+
+**Se reescriben:**
+
+- el parser de frames: incremental entre lecturas, con la máscara obligatoria del cliente, `max_frame` /
+  `max_message` (cierre 1009), fragmentación y UTF-8 en los de texto;
+- ping/pong automáticos con timer;
+- close con código y su timeout.
+
+**La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
+pool de la ruta.
+
+**Aquí sí escribe el loop.** `http_websocket_send` se llama desde cualquier hilo: encola en una cola de salida acotada
+de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
+
+- Con la cola llena: descartar, o cerrar con 1008, según la configuración.
+- Un registro de clientes por ruta permite el broadcast.
+
+El modifier `HTTP_ROUTE_MODIFIER_WEB_SOCKET` deja de responder 501 en EVENTS; en THREADS sigue en 501. Detrás de un
+proxy van `Upgrade` / `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
+
+### 4.7 F7 — Auth asíncrona (2.1b-14)
+
+- **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
+  loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
+- **La conexión espera en `AUTH` sin hilo,** con un pool de conexiones persistentes por loop.
+- **El fallback:** la etapa en el pool, para una auth custom que no usa ese cliente.
+
+### 4.8 F8 — TLS en proceso (2.1b-15)
+
+- OpenSSL no bloqueante en la máquina de estados (`SSL_read` / `SSL_write`, `WANT_READ` / `WANT_WRITE` mapeados a
+  epoll), SNI y recarga de certificados. OpenSSL ya se enlaza, hoy solo para JWT.
+- Lleva su propia fase de diseño antes de implementar.
+
+### 4.9 F9 — HTTP/2 (2.1b-16+)
+
+- Primero h2c (prior knowledge) detrás de un proxy, después ALPN con TLS.
+- Un stream = una petición al pool. El control de flujo vive en el loop.
+- Lleva su propia fase de diseño antes de implementar.
+
+### 4.10 Deprecación (2.1)
+
+- `http_route_*`, la capa de compatibilidad y THREADS para web registran un warning de obsoleto.
+- Se quitan en una 2.x posterior, cuando las aplicaciones registren con grupos y corran en EVENTS.
+- Una firma nueva del handler (un contexto único) sería aditiva: otro tipo de handler, sin romper el actual.
+
+### 4.11 La integración: `nightly` → `http` → 2.1
+
+**Los criterios:**
+
+1. 2.0 publicada en `master`;
+2. F0–F5 publicadas como betas y en verde con el gate de `nightly`;
+3. aplicaciones reales con EVENTS el tiempo acordado, sin regresiones contra THREADS;
+4. el estrés comparado contra el de THREADS.
+
+**El merge:**
+
+1. `nightly` → `http`, con los archivos de versión y el roadmap resueltos a mano: este roadmap se integra al de `http`
+   como la línea 2.1;
+2. el `.gitattributes` vuelve a su forma de `http` en ese commit;
+3. `http-beta` continúa la numeración (2.1b-N+1) y pasa a 2.1rc-N;
+4. el PR `http` → `master` publica la 2.1 (un release nunca sale de la beta).
+
+Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
+
+## 5. Plan de tests y el gate de `nightly`
+
+**El gate de `nightly` es el de `http` más:**
+
+- **El de `http`:** gcc con los 4 TYPEs, g++, unit con ASan + UBSan, TSan y valgrind, los pares de integración × 4
+  variantes, el fuzz y `test/performance.sh`.
+- **El flaky hunter:** 200 repeticiones (`test/repeat.sh`) de las suites que tocan el loop, también en TSan.
+- **Fuzz:** ≥ 30 min por target (el de `http` es de 30 s), con un target nuevo de varias peticiones por conexión.
+- **Los pares web** en THREADS **y** en EVENTS (`test/web/*.c` toman el modelo de una variable de entorno). curl
+  reutiliza la conexión cuando no hay close.
+- **`test/http/server.c`:** sus tests (408, slowloris, idle, slow body, request y send timeout, overload
+  `reject` / `wait`, drain, EINTR, sin fds, dos cervers…) parametrizados en los dos modelos. Son la suite de
+  aceptación del loop.
+- **`test/events/{loop,timers}.c`:** la rueda, el traspaso y la cola de completados.
+- **`test/http/keepalive.c` (nuevo):**
+  - N peticiones por conexión;
+  - pipelining en orden;
+  - 1.0 con keep-alive;
+  - close del cliente;
+  - el máximo de peticiones;
+  - idle con FIN;
+  - respuesta sin delimitar → close;
+  - sin respuesta → 500;
+  - el estado limpio entre peticiones (params, custom data, directorios de multipart distintos);
+  - auth que rechaza antes del body;
+  - `wait` estacionando sin ocupar hilos;
+  - `reject` 503;
+  - `wait_timeout`;
+  - aislamiento de pools (uno lento lleno, el default responde);
+  - el health con todo saturado;
+  - el drenado con conexiones ociosas y en vuelo.
+- **`test/http/receive.c`** alimentado por el loop, partido en cada byte.
+- **`test/nginx/`** con keep-alive real y reinicios del servidor bajo carga: 0 resets, 0 502 y el reuso medido con
+  `ss`.
+- **`benchmarks/load.c`** con modo keep-alive y umbrales nuevos en `performance.sh`. La meta es GET ≤ 4 asignaciones
+  (hoy 8), y keep-alive contra close por petición.
+- **F2:** las diferencias de llhttp documentadas caso por caso.
+- **F6:** autobahn-testsuite (fuzzingclient), frames partidos en cada byte, envío desde otros hilos con TSan, detrás
+  de nginx.
+- **Un soak de 4 h** con una aplicación real, sin crecer memoria ni fds (§6).
+
+`scheduled.yml` corre las versiones largas (TSan, el flaky hunter, el fuzz de 30 min por target, performance y
+nginx); hasta que `master` tenga su despachador (§7), se lanza a mano.
+
+## 6. Validación con aplicaciones reales
+
+Cada fase se valida, además del gate, con aplicaciones reales en un entorno de pruebas, fuera de este repositorio:
+THREADS contra EVENTS sobre la misma imagen. La evidencia (estrés, `ListenOverflows`, `TCPAbortOnData`, `TIME_WAIT`,
+el healthcheck durante la saturación, el drenado al detener) se guarda fuera del repositorio. `nightly` no se usa en
+producción.
+
+## 7. Los workflows
+
+- **`pre-release.yml` y `beta.yml`** corren en cualquier `'*beta'`. El nombre y la imagen salen de la rama:
+  - siempre `ermiry/cerver:<version.txt>`;
+  - el tag móvil por línea: `:beta` desde `http-beta`, `:nightly-beta` desde `nightly-beta`, `:core-beta` desde
+    `beta`;
+  - los nombres son «HTTP Beta», «Nightly Beta» y «Beta».
+
+  Cada rama lleva sus workflows (el push usa los del commit empujado), así que `nightly-beta` no pisa nada de
+  `http-beta`.
+- **`build.yml`:** en un push a `nightly` construye `ermiry/cerver:nightly` y `:nightly-YYYYMMDD`. Como el resto de
+  los workflows, construye sin publicar.
+- **`scheduled.yml`, con un despachador en `master`.** Un cron solo corre desde la rama default (`master`) y hace
+  checkout de ella. Por eso:
+  - cada rama (`core`, `http`, `nightly`) define su gate largo en su `scheduled.yml` (`workflow_dispatch`);
+  - en `master`, `scheduled.yml` es el cron que los lanza:
+
+  ```yaml
+  # master: .github/workflows/scheduled.yml
+  on:
+    schedule:
+      - cron: '0 3 * * *'
+    workflow_dispatch:
+  permissions:
+    actions: write
+  jobs:
+    dispatch:
+      runs-on: ubuntu-latest
+      strategy:
+        matrix:
+          ref: [core, http, nightly]
+      steps:
+        - run: gh workflow run scheduled.yml --repo "${{ github.repository }}" --ref "${{ matrix.ref }}"
+          env:
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  ```
+
+## 8. Beneficios y riesgos
+
+| Aspecto | Hoy (THREADS) | EVENTS (2.1) |
 |---|---|---|
-| `cerver.c` (`cerver_sockets_pool_push` / `_pop`) | detectores `socket still open`, `socket in use`, `pool corrupted` | `#ifdef SOCKET_DEBUG`, con chequeo de NULL de `cerver->sockets_pool` (hoy se desreferencia sin verificar) |
-| `connection.c` (`connection_end`) | log `close fd N - ip:puerto` | `#ifdef CONNECTION_DEBUG` |
-| `connection.c` (`connection_end`) | `close () failed` | siempre (`LOG_TYPE_WARNING`, `LOG_TYPE_CONNECTION`) |
-| `handler.c` (`cerver_receive_http_actual`) | `recv () failed` con errno y `strerror_r` | siempre (warning) |
-| `handler.c` | struct `HttpReceiveDiagnostics` (`last_rc`, `last_errno`, `n_recvs`) | se conserva sin `#ifdef`: cuesta tres asignaciones por `recv` y alimenta el log de `Bad request` |
-| `handler.c` (`cerver_receive_http`, inicio del worker) | chequeo con `getpeername` del fd y del puerto | `#ifdef HANDLER_DEBUG` (es una syscall por petición) |
-| `handler.c` (`cerver_register_new_connection`) | `accepted fd N - ip:puerto` | `#ifdef HANDLER_DEBUG` |
-| `handler.c` (el `default:` de `Bad request`) | log extendido (status, recibido, `recv`s, rc, errno, parser, running, tiempo) | siempre: reemplaza al `"%s -> Bad request"` plano |
-| `http/http.c` (`http_receive_handle`) | `parser error` | siempre, fusionado con el `cerver_log_error` existente en una línea (n parsed, received, `http_errno_name`, descripción, status) |
-| `http/response.c` (`http_response_send_actual`) | `send () failed` | siempre (warning, con errno y bytes pendientes) |
-
-Además, `percepthor-devops/Dockerfile.devel` pasa su `CERVER_DEFINES` por omisión a `-D _GNU_SOURCE`.
-
-**0.2 Tests.**
-- **El test del arreglo de `pool_push`:** un `test/collections/pool.c` nuevo con N hilos haciendo `pool_push` /
-  `pool_pop` concurrentes. Al final se verifican `size`, `start` y `end`. Se registra en `test/collections/collections.c`
-  y `collections.h`.
-- **Arreglar los dos binarios que fallan con gcc 13.** También fallan en el tag `2.0b-56` intacto, y son bugs de los
-  tests, no del código:
-  - `test/collections/htab.c:277-280` reinserta `data`, que aún apunta al elemento idx 9 liberado en la línea 252, y
-    `htab_destroy` lo libera de nuevo. glibc ≥ 2.29 aborta por el double free.
-  - `test/utils/c_strings.c:28-30` escribe 41 bytes en un buffer de 32 a propósito ("this causes an overflow"):
-    `-fstack-protector` aborta.
-  - `test/utils/math.c:62`: `random_int_in_range` es inclusivo, pero el test verifica el rango estricto, así que
-    falla de vez en cuando.
-- Agregar `./test/bin/version` a `test/run.sh`.
-
-**0.3 Herramientas.**
-- `make SANITIZER=address|thread|undefined`, que agrega `-fsanitize=… -fno-omit-frame-pointer` a la librería, los tests
-  y los ejemplos.
-- `valgrind --leak-check=full --error-exitcode=1` sobre los unit tests.
-- CI: los workflows usan `actions/*@v2` y `upload-artifact@v2`, que GitHub deshabilitó. Pasar a `@v4`, agregar una
-  matriz de sanitizers y correr `test/handler` (`testhandler`), que hoy no corre.
-- `build.yml` corre `make test` en modo development; agregar `TYPE=test`.
-
-**0.4 pycerver y la cadena devel.**
-- `percepthor-devops/Dockerfile.devel`: `pip install` desde `--build-context pycerver=/Users/ermiry/Documents/py-cerver`
-  en lugar de `pycerver==0.9.8`. `devel.sh` agrega `PYCERVER_DIR`.
-- **Auditoría de bindings.** Hay unas 50 funciones `http_*` exportadas sin binding, por ejemplo:
-  - `http_cerver_auth_generate_jwt`, `_validate_jwt`, `_load_key`;
-  - `http_response_add_custom_header`;
-  - `http_request_get_bytes_range`, `http_request_multi_parts_get_all_saved_filenames`;
-  - `http_url_decode` / `_encode`, `http_receive_status_str`, `http_request_content_type_is_json`.
-
-  Para obtener la lista se comparan los `CERVER_EXPORT` / `CERVER_PUBLIC` de `include/cerver/**` contra los
-  `lib.<símbolo>` de `py-cerver/cerver/**`.
-  - Hay que agregar los que son API de usuario, con `argtypes` y `restype` verificados contra el header.
-  - Corregir los tipos que no coinciden: `Cerver.receive_buffer_size` es `u32` (`include/cerver/cerver.h:312`), pero
-    `cerver_set_receive_buffer_size` recibe `size_t`.
-  - Si falta un símbolo, ctypes falla al importar. Por eso se verifica con `python -c "import cerver, cerver.http"`
-    dentro de la imagen.
-- Nuevos `payloads-service/Dockerfile.devel` y `devel.sh` (submódulo en `percepthor-backend/payloads-service`), con el
-  patrón de gepp, y su override de compose en test.
-
-**Criterio de salida:**
-- `test/run.sh` en verde con gcc 13 y con ASan;
-- las tres imágenes devel construidas;
-- gepp validado de nuevo (sin regresión del 502);
-- bump a **2.0b-57**.
-
-### 4.1 Fase 1 — Correctitud HTTP: el bug del body y la seguridad
-
-**La causa raíz del bug "del buffer".** Cada `recv ()` se pasa directo a `http_parser_execute`
-(`handler.c:2273` → `http/http.c:3030`). Cuando un token cruza el límite entre dos `recv`, http_parser llama
-**varias veces** a `on_url`, `on_header_field`, `on_header_value` y `on_body`, una vez por pedazo. Los callbacks de
-cerver suponen que cada llamada trae el token completo:
-
-| # | Bug | Dónde | Escenario | Efecto |
-|---|---|---|---|---|
-| 1 | El append del body **no escribe el NUL** | `types/string.c:246-258` (`str_append_n_from_c_string`: `strncpy` de `n` bytes sin terminador; el último byte del `realloc` queda sin inicializar), llamado desde `http/http.c:1764-1770` | un body JSON que llega en dos o más `on_body` | `request->body->str` trae basura después de los datos: `json_loads` falla o lee de más. Si el body es urlencoded, `http_url_decode` hace `strlen` fuera del buffer |
-| 2 | **Un valor de cabecera partido conserva solo el último pedazo** (y el anterior se fuga) | `http/http.c:1723-1749` | un `recv` que termina dentro de `Content-Type: multipart/form-data; boundary=…` | `is_multipart` falla o el boundary queda truncado: el multipart se pierde en silencio. Un `Authorization` partido da 401 |
-| 3 | **Un nombre de cabecera partido se evalúa por pedazos** | `http/http.c:1697-1720` | `"Content-Ty"` + `"pe"` | dos cabeceras custom falsas, `headers[HTTP_HEADER_CONTENT_TYPE]` en NULL. El mismo efecto que el bug 2 |
-| 4 | **Una URL partida conserva solo el último pedazo** (y la anterior se fuga) | `http/http.c:1676-1693` | una URL larga o un `recv` muy corto | ruta equivocada o 404, query equivocada |
-| 5 | urlencoded con la longitud **previa** a la decodificación | `http/http.c:2485-2491` | cualquier body urlencoded con `%XX` | el último valor lee más allá del NUL, aunque no haya cortes |
-| 6 | El primer chunk del body se crea con `str_create ("%.*s")` | `http/http.c:1765` | un body binario que no es multipart | se trunca en el primer 0x00 |
-| 7 | `query->len` cuenta el `?` | `http/http.c:1580-1586`, usado en `:2467` | cualquier query | `real_query + query->len` apunta un byte después del NUL |
-
-**Por qué un buffer más grande "lo arregla", y por qué no hay un valor correcto.**
-- Con un buffer más grande hay menos `recv`, así que se parten menos tokens. Si todo llega en un `recv`, solo corre el
-  camino correcto (`str_create`).
-- Pero sobre una red real `recv ()` devuelve lo que haya llegado (segmentos de ~1448 bytes), sea cual sea el buffer.
-- Los clientes que escriben las cabeceras y el body por separado, los bodies chunked y las cabeceras de más de 4 KB
-  (JWT y cookies grandes) parten tokens con cualquier valor.
-- Por eso cada servicio "funciona" con un valor distinto: depende del tamaño típico de sus peticiones.
-
-**Arreglos:**
-- Acumular URL, nombre y valor de cabecera entre callbacks. El token se cierra cuando cambia el tipo de callback: un
-  `on_header_value` cierra el nombre, y el siguiente `on_header_field` o `on_headers_complete` cierra el valor.
-  - El patrón ya existe y funciona en los callbacks de multipart (`http/http.c:1941-1984`, commits `e4ec141c`,
-    `b2e763ca` y `a24a7da4`).
-  - Las cabeceras duplicadas se concatenan con `, ` o se rechazan, según la RFC 9110 §5.3, en lugar de fugarse.
-- Body con un buffer binario de longitud explícita (sin `%.*s`) y terminador NUL siempre. Hay que corregir
-  `str_append_n_from_c_string` y el test que pasa por suerte (`test/types/string.c:363`).
-- Corregir la longitud de urlencoded (bug 5) y de la query (bug 7).
-- **Límites configurables**, cada uno con su respuesta:
-
-  | Límite | Respuesta |
-  |---|---|
-  | `max_body_size` | 413 |
-  | `max_url_size` | 414 |
-  | `max_header_size` | 431 |
-  | `max_headers` | 431 |
-  | `max_multipart_parts` | 413 |
-  | `max_file_size` | 413 |
-
-  Hoy no hay ninguno: el body crece con `realloc` sin tope, y cada cabecera custom es un `malloc` de 768 bytes
-  (`include/cerver/http/custom.h:8-9`). El único límite es `HTTP_MAX_HEADER_SIZE` de 80 KB
-  (`include/cerver/http/http_parser.h:50`).
-- Con esos límites, `CERVER_RECEIVE_BUFFER_SIZE` queda como perilla de rendimiento. Se recomienda un valor uniforme
-  (p. ej. 16384) en todos los composes.
-- Responder `100 Continue` cuando llega `Expect: 100-continue`.
-- **Pipelining:** si llega una segunda petición en el mismo buffer, hoy se parsea y su handler corre sobre fd -1,
-  porque `on_message_complete` llama a `connection_end` (`http/http.c:3017-3019`) y http_parser sigue. Con
-  `http_parser_pause` o devolviendo distinto de cero se detiene el parseo.
-- `receive_status` y el log de `Bad request` deben distinguir timeout, cierre del cliente, error del parser y límite
-  excedido. El struct de diagnóstico de la Fase 0 ya tiene los datos.
-
-**Seguridad (alta prioridad):**
-
-| Bug | Dónde | Arreglo |
-|---|---|---|
-| **Path traversal en estáticos.** El path se concatena sin normalizar, así que `GET /../../etc/passwd` con un socket crudo o con `curl --path-as-is` funciona. No se rechazan directorios (no hay `S_ISREG`), y `c_string_concat_safe` deja el filename anterior si el path no cabe | `http/http.c:2917-2966` (`http_receive_handle_serve_file`, con un `// TODO: handle authentication`) | `realpath` con verificación de prefijo, rechazar `..` y lo que no sea `S_ISREG`, auth en estáticos |
-| **Lectura del Bearer fuera de límites.** `str + sizeof ("Bearer")` sin verificar el prefijo ni la longitud | `http/http.c:2635` | validar `"Bearer "` y la longitud |
-| **Índice de tokens de ruta.** Una URL con más de 16 segmentos lee `routes_tokens[n_tokens - 1]` fuera del arreglo: un crash remoto | `http/http.c:2555` | el límite se verifica (y en la Fase 3 desaparecen las cubetas) |
-| **Multipart antes del auth.** Los archivos se abren y escriben en los callbacks (`http/http.c:2091-2095`, `:2157`), antes del match de ruta y del auth, que corren en `on_message_complete`. Un cliente sin autenticar escribe en disco en cualquier ruta | `http/http.c` | resolver ruta y auth en `on_headers_complete`, antes de aceptar el body |
-| Archivos de upload con `O_CREAT \| O_WRONLY`, sin `O_TRUNC` ni `O_EXCL` y con modo 0777 | `http/http.c:2093`, `include/cerver/http/http.h:27-28` | `O_EXCL` y 0644 por omisión (directorios 0755). Reintentar las escrituras cortas |
-| Upload truncado reportado como éxito (el tmpfs lleno) | escritura de multipart | si falla el `write`, se marca la parte con error y el request queda en error (hoy los servicios lo detectan a mano) |
-| Se ignora el retorno de `multipart_parser_execute` | `http/http.c:2213`, `:2249` | un boundary inválido se convierte en 400 |
-| La búsqueda de boundary de respaldo (`http_receive_handle_mpart_body_look_for_boundary`) busca chunk por chunk (no ve un boundary partido), descarta lo anterior y lee `found + 24` más allá de `length` | `http/http.c:2219-2254` | se elimina: con el bug 2 arreglado, el boundary siempre sale de la cabecera |
-
-**Envío:**
-- `send (…, 0)` sin `MSG_NOSIGNAL` (`http/response.c:705`), y la librería no ignora `SIGPIPE`: un RST del cliente
-  mata el proceso. Solo algunos servidores de test hacen `signal (SIGPIPE, SIG_IGN)`.
-- Manejar `EINTR` y `EAGAIN` en `send`.
-- El loop de `sendfile` (`http/response.c:842-874`) se detiene en silencio ante un error y reporta éxito.
-- Cerrar con `shutdown (SHUT_WR)` y un drenado corto en lugar de un `close ()` con datos sin leer. Un `close` con
-  bytes pendientes en el socket (un error del parser, una petición pipelined) manda un RST que puede destruir la
-  respuesta en vuelo.
-
-**Tests:**
-- un *feeder* que pase cada petición del corpus a `http_receive_handle` partida **en cada offset de byte posible**
-  (URL, nombres, valores y body), además de 1 byte por `recv`;
-- pipelining, cabeceras duplicadas, Authorization corto, `..` en estáticos;
-- cada límite con su código;
-- multipart con el boundary partido.
-
-**Criterio de salida:** el escenario de payloads de §6 pasa con buffers de 1024, 4096, 8192 y 16384 bytes.
-
-### 4.2 Fase 2 — Concurrencia incremental (sobre el modelo actual)
-
-**Estado (2026-11-05): implementada y validada.**
-
-- La evidencia y las decisiones están en `percepthor-backend/docs/context/cerver-module-context.md` §3.5.
-- Los puntos de esta sección describen el código **antes** de la fase.
-- Desviaciones del plan:
-  - `job_queue` (los Handlers) conserva su semáforo binario, porque cada cola tiene un solo consumidor;
-  - las arenas cubren el request (structs, URL, query y cabeceras conocidas) pero no el body ni multipart;
-  - el ensamblado TCP quedó en `receive.c`, compartido por el cerver y el cliente.
-
-**El modelo actual.**
-- Las cervers web **ignoran `handler_type`**: `cerver_register_new_connection_normal` (`handler.c:2852`) manda todo a
-  `cerver_register_new_connection_normal_web` (`handler.c:2583-2655`).
-- Cada conexión aceptada es un job bloqueante del thpool.
-- **Si `thpool_is_full ()`, se crea un hilo desprendido nuevo** (`handler.c:2598-2615`). No hay tope, así que bajo
-  carga (balance con handlers de 180 s) se crean hilos sin límite, con stacks de 8 MB.
-- Cada petición hace unos 15 `malloc`: Connection, ConnectionStats y sus dos `packets_per_type`, CerverReceive,
-  HttpReceive, `http_parser`, HttpRequest, file stats, Job, las Strings de URL, query y cabeceras, el body y la copia
-  de `http_response_compile`.
-
-**thpool (`threads/`):**
-
-| Bug o ineficiencia | Dónde | Arreglo |
-|---|---|---|
-| `thpool_is_full` compara los hilos trabajando contra los vivos y no cuenta la cola | `threads/thpool.c:318-326` | cola **acotada**, con política configurable (esperar, rechazar con 503 + `Retry-After`). Se eliminan los hilos desprendidos |
-| Un `malloc` y un `free` por job, aunque la cola tiene su pool de `Job` | `threads/thpool.c:339-340`, `:177`; `threads/jobs.c:302-319` | reutilizar el pool de jobs |
-| Tres locks por push o pull (el `rwmutex` de la cola, el mutex de la dlist y el bsem), y el bsem binario funde los posts | `threads/jobs.c:342-358`, `:485-510` | un solo mutex con una condvar de contador, o un ring buffer acotado |
-| Espera activa sin lock al arrancar, que se cuelga para siempre si falla `pthread_create` | `threads/thpool.c:248` | condvar y verificar `pool_thread_init` |
-| `calloc (n, sizeof (PoolThread))` en lugar de `sizeof (PoolThread *)` | `threads/thpool.c:210` | corregir |
-| `bsem_reset` vuelve a inicializar (`malloc`) el mutex y la condvar con hilos esperando | `threads/bsem.c:66-68` | reset sin realocar |
-| `pthread_attr_destroy` nunca se llama | `threads/thread.c:29`, `:56` | llamarlo |
-| `keep_alive` y los contadores son `volatile`, no atómicos | `threads/thpool.c` | `__atomic` |
-
-**Accept y poll (`handler.c`):**
-- `cerver->fds[i].fd == -1;` es una comparación, no una asignación, y su warning está silenciado con un pragma
-  (`handler.c:3039`). Además el `realloc` se asigna sobre el mismo puntero, y `max_n_fds` se duplica antes del chequeo
-  (`handler.c:3026-3031`).
-- `poll ()` corre sin `poll_lock` mientras los jobs de accept hacen `realloc` del mismo arreglo (`handler.c:3350`): un
-  use-after-free.
-- `poll` recorre todos los slots en cada despertar y crea un `CerverReceive` (un `malloc` más búsquedas) aunque
-  `revents == 0`.
-- `switch (revents)` compara valores exactos, así que `POLLIN | POLLHUP` cae en el `default` (`handler.c:3258`).
-- **Un `EINTR` en `poll` o en `accept` detiene el servidor** (`handler.c:3357-3366`, `:2961-2965`).
-- `EMFILE` / `ENFILE` hacen un busy-loop con `perror`: hace falta un fd de reserva y backoff. `ECONNABORTED` no se
-  maneja. `new_fd > 0` trata el fd 0 como error.
-- Si falla `cerver_connection_create`, el fd aceptado se fuga (`handler.c:2930`, que tiene un FIXME).
-- El backlog por omisión es 10 (`include/cerver/cerver.h:32`). Usar `SOMAXCONN` o un valor configurable.
-- `SO_REUSEADDR` también activa `SO_REUSEPORT` (`network.c:194`), así que dos servidores pueden hacer bind al mismo
-  puerto sin error. Hay que separarlos.
-- `sock_set_blocking` está invertido (`network.c:46`), y `cerver.c:1424` depende de esa inversión.
-
-**Ciclo de vida de conexiones y sockets:**
-- `connection_delete` llama a `socket_delete ()` y después usa el socket en `connection_end ()`
-  (`connection.c:190-196`).
-- El pool de sockets reutiliza `Socket*` (`connection.c:583-599`), lo que crea un problema ABA: un puntero viejo en
-  otro hilo actúa sobre el fd de una conexión nueva. El pool nunca se encoge y cada Socket carga dos mutex del heap.
-- **La conexión se cierra al terminar el handler, no al responder** (`http/http.c:3017-3019`). Un handler que difiere
-  su respuesta a otro hilo escribe sobre fd -1 o sobre un fd reutilizado. Se necesita un ciclo de vida explícito: el
-  handler termina, la respuesta se envía, y entonces se cierra.
-- `cerver_inactive_check` es recursivo y no verifica NULL (`cerver.c:2107`): segfault en cuanto se activa
-  `inactive_clients`. Además recorre el AVL sin lock.
-- `cerver_update` calcula el tiempo de frame solo con diferencias de `tv_nsec`, lo que falla al cruzar cada segundo
-  (`cerver.c:2466`, `:2476`).
-- Las carreras de tipo `dlist_end` que quedan: `queue_push` (`collections/queue.c:82`), `dlist_insert_at`
-  (`collections/dlist.c:605`), `client_connection_add` (`client.c:588`) y `connection_register_to_client`
-  (`connection.c:688`).
-- `connect ()` con `sizeof (struct sockaddr)` rompe IPv6 (`connection.c:533-535`).
-
-**Apagado:**
-- `cerver_shutdown` solo hace `close (listen_fd)` (`cerver.c:2559-2588`). En Linux eso no despierta a un hilo
-  bloqueado en `accept`; se necesita `shutdown ()` o un fd de despertar.
-- `cerver_clean` libera las rutas del HTTP cerver (`cerver.c:2664`) y los clientes (`:2684`) **antes** de destruir el
-  thpool (`:2726`). Los workers que siguen corriendo usan memoria liberada.
-- `thpool_destroy` (`threads/thpool.c:370-396`) libera los jobs en cola sin correrlos: fuga sus `CerverReceive` y
-  nunca cierra sus fds.
-- **Drenado con deadline:** dejar de aceptar, terminar las peticiones en curso hasta N segundos y después cerrar. Es lo
-  que necesita el rolling deploy del backend.
-
-**Estado compartido y timeouts:**
-- `isRunning` (`include/cerver/cerver.h:244`) y las estadísticas de `cerver->stats` (`handler.c:2268-2269`,
-  `http/response.c:744`, `:866`) se actualizan desde muchos hilos sin atómicos: pasar a `__atomic`.
-- `SO_RCVTIMEO` de 5 s es **por `recv`, no por petición** (`include/cerver/handler.h:195`): un cliente slowloris que
-  manda un byte cada 4 s ocupa un worker para siempre. Se necesita un deadline por petición (cabeceras y body).
-- No hay `SO_SNDTIMEO`, así que un lector lento bloquea un worker en `send` sin límite.
-
-**Collections (`collections/`):**
-
-| Estructura | Bug | Dónde |
-|---|---|---|
-| dlist | `insert_after` en medio de la lista nunca asigna `element->next->prev = le`: corrompe los enlaces hacia atrás | `collections/dlist.c:92-96` |
-| dlist | `insert_in_order` solo maneja resultados -1, 0 y 1 del comparador (con `strcmp` no inserta nada) | `collections/dlist.c:704` |
-| dlist | `dlist_get_element` ignora su `compare` y usa `dlist->compare` (crash si es NULL) | `collections/dlist.c:1048` |
-| dlist | `sort` no actualiza `end`, `merge_two` no asigna `prev` y `split_half` no asigna `end` | `collections/dlist.c:1175`, `:254`, `:1295` |
-| dlist | `remove_at` y `get_at` leen `size` fuera del lock; `search`, `get_element` y `copy` no hacen lock | `collections/dlist.c:902`, `:1062`, `:1082` |
-| AVL | la doble rotación llama a `avl_balance_fix` con el nodo equivocado (NULL en el caso simple 3, 1, 2): segfault | `collections/avl.c:380`, `:415` |
-| AVL | el borrado de un nodo con dos hijos no rebalancea: los factores derivan y rotaciones posteriores desreferencian NULL | `collections/avl.c:591` |
-| htab | el hash es la suma de bytes módulo el tamaño, y la tabla nunca crece (128 para el mapa de clientes, `cerver.c:1555`) | `collections/htab.c:14-24` |
-| htab | `calloc` con `sizeof (HtabBucket)` en lugar del puntero; el mutex solo se crea si `size > 0` | `collections/htab.c:241`, `:252` |
-| htab | los lookups se detienen en cualquier nodo con `val == NULL`; un insert duplicado falla en silencio | `collections/htab.c:326`, `:432` |
-| pool | `pool_create` nunca asigna `create` | `collections/pool.c` |
-
-La dirección general es dejar de pagar un `malloc` por nodo y un mutex del heap por colección en el camino caliente:
-listas intrusivas, arenas por petición y locks solo donde de verdad se comparte.
-
-**Tests:**
-- invariantes de dlist después de cada operación (recorrido hacia adelante y hacia atrás, `size`, `start`, `end`);
-- AVL aleatorio con verificador de balance;
-- colisiones de htab y reutilización de fd;
-- `pool` y `queue` con 8 hilos × 1 M operaciones;
-- ráfaga de thpool mucho mayor que el número de hilos, y destroy con la cola llena;
-- TSan en todo lo anterior;
-- el escenario de saturación de balance (§6).
-
-**Criterio de salida:**
-- TSan limpio en los unit tests;
-- balance saturado responde 503 en lugar de crear hilos;
-- `docker stop` drena sin cortar peticiones.
-
-### 4.3 Fase 3 — Capacidades HTTP, con el registro de rutas como eje
-
-**Estado (2026-11-05): implementada** en cerver, pycerver, pypercepthor y libauth, y **migrados** gepp, balance,
-payloads y tickets (§4.3.4). tickets ya corre en test con la imagen devel; falta validar en test los otros tres.
-
-**Alcance real:** el router y su semántica, más las cabeceras zero-copy y el envío con un solo `sendmsg`. Chunked,
-Date / ETag / 304, request id, métricas y WebSocket pasan a la Fase 3b (§4.3.5).
-
-**Decisiones de la planeación:**
-
-| Tema | Decisión |
-|---|---|
-| Compatibilidad | La API vieja se conserva en `http/compatibility.c`, obsoleta. Se quita en la 3.0 (§4.4) |
-| Prioridad | Estático > parámetro > comodín para todos, compat incluida. Las 11 rutas tapadas de los servicios empiezan a responder |
-| Errores de registro | Fatales en la API nueva (`cerver_start` falla); warning en compat (gana la primera) |
-| Nombres de parámetro | Viven en el endpoint, así que una posición puede tener varios nombres |
-| `/` final | Tolerante por default; `strict` y `redirect` (308) configurables; `//` responde 404 |
-| 405 | Opt-in, con un handler configurable y `http_receive_get_allow ()` |
-| OPTIONS / CORS | OPTIONS automático (204 + `Allow`); el preflight CORS por grupo / endpoint es opt-in |
-| Validadores | `objectid`, `int`, `uuid` y custom; un valor rechazado no hace match (404) |
-| Middlewares | `before` / `after` en C y en Python, por cerver, grupo y endpoint |
-| Python | Grupos + funciones y decoradores encima, en pycerver y pypercepthor |
-| Archivos | Una palabra por archivo: `tree.c`, `middleware.c`, `validator.c`, `compatibility.c` |
-
-**El diagnóstico de abajo corregido con el código de la Fase 2:**
-- los desbordes de más de 16 segmentos y de más de 8 parámetros ya estaban protegidos;
-- gepp registra 256 rutas (las ~500 son de indicators-service, en 11 top-level);
-- `http_route_set_handler` sí se usa (8 llamadas en 6 servicios);
-- las citas de línea se movieron.
-
-#### 4.3.1 Rutas: el diagnóstico
-
-Fuentes: `http/route.c`, `include/cerver/http/route.h`, y `http_receive_handle_select` /
-`http_receive_handle_select_children` / `http_receive_handle_match` en `http/http.c:2460-2820`.
-
-**Estructura y registro:**
-- **Un solo nivel de anidación.** `http_route_init` (`http/route.c:434-499`) solo prepara a los hijos directos de cada
-  ruta top-level. Un nieto (`http_route_child_add` sobre un hijo) calcula su `route->route` pero nunca se indexa.
-- **Las rutas top-level no aceptan parámetros.** Se comparan con `strcmp` exacto (`http/http.c:2757`), así que
-  `/users/:id` como top-level nunca hace match.
-- **Se indexan por número de tokens en 16 cubetas fijas** (`DEFAULT_ROUTES_TOKENS_SIZE`,
-  `include/cerver/http/route.h:15`):
-  - una URL con más de 16 segmentos lee fuera de límites (`http/http.c:2555`);
-  - una ruta hija con más de 16 tokens escribe fuera de límites en `http_route_init`;
-  - el `calloc` de `routes` usa `sizeof (HttpRoute)` en lugar de `sizeof (HttpRoute *)` (`http/route.c:474`).
-- **El auth, el modifier y el custom data son de la ruta, no del método.** Para tener el mismo path con métodos de
-  distinta configuración hay que crear dos rutas, y entonces la primera registrada tapa a la segunda. Ningún servicio
-  usa `http_route_set_handler`.
-  - Esto **no** es una crítica a los paths de la API: endpoints como `POST /refris/:id/delete` son diseño de la API y se
-    respetan. El router nuevo debe soportar cualquier estilo de path.
-- **Sin validaciones al registrar:** no se detectan duplicados ni conflictos de parámetros, no se valida el formato
-  (`//`, `/` final, `:` vacío) ni hay verificación al hacer `cerver_start`. Tampoco hay un error de registro que el
-  usuario pueda ver.
-- **Parámetros sin nombre.** `:id` se reemplaza por `*` (`http/route.c:460-467`). El handler los obtiene solo por
-  índice (`http_request_get_param_at_idx`) y sin percent-decode. `REQUEST_PARAMS_SIZE` es 8
-  (`include/cerver/http/request.h:49`) y los parámetros se escriben sin chequeo de límite (`http/http.c:2587`): una
-  ruta con más de 8 parámetros desborda.
-
-**El match en cada petición:**
-- **Es lineal.** Recorre las rutas top-level y, dentro de la cubeta de tokens, todos los hijos con un `strcmp` por
-  token.
-  - gepp registra unas 500 rutas bajo una sola top-level.
-  - Cada petición hace además `c_string_split` (`utils/utils.c:324`), con un `strdup` y un `malloc` por segmento.
-- **El prefijo se busca con `strstr` en cualquier posición** (`http/http.c:2539`) y luego se recorta por longitud,
-  como si estuviera al inicio:
-  - `/x/api/…` hace match con `/api`;
-  - `/apiv2/users` hace match con `/api`, porque no se verifica el límite de segmento.
-- **Gana la primera ruta registrada.** Un `*` acepta cualquier segmento y no hay prioridad de estático sobre parámetro.
-  Es la trampa del orden que el backend ya documentó.
-- **`/` final y segmentos vacíos.** `c_string_split` colapsa `//` y descarta el `/` final, así que `/api/` no hace
-  match y `/api//users` hace match con `/api/users`.
-- **Métodos:**
-  - `PATCH` (28 en http_parser) es mayor o igual a `HTTP_HANDLERS_COUNT` (8, `include/cerver/http/route.h:77`) y cae en
-    catch-all;
-  - una ruta que existe pero no tiene handler para el método cae en catch-all (200 o 404) en lugar de **405 con
-    `Allow`**;
-  - `HEAD` no usa el handler de `GET`;
-  - no hay `OPTIONS` automático ni preflight CORS por ruta.
-- Cada 404 escribe un warning (`http/http.c:2427-2431`).
-- Las estadísticas por ruta toman un mutex en cada actualización (`http/route.c`, `http_route_stats_update`).
-
-#### 4.3.2 Rutas: el diseño propuesto
-
-**Árbol radix de segmentos, compilado en `cerver_start`:**
-- cada nodo tiene hijos estáticos (un arreglo ordenado o un hash por segmento), un hijo de parámetro (`:name`) y un
-  comodín final (`*path`);
-- prioridad fija **estático > parámetro > comodín**, sin importar el orden de registro;
-- anidación sin límite y parámetros en cualquier nivel, también en top-level.
-
-**Match sin asignaciones:**
-- se recorre la URL en su mismo buffer, segmento por segmento, como `(ptr, len)`;
-- los parámetros quedan como slices en un arreglo del request, con tamaño configurable y límite verificado;
-- el percent-decode es perezoso;
-- el límite de segmento se verifica siempre.
-
-**Handlers y configuración por `(ruta, método)`:**
-- cada método tiene su auth type, su authentication handler, su custom data y su modifier;
-- **herencia de grupos:** un grupo define el prefijo, el auth y el custom data por omisión, y sus hijos los
-  sobrescriben.
-
-**API de registro**, en el estilo `http_route_*` del repo:
-- `http_route_create (path)` + `http_route_set_method_handler (route, method, handler)`, o atajos por método;
-- `http_route_group_create (prefix)` para grupos;
-- el registro devuelve error ante un duplicado, un conflicto o un path inválido, con un mensaje claro;
-- `http_cerver_routes_print` muestra el árbol compilado.
-
-**Parámetros por nombre:**
-- `http_request_get_param (request, "id")`, además del índice;
-- validadores de tipo opcionales en la ruta (`:id<objectid>`, `:n<int>`), útiles para los ObjectId de Percepthor, que
-  responden 404 o 400 sin llegar al handler.
-
-**Semántica HTTP:**
-- `PATCH` y los demás métodos de http_parser (se extiende el X-macro `REQUEST_METHOD_MAP`,
-  `include/cerver/http/request.h:26`);
-- 405 con `Allow`;
-- `HEAD` desde `GET` sin body;
-- `OPTIONS` automático y preflight CORS por ruta o grupo, con la whitelist de orígenes existente;
-- política configurable para el `/` final (estricta o redirección 308).
-
-**El resto:**
-- **Middlewares por ruta o grupo**, antes y después del handler: auth, request id, métricas, `max_body` por ruta
-  (además del global de la Fase 1). Reemplazan el `switch` fijo de auth en `http_receive_handle_select`.
-- **Estadísticas por ruta y método** con contadores atómicos.
-- **Capa de compatibilidad.** `http_route_create` + `http_route_child_add` (con `:id`) se traducen al árbol nuevo y se
-  marcan como obsoletas. Los servicios migran a su ritmo, y la capa se quita en la versión mayor.
-  - pycerver expone la API nueva;
-  - el paquete `percepthor` (`percepthor_route_create`, `_action_route_create`, `_role_route_create`) puede registrar
-    auth y custom data por método;
-  - **los paths de la API no se migran.**
-
-**Tests:**
-- de match, con tabla:
-  - estático contra parámetro;
-  - orden de registro indiferente;
-  - `/` final y `//`;
-  - más de 16 segmentos y más de 8 parámetros;
-  - prefijo sin límite de segmento;
-  - 405, `HEAD`, `OPTIONS`, `PATCH`;
-  - grupos y herencia;
-  - errores de registro;
-- fuzzing de paths;
-- **benchmark de match con las ~500 rutas reales de gepp**, el algoritmo actual contra el árbol.
-
-#### 4.3.3 El resto de las capacidades HTTP
-
-Lo que entró en la Fase 3:
-- **Cabeceras:**
-  - lookup por hash en lugar de los 56 `strcasecmp`;
-  - las cabeceras custom viven en la arena, sin un `malloc` de 776 B cada una;
-  - las conocidas ya estaban en la arena desde la Fase 2, una copia por cabecera, porque el buffer de `recv` se
-    reutiliza.
-- **Respuestas sin copias:** un solo `sendmsg` con la cabecera y el body (un `writev` con `MSG_NOSIGNAL`), en lugar de
-  `malloc` + `memcpy`. Las respuestas ya compiladas se envían de su buffer.
-
-#### 4.3.4 La migración de gepp, balance, payloads y tickets (hecha, 2026-11-05)
-
-- El registro de sus `service/api/*.py` pasó a grupos + `percepthor_route` (pypercepthor), y salió de `service.py`
-  a `service/api/service.py`. Los handlers, los paths y las respuestas no cambiaron; los parámetros se siguen leyendo
-  por índice y las rutas no usan validadores.
-- **La raíz de un grupo se registra al crearlo**: `percepthor_subgroup_create (api, "refris", REQUEST_METHOD_GET,
-  refris_handler, **settings)` (y lo mismo `percepthor_group_create`), sobre `http_group_root_add (group, method,
-  handler)` en C y `HttpGroup.create / subgroup / root` en pycerver. Nunca un `""` en un `percepthor_route`.
-- **Admin en grupos**: un cerver sin rutas de la API vieja cuelga `cerver/info`, `cerver/stats`,
-  `cerver/stats/filesystems` y `cerver/stats/workers` del primer grupo top-level (`http_cerver_admin_group_init`),
-  con el auth de admin y no el del grupo; `http_cerver_init_admin_routes` es idempotente (`admin_routes_ready`) y
-  `http_cerver_routes_compile` también la llama.
-- **El dump del árbol**: `http_cerver_routes_generate_json` / `http_cerver_routes_json_delete` (pycerver:
-  `http_cerver_routes_json`), más los bindings de `http_route_auth_type_to_string` y `http_route_modifier_to_string`.
-- **La equivalencia la prueba cada servicio**: `tests/routes_expected.py` (método, path, handler, auth/acción,
-  multipart) se generó del registro viejo y se cruzó con el árbol que compiló la compat; `tests/unit/test_api_routes.py`
-  lo compara contra el árbol real. Verificado con tres mutaciones (un path, un `public`, un duplicado).
-- Las dos rutas duplicadas de payloads pasaron a `:id/status/update/internal` y `dynamic/:id/status/update/internal`,
-  como decían sus comentarios.
-- Las suites se construyen con `PERCEPTHOR_IMAGE=itpercepthor/percepthor:devel ./tests/build.sh` (ARG en
-  `tests/Dockerfile`) hasta publicar pypercepthor 0.7.0 y reconstruir `percepthor:latest`.
-- Los otros 41 servicios corren con la capa de compatibilidad.
-- Contexto completo: `percepthor-backend/docs/context/cerver-services-migration-session-context.md`.
-
-#### 4.3.5 Fase 3b — Capacidades HTTP restantes (Beta 2.0b-60)
-
-El uso principal de cerver es detrás de nginx: cada capacidad se prueba standalone y detrás de nginx (la versión de
-producción, 1.31.6, y la stable), con el upstream en `keepalive`.
-
-- **Cabeceras por petición.** Todas las respuestas salen por un solo `sendmsg` de cuatro partes: la cabecera compilada
-  sin su `\r\n` final, las cabeceras de la petición, `\r\n` y el body. Así una respuesta compilada una vez (las de los
-  servicios, las de error de cerver) recibe `Date`, `X-Request-Id`, CORS, `ETag` o `Content-Encoding` sin
-  recompilarse y sin asignaciones. Una cabecera que la respuesta o el cerver ya tienen no se repite.
-- **`Date`** siempre (RFC 9110 §6.6.1), cacheada por hilo y por segundo; `http_cerver_set_date_header` la apaga.
-- **Chunked de entrada.** http_parser ya decodifica los chunks y rechaza `Transfer-Encoding` + `Content-Length`; los
-  trailers se ignoran. Se prueba partido en cada byte, con multipart y con `Expect: 100-continue`.
-- **Streaming:** `http_response_stream_begin / write / end` (chunked en HTTP/1.1, delimitado por el cierre en 1.0;
-  HEAD sin body). Si el handler no lo termina, cerver lo termina.
-- **ETag y 304:** los estáticos con ETag débil (tamaño y mtime) y `Last-Modified`; los handlers con el setting
-  heredable `etag` (FNV-1a del body). `If-None-Match` manda sobre `If-Modified-Since`.
-- **Compresión gzip** opcional (`ZLIB=1` en el makefile), con el setting heredable `compression`, un tamaño mínimo y
-  los tipos comprimibles. Sin zlib la API existe y no comprime.
-- **Request id** opt-in por cerver: el `X-Request-Id` entrante si es válido o un UUID v4; en la respuesta, en el log y
-  con `http_request_get_id`.
-- **Métricas Prometheus** en `[top level]/cerver/metrics` con el auth de admin: los stats actuales, las respuestas por
-  código y un histograma de latencia por endpoint.
-- **CORS automático:** los endpoints con `cors` agregan `Access-Control-Allow-Origin` y `Vary: Origin` a todas sus
-  respuestas.
-- **La IP real del cliente** detrás de proxies: `X-Forwarded-For` (de derecha a izquierda) o `X-Real-IP`, solo desde
-  un proxy de confianza (`NONE` por default, una lista CIDR, las redes privadas o todos). En el log, con
-  `http_request_get_client_ip`, y libauth la reenvía al servicio de auth.
-- **`Connection: close` se mantiene** hasta el keep-alive de la Fase 4.
-
-#### 4.3.6 Los arreglos sin el event loop (Beta 2.0b-61)
-
-Llegan a `nightly` por la rama. Cada uno tiene su test, que se vio fallar contra la 2.0b-60.
-
-- **El 500 de un handler sin respuesta.**
-  - Antes, un handler que regresaba sin responder dejaba la conexión cerrada sin respuesta, y nginx contestaba 502.
-    Pasaba, por ejemplo, con una excepción de Python en pycerver.
-  - Ahora `HttpReceive.responded` se marca en `http_response_send_vector`, por donde pasa todo envío, al intentarlo:
-    un cliente que ya se fue no recibe un segundo intento.
-  - Después del dispatch, una petición sin respuesta recibe `server_error` con `Connection: close` y un warning con
-    el método y el path.
-  - Se cuenta en `n_unanswered_requests` y en la métrica `cerver_http_requests_unanswered_total`.
-- **`poll (POLLOUT)` en `EAGAIN`.**
-  - Un socket no bloqueante con el buffer lleno ya no se reintenta 16 veces en caliente, que truncaba la respuesta.
-    Ahora espera con `poll` lo que queda de un plazo por envío igual al `send_timeout` del cerver, o
-    `CERVER_DEFAULT_SEND_TIMEOUT` si es 0.
-  - `HTTP_RESPONSE_SEND_RETRIES` se quitó.
-  - Un socket bloqueante sigue igual: `SO_SNDTIMEO`.
-  - Los archivos y el video comparten el mismo envío con `sendfile`. El video antes ignoraba `EINTR`, `EAGAIN` y los
-    errores.
-  - De paso, `fd > -1` al abrir archivos y videos, porque un fd 0 es válido.
-- **La secuencia de los uploads.**
-  - Los generadores default usaban `fd-time`. Dos peticiones con el mismo fd (reusado al cerrar la conexión) en el
-    mismo segundo compartían el directorio y mezclaban sus archivos; los nombres repetidos se numeraban.
-  - Ahora cada petición toma un número atómico del `HttpCerver` la primera vez que un generador lo pide: archivo
-    `%d-%ld-%zu-%u-%s` (fd-time-secuencia-índice-nombre) y directorio `%d-%ld-%zu`.
-  - Las firmas no cambian.
-- **`gcc:16.2` / `debian:trixie-slim`** en los Dockerfiles, como `core`. Los warnings nuevos de gcc 16 se arreglaron
-  como en `core`:
-  - `file_read_internal` leía cada pedazo al inicio del buffer;
-  - sobraba el contador de fps del update del admin.
-
-  Los workflows no cambian.
-
-### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
-
-Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.
-
-- **Un epoll no bloqueante por worker**, con `SO_REUSEPORT` y `accept4 (SOCK_NONBLOCK | SOCK_CLOEXEC)`. Reemplaza el
-  accept bloqueante, el modo `POLL` y el hilo por conexión.
-- **Una máquina de estados por conexión** con un buffer reutilizable: leer cabeceras, leer body, despachar, escribir,
-  idle.
-- **Rueda de timers**: timeouts de cabeceras, body, idle y petición.
-- **Keep-alive real.** Entonces `HTTP_RESPONSE_CONNECTION_CLOSE_HEADER` pasa a ser condicional: `Connection: close`
-  solo cuando se va a cerrar. Hay que reiniciar `HttpReceive` / `HttpRequest` entre peticiones (hoy no se reinician:
-  `HttpReceive.keep_alive`, `include/cerver/http/http.h:609`, nunca se activa).
-- **Un pool acotado de handlers bloqueantes, separado del I/O.** Es indispensable para Python, donde el GIL serializa
-  los handlers. Tiene backpressure: si el pool y su cola están llenos, se responde 503 sin ocupar un hilo de I/O.
-- `writev` y `sendfile` no bloqueantes. Respuestas diferidas desde otros hilos, con un ciclo de vida seguro.
-- TLS en proceso (OpenSSL ya se enlaza, hoy solo para JWT) y, más adelante, HTTP/2.
-- **WebSocket** (movido de la Fase 3b): en el modelo de un hilo por conexión, cada WebSocket ocuparía un hilo del
-  thpool toda su vida. Con el event loop es una conexión más. Las rutas con ese modifier responden 501 hasta entonces.
-- **Una ruta de healthcheck fuera del pool** (movida del backlog): hoy, con la política `wait`, `/version` espera en
-  la cola y el contenedor queda `unhealthy` mientras dura la saturación.
-- **pycerver 1.0** alineado con la API 3.0.
-- **La migración completa, sin retrocompatibilidad:**
-  - los 47 servicios registran sus rutas con grupos y endpoints;
-  - se quitan `http/compatibility.c` y la API `http_route_*` vieja (`HttpRoute`, `http_cerver_route_register`,
-    `http_route_child_add`, los params solo por índice);
-  - pycerver y pypercepthor quitan sus bindings viejos (`percepthor_*_route_create`).
-
-  En la 3.0 también se puede rediseñar la firma del handler (un contexto único en lugar de `(HttpReceive *,
-  HttpRequest *)`), porque todos los servicios se migran a la vez.
-
-### 4.5 Fase 5 — En cada fase
-
-- **pycerver:** cada cambio de API, struct o firma lleva su binding en el módulo espejo (`py-cerver/cerver/…`), con
-  `argtypes` y `restype` verificados contra el header. Se verifica con `import` en la imagen devel.
-- **Versión:** el commit dedicado "Updated version to Beta 2.0b-N" actualiza `version.txt`,
-  `include/cerver/version.h`, `ARG CERVER_VERSION` del `Dockerfile` y `cerver-install.sh`, y reemplaza
-  `CHANGELOG.md`.
-- **Validación devel** en test (§6).
-- **Documento de contexto** en `percepthor-backend/docs/context/`.
-
-### 4.6 Resumen de prioridades
-
-| Prioridad | Qué | Por qué |
-|---|---|---|
-| 1 | Fase 0 | sin tests confiables, ni sanitizers, ni la cadena devel, ninguna otra fase se puede validar |
-| 2 | Fase 1 (body y seguridad) | es el bug que todos los servicios pagan con el buffer, y hay crashes y escrituras remotas |
-| 3 | Fase 2 (thpool, apagado, collections) | balance y los handlers síncronos agotan el pool; el rolling deploy necesita drenado |
-| 4 | Fase 3 (rutas y HTTP) | las ~500 rutas de indicators y las 256 de gepp en match lineal, la trampa del orden, 405 / `PATCH` / `HEAD` |
-| 4b | Fase 3b (chunked, streaming, `Date`, ETag, compresión, request id, métricas, CORS, la IP real) | lo que completa HTTP/1.1 detrás de nginx antes del event loop |
-| 5 | Fase 4 (event loop) | el techo de rendimiento, cuando lo anterior esté estable |
-
----
-
-## 5. Plan de tests
-
-### Lo que hay
-
-- **Unit:** `types`, `cerver/test`, `client/test`, `connection`, `collections`, `files`, `packets`, `receive`,
-  `system`, `threads`, `utils`, `http`, `json`, `jwt`, `version`. No hay framework: `test/test.h` define macros
-  `test_check_*`.
-- **`test/app`:** una librería compartida de handlers, rutas, usuarios y auth.
-- **Integración:** pares servidor / cliente:
-  - TCP: `test/cerver/*` contra `test/client/*`;
-  - HTTP: `test/web/*` contra `test/client/web/*`, con libcurl.
-
-  Los corre `test.sh` en la imagen `ermiry/cerver:test`.
-- **`benchmarks/`:** `http-parser.c` (el parser con callbacks vacíos), `base64.c` y `web.c` (libcurl contra
-  `localhost.com:8080`).
-
-### Estado (la suite de tests)
-
-Las Fases 0–3 y la suite de tests cubrieron casi todo lo que esta sección listaba como hueco: el parseo HTTP de
-punta a punta, el árbol de rutas, multipart, el cerver TCP en proceso, el ciclo de vida del cliente, los sanitizers en
-la integración, el fuzzing, la regresión de rendimiento y nginx delante. El detalle, lo que quedó pendiente y los bugs
-que encontró están en [`test/roadmap.md`](test/roadmap.md).
-
-### Tests nuevos
-
-**Unit:**
-
-| Test | Fase |
-|---|---|
-| `pool` concurrente (el arreglo de `pool_push`) | 0 |
-| Feeder split-buffer del parser en todos los offsets, y 1 byte por `recv` | 1 |
-| Pipelining, cabeceras duplicadas, Authorization corto, `..` en estáticos, cada límite | 1 |
-| Invariantes de dlist, AVL aleatorio con verificador, colisiones de htab y reutilización de fd | 2 |
-| `pool` / `queue` con 8 hilos × 1 M operaciones; ráfaga de thpool; destroy con la cola llena | 2 |
-| Tabla de match de rutas, errores de registro, 405 / `HEAD` / `OPTIONS` / `PATCH` | 3 |
-
-**Integración y estrés** (en Docker, contra `test/web/*` y los ejemplos):
-- wrk o h2load con 1 k conexiones: 0 respuestas no 2xx y 0 RST;
-- **nginx delante** como proxy, la regresión del 502 (con la configuración de `nginx/` del repo);
-- slowloris (1 byte cada 4 s), lector lento (nunca lee la respuesta), RST del cliente a mitad de la respuesta
-  (`SIGPIPE`);
-- body de 100 MB y cada límite;
-- multipart: sin boundary, boundary partido entre lecturas, filename vacío, filename con `../`, archivo de destino
-  existente;
-- `ulimit -n 64` (`EMFILE`), SIGINT bajo carga (drenado).
-
-**Fuzzing:** harnesses de libFuzzer para http_parser con los callbacks de cerver, multipart, `http_url_decode`, el
-loader JSON, el decoder JWT y el match de rutas.
-
-**Benchmarks:**
-- ampliar `benchmarks/` con wrk contra `examples/web/web.c`;
-- una línea base por fase (req/s, p50 / p99, `malloc` por petición);
-- h2o y drogon con el mismo hardware como referencia.
-
-**Convenciones adoptadas del backend:**
-- cada bug arreglado lleva su test;
-- cada suite documenta "los bugs que la suite fijó" y "los huecos de cobertura";
-- nunca se finge el framework nativo.
-
----
-
-## 6. Workflow de validación devel
-
-Es la generalización del workflow con el que se encontró y validó el 502 de gepp.
-
-### 6.1 Imágenes
-
-1. **Base devel, solo local:** `percepthor-devops/devel.sh` → `itpercepthor/percepthor:devel`.
-   - `docker build --platform=linux/amd64` con build contexts `cerver=/Users/ermiry/Documents/cerver`,
-     `auth=/Users/ermiry/Documents/Work/libauth` y (desde la Fase 0) `pycerver=/Users/ermiry/Documents/py-cerver`.
-   - `Dockerfile.devel` compila cerver con `make TYPE=${CERVER_TYPE} DEFINES="${CERVER_DEFINES}"` (por omisión `beta` y
-     `-D _GNU_SOURCE`; los defines de debug solo para depurar) y libauth con `TYPE=production`, sobre `gcc:13.4`. El
-     runtime es `python:3.12.10-slim-bookworm`.
-2. **Imágenes de servicio:** `FROM itpercepthor/percepthor:devel`, construidas y empujadas desde la Mac con
-   `devel.sh` como `…/<servicio>:devel` en GCP Artifact Registry.
-   - gepp-service y balance-service ya tienen su `Dockerfile.devel` y `devel.sh`.
-   - payloads-service los recibe en la Fase 0.
-
-### 6.2 Gate local
-
-- Unit tests de cerver en Docker: `make TYPE=test && make TYPE=test test && bash test/run.sh`. Desde la Fase 0, también
-  con `SANITIZER=address` y `SANITIZER=thread`.
-- Las suites de cada servicio en su imagen: `tests/build.sh`, luego `./run.sh` (`unit`, `integration`).
-- Para gepp, además: `GEPP_E2E_PHOTOS_DIR=/Users/ermiry/Documents/Work/gepp-service/tests/stress/images ./run.sh e2e`.
-- `python -c "import cerver, cerver.http"` en la imagen base.
-
-### 6.3 Despliegue en test (`test.percepthor.com`, host `artemis`)
-
-- SSH `erick_salas@test.percepthor.com`, `sudo -n` disponible.
-- Autorizado: diagnóstico (logs, contadores, tcpdump, py-spy) y desplegar gepp y balance. **Desplegar payloads
-  requiere autorización explícita.** nginx, la restauración de test y lo demás los decide el usuario.
-- Por cada réplica, una por una y **sin `sudo`**:
-  1. `docker compose -f <compose> [-f <override devel>] pull <réplicas>`
-  2. `docker compose -f <compose> [-f <override devel>] up -d --no-deps --wait --wait-timeout 600 <réplica>`
-- Composes:
-  - gepp: `~/percepthor/clients/docker-compose.test.clients.yml`;
-  - balance: `~/percepthor/balance/docker-compose.test.balance.yml` con `docker-compose.test.balance.devel.yml`;
-  - payloads: su compose de test con un override `devel` nuevo, que solo cambia `image`.
-- Confirmar en el log de arranque de cada réplica la configuración de cerver y, en gepp, `STRESS_MODE: True`.
-
-### 6.4 Escenarios por servicio
-
-| Servicio | Escenario | Criterio |
-|---|---|---|
-| **gepp** | El reproductor (`burst.py`: 8 hilos con `threading.Barrier`, una `requests.Session` por hilo, `POST /api/gepp/refris/<24 hex>/delete`; 404 = atendida, 502 = reset), por nginx y directo a `gepp-1:5060` | 0 resets |
-| | `tcpdump -i any` en el namespace de la réplica | SYN = POST (una conexión por petición), 0 RST de gepp |
-| | `gepp-service/tests/stress/run.sh peak` (y `headroom`, `breakpoint`, `window` cuando se decida cómo medir la latencia) | 0 errores. p95 del servidor (`server.py` → `peak.performance.json`) ≤ 3 s en refris y ≤ 5 s en censos. Limpieza con `failed 0` |
-| **payloads** | Un cliente que fuerce cortes de `recv`: cabeceras y body en escrituras separadas, `send` de pocos bytes, cabeceras de más de 4 KB, `Transfer-Encoding: chunked`, el flujo `/upload/start` → `/chunk` → `/end` con imágenes reales | antes de la Fase 1 reproduce el bug; después de la Fase 1 pasa **con cualquier `CERVER_RECEIVE_BUFFER_SIZE`** (1024 / 4096 / 8192 / 16384) |
-| **balance** | Saturar el pool con peticiones de larga duración (más concurrencia que hilos más cola) | antes de la Fase 2: medir los hilos desprendidos (`/proc/<pid>/status` `Threads`) y la latencia. Después: el número de hilos queda acotado y el exceso recibe 503 |
-| Todos | `docker stop` de una réplica bajo carga | después de la Fase 2: 0 peticiones cortadas, `Done!` en el log |
-
-### 6.5 Evidencia
-
-- Restar dos tomas de `/proc/net/netstat` y `/proc/net/snmp` (`TCPAbortOnData`, `ListenOverflows`, `OutRsts`).
-- `grep -c 'Connection reset by peer'` en el error log de nginx (`entry-nginx-1`).
-- `docker stats` y `top -H`.
-- py-spy desde el host (el contenedor no tiene `CAP_SYS_PTRACE`):
-  - instalación: `docker exec <réplica> pip install py-spy`;
-  - ejecución: `sudo -n /proc/<pid>/root/usr/local/bin/py-spy record --pid <pid del host> --duration 60 --rate 100 --nonblocking --gil --format raw`.
-- Las capturas y los perfiles se lanzan con `setsid timeout N` y se borran de `/tmp` al terminar.
-
-### 6.6 Restauración
-
-- gepp sin modo estrés: `percepthor-backend/deploy/clients.test.sh gepp`.
-- balance sin el override devel.
-- payloads a `:test`.
-
-Las decisiones de restauración son del usuario.
-
-### 6.7 Sutilezas operativas conocidas
-
-- La Mac no tiene `timeout`: ponerlo solo del lado remoto.
-- La shell remota es zsh: una variable con espacios no se separa en palabras.
-- Separar el despliegue de los pasos posteriores y comprobar el estado con `docker inspect` (un `ssh` de despliegue se
-  quedó colgado una vez).
-- No filtrar contenedores con `grep gepp`: el registry se llama `gepp-300009`.
-- Usar siempre `tcpdump -i any`: el orden de las interfaces cambia al redesplegar.
-- Para contar conexiones reutilizadas, comparar SYN contra POST, no agrupar por puerto.
-- El p95 de Locust desde la Mac incluye la subida por su red (~13 s contra ~1 s en el servidor): juzgar con
-  `server.py`, o correr desde una VM cercana.
-- `smoke` casi no tiene concurrencia: no prueba nada del manejo de conexiones.
-
----
-
-## 7. Convenciones
-
-### Las de cerver (se conservan)
-
-- **Estilo:**
-  - tabs, espacio antes de los paréntesis de llamada (`foo (bar)`);
-  - bloques `#pragma region` / `#pragma endregion`;
-  - casts `(void)` en los retornos ignorados;
-  - comentarios `//` cortos;
-  - el espacio antes de los paréntesis aplica en todos los archivos, vendorizados incluidos; las excepciones son el
-    nombre de una macro con parámetros en su `#define NAME(x)` y las tablas X-macro (`XX(...)`, `*_MAP(XX)`), cuyo
-    texto se convierte en string con `#`.
-- **Constantes y funciones (2026-11-04, código nuevo; el resto del codebase se migra después):**
-  - nada de valores literales dentro de las funciones: tamaños, longitudes, prefijos, separadores y timeouts son
-    constantes con nombre (`#define` en el header o `static const` al inicio del archivo), por ejemplo
-    `HTTP_ERROR_BUFFER_SIZE` en lugar de `char error_buffer[64]`;
-  - los cuerpos de los `if` y los `case` quedan cortos: si una rama necesita sus propias variables o más de un par de
-    sentencias, pasa a una función `static` dedicada.
-- **Headers:**
-  - `include/cerver/` es espejo uno a uno de `src/cerver/`;
-  - funciones públicas con `CERVER_EXPORT` / `CERVER_PUBLIC` y declaraciones dentro de `extern "C"`.
-- **Enums con X-macro `*_MAP (XX)`:** se extiende el mapa, no el enum.
-- **Retornos:**
-  - `u8` / `int` con 0 = éxito y 1 = error;
-  - NULL en los punteros.
-- **Nombres:**
-  - `x_new` reserva y pone defaults;
-  - `x_create` es new más configuración;
-  - `x_delete (void *)` tiene la forma de un callback de destrucción;
-  - `x_init` / `x_end` arrancan y terminan;
-  - `_unsafe` significa sin lock;
-  - `_internal` / `_actual` son internas;
-  - `_drop` cierra y borra;
-  - `_reference` evita copias.
-- **Logs y debug:**
-  - `cerver_log*`;
-  - defines de debug y estadísticas por módulo (`CERVER_DEBUG`, `HANDLER_DEBUG`, `CONNECTION_DEBUG`, `SOCKET_DEBUG`,
-    `HTTP_*_DEBUG`, …), que activa `TYPE=development`;
-  - los errores reales se loguean siempre.
-- **Compilación:**
-  - compila como C11 (`-Wpedantic -pedantic-errors`) y como C++11 (`-fpermissive`);
-  - los atómicos se escriben con `__atomic_*`.
-- **Vendorizados** (`http_parser.c`, `http/json/`, `http/jwt/`): no se reestilizan.
-
-### Las adoptadas del backend (`percepthor-backend/docs/conventions/`)
-
-- **Nombres:**
-  - palabras completas, sin abreviaturas, en defines, logs, nombres y paths (`SOCKET_DEBUG`, `error_buffer`). Los
-    nombres upstream existentes (`dlist`, `cr`) se dejan;
-  - enums nuevos que empiezan en `*_NONE = 0` y terminan en `*_MAX` (el máximo real + 1);
-  - singular para un elemento y plural para colecciones.
-- **Tests:** un test por cada bug arreglado, y cada suite documenta "los bugs que fijó" y "los huecos de cobertura".
-- **Commits y versiones:**
-  - commits con verbo en pasado, sin prefijos, uno por cambio ("Added …", "Fixed …", "Refactored …"), con la línea
-    correspondiente en `CHANGELOG.md` **solo** en el commit de versión;
-  - nunca se sube la versión sin una instrucción explícita.
-- **Documentación de sesión:** un documento de contexto por sesión en `percepthor-backend/docs/context/` (goal,
-  motivación, decisiones, lo encontrado, lo trabajado, cómo seguir, sutilezas y referencias), y este roadmap como plan
-  vivo: cada fase actualiza su estado aquí.
+| Qué ocupa un hilo | toda la conexión: cabeceras, body lento, auth y handler | la auth custom y el handler (desde F7, solo el handler) |
+| Conexiones simultáneas | ≈ hilos + cola | 2^14; una ociosa o lenta cuesta una `HttpConnection` + arena |
+| Saturación con `wait` | el accept se bloquea y el backlog se desborda (`ListenOverflows`) | estacionadas en el loop, con timeout y 503 explícitos; el accept nunca se detiene |
+| Rutas lentas vs rápidas | comparten slots | pools nombrados aislados |
+| Healthcheck | mide si hay un hilo libre: `unhealthy` bajo carga | liveness desde el loop + readiness por saturación |
+| Conexiones TCP | una nueva por salto y por petición | reutilizadas: sin handshake, sin `TIME_WAIT` acumulado, menos accepts |
+| Asignaciones por GET | 8 | meta ≤ 4 |
+| Slowloris / clientes lentos | un hilo hasta 16 s | un timer |
+| Handler sin respuesta | 500 + close (desde la 2.0b-61) | igual |
+| WebSocket | 501 | una conexión más del loop (F6) |
+| Observabilidad | stats por endpoint | + pools, cola, espera, conexiones y reusos |
+
+**Sin cambio esperado:** el CPU de los handlers. El ahorro de latencia por salto es ~0.1–0.3 ms en LAN. En C puro,
+keep-alive debería multiplicar los req/s de respuestas pequeñas; se mide en `benchmarks/load.c`, no se promete.
+
+**Riesgos:**
+
+- **La carrera de cierre en keep-alive:** la regla de §4.4, y la suite nginx con reinicios.
+- **El traspaso loop ↔ pool:** TSan y el flaky hunter de 200 repeticiones en cada fase.
+- **Estado que se filtra entre peticiones:** cabeceras, `custom_data` o directorios de una petición en la siguiente.
+  Lo cubren `keepalive.c` y el fuzz multi-petición.
+- **llhttp más estricto:** las diferencias se documentan en F2.
+- **Los conflictos `http` → `nightly`** en `http.c`, `response.c`, `handler.c`, y con el port de la 1.8 en `cerver.c`
+  y `client.c`: se mergea en cada beta de `http`, no al final, y F3 espera el port.
+
+## 9. Convenciones
+
+- Las de `CLAUDE.md` (estilo, constantes con nombre, ramas cortas, nombres de una palabra, versión y `CHANGELOG.md`).
+- Los defaults nuevos son potencias de 2: 2^14 conexiones, 2^7 s de idle, 2^10 peticiones, 2^8 ms de tick, 2^5 s de
+  espera.
+- **Los arreglos que sirven a la 2.0 se hacen en `http`** y llegan a `nightly` por un merge después de cada
+  2.0b / 2.0rc / 2.0.N, nunca por rebase. Nunca al revés, salvo la integración de §4.11.
