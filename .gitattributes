@@ -1,1 +1,8 @@
 test/fuzz/corpus/** -text
+
+version.txt merge=ours
+include/cerver/version.h merge=ours
+Dockerfile merge=ours
+cerver-install.sh merge=ours
+CHANGELOG.md merge=ours
+roadmap.md merge=ours
