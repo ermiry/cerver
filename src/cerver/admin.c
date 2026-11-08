@@ -1101,11 +1101,8 @@ static void *admin_cerver_update (void *args) {
 		// printf ("time per frame: %d\n", time_per_frame);
 		u32 temp = 0;
 		i32 sleep_time = 0;
-		u64 delta_time = 0;
 
-		u64 delta_ticks = 0;
-		u32 fps = 0;
-		struct timespec start = { 0 }, middle = { 0 }, end = { 0 };
+		struct timespec start = { 0 }, middle = { 0 };
 
 		while (cerver_is_running (admin_cerver->cerver)) {
 			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
@@ -1121,18 +1118,6 @@ static void *admin_cerver_update (void *args) {
 			// printf ("sleep time: %d\n", sleep_time);
 			if (sleep_time > 0) {
 				(void) usleep (sleep_time);
-			}
-
-			// count fps
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &end);
-			delta_time = (end.tv_nsec - start.tv_nsec) / 1000000;
-			delta_ticks += delta_time;
-			fps++;
-			// printf ("delta ticks: %ld\n", delta_ticks);
-			if (delta_ticks >= 1000) {
-				// printf ("cerver %s update fps: %i\n", cerver->info->name, fps);
-				delta_ticks = 0;
-				fps = 0;
 			}
 		}
 
