@@ -136,7 +136,9 @@ static void test_encode (
 	if (verbose) (void) printf ("encoded size = %zu \n", expected);
 	// BEST_TIME (memcpy (buffer, data, datalength), repeat, datalength, verbose);
 	BEST_TIME (chromium_base64_encode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#if defined (__AVX2__)
 	BEST_TIME (fast_avx2_base64_encode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#endif
 
 	free (buffer);
 
@@ -161,7 +163,9 @@ static void test_decode (
 
 	// BEST_TIME (memcpy (buffer, data, datalength), repeat, datalength, verbose);
 	BEST_TIME (chromium_base64_decode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#if defined (__AVX2__)
 	BEST_TIME (fast_avx2_base64_decode (buffer, data, datalength), (int) expected, repeat, datalength, verbose);
+	#endif
 
 	free (buffer);
 	if (verbose) (void) printf("\n");

@@ -29,14 +29,31 @@
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
-#define CERVER_DEFAULT_CONNECTION_QUEUE				10
+#define CERVER_DEFAULT_CONNECTION_QUEUE				SOMAXCONN
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 
 #define CERVER_DEFAULT_REUSABLE_FLAGS				false
+#define CERVER_DEFAULT_REUSABLE_PORT				false
+#define CERVER_DEFAULT_IGNORE_SIGPIPE				true
 
 #define CERVER_DEFAULT_POOL_THREADS					4
+
+// 0 uses the thpool default (threads * THPOOL_DEFAULT_QUEUE_SIZE_FACTOR)
+#define CERVER_DEFAULT_THPOOL_QUEUE_SIZE			0
+
+#define CERVER_DEFAULT_OVERLOAD_POLICY				CERVER_OVERLOAD_POLICY_WAIT
+
+// the ms that the accept loop waits for space in a full thpool before checking
+// if the cerver is still running (a free slot wakes it up right away)
+#define CERVER_OVERLOAD_WAIT_TIMEOUT				1024
+
+#define CERVER_DEFAULT_DRAIN_POLICY					CERVER_DRAIN_POLICY_RUN
+#define CERVER_DEFAULT_DRAIN_TIMEOUT				32
+
+// SO_SNDTIMEO in secs for the accepted connections, 0 to disable it
+#define CERVER_DEFAULT_SEND_TIMEOUT					32
 
 #define CERVER_DEFAULT_SOCKETS_INIT					10
 
@@ -54,6 +71,9 @@
 #define CERVER_DEFAULT_ON_HOLD_MAX_BAD_PACKETS		4
 #define CERVER_DEFAULT_ON_HOLD_CHECK_PACKETS		false
 #define CERVER_DEFAULT_ON_HOLD_RECEIVE_BUFFER_SIZE	4096
+#define CERVER_DEFAULT_ON_HOLD_SECONDS				16
+
+#define CERVER_DEFAULT_MAX_BAD_PACKETS				16
 
 #define CERVER_DEFAULT_USE_SESSIONS					false
 
@@ -68,6 +88,7 @@
 extern "C" {
 #endif
 
+struct _Balancer;
 struct _Cerver;
 struct _AdminCerver;
 struct _Client;
@@ -95,7 +116,8 @@ CERVER_EXPORT void cerver_end (void);
 	XX(1,	CUSTOM, 	Custom)				\
 	XX(2,	GAME, 		Game)				\
 	XX(3,	WEB, 		Web)				\
-	XX(4,	FILES, 		Files)
+	XX(4,	FILES, 		Files)				\
+	XX(5,	BALANCER, 	Balancer)
 
 typedef enum CerverType {
 
@@ -126,6 +148,54 @@ CERVER_EXPORT const char *cerver_handler_type_to_string (
 
 CERVER_EXPORT const char *cerver_handler_type_description (
 	CerverHandlerType type
+);
+
+// what happens with a new connection when the thpool queue is full
+#define CERVER_OVERLOAD_POLICY_MAP(XX)																	\
+	XX(0,	NONE, 		None, 		None)																\
+	XX(1,	WAIT, 		Wait, 		Stop accepting until the thpool has space for the connection)		\
+	XX(2,	REJECT, 	Reject, 	Reject the connection right away (503 in web cervers))
+
+typedef enum CerverOverloadPolicy {
+
+	#define XX(num, name, string, description) CERVER_OVERLOAD_POLICY_##name = num,
+	CERVER_OVERLOAD_POLICY_MAP (XX)
+	#undef XX
+
+	CERVER_OVERLOAD_POLICY_MAX
+
+} CerverOverloadPolicy;
+
+CERVER_EXPORT const char *cerver_overload_policy_to_string (
+	CerverOverloadPolicy policy
+);
+
+CERVER_EXPORT const char *cerver_overload_policy_description (
+	CerverOverloadPolicy policy
+);
+
+// what happens with the queued connections when the cerver is drained
+#define CERVER_DRAIN_POLICY_MAP(XX)																		\
+	XX(0,	NONE, 		None, 		None)																\
+	XX(1,	RUN, 		Run, 		Handle the queued connections until the drain timeout)				\
+	XX(2,	REJECT, 	Reject, 	Reject the queued connections right away (503 in web cervers))
+
+typedef enum CerverDrainPolicy {
+
+	#define XX(num, name, string, description) CERVER_DRAIN_POLICY_##name = num,
+	CERVER_DRAIN_POLICY_MAP (XX)
+	#undef XX
+
+	CERVER_DRAIN_POLICY_MAX
+
+} CerverDrainPolicy;
+
+CERVER_EXPORT const char *cerver_drain_policy_to_string (
+	CerverDrainPolicy policy
+);
+
+CERVER_EXPORT const char *cerver_drain_policy_description (
+	CerverDrainPolicy policy
 );
 
 #pragma endregion
@@ -167,6 +237,10 @@ CERVER_EXPORT u8 cerver_set_welcome_msg (
 	struct _Cerver *cerver, const char *msg
 );
 
+CERVER_PRIVATE void cerver_update_uptime (
+	struct _Cerver *cerver
+);
+
 // sends the cerver info packet
 // retuns 0 on success, 1 on error
 CERVER_PUBLIC u8 cerver_info_send_info_packet (
@@ -177,6 +251,11 @@ CERVER_PUBLIC u8 cerver_info_send_info_packet (
 #pragma endregion
 
 #pragma region stats
+
+// the stats are updated from many threads at the same time
+#define CERVER_STATS_ADD(field, value) ((void) __atomic_add_fetch (&(field), (value), __ATOMIC_RELAXED))
+#define CERVER_STATS_SUBTRACT(field, value) ((void) __atomic_sub_fetch (&(field), (value), __ATOMIC_RELAXED))
+#define CERVER_STATS_GET(field) (__atomic_load_n (&(field), __ATOMIC_RELAXED))
 
 typedef struct CerverStats {
 
@@ -204,6 +283,7 @@ typedef struct CerverStats {
 	u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
 	u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
 	u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
+	u64 total_rejected_connections;                 // connections rejected because the thpool was full or the cerver was draining
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -237,21 +317,33 @@ struct _Cerver {
 	bool use_ipv6;
 	u16 connection_queue;               // each server can handle connection differently
 
+	// read and written with __atomic, use cerver_is_running ()
 	bool isRunning;                     // the server is recieving and/or sending packetss
-	bool blocking;                      // sokcet fd is blocking?
+	// read and written with __atomic, a stop requested before cerver_start () cancels it
+	bool stop_requested;
+	bool blocking;                     // sokcet fd is blocking?
 	bool reusable;						// socket fd with reusable flags?
+	bool reusable_port;					// socket fd with SO_REUSEPORT?
+	bool ignore_sigpipe;				// ignore SIGPIPE when the cerver starts?
 
 	void *cerver_data;
 	Action delete_cerver_data;
 
 	u16 n_thpool_threads;
+	unsigned int thpool_queue_size;
 	Thpool *thpool;
 
-	// 29/05/2020
-	// using this pool to avoid completely destroying connection's sockets
-	// as another thread might be blocked by the socket's mutex
-	unsigned int sockets_pool_init;
-	Pool *sockets_pool;
+	CerverOverloadPolicy overload_policy;
+
+	CerverDrainPolicy drain_policy;
+	u32 drain_timeout;					// secs to wait for the connections when draining
+	bool drained;						// every connection finished before the drain timeout
+
+	u32 send_timeout;					// SO_SNDTIMEO in secs for accepted connections
+
+	// wakes up the cerver threads that sleep when the cerver stops
+	pthread_mutex_t *stop_mutex;
+	pthread_cond_t *stop_cond;
 
 	AVLTree *clients;                   // connected clients
 	Htab *client_sock_fd_map;           // direct indexing by sokcet fd as key
@@ -268,8 +360,10 @@ struct _Cerver {
 
 	// if set & CERVER_HANDLER_TYPE_THREADS, connections will be handled
 	// by creating a new detachable thread each time, if not,
-	// the thpoll will be used instead; if the thpool is full or unavailable,
+	// the thpool will be used instead; if the thpool is full,
+	// the overload policy is applied, and if the cerver does not have a thpool,
 	// a detachable thread will be created anyway
+	// web cervers always use the thpool
 	bool handle_detachable_threads;
 
 	struct pollfd *fds;
@@ -295,6 +389,7 @@ struct _Cerver {
 	u8 on_hold_max_bad_packets;
 	bool on_hold_check_packets;
 	size_t on_hold_receive_buffer_size;
+	u32 on_hold_timeout;                // secs to authenticate before being dropped, 0 disables it
 
 	// allow the clients to use sessions (have multiple connections)
 	bool use_sessions;
@@ -305,7 +400,7 @@ struct _Cerver {
 	// otherwise, it will be set to the default one
 	Action handle_received_buffer;
 
-	u32 receive_buffer_size;
+	size_t receive_buffer_size;
 	size_t max_received_packet_size;
 
 	// 27/05/2020 - changed form Action to Handler
@@ -330,6 +425,7 @@ struct _Cerver {
 	// pthread_cond_t *handlers_wait;
 
 	bool check_packets;                     // enable / disbale packet checking
+	u8 max_bad_packets;                     // bad packets of a connection before it is dropped, 0 disables it
 
 	pthread_t update_thread_id;
 	Action update;                          // method to be executed every tick
@@ -353,6 +449,9 @@ struct _Cerver {
 	CerverInfo *info;
 	CerverStats *stats;
 
+	// reference to the parent load balancer
+	struct _Balancer *balancer;
+
 };
 
 typedef struct _Cerver Cerver;
@@ -375,13 +474,31 @@ CERVER_EXPORT void cerver_set_connection_queue (
 
 // sets the cerver's receive buffer size used in recv method
 CERVER_EXPORT void cerver_set_receive_buffer_size (
-	Cerver *cerver, const u32 size
+	Cerver *cerver, const size_t size
 );
 
-// sets the cerver's ability to use reusable flags in sock fd
+// sets the cerver's ability to use reusable flags in sock fd (SO_REUSEADDR)
 // if TRUE, this can prevent failing when trying to bind address
 // the default value is CERVER_DEFAULT_REUSABLE_FLAGS
 CERVER_EXPORT void cerver_set_reusable_address_flags (
+	Cerver *cerver, bool value
+);
+
+// sets the cerver's ability to share its port with other sockets (SO_REUSEPORT)
+// only enable it when more than one process must listen in the same port,
+// otherwise a second cerver can bind the same port without any error
+// the default value is CERVER_DEFAULT_REUSABLE_PORT
+CERVER_EXPORT void cerver_set_reusable_port (
+	Cerver *cerver, bool value
+);
+
+// returns true while the cerver is accepting connections
+CERVER_EXPORT bool cerver_is_running (const Cerver *cerver);
+
+// sets whether cerver_start () ignores SIGPIPE when the process has not set a handler for it,
+// writing to a connection that the client reset raises SIGPIPE, that by default kills the process
+// the default value is CERVER_DEFAULT_IGNORE_SIGPIPE
+CERVER_EXPORT void cerver_set_ignore_sigpipe (
 	Cerver *cerver, bool value
 );
 
@@ -400,8 +517,52 @@ CERVER_EXPORT void cerver_set_thpool_n_threads (
 	Cerver *cerver, u16 n_threads
 );
 
-// sets the initial number of sockets to be created in the cerver's sockets pool
-// the defauult value is 10
+// sets how many accepted connections can wait in the thpool queue
+// it is rounded up to a power of 2, 0 uses the thpool default
+// (the number of threads * THPOOL_DEFAULT_QUEUE_SIZE_FACTOR)
+// the default value is CERVER_DEFAULT_THPOOL_QUEUE_SIZE
+CERVER_EXPORT void cerver_set_thpool_queue_size (
+	Cerver *cerver, unsigned int queue_size
+);
+
+// sets what happens with a new connection when the thpool queue is full
+// CERVER_OVERLOAD_POLICY_WAIT stops accepting until there is space,
+// and the new connections wait in the listen backlog
+// CERVER_OVERLOAD_POLICY_REJECT closes the new connection right away,
+// web cervers respond with 503 and a Retry-After header
+// the default value is CERVER_DEFAULT_OVERLOAD_POLICY
+CERVER_EXPORT void cerver_set_overload_policy (
+	Cerver *cerver, CerverOverloadPolicy policy
+);
+
+// sets what happens with the queued connections when the cerver is drained
+// at cerver_teardown (), the cerver stops accepting connections and
+// waits drain_timeout secs for the connections in progress
+// CERVER_DRAIN_POLICY_RUN also handles the queued connections
+// CERVER_DRAIN_POLICY_REJECT rejects them right away (503 in web cervers)
+// the default value is CERVER_DEFAULT_DRAIN_POLICY
+CERVER_EXPORT void cerver_set_drain_policy (
+	Cerver *cerver, CerverDrainPolicy policy
+);
+
+// sets how many secs the cerver waits for its connections when it is drained
+// the connections that are still queued after it are rejected
+// 0 waits until every connection has finished
+// the default value is CERVER_DEFAULT_DRAIN_TIMEOUT
+CERVER_EXPORT void cerver_set_drain_timeout (
+	Cerver *cerver, u32 drain_timeout
+);
+
+// sets the SO_SNDTIMEO in secs for every accepted connection,
+// so a client that never reads can not block a thread forever
+// 0 disables the timeout
+// the default value is CERVER_DEFAULT_SEND_TIMEOUT
+CERVER_EXPORT void cerver_set_send_timeout (
+	Cerver *cerver, u32 send_timeout
+);
+
+// DEPRECATED: the sockets pool was removed,
+// every connection now owns its socket
 CERVER_EXPORT void cerver_set_sockets_pool_init (
 	Cerver *cerver, unsigned int n_sockets
 );
@@ -463,6 +624,13 @@ CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
 	Cerver *cerver, u32 on_hold_poll_timeout
 );
 
+// sets the secs that a new connection has to authenticate,
+// after them it is dropped (CERVER_EVENT_ON_HOLD_DROPPED), 0 disables it
+// it is checked every on hold poll timeout, the default is CERVER_DEFAULT_ON_HOLD_SECONDS
+CERVER_EXPORT void cerver_set_on_hold_timeout (
+	Cerver *cerver, u32 on_hold_timeout
+);
+
 // sets the max number of bad packets to tolerate from an ON HOLD connection before being dropped,
 // the default is DEFAULT_ON_HOLD_MAX_BAD_PACKETS
 // a bad packet is anyone which can't be handle by the cerver because there is no handle,
@@ -488,6 +656,7 @@ CERVER_EXPORT void cerver_set_on_hold_receive_buffer_size (
 // or you can use it to allow different connections from different devices using a token
 // you can pass your own session generator method that must take a SessionData as the argument
 // and must return a char * representing the session id (token) for the client
+// allocated with malloc (), cerver copies it and releases it with free ()
 // or use the default one
 // retuns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_sessions (
@@ -548,11 +717,19 @@ CERVER_EXPORT int cerver_set_multiple_handlers (
 
 // set whether to check or not incoming packets
 // check packet's header protocol id & version compatibility
-// if packets do not pass the checks, won't be handled and will be inmediately destroyed
+// if packets do not pass the checks, they are bad packets
 // packets size must be cheked in individual methods (handlers)
 // by default, this option is turned off
 CERVER_EXPORT void cerver_set_check_packets (
 	Cerver *cerver, bool check_packets
+);
+
+// sets how many bad packets an authenticated connection can send before it is dropped,
+// a bad packet fails packet_check () or has an unknown type, and its sender gets a CERVER_ERROR_PACKET_ERROR
+// a packet bigger than max_received_packet_size closes the connection right away
+// 0 disables the limit, the default is CERVER_DEFAULT_MAX_BAD_PACKETS
+CERVER_EXPORT void cerver_set_max_bad_packets (
+	Cerver *cerver, u8 max_bad_packets
 );
 
 // sets a custom cerver update function to be executed every n ticks
@@ -580,18 +757,6 @@ CERVER_EXPORT void cerver_set_update_interval (
 // enables admin connections to cerver
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_set_admin_enable (Cerver *cerver);
-
-#pragma endregion
-
-#pragma region sockets
-
-CERVER_PRIVATE int cerver_sockets_pool_push (
-	Cerver *cerver, struct _Socket *socket
-);
-
-CERVER_PRIVATE struct _Socket *cerver_sockets_pool_pop (
-	Cerver *cerver
-);
 
 #pragma endregion
 
@@ -624,7 +789,7 @@ CERVER_EXPORT unsigned int cerver_get_n_handlers_working (Cerver *cerver);
 CERVER_EXPORT Cerver *cerver_create (
 	const CerverType type, const char *name,
 	const u16 port, const Protocol protocol, bool use_ipv6,
-	u16 connection_queue
+	const u16 connection_queue
 );
 
 #pragma endregion
@@ -661,11 +826,25 @@ CERVER_PUBLIC void cerver_update_delete (void *cerver_update_ptr);
 
 #pragma region end
 
-// disable socket I/O in both ways and stop any ongoing job
+// stops accepting new connections and wakes up cerver_start ()
+// it is safe to call it from another thread, from a signal handler
+// and more than once, an interrupted accept () or poll ()
+// (a signal without SA_RESTART) also stops the cerver
+// the connections in progress are drained by cerver_teardown ()
+CERVER_PRIVATE void cerver_stop_request (Cerver *cerver);
+
+// stops accepting new connections and wakes up cerver_start ()
+// it can be called after the cerver was stopped by a signal
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_shutdown (Cerver *cerver);
 
-// teardown a server -> stop the server and clean all of its data
+// sleeps the seconds or until the cerver is stopped
+CERVER_PRIVATE void cerver_sleep (Cerver *cerver, u32 seconds);
+
+// teardown a server -> stop the server, drain the connections
+// using the drain policy and timeout, and clean all of its data
+// if some connections did not finish before the drain timeout,
+// the data they use is not released, to avoid using it after a free
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 cerver_teardown (Cerver *cerver);
 

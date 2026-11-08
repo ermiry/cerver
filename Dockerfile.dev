@@ -1,4 +1,4 @@
-FROM gcc as builder
+FROM gcc:16.2 as builder
 
 WORKDIR /opt/cerver
 
@@ -7,7 +7,7 @@ COPY . .
 RUN make -j4 && make -j4 examples && make -j4 test
 
 ############
-FROM ubuntu:bionic
+FROM debian:trixie-slim
 
 ARG RUNTIME_DEPS='libssl-dev'
 

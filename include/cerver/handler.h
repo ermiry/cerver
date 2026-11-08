@@ -187,6 +187,12 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 	struct _Packet *packet
 );
 
+// handles a packet of type PACKET_TYPE_CLIENT that was received outside the packet handler,
+// like the ones that the load balancer receives
+CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
+	struct _Packet *packet
+);
+
 #pragma endregion
 
 #pragma region receive

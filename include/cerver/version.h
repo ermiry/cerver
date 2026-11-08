@@ -3,17 +3,17 @@
 
 #include "cerver/config.h"
 
-#define CERVER_VERSION				"1.6.4b-8"
-#define CERVER_VERSION_NAME			"Beta 1.6.4b-8"
-#define CERVER_VERSION_DATE			"19/09/2021"
-#define CERVER_VERSION_TIME			"13:08 CST"
+#define CERVER_VERSION				"1.8b-1"
+#define CERVER_VERSION_NAME			"Beta 1.8b-1"
+#define CERVER_VERSION_DATE			"08/11/2026"
+#define CERVER_VERSION_TIME			"04:28 CST"
 #define CERVER_VERSION_AUTHOR		"Erick Salas"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// print full cerver version information 
+// print full cerver version information
 CERVER_EXPORT void cerver_version_print_full (void);
 
 // print the version id

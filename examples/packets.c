@@ -22,7 +22,7 @@ static Cerver *my_cerver = NULL;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 
-#define APP_MESSAGE_LEN			512
+#define APP_MESSAGE_SIZE			512
 
 typedef enum AppRequest {
 
@@ -36,7 +36,7 @@ typedef struct AppData {
 
 	time_t timestamp;
 	size_t message_len;
-	char message[APP_MESSAGE_LEN];
+	char message[APP_MESSAGE_SIZE];
 
 } AppData;
 
@@ -65,7 +65,7 @@ static AppData *app_data_create (const char *message) {
 
 		if (message) {
 			app_data->message_len = strlen (message);
-			strncpy (app_data->message, message, APP_MESSAGE_LEN);
+			strncpy (app_data->message, message, APP_MESSAGE_SIZE);
 		}
 	}
 

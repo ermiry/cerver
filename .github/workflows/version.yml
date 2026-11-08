@@ -14,12 +14,10 @@ jobs:
   build:
     name: Cerver build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
+        uses: actions/checkout@v6
 
       - name: gcc make
         run: make

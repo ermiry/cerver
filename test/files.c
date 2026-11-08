@@ -11,8 +11,6 @@ static const char *sanitize_complete_one = { "hola/adios/1234567890-hola.png" };
 static const char *sanitize_complete_two = { "1234567890-hola/adios/hola.png.res" };
 static const char *sanitize_complete_three = { "12345!67`890-ho#la@/ad$^ios&/h*o)l)a.p+=ng.res" };
 
-static const char *bmp_extension = { "bmp" };
-static const char *gif_extension = { "gif" };
 static const char *png_extension = { "png" };
 static const char *jpg_extension = { "jpg" };
 static const char *jpeg_extension = { "jpeg" };
@@ -294,9 +292,20 @@ static void test_files_image_extension_is_png (void) {
 
 }
 
+// a missing filename or file is not an image, the bindings of python pass NULL for it
+static void test_files_image_get_type_without_file (void) {
+
+	test_check_unsigned_eq (files_image_get_type (NULL), IMAGE_TYPE_NONE, NULL);
+	test_check_unsigned_eq (files_image_get_type ("/tmp/cerver-test-missing.png"), IMAGE_TYPE_NONE, NULL);
+	test_check_bool_eq (file_exists (NULL), false, NULL);
+
+}
+
 #pragma endregion
 
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	(void) printf ("Testing FILES...\n");
 
@@ -313,6 +322,7 @@ int main (int argc, char **argv) {
 	test_files_image_get_type_by_extension ();
 	test_files_image_extension_is_jpeg ();
 	test_files_image_extension_is_png ();
+	test_files_image_get_type_without_file ();
 
 	(void) printf ("\nDone with FILES tests!\n\n");
 

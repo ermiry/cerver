@@ -3,7 +3,11 @@
 
 #include "utils.h"
 
+#include "../test.h"
+
 int main (int argc, char **argv) {
+
+	test_output_init ();
 
 	(void) printf ("Testing UTILS...\n");
 
@@ -14,6 +18,10 @@ int main (int argc, char **argv) {
 	utils_tests_math ();
 
 	utils_tests_sha256 ();
+
+	utils_tests_timer ();
+
+	utils_tests_serializer ();
 
 	(void) printf ("\nDone with UTILS tests!\n\n");
 

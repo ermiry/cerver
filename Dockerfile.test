@@ -1,32 +1,15 @@
-FROM gcc as builder
+FROM gcc:16.2
+
+ARG SANITIZER=''
+ARG COVERAGE=0
+
+RUN apt-get update && apt-get install -y libssl-dev gdb && apt-get clean
 
 WORKDIR /opt/cerver
 
-RUN apt-get update && apt-get install -y libssl-dev
-
-# cerver
 COPY . .
-RUN make TYPE=test -j4 && make TYPE=test -j4 test
+RUN make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 && make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 test
 
-############
-FROM ubuntu:bionic
+ENV LD_LIBRARY_PATH=/opt/cerver/bin:/opt/cerver/test/bin/app
 
-ARG RUNTIME_DEPS='libssl-dev'
-
-RUN apt-get update && apt-get install -y ${RUNTIME_DEPS} && apt-get clean
-
-# install cerver
-COPY --from=builder /opt/cerver/bin/libcerver.so /usr/local/lib/
-COPY --from=builder /opt/cerver/include/cerver /usr/local/include/cerver
-
-# install test app
-COPY --from=builder /opt/cerver/test/bin/app/libapp.so /usr/local/lib/
-COPY --from=builder /opt/cerver/test/app/*.h /usr/local/include/app/
-
-RUN ldconfig
-
-# cerver
-WORKDIR /home/cerver
-COPY --from=builder /opt/cerver/test/bin ./bin
-
-CMD ["./bin/cerver/ping"]
+CMD ["bash", "test/pair.sh", "cerver/ping"]

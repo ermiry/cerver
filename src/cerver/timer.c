@@ -33,7 +33,7 @@ TimeSpec *timer_get_timespec (void) {
 
 	TimeSpec *t = timespec_new ();
 	if (t) {
-		clock_gettime (4, t);
+		(void) clock_gettime (CLOCK_MONOTONIC_RAW, t);
 	}
 
 	return t;

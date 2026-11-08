@@ -4,7 +4,7 @@
 
 #include "app.h"
 
-const char *app_request_to_string (AppRequest type) {
+const char *app_request_to_string (const AppRequest type) {
 
 	switch (type) {
 		#define XX(num, name, string) case APP_REQUEST_##name: return #string;
@@ -45,7 +45,7 @@ void app_message_create_internal (
 		(void) strncpy (
 			app_message->message,
 			message,
-			APP_MESSAGE_LEN - 1
+			APP_MESSAGE_SIZE - 1
 		);
 	}
 
@@ -67,7 +67,7 @@ AppMessage *app_message_create (
 
 }
 
-void app_message_print (AppMessage *app_message) {
+void app_message_print (const AppMessage *app_message) {
 
 	if (app_message) {
 		(void) printf (

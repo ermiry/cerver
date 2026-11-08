@@ -20,13 +20,12 @@ static const char *welcome_message = "Hello there!";
 
 static Cerver *cerver = NULL;
 
+// the cerver is released in main () when cerver_start () returns
 static void end (int dummy) {
-	
-	cerver_teardown (cerver);
 
-	// cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	(void) cerver_shutdown (cerver);
 
 }
 
@@ -108,6 +107,8 @@ int main (int argc, char **argv) {
 	test_check_unsigned_eq (
 		cerver_start (cerver), 0, "Failed to start cerver!"
 	);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
 
 	return 0;
 

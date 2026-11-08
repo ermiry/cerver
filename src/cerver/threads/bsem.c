@@ -65,7 +65,13 @@ void bsem_init (bsem *bsem_p, int value) {
 // resets semaphore to 0
 void bsem_reset (bsem *bsem_p) {
 
-	if (bsem_p) bsem_init (bsem_p, 0);
+	// the mutex and the condition are kept,
+	// because other threads may be using them
+	if (bsem_p && bsem_p->mutex) {
+		(void) pthread_mutex_lock (bsem_p->mutex);
+		bsem_p->v = 0;
+		(void) pthread_mutex_unlock (bsem_p->mutex);
+	}
 
 }
 

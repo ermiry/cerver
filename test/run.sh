@@ -1,23 +1,49 @@
 #!/bin/bash
 
-./test/bin/types || { exit 1; }
+RUNNER=${RUNNER:-}
 
-./test/bin/cerver/test || { exit 1; }
+run () {
+	$RUNNER "$@" || { echo "$1 failed"; exit 1; }
+}
 
-./test/bin/client/test || { exit 1; }
+run ./test/bin/types
 
-./test/bin/connection || { exit 1; }
+run ./test/bin/cerver/test
 
-./test/bin/collections --quiet || { exit 1; }
+run ./test/bin/cerver/core
 
-./test/bin/files || { exit 1; }
+run ./test/bin/cerver/lobby
 
-./test/bin/packets || { exit 1; }
+run ./test/bin/client/test
 
-./test/bin/receive || { exit 1; }
+run ./test/bin/client/lifecycle
 
-./test/bin/system || { exit 1; }
+run ./test/bin/client/features
 
-./test/bin/threads || { exit 1; }
+run ./test/bin/client/files
 
-./test/bin/utils || { exit 1; }
+run ./test/bin/connection
+
+run ./test/bin/balancer
+
+run ./test/bin/routing
+
+run ./test/bin/collections --quiet
+
+run ./test/bin/files
+
+run ./test/bin/game
+
+run ./test/bin/network
+
+run ./test/bin/packets
+
+run ./test/bin/receive
+
+run ./test/bin/system
+
+run ./test/bin/threads
+
+run ./test/bin/utils
+
+run ./test/bin/version

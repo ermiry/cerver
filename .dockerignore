@@ -1,0 +1,15 @@
+.git
+.vscode
+benchmarks/bin
+benchmarks/objs
+bin
+coverage
+coverage-integration
+docs
+examples/bin
+examples/objs
+fuzz-artifacts
+objs
+test/bin
+test/objs
+uploads

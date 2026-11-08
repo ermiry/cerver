@@ -12,7 +12,8 @@ Credentials *credentials_new (
 	const char *username, const char *password
 ) {
 
-	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
+	// zeroed, the whole structure is sent to the cerver
+	Credentials *credentials = (Credentials *) calloc (1, sizeof (Credentials));
 	if (credentials) {
 		(void) strncpy (credentials->username, username, USERNAME_SIZE - 1);
 		(void) strncpy (credentials->password, password, PASSWORD_SIZE - 1);

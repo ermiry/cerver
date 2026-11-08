@@ -79,7 +79,10 @@ extern void htab_set_key_comparator (
 
 // creates a new htab
 // size - how many buckets do you want - more buckets = less collisions
-// hash - custom method to hash the key for insertion, NULL for default
+// it is rounded up to a power of 2, and 0 uses HTAB_DEFAULT_INIT_SIZE
+// the table doubles its size when it is 3/4 full,
+// except when a custom key_create method is set
+// hash - custom method to hash the key for insertion, NULL for default (FNV-1a)
 // delete_data - custom method to delete your data, NULL for no delete when htab gets destroyed
 extern Htab *htab_create (
 	size_t size,
@@ -103,7 +106,7 @@ extern bool htab_contains_key (
 );
 
 // inserts a new value to the htab associated with its key
-// returns 0 on success, 1 on error
+// returns 0 on success, 1 on error or if the key already exists
 extern int htab_insert (
 	Htab *ht, 
 	const void *key, size_t key_size, 

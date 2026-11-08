@@ -155,9 +155,15 @@ struct _PacketHeader {
 
 	u16 sock_fd;				// used in when working with load balancers
 
+	// the protocol of the sender, packet_check () validates it with the local one
+	PacketVersion version;
+
 };
 
 typedef struct _PacketHeader PacketHeader;
+
+// the protocol id and version of this process, to send them in every header
+CERVER_PUBLIC PacketVersion packet_version_local (void);
 
 CERVER_PUBLIC PacketHeader *packet_header_new (void);
 
@@ -403,16 +409,6 @@ CERVER_EXPORT u8 packet_set_packet_ref (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_generate (Packet *packet);
 
-// initializes a packet with request related values
-CERVER_EXPORT void packet_init_request (
-	Packet *packet,
-	const PacketType packet_type,
-	const u32 request_type
-);
-
-// initializes an already allocated packet as ping request
-CERVER_EXPORT void packet_init_ping (Packet *packet);
-
 // creates a request packet that is ready to be sent
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_request (
@@ -424,6 +420,16 @@ CERVER_EXPORT Packet *packet_create_request (
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_ping (void);
 
+// initializes an already allocated packet with request related values
+CERVER_EXPORT void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
+// initializes an already allocated packet as a ping request
+CERVER_EXPORT void packet_init_ping (Packet *packet);
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
@@ -432,17 +438,19 @@ CERVER_EXPORT Packet *packet_generate_request (
 	const void *data, const size_t data_size
 );
 
-CERVER_PRIVATE u8 packet_send_actual (
-	const Packet *packet,
-	int flags, size_t *total_sent,
-	struct _Client *client, struct _Connection *connection
-);
-
 // sends a packet using its network values
 // raw flag to send a raw packet (only the data that was set to the packet, without any header)
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
+);
+
+// sends a packet of a connection's send queue
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	struct _Client *client, struct _Connection *connection
 );
 
 // works just as packet_send () but the socket's write mutex won't be locked
@@ -533,7 +541,9 @@ CERVER_PUBLIC u8 packet_route_between_connections (
 	PacketHeader *header, size_t *sent
 );
 
-// check if packet has a compatible protocol id and a version
+// check if packet has a compatible protocol id and a version:
+// the same protocol id and major, and a minor that is not newer than the local one
+// the version is not part of the packet header, so a received packet has the initial one
 // returns false on a bad packet
 CERVER_EXPORT bool packet_check (const Packet *packet);
 
