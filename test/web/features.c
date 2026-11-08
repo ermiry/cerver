@@ -150,6 +150,16 @@ static void features_plain_handler (
 
 }
 
+// GET /features/unanswered returns without a response, cerver answers it with 500
+static void features_unanswered_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+}
+
 static void features_items_create (void) {
 
 	size_t length = (size_t) snprintf (features_items, FEATURES_ITEMS_SIZE, "[");
@@ -178,6 +188,7 @@ static void features_routes (HttpCerver *http_cerver) {
 	(void) http_group_get (features, "stream", features_stream_handler);
 	(void) http_group_post (features, "echo", features_echo_handler);
 	(void) http_group_get (features, "client", features_client_handler);
+	(void) http_group_get (features, "unanswered", features_unanswered_handler);
 
 	HttpGroup *plain = http_cerver_group_create (http_cerver, "plain");
 	(void) http_group_get (plain, "small", features_plain_handler);
