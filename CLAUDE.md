@@ -23,7 +23,9 @@ make clean
 make install            # copy libcerver.so to /usr/local/lib and headers to /usr/local/include
 ```
 
-`compile.sh` builds library, examples and tests with both gcc and g++ in production mode. Keep code compiling cleanly under both, with the warning flags in `COMMON` (`-Wpedantic -pedantic-errors` for C). The Dockerfiles use `gcc:16.2` and `debian:trixie-slim` (`Dockerfile.fuzz` keeps clang on `ubuntu:24.04`).
+`compile.sh` builds library, examples and tests with both gcc and g++ in production mode. Keep code compiling cleanly under both, with the warning flags in `COMMON` (`-Wpedantic -pedantic-errors` for C). The Dockerfiles use `gcc:16.2` and `debian:trixie-slim` (`Dockerfile.fuzz` keeps clang on `ubuntu:24.04`), and the workflow jobs that compile on the runner use `container: gcc:16.2` (the sanitizers run in a `docker run` of that image, because TSan needs the host's `sysctl`).
+
+`src/cerver/http/parser/` (llhttp, from the `http-optimizations` branch) is out of `SOURCES` (`LLHTTPDIR` in the `makefile`) until it replaces `http_parser.c` in the phase F2 of `roadmap.md`.
 
 Run an example: `LD_LIBRARY_PATH=bin/ ./examples/bin/welcome`
 
@@ -49,7 +51,7 @@ How tests are linked (see the `units`, `integration-*` and `testhandler` targets
 - Fuzzing: `test/fuzz/*.c` are libFuzzer targets (`request`, `multipart`, `url`, `json`, `jwt`, `tree`) built with `make TYPE=test CC=clang fuzz` in `Dockerfile.fuzz`; `SECONDS_PER_TARGET=30 bash test/fuzz.sh [target ...]` runs them from the seeds in `test/fuzz/corpus/` and leaves crashes in `fuzz-artifacts/`.
 - `bash test/performance.sh` (needs valgrind) fails on allocations per request above the current ones, load errors or 503s, req/s below half of `benchmarks/baseline.txt` for the architecture, or a routes tree less than 2x faster than the 2.0b-58 matcher on the synthetic tables of `benchmarks/routes/` (made by `benchmarks/generate.py`). `bash test/nginx/run.sh` runs the `test/web/features.c` server behind nginx (`NGINX_IMAGES`, by default the version of production, 1.31.6, and the stable one, 1.30.6), with an upstream `keepalive`, the forwarded headers and a location without buffering: the `test/client/web/features.c` client with `FEATURES_PROXY=1` (the same client of the standalone `web/features` pair) and then the load, failing on any 502 or upstream reset.
 - `test/http/features.c` is a web cerver in the same process for the headers that cerver adds (Date, X-Request-Id, CORS, Vary), ETag / 304, gzip, streams, chunked bodies with trailers, the client's address and the metrics; `test/http/{date,conditional,compression,proxy}.c` are their units.
-- `.github/workflows/nightly.yml` runs the TSan pairs, the flaky hunter, long fuzzing, performance and nginx.
+- `.github/workflows/scheduled.yml` runs the TSan pairs, the flaky hunter, the fuzzing of 30 minutes per target, performance and nginx. It only has `workflow_dispatch`: a cron runs only from the default branch, so the dispatcher of `master` launches it on each branch.
 - The routes tree is covered by `test/http/tree.c` (match table, registration errors, inheritance, middlewares, compatibility, group roots, admin routes in groups, the routes json, fuzz) and end to end by `test/http/receive.c` and the `test/web/router.c` pair. `make tree` builds `benchmarks/bin/tree`.
 - `test/bin/version` checks that `CERVER_VERSION` in `include/cerver/version.h` matches `version.txt` (run by CI on `master`/`*beta`).
 
@@ -94,3 +96,10 @@ HTTP layer (`http/`), used when the cerver type is `CERVER_TYPE_WEB`:
 - `CHANGELOG.md` holds only the current version's changes, grouped under headings (`## HTTP`, `## Tests`, …), one line per commit message.
 - Version bumps are a dedicated commit ("Updated version to Beta 2.0b-N") that updates `version.txt`, `include/cerver/version.h` (version, name, date, time), `ARG CERVER_VERSION` in `Dockerfile`, `cerver-install.sh`, and replaces `CHANGELOG.md` with that version's commit messages. `version.txt` and `CERVER_VERSION` must match or the version CI check fails.
 - `docs/` is a git submodule (`ermiry/cerver-docs`).
+
+## Branches
+
+- `nightly` is the experimental 2.1 line (event loop, keep-alive, named pools, llhttp, WebSocket, TLS, HTTP/2), planned phase by phase in `roadmap.md`; its betas go to `nightly-beta` as 2.1b-N ("Nightly Beta"). `http` / `http-beta` is the stable 2.0 line, `core` / `beta` the 1.x line.
+- `http` is merged into `nightly` after each 2.0b / 2.0rc / 2.0.N, never rebased, and nothing goes from `nightly` to `http` until the 2.1 integration. A fix for the 2.0 is made in `http` and arrives here with that merge.
+- `.gitattributes` keeps the `nightly` side of `version.txt`, `include/cerver/version.h`, `Dockerfile`, `cerver-install.sh`, `CHANGELOG.md` and `roadmap.md` in those merges with `merge=ours`, which needs `git config merge.ours.driver true` in every clone (without it git uses its normal merge for those files).
+- The gate of a `nightly` beta is the one of `http` plus the long runs of `scheduled.yml` (`roadmap.md` §5).
