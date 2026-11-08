@@ -232,6 +232,7 @@ JobQueue *job_queue_new (void) {
 		job_queue->requested_job = NULL;
 
 		job_queue->running = false;
+		job_queue->handler_thread_id = 0;
 		job_queue->handler = NULL;
 	}
 
@@ -243,6 +244,9 @@ void job_queue_delete (void *job_queue_ptr) {
 
 	if (job_queue_ptr) {
 		JobQueue *job_queue = (JobQueue *) job_queue_ptr;
+
+		// its thread must end before anything it uses is released
+		(void) job_queue_stop (job_queue);
 
 		if (job_queue->rwmutex) {
 			(void) pthread_mutex_lock (job_queue->rwmutex);
@@ -347,11 +351,7 @@ static unsigned int job_queue_push_internal (
 
 	(void) pthread_mutex_lock (job_queue->rwmutex);
 
-	retval = dlist_insert_after (
-		job_queue->queue,
-		dlist_end (job_queue->queue),
-		job_ptr
-	);
+	retval = dlist_insert_at_end (job_queue->queue, job_ptr);
 
 	bsem_post (job_queue->has_jobs);
 
@@ -412,11 +412,7 @@ static unsigned int job_queue_push_job_with_id_internal (
 	}
 
 	else {
-		retval = dlist_insert_after (
-			job_queue->queue,
-			dlist_end (job_queue->queue),
-			job
-		);
+		retval = dlist_insert_at_end (job_queue->queue, job);
 	}
 
 	(void) pthread_mutex_unlock (job_queue->rwmutex);
@@ -561,7 +557,7 @@ static void *job_queue_jobs (void *job_queue_ptr) {
 	JobQueue *job_queue = (JobQueue *) job_queue_ptr;
 
 	Job *job = NULL;
-	while (job_queue->running) {
+	while (__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE)) {
 		bsem_wait (job_queue->has_jobs);
 
 		job = (Job *) job_queue_pull (job_queue);
@@ -587,7 +583,7 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 	JobQueue *job_queue = (JobQueue *) job_queue_ptr;
 
 	JobHandler *job_handler = NULL;
-	while (job_queue->running) {
+	while (__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE)) {
 		bsem_wait (job_queue->has_jobs);
 
 		job_handler = (JobHandler *) job_queue_pull (job_queue);
@@ -620,10 +616,11 @@ static unsigned int job_queue_start_internal (JobQueue *job_queue) {
 
 	unsigned int retval = 1;
 
-	job_queue->running = true;
+	__atomic_store_n (&job_queue->running, true, __ATOMIC_RELEASE);
+	// joined by job_queue_stop (), before the queue can be deleted
 	switch (job_queue->type) {
 		case JOB_QUEUE_TYPE_JOBS:
-			retval = thread_create_detachable (
+			retval = thread_create_joinable (
 				&job_queue->handler_thread_id,
 				job_queue_jobs,
 				job_queue
@@ -631,7 +628,7 @@ static unsigned int job_queue_start_internal (JobQueue *job_queue) {
 			break;
 
 		case JOB_QUEUE_TYPE_HANDLERS:
-			retval = thread_create_detachable (
+			retval = thread_create_joinable (
 				&job_queue->handler_thread_id,
 				job_queue_handlers,
 				job_queue
@@ -651,7 +648,7 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 
 	if (job_queue) {
 		if (job_queue_start_internal (job_queue)) {
-			job_queue->running = false;
+			__atomic_store_n (&job_queue->running, false, __ATOMIC_RELEASE);
 			errors = 1;
 		}
 	}
@@ -674,14 +671,34 @@ void job_queue_signal (JobQueue *job_queue) {
 
 }
 
+// waits for the queue thread to end its current job
+// a job that stops its own queue can not wait for itself,
+// so its thread is detached and ends after the job returns
+static void job_queue_join (JobQueue *job_queue) {
+
+	if (job_queue->handler_thread_id) {
+		if (pthread_equal (job_queue->handler_thread_id, pthread_self ())) {
+			(void) pthread_detach (job_queue->handler_thread_id);
+		}
+
+		else {
+			(void) pthread_join (job_queue->handler_thread_id, NULL);
+		}
+
+		job_queue->handler_thread_id = 0;
+	}
+
+}
+
 unsigned int job_queue_stop (JobQueue *job_queue) {
 
 	unsigned int retval = 1;
 
 	if (job_queue) {
-		if (job_queue->running) {
-			job_queue->running = false;
+		// the queue thread reads it while it waits for jobs
+		if (__atomic_exchange_n (&job_queue->running, false, __ATOMIC_ACQ_REL)) {
 			bsem_post (job_queue->has_jobs);
+			job_queue_join (job_queue);
 			retval = 0;
 		}
 	}
