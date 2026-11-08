@@ -29,7 +29,7 @@ typedef enum Protocol {
 
 } Protocol;
 
-#define SOCK_SIZEOF_MEMBER(type, member) (sizeof(((type *) NULL)->member))
+#define SOCK_SIZEOF_MEMBER(type, member) (sizeof (((type *) NULL)->member))
 
 // gets the ip related to the hostname
 // returns a newly allocated c string if found
@@ -39,6 +39,7 @@ CERVER_PUBLIC char *network_hostname_to_ip (
 );
 
 // enable/disable blocking on a socket
+// blocking = false sets O_NONBLOCK
 // true on success, false if there was an error
 CERVER_PUBLIC bool sock_set_blocking (
 	int32_t fd, bool blocking
@@ -69,10 +70,22 @@ CERVER_PUBLIC int sock_set_timeout (
 	int sock_fd, time_t timeout
 );
 
-// sets the socket's reusable options
+// sets a timeout (in seconds) for the socket's send operations
+// a send that can not make progress in that time fails with EAGAIN
+// returns 0 on success, 1 on error
+CERVER_PUBLIC int sock_set_send_timeout (
+	int sock_fd, time_t timeout
+);
+
+// sets the socket's reusable address option (SO_REUSEADDR)
 // this should avoid errors when binding sockets
 // returns 0 on success, 1 on any error
 CERVER_PUBLIC int sock_set_reusable (int sock_fd);
+
+// sets the socket's reusable port option (SO_REUSEPORT)
+// other sockets can bind the same port, so the kernel balances them
+// returns 0 on success, 1 on any error
+CERVER_PUBLIC int sock_set_reusable_port (int sock_fd);
 
 #ifdef __cplusplus
 }
