@@ -21,9 +21,12 @@
 #include <cerver/cerver.h>
 #include <cerver/network.h>
 
+#include <cerver/types/string.h>
+
 #include <cerver/threads/thpool.h>
 
 #include <cerver/http/http.h>
+#include <cerver/http/metrics.h>
 #include <cerver/http/request.h>
 #include <cerver/http/response.h>
 #include <cerver/http/route.h>
@@ -46,6 +49,10 @@
 // - sock_set_blocking () was inverted and SO_REUSEADDR also set SO_REUSEPORT
 // - the first of two HTTP cervers in a process released the common responses
 //   and the pools of the other, and the multi-parts pool was never released
+// - a handler that returned without a response closed the connection without one
+// - a full non blocking socket buffer was retried a few times in a hot loop,
+//   so a response, a file or a video arrived truncated
+// - a file or a video opened as fd 0 was not sent
 // coverage holes:
 // - a drain that times out keeps the cerver memory on purpose (see thpool.c)
 
@@ -96,6 +103,22 @@
 
 #define SERVER_TEST_ALARM					256
 
+#define SERVER_TEST_MILLISECONDS_PER_SECOND	1000
+
+// a small receive window fills the socket buffer of the cerver right away
+#define SERVER_TEST_SMALL_RECEIVE_BUFFER	(1 << 12)
+
+// 2^27 ns, the client starts reading after many sends found the socket buffer full
+#define SERVER_TEST_READER_DELAY			134217728L
+
+// a poll () rounds its timeout to milliseconds, so the deadline can end a bit earlier
+#define SERVER_TEST_SEND_TIMEOUT_MARGIN		(1 << 7)
+
+#define SERVER_TEST_FILENAME_SIZE			256
+#define SERVER_TEST_FILE_TEMPLATE			"/tmp/cerver-server-XXXXXX.mp4"
+#define SERVER_TEST_FILE_SUFFIX_LENGTH		4
+#define SERVER_TEST_FILE_SIZE				(1 << 22)
+
 static const char *ok_request = {
 	"GET /ok HTTP/1.1\r\n"
 	"Host: localhost\r\n"
@@ -144,7 +167,63 @@ static const char *huge_request_format = {
 	"\r\n"
 };
 
+static const char *unanswered_request = {
+	"GET /unanswered HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *gone_request = {
+	"GET /gone HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *nonblocking_large_request = {
+	"GET /nonblocking/large HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *nonblocking_big_request = {
+	"GET /nonblocking/big HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *nonblocking_file_request = {
+	"GET /nonblocking/file HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *nonblocking_video_request = {
+	"GET /nonblocking/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=0-\r\n"
+	"\r\n"
+};
+
+static const char *zero_file_request = {
+	"GET /zero/file HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"\r\n"
+};
+
+static const char *zero_video_request = {
+	"GET /zero/video HTTP/1.1\r\n"
+	"Host: localhost\r\n"
+	"Range: bytes=0-\r\n"
+	"\r\n"
+};
+
+static const char *null_device = { "/dev/null" };
+
+static const char *unanswered_metric = { "cerver_http_requests_unanswered_total 1\n" };
+
 static const char *status_ok = { "HTTP/1.1 200" };
+static const char *status_partial_content = { "HTTP/1.1 206" };
+static const char *status_server_error = { "HTTP/1.1 500" };
 static const char *status_payload_too_large = { "HTTP/1.1 413" };
 static const char *status_request_timeout = { "HTTP/1.1 408" };
 static const char *status_service_unavailable = { "HTTP/1.1 503" };
@@ -316,6 +395,147 @@ static void server_test_huge_handler (
 
 }
 
+// GET /unanswered returns without sending a response
+static void server_test_unanswered_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+}
+
+static unsigned int gone_answered = 0;
+
+// GET /gone answers after its client has closed the connection
+static void server_test_gone_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) pthread_mutex_lock (&gate_mutex);
+	gate_waiting += 1;
+	while (!gate_open) (void) pthread_cond_wait (&gate_cond, &gate_mutex);
+	(void) pthread_mutex_unlock (&gate_mutex);
+
+	(void) http_response_send (oki_doki, http_receive);
+
+	(void) __atomic_add_fetch (&gone_answered, 1, __ATOMIC_SEQ_CST);
+
+}
+
+// the result of the last response sent by a handler with a non blocking socket
+static unsigned int nonblocking_done = 0;
+static unsigned int nonblocking_failed = 0;
+static unsigned long nonblocking_milliseconds = 0;
+
+static char server_test_file[SERVER_TEST_FILENAME_SIZE] = { 0 };
+
+static double server_test_now (void);
+
+// the handler's socket stops blocking, so a full socket buffer answers send () with EAGAIN
+static double server_test_nonblocking_start (const HttpReceive *http_receive) {
+
+	(void) sock_set_blocking (http_receive->cr->connection->socket->sock_fd, false);
+
+	return server_test_now ();
+
+}
+
+static void server_test_nonblocking_end (const double start, const u8 result) {
+
+	const double milliseconds = (server_test_now () - start) * SERVER_TEST_MILLISECONDS_PER_SECOND;
+
+	__atomic_store_n (&nonblocking_milliseconds, (unsigned long) milliseconds, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&nonblocking_failed, (unsigned int) (result != 0), __ATOMIC_SEQ_CST);
+	(void) __atomic_add_fetch (&nonblocking_done, 1, __ATOMIC_SEQ_CST);
+
+}
+
+static u8 server_test_large_send (const HttpReceive *http_receive);
+
+// GET /nonblocking/large
+static void server_test_nonblocking_large_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_nonblocking_start (http_receive);
+
+	server_test_nonblocking_end (start, server_test_large_send (http_receive));
+
+}
+
+// GET /nonblocking/big, the client never reads it
+static void server_test_nonblocking_big_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_nonblocking_start (http_receive);
+
+	server_test_nonblocking_end (
+		start,
+		http_response_render_text (http_receive, HTTP_STATUS_OK, big_response, SERVER_TEST_BIG_RESPONSE_SIZE)
+	);
+
+}
+
+// GET /nonblocking/file
+static void server_test_nonblocking_file_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_nonblocking_start (http_receive);
+
+	server_test_nonblocking_end (start, http_response_send_file (http_receive, HTTP_STATUS_OK, server_test_file));
+
+}
+
+// GET /zero/file, in a child process, closes its stdin so the file is opened as fd 0
+static void server_test_zero_file_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) close (STDIN_FILENO);
+
+	(void) http_response_send_file (http_receive, HTTP_STATUS_OK, server_test_file);
+
+}
+
+// GET /zero/video, in a child process, closes its stdin so the video is opened as fd 0
+static void server_test_zero_video_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) close (STDIN_FILENO);
+
+	(void) http_response_handle_video (http_receive, server_test_file);
+
+}
+
+// GET /nonblocking/video
+static void server_test_nonblocking_video_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	const double start = server_test_nonblocking_start (http_receive);
+
+	server_test_nonblocking_end (start, http_response_handle_video (http_receive, server_test_file));
+
+}
+
 #pragma endregion
 
 #pragma region server
@@ -382,12 +602,11 @@ static char server_test_large_byte (const size_t position) {
 
 }
 
-// GET /group/large, a response bigger than the socket buffer is sent in many partial writes
-static void server_test_large_handler (
-	const HttpReceive *http_receive, const HttpRequest *request
-) {
+// sends a response bigger than the socket buffer, in many partial writes
+// returns 0 on success, 1 on error
+static u8 server_test_large_send (const HttpReceive *http_receive) {
 
-	(void) request;
+	u8 retval = 1;
 
 	char *body = (char *) malloc (SERVER_TEST_LARGE_RESPONSE_SIZE);
 	if (body) {
@@ -399,12 +618,25 @@ static void server_test_large_handler (
 		HttpResponse *response = http_response_create (HTTP_STATUS_OK, body, SERVER_TEST_LARGE_RESPONSE_SIZE);
 		if (response) {
 			(void) http_response_add_content_length_header (response, SERVER_TEST_LARGE_RESPONSE_SIZE);
-			(void) http_response_send (response, http_receive);
+			retval = http_response_send (response, http_receive);
 			http_response_delete (response);
 		}
 
 		free (body);
 	}
+
+	return retval;
+
+}
+
+// GET /group/large
+static void server_test_large_handler (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) request;
+
+	(void) server_test_large_send (http_receive);
 
 }
 
@@ -427,6 +659,22 @@ static void server_test_routes (HttpCerver *http_cerver) {
 
 	HttpGroup *group = http_cerver_group_create (http_cerver, "group");
 	test_check_ptr (http_group_get (group, "large", server_test_large_handler));
+
+	HttpRoute *unanswered_route = http_route_create (REQUEST_METHOD_GET, "unanswered", server_test_unanswered_handler);
+	http_cerver_route_register (http_cerver, unanswered_route);
+
+	HttpRoute *gone_route = http_route_create (REQUEST_METHOD_GET, "gone", server_test_gone_handler);
+	http_cerver_route_register (http_cerver, gone_route);
+
+	HttpGroup *nonblocking = http_cerver_group_create (http_cerver, "nonblocking");
+	test_check_ptr (http_group_get (nonblocking, "large", server_test_nonblocking_large_handler));
+	test_check_ptr (http_group_get (nonblocking, "big", server_test_nonblocking_big_handler));
+	test_check_ptr (http_group_get (nonblocking, "file", server_test_nonblocking_file_handler));
+	test_check_ptr (http_group_get (nonblocking, "video", server_test_nonblocking_video_handler));
+
+	HttpGroup *zero = http_cerver_group_create (http_cerver, "zero");
+	test_check_ptr (http_group_get (zero, "file", server_test_zero_file_handler));
+	test_check_ptr (http_group_get (zero, "video", server_test_zero_video_handler));
 
 }
 
@@ -951,6 +1199,255 @@ static void test_server_send_timeout (void) {
 
 #pragma endregion
 
+#pragma region responses
+
+static size_t server_test_unanswered_count (const ServerTest *server) {
+
+	const HttpCerver *http_cerver = (const HttpCerver *) server->cerver->cerver_data;
+
+	return CERVER_STATS_GET (http_cerver->n_unanswered_requests);
+
+}
+
+// a handler that returns without a response is answered with 500 and counted,
+// before, the connection was closed without any response (a proxy answered 502)
+static void test_server_unanswered (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	int fd = server_test_connect (server->port);
+	server_test_send (fd, unanswered_request);
+
+	char response[SERVER_TEST_RESPONSE_SIZE];
+	(void) server_test_read (fd, response);
+	(void) close (fd);
+
+	test_check (server_test_starts_with (response, status_server_error), "the unanswered request is not a 500");
+	test_check_ptr (strstr (response, HTTP_RESPONSE_CONNECTION_CLOSE_HEADER));
+	test_check_unsigned_eq (server_test_unanswered_count (server), 1, NULL);
+
+	// a handler that responds is not counted
+	server_test_request (server->port, ok_request, status_ok);
+	test_check_unsigned_eq (server_test_unanswered_count (server), 1, NULL);
+
+	String *metrics = http_cerver_metrics_generate ((const HttpCerver *) server->cerver->cerver_data);
+	test_check_ptr (metrics);
+	test_check_ptr (strstr (metrics->str, unanswered_metric));
+	str_delete (metrics);
+
+	server_test_stop (server);
+
+}
+
+static void server_test_wait_count (const unsigned int *count, const unsigned int expected) {
+
+	const double deadline = server_test_now () + SERVER_TEST_JOIN_TIMEOUT;
+	while ((__atomic_load_n (count, __ATOMIC_SEQ_CST) < expected) && (server_test_now () < deadline)) {
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	test_check (__atomic_load_n (count, __ATOMIC_SEQ_CST) >= expected, "the handler did not end in time");
+
+}
+
+// a response to a client that already left is still an answer,
+// the request is not answered again with 500
+static void test_server_unanswered_gone (void) {
+
+	server_test_gate_reset ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	const unsigned int answered = __atomic_load_n (&gone_answered, __ATOMIC_SEQ_CST);
+
+	int fd = server_test_connect (server->port);
+	server_test_send (fd, gone_request);
+	server_test_gate_wait_for (1);
+
+	// a close with a zero linger sends a RST
+	const struct linger reset = { 1, 0 };
+	(void) setsockopt (fd, SOL_SOCKET, SO_LINGER, &reset, sizeof (struct linger));
+	(void) close (fd);
+
+	server_test_gate_open ();
+	server_test_wait_count (&gone_answered, answered + 1);
+
+	server_test_request (server->port, ok_request, status_ok);
+	test_check_unsigned_eq (server_test_unanswered_count (server), 0, NULL);
+
+	server_test_stop (server);
+
+}
+
+// a client with a small receive window, so the cerver finds its socket buffer full
+static int server_test_connect_small (const u16 port) {
+
+	int fd = socket (AF_INET, SOCK_STREAM, 0);
+	test_check (fd > -1, "socket () failed");
+
+	const int size = SERVER_TEST_SMALL_RECEIVE_BUFFER;
+	(void) setsockopt (fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof (int));
+
+	struct sockaddr_in address;
+	(void) memset (&address, 0, sizeof (struct sockaddr_in));
+	address.sin_family = AF_INET;
+	address.sin_port = htons (port);
+	(void) inet_pton (AF_INET, SERVER_TEST_ADDRESS, &address.sin_addr);
+
+	test_check_int_eq (connect (fd, (const struct sockaddr *) &address, sizeof (struct sockaddr_in)), 0, NULL);
+
+	(void) sock_set_timeout (fd, SERVER_TEST_RECEIVE_TIMEOUT);
+
+	return fd;
+
+}
+
+// a file with the bytes of the large response, the extension makes it a video
+static void server_test_file_create (void) {
+
+	(void) strncpy (server_test_file, SERVER_TEST_FILE_TEMPLATE, SERVER_TEST_FILENAME_SIZE - 1);
+
+	const int fd = mkstemps (server_test_file, SERVER_TEST_FILE_SUFFIX_LENGTH);
+	test_check (fd > -1, "mkstemps () failed");
+
+	char *contents = (char *) malloc (SERVER_TEST_FILE_SIZE);
+	test_check_ptr (contents);
+	for (size_t idx = 0; idx < SERVER_TEST_FILE_SIZE; idx++) {
+		contents[idx] = server_test_large_byte (idx);
+	}
+
+	size_t written = 0;
+	while (written < SERVER_TEST_FILE_SIZE) {
+		const ssize_t result = write (fd, contents + written, SERVER_TEST_FILE_SIZE - written);
+		test_check (result > 0, "failed to write the test file");
+		written += (size_t) result;
+	}
+
+	(void) close (fd);
+
+	free (contents);
+
+}
+
+// reads the whole response, every byte of its body arrives once and in order
+static void server_test_expect_body (
+	const int fd, const char *status, const size_t body_size
+) {
+
+	const size_t size = body_size + SERVER_TEST_RESPONSE_SIZE;
+	char *response = (char *) malloc (size);
+	test_check_ptr (response);
+
+	const size_t total = server_test_read_large (fd, response, size);
+
+	test_check (server_test_starts_with (response, status), "unexpected status of the response");
+
+	const char *end = strstr (response, headers_end);
+	test_check_ptr (end);
+
+	const char *body = end + strlen (headers_end);
+	const size_t body_len = total - (size_t) (body - response);
+	test_check_unsigned_eq (body_len, body_size, NULL);
+
+	bool intact = true;
+	for (size_t idx = 0; intact && (idx < body_len); idx++) {
+		intact = (body[idx] == server_test_large_byte (idx));
+	}
+
+	test_check (intact, "the response arrived with wrong bytes");
+
+	free (response);
+
+}
+
+// the client starts reading late, then the whole body arrives
+static void server_test_nonblocking_response (
+	const u16 port, const char *request,
+	const char *status, const size_t body_size
+) {
+
+	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+
+	int fd = server_test_connect_small (port);
+	server_test_send (fd, request);
+	server_test_sleep (SERVER_TEST_READER_DELAY);
+	server_test_expect_body (fd, status, body_size);
+	(void) close (fd);
+
+	server_test_wait_count (&nonblocking_done, done + 1);
+	test_check_unsigned_eq (__atomic_load_n (&nonblocking_failed, __ATOMIC_SEQ_CST), 0, NULL);
+
+}
+
+// a full non blocking socket buffer waits until the client reads,
+// before, send () and sendfile () gave up after a few retries and the response arrived truncated
+static void test_server_nonblocking (void) {
+
+	server_test_file_create ();
+
+	ServerTestOptions options = server_test_options_default ();
+	ServerTest *server = server_test_start (&options);
+
+	server_test_nonblocking_response (
+		server->port, nonblocking_large_request, status_ok, SERVER_TEST_LARGE_RESPONSE_SIZE
+	);
+
+	server_test_nonblocking_response (
+		server->port, nonblocking_file_request, status_ok, SERVER_TEST_FILE_SIZE
+	);
+
+	server_test_nonblocking_response (
+		server->port, nonblocking_video_request, status_partial_content, HTTP_RESPONSE_VIDEO_CHUNK_SIZE
+	);
+
+	server_test_stop (server);
+
+	(void) unlink (server_test_file);
+
+}
+
+// a non blocking socket that never drains fails when the cerver's send timeout ends,
+// before, it failed right away after a few retries
+static void test_server_nonblocking_timeout (void) {
+
+	ServerTestOptions options = server_test_options_default ();
+	options.send_timeout = SERVER_TEST_SEND_TIMEOUT;
+	ServerTest *server = server_test_start (&options);
+
+	big_response = (char *) malloc (SERVER_TEST_BIG_RESPONSE_SIZE);
+	test_check_ptr (big_response);
+	(void) memset (big_response, 'a', SERVER_TEST_BIG_RESPONSE_SIZE);
+
+	const unsigned int done = __atomic_load_n (&nonblocking_done, __ATOMIC_SEQ_CST);
+
+	int fd = server_test_connect_small (server->port);
+	server_test_send (fd, nonblocking_big_request);
+
+	server_test_wait_count (&nonblocking_done, done + 1);
+	(void) close (fd);
+
+	test_check_unsigned_eq (__atomic_load_n (&nonblocking_failed, __ATOMIC_SEQ_CST), 1, NULL);
+
+	const unsigned long milliseconds = __atomic_load_n (&nonblocking_milliseconds, __ATOMIC_SEQ_CST);
+	test_check (
+		milliseconds >= ((SERVER_TEST_SEND_TIMEOUT * SERVER_TEST_MILLISECONDS_PER_SECOND) - SERVER_TEST_SEND_TIMEOUT_MARGIN),
+		"the non blocking response did not wait for its send timeout"
+	);
+
+	// the only thread is free again
+	server_test_request (server->port, ok_request, status_ok);
+
+	server_test_stop (server);
+
+	free (big_response);
+	big_response = NULL;
+
+}
+
+#pragma endregion
+
 #pragma region overload
 
 static void server_test_check_unavailable (const char *response) {
@@ -1176,7 +1673,13 @@ static void test_server_signal (void) {
 	ServerTestOptions options = server_test_options_default ();
 	ServerTest *server = server_test_start (&options);
 
-	test_check_int_eq (pthread_kill (server->thread, SIGUSR1), 0, NULL);
+	// a signal that arrives between two accept () is lost (cerver_run () handles that case),
+	// so it is sent again until one interrupts accept ()
+	const double deadline = server_test_now () + SERVER_TEST_JOIN_TIMEOUT;
+	while (cerver_is_running (server->cerver) && (server_test_now () < deadline)) {
+		test_check_int_eq (pthread_kill (server->thread, SIGUSR1), 0, NULL);
+		server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
 
 	server_test_join (server);
 	test_check_false (cerver_is_running (server->cerver));
@@ -1294,6 +1797,69 @@ static void test_server_out_of_fds (void) {
 	int status = 0;
 	(void) waitpid (pid, &status, 0);
 	test_check (WIFEXITED (status) && (WEXITSTATUS (status) == EXIT_SUCCESS), "the out of fds cerver did not stop");
+
+}
+
+// the child keeps an open stdin until its handler closes it,
+// so the file of its only request is opened as fd 0
+static void server_test_zero_child (const u16 port) {
+
+	const int null_fd = open (null_device, O_RDONLY);
+	if (null_fd > STDIN_FILENO) {
+		(void) dup2 (null_fd, STDIN_FILENO);
+		(void) close (null_fd);
+	}
+
+	ServerTestOptions options = server_test_options_default ();
+	server_test_files_cerver = server_test_cerver_create (port, &options);
+
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (struct sigaction));
+	action.sa_handler = server_test_files_signal_handler;
+	(void) sigemptyset (&action.sa_mask);
+	(void) sigaction (SIGTERM, &action, NULL);
+
+	(void) cerver_start (server_test_files_cerver);
+	(void) cerver_teardown (server_test_files_cerver);
+
+	_exit (EXIT_SUCCESS);
+
+}
+
+static void server_test_zero_request (
+	const char *request, const char *status, const size_t body_size
+) {
+
+	const u16 port = (u16) server_test_port++;
+
+	(void) fflush (stdout);
+	pid_t pid = fork ();
+	test_check (pid >= 0, "fork () failed");
+
+	if (pid == 0) server_test_zero_child (port);
+
+	int fd = server_test_connect (port);
+	server_test_send (fd, request);
+	server_test_expect_body (fd, status, body_size);
+	(void) close (fd);
+
+	(void) kill (pid, SIGTERM);
+
+	int exit_status = 0;
+	(void) waitpid (pid, &exit_status, 0);
+	test_check (WIFEXITED (exit_status) && (WEXITSTATUS (exit_status) == EXIT_SUCCESS), "the fd 0 cerver did not stop");
+
+}
+
+// a file or a video opened as fd 0 is sent, before, fd 0 was taken as an error to open them
+static void test_server_zero_fd (void) {
+
+	server_test_file_create ();
+
+	server_test_zero_request (zero_file_request, status_ok, SERVER_TEST_FILE_SIZE);
+	server_test_zero_request (zero_video_request, status_partial_content, HTTP_RESPONSE_VIDEO_CHUNK_SIZE);
+
+	(void) unlink (server_test_file);
 
 }
 
@@ -1457,6 +2023,11 @@ void http_tests_server (void) {
 	test_server_request_timeout ();
 	test_server_send_timeout ();
 
+	test_server_unanswered ();
+	test_server_unanswered_gone ();
+	test_server_nonblocking ();
+	test_server_nonblocking_timeout ();
+
 	test_server_overload_reject ();
 	test_server_overload_wait ();
 
@@ -1469,6 +2040,7 @@ void http_tests_server (void) {
 	test_server_stop_before_start ();
 
 	test_server_out_of_fds ();
+	test_server_zero_fd ();
 
 	(void) alarm (0);
 
