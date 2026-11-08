@@ -250,6 +250,8 @@ struct _HttpCerver {
 
 	size_t n_timeout_requests;		// answered with 408
 
+	size_t n_unanswered_requests;	// answered with 500 because the handler did not respond
+
 	// the headers that cerver adds to every response
 	bool date_header;
 	bool request_id;
@@ -960,8 +962,9 @@ struct _HttpReceive {
 	size_t body_size;
 	unsigned int n_parts;
 
-	// a response was already sent before the request was completed,
-	// the rest of the request is not handled
+	// cerver already tried to send a response, even if it failed:
+	// before the request was completed, the rest of the request is not handled,
+	// after its handler, a request without one is answered with 500
 	bool responded;
 
 	// the response that the handler sends in pieces

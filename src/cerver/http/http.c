@@ -327,6 +327,8 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->n_timeout_requests = 0;
 
+		http_cerver->n_unanswered_requests = 0;
+
 		http_cerver->date_header = HTTP_CERVER_DEFAULT_DATE_HEADER;
 		http_cerver->request_id = HTTP_CERVER_DEFAULT_REQUEST_ID;
 
@@ -4422,6 +4424,34 @@ static void http_receive_handle_dispatch (HttpReceive *http_receive) {
 
 }
 
+static const char *http_receive_url (const HttpReceive *http_receive) {
+
+	const HttpRequest *request = http_receive->request;
+
+	return (request && request->url) ? request->url->str : "";
+
+}
+
+// a handler that returned without sending a response is answered with 500,
+// instead of closing the connection without one (a proxy answers it with 502)
+static void http_receive_handle_unanswered (HttpReceive *http_receive) {
+
+	if (!http_receive->responded) {
+		cerver_log_with_date (
+			LOG_TYPE_WARNING, LOG_TYPE_HTTP,
+			"http_receive_handle () - the request was not answered - fd %d - %s %s",
+			http_receive->cr->connection->socket->sock_fd,
+			http_request_method_str (http_receive->request->method),
+			http_receive_url (http_receive)
+		);
+
+		(void) http_response_send (server_error, http_receive);
+
+		CERVER_STATS_ADD (http_receive->http_cerver->n_unanswered_requests, 1);
+	}
+
+}
+
 // the endpoint and its authentication were resolved in on_headers_complete,
 // now that the body is complete the request is handled
 static int http_receive_handle_message_completed (http_parser *parser) {
@@ -4439,6 +4469,8 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 			http_receive_handle_dispatch (http_receive);
 			break;
 	}
+
+	http_receive_handle_unanswered (http_receive);
 
 	// only one request is handled by connection,
 	// the parser stops here, so a pipelined request in the same buffer is never parsed
