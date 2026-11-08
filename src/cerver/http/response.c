@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -6,6 +7,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <time.h>
 
 #include <sys/sendfile.h>
 #include <sys/socket.h>
@@ -733,11 +736,81 @@ static bool http_response_socket_is_blocking (const int sock_fd) {
 
 }
 
+// every response that cerver tries to send marks the request as answered,
+// even if the client is already gone, so it is never answered twice
+static void http_response_mark_responded (const HttpReceive *http_receive) {
+
+	((HttpReceive *) http_receive)->responded = true;
+
+}
+
+// the send timeout of the cerver of the connection,
+// a cerver without one uses CERVER_DEFAULT_SEND_TIMEOUT, so a client that never reads
+// can not keep a thread forever
+static time_t http_response_send_timeout (const HttpReceive *http_receive) {
+
+	const Cerver *cerver = http_receive->cr->cerver;
+
+	return (cerver && cerver->send_timeout) ?
+		(time_t) cerver->send_timeout : (time_t) CERVER_DEFAULT_SEND_TIMEOUT;
+
+}
+
+static void http_response_send_deadline (
+	const HttpReceive *http_receive, struct timespec *deadline
+) {
+
+	(void) clock_gettime (CLOCK_MONOTONIC, deadline);
+	deadline->tv_sec += http_response_send_timeout (http_receive);
+
+}
+
+// returns the milliseconds that are left until the deadline, 0 if it has expired
+static int http_response_send_remaining (const struct timespec *deadline) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	const long long remaining =
+		((long long) (deadline->tv_sec - now.tv_sec) * HTTP_RESPONSE_MILLISECONDS_PER_SECOND)
+		+ ((deadline->tv_nsec - now.tv_nsec) / HTTP_RESPONSE_NANOSECONDS_PER_MILLISECOND);
+
+	return (remaining > 0) ? (int) remaining : 0;
+
+}
+
+// waits until a full non blocking socket can be written again
+// returns true if it can be written before the deadline
+static bool http_response_send_wait_writable (
+	const int sock_fd, const struct timespec *deadline
+) {
+
+	bool writable = false;
+
+	int remaining = http_response_send_remaining (deadline);
+	while (remaining > 0) {
+		struct pollfd poll_fd = { .fd = sock_fd, .events = POLLOUT, .revents = 0 };
+
+		const int ready = poll (&poll_fd, 1, remaining);
+		if (ready > 0) {
+			writable = true;
+			break;
+		}
+
+		if ((ready < 0) && (errno != EINTR)) break;
+
+		remaining = http_response_send_remaining (deadline);
+	}
+
+	return writable;
+
+}
+
 // an interrupted send () is always retried,
-// a full non blocking socket buffer (EAGAIN) is retried up to HTTP_RESPONSE_SEND_RETRIES times
+// a full non blocking socket buffer (EAGAIN) is retried when it can be written before the deadline
 // in a blocking socket, EAGAIN means that SO_SNDTIMEO expired without any progress
 static bool http_response_send_can_retry (
-	const int sock_fd, const int error, unsigned int *retries
+	const int sock_fd, const int error, const struct timespec *deadline
 ) {
 
 	bool retry = false;
@@ -750,8 +823,7 @@ static bool http_response_send_can_retry (
 		((error == EAGAIN) || (error == EWOULDBLOCK))
 		&& !http_response_socket_is_blocking (sock_fd)
 	) {
-		*retries += 1;
-		retry = (*retries <= HTTP_RESPONSE_SEND_RETRIES);
+		retry = http_response_send_wait_writable (sock_fd, deadline);
 	}
 
 	return retry;
@@ -796,12 +868,18 @@ static void http_response_parts_advance (
 // like writev (), but with MSG_NOSIGNAL
 // returns 0 on success, 1 on error
 static u8 http_response_send_vector (
-	const Socket *socket, struct iovec *parts, int n_parts
+	const HttpReceive *http_receive, struct iovec *parts, int n_parts
 ) {
 
 	u8 retval = 0;
 
-	unsigned int retries = 0;
+	const Socket *socket = http_receive->cr->connection->socket;
+
+	http_response_mark_responded (http_receive);
+
+	struct timespec deadline = { 0, 0 };
+	http_response_send_deadline (http_receive, &deadline);
+
 	while (n_parts > 0) {
 		struct msghdr message;
 		(void) memset (&message, 0, sizeof (struct msghdr));
@@ -811,9 +889,10 @@ static u8 http_response_send_vector (
 		// MSG_NOSIGNAL: a client that reset the connection returns EPIPE instead of raising SIGPIPE
 		const ssize_t sent = sendmsg (socket->sock_fd, &message, MSG_NOSIGNAL);
 		if (sent < 0) {
-			if (http_response_send_can_retry (socket->sock_fd, errno, &retries)) continue;
+			const int error = errno;
+			if (http_response_send_can_retry (socket->sock_fd, error, &deadline)) continue;
 
-			http_response_send_failed (socket, "sendmsg", errno, parts->iov_len);
+			http_response_send_failed (socket, "sendmsg", error, parts->iov_len);
 
 			retval = 1;
 			break;
@@ -871,9 +950,7 @@ u8 http_response_send_pieces (
 	size_t total = 0;
 	for (int i = 0; i < n_parts; i++) total += parts[i].iov_len;
 
-	const u8 retval = http_response_send_vector (
-		http_receive->cr->connection->socket, parts, n_parts
-	);
+	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent_bytes (http_receive, total);
 
@@ -1325,9 +1402,7 @@ static u8 http_response_message_send (
 
 	const int n_parts = body_length ? HTTP_RESPONSE_MESSAGE_PARTS : HTTP_RESPONSE_MESSAGE_PARTS - 1;
 
-	const u8 retval = http_response_send_vector (
-		http_receive->cr->connection->socket, parts, n_parts
-	);
+	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) {
 		http_response_sent (
@@ -1500,9 +1575,7 @@ static u8 http_response_send_raw (
 
 	const int n_parts = body_len ? HTTP_RESPONSE_PARTS : 1;
 
-	const u8 retval = http_response_send_vector (
-		http_receive->cr->connection->socket, parts, n_parts
-	);
+	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent (http_receive, status, header_len + body_len);
 
@@ -1736,30 +1809,54 @@ u8 http_response_create_and_send (
 
 }
 
-// copies the whole file to the socket and adds the bytes that were sent to total_sent
+// the bytes that a pipe copies until the end of the file
+static const size_t http_response_pipe_whole_file = SIZE_MAX;
+
+static size_t http_response_pipe_count (const size_t remaining) {
+
+	return (remaining < HTTP_RESPONSE_FILE_CHUNK_SIZE) ? remaining : HTTP_RESPONSE_FILE_CHUNK_SIZE;
+
+}
+
+// the bytes that are logged as pending, a whole file does not know them
+static size_t http_response_pipe_pending (const size_t remaining) {
+
+	return (remaining == http_response_pipe_whole_file) ? 0 : remaining;
+
+}
+
+// copies the bytes of the file to the socket, from its offset (NULL for the file's current offset),
+// until remaining is sent or the file ends, and adds the bytes that were sent to total_sent
 // sendfile () does not accept MSG_NOSIGNAL, so SIGPIPE is ignored by cerver_start ()
 // returns 0 on success, 1 if the file was not sent completely
 static u8 http_response_send_file_pipe (
-	const Socket *socket, const int file_fd, size_t *total_sent
+	const HttpReceive *http_receive, const int file_fd,
+	off_t *offset, size_t remaining, size_t *total_sent
 ) {
 
 	u8 retval = 0;
 
-	unsigned int retries = 0;
+	const Socket *socket = http_receive->cr->connection->socket;
+
+	struct timespec deadline = { 0, 0 };
+	http_response_send_deadline (http_receive, &deadline);
+
 	ssize_t copied = 0;
 	do {
-		copied = sendfile (socket->sock_fd, file_fd, NULL, HTTP_RESPONSE_FILE_CHUNK_SIZE);
+		copied = sendfile (socket->sock_fd, file_fd, offset, http_response_pipe_count (remaining));
 		if (copied > 0) {
 			*total_sent += (size_t) copied;
+			if (remaining != http_response_pipe_whole_file) remaining -= (size_t) copied;
 		}
 
 		else if (copied < 0) {
-			if (http_response_send_can_retry (socket->sock_fd, errno, &retries)) continue;
+			const int error = errno;
+			if (http_response_send_can_retry (socket->sock_fd, error, &deadline)) continue;
 
-			http_response_send_failed (socket, "sendfile", errno, 0);
+			http_response_send_failed (socket, "sendfile", error, http_response_pipe_pending (remaining));
 			retval = 1;
 		}
-	} while (copied != 0 && !retval);
+	} while ((copied != 0) && remaining && !retval);
 
 	return retval;
 
@@ -1792,12 +1889,11 @@ static u8 http_response_send_file_actual (
 	u8 retval = 1;
 
 	int file_fd = open (filename, O_RDONLY);
-	if (file_fd > 0) {
+	if (file_fd > -1) {
 		size_t total_sent = 0;
 
 		retval = http_response_send_file_pipe (
-			http_receive->cr->connection->socket,
-			file_fd, &total_sent
+			http_receive, file_fd, NULL, http_response_pipe_whole_file, &total_sent
 		);
 
 		http_response_sent_bytes (http_receive, total_sent);
@@ -2086,45 +2182,17 @@ static u8 http_response_handle_video_internal (
 
 		// open video
 		int video_fd = open (filename, O_RDONLY);
-		if (video_fd > 0) {
-			// pipe video
-			ssize_t copied = 0;
-			size_t to_copy = (size_t) bytes_range->chunk_size;
-
-			#ifdef HTTP_RESPONSE_DEBUG
-			unsigned int count = 0;
-			#endif
-
-			do {
-				copied = sendfile (
-					http_receive->cr->connection->socket->sock_fd,
-					video_fd,
-					&bytes_range->start,
-					to_copy
-				);
-
-				if (copied > 0) {
-					to_copy -= (size_t) copied;
-					total_sent += (size_t) copied;
-
-					#ifdef HTTP_RESPONSE_DEBUG
-					count += 1;
-					#endif
-				}
-			} while ((copied > 0) && to_copy);
-
-			#ifdef HTTP_RESPONSE_DEBUG
-			cerver_log_debug (
-				"Video chunk took %u copies", count
+		if (video_fd > -1) {
+			retval = http_response_send_file_pipe (
+				http_receive, video_fd,
+				&bytes_range->start, (size_t) bytes_range->chunk_size,
+				&total_sent
 			);
-			#endif
 
 			// the header was already added to the stats
 			http_response_sent_bytes (http_receive, total_sent);
 
 			(void) close (video_fd);
-
-			retval = 0;
 		}
 
 		else {
