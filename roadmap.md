@@ -92,9 +92,13 @@ rutas con auth custom (libauth). Ver por ejemplo `gepp-service/service/service.p
 ## 3. Estado actual (rama `http`)
 
 **2026-11-06: la Fase 3 y la suite de tests se publicaron en la Beta 2.0b-59**, con la migración de gepp, balance,
-payloads y tickets validada en test (§4.3.4). La siguiente es la Beta 2.0b-60: la Fase 3b (§4.3.5), sin WebSocket, y
-los arreglos de CI de 2.0b-59 (el crecimiento geométrico de `String` y la reserva del body). El detalle está en
-`percepthor-backend/docs/context/cerver-module-context.md`.
+payloads y tickets validada en test (§4.3.4). La Beta 2.0b-60 publicó la Fase 3b (§4.3.5), sin WebSocket, y los
+arreglos de CI de 2.0b-59 (el crecimiento geométrico de `String` y la reserva del body).
+
+**2026-11-08: la Beta 2.0b-61** (§4.3.6) trae los tres arreglos que no necesitan el event loop: el 500 de un handler
+sin respuesta, la espera con `poll` en un socket no bloqueante lleno y la secuencia de los uploads; además, `gcc:16.2`
+en los Dockerfiles. La Fase 4 pasó a ser la línea 2.1 (`nightly`), que nace de `http` después de esta beta. El
+detalle está en `percepthor-backend/docs/context/cerver-http-module-context.md`.
 
 - **Rutas:**
   - árbol radix (`http/tree.c`) compilado en `cerver_start`, con prioridad estático > parámetro > comodín;
@@ -648,6 +652,40 @@ producción, 1.31.6, y la stable), con el upstream en `keepalive`.
   un proxy de confianza (`NONE` por default, una lista CIDR, las redes privadas o todos). En el log, con
   `http_request_get_client_ip`, y libauth la reenvía al servicio de auth.
 - **`Connection: close` se mantiene** hasta el keep-alive de la Fase 4.
+
+#### 4.3.6 Los arreglos sin el event loop (Beta 2.0b-61)
+
+Llegan a `nightly` por la rama. Cada uno tiene su test, que se vio fallar contra la 2.0b-60.
+
+- **El 500 de un handler sin respuesta.**
+  - Antes, un handler que regresaba sin responder dejaba la conexión cerrada sin respuesta, y nginx contestaba 502.
+    Pasaba, por ejemplo, con una excepción de Python en pycerver.
+  - Ahora `HttpReceive.responded` se marca en `http_response_send_vector`, por donde pasa todo envío, al intentarlo:
+    un cliente que ya se fue no recibe un segundo intento.
+  - Después del dispatch, una petición sin respuesta recibe `server_error` con `Connection: close` y un warning con
+    el método y el path.
+  - Se cuenta en `n_unanswered_requests` y en la métrica `cerver_http_requests_unanswered_total`.
+- **`poll (POLLOUT)` en `EAGAIN`.**
+  - Un socket no bloqueante con el buffer lleno ya no se reintenta 16 veces en caliente, que truncaba la respuesta.
+    Ahora espera con `poll` lo que queda de un plazo por envío igual al `send_timeout` del cerver, o
+    `CERVER_DEFAULT_SEND_TIMEOUT` si es 0.
+  - `HTTP_RESPONSE_SEND_RETRIES` se quitó.
+  - Un socket bloqueante sigue igual: `SO_SNDTIMEO`.
+  - Los archivos y el video comparten el mismo envío con `sendfile`. El video antes ignoraba `EINTR`, `EAGAIN` y los
+    errores.
+  - De paso, `fd > -1` al abrir archivos y videos, porque un fd 0 es válido.
+- **La secuencia de los uploads.**
+  - Los generadores default usaban `fd-time`. Dos peticiones con el mismo fd (reusado al cerrar la conexión) en el
+    mismo segundo compartían el directorio y mezclaban sus archivos; los nombres repetidos se numeraban.
+  - Ahora cada petición toma un número atómico del `HttpCerver` la primera vez que un generador lo pide: archivo
+    `%d-%ld-%zu-%u-%s` (fd-time-secuencia-índice-nombre) y directorio `%d-%ld-%zu`.
+  - Las firmas no cambian.
+- **`gcc:16.2` / `debian:trixie-slim`** en los Dockerfiles, como `core`. Los warnings nuevos de gcc 16 se arreglaron
+  como en `core`:
+  - `file_read_internal` leía cada pedazo al inicio del buffer;
+  - sobraba el contador de fps del update del admin.
+
+  Los workflows no cambian.
 
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
