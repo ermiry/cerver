@@ -45,6 +45,7 @@
 // - a static file path with ".." was served from outside the static path
 // - a multi-part filename that was empty or ".." after it was sanitized pointed to the uploads directory
 // - a dirname generator without an uploads path created its directory at the filesystem root
+// - two requests with the same fd in the same second shared the default uploads directory
 // coverage gaps: the receive loop of handler.c (see the web integration tests)
 
 #define TEST_RECEIVE_RESPONSE_SIZE			(1 << 16)
@@ -1569,6 +1570,47 @@ static void test_receive_dirname_with_uploads_path (Cerver *cerver) {
 
 }
 
+// copies the directory of the first saved file of the request and removes it
+static void test_receive_default_dirname_take (char *directory) {
+
+	test_receive_copy_c_string (directory, observed.files[0].saved_filename);
+
+	char *last_slash = strrchr (directory, '/');
+	if (last_slash) *last_slash = '\0';
+
+	(void) rmdir (directory);
+
+}
+
+// two requests with the same fd in the same second shared the directory of the default generator,
+// so their files were mixed in it, now each request has its own sequence
+static void test_receive_default_dirnames (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_set_default_uploads_dirname_generator (http_cerver);
+
+	char first[TEST_RECEIVE_PATH_SIZE] = { 0 };
+	char second[TEST_RECEIVE_PATH_SIZE] = { 0 };
+
+	test_receive_whole_case (cerver, "the first request with the default dirname", multipart_request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_files == 2);
+	test_receive_default_dirname_take (first);
+
+	test_receive_whole_case (cerver, "the second request with the default dirname", multipart_request);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_files == 2);
+	test_receive_default_dirname_take (second);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+
+	test_receive_expect (!strncmp (first, TEST_RECEIVE_UPLOADS_PATH "/", strlen (TEST_RECEIVE_UPLOADS_PATH "/")));
+	test_receive_expect (strcmp (first, second) != 0);
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+}
+
 // an attribute without a value dereferenced NULL (found by the multipart fuzzer)
 static void test_receive_attribute_without_value (Cerver *cerver) {
 
@@ -1974,6 +2016,7 @@ void http_tests_receive (void) {
 	test_receive_unsafe_filenames (cerver);
 	test_receive_dirname_without_uploads_path (cerver);
 	test_receive_dirname_with_uploads_path (cerver);
+	test_receive_default_dirnames (cerver);
 	test_receive_attribute_without_value (cerver);
 	test_receive_upload_error (cerver);
 
