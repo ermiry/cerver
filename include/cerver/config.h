@@ -28,16 +28,19 @@
 // used by private methods but can be used by the application
 #define CERVER_PUBLIC 			extern
 
+// in C++ an inline function is only emitted where it is used,
+// so the exported functions defined with CERVER_INLINE in the sources
+// must be regular functions to be available to other translation units
 #ifdef __cplusplus
-#define CERVER_INLINE inline
+#define CERVER_INLINE
 #else
 #define CERVER_INLINE inline
 #endif
 
 #define DEPRECATED(func) func __attribute__ ((deprecated))
 
-#if defined(__GNUC__) || defined(__clang__)
-#define CERVER_ATTRS(x) __attribute__(x)
+#if defined (__GNUC__) || defined (__clang__)
+#define CERVER_ATTRS(x) __attribute__ (x)
 #else
 #define CERVER_ATTRS(x)
 #endif
@@ -51,11 +54,11 @@
 #endif
 
 #ifndef ARRAY_SIZE
-	#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
+	#define ARRAY_SIZE(a) (sizeof (a) / sizeof ((a)[0]))
 #endif
 
-#ifndef ELEM_AT
-	#define ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE(a) ? (a)[(i)] : (v))
+#ifndef ARRAY_ELEM_AT
+	#define ARRAY_ELEM_AT(a, i, v) ((unsigned int) (i) < ARRAY_SIZE (a) ? (a)[(i)] : (v))
 #endif
 
 // va_copy is a C99 feature. In C89 implementations, it's sometimes
@@ -64,7 +67,7 @@
 	#ifdef __va_copy
 		#define va_copy __va_copy
 	#else
-		#define va_copy(a, b) memcpy(&(a), &(b), sizeof(va_list))
+		#define va_copy(a, b) memcpy (&(a), &(b), sizeof (va_list))
 	#endif
 #endif
 
