@@ -361,6 +361,25 @@ cambio de protocolo: el `PacketHeader` de pycerver se actualizó igual.
 - **Ejemplos:** los 26 de `examples/` ya no liberan nada en el handler de señal. `end ()` solo llama
   `cerver_shutdown`, y el teardown corre cuando `cerver_start` retorna.
 
+### 2.0b-61
+
+Cada test se vio fallar contra la 2.0b-60.
+
+| Test | Dónde | Qué fija |
+|---|---|---|
+| `test_server_unanswered` | `test/http/server.c` | Un handler sin respuesta recibe 500 con `Connection: close`, se cuenta y aparece en `cerver_http_requests_unanswered_total` |
+| `test_server_unanswered_gone` | `test/http/server.c` | Una respuesta a un cliente que ya se fue cuenta como respuesta: no hay un 500 después |
+| `test_server_nonblocking` | `test/http/server.c` | Una respuesta, un archivo y un video en un socket no bloqueante lleno llegan completos y en orden |
+| `test_server_nonblocking_timeout` | `test/http/server.c` | Un socket no bloqueante que nunca se vacía falla al vencer el `send_timeout`, no al instante |
+| `test_server_zero_fd` | `test/http/server.c` (proceso hijo) | Un archivo y un video abiertos como fd 0 se envían (el video no se enviaba) |
+| `test_receive_default_dirnames` | `test/http/receive.c` | Dos peticiones con el mismo fd en el mismo segundo tienen directorios distintos |
+| `/features/unanswered` | par `web/features` y `test/nginx/run.sh` | El 500 por curl, y detrás de nginx (en lugar de un 502) |
+
+**El test de señal era flaky desde la 2.0b-60** (`repeat.sh test/bin/http`, ~1 de cada 200 rondas en la línea base):
+- `test_server_signal` mandaba un solo `SIGUSR1`, y si llegaba entre dos `accept ()` se perdía. Esa limitación ya
+  está aceptada y `cerver_run` la cubre en los servicios.
+- Ahora repite la señal hasta que el cerver se detiene: 1000 rondas limpias, y limpio con TSan.
+
 ### Pendiente
 
 - **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `nightly.yml`.
