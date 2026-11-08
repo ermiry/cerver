@@ -9,6 +9,9 @@
 
 #include "cerver/config.h"
 
+// the size of the buffer used to get the description of an errno with strerror_r ()
+#define CERVER_ERRNO_DESCRIPTION_SIZE			64
+
 #ifdef __cplusplus
 extern "C" {
 #endif
