@@ -8,7 +8,9 @@
 #include "cerver/client.h"
 #include "cerver/connection.h"
 #include "cerver/config.h"
+#include "cerver/handler.h"
 #include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 
@@ -42,6 +44,8 @@ const char *balancer_type_to_string (
 
 #pragma region stats
 
+// every value is updated with atomic operations,
+// the receive threads of the clients and the services update them
 typedef struct BalancerStats {
 
 	// good types packets that the balancer can handle
@@ -49,7 +53,7 @@ typedef struct BalancerStats {
 	u64 receives_done;                 // receives done to clients
 	u64 bytes_received;                // bytes received from clients
 
-	// bad types packets - consumed data from sock fd until next header
+	// bad types packets - their data was read and discarded
 	u64 bad_n_packets_received;        // packets received from clients
 	u64 bad_receives_done;             // receives done to clients
 	u64 bad_bytes_received;            // bytes received from clients
@@ -62,6 +66,9 @@ typedef struct BalancerStats {
 	u64 n_packets_sent;                // total number of packets that were sent
 	u64 total_bytes_sent;              // total amount of bytes sent by the cerver
 
+	// responses of clients that were already disconnected
+	u64 discarded_responses;
+
 	// packets handled by balancer on unavailable services
 	u64 backup_handled_packets;
 	u64 backup_handled_bytes;
@@ -70,7 +77,7 @@ typedef struct BalancerStats {
 	u64 unhandled_packets;
 	u64 unhandled_bytes;
 
-	u64 received_packets[PACKETS_MAX_TYPES];	
+	u64 received_packets[PACKETS_MAX_TYPES];
 	u64 routed_packets[PACKETS_MAX_TYPES];
 	u64 sent_packets[PACKETS_MAX_TYPES];
 
@@ -84,8 +91,17 @@ CERVER_EXPORT void balancer_stats_print (
 
 #pragma region main
 
-#define BALANCER_RECEIVE_BUFFER_SIZE		512
-#define BALANCER_CONSUME_BUFFER_SIZE		1024
+// the route of each client connection, by its sock fd,
+// a reference to the socket is kept while the connection is alive,
+// so a response is never sent to a socket that was deleted
+typedef struct BalancerRoute {
+
+	Socket *socket;
+
+} BalancerRoute;
+
+#define BALANCER_DEFAULT_ROUTES_SIZE		64
+#define BALANCER_ROUTES_GROWTH_FACTOR		2
 
 struct _Balancer {
 
@@ -103,7 +119,16 @@ struct _Balancer {
 
 	BalancerStats *stats;
 
+	// protects the next service and the routes
 	pthread_mutex_t *mutex;
+
+	BalancerRoute *routes;
+	size_t routes_size;
+
+	// the services that were down when the balancer started
+	// wait for their next attempt in this condition
+	bool running;
+	pthread_cond_t *cond;
 
 };
 
@@ -123,6 +148,7 @@ CERVER_EXPORT void balancer_set_on_unavailable_services (
 
 // create a new load balancer of the selected type
 // set its network values & set the number of services it will handle
+// the cerver of the balancer handles each client in a dedicated thread
 CERVER_EXPORT Balancer *balancer_create (
 	const char *name, const BalancerType type,
 	const u16 port, const u16 connection_queue,
@@ -136,10 +162,11 @@ CERVER_EXPORT Balancer *balancer_create (
 #define SERVICE_NAME_SIZE					64
 #define SERVICE_CONNECTION_NAME_SIZE		64
 
-#define SERVICE_CONSUME_BUFFER_SIZE			512
-
 #define SERVICE_DEFAULT_MAX_SLEEP			30
 #define SERVICE_DEFAULT_WAIT_TIME			20
+
+// the connection to a service makes a single attempt
+#define SERVICE_CONNECT_MAX_SLEEP			1
 
 #define SERVICE_STATUS_MAP(XX)																			\
 	XX(0, 	NONE, 			None, 			None)														\
@@ -167,6 +194,7 @@ CERVER_EXPORT const char *balancer_service_status_description (
 	const ServiceStatus status
 );
 
+// every value is updated with atomic operations
 typedef struct ServiceStats {
 
 	// routed packets to the service
@@ -178,7 +206,7 @@ typedef struct ServiceStats {
 	u64 receives_done;                 // calls to recv ()
 	u64 bytes_received;                // bytes received from the service
 
-	// bad types packets - consumed data from sock fd until next header
+	// bad types packets - their data was read and discarded
 	u64 bad_n_packets_received;        // bad packets received from the service
 	u64 bad_receives_done;             // calls to recv ()
 	u64 bad_bytes_received;            // bad bytes received from the service
@@ -197,15 +225,17 @@ struct _Service {
 	unsigned int id;
 	char name[SERVICE_NAME_SIZE];
 
+	// read and written with atomic operations
 	ServiceStatus status;
 	Action on_status_change;
 
+	// the connection reconnects by itself after it was connected once
 	Connection *connection;
 	unsigned int reconnect_wait_time;
-	pthread_t reconnect_thread_id;
 
-	int forward_pipe_fds[2];
-	int receive_pipe_fds[2];
+	// a service that was down when the balancer started is connected by this thread
+	bool reconnect_thread_running;
+	pthread_t reconnect_thread_id;
 
 	ServiceStats *stats;
 
@@ -260,6 +290,8 @@ CERVER_EXPORT void balancer_service_set_reconnect_wait_time (
 
 // starts the load balancer by first connecting to the registered services
 // and checking their ability to handle requests
+// the services that are down are connected later by a dedicated thread,
+// at least one service must be working
 // then the cerver gets started to enable client connections
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 balancer_start (Balancer *balancer);
@@ -268,14 +300,23 @@ CERVER_EXPORT u8 balancer_start (Balancer *balancer);
 
 #pragma region route
 
-// routes the received packet to a service to be handled
-// first sends the packet header with the correct sock fd
-// if any data, it is forwarded from one sock fd to another using splice ()
-CERVER_PRIVATE void balancer_route_to_service (
-	CerverReceive *cr,
-	Balancer *balancer, Connection *connection,
-	PacketHeader *header
+// how many times a recv () can time out in the middle of a packet
+#define BALANCER_RECEIVE_MAX_TIMEOUTS		4
+
+// registers the route of a client connection that the balancer receives from
+CERVER_PRIVATE void balancer_connection_start (
+	Balancer *balancer, const i32 sock_fd, Socket *socket
 );
+
+// removes the route of a client connection that has ended,
+// its pending responses are discarded
+CERVER_PRIVATE void balancer_connection_end (
+	Balancer *balancer, const i32 sock_fd
+);
+
+// receives a complete packet from a client and routes it to a service
+// returns 0 to keep receiving, 1 when the connection has ended
+CERVER_PRIVATE u8 balancer_receive (CerverReceive *cr);
 
 #pragma endregion
 
