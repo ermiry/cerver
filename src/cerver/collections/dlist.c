@@ -272,6 +272,81 @@ static void dlist_internal_merge_two (
 
 }
 
+// locks both dlists always in the same order to avoid dead locks
+static void dlist_internal_lock_two (
+	const DoubleList *one, const DoubleList *two
+) {
+
+	if (one == two) {
+		(void) pthread_mutex_lock (one->mutex);
+	}
+
+	else if (one < two) {
+		(void) pthread_mutex_lock (one->mutex);
+		(void) pthread_mutex_lock (two->mutex);
+	}
+
+	else {
+		(void) pthread_mutex_lock (two->mutex);
+		(void) pthread_mutex_lock (one->mutex);
+	}
+
+}
+
+static void dlist_internal_unlock_two (
+	const DoubleList *one, const DoubleList *two
+) {
+
+	(void) pthread_mutex_unlock (one->mutex);
+	if (one != two) (void) pthread_mutex_unlock (two->mutex);
+
+}
+
+static ListElement *dlist_internal_get_element_at (
+	const DoubleList *dlist, const size_t idx
+) {
+
+	ListElement *retval = NULL;
+
+	if (idx < dlist->size) {
+		size_t i = 0;
+		ListElement *ptr = dlist->start;
+		while (ptr != NULL) {
+			if (i == idx) {
+				retval = ptr;
+				break;
+			}
+
+			ptr = ptr->next;
+			i++;
+		}
+	}
+
+	return retval;
+
+}
+
+static ListElement *dlist_internal_get_element (
+	const DoubleList *dlist, const void *data,
+	int (*compare)(const void *one, const void *two)
+) {
+
+	ListElement *retval = NULL;
+
+	ListElement *ptr = dlist->start;
+	while (ptr != NULL) {
+		if (!compare (ptr->data, data)) {
+			retval = ptr;
+			break;
+		}
+
+		ptr = ptr->next;
+	}
+
+	return retval;
+
+}
+
 static void dlist_internal_remove_elements (DoubleList *dlist) {
 
 	void *data = NULL;
@@ -600,25 +675,20 @@ int dlist_insert_at (
 	int retval = 1;
 
 	if (dlist && data) {
-		// insert at the start of the list
-		if (pos == 0) retval = dlist_insert_before (dlist, NULL, data);
-		else if (pos >= dlist->size) {
-			// insert at the end of the list
-			retval = dlist_insert_after (dlist, dlist_end (dlist), data);
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		// insert at the end of the list
+		if (pos >= dlist->size) {
+			retval = dlist_internal_insert_after (dlist, dlist->end, data);
 		}
 
 		else {
-			unsigned int count = 0;
-			ListElement *le = dlist_start (dlist);
-			while (le) {
-				if (count == pos) break;
-				
-				count++;
-				le = le->next;
-			}
-
-			retval = dlist_insert_before (dlist, le, data);
+			retval = dlist_internal_insert_before (
+				dlist, dlist_internal_get_element_at (dlist, pos), data
+			);
 		}
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -897,32 +967,14 @@ void *dlist_remove_at (DoubleList *dlist, const unsigned int idx) {
 	void *retval = NULL;
 
 	if (dlist) {
-		if (idx < dlist->size) {
-			(void) pthread_mutex_lock (dlist->mutex);
+		(void) pthread_mutex_lock (dlist->mutex);
 
-			bool first = true;
-			unsigned int i = 0;
-			ListElement *ptr = dlist_start (dlist);
-			while (ptr != NULL) {
-				if (i == idx) {
-					// remove the list element
-					void *data = NULL;
-					if (first) data = dlist_internal_remove_element (dlist, NULL);
-					else data = dlist_internal_remove_element (dlist, ptr);
-					if (data) {
-						retval = data;
-					}
-
-					break;
-				}
-
-				first = false;
-				ptr = ptr->next;
-				i++;
-			}
-
-			(void) pthread_mutex_unlock (dlist->mutex);
+		ListElement *ptr = dlist_internal_get_element_at (dlist, idx);
+		if (ptr) {
+			retval = dlist_internal_remove_element (dlist, ptr);
 		}
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return retval;
@@ -1013,20 +1065,22 @@ void *dlist_search (
 	int (*compare)(const void *one, const void *two)
 ) {
 
+	void *retval = NULL;
+
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
 		if (comp) {
-			ListElement *ptr = dlist_start (dlist);
+			(void) pthread_mutex_lock (dlist->mutex);
 
-			while (ptr != NULL) {
-				if (!comp (ptr->data, data)) return ptr->data;
-				ptr = ptr->next;
-			}
+			ListElement *ptr = dlist_internal_get_element (dlist, data, comp);
+			if (ptr) retval = ptr->data;
+
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
-	return NULL;    
+	return retval;
 
 }
 
@@ -1037,53 +1091,56 @@ ListElement *dlist_get_element (
 	int (*compare)(const void *one, const void *two)
 ) {
 
+	ListElement *retval = NULL;
+
 	if (dlist && data) {
 		int (*comp)(const void *one, const void *two) = compare ? compare : dlist->compare;
 
 		if (comp) {
-			ListElement *ptr = dlist_start (dlist);
-			while (ptr != NULL) {
-				if (!comp (ptr->data, data)) return ptr;
-				ptr = ptr->next;
-			}
+			(void) pthread_mutex_lock (dlist->mutex);
+
+			retval = dlist_internal_get_element (dlist, data, comp);
+
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
-	return NULL;
+	return retval;
 
 }
 
 // traverses the dlist and returns the list element at the specified index
 ListElement *dlist_get_element_at (const DoubleList *dlist, const unsigned int idx) {
 
-	if (dlist) {
-		if (idx < dlist->size) {
-			unsigned int i = 0;
-			ListElement *ptr = dlist_start (dlist);
-			while (ptr != NULL) {
-				if (i == idx) return ptr;
+	ListElement *retval = NULL;
 
-				ptr = ptr->next;
-				i++;
-			}
-		}
+	if (dlist) {
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		retval = dlist_internal_get_element_at (dlist, idx);
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
-	return NULL;
+	return retval;
 
 }
 
 // traverses the dlist and returns the data of the list element at the specified index
 void *dlist_get_at (const DoubleList *dlist, const unsigned int idx) {
 
+	void *retval = NULL;
+
 	if (dlist) {
-		if (idx < dlist->size) {
-			ListElement *le = dlist_get_element_at (dlist, idx);
-			return le ? le->data : NULL;
-		}
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		ListElement *le = dlist_internal_get_element_at (dlist, idx);
+		if (le) retval = le->data;
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
-	return NULL;
+	return retval;
 
 }
 
@@ -1207,9 +1264,14 @@ void **dlist_to_array (const DoubleList *dlist, size_t *count) {
 	void **array = NULL;
 
 	if (dlist) {
-		array = (void **) calloc (dlist->size, sizeof (void *));
+		(void) pthread_mutex_lock (dlist->mutex);
+
+		if (dlist->size) {
+			array = (void **) calloc (dlist->size, sizeof (void *));
+		}
+
 		if (array) {
-			unsigned int idx = 0;
+			size_t idx = 0;
 			ListElement *ptr = dlist_start (dlist);
 			while (ptr != NULL) {
 				array[idx] = ptr->data;
@@ -1220,6 +1282,10 @@ void **dlist_to_array (const DoubleList *dlist, size_t *count) {
 
 			if (count) *count = dlist->size;
 		}
+
+		else if (count) *count = 0;
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return array;
@@ -1236,13 +1302,14 @@ DoubleList *dlist_copy (const DoubleList *dlist) {
 
 	if (dlist) {
 		copy = dlist_init (dlist->destroy, dlist->compare);
+		if (copy) {
+			(void) pthread_mutex_lock (dlist->mutex);
 
-		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
-			dlist_insert_after (
-				copy,
-				dlist_end (copy),
-				le->data
-			);
+			for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+				(void) dlist_insert_at_end_unsafe (copy, le->data);
+			}
+
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
@@ -1264,13 +1331,14 @@ DoubleList *dlist_clone (
 
 	if (dlist && clone) {
 		dlist_clone = dlist_init (dlist->destroy, dlist->compare);
+		if (dlist_clone) {
+			(void) pthread_mutex_lock (dlist->mutex);
 
-		for (ListElement *le = dlist_start (dlist); le; le = le->next) {
-			dlist_insert_after (
-				dlist_clone,
-				dlist_end (dlist_clone),
-				clone (le->data)
-			);
+			for (ListElement *le = dlist_start (dlist); le; le = le->next) {
+				(void) dlist_insert_at_end_unsafe (dlist_clone, clone (le->data));
+			}
+
+			(void) pthread_mutex_unlock (dlist->mutex);
 		}
 	}
 
@@ -1287,35 +1355,29 @@ DoubleList *dlist_split_half (DoubleList *dlist) {
 	DoubleList *half = NULL;
 
 	if (dlist) {
+		(void) pthread_mutex_lock (dlist->mutex);
+
 		if (dlist->size > 1) {
 			half = dlist_init (dlist->destroy, dlist->compare);
-
-			(void) pthread_mutex_lock (dlist->mutex);
-
-			size_t carry = dlist->size % 2;
-			size_t half_count = dlist->size / 2;
-			half_count += carry;
-			size_t count = 0;
-			for (ListElement *le = dlist_start (dlist); half && le; le = le->next) {
-				if (count == half_count) {
-					// the second half keeps the original end
-					half->start = le;
-					half->end = dlist->end;
-
-					dlist->end = le->prev;
-					le->prev->next = NULL;
-					le->prev = NULL;
-
-					half->size = dlist->size - half_count;
-					dlist->size = half_count;
-					break;
-				}
-
-				count++;
-			}
-
-			(void) pthread_mutex_unlock (dlist->mutex);
 		}
+
+		if (half) {
+			// the first half keeps the extra element
+			size_t half_count = (dlist->size + 1) / 2;
+
+			ListElement *le = dlist_internal_get_element_at (dlist, half_count);
+
+			half->start = le;
+			half->end = dlist->end;
+			half->size = dlist->size - half_count;
+
+			dlist->end = le->prev;
+			le->prev->next = NULL;
+			le->prev = NULL;
+			dlist->size = half_count;
+		}
+
+		(void) pthread_mutex_unlock (dlist->mutex);
 	}
 
 	return half;
@@ -1361,10 +1423,14 @@ DoubleList *dlist_split_by_condition (
 // one should be of size = one->size + two->size
 void dlist_merge_two (DoubleList *one, DoubleList *two) {
 
-	if (one && two) {
+	if (one && two && (one != two)) {
+		dlist_internal_lock_two (one, two);
+
 		if (one->size || two->size) {
 			dlist_internal_merge_two (one, two);
 		}
+
+		dlist_internal_unlock_two (one, two);
 	}
 
 }
@@ -1381,18 +1447,24 @@ DoubleList *dlist_merge_two_by_condition (
 
 	DoubleList *merge = NULL;
 
-	if (one && two) {
+	if (one && two && compare) {
 		merge = dlist_init (one->destroy, one->compare);
 		if (merge) {
+			dlist_internal_lock_two (one, two);
+
 			dlist_internal_move_matches (
 				one, merge,
 				compare, match
 			);
 
-			dlist_internal_move_matches (
-				two, merge,
-				compare, match
-			);
+			if (one != two) {
+				dlist_internal_move_matches (
+					two, merge,
+					compare, match
+				);
+			}
+
+			dlist_internal_unlock_two (one, two);
 		}
 	}
 
@@ -1409,20 +1481,28 @@ DoubleList *dlist_merge_many (DoubleList *many_dlists) {
 	DoubleList *merge = NULL;
 
 	if (many_dlists) {
+		(void) pthread_mutex_lock (many_dlists->mutex);
+
 		if (many_dlists->size) {
 			DoubleList *first = (DoubleList *) many_dlists->start->data;
 
 			merge = dlist_init (first->destroy, first->compare);
-			if (merge) {
-				ListElement *le = NULL;
-				dlist_for_each (many_dlists, le) {
-					dlist_internal_merge_two (
-						merge, (DoubleList *) le->data
-					);
-				}
+		}
+
+		if (merge) {
+			ListElement *le = NULL;
+			dlist_for_each (many_dlists, le) {
+				DoubleList *current = (DoubleList *) le->data;
+
+				(void) pthread_mutex_lock (current->mutex);
+
+				dlist_internal_merge_two (merge, current);
+
+				(void) pthread_mutex_unlock (current->mutex);
 			}
 		}
 
+		(void) pthread_mutex_unlock (many_dlists->mutex);
 	}
 
 	return merge;
