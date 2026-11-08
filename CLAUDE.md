@@ -23,7 +23,7 @@ make clean
 make install            # copy libcerver.so to /usr/local/lib and headers to /usr/local/include
 ```
 
-`compile.sh` builds library, examples and tests with both gcc and g++ in production mode. Keep code compiling cleanly under both, with the warning flags in `COMMON` (`-Wpedantic -pedantic-errors` for C).
+`compile.sh` builds library, examples and tests with both gcc and g++ in production mode. Keep code compiling cleanly under both, with the warning flags in `COMMON` (`-Wpedantic -pedantic-errors` for C). The Dockerfiles use `gcc:16.2` and `debian:trixie-slim` (`Dockerfile.fuzz` keeps clang on `ubuntu:24.04`).
 
 Run an example: `LD_LIBRARY_PATH=bin/ ./examples/bin/welcome`
 
@@ -79,7 +79,10 @@ HTTP layer (`http/`), used when the cerver type is `CERVER_TYPE_WEB`:
 - `request.c` / `response.c` / `headers.c` / `multipart.c` / `url.c` / `origin.c` / `admin.c` / `auth.c` — request parsing (params are slices of the url, decoded on demand; custom headers live in the request arena; header names are found with a hash table; the request id and the client's address are resolved in `on_headers_complete`), responses, multipart uploads, CORS origins, HTTP admin routes (with `cerver/metrics`), JWT auth.
 - Every response goes through `http_response_send_message ()` (`response.c`): one `sendmsg` of four parts, the compiled header without its empty line, the headers that cerver adds for the request (`Date`, `X-Request-Id`, `Access-Control-Allow-Origin` + `Vary` of an endpoint with `cors`, `ETag`, `Content-Encoding`), the empty line and the body, without the body for a HEAD. A header that the response already has is not added, and nothing is allocated (`test/performance.sh` counts it). With the endpoint's `etag` a GET is answered with 304 when its If-None-Match matches, and with `compression` the body is gzipped into the request arena and the header copied without its Content-Length.
 - `date.c` (the IMF-fixdate cached per thread and second), `conditional.c` (entity tags, If-None-Match / If-Modified-Since), `compression.c` (Accept-Encoding, compressible types, gzip with zlib's memory in the arena), `stream.c` (`http_response_stream_begin / write / end`: chunked to HTTP/1.1, close delimited to 1.0, ended by cerver after the handler), `proxy.c` (`HTTP_TRUSTED_PROXIES_MAP`: none by default, a CIDR list, the private networks or all; X-Forwarded-For from right to left, then X-Real-IP), `metrics.c` (the Prometheus text of the cerver and of every endpoint, with the latency histogram of `HttpRouteStats`).
-- cerver always closes the connection after a response and every response says `Connection: close` (the 502 behind nginx); keep-alive waits for the event loop of 3.0 (`roadmap.md` §4.4).
+- cerver always closes the connection after a response and every response says `Connection: close` (the 502 behind nginx); keep-alive waits for the event loop of the 2.1 line (`nightly`).
+- `HttpReceive.responded` is set by `http_response_send_vector ()` whenever cerver tries to send, even if it fails: before the request is completed the rest of it is not handled, and after the dispatch a request without a response is answered with `server_error` (500) and counted in `n_unanswered_requests` (`cerver_http_requests_unanswered_total`).
+- A non blocking socket whose buffer is full waits with `poll (POLLOUT)` until a deadline per send of the cerver's `send_timeout` (`CERVER_DEFAULT_SEND_TIMEOUT` when it is 0); a blocking socket keeps its `SO_SNDTIMEO`. Files and videos share `http_response_send_file_pipe ()`.
+- The default uploads generators add a sequence that the request takes from its `HttpCerver` the first time a generator asks for it: files `fd-time-sequence-index-name`, directories `fd-time-sequence`.
 - Vendored third-party code: `http_parser.c` (Joyent/Node http-parser), `http/json/` (Jansson-derived JSON), `http/jwt/` (libjwt-derived JWT over OpenSSL). They follow the cerver call style (space before call parentheses) but keep their upstream structure otherwise.
 
 ## Conventions
