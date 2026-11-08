@@ -689,7 +689,7 @@ static char *file_read_internal (
 	char *file_contents = NULL;
 
 	int file_fd = open (filename, O_RDONLY);
-	if (file_fd > 0) {
+	if (file_fd > -1) {
 		file_contents = (char *) calloc (
 			n_bytes + 1, sizeof (char)
 		);
@@ -703,10 +703,11 @@ static char *file_read_internal (
 			unsigned int count = 0;
 			#endif
 
+			// each read continues where the last one ended
 			do {
 				copied = read (
 					file_fd,
-					file_contents,
+					end,
 					to_copy
 				);
 
