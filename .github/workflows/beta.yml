@@ -15,6 +15,7 @@ jobs:
     # build sources with beta flags
     name: Cerver beta build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,12 +43,10 @@ jobs:
     name: Cerver beta tests
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
       - name: Get Shared Library
         uses: actions/download-artifact@v4
