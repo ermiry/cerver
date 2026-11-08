@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 #include <unistd.h>
 
@@ -75,7 +74,7 @@ struct _FileCerver {
 		struct _Cerver *, struct _Client *, struct _Connection *,
 		const char *saved_filename
 	);
-
+	
 	FileCerverStats *stats;
 
 };
