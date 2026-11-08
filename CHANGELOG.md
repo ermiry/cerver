@@ -1,66 +1,72 @@
 ## General
-- Added balancer cerver type & its reference in every cerver
-- Added CLIENT_STATS & CONNECTION_STATS definitions
-- Added sock fd in the packet header to route the responses
-- Added packet_route_between_connections() using a pipe
-- Added bad packets type & a method to print packet types
-- Added packet_send_unsafe() & updating the sender stats
-- Added dedicated script to remove the libcerver installation
-- Fixed stats print format warnings in game & lobby sources
-- Fixed cast function type warnings in cerver update threads
-- Added base64 & handler benchmarks with its make target
-- Added cerver documentation submodule in docs directory
-- Updated workflows with the latest actions & release action
-- Fixed bsem_reset() creating again its mutex and condition
-- Using dlist_insert_at_end() when pushing data into a pool
-- Fixed string append methods overflow & their missing NUL
-- Fixed dlist prev links, insert positions, merge sort & halves
-- Fixed AVL double rotations & removing nodes with children
-- Fixed connection delete method removing socket too early
-- Fixed sock_set_blocking() inverted flags for the poll cerver
-- Fixed auth session token copy reading past session id end
-- Sending the packet header padding zeroed in each packet
-- Sending zeroed error & file packets without heap garbage
-- Checking a NULL filename before reading the image type
-- Fixed game cerver unregister lobby removing the list start
-- Fixed game types search & removal with the player id leak
-- Using a clock name instead of a number in timer timespec
-- Fixed cerver inactive check recursing into the NULL nodes
-- Fixed lobby threads casts and the ignored custom handler
-- Fixed game scores update clamp & strings lengths in keys
-- Fixed input line offset reading the pointer freed by realloc()
-- Fixed gcc 15 unused params & sha256 parameter warning
-- Updated workflows with the actions versions for Node 24
+- Using gcc 16.2 in a single stage test Dockerfile & its ignore
+- Using gcc 16.2 & trixie slim images in the other Dockerfiles
+- Added fuzz Dockerfile to build & to run fuzzers with clang
+- Added sanitizer & fuzz options in makefile & the new tests
+- Running sanitizers & valgrind in the build & test workflows
+- Using gcc 16.2 container in beta, production & version job
+- Added nightly workflow with thread sanitizer & repetitions
+- Defining CERVER_INLINE as empty when compiling in C++
+- Added the errno description size definition for strerror_r ()
+- Checking the vasprintf () result when creating the c string
+- Calling AVX2 base64 methods only when AVX2 is available
+- Fixed input password inverted condition & unchecked scan
+- Added arena collection to allocate values in reused blocks
+- Using FNV-1a hash & growing htab table when it is 3/4 full
+- Using dlist read locks & locking two lists in the same order
+- Added queue init method & removed repeated pop header
+- Checking pool create method exists before producing data
+- Added methods to create and append bytes in String type
+- Added joinable threads blocking process signals on create
+- Joining job queue thread when stopping the queue of jobs
+- Refactored thpool with a bounded queue & drain methods
+- Added references count to sockets used by many threads
+- Added socket send timeout & the dedicated reusable port
+- Sending packet version in headers & fixing packet_check()
+- Added receive handle buffer method to assemble packets
+- Added cerver overload & drain policies with ordered stops
+- Handling bad packets & polling a copy of all registered fds
+- Fixed on hold packets check & dropping slow connections
+- Fixed admin cerver packets checks & polling a copy of fds
+- Fixed files receive with the bytes that come with its packet
+
+## Connection
+- Added connection states, send queue & real reconnection
+- Fixed client end with single owner & added async connect
 
 ## Balancer
-- Added a load balancer structure & its services registration
-- Added balancer_receive() to route packets to the services
-- Added services status, reconnect wait & a status callback
-- Added balancer and service stats with unhandled packets
-- Consuming data from connections if no service is available
-- Consuming the data from services on any bad packet type
-- Added routing to the services by round robin or handler id
-- Added BALANCER_DEBUG & SERVICE_DEBUG definitions
-- Sending a packet error when there is no service to route to
+- Refactored load balancer to receive & to route full packets
 
-## Examples
-- Added dedicated balancer & service examples with an app
+## Game
+- Fixed game lobby search & join methods using lobby types
+- Fixed player unregister from lobby inverted remove results
+- Fixed lobby leave & teardown using the lobby after its free
+- Refactored game scores with the players names & clamps
 
 ## Tests
-- Added balancer & services methods unit tests & their stats
-- Added load balancer integration tests by type & handler id
-- Fixed htab unit tests double free when inserting final value
-- Fixed dlist unit tests race condition when reading dlist end
-- Removed an overflowing case from c string copy unit tests
-- Fixed packets unit tests checking binary data with strlen ()
-- Added collections unit tests helper to check the dlist links
-- Added dlist unit tests checking invariants after any change
-- Added AVL unit tests with random values & balance check
+- Added test output init & counters wait helpers in test.h file
+- Added scripts to run cerver & client integration tests pairs
+- Added script to repeat a test many times to find flaky ones
+- Added script to run each fuzzer with its corpus for a while
+- Added arena collection unit tests with new blocks & resets
+- Added htab hashing unit tests with FNV-1a & table growth
+- Added pool unit tests producing & popping all its elements
+- Added queue unit tests with FIFO order & multiple threads
+- Added dlist invariants unit tests with threads & self merge
 - Registering the new collections unit tests in tests main file
-- Added packet header padding unit test with zeroed bytes
-- Checking the NUL at the end in all string append unit tests
-- Added network unit tests checking socket blocking modes
-- Registering the network unit tests in makefile & tests script
-- Added game unit tests with game types, players & lobbies
-- Registering the game unit tests in makefile & the run script
-- Removed unused bmp & gif extensions from files unit tests
+- Added utils unit tests for the serializer & the timer helpers
+- Added String bytes methods & its reserve in the unit tests
+- Added bounded thpool, drain & joinable threads unit tests
+- Added packets unit tests with pieces, routes & the checks
+- Added receive buffer unit tests with packets split by bytes
+- Added game scores, image files & version in the unit tests
+- Added fuzzers & corpus for receive buffer & packet check
+- Added cerver core unit tests with drops, on hold & a drain
+- Added client lifecycle unit tests ending all the connections
+- Added client features unit tests with states & reconnection
+- Added client files unit tests using a files cerver in-process
+- Added game lobby unit tests with players in a game cerver
+- Added routing unit tests with load balancer & two services
+- Updated balancer unit tests with the reconnect thread flag
+- Using shutdown & atomic counters in the integration tests
+- Registering the new unit tests & a runner in the tests script
