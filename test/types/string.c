@@ -9,6 +9,12 @@
 
 #include "../test.h"
 
+#define STRING_TEST_GROWTH_APPENDS			(1 << 16)
+#define STRING_TEST_GROWTH_MAX_MOVES		(1 << 6)
+#define STRING_TEST_RESERVE					(1 << 8)
+
+static const char *string_test_byte = "x";
+
 static void test_str_new (void) {
 
 	String *empty = str_new (NULL);
@@ -331,13 +337,10 @@ static void test_str_append_char (void) {
 	str_append_char (str, '!');
 
 	test_check_ptr (str);
-	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check (str->max_len > str->len, NULL);
 	test_check_unsigned_eq (str->len, strlen (result), NULL);
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
-
-	// the string is terminated right after its length
-	test_check_int_eq (str->str[str->len], '\0', NULL);
 
 	str_delete (str);
 
@@ -354,13 +357,10 @@ static void test_str_append_c_string (void) {
 	str_append_c_string (str, second);
 
 	test_check_ptr (str);
-	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check (str->max_len > str->len, NULL);
 	test_check_unsigned_eq (str->len, strlen (result), NULL);
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
-
-	// the string is terminated right after its length
-	test_check_int_eq (str->str[str->len], '\0', NULL);
 
 	str_delete (str);
 
@@ -378,15 +378,184 @@ static void test_str_append_n_from_c_string (void) {
 	str_append_n_from_c_string (str, second, to_append);
 
 	test_check_ptr (str);
-	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check (str->max_len > str->len, NULL);
 	test_check_unsigned_eq (str->len, strlen (result), NULL);
 	test_check_ptr (str->str);
 	test_check_str_eq (str->str, result, NULL);
 
-	// only n chars are appended and the string is terminated after them
-	test_check_int_eq (str->str[str->len], '\0', NULL);
+	// the terminator must be written on every append
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
 
 	str_delete (str);
+
+}
+
+// a body that arrives in many pieces is built with many appends
+static void test_str_append_n_from_c_string_many (void) {
+
+	const char *body = { "{\"name\": \"Erick Salas\", \"value\": 1234567890}" };
+	const size_t body_len = strlen (body);
+
+	// start from an empty string, as the HTTP body does
+	String *str = str_new (NULL);
+	test_check_ptr (str);
+
+	for (size_t i = 0; i < body_len; i += 3) {
+		const size_t n = ((body_len - i) < 3) ? (body_len - i) : 3;
+		str_append_n_from_c_string (str, body + i, n);
+
+		test_check_unsigned_eq (str->len, i + n, NULL);
+		test_check_int_eq ((int) str->str[str->len], 0, NULL);
+	}
+
+	test_check_str_eq (str->str, body, NULL);
+	test_check_unsigned_eq (str->len, body_len, NULL);
+
+	str_delete (str);
+
+}
+
+static void test_str_create_from_bytes (void) {
+
+	const char bytes[] = { 'a', '\0', 'b', '\0', 'c' };
+
+	String *str = str_create_from_bytes (bytes, sizeof (bytes));
+	test_check_ptr (str);
+	test_check_ptr (str->str);
+	test_check_unsigned_eq (str->len, sizeof (bytes), NULL);
+	test_check_int_eq (memcmp (str->str, bytes, sizeof (bytes)), 0, NULL);
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+	str_delete (str);
+
+	// an empty chunk creates an empty but valid string
+	String *empty = str_create_from_bytes (bytes, 0);
+	test_check_ptr (empty);
+	test_check_ptr (empty->str);
+	test_check_unsigned_eq (empty->len, 0, NULL);
+	test_check_str_eq (empty->str, "", NULL);
+	str_delete (empty);
+
+}
+
+static void test_str_append_bytes (void) {
+
+	const char first[] = { 'x', '\0', 'y' };
+	const char second[] = { '\0', 'z' };
+	const char result[] = { 'x', '\0', 'y', '\0', 'z' };
+
+	String *str = str_create_from_bytes (first, sizeof (first));
+	test_check_ptr (str);
+
+	test_check_int_eq (str_append_bytes (str, second, sizeof (second)), 0, NULL);
+	test_check_unsigned_eq (str->len, sizeof (result), NULL);
+	test_check_int_eq (memcmp (str->str, result, sizeof (result)), 0, NULL);
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+
+	// appending nothing keeps the string unchanged
+	test_check_int_eq (str_append_bytes (str, NULL, 0), 0, NULL);
+	test_check_unsigned_eq (str->len, sizeof (result), NULL);
+
+	// bad arguments
+	test_check_int_eq (str_append_bytes (NULL, second, sizeof (second)), 1, NULL);
+	test_check_int_eq (str_append_bytes (str, NULL, 1), 1, NULL);
+
+	str_delete (str);
+
+}
+
+// appends that fit in the capacity never move the string
+static void test_str_append_bytes_growth (void) {
+
+	String *str = str_new (NULL);
+	test_check_ptr (str);
+
+	size_t moves = 0;
+	const char *previous = NULL;
+	for (size_t i = 0; i < STRING_TEST_GROWTH_APPENDS; i++) {
+		test_check_int_eq (str_append_bytes (str, string_test_byte, 1), 0, NULL);
+		test_check (str->max_len > str->len, NULL);
+
+		if (str->str != previous) moves++;
+		previous = str->str;
+	}
+
+	test_check_unsigned_eq (str->len, STRING_TEST_GROWTH_APPENDS, NULL);
+	test_check_int_eq ((int) str->str[str->len], 0, NULL);
+
+	// a geometric growth, not one realloc for every append
+	test_check (moves < STRING_TEST_GROWTH_MAX_MOVES, "the string was reallocated in too many appends");
+
+	str_delete (str);
+
+}
+
+static void test_str_reserve (void) {
+
+	String *str = str_new (NULL);
+	test_check_ptr (str);
+
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	test_check_ptr (str->str);
+	test_check_unsigned_eq (str->max_len, STRING_TEST_RESERVE, NULL);
+	test_check_unsigned_eq (str->len, 0, NULL);
+	test_check_str_eq (str->str, "", NULL);
+
+	// appends inside the reserved bytes keep the same buffer
+	const char *reserved = str->str;
+	for (size_t i = 0; i < (STRING_TEST_RESERVE - 1); i++) {
+		test_check_int_eq (str_append_bytes (str, string_test_byte, 1), 0, NULL);
+	}
+
+	test_check_ptr_eq (str->str, reserved);
+	test_check_unsigned_eq (str->max_len, STRING_TEST_RESERVE, NULL);
+
+	// it never shrinks
+	test_check_int_eq (str_reserve (str, 1), 0, NULL);
+	test_check_unsigned_eq (str->max_len, STRING_TEST_RESERVE, NULL);
+
+	test_check_int_eq (str_reserve (NULL, STRING_TEST_RESERVE), 1, NULL);
+
+	str_delete (str);
+
+}
+
+// a new buffer resets the capacity, so the next append can not overflow it
+static void test_str_capacity_reset (void) {
+
+	String *str = str_new (NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_replace_with (str, "Erick Salas");
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check_int_eq (str_append_bytes (str, string_test_byte, 1), 0, NULL);
+	test_check_str_eq (str->str, "Erick Salasx", NULL);
+	str_delete (str);
+
+	str = str_new (NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_n_replace_with (str, "Erick Salas", 5);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	str_delete (str);
+
+	str = str_new (NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_replace (str, "%s", "Erick Salas");
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	str_delete (str);
+
+	String *from = str_new ("Erick Salas");
+	str = str_new (NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_copy (str, from);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_n_copy (str, from, 5);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check_int_eq (str_reserve (str, STRING_TEST_RESERVE), 0, NULL);
+	str_remove_last_char (str);
+	test_check_unsigned_eq (str->max_len, 0, NULL);
+	test_check_str_eq (str->str, "Eric", NULL);
+	str_delete (str);
+	str_delete (from);
 
 }
 
@@ -505,6 +674,12 @@ void types_tests_string (void) {
 	test_str_append_char ();
 	test_str_append_c_string ();
 	test_str_append_n_from_c_string ();
+	test_str_append_n_from_c_string_many ();
+	test_str_create_from_bytes ();
+	test_str_append_bytes ();
+	test_str_append_bytes_growth ();
+	test_str_reserve ();
+	test_str_capacity_reset ();
 	test_str_to_upper ();
 	test_str_to_lower ();
 	test_str_remove_char ();
