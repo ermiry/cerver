@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <cerver/client.h>
 #include <cerver/packets.h>
@@ -41,10 +42,41 @@ const char *MESSAGE_4 = {
 	"Quis vel eros donec ac odio tempor. Lorem ipsum dolor sit amet consectetur."
 };
 
+#define MESSAGES			3
+
 static const char *client_name = { "test-client" };
 
 static Client *client = NULL;
 static Connection *connection = NULL;
+
+static unsigned int echoes = 0;
+static unsigned int mismatches = 0;
+
+// the cerver echoes every message back
+static void client_app_handler_message (const Packet *packet) {
+
+	const AppMessage *app_message = (const AppMessage *) packet->data;
+
+	if (
+		!app_message || (packet->data_size < sizeof (AppMessage))
+		|| strncmp (MESSAGE, app_message->message, APP_MESSAGE_LEN)
+	) {
+		test_counter_add (&mismatches);
+	}
+
+	test_counter_add (&echoes);
+
+}
+
+static void client_app_handler (void *packet_ptr) {
+
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	if (packet && (packet->header.request_type == APP_REQUEST_MESSAGE)) {
+		client_app_handler_message (packet);
+	}
+
+}
 
 static void single_app_message (
 	const size_t id, const char *msg
@@ -128,7 +160,7 @@ static void single_app_message_manual (const char *msg) {
 
 	// generate the packet
 	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	message->packet = malloc (packet_len);
+	message->packet = calloc (1, packet_len);
 	message->packet_size = packet_len;
 
 	char *end = (char *) message->packet;
@@ -137,6 +169,7 @@ static void single_app_message_manual (const char *msg) {
 	header->packet_size = packet_len;
 
 	header->request_type = APP_REQUEST_MESSAGE;
+	header->version = packet_version_local ();
 
 	end += sizeof (PacketHeader);
 
@@ -175,9 +208,9 @@ int main (int argc, const char **argv) {
 	test_check_str_eq (client->name, client_name, NULL);
 	test_check_str_len (client->name, strlen (client_name), NULL);
 
-	// Handler *app_handler = handler_create (client_app_handler);
-	// handler_set_direct_handle (app_handler, true);
-	// client_set_app_handlers (client, app_handler, NULL);
+	Handler *app_handler = handler_create (client_app_handler);
+	handler_set_direct_handle (app_handler, true);
+	client_set_app_handlers (client, app_handler, NULL);
 
 	connection = client_connection_create (
 		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
@@ -197,8 +230,14 @@ int main (int argc, const char **argv) {
 	single_app_message_generate_request (1, MESSAGE);
 	single_app_message_manual (MESSAGE);
 
-	// wait for any response to arrive
-	(void) sleep (2);
+	/*** check ***/
+	// wait until every echo has arrived
+	test_check_unsigned_eq (
+		test_wait_counter (&echoes, MESSAGES, TEST_WAIT_SECONDS),
+		MESSAGES, NULL
+	);
+
+	test_check_unsigned_eq (mismatches, 0, NULL);
 
 	/*** end ***/
 	client_connection_end (client, connection);

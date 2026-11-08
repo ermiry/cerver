@@ -18,15 +18,12 @@ static const char *welcome_message = "Hello there!";
 
 static Cerver *cerver = NULL;
 
+// the cerver is released in main () when cerver_start () returns
 static void end (int dummy) {
-	
-	cerver_stats_print (cerver, true, true);
 
-	cerver_teardown (cerver);
+	(void) dummy;
 
-	cerver_end ();
-
-	exit (0);
+	(void) cerver_shutdown (cerver);
 
 }
 
@@ -67,12 +64,18 @@ int main (int argc, char **argv) {
 	cerver_set_app_handlers (cerver, app_packet_handler, NULL);
 
 	/*** start ***/
+	int code = 0;
 	if (cerver_start (cerver)) {
 		cerver_log_error ("Failed to start cerver!");
+		code = 1;
 	}
+
+	cerver_stats_print (cerver, true, true);
+
+	if (cerver_teardown (cerver)) code = 1;
 
 	cerver_end ();
 
-	return 0;
+	return code;
 
 }

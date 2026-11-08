@@ -22,13 +22,12 @@ static unsigned int n_services = 2;
 
 static Balancer *load_balancer = NULL;
 
+// the balancer is released in start () when balancer_start () returns
 static void end (int dummy) {
-	
-	balancer_teardown (load_balancer);
 
-	cerver_end ();
+	(void) dummy;
 
-	exit (0);
+	if (load_balancer) (void) cerver_shutdown (load_balancer->cerver);
 
 }
 
@@ -136,6 +135,9 @@ static void start (const BalancerType type) {
 	test_check_unsigned_eq (
 		balancer_start (load_balancer), 0, "Failed to start balancer!"
 	);
+
+	test_check_unsigned_eq (balancer_teardown (load_balancer), 0, NULL);
+	load_balancer = NULL;
 
 }
 

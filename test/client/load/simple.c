@@ -40,7 +40,7 @@ static void app_handler (void *packet_ptr) {
 			case APP_REQUEST_TEST: break;
 
 			case APP_REQUEST_MESSAGE: {
-				responses += 1;
+				test_counter_add (&responses);
 
 				AppMessage *app_message = (AppMessage *) (char *) packet->data;
 
@@ -76,7 +76,7 @@ static void send_app_message (
 
 	// generate the packet
 	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	message->packet = malloc (packet_len);
+	message->packet = calloc (1, packet_len);
 	message->packet_size = packet_len;
 
 	char *end = (char *) message->packet;
@@ -85,6 +85,8 @@ static void send_app_message (
 	header->packet_size = packet_len;
 
 	header->request_type = APP_REQUEST_MESSAGE;
+
+	header->version = packet_version_local ();
 
 	end += sizeof (PacketHeader);
 
@@ -116,6 +118,8 @@ int main (int argc, const char **argv) {
 	(void) signal (SIGPIPE, SIG_IGN);
 
 	MESSAGE_LEN = strlen (MESSAGE);
+
+	test_output_init ();
 
 	(void) printf ("Testing CLIENT load...\n");
 
@@ -162,26 +166,19 @@ int main (int argc, const char **argv) {
 		usleep (1000);
 	}
 
-	// wait for any response to arrive
+	// wait for every response to arrive
 	(void) printf ("Waiting...\n");
-	(void) sleep (4);
+	const unsigned int received = test_wait_counter (&responses, n_sent_packets, TEST_WAIT_SECONDS);
 
 	/*** check ***/
-	// check that we received matching responses
-	// test_check_unsigned_eq (
-	// 	client->stats->received_packets->n_test_packets,
-	// 	n_sent_packets,
-	// 	NULL
-	// );
-
 	(void) printf (
-		"\n\n%lu responses / %lu requests received!\n\n",
-		responses, n_sent_packets
+		"\n\n%u responses / %u requests received!\n\n",
+		received, n_sent_packets
 	);
 
 	test_check_unsigned_eq (
 		n_sent_packets,
-		responses,
+		received,
 		NULL
 	);
 

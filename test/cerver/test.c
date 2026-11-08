@@ -61,6 +61,8 @@ static void test_cerver_base_configuration (void) {
 
 int main (int argc, char **argv) {
 
+	test_output_init ();
+
 	srand ((unsigned) time (NULL));
 
 	(void) printf ("Testing CERVER...\n");
