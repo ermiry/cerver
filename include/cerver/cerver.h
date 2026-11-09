@@ -33,8 +33,8 @@
 #define CERVER_DEFAULT_IPV6_ONLY					false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				SOMAXCONN
 
-// a literal IPv4 or IPv6 address, without the port
-#define CERVER_BIND_ADDRESS_SIZE					INET6_ADDRSTRLEN
+// a literal IPv4 or IPv6 address with its zone, without the port
+#define CERVER_BIND_ADDRESS_SIZE					NETWORK_ADDRESS_STRING_SIZE
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE

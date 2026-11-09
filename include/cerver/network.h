@@ -7,6 +7,7 @@
 #include <fcntl.h>
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 
@@ -22,6 +23,15 @@
 // an IPv4 inside an IPv6 address (::ffff:a.b.c.d) starts after these bytes
 #define NETWORK_IPV4_MAPPED_OFFSET		12
 
+// separates a link local IPv6 address from its zone (fe80::1%eth0)
+#define NETWORK_ZONE_SEPARATOR			'%'
+
+// an ip with its zone: the IPv6 text, the separator and the interface name
+#define NETWORK_ADDRESS_STRING_SIZE		(INET6_ADDRSTRLEN + IF_NAMESIZE)
+
+// the most addresses that a host name resolves to that are kept
+#define NETWORK_MAX_RESOLVED_ADDRESSES	16
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -34,6 +44,14 @@ typedef enum Protocol {
 } Protocol;
 
 #define SOCK_SIZEOF_MEMBER(type, member) (sizeof (((type *) NULL)->member))
+
+// the addresses that a host resolves to, in the order to try them
+typedef struct NetworkAddresses {
+
+	unsigned int count;
+	struct sockaddr_storage addresses[NETWORK_MAX_RESOLVED_ADDRESSES];
+
+} NetworkAddresses;
 
 // gets the ip related to the hostname, IPv4 or IPv6, with getaddrinfo () (thread safe)
 // returns a newly allocated c string if found
@@ -50,7 +68,18 @@ CERVER_PUBLIC unsigned int network_resolve_address (
 	struct sockaddr_storage *address
 );
 
+// resolves a literal ip (with its zone) or a host name into every address of the protocol,
+// alternating the families and starting with the one of prefer_ipv6,
+// each family keeps the order of getaddrinfo () (RFC 6724)
+// returns 0 on success, 1 if the host could not be resolved
+CERVER_PUBLIC unsigned int network_resolve_addresses (
+	const char *host, const in_port_t port,
+	const bool prefer_ipv6, const int protocol,
+	NetworkAddresses *addresses
+);
+
 // parses a literal IPv4 or IPv6 address, without a port, into an address
+// a link local IPv6 address can have its zone, as an interface name or index (fe80::1%eth0)
 // returns 0 on success, 1 if it is not a valid ip
 CERVER_PUBLIC unsigned int network_parse_address (
 	const char *ip, const in_port_t port,
@@ -74,18 +103,22 @@ CERVER_PUBLIC bool sock_set_blocking (
 	int32_t fd, bool blocking
 );
 
-// writes the ip of the address in a buffer of at least INET6_ADDRSTRLEN bytes
+// writes the ip of the address in a buffer of at least NETWORK_ADDRESS_STRING_SIZE bytes
 // an IPv4 inside an IPv6 address is written as the IPv4 (a.b.c.d)
+// an IPv6 address with a scope id is written with its zone (fe80::1%eth0)
 // returns 0 on success, 1 on error
 CERVER_PUBLIC unsigned int sock_ip_to_string_actual (
 	const struct sockaddr *address,
 	char *ip_buffer
 );
 
+// returns a newly allocated c string with the ip of the address
 CERVER_PUBLIC char *sock_ip_to_string (
 	const struct sockaddr *address
 );
 
+// true if both addresses have the same ip, port and zone,
+// an IPv4 inside an IPv6 address (::ffff:a.b.c.d) is equal to the IPv4
 CERVER_PUBLIC bool sock_ip_equal (
 	const struct sockaddr *a, const struct sockaddr *b
 );
