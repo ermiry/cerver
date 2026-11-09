@@ -102,6 +102,13 @@ struct _ReceiveHandle {
 
 	struct _Packet *spare_packet;
 
+	// the bytes of the buffer that come after the packet that is being dispatched,
+	// like the contents of a file that are sent after its packet,
+	// the handler takes them with receive_handle_take_trailing ()
+	const char *trailing;
+	size_t trailing_size;
+	size_t trailing_taken;
+
 };
 
 typedef struct _ReceiveHandle ReceiveHandle;
@@ -122,6 +129,15 @@ CERVER_PRIVATE void receive_handle_buffer (
 
 // releases the packet that was being assembled
 CERVER_PRIVATE void receive_handle_end (ReceiveHandle *receive_handle);
+
+// takes up to max_size of the bytes that come after the packet that is being dispatched,
+// they are not handled as packets after the dispatch
+// it can only be called from the dispatch of the packet
+// returns the number of bytes in data
+CERVER_PRIVATE size_t receive_handle_take_trailing (
+	ReceiveHandle *receive_handle,
+	const char **data, const size_t max_size
+);
 
 #ifdef __cplusplus
 }
