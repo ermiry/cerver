@@ -245,6 +245,7 @@ Connection *connection_new (void) {
 		connection->updating = false;
 		connection->ending = false;
 		connection->end_deferred = false;
+		connection->shut_down = false;
 
 		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
@@ -314,6 +315,9 @@ Connection *connection_new (void) {
 		connection->delete_auth_data = NULL;
 		connection->admin_auth = false;
 		connection->auth_packet = NULL;
+
+		(void) memset (connection->datagram_token, 0, CONNECTION_DATAGRAM_TOKEN_SIZE);
+		connection->datagram_token_set = false;
 
 		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
 		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
@@ -690,6 +694,52 @@ u8 connection_generate_auth_packet (Connection *connection) {
 
 }
 
+// sets the token that an authenticated UDP connection sends after the packet in every datagram
+// the token is written before the flag, a sender that sees the flag reads it complete
+void connection_set_datagram_token (
+	Connection *connection, const u8 *token
+) {
+
+	if (connection && token) {
+		(void) memcpy (connection->datagram_token, token, CONNECTION_DATAGRAM_TOKEN_SIZE);
+		__atomic_store_n (&connection->datagram_token_set, true, __ATOMIC_RELEASE);
+	}
+
+}
+
+// copies the datagram token of the connection into token
+// returns true if the connection has one
+bool connection_get_datagram_token (
+	const Connection *connection, u8 *token
+) {
+
+	bool has_token = false;
+
+	if (connection && __atomic_load_n (&connection->datagram_token_set, __ATOMIC_ACQUIRE)) {
+		(void) memcpy (token, connection->datagram_token, CONNECTION_DATAGRAM_TOKEN_SIZE);
+		has_token = true;
+	}
+
+	return has_token;
+
+}
+
+// the connection sends its datagrams without a token again
+void connection_clear_datagram_token (Connection *connection) {
+
+	if (connection) {
+		__atomic_store_n (&connection->datagram_token_set, false, __ATOMIC_RELEASE);
+	}
+
+}
+
+// returns true if the connection sends a token in its datagrams (it authenticated)
+bool connection_has_datagram_token (const Connection *connection) {
+
+	return connection && __atomic_load_n (&connection->datagram_token_set, __ATOMIC_ACQUIRE);
+
+}
+
 // sets the ability to attempt a reconnection when the cerver ends the connection
 // the update thread waits wait_time secs before each attempt,
 // until it connects again or the connection is ended by the client
@@ -750,6 +800,18 @@ static int connection_init_socket_type (const Protocol protocol) {
 
 }
 
+// a datagram is received whole in a single recv (), a smaller buffer would truncate it
+static void connection_init_datagram_buffer (Connection *connection) {
+
+	if (
+		(connection->protocol == PROTOCOL_UDP)
+		&& (connection->receive_packet_buffer_size < MAX_UDP_PACKET_SIZE)
+	) {
+		connection->receive_packet_buffer_size = MAX_UDP_PACKET_SIZE;
+	}
+
+}
+
 // sets up the new connection values
 u8 connection_init (Connection *connection) {
 
@@ -764,6 +826,11 @@ u8 connection_init (Connection *connection) {
 			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
 
 			if (connection->socket->sock_fd > -1) {
+				// a new socket that was not shut down
+				__atomic_store_n (&connection->shut_down, false, __ATOMIC_RELEASE);
+
+				connection_init_datagram_buffer (connection);
+
 				retval = 0;     // connection setup was successfull
 			}
 
@@ -1037,6 +1104,9 @@ void connection_reset (Connection *connection) {
 
 		connection->authenticated = false;
 
+		// a connection that connects again authenticates again
+		connection_clear_datagram_token (connection);
+
 		connection->reconnect_attempts = 0;
 
 		// a new socket and the address of the cerver
@@ -1097,6 +1167,7 @@ u8 connection_drop_request (Connection *connection) {
 	u8 retval = 1;
 
 	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
+		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
 		retval = (u8) (shutdown (connection->socket->sock_fd, SHUT_RDWR) != 0);
 	}
 
@@ -1394,6 +1465,7 @@ bool connection_is_update_thread (const Connection *connection) {
 void connection_wake_update (Connection *connection) {
 
 	if (connection->socket && (connection->socket->sock_fd >= 0)) {
+		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
 		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
 	}
 
@@ -1544,6 +1616,9 @@ static bool connection_update_reconnect_attempt (
 
 			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
 
+			// an UDP cerver only knows the connection when it sends a datagram
+			client_connect_datagram (client, connection);
+
 			connected = true;
 		}
 
@@ -1578,6 +1653,9 @@ static void connection_update_reconnect_close (
 	cerver_report_delete (
 		__atomic_exchange_n (&connection->cerver_report, NULL, __ATOMIC_ACQ_REL)
 	);
+
+	// an UDP connection authenticates again with a new token
+	connection_clear_datagram_token (connection);
 
 	// a packet that was only partially received
 	receive_handle_end (&connection->receive_handle);

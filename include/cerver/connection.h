@@ -37,6 +37,9 @@
 #define CONNECTION_DEFAULT_RECEIVE_FLAGS			0
 #define CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE		4096
 
+// an authenticated UDP connection sends this token after the packet in every datagram
+#define CONNECTION_DATAGRAM_TOKEN_SIZE				16
+
 #define CONNECTION_DEFAULT_UPDATE_TIMEOUT			2
 
 #define CONNECTION_DEFAULT_RECEIVE_PACKETS			true
@@ -153,6 +156,10 @@ struct _Connection {
 	bool ending;
 	bool end_deferred;
 
+	// the socket was shut down to wake up its receive, set with __atomic,
+	// so an UDP recv () of 0 bytes is told apart from an empty datagram
+	bool shut_down;
+
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
@@ -197,6 +204,11 @@ struct _Connection {
 	Action delete_auth_data;                // destroys the auth data when the connection ends
 	bool admin_auth;                        // attempt to connect as an admin
 	struct _Packet *auth_packet;
+
+	// the token of an authenticated UDP connection, it goes after the packet in every datagram,
+	// the flag is set with __atomic after the token, so a sender reads it complete
+	u8 datagram_token[CONNECTION_DATAGRAM_TOKEN_SIZE];
+	bool datagram_token_set;
 
 	// the update thread reconnects when the cerver ends the connection,
 	// it waits reconnect_wait_time secs between each attempt
@@ -368,6 +380,23 @@ CERVER_PUBLIC void connection_remove_auth_data (
 CERVER_PUBLIC u8 connection_generate_auth_packet (
 	Connection *connection
 );
+
+// sets the token that an authenticated UDP connection sends after the packet in every datagram
+CERVER_PRIVATE void connection_set_datagram_token (
+	Connection *connection, const u8 *token
+);
+
+// copies the datagram token of the connection into token
+// returns true if the connection has one
+CERVER_PRIVATE bool connection_get_datagram_token (
+	const Connection *connection, u8 *token
+);
+
+// the connection sends its datagrams without a token again
+CERVER_PRIVATE void connection_clear_datagram_token (Connection *connection);
+
+// returns true if the connection sends a token in its datagrams (it authenticated)
+CERVER_PRIVATE bool connection_has_datagram_token (const Connection *connection);
 
 // sets the ability to attempt a reconnection when the cerver ends the connection
 // the update thread waits wait_time secs before each attempt,
