@@ -29,6 +29,15 @@
 #define HTTP_METRICS_SUM_FORMAT					"cerver_http_request_duration_seconds_sum{method=\"%s\",path=\"%s\"} %.6f\n"
 #define HTTP_METRICS_COUNT_FORMAT				"cerver_http_request_duration_seconds_count{method=\"%s\",path=\"%s\"} %zu\n"
 
+#define HTTP_METRICS_THPOOL_BUCKET_FORMAT			"%s_bucket{le=\"%g\"} %zu\n"
+#define HTTP_METRICS_THPOOL_INFINITE_BUCKET_FORMAT	"%s_bucket{le=\"+Inf\"} %zu\n"
+#define HTTP_METRICS_THPOOL_SUM_FORMAT				"%s_sum %.6f\n"
+#define HTTP_METRICS_THPOOL_COUNT_FORMAT			"%s_count %zu\n"
+
+// the buckets of the thpool histograms are in ms, the metrics in secs
+#define HTTP_METRICS_MILLISECONDS_PER_SECOND		1000.0
+#define HTTP_METRICS_MICROSECONDS_PER_SECOND		1000000.0
+
 static const char *http_metrics_type_counter = { "counter" };
 static const char *http_metrics_type_gauge = { "gauge" };
 static const char *http_metrics_type_histogram = { "histogram" };
@@ -198,6 +207,96 @@ static void http_metrics_requests_counters (String *metrics, const HttpCerver *h
 
 }
 
+// the counters of the jobs of the thpool, that are the connections that it handled
+static void http_metrics_thpool_counters (String *metrics, const ThpoolStats *stats) {
+
+	http_metrics_header (
+		metrics, "cerver_thpool_jobs_total", "The connections that entered the queue of the pool.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_jobs_total", (size_t) stats->total_jobs);
+
+	http_metrics_header (
+		metrics, "cerver_thpool_jobs_completed_total", "The connections that the threads finished.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_jobs_completed_total", (size_t) stats->completed_jobs);
+
+	http_metrics_header (
+		metrics, "cerver_thpool_rejected_total", "The connections that could not enter the queue.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_rejected_total", (size_t) stats->rejected_jobs);
+
+	http_metrics_header (
+		metrics, "cerver_thpool_dropped_total", "The queued connections that a drain rejected.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_dropped_total", (size_t) stats->dropped_jobs);
+
+	http_metrics_header (
+		metrics, "cerver_thpool_waited_total", "The times that a connection waited for space in the queue.",
+		http_metrics_type_counter
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_waited_total", (size_t) stats->waited_jobs);
+
+	http_metrics_header (
+		metrics, "cerver_thpool_queued_max", "The most connections that waited in the queue at once.",
+		http_metrics_type_gauge
+	);
+
+	http_metrics_value (metrics, "cerver_thpool_queued_max", (size_t) stats->max_queued);
+
+}
+
+// a histogram of the thpool, its buckets are of 2^i ms and the last one has the rest
+static void http_metrics_thpool_histogram (
+	String *metrics, const char *name, const char *help,
+	const u64 *histogram, const u64 total_microseconds
+) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (metrics, name, help, http_metrics_type_histogram);
+
+	size_t cumulative = 0;
+	for (unsigned int i = 0; i < (THPOOL_HISTOGRAM_BUCKETS - 1); i++) {
+		cumulative += (size_t) histogram[i];
+
+		const double bucket = (double) (1UL << i) / HTTP_METRICS_MILLISECONDS_PER_SECOND;
+		http_metrics_append (
+			metrics, line,
+			snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_THPOOL_BUCKET_FORMAT, name, bucket, cumulative)
+		);
+	}
+
+	cumulative += (size_t) histogram[THPOOL_HISTOGRAM_BUCKETS - 1];
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_THPOOL_INFINITE_BUCKET_FORMAT, name, cumulative)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (
+			line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_THPOOL_SUM_FORMAT,
+			name, (double) total_microseconds / HTTP_METRICS_MICROSECONDS_PER_SECOND
+		)
+	);
+
+	http_metrics_append (
+		metrics, line,
+		snprintf (line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_THPOOL_COUNT_FORMAT, name, cumulative)
+	);
+
+}
+
 static void http_metrics_thpool (String *metrics, const HttpCerver *http_cerver) {
 
 	Thpool *thpool = http_cerver->cerver ? http_cerver->cerver->thpool : NULL;
@@ -220,6 +319,21 @@ static void http_metrics_thpool (String *metrics, const HttpCerver *http_cerver)
 		);
 
 		http_metrics_value (metrics, "cerver_thpool_queued", thpool_get_queued (thpool));
+
+		ThpoolStats stats;
+		thpool_get_stats (thpool, &stats);
+
+		http_metrics_thpool_counters (metrics, &stats);
+
+		http_metrics_thpool_histogram (
+			metrics, "cerver_thpool_wait_seconds", "The time that the connections waited for a thread.",
+			stats.wait_histogram, stats.wait_total_microseconds
+		);
+
+		http_metrics_thpool_histogram (
+			metrics, "cerver_thpool_run_seconds", "The time that the threads handled each connection.",
+			stats.run_histogram, stats.run_total_microseconds
+		);
 	}
 
 }
