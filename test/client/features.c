@@ -25,6 +25,7 @@
 // - client_connect_to_cerver_async () handles the cerver info and is waited by client_requests_wait ()
 // - the send queue sends every packet from its own thread, that is joined at the end
 // - a connection with attempt reconnect connects again after the cerver restarts
+// - the reconnection resolves the host again and finds the cerver in its other address
 // - connection_reconnect () closes the socket and the connection connects again
 // - the end of a connection that waits to reconnect does not wait the reconnect time
 // - packet_init_ping () and packet_init_request () send a header with the local version
@@ -32,6 +33,8 @@
 //   authenticates with the token and is added to the same client of the cerver
 
 #define FEATURES_ADDRESS				"127.0.0.1"
+#define FEATURES_IPV6_ADDRESS			"::1"
+#define FEATURES_LOCALHOST				"localhost"
 #define FEATURES_PORT_BASE				7300
 #define FEATURES_NAME					"features-cerver"
 
@@ -65,6 +68,9 @@ typedef struct FeaturesCerver {
 	u8 start_result;
 
 	unsigned int started;
+
+	// the cerver binds this address, NULL for every address
+	const char *bind_address;
 
 } FeaturesCerver;
 
@@ -208,6 +214,10 @@ static void features_cerver_start_with (
 	cerver_set_handler_type (features->cerver, CERVER_HANDLER_TYPE_POLL);
 	cerver_set_poll_time_out (features->cerver, FEATURES_POLL_TIMEOUT);
 	cerver_set_max_received_packet_size (features->cerver, FEATURES_MAX_PACKET_SIZE);
+
+	if (features->bind_address) {
+		test_check_unsigned_eq (cerver_set_bind_address (features->cerver, features->bind_address), 0, NULL);
+	}
 
 	Handler *app_handler = handler_create (features_cerver_app_handler);
 	handler_set_direct_handle (app_handler, true);
@@ -495,7 +505,7 @@ static void test_features_send_queue_pending (void) {
 		connection_send_packet (connection, features_echo_request (client, connection));
 	}
 
-	test_check_unsigned_eq (dlist_size (connection->send_queue->queue), FEATURES_PACKETS, NULL);
+	test_check_unsigned_eq ((unsigned int) job_queue_size (connection->send_queue), FEATURES_PACKETS, NULL);
 
 	test_check_unsigned_eq (client_teardown (client), 0, NULL);
 
@@ -536,6 +546,53 @@ static void test_features_reconnect (void) {
 
 	test_check_unsigned_eq (test_wait_counter (&connected_events, 2, TEST_WAIT_SECONDS), 2, "the connection did not reconnect");
 	test_check_int_eq (connection_get_state (connection), CONNECTION_STATE_WORKING, NULL);
+
+	features_send_echoes (client, connection, FEATURES_PACKETS);
+	features_check_echoes (2 * FEATURES_PACKETS);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
+	features_cerver_stop (&features);
+
+}
+
+// the cerver comes back in the other address of the host name,
+// each reconnection resolves the host again and tries every address,
+// before it only tried the first address that was resolved when the connection was created
+static void test_features_reconnect_address (void) {
+
+	features_counters_reset ();
+
+	const u16 port = features_port++;
+
+	FeaturesCerver features = { 0 };
+	features.bind_address = FEATURES_ADDRESS;
+	features_cerver_start (&features, port);
+
+	Client *client = features_client_create ();
+	Connection *connection = client_connection_create (
+		client, FEATURES_LOCALHOST, port, PROTOCOL_TCP, false
+	);
+
+	test_check_ptr (connection);
+
+	connection_set_attempt_reconnect (connection, FEATURES_RECONNECT_SECONDS);
+
+	test_check_int_eq (client_connect_and_start (client, connection), 0, NULL);
+	test_check_int_eq (connection->address.ss_family, AF_INET, NULL);
+
+	features_send_echoes (client, connection, FEATURES_PACKETS);
+	features_check_echoes (FEATURES_PACKETS);
+
+	features_cerver_stop (&features);
+
+	test_check_unsigned_eq (test_wait_counter (&close_events, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	features.bind_address = FEATURES_IPV6_ADDRESS;
+	features_cerver_start (&features, port);
+
+	test_check_unsigned_eq (test_wait_counter (&connected_events, 2, TEST_WAIT_SECONDS), 2, "the connection did not reconnect");
+	test_check_int_eq (connection->address.ss_family, AF_INET6, NULL);
 
 	features_send_echoes (client, connection, FEATURES_PACKETS);
 	features_check_echoes (2 * FEATURES_PACKETS);
@@ -811,6 +868,7 @@ int main (int argc, char **argv) {
 	test_features_send_queue_pending ();
 
 	test_features_reconnect ();
+	test_features_reconnect_address ();
 	test_features_reconnect_request ();
 	test_features_reconnect_end ();
 
