@@ -47,7 +47,9 @@ BASE_DEBUG	:= -D CERVER_DEBUG -D CERVER_STATS 				\
 				-D AUTH_DEBUG 								\
 				-D ADMIN_DEBUG								\
 				-D FILES_DEBUG								\
-				-D THREADS_DEBUG
+				-D THREADS_DEBUG							\
+				-D BALANCER_DEBUG							\
+				-D SERVICE_DEBUG
 
 HAND_DEBUG	:= -D HANDLER_DEBUG -D SOCKET_DEBUG
 RECV_DEBUG	:= -D RECEIVE_DEBUG -D CLIENT_RECEIVE_DEBUG
@@ -125,6 +127,7 @@ endif
 # sanitizers are applied to the library, the examples and the tests
 ifneq ($(SANITIZER),)
 	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
+	CFLAGS += -D CERVER_RECYCLE_DISABLED
 endif
 
 # common flags
@@ -323,12 +326,19 @@ testapp:
 	$(CC) $(TESTAPPFGS) -I $(INCDIR) $(TESTAPPSRC) -shared -o $(TESTAPP) $(TESTAPPLIBS)
 
 units: testout $(TESTOBJS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/balancer.o -o ./$(TESTTARGET)/balancer $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/routing.o -o ./$(TESTTARGET)/routing $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/core.o -o ./$(TESTTARGET)/cerver/core $(TESTLIBS) $(TESTAPPLIB)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/lobby.o -o ./$(TESTTARGET)/cerver/lobby $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/game/*.o -o ./$(TESTTARGET)/game $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/lifecycle.o -o ./$(TESTTARGET)/client/lifecycle $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/features.o -o ./$(TESTTARGET)/client/features $(TESTLIBS) $(TESTAPPLIB)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/client/files.o -o ./$(TESTTARGET)/client/files $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/connection.o -o ./$(TESTTARGET)/connection $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/network.o -o ./$(TESTTARGET)/network $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/socket.o -o ./$(TESTTARGET)/socket $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/collections/*.o -o ./$(TESTTARGET)/collections $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/http/*.o -o ./$(TESTTARGET)/http $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/files.o -o ./$(TESTTARGET)/files $(TESTLIBS)
@@ -348,9 +358,13 @@ INTCERVERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 
 integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/connections.o -o $(INTCERVEROUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/load.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/load $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/queue.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/queue $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/requests.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/requests $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/service.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/service $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
 
@@ -360,8 +374,12 @@ INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/connections.o -o $(INTCLIENTOUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/simple.o -o $(INTCLIENTOUT)/load/simple $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/queue.o -o $(INTCLIENTOUT)/queue $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
@@ -423,6 +441,8 @@ testout:
 	@mkdir -p ./$(TESTTARGET)
 	@mkdir -p ./$(TESTTARGET)/cerver
 	@mkdir -p ./$(TESTTARGET)/client
+	@mkdir -p ./$(TESTTARGET)/client/load
+	@mkdir -p ./$(TESTTARGET)/handler
 
 test: testout
 	$(MAKE) $(TESTOBJS)
@@ -516,7 +536,7 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
 FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
