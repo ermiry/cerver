@@ -1222,13 +1222,13 @@ void cerver_handlers_print_info (Cerver *cerver) {
 
 	if (cerver) {
 		cerver_log_debug (
-			"%d - current ACTIVE handlers in cerver %s",
-			cerver->num_handlers_alive, cerver->info->name
+			"%u - current ACTIVE handlers in cerver %s",
+			cerver_get_n_handlers_alive (cerver), cerver->info->name
 		);
 
 		cerver_log_debug (
-			"%d - current WORKING handlers in cerver %s",
-			cerver->num_handlers_working, cerver->info->name
+			"%u - current WORKING handlers in cerver %s",
+			cerver_get_n_handlers_working (cerver), cerver->info->name
 		);
 	}
 
@@ -1292,10 +1292,9 @@ unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
 
 	unsigned int retval = 0;
 
-	if (cerver && cerver->handlers_lock) {
-		(void) pthread_mutex_lock (cerver->handlers_lock);
-		retval = cerver->num_handlers_working;
-		(void) pthread_mutex_unlock (cerver->handlers_lock);
+	// the handlers count themselves with __atomic while they handle a packet
+	if (cerver) {
+		retval = __atomic_load_n (&cerver->num_handlers_working, __ATOMIC_SEQ_CST);
 	}
 
 	return retval;
