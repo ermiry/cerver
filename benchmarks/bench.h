@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#if defined (__x86_64__) || defined (__i386__)
+
+#define BENCH_TIME_UNIT		"cycles"
+
 #define RDTSC_START(cycles)												\
     do {																\
         uint32_t cyc_high, cyc_low;										\
@@ -32,6 +36,26 @@
                        ); 												\
         (cycles) = ((uint64_t)cyc_high << 32) | cyc_low;				\
     } while (0)
+
+// without rdtsc (arm64), the monotonic clock is used and the unit is nanoseconds
+#else
+
+#include <time.h>
+
+#define BENCH_TIME_UNIT					"ns"
+#define BENCH_NANOSECONDS_PER_SECOND	1000000000ULL
+
+#define RDTSC_START(cycles)												\
+	do {																\
+		struct timespec bench_now;										\
+		(void) clock_gettime (CLOCK_MONOTONIC, &bench_now);				\
+		(cycles) = ((uint64_t) bench_now.tv_sec * BENCH_NANOSECONDS_PER_SECOND)	\
+			+ (uint64_t) bench_now.tv_nsec;								\
+	} while (0)
+
+#define RDTSC_STOP(cycles)		RDTSC_START (cycles)
+
+#endif
 
 static __attribute__ ((noinline))
 	uint64_t rdtsc_overhead_func (uint64_t dummy) { return dummy; }
@@ -86,8 +110,8 @@ uint64_t global_rdtsc_overhead = (uint64_t) UINT64_MAX;
 		uint64_t S = size;																			\
 		float cycle_per_op = (min_diff) / (double) S;												\
 		float avg_cycle_per_op = (sum_diff) / ((double) S * repeat);								\
-		if (verbose) (void) printf (" %.2f cycles per operation (best) ", cycle_per_op);			\
-		if (verbose) (void) printf ("\t%.2f cycles per operation (avg) ", avg_cycle_per_op);		\
+		if (verbose) (void) printf (" %.2f " BENCH_TIME_UNIT " per operation (best) ", cycle_per_op);	\
+		if (verbose) (void) printf ("\t%.2f " BENCH_TIME_UNIT " per operation (avg) ", avg_cycle_per_op);	\
 		if (verbose) (void) printf ("\n");															\
 		if (!verbose) (void) printf (" %.2f ",cycle_per_op);										\
 		(void) fflush (NULL);																		\

@@ -3,6 +3,21 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-3 (from 1.8b-2)
+
+- New fields (ABI): `Handler` (`joinable`), `Client` (`session_lock`, `teardown_requested`, `event_threads`, the storages of its stats, file stats and lock, `recycle_next`), `ClientStats` (the storages of its packets per type) and `Cerver` (`connection_threads`, `event_threads`)
+- The stats, the file stats and the lock of a client live inside it: they must not be freed nor replaced
+- Clients are recycled like connections: a pointer to a client is never valid after it was deleted
+- `client->session_id` is set and read with the client's session lock: read it with `client_get_session_id ()`, not directly from another thread
+- The handlers threads are joinable and the teardowns join them: a handler that never returns from its method blocks the teardown, it used to be polled every second forever
+- The cerver and client teardowns wait for the event and error actions that run in their own threads (`create_thread`), and the cerver drain also waits for its detachable connection threads
+- A drain that times out waits `CERVER_DRAIN_GRACE_TIMEOUT` more seconds before giving up
+- The connect backoff of a connection stops when its client is torn down or the connection is ended, `connection_connect ()` returns 1 instead of waiting it
+- A `FileHeader` of a packet is used only if its filename is a single NUL terminated name (no `/`, `.` or `..`): any other gets the "Missing or invalid file header" error
+- The packets that are not taken by a handler are released: APP, APP_ERROR and CUSTOM without a handler or with a full queue, NONE and CERVER in a cerver, NONE in a client, and GAME after its handler
+- `client_connection_get_next_packet ()` accepts packets up to the client's max received packet size, not `MAX_UDP_PACKET_SIZE`, and a packet with an invalid size closes the connection
+- A cerver info packet smaller than `SCerver` is ignored, and `cerver_deserialize ()` takes a `const SCerver *`
+
 ## 1.8b-2 (from 1.8b-1)
 
 - New fields (ABI): `Cerver` (`bind_address`, `ipv6_only`), `Connection` (`send_timeout`, the storages of its stats and synchronization values, `recycle_next`), `ConnectionStats` (the storages of its packets per type), `Socket` (`recycle_next`), `CerverReceive` (`recycle_next`), `Thpool` (`stats`) and `ThpoolJob` (`queued`)

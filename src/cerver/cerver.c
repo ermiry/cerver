@@ -460,6 +460,9 @@ Cerver *cerver_new (void) {
 
 		cerver->handle_detachable_threads = false;
 
+		thread_group_init (&cerver->connection_threads);
+		thread_group_init (&cerver->event_threads);
+
 		cerver->fds = NULL;
 		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
@@ -605,6 +608,9 @@ void cerver_delete (void *ptr) {
 
 		cerver_info_delete (cerver->info);
 		cerver_stats_delete (cerver->stats);
+
+		thread_group_end (&cerver->connection_threads);
+		thread_group_end (&cerver->event_threads);
 
 		free (cerver);
 	}
@@ -1290,138 +1296,30 @@ unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
 
 }
 
-// wakes up the multiple handlers that have a thread, so they see the cerver stopped
-static void cerver_multiple_handlers_wake (Cerver *cerver) {
+// joins the multiple app handlers threads, if any
+static void cerver_multiple_app_handlers_destroy (Cerver *cerver) {
 
-	for (unsigned int i = 0; i < cerver->n_handlers; i++) {
-		if (cerver->handlers[i] && !cerver->handlers[i]->direct_handle) {
-			bsem_post_all (cerver->handlers[i]->job_queue->has_jobs);
+	if (cerver->handlers) {
+		#ifdef CERVER_DEBUG
+		cerver_log_debug (
+			"Stopping multiple app handlers in cerver %s...",
+			cerver->info->name
+		);
+
+		cerver_handlers_print_info (cerver);
+		#endif
+
+		for (unsigned int i = 0; i < cerver->n_handlers; i++) {
+			handler_stop (cerver->handlers[i]);
 		}
 	}
-
-}
-
-// correctly destroys multiple app handlers, if any
-static u8 cerver_multiple_app_handlers_destroy (Cerver *cerver) {
-
-	u8 retval = 1;
-
-	if (cerver) {
-		if (cerver->handlers && (cerver_get_n_handlers_alive (cerver) > 0)) {
-			#ifdef CERVER_DEBUG
-			cerver_log_debug (
-				"Stopping multiple app handlers in cerver %s...",
-				cerver->info->name
-			);
-			#endif
-
-			#ifdef CERVER_DEBUG
-			cerver_handlers_print_info (cerver);
-			#endif
-
-			// give x timeout to kill idle handlers
-			double timeout = 1.0;
-			time_t start = 0, end = 0;
-			double time_passed = 0.0;
-			time (&start);
-			while (time_passed < timeout && cerver_get_n_handlers_alive (cerver)) {
-				cerver_multiple_handlers_wake (cerver);
-				time (&end);
-				time_passed = difftime (end, start);
-			}
-
-			// poll remaining handlers
-			while (cerver_get_n_handlers_alive (cerver)) {
-				cerver_multiple_handlers_wake (cerver);
-				sleep (1);
-			}
-
-			retval = 0;
-		}
-	}
-
-	return retval;
-
-}
-
-static u8 cerver_app_handlers_destroy (Cerver *cerver) {
-
-	u8 errors = 0;
-
-	if (cerver) {
-		if (cerver->multiple_handlers) {
-			if (cerver->handlers && (cerver->num_handlers_alive > 0)) {
-				if (!cerver_multiple_app_handlers_destroy (cerver)) {
-					#ifdef CERVER_DEBUG
-					cerver_log_success (
-						"Done destroying multiple app handlers in cerver %s!",
-						cerver->info->name
-					);
-					#endif
-				}
-
-				else {
-					cerver_log_error (
-						"Failed to destroy multiple app handlers in cerver %s!",
-						cerver->info->name
-					);
-				}
-			}
-		}
-
-		else {
-			if (cerver->app_packet_handler) {
-				if (!cerver->app_packet_handler->direct_handle) {
-					// stop app handler
-					bsem_post_all (cerver->app_packet_handler->job_queue->has_jobs);
-				}
-			}
-		}
-	}
-
-	return errors;
-
-}
-
-static u8 cerver_app_error_handler_destroy (Cerver *cerver) {
-
-	u8 errors = 0;
-
-	if (cerver) {
-		if (cerver->app_error_packet_handler) {
-			if (!cerver->app_error_packet_handler->direct_handle) {
-				// stop app error handler
-				bsem_post_all (cerver->app_error_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-	return errors;
-
-}
-
-static u8 cerver_custom_handler_destroy (Cerver *cerver) {
-
-	u8 errors = 0;
-
-	if (cerver) {
-		if (cerver->custom_packet_handler) {
-			if (!cerver->custom_packet_handler->direct_handle) {
-				// stop custom handler
-				bsem_post_all (cerver->custom_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-	return errors;
 
 }
 
 // 27/05/2020
-// correctly destroy cerver's custom handlers
+// correctly destroy cerver's custom handlers,
+// each thread is woken and joined, a handler that never started is skipped
 static u8 cerver_handlers_destroy (Cerver *cerver) {
-
-	u8 errors = 0;
 
 	if (cerver) {
 		#ifdef CERVER_DEBUG
@@ -1431,28 +1329,18 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 		);
 		#endif
 
-		errors |= cerver_app_handlers_destroy (cerver);
-
-		errors |= cerver_app_error_handler_destroy (cerver);
-
-		errors |= cerver_custom_handler_destroy (cerver);
-
-		// poll remaining handlers
-		while (cerver_get_n_handlers_alive (cerver)) {
-			if (cerver->app_packet_handler)
-				bsem_post_all (cerver->app_packet_handler->job_queue->has_jobs);
-
-			if (cerver->app_error_packet_handler)
-				bsem_post_all (cerver->app_error_packet_handler->job_queue->has_jobs);
-
-			if (cerver->custom_packet_handler)
-				bsem_post_all (cerver->custom_packet_handler->job_queue->has_jobs);
-
-			sleep (1);
+		if (cerver->multiple_handlers) {
+			cerver_multiple_app_handlers_destroy (cerver);
 		}
+
+		handler_stop (cerver->app_packet_handler);
+
+		handler_stop (cerver->app_error_packet_handler);
+
+		handler_stop (cerver->custom_packet_handler);
 	}
 
-	return errors;
+	return 0;
 
 }
 
@@ -2768,6 +2656,29 @@ static i64 cerver_timespec_diff_microseconds (
 
 }
 
+// sleeps the microseconds or until the cerver is stopped, used to limit the fps of an update
+void cerver_sleep_microseconds (Cerver *cerver, i64 microseconds) {
+
+	const i64 nanoseconds_per_second = CERVER_MICROSECONDS_PER_SECOND * CERVER_NANOSECONDS_PER_MICROSECOND;
+
+	struct timespec deadline = { 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+
+	i64 nanoseconds = (i64) deadline.tv_nsec + (microseconds * CERVER_NANOSECONDS_PER_MICROSECOND);
+	deadline.tv_sec += (time_t) (nanoseconds / nanoseconds_per_second);
+	deadline.tv_nsec = (long) (nanoseconds % nanoseconds_per_second);
+
+	(void) pthread_mutex_lock (cerver->stop_mutex);
+
+	int result = 0;
+	while (cerver_is_running (cerver) && (result != ETIMEDOUT)) {
+		result = pthread_cond_timedwait (cerver->stop_cond, cerver->stop_mutex, &deadline);
+	}
+
+	(void) pthread_mutex_unlock (cerver->stop_mutex);
+
+}
+
 // called in a dedicated thread only if a user method was set
 // executes methods every tick
 static void *cerver_update (void *args) {
@@ -2799,7 +2710,8 @@ static void *cerver_update (void *args) {
 			(void) clock_gettime (CLOCK_MONOTONIC, &middle);
 			sleep_time = time_per_frame - cerver_timespec_diff_microseconds (&start, &middle);
 			if (sleep_time > 0) {
-				(void) usleep ((useconds_t) sleep_time);
+				// the stop wakes it up, it does not wait for the end of the frame
+				cerver_sleep_microseconds (cerver, sleep_time);
 			}
 		}
 
@@ -3007,17 +2919,60 @@ static void cerver_shutdown_clients (Cerver *cerver) {
 
 }
 
-// waits for the connections in progress using the drain policy and timeout
+// waits for the thpool and for the detachable connection threads,
+// returns true if both finished before the timeout
+static bool cerver_drain_wait (Cerver *cerver, const time_t timeout) {
+
+	bool drained = true;
+
+	if (cerver->thpool) {
+		drained = !thpool_drain (
+			cerver->thpool,
+			(cerver->drain_policy == CERVER_DRAIN_POLICY_RUN),
+			timeout
+		);
+	}
+
+	if (thread_group_wait (&cerver->connection_threads, timeout)) {
+		drained = false;
+	}
+
+	return drained;
+
+}
+
+// logs what is still alive after the drain grace, its data is not released
+static void cerver_drain_report (Cerver *cerver) {
+
+	cerver_log_warning (
+		"Cerver %s was NOT drained in %u + %u secs - "
+		"%u thpool connections working - %u queued - %u connection threads - "
+		"%u event threads - %u handlers alive, the data they use will not be released",
+		cerver->info->name, cerver->drain_timeout, CERVER_DRAIN_GRACE_TIMEOUT,
+		cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0,
+		cerver->thpool ? thpool_get_queued (cerver->thpool) : 0,
+		thread_group_alive (&cerver->connection_threads),
+		thread_group_alive (&cerver->event_threads),
+		cerver_get_n_handlers_alive (cerver)
+	);
+
+}
+
+// waits for the connections in progress using the drain policy and timeout,
+// if they do not finish, a short grace is given before reporting them
 static void cerver_drain (Cerver *cerver) {
 
 	cerver->drained = true;
 
-	if (cerver->thpool) {
+	const bool connection_threads = thread_group_alive (&cerver->connection_threads) > 0;
+
+	if (cerver->thpool || connection_threads) {
 		cerver_log_msg (
-			"Draining cerver %s - %u working - %u queued - %s policy - %u secs timeout",
+			"Draining cerver %s - %u working - %u queued - %u connection threads - %s policy - %u secs timeout",
 			cerver->info->name,
-			thpool_get_num_threads_working (cerver->thpool),
-			thpool_get_queued (cerver->thpool),
+			cerver->thpool ? thpool_get_num_threads_working (cerver->thpool) : 0,
+			cerver->thpool ? thpool_get_queued (cerver->thpool) : 0,
+			thread_group_alive (&cerver->connection_threads),
 			cerver_drain_policy_to_string (cerver->drain_policy),
 			cerver->drain_timeout
 		);
@@ -3026,23 +2981,23 @@ static void cerver_drain (Cerver *cerver) {
 			cerver_shutdown_clients (cerver);
 		}
 
-		cerver->drained = !thpool_drain (
-			cerver->thpool,
-			(cerver->drain_policy == CERVER_DRAIN_POLICY_RUN),
-			(time_t) cerver->drain_timeout
-		);
+		cerver->drained = cerver_drain_wait (cerver, (time_t) cerver->drain_timeout);
+
+		if (!cerver->drained) {
+			cerver_log_warning (
+				"Cerver %s was NOT drained in %u secs - waiting %u more secs",
+				cerver->info->name, cerver->drain_timeout, CERVER_DRAIN_GRACE_TIMEOUT
+			);
+
+			cerver->drained = cerver_drain_wait (cerver, (time_t) CERVER_DRAIN_GRACE_TIMEOUT);
+		}
 
 		if (cerver->drained) {
 			cerver_log_success ("Cerver %s was drained!", cerver->info->name);
 		}
 
 		else {
-			cerver_log_warning (
-				"Cerver %s was NOT drained in %u secs - %u connections are still working, "
-				"the data they use will not be released",
-				cerver->info->name, cerver->drain_timeout,
-				thpool_get_num_threads_working (cerver->thpool)
-			);
+			cerver_drain_report (cerver);
 		}
 	}
 
@@ -3239,6 +3194,9 @@ u8 cerver_teardown (Cerver *cerver) {
 		admin_cerver_end (cerver->admin);
 
 		if (cerver->drained) {
+			// no connection or handler can trigger an event after this
+			(void) thread_group_wait (&cerver->event_threads, THREAD_GROUP_WAIT_FOREVER);
+
 			cerver_log (
 				LOG_TYPE_SUCCESS, LOG_TYPE_NONE,
 				"Cerver %s teardown was successful!",
@@ -3508,7 +3466,16 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
 
 }
 
-CerverReport *cerver_deserialize (SCerver *scerver) {
+// a flag that comes from the network can have any value, it is read as a byte
+static bool cerver_deserialize_flag (const bool *flag) {
+
+	return *((const unsigned char *) flag) != 0;
+
+}
+
+// the scerver comes from the network: its strings may not be NUL terminated
+// and its flags may have any value, so they are read up to their sizes and as bytes
+CerverReport *cerver_deserialize (const SCerver *scerver) {
 
 	CerverReport *cerver_report = NULL;
 
@@ -3517,17 +3484,21 @@ CerverReport *cerver_deserialize (SCerver *scerver) {
 		if (cerver_report) {
 			cerver_report->type = scerver->type;
 
-			cerver_report->name = str_new (scerver->name);
-			if (strlen (scerver->welcome)) {
-				cerver_report->welcome = str_new (scerver->welcome);
+			cerver_report->name = str_create_from_bytes (
+				scerver->name, strnlen (scerver->name, S_CERVER_NAME_LENGTH)
+			);
+
+			const size_t welcome_len = strnlen (scerver->welcome, S_CERVER_WELCOME_LENGTH);
+			if (welcome_len) {
+				cerver_report->welcome = str_create_from_bytes (scerver->welcome, welcome_len);
 			}
 
-			cerver_report->use_ipv6 = scerver->use_ipv6;
+			cerver_report->use_ipv6 = cerver_deserialize_flag (&scerver->use_ipv6);
 			cerver_report->protocol = scerver->protocol;
 			cerver_report->port = scerver->port;
 
-			cerver_report->auth_required = scerver->auth_required;
-			cerver_report->uses_sessions = scerver->uses_sessions;
+			cerver_report->auth_required = cerver_deserialize_flag (&scerver->auth_required);
+			cerver_report->uses_sessions = cerver_deserialize_flag (&scerver->uses_sessions);
 		}
 	}
 

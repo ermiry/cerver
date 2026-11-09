@@ -788,7 +788,57 @@ u8 connection_init (Connection *connection) {
 
 }
 
-// try to connect a client to an address (server) with exponential backoff
+// true when the connection must stop its connect backoff:
+// it is ending, or its client is being torn down
+static bool connection_connect_cancelled (const Connection *connection) {
+
+	return connection->ending || client_teardown_is_requested (connection->client);
+
+}
+
+// waits the seconds of a backoff step in the connection's condition,
+// connection_wake_connect () and the end of the connection interrupt it
+// returns true if the connection can attempt to connect again
+static bool connection_try_wait (Connection *connection, const u32 seconds) {
+
+	if (!connection->mutex || !connection->cond) {
+		(void) sleep (seconds);
+		return true;
+	}
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += (time_t) seconds;
+
+	(void) pthread_mutex_lock (connection->mutex);
+
+	int result = 0;
+	while (!connection_connect_cancelled (connection) && (result != ETIMEDOUT)) {
+		result = pthread_cond_timedwait (connection->cond, connection->mutex, &deadline);
+	}
+
+	const bool proceed = !connection_connect_cancelled (connection);
+
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	return proceed;
+
+}
+
+// wakes up the connection that waits in the backoff of connection_connect (),
+// it stops waiting if its client was torn down
+void connection_wake_connect (Connection *connection) {
+
+	if (connection && connection->mutex && connection->cond) {
+		(void) pthread_mutex_lock (connection->mutex);
+		(void) pthread_cond_broadcast (connection->cond);
+		(void) pthread_mutex_unlock (connection->mutex);
+	}
+
+}
+
+// try to connect a client to an address (server) with exponential backoff,
+// each wait can be interrupted by the end of the connection or a client teardown
 static u8 connection_try (
 	Connection *connection, const struct sockaddr_storage address
 ) {
@@ -804,7 +854,8 @@ static u8 connection_try (
 		address_size)) {
 		if (numsec > connection->max_sleep) return 1;
 
-		(void) sleep (numsec);
+		if (!connection_try_wait (connection, numsec)) return 1;
+
 		numsec <<= 1;
 	}
 

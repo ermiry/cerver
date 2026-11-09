@@ -44,6 +44,9 @@
 #define CORE_PACKETS					32
 #define CORE_CLIENTS					4
 
+#define CORE_HANDLERS					3
+#define CORE_HANDLERS_TEARDOWN_MAX_SECONDS	0.25
+
 #define CORE_MULTIPLE_HANDLERS			2
 #define CORE_MISSING_HANDLER_ID			7
 
@@ -73,6 +76,12 @@
 #define CORE_BIG_PACKET_SIZE			1024
 #define CORE_REQUEST_DROP				2
 #define CORE_REQUEST_ADDRESS			3
+#define CORE_REQUEST_SLOW				4
+
+#define CORE_SLOW_EVENT_NANOSECONDS		(1L << 29)
+#define CORE_SLOW_HANDLER_SECONDS		2
+#define CORE_SLOW_UPDATE_FPS			1
+#define CORE_DRAIN_TIMEOUT				1
 
 #define CORE_IPV4_LOOPBACK				"127.0.0.1"
 #define CORE_IPV6_LOOPBACK				"::1"
@@ -111,6 +120,10 @@ static unsigned int app_packets = 0;
 static unsigned int app_error_packets = 0;
 static unsigned int custom_packets = 0;
 static unsigned int handler_packets[CORE_MULTIPLE_HANDLERS] = { 0 };
+static unsigned int queued_packets = 0;
+static unsigned int slow_events = 0;
+static unsigned int slow_started = 0;
+static unsigned int slow_finished = 0;
 static unsigned int update_ticks = 0;
 static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
@@ -129,6 +142,10 @@ static void core_counters_reset (void) {
 	app_error_packets = 0;
 	custom_packets = 0;
 	(void) memset (handler_packets, 0, sizeof (handler_packets));
+	queued_packets = 0;
+	slow_events = 0;
+	slow_started = 0;
+	slow_finished = 0;
 	update_ticks = 0;
 	interval_ticks = 0;
 	(void) memset (events, 0, sizeof (events));
@@ -182,6 +199,13 @@ static void core_app_handler (void *packet_ptr) {
 			test_check_unsigned_eq (connection_drop_request (packet->connection), 0, NULL);
 			break;
 
+		// a handler that is still working when the drain times out
+		case CORE_REQUEST_SLOW:
+			test_counter_add (&slow_started);
+			(void) sleep (CORE_SLOW_HANDLER_SECONDS);
+			test_counter_add (&slow_finished);
+			break;
+
 		default: break;
 	}
 
@@ -215,6 +239,17 @@ static void core_multiple_handler (void *handler_data_ptr) {
 
 }
 
+// a handler with its own thread gets the packet inside a HandlerData
+static void core_queued_handler (void *handler_data_ptr) {
+
+	const HandlerData *handler_data = (const HandlerData *) handler_data_ptr;
+
+	test_check_ptr (handler_data->packet);
+
+	test_counter_add (&queued_packets);
+
+}
+
 static void core_update (void *update_ptr) {
 
 	(void) update_ptr;
@@ -245,6 +280,20 @@ static void *core_event (void *event_data_ptr) {
 
 }
 
+// an event action in its own thread that is still running when the cerver stops
+static void *core_slow_event (void *event_data_ptr) {
+
+	const struct timespec interval = { 0, CORE_SLOW_EVENT_NANOSECONDS };
+	(void) nanosleep (&interval, NULL);
+
+	test_counter_add (&slow_events);
+
+	cerver_event_data_delete ((CerverEventData *) event_data_ptr);
+
+	return NULL;
+
+}
+
 static void core_events_register (Cerver *cerver) {
 
 	for (unsigned int type = CERVER_EVENT_STARTED; type < CERVER_EVENT_LOBBY_CREATE; type++) {
@@ -257,7 +306,7 @@ static void core_events_register (Cerver *cerver) {
 
 }
 
-static Cerver *core_cerver_create (
+static Cerver *core_cerver_create_base (
 	const u16 port, const CerverHandlerType handler_type
 ) {
 
@@ -273,6 +322,19 @@ static Cerver *core_cerver_create (
 	cerver_set_handler_type (cerver, handler_type);
 	cerver_set_poll_time_out (cerver, CORE_POLL_TIMEOUT);
 
+	core_events_register (cerver);
+
+	return cerver;
+
+}
+
+// the app, app error and custom handlers run in each packet's thread
+static Cerver *core_cerver_create (
+	const u16 port, const CerverHandlerType handler_type
+) {
+
+	Cerver *cerver = core_cerver_create_base (port, handler_type);
+
 	Handler *app_handler = handler_create (core_app_handler);
 	handler_set_direct_handle (app_handler, true);
 
@@ -285,7 +347,24 @@ static Cerver *core_cerver_create (
 	handler_set_direct_handle (custom_handler, true);
 	cerver_set_custom_handler (cerver, custom_handler);
 
-	core_events_register (cerver);
+	return cerver;
+
+}
+
+// the app, app error and custom handlers have their own threads and queues
+static Cerver *core_queued_cerver_create (
+	const u16 port, const CerverHandlerType handler_type
+) {
+
+	Cerver *cerver = core_cerver_create_base (port, handler_type);
+
+	cerver_set_app_handlers (
+		cerver,
+		handler_create (core_queued_handler),
+		handler_create (core_queued_handler)
+	);
+
+	cerver_set_custom_handler (cerver, handler_create (core_queued_handler));
 
 	return cerver;
 
@@ -349,6 +428,26 @@ static void core_cerver_stop (CoreCerver *core) {
 	test_check_unsigned_eq (cerver_teardown (core->cerver), 0, NULL);
 
 	test_check ((test_wait_now () - start) < CORE_TEARDOWN_MAX_SECONDS, "the cerver took too long to stop");
+
+	test_check_unsigned_eq (events[CERVER_EVENT_TEARDOWN], 1, NULL);
+
+}
+
+// the teardown joins the handlers threads at once, without polling them
+static void core_cerver_stop_quickly (CoreCerver *core) {
+
+	test_check_unsigned_eq (cerver_shutdown (core->cerver), 0, NULL);
+
+	core_cerver_join (core);
+
+	const double start = test_wait_now ();
+
+	test_check_unsigned_eq (cerver_teardown (core->cerver), 0, NULL);
+
+	test_check (
+		(test_wait_now () - start) < CORE_HANDLERS_TEARDOWN_MAX_SECONDS,
+		"the handlers took too long to stop"
+	);
 
 	test_check_unsigned_eq (events[CERVER_EVENT_TEARDOWN], 1, NULL);
 
@@ -504,6 +603,39 @@ static bool core_client_stopped (const CoreClient *core) {
 
 #pragma region tests
 
+// the packets of a cerver without app, app error and custom handlers are released,
+// and the ones without a handler in a cerver (none, cerver and game) too (LSan checks it)
+static void test_core_without_handlers (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create_base (port, CERVER_HANDLER_TYPE_POLL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	// the packets of one connection are handled in order, so the custom ones are the last
+	core_client_send (&client, PACKET_TYPE_NONE, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CERVER, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_GAME, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, 0, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter_64 (&cerver->stats->received_packets->n_custom_packets, CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_PACKETS, NULL
+	);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+}
+
 // app, app error and custom packets reach their handlers
 static void test_core_dispatch (const CerverHandlerType handler_type) {
 
@@ -587,11 +719,50 @@ static void test_core_multiple_handlers (void) {
 
 	core_client_end (&client);
 
-	core_cerver_stop (&core);
+	core_cerver_stop_quickly (&core);
 
 	test_check_unsigned_eq (handler_packets[0], CORE_PACKETS, NULL);
 	test_check_unsigned_eq (handler_packets[1], CORE_PACKETS / 2, NULL);
 	test_check_unsigned_eq (app_packets, 0, NULL);
+
+}
+
+// the app, app error and custom handlers threads handle their packets,
+// and the teardown stops them without waiting a second for each
+static void test_core_handlers_teardown (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_queued_cerver_create (port, handler_type), port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, 0, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&queued_packets, CORE_HANDLERS * CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_HANDLERS * CORE_PACKETS, NULL
+	);
+
+	core_client_end (&client);
+
+	core_cerver_stop_quickly (&core);
+
+}
+
+static void test_core_handlers_teardown_poll (void) {
+
+	test_core_handlers_teardown (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_handlers_teardown_threads (void) {
+
+	test_core_handlers_teardown (CERVER_HANDLER_TYPE_THREADS);
 
 }
 
@@ -1164,6 +1335,116 @@ static void test_core_teardown_connected (void) {
 
 }
 
+// the teardown waits for an event action that runs in its own thread
+static void test_core_event_thread_teardown (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (
+		cerver_event_register (
+			cerver, CERVER_EVENT_CLIENT_CONNECTED,
+			core_slow_event, NULL, NULL,
+			true, false
+		), 0, NULL
+	);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (
+		__atomic_load_n (&slow_events, __ATOMIC_SEQ_CST), 1,
+		"the teardown did not wait for the event thread"
+	);
+
+}
+
+// the detachable connection threads are drained before the clients are released
+static void test_core_detachable_threads (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handle_detachable_threads (cerver, true);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient clients[CORE_CLIENTS];
+	for (unsigned int i = 0; i < CORE_CLIENTS; i++) {
+		clients[i] = core_client_connect (port, NULL);
+		core_client_send (&clients[i], PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	}
+
+	test_check_unsigned_eq (
+		test_wait_counter (&echoes, CORE_CLIENTS * CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_CLIENTS * CORE_PACKETS, NULL
+	);
+
+	core_cerver_stop (&core);
+
+	for (unsigned int i = 0; i < CORE_CLIENTS; i++) {
+		test_check (core_client_stopped (&clients[i]), "a client did not see the cerver close");
+		core_client_end (&clients[i]);
+	}
+
+}
+
+// an update with a low fps stops with the cerver, it does not wait for its frame
+static void test_core_slow_update_teardown (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	cerver_set_update (cerver, core_update, NULL, NULL, CORE_SLOW_UPDATE_FPS);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	test_check (test_wait_counter (&update_ticks, 1, TEST_WAIT_SECONDS) >= 1, NULL);
+
+	core_cerver_stop_quickly (&core);
+
+}
+
+// a connection that is still working when the drain times out finishes in the grace,
+// so the cerver is released (LSan checks it)
+static void test_core_drain_grace (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_drain_timeout (cerver, CORE_DRAIN_TIMEOUT);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_SLOW, 0, 1);
+
+	test_check_unsigned_eq (test_wait_counter (&slow_started, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (
+		__atomic_load_n (&slow_finished, __ATOMIC_SEQ_CST), 1,
+		"the teardown did not wait for the connection in the grace"
+	);
+
+	core_client_end (&client);
+
+}
+
 // a stop requested before cerver_start () cancels it, the cerver never listens
 static void test_core_stop_before_start (const CerverHandlerType handler_type) {
 
@@ -1353,7 +1634,10 @@ int main (int argc, char **argv) {
 
 	test_core_dispatch_poll ();
 	test_core_dispatch_threads ();
+	test_core_without_handlers ();
 	test_core_multiple_handlers ();
+	test_core_handlers_teardown_poll ();
+	test_core_handlers_teardown_threads ();
 	test_core_auth_success ();
 	test_core_auth_failed ();
 	test_core_auth_retry ();
@@ -1371,6 +1655,10 @@ int main (int argc, char **argv) {
 	test_core_inactive_clients ();
 	test_core_update ();
 	test_core_teardown_connected ();
+	test_core_event_thread_teardown ();
+	test_core_detachable_threads ();
+	test_core_slow_update_teardown ();
+	test_core_drain_grace ();
 	test_core_stop_before_start_poll ();
 	test_core_stop_before_start_threads ();
 	test_core_stop_while_starting ();

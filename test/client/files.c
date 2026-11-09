@@ -45,6 +45,10 @@
 #define FILES_SENT_NAME					"sent.bin"
 #define FILES_MISSING_NAME				"missing.bin"
 
+// it exists outside of the served path, relative to it
+#define FILES_OUTSIDE_NAME				"../send/" FILES_SENT_NAME
+#define FILES_OUTSIDE_WAIT_SECONDS		1
+
 #define FILES_SIZE						(1 << 18)
 #define FILES_BYTE_PATTERN				0xFF
 #define FILES_SENT_SEED					7
@@ -302,6 +306,20 @@ static void test_files_get_missing (Client *client, Connection *connection) {
 
 }
 
+// a filename that leaves the served path is rejected, the file is never sent
+static void test_files_get_outside (Client *client, Connection *connection) {
+
+	const unsigned int uploads = __atomic_load_n (&client_uploads, __ATOMIC_SEQ_CST);
+
+	test_check_unsigned_eq (client_file_get (client, connection, FILES_OUTSIDE_NAME), 0, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&client_uploads, uploads + 1, FILES_OUTSIDE_WAIT_SECONDS),
+		uploads, "a file outside of the served path was sent"
+	);
+
+}
+
 static void test_files_send (Client *client, Connection *connection) {
 
 	test_check_unsigned_eq (
@@ -338,6 +356,7 @@ int main (int argc, char **argv) {
 	test_files_get_without_uploads_path (client, connection);
 	test_files_get (client, connection);
 	test_files_get_missing (client, connection);
+	test_files_get_outside (client, connection);
 	test_files_send (client, connection);
 
 	test_check_unsigned_eq (client_teardown (client), 0, NULL);

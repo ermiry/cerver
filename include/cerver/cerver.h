@@ -21,6 +21,7 @@
 #include "cerver/packets.h"
 
 #include "cerver/threads/thpool.h"
+#include "cerver/threads/thread.h"
 
 #include "cerver/game/game.h"
 
@@ -55,6 +56,9 @@
 
 #define CERVER_DEFAULT_DRAIN_POLICY					CERVER_DRAIN_POLICY_RUN
 #define CERVER_DEFAULT_DRAIN_TIMEOUT				32
+
+// the extra secs that a drain that timed out waits before reporting what is still alive
+#define CERVER_DRAIN_GRACE_TIMEOUT					4U
 
 // SO_SNDTIMEO in secs for the accepted connections, 0 to disable it
 #define CERVER_DEFAULT_SEND_TIMEOUT					32
@@ -374,6 +378,13 @@ struct _Cerver {
 	// a detachable thread will be created anyway
 	// web cervers always use the thpool
 	bool handle_detachable_threads;
+
+	// the detachable connection threads, the teardown waits for them while it drains
+	ThreadGroup connection_threads;
+
+	// the events and errors actions that run in their own threads,
+	// the teardown waits for them before the cerver is released
+	ThreadGroup event_threads;
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
@@ -865,6 +876,9 @@ CERVER_EXPORT u8 cerver_shutdown (Cerver *cerver);
 // sleeps the seconds or until the cerver is stopped
 CERVER_PRIVATE void cerver_sleep (Cerver *cerver, u32 seconds);
 
+// sleeps the microseconds or until the cerver is stopped, used to limit the fps of an update
+CERVER_PRIVATE void cerver_sleep_microseconds (Cerver *cerver, i64 microseconds);
+
 // teardown a server -> stop the server, drain the connections
 // using the drain policy and timeout, and clean all of its data
 // if some connections did not finish before the drain timeout,
@@ -926,8 +940,10 @@ typedef struct SCerver {
 
 } SCerver;
 
+// the scerver comes from the network: its strings may not be NUL terminated
+// and its flags may have any value, so they are read up to their sizes and as bytes
 CERVER_PRIVATE CerverReport *cerver_deserialize (
-	SCerver *scerver
+	const SCerver *scerver
 );
 
 // creates a cerver info packet ready to be sent
