@@ -818,6 +818,9 @@ static void test_thpool_signals (void) {
 
 }
 
+// the sanitizers need more address space than the limit, so they do not run the failure child
+#ifndef THPOOL_TEST_SANITIZER
+
 // the child can not allocate the stacks of every thread,
 // thpool_init () must fail and stop the threads that did start, instead of hanging
 static void thpool_test_failure_child (void) {
@@ -847,6 +850,8 @@ static bool thpool_test_memory_limit_is_valid (void) {
 	return !(preload && strstr (preload, THPOOL_TEST_VALGRIND_PRELOAD));
 
 }
+
+#endif
 
 static void test_thpool_init_failure (void) {
 
