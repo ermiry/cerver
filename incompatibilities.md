@@ -3,6 +3,25 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-5 (from 1.8b-4)
+
+- New fields (ABI): `Connection` (`connect_timeout`), `Cerver` (`handlers_alive_cond`), `Worker` (`joinable`, `idle_since`, `owns_queue`, `state_changed`); `Pool` and `JobQueue` changed completely
+- `Pool` is a stack on an array with its own mutex, without the `dlist`: the last element that was pushed is the first one that `pool_pop ()` takes (it was the first one pushed), and `pool_set_max_elements ()` limits it (an element pushed to a full pool is destroyed)
+- `JobQueue` keeps its jobs in a ring per priority (`JOB_QUEUE_DEFAULT_PRIORITIES`, the default one in the middle), with one mutex and conditions: `queue`, `rwmutex` and the `bsem` `has_jobs` were removed; a thread waits with `job_queue_pull_timeout ()`, `job_queue_pull_interruptible ()` or `job_queue_wait ()`, and is woken with `job_queue_signal ()`
+- A lower priority job is taken after `JOB_QUEUE_DEFAULT_STARVATION_LIMIT` jobs were taken ahead of it (`job_queue_set_starvation_limit ()`)
+- The handlers take their jobs from the pool of their queue (`job_get ()` / `job_return ()`), a job of a handler queue must not be released with `job_delete ()`
+- `cerver_get_n_handlers_working ()` and `admin_cerver_get_n_handlers_working ()` read an atomic counter, the handlers count themselves without the handlers lock
+- `thpool.h` no longer includes `jobs.h`
+- Workers have joinable threads: `worker_end ()` waits for the job that is running and joins the thread, `worker_delete ()` ends a running worker, `WORKER_SLEEP_TIME` was removed and `worker_stop ()` / `worker_end ()` wait in a condition instead of polling every 100 ms; `worker_get_state ()` is public
+- A client connection tries every address that its host resolves to, alternating the families and starting with the preferred one (`use_ipv6`), each with a non blocking connect of up to `CONNECTION_DEFAULT_CONNECT_TIMEOUT` ms (`connection_set_connect_timeout ()`); `use_ipv6` stays as the preference, it is no longer replaced by the family of the resolved address
+- The reconnection resolves the host again and tries each address, it used to connect again to the first address resolved when the connection was created
+- `network_parse_address ()` takes a zone in a link local IPv6 address (`fe80::1%eth0` or `%2`), and a zone in any other address is not valid
+- `sock_ip_to_string_actual ()` writes the zone of an address with a scope id, its buffer must be of `NETWORK_ADDRESS_STRING_SIZE` bytes (it was `INET6_ADDRSTRLEN`); `CERVER_BIND_ADDRESS_SIZE` and `CERVER_UDP_PEER_KEY_SIZE` grew with it
+- `sock_ip_equal ()` takes an IPv4 mapped address (`::ffff:a.b.c.d`) as equal to the IPv4 and does not compare the flow info
+- The bind address decides the family of the cerver's socket, even if `cerver_set_network_values ()` was called after `cerver_set_bind_address ()`
+- The ready log of a cerver has its address: "Cerver <name> is ready in <address> port <port>!"
+- `cerver_log_end ()` joins the thread that syncs the log file before it closes the file
+
 ## 1.8b-4 (from 1.8b-3)
 
 - New fields (ABI): `Packet` (`release`, `release_args`), `Connection` (`shut_down`, `datagram_token`, `datagram_token_set`) and `Cerver` (`udp`, `udp_peer_timeout`, `udp_max_peers`, `udp_peers_count`)
