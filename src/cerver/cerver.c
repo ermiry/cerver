@@ -420,6 +420,9 @@ Cerver *cerver_new (void) {
 		cerver->use_ipv6 = CERVER_DEFAULT_USE_IPV6;
 		cerver->connection_queue = CERVER_DEFAULT_CONNECTION_QUEUE;
 
+		(void) memset (cerver->bind_address, 0, CERVER_BIND_ADDRESS_SIZE);
+		cerver->ipv6_only = CERVER_DEFAULT_IPV6_ONLY;
+
 		cerver->isRunning = false;
 		cerver->stop_requested = false;
 		cerver->blocking = true;
@@ -660,6 +663,49 @@ void cerver_set_reusable_port (
 ) {
 
 	if (cerver) cerver->reusable_port = value;
+
+}
+
+// sets the literal IPv4 or IPv6 address that the cerver binds
+// returns 0 on success, 1 if it is not a valid ip
+unsigned int cerver_set_bind_address (
+	Cerver *cerver, const char *address
+) {
+
+	unsigned int retval = 1;
+
+	if (cerver) {
+		struct sockaddr_storage parsed;
+
+		if (!address) {
+			(void) memset (cerver->bind_address, 0, CERVER_BIND_ADDRESS_SIZE);
+			retval = 0;
+		}
+
+		else if (!network_parse_address (address, cerver->port, &parsed)) {
+			(void) snprintf (cerver->bind_address, CERVER_BIND_ADDRESS_SIZE, "%s", address);
+			cerver->use_ipv6 = (parsed.ss_family == AF_INET6);
+			retval = 0;
+		}
+
+		else {
+			cerver_log_error (
+				"cerver_set_bind_address () - %s is not a valid ip for cerver %s",
+				address, cerver->info->name
+			);
+		}
+	}
+
+	return retval;
+
+}
+
+// sets IPV6_V6ONLY in the socket of an IPv6 cerver
+void cerver_set_ipv6_only (
+	Cerver *cerver, bool ipv6_only
+) {
+
+	if (cerver) cerver->ipv6_only = ipv6_only;
 
 }
 
@@ -1473,10 +1519,8 @@ Cerver *cerver_create (
 
 #pragma region init
 
-// inits the cerver's address & binds the socket to it
-static u8 cerver_network_init_address (Cerver *cerver) {
-
-	u8 retval = 1;
+// every address of the cerver's family
+static void cerver_network_init_address_any (Cerver *cerver) {
 
 	(void) memset (&cerver->address, 0, sizeof (struct sockaddr_storage));
 
@@ -1493,6 +1537,59 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 		addr->sin_addr.s_addr = INADDR_ANY;
 		addr->sin_port = htons (cerver->port);
 	}
+
+}
+
+// the address of cerver_set_bind_address (), or every address of the cerver's family
+// returns 0 on success, 1 on error
+static u8 cerver_network_init_address_bind (Cerver *cerver) {
+
+	u8 retval = 0;
+
+	if (cerver->bind_address[0]) {
+		retval = (u8) network_parse_address (cerver->bind_address, cerver->port, &cerver->address);
+	}
+
+	else {
+		cerver_network_init_address_any (cerver);
+	}
+
+	return retval;
+
+}
+
+// an IPv6 socket always sets IPV6_V6ONLY,
+// so the cerver does not depend on the net.ipv6.bindv6only sysctl
+static void cerver_network_init_ipv6_only (const Cerver *cerver) {
+
+	if (cerver->use_ipv6 && sock_set_ipv6_only (cerver->sock, cerver->ipv6_only)) {
+		cerver_log (
+			LOG_TYPE_WARNING, LOG_TYPE_CERVER,
+			"Failed to set cerver %s IPV6_V6ONLY to %d",
+			cerver->info->name, cerver->ipv6_only
+		);
+	}
+
+}
+
+// inits the cerver's address & binds the socket to it
+static u8 cerver_network_init_address (Cerver *cerver) {
+
+	u8 retval = 1;
+
+	if (cerver_network_init_address_bind (cerver)) {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_CERVER,
+			"Cerver %s bind address %s is not valid!",
+			cerver->info->name, cerver->bind_address
+		);
+
+		close (cerver->sock);
+
+		return retval;
+	}
+
+	cerver_network_init_ipv6_only (cerver);
 
 	if (cerver->reusable) {
 		if (sock_set_reusable (cerver->sock)) {
@@ -1515,7 +1612,7 @@ static u8 cerver_network_init_address (Cerver *cerver) {
 	if (!bind (
 		cerver->sock,
 		(const struct sockaddr *) &cerver->address,
-		sizeof (struct sockaddr_storage))
+		sock_address_size (&cerver->address))
 	) {
 		retval = 0;       // success!!
 	}
