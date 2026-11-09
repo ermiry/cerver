@@ -7,6 +7,11 @@
 #include "cerver/config.h"
 #include "cerver/receive.h"
 
+#include "cerver/collections/freelist.h"
+
+// the deleted sockets that are kept to be reused
+#define SOCKET_RECYCLE_LIMIT			FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -30,6 +35,9 @@ struct _Socket {
 	// the connection owns one reference, and every CerverReceive another one,
 	// so a receive thread can still read the socket after a handler deleted its connection
 	unsigned int references;
+
+	// the next deleted socket that waits to be reused
+	struct _Socket *recycle_next;
 
 };
 
