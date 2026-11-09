@@ -44,7 +44,9 @@ jobs:
     name: Cerver tests
     needs: build
     runs-on: ubuntu-latest
-    container: gcc:16.2
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
       - uses: actions/checkout@v6
 
@@ -69,7 +71,9 @@ jobs:
     name: Cerver tests with valgrind
     needs: build
     runs-on: ubuntu-latest
-    container: gcc:16.2
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
       - uses: actions/checkout@v6
 
@@ -104,6 +108,7 @@ jobs:
       - name: Run tests
         run: |
           docker run --rm -v "$PWD":/opt/cerver -w /opt/cerver \
+            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
             -e ASAN_OPTIONS=detect_leaks=1 \
             -e UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
             -e TSAN_OPTIONS=halt_on_error=1 \

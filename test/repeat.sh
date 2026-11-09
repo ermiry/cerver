@@ -27,6 +27,7 @@ if [ ! -f /.dockerenv ]; then
 
 	exec $DOCKER run --rm \
 		--cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+		--sysctl net.ipv6.conf.all.disable_ipv6=0 \
 		--add-host service-1:127.0.0.1 --add-host service-2:127.0.0.1 \
 		-e ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" \
 		-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
