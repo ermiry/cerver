@@ -5,6 +5,7 @@
 #include "cerver/config.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
@@ -24,6 +25,7 @@
 #include "cerver/files.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 
@@ -153,6 +155,9 @@ u8 file_cerver_add_path (
 		if (file_cerver->n_paths < FILE_CERVER_MAX_PATHS) {
 			file_cerver->paths[file_cerver->n_paths] = str_new (path);
 			file_cerver->n_paths += 1;
+
+			// the path was added, it always returned an error before
+			retval = 0;
 		}
 	}
 
@@ -249,7 +254,7 @@ ssize_t file_cerver_send_file (
 		const char *actual_filename = NULL;
 		struct stat filestatus = { 0 };
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
-		if (file_fd > 0) {
+		if (file_fd > -1) {
 			retval = file_send_actual (
 				cerver, client, connection,
 				file_fd, actual_filename, filestatus.st_size
@@ -808,6 +813,15 @@ int file_open_as_fd (
 
 #pragma region images
 
+// the bytes that are read to find the type of an image
+#define FILES_IMAGE_HEADER_SIZE			24
+
+// the rest of a received file is moved in chunks of this size
+#define FILES_RECEIVE_CHUNK_SIZE		4096
+
+// how many times a recv () can time out in the middle of a file
+#define FILES_RECEIVE_MAX_TIMEOUTS		4
+
 static const char *image_bmp_extension = { "bmp" };
 static const char *image_gif_extension = { "gif" };
 static const char *image_png_extension = { "png" };
@@ -837,9 +851,6 @@ const char *files_image_type_extension (const ImageType type) {
 	return NULL;
 
 }
-
-// the bytes that are read to find the type of an image
-#define FILES_IMAGE_HEADER_SIZE			24
 
 ImageType files_image_get_type_from_file (const void *file_ptr) {
 
@@ -997,6 +1008,50 @@ bool files_image_extension_is_png (const char *filename) {
 
 #pragma region send
 
+static const char *FILE_HEADER_CURRENT_DIRECTORY = ".";
+static const char *FILE_HEADER_PARENT_DIRECTORY = "..";
+
+// a FileHeader that comes from a packet is used only if its filename is NUL terminated,
+// not empty, a single name (without '/') and different from "." and "..",
+// so it can not read past the header or reach a file outside of the configured paths
+bool file_header_is_valid (const FileHeader *file_header) {
+
+	bool valid = false;
+
+	if (file_header) {
+		const char *end = (const char *) memchr (
+			file_header->filename, '\0', FILENAME_DEFAULT_SIZE
+		);
+
+		valid = end
+			&& (end != file_header->filename)
+			&& !strchr (file_header->filename, '/')
+			&& strcmp (file_header->filename, FILE_HEADER_CURRENT_DIRECTORY)
+			&& strcmp (file_header->filename, FILE_HEADER_PARENT_DIRECTORY);
+	}
+
+	return valid;
+
+}
+
+// copies the FileHeader at the start of the data of a packet and validates it
+// returns true if the data has a valid header
+bool file_header_get (
+	const void *data, const size_t data_size, FileHeader *file_header
+) {
+
+	bool valid = false;
+
+	if (data && file_header && (data_size >= sizeof (FileHeader))) {
+		(void) memcpy (file_header, data, sizeof (FileHeader));
+
+		valid = file_header_is_valid (file_header);
+	}
+
+	return valid;
+
+}
+
 // sends a first packet with file info
 // returns 0 on success, 1 on error
 static u8 file_send_header (
@@ -1044,7 +1099,7 @@ static ssize_t file_send_actual (
 	int file_fd, const char *actual_filename, size_t filelen
 ) {
 
-	ssize_t retval = 0;
+	ssize_t retval = -1;
 
 	(void) pthread_mutex_lock (connection->socket->write_mutex);
 
@@ -1053,10 +1108,23 @@ static ssize_t file_send_actual (
 		cerver, client, connection,
 		actual_filename, filelen
 	)) {
-		// send the actual file
-		retval = sendfile (
-			connection->socket->sock_fd, file_fd, NULL, filelen
-		);
+		// send the actual file, a sendfile () can send only a part of it
+		size_t sent = 0;
+		if (!socket_send_file (
+			connection->socket, file_fd, filelen,
+			(time_t) connection->send_timeout,
+			&sent, NULL
+		)) {
+			retval = (ssize_t) sent;
+		}
+
+		else {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_FILE,
+				"file_send_actual () - sent %zu of %zu bytes",
+				sent, filelen
+			);
+		}
 	}
 
 	else {
@@ -1114,7 +1182,7 @@ ssize_t file_send (
 		const char *actual_filename = NULL;
 		struct stat filestatus = { 0 };
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
-		if (file_fd > 0) {
+		if (file_fd > -1) {
 			retval = file_send_actual (
 				cerver, client, connection,
 				file_fd, actual_filename, filestatus.st_size
@@ -1241,36 +1309,92 @@ static inline u8 file_receive_internal_move (
 
 }
 
+// moves every byte that entered the pipe to the file,
+// splice () can move less bytes than the ones in the pipe
+// returns 0 on success, 1 on error
+static u8 file_receive_internal_move_all (
+	int pipefd, int file_fd, size_t pending
+) {
+
+	u8 retval = 0;
+
+	ssize_t moved = 0;
+	while (!retval && pending) {
+		if (file_receive_internal_move (pipefd, file_fd, (int) pending, &moved)) retval = 1;
+		else pending -= (size_t) moved;
+	}
+
+	return retval;
+
+}
+
+// a recv () timeout in the middle of the file is retried a few times
+static inline bool file_receive_internal_retry (
+	const ssize_t received, unsigned int *timeouts
+) {
+
+	return (received < 0)
+		&& ((errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR))
+		&& (++(*timeouts) < FILES_RECEIVE_MAX_TIMEOUTS);
+
+}
+
+// receives the rest of the file from the socket,
+// it counts the bytes that were received, not the ones that were requested
 static u8 file_receive_internal (
 	Connection *connection, size_t filelen, int file_fd
 ) {
 
 	u8 retval = 1;
 
-	size_t buff_size = 4096;
-	int pipefds[2] = { 0 };
-	ssize_t received = 0;
-	ssize_t moved = 0;
+	int pipefds[2] = { -1, -1 };
 	if (!pipe (pipefds)) {
 		size_t len = filelen;
-		while (len > 0) {
-			if (buff_size > len) buff_size = len;
+		unsigned int timeouts = 0;
+		bool failed = false;
+		while (!failed && len) {
+			const size_t chunk = (len < FILES_RECEIVE_CHUNK_SIZE) ? len : FILES_RECEIVE_CHUNK_SIZE;
 
-			if (file_receive_internal_receive (
-				connection, pipefds[1], buff_size, &received
-			)) break;
+			ssize_t received = 0;
+			if (!file_receive_internal_receive (connection, pipefds[1], (int) chunk, &received)) {
+				timeouts = 0;
+				failed = file_receive_internal_move_all (pipefds[0], file_fd, (size_t) received);
+				len -= (size_t) received;
+			}
 
-			if (file_receive_internal_move (
-				pipefds[0], file_fd, buff_size, &moved
-			)) break;
-
-			len -= buff_size;
+			else {
+				failed = !file_receive_internal_retry (received, &timeouts);
+			}
 		}
 
 		(void) close (pipefds[0]);
 		(void) close (pipefds[1]);
 
-		if (len <= 0) retval = 0;
+		if (!len) retval = 0;
+	}
+
+	return retval;
+
+}
+
+// writes every byte, write () can write less bytes than the ones requested
+// returns 0 on success, 1 on error
+static u8 file_receive_write_all (
+	int file_fd, const char *data, size_t size
+) {
+
+	u8 retval = 0;
+
+	while (!retval && size) {
+		const ssize_t wrote = write (file_fd, data, size);
+		if (wrote > 0) {
+			data += wrote;
+			size -= (size_t) wrote;
+		}
+
+		else if ((wrote < 0) && (errno == EINTR)) continue;
+
+		else retval = 1;
 	}
 
 	return retval;
@@ -1292,7 +1416,7 @@ u8 file_receive_actual (
 	u8 retval = 1;
 
 	int file_fd = open (*saved_filename, O_CREAT | O_WRONLY | O_TRUNC, 0777);
-	if (file_fd > 0) {
+	if (file_fd > -1) {
 		// ssize_t received = splice (
 		// 	connection->socket->sock_fd, NULL,
 		// 	file_fd, NULL,
@@ -1302,27 +1426,26 @@ u8 file_receive_actual (
 
 		// we received some part of the file when reading packets,
 		// they should be the first ones to be saved into the file
+		// the bytes after the file belong to the next packets
+		if (file_data_len > file_header->len) file_data_len = file_header->len;
+
+		bool failed = false;
 		if (file_data && file_data_len) {
-			ssize_t wrote = write (file_fd, file_data, file_data_len);
-			if (wrote < 0) {
+			failed = file_receive_write_all (file_fd, file_data, file_data_len);
+			if (failed) {
 				cerver_log_error ("file_receive_actual () - write () has failed!");
 				perror ("Error");
 				cerver_log_line_break ();
 			}
+		}
 
-			else {
-				#ifdef FILES_DEBUG
-				cerver_log_debug (
-					"\n\nwrote %ld of file_data_len %ld\n\n",
-					wrote,
-					file_data_len
-				);
-				#endif
-			}
+		// the whole file was in the buffer, it was always an error before
+		if (!failed && (file_data_len == file_header->len)) {
+			retval = 0;
 		}
 
 		// there is still more data to be received
-		if (file_data_len < file_header->len) {
+		else if (!failed) {
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
 			cerver_log_debug (
@@ -1349,6 +1472,11 @@ u8 file_receive_actual (
 		}
 
 		(void) close (file_fd);
+
+		if (failed) {
+			free (*saved_filename);
+			*saved_filename = NULL;
+		}
 	}
 
 	else {

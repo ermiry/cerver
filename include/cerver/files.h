@@ -284,6 +284,17 @@ struct _FileHeader {
 
 typedef struct _FileHeader FileHeader;
 
+// a FileHeader that comes from a packet is used only if its filename is NUL terminated,
+// not empty, a single name (without '/') and different from "." and "..",
+// so it can not read past the header or reach a file outside of the configured paths
+CERVER_PUBLIC bool file_header_is_valid (const FileHeader *file_header);
+
+// copies the FileHeader at the start of the data of a packet and validates it
+// returns true if the data has a valid header
+CERVER_PUBLIC bool file_header_get (
+	const void *data, const size_t data_size, FileHeader *file_header
+);
+
 // opens a file and sends its contents
 // first the FileHeader in a regular packet, then the file contents between sockets
 // returns the number of bytes sent, or -1 on error
