@@ -110,6 +110,7 @@ endif
 # sanitizers are applied to the library, the examples and the tests
 ifneq ($(SANITIZER),)
 	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
+	CFLAGS += -D CERVER_RECYCLE_DISABLED
 endif
 
 # common flags
@@ -421,7 +422,7 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
 FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
