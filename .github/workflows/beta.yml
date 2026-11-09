@@ -15,6 +15,7 @@ jobs:
     # build sources with beta flags
     name: Cerver beta build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,12 +43,10 @@ jobs:
     name: Cerver beta tests
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
       - name: Get Shared Library
         uses: actions/download-artifact@v4
@@ -77,6 +76,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Image tags
+        id: tags
+        run: |
+          version="$(cat version.txt)"
+          case "${{ github.base_ref || github.ref_name }}" in
+            http-beta)    moving="beta" ;;
+            nightly-beta) moving="nightly-beta" ;;
+            beta)         moving="core-beta" ;;
+            *)            moving="" ;;
+          esac
+          tags="ermiry/cerver:${version}"
+          if [ -n "$moving" ]; then tags="${tags},ermiry/cerver:${moving}"; fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
       # docker setup
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -90,6 +103,6 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.beta
-          tags: ermiry/cerver:beta
+          tags: ${{ steps.tags.outputs.tags }}
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }} 

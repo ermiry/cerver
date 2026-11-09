@@ -13,6 +13,7 @@ jobs:
     # build sources with production flags
     name: Cerver production build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v4
 
@@ -39,11 +40,9 @@ jobs:
     name: Cerver production tests
     needs: build
     runs-on: ubuntu-latest
+    container: gcc:16.2
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Dependencies
-        run: sudo apt-get update && sudo apt-get install libcurl4-openssl-dev
 
       - name: Get Shared Library
         uses: actions/download-artifact@v4
