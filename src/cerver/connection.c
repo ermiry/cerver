@@ -704,6 +704,52 @@ void connection_set_attempt_reconnect (
 
 }
 
+// the ip of the connection can be a literal IPv4 or IPv6 address or a host name,
+// the family of the socket is the one of the resolved address
+// returns 0 on success, 1 on error
+static u8 connection_init_address (Connection *connection) {
+
+	u8 retval = 1;
+
+	if (!network_resolve_address (
+		connection->ip, connection->port, connection->use_ipv6, &connection->address
+	)) {
+		connection->use_ipv6 = (connection->address.ss_family == AF_INET6);
+		retval = 0;
+	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Connection %s failed to resolve %s!",
+			connection->name, connection->ip
+		);
+	}
+
+	return retval;
+
+}
+
+static int connection_init_socket_type (const Protocol protocol) {
+
+	int type = -1;
+
+	switch (protocol) {
+		case IPPROTO_TCP: type = SOCK_STREAM; break;
+		case IPPROTO_UDP: type = SOCK_DGRAM; break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				"Unkonw protocol type!"
+			);
+			break;
+	}
+
+	return type;
+
+}
+
 // sets up the new connection values
 u8 connection_init (Connection *connection) {
 
@@ -711,47 +757,13 @@ u8 connection_init (Connection *connection) {
 
 	if (connection) {
 		if (!connection->active) {
-			// init the new connection socket
-			switch (connection->protocol) {
-				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_STREAM, 0
-					);
-					break;
-				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_DGRAM, 0
-					);
-					break;
+			const int type = connection_init_socket_type (connection->protocol);
+			if ((type < 0) || connection_init_address (connection)) return 1;
 
-				default:
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Unkonw protocol type!"
-					);
-					return 1;
-			}
+			// init the new connection socket
+			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
 
 			if (connection->socket->sock_fd > -1) {
-				if (connection->use_ipv6) {
-					// the address of the cerver, in6addr_any only works for a local cerver
-					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-					addr->sin6_family = AF_INET6;
-					if (inet_pton (AF_INET6, connection->ip, &addr->sin6_addr) != 1) {
-						addr->sin6_addr = in6addr_any;
-					}
-					addr->sin6_port = htons (connection->port);
-				}
-
-				else {
-					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-					addr->sin_family = AF_INET;
-					addr->sin_addr.s_addr = inet_addr (connection->ip);
-					addr->sin_port = htons (connection->port);
-				}
-
 				retval = 0;     // connection setup was successfull
 			}
 
@@ -782,8 +794,7 @@ static u8 connection_try (
 ) {
 
 	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
-	const socklen_t address_size = (address.ss_family == AF_INET6) ?
-		sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
+	const socklen_t address_size = sock_address_size (&address);
 
 	// the first attempt is always done, a max sleep smaller than the first wait
 	// never attempted to connect
