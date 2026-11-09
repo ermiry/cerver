@@ -4,13 +4,75 @@
 #include <netdb.h>
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include <sys/socket.h>
 #include <sys/time.h>
 
 #include "cerver/network.h"
 
-// gets the ip related to the hostname
+#pragma region resolve
+
+static void network_address_set_port (
+	struct sockaddr_storage *address, const in_port_t port
+) {
+
+	if (address->ss_family == AF_INET6) {
+		((struct sockaddr_in6 *) address)->sin6_port = htons (port);
+	}
+
+	else {
+		((struct sockaddr_in *) address)->sin_port = htons (port);
+	}
+
+}
+
+// the first address of the preferred family, or the first one of any family
+static const struct addrinfo *network_resolve_select (
+	const struct addrinfo *results, const int preferred_family
+) {
+
+	const struct addrinfo *selected = NULL;
+
+	for (const struct addrinfo *result = results; result && !selected; result = result->ai_next) {
+		if (result->ai_family == preferred_family) selected = result;
+	}
+
+	return selected ? selected : results;
+
+}
+
+static unsigned int network_resolve (
+	const char *host, const bool prefer_ipv6,
+	struct sockaddr_storage *address
+) {
+
+	unsigned int retval = 1;
+
+	struct addrinfo hints;
+	(void) memset (&hints, 0, sizeof (struct addrinfo));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	struct addrinfo *results = NULL;
+	if (host && !getaddrinfo (host, NULL, &hints, &results) && results) {
+		const struct addrinfo *selected = network_resolve_select (
+			results, prefer_ipv6 ? AF_INET6 : AF_INET
+		);
+
+		(void) memset (address, 0, sizeof (struct sockaddr_storage));
+		(void) memcpy (address, selected->ai_addr, selected->ai_addrlen);
+
+		retval = 0;
+	}
+
+	if (results) freeaddrinfo (results);
+
+	return retval;
+
+}
+
+// gets the ip related to the hostname, IPv4 or IPv6, with getaddrinfo () (thread safe)
 // returns a newly allocated c string if found
 // returns NULL on error or not found
 char *network_hostname_to_ip (
@@ -19,19 +81,95 @@ char *network_hostname_to_ip (
 
 	char *retval = NULL;
 
-	struct hostent *he = gethostbyname (hostname);
-	if (he) {
-		struct in_addr **addr_list = (struct in_addr **) he->h_addr_list;
-		if (addr_list) {
-			if (inet_ntoa (*addr_list[0])) {
-				retval = strdup (inet_ntoa (*addr_list[0]));
-			}
-		}
+	struct sockaddr_storage address;
+	if (!network_resolve (hostname, false, &address)) {
+		retval = sock_ip_to_string ((const struct sockaddr *) &address);
 	}
 
 	return retval;
 
 }
+
+// resolves a literal ip or a host name into an address with the port
+// returns 0 on success, 1 if the host could not be resolved
+unsigned int network_resolve_address (
+	const char *host, const in_port_t port, const bool prefer_ipv6,
+	struct sockaddr_storage *address
+) {
+
+	unsigned int retval = 1;
+
+	if (address && !network_resolve (host, prefer_ipv6, address)) {
+		network_address_set_port (address, port);
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// parses a literal IPv4 or IPv6 address, without a port, into an address
+// returns 0 on success, 1 if it is not a valid ip
+unsigned int network_parse_address (
+	const char *ip, const in_port_t port,
+	struct sockaddr_storage *address
+) {
+
+	unsigned int retval = 1;
+
+	if (ip && address) {
+		(void) memset (address, 0, sizeof (struct sockaddr_storage));
+
+		struct sockaddr_in *ipv4 = (struct sockaddr_in *) address;
+		struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *) address;
+
+		if (inet_pton (AF_INET, ip, &ipv4->sin_addr) == 1) {
+			ipv4->sin_family = AF_INET;
+			retval = 0;
+		}
+
+		else if (inet_pton (AF_INET6, ip, &ipv6->sin6_addr) == 1) {
+			ipv6->sin6_family = AF_INET6;
+			retval = 0;
+		}
+
+		if (!retval) network_address_set_port (address, port);
+	}
+
+	return retval;
+
+}
+
+// returns the size of the address of its family
+socklen_t sock_address_size (const struct sockaddr_storage *address) {
+
+	return (address->ss_family == AF_INET6) ?
+		(socklen_t) sizeof (struct sockaddr_in6) : (socklen_t) sizeof (struct sockaddr_in);
+
+}
+
+// returns true if the address is an IPv4 inside an IPv6 address (::ffff:a.b.c.d)
+bool sock_ip_is_mapped (const struct sockaddr *address) {
+
+	return address
+		&& (address->sa_family == AF_INET6)
+		&& IN6_IS_ADDR_V4MAPPED (&((const struct sockaddr_in6 *) address)->sin6_addr);
+
+}
+
+// sets IPV6_V6ONLY in an IPv6 socket
+// returns 0 on success, 1 on error
+int sock_set_ipv6_only (int sock_fd, bool ipv6_only) {
+
+	int value = ipv6_only ? 1 : 0;
+
+	return setsockopt (
+		sock_fd, IPPROTO_IPV6, IPV6_V6ONLY, &value, sizeof (int)
+	) ? 1 : 0;
+
+}
+
+#pragma endregion
 
 // enable/disable blocking on a socket
 // true on success, false if there was an error
@@ -49,6 +187,26 @@ bool sock_set_blocking (int32_t fd, bool blocking) {
 	}
 
 	return retval;
+
+}
+
+// an IPv4 inside an IPv6 address is written as the IPv4,
+// so a dual stack cerver logs and compares its IPv4 clients as IPv4
+static void sock_ip_to_string_ipv6 (
+	const struct sockaddr_in6 *address, char *ip_buffer
+) {
+
+	if (IN6_IS_ADDR_V4MAPPED (&address->sin6_addr)) {
+		(void) inet_ntop (
+			AF_INET,
+			&address->sin6_addr.s6_addr[NETWORK_IPV4_MAPPED_OFFSET],
+			ip_buffer, INET6_ADDRSTRLEN
+		);
+	}
+
+	else {
+		(void) inet_ntop (AF_INET6, &address->sin6_addr, ip_buffer, INET6_ADDRSTRLEN);
+	}
 
 }
 
@@ -71,11 +229,7 @@ unsigned int sock_ip_to_string_actual (
 			break;
 
 		case AF_INET6:
-			(void) inet_ntop (
-				AF_INET6,
-				&((struct sockaddr_in6 *) address)->sin6_addr,
-				ip_buffer, INET6_ADDRSTRLEN
-			);
+			sock_ip_to_string_ipv6 ((const struct sockaddr_in6 *) address, ip_buffer);
 
 			retval = 0;
 			break;
