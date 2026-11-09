@@ -11,6 +11,8 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 
+#include "cerver/collections/freelist.h"
+
 #include "cerver/threads/jobs.h"
 
 #include "cerver/game/lobby.h"
@@ -200,6 +202,9 @@ CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
 // the default timeout when handling a connection in dedicated thread
 #define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
 
+// the deleted receives that are kept to be reused
+#define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (
 	void *receive_handle_ptr
@@ -217,6 +222,9 @@ typedef struct CerverReceive {
 	struct _Admin *admin;
 
 	struct _Lobby *lobby;
+
+	// the next deleted receive that waits to be reused
+	struct CerverReceive *recycle_next;
 
 } CerverReceive;
 
