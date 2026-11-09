@@ -2534,6 +2534,20 @@ u8 cerver_handler_register_connection (
 
 #pragma region poll
 
+// the address with its zone and the port where the cerver accepts connections
+static void cerver_log_ready (const Cerver *cerver) {
+
+	char ip[NETWORK_ADDRESS_STRING_SIZE] = { 0 };
+	(void) sock_ip_to_string_actual ((const struct sockaddr *) &cerver->address, ip);
+
+	cerver_log (
+		LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+		"Cerver %s is ready in %s port %d!",
+		cerver->info->name, ip, cerver->port
+	);
+
+}
+
 // reallocs main cerver poll fds
 // returns 0 on success, 1 on error
 u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
@@ -2890,11 +2904,7 @@ u8 cerver_poll (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver_log (
-			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s is ready in port %d!",
-			cerver->info->name, cerver->port
-		);
+		cerver_log_ready (cerver);
 
 		#ifdef CERVER_DEBUG
 		cerver_log (
@@ -2985,11 +2995,7 @@ u8 cerver_threads (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver_log (
-			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s ready in port %d!",
-			cerver->info->name, cerver->port
-		);
+		cerver_log_ready (cerver);
 
 		#ifdef CERVER_DEBUG
 		cerver_log (
