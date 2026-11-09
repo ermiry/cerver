@@ -88,7 +88,17 @@
 #define CORE_IPV6_ANY					"::"
 #define CORE_LOCALHOST					"localhost"
 #define CORE_INVALID_ADDRESS			"127.0.0.256"
+#define CORE_LINK_LOCAL_ZONE			"fe80::1%lo"
+#define CORE_UNKNOWN_ZONE				"fe80::1%cerver0"
 #define CORE_CONNECT_SINGLE_ATTEMPT		1
+
+// a connect () to each address can take up to 2^9 ms
+#define CORE_CONNECT_TIMEOUT				512
+#define CORE_CONNECT_TIMEOUT_MIN_SECONDS	0.5
+#define CORE_CONNECT_TIMEOUT_MAX_SECONDS	4
+
+// a listener that only takes one connection in its accept queue
+#define CORE_BLACKHOLE_BACKLOG			0
 
 #define CORE_ON_HOLD_SECONDS			1
 #define CORE_ON_HOLD_POLL_TIMEOUT		200
@@ -1523,10 +1533,20 @@ static Cerver *core_address_cerver_create (
 
 }
 
-// the client connects to client_address and the cerver sees it as expected_ip
-static void core_address_check (
+// the client asks for the ip that the cerver sees
+static void core_address_expect (CoreClient *client, const char *expected_ip) {
+
+	core_client_send (client, PACKET_TYPE_APP, CORE_REQUEST_ADDRESS, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&address_requests, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_str_eq (client_ip, expected_ip, NULL);
+
+}
+
+// the client connects to client_address preferring a family, and the cerver sees it as expected_ip
+static void core_address_check_preferring (
 	const char *bind_address, const bool ipv6_only,
-	const char *client_address, const char *expected_ip
+	const char *client_address, const bool prefer_ipv6,
+	const char *expected_ip
 ) {
 
 	core_counters_reset ();
@@ -1535,15 +1555,27 @@ static void core_address_check (
 	CoreCerver core;
 	core_cerver_start (&core, core_address_cerver_create (port, bind_address, ipv6_only), port);
 
-	CoreClient client = core_client_start (core_client_create_at (client_address, port, NULL, false));
+	CoreClient client = core_client_create_at (client_address, port, NULL, false);
+	client.connection->use_ipv6 = prefer_ipv6;
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
 
-	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ADDRESS, 0, 1);
-	test_check_unsigned_eq (test_wait_counter (&address_requests, 1, TEST_WAIT_SECONDS), 1, NULL);
-	test_check_str_eq (client_ip, expected_ip, NULL);
+	client = core_client_start (client);
+
+	core_address_expect (&client, expected_ip);
 
 	core_client_end (&client);
 
 	core_cerver_stop (&core);
+
+}
+
+// the client connects to client_address and the cerver sees it as expected_ip
+static void core_address_check (
+	const char *bind_address, const bool ipv6_only,
+	const char *client_address, const char *expected_ip
+) {
+
+	core_address_check_preferring (bind_address, ipv6_only, client_address, false, expected_ip);
 
 }
 
@@ -1615,7 +1647,106 @@ static void test_core_address_invalid (void) {
 	test_check_unsigned_eq (cerver_set_bind_address (cerver, NULL), 0, NULL);
 	test_check_str_empty (cerver->bind_address);
 
+	// a link local address with its zone, and a zone without an interface
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_LINK_LOCAL_ZONE), 0, NULL);
+	test_check_str_eq (cerver->bind_address, CORE_LINK_LOCAL_ZONE, NULL);
+	test_check_true (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_UNKNOWN_ZONE), 1, NULL);
+
 	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+// localhost resolves to 127.0.0.1 and ::1, the cerver only listens in one of them:
+// the client is refused by the first address and connects to the other one,
+// before it only tried the first address of its preferred family
+static void test_core_address_fallback (void) {
+
+	core_address_check_preferring (CORE_IPV6_LOOPBACK, false, CORE_LOCALHOST, false, CORE_IPV6_LOOPBACK);
+	core_address_check_preferring (CORE_IPV4_LOOPBACK, false, CORE_LOCALHOST, true, CORE_IPV4_LOOPBACK);
+
+}
+
+// a listener whose accept queue is full drops new connections without an answer,
+// so a connect () to it never ends by itself
+static int core_blackhole_create (const char *ip, const u16 port, int *queued) {
+
+	struct sockaddr_storage address;
+	test_check_unsigned_eq (network_parse_address (ip, port, &address), 0, NULL);
+
+	const int listener = socket (address.ss_family, SOCK_STREAM, 0);
+	test_check (listener >= 0, NULL);
+	test_check_int_eq (sock_set_reusable (listener), 0, NULL);
+	test_check_int_eq (bind (listener, (const struct sockaddr *) &address, sock_address_size (&address)), 0, NULL);
+	test_check_int_eq (listen (listener, CORE_BLACKHOLE_BACKLOG), 0, NULL);
+
+	*queued = socket (address.ss_family, SOCK_STREAM, 0);
+	test_check (*queued >= 0, NULL);
+	test_check_int_eq (connect (*queued, (const struct sockaddr *) &address, sock_address_size (&address)), 0, NULL);
+
+	return listener;
+
+}
+
+// the first address never answers: the client waits its connect timeout and tries the next one,
+// before the connect () blocked until the kernel gave up on the first address
+static void test_core_address_connect_timeout (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+
+	int queued = -1;
+	const int blackhole = core_blackhole_create (CORE_IPV4_LOOPBACK, port, &queued);
+
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, CORE_IPV6_LOOPBACK, false), port);
+
+	CoreClient client = core_client_create_at (CORE_LOCALHOST, port, NULL, false);
+	connection_set_connect_timeout (client.connection, CORE_CONNECT_TIMEOUT);
+	test_check_unsigned_eq (client.connection->connect_timeout, CORE_CONNECT_TIMEOUT, NULL);
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+
+	const double start = test_wait_now ();
+	client = core_client_start (client);
+	const double elapsed = test_wait_now () - start;
+
+	test_check (elapsed >= CORE_CONNECT_TIMEOUT_MIN_SECONDS, "the client did not wait for the first address");
+	test_check (elapsed < CORE_CONNECT_TIMEOUT_MAX_SECONDS, "the client waited too long for the first address");
+
+	core_address_expect (&client, CORE_IPV6_LOOPBACK);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	(void) close (queued);
+	(void) close (blackhole);
+
+}
+
+// cerver_set_network_values () after cerver_set_bind_address () changed use_ipv6,
+// and the IPv4 socket could not bind the IPv6 address
+static void test_core_address_network_values (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+
+	Cerver *cerver = core_address_cerver_create (port, CORE_IPV6_LOOPBACK, false);
+	cerver_set_network_values (cerver, port, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_start (core_client_create_at (CORE_IPV6_LOOPBACK, port, NULL, false));
+
+	core_address_expect (&client, CORE_IPV6_LOOPBACK);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
 
 }
 
@@ -1667,6 +1798,9 @@ int main (int argc, char **argv) {
 	test_core_address_host_name ();
 	test_core_address_refused ();
 	test_core_address_invalid ();
+	test_core_address_fallback ();
+	test_core_address_connect_timeout ();
+	test_core_address_network_values ();
 
 	(void) printf ("\nDone with CERVER core tests!\n\n");
 
