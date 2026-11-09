@@ -161,6 +161,8 @@ int main (int argc, char **argv) {
 
 	threads_tests_worker ();
 
+	threads_tests_manager ();
+
 	(void) printf ("\nDone with THREADS tests!\n\n");
 
 	return 0;
