@@ -13,6 +13,7 @@
 #include "cerver/collections/htab.h"
 
 #include "cerver/config.h"
+#include "cerver/network.h"
 #include "cerver/packets.h"
 
 // a peer of an UDP cerver that does not send anything in these secs is removed
@@ -24,8 +25,8 @@
 // how often the receive loop removes the inactive peers, in secs
 #define CERVER_UDP_PEERS_CHECK_INTERVAL		1
 
-// the ip and the port of a peer, its key in the peers of the cerver
-#define CERVER_UDP_PEER_KEY_SIZE			(INET6_ADDRSTRLEN + 8)
+// the ip with its zone and the port of a peer, its key in the peers of the cerver
+#define CERVER_UDP_PEER_KEY_SIZE			(NETWORK_ADDRESS_STRING_SIZE + 8)
 
 // a peer whose address is not proven (it did not authenticate) gets answers of the cerver
 // of up to these times the bytes that it sent, so a forged address can not be flooded

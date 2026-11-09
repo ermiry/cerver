@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#include <poll.h>
+
 #include <sys/socket.h>
 
 #include <arpa/inet.h>
@@ -241,6 +243,7 @@ Connection *connection_new (void) {
 		connection->cerver_report = NULL;
 
 		connection->max_sleep = CONNECTION_DEFAULT_MAX_SLEEP;
+		connection->connect_timeout = CONNECTION_DEFAULT_CONNECT_TIMEOUT;
 		connection->active = false;
 		connection->updating = false;
 		connection->ending = false;
@@ -535,6 +538,14 @@ void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 
 }
 
+// sets how long a connect () to each address of the cerver can take, in milliseconds,
+// after it the next resolved address is tried (default CONNECTION_DEFAULT_CONNECT_TIMEOUT)
+void connection_set_connect_timeout (Connection *connection, u32 timeout) {
+
+	if (connection) connection->connect_timeout = timeout;
+
+}
+
 // sets if the connection will receive packets or not (default true)
 // if true, a new thread is created that handled incoming packets
 void connection_set_receive (Connection *connection, bool receive) {
@@ -755,7 +766,8 @@ void connection_set_attempt_reconnect (
 }
 
 // the ip of the connection can be a literal IPv4 or IPv6 address or a host name,
-// the family of the socket is the one of the resolved address
+// the family of the socket is the one of the first resolved address,
+// use_ipv6 stays as the preferred family for every new resolution
 // returns 0 on success, 1 on error
 static u8 connection_init_address (Connection *connection) {
 
@@ -764,7 +776,6 @@ static u8 connection_init_address (Connection *connection) {
 	if (!network_resolve_address (
 		connection->ip, connection->port, connection->use_ipv6, &connection->address
 	)) {
-		connection->use_ipv6 = (connection->address.ss_family == AF_INET6);
 		retval = 0;
 	}
 
@@ -904,21 +915,167 @@ void connection_wake_connect (Connection *connection) {
 
 }
 
-// try to connect a client to an address (server) with exponential backoff,
-// each wait can be interrupted by the end of the connection or a client teardown
-static u8 connection_try (
-	Connection *connection, const struct sockaddr_storage address
+// a new socket of the family of the address, in place of the current one,
+// a socket whose connect () failed can not be used again
+// returns 0 on success, 1 on error
+static u8 connection_socket_replace (
+	Connection *connection, const struct sockaddr_storage *address
 ) {
 
-	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
-	const socklen_t address_size = sock_address_size (&address);
+	if (connection->socket->sock_fd >= 0) {
+		(void) close (connection->socket->sock_fd);
+	}
+
+	const int type = connection_init_socket_type (connection->protocol);
+	connection->socket->sock_fd = (type < 0) ? -1 : socket (address->ss_family, type, 0);
+
+	return (connection->socket->sock_fd >= 0) ? 0 : 1;
+
+}
+
+// the result of a non blocking connect () that finished
+// returns 0 if the socket is connected, 1 on error
+static u8 connection_connect_result (const int sock_fd) {
+
+	int error = 0;
+	socklen_t length = (socklen_t) sizeof (int);
+
+	return (!getsockopt (sock_fd, SOL_SOCKET, SO_ERROR, &error, &length) && !error) ? 0 : 1;
+
+}
+
+// waits up to the connect timeout for a non blocking connect (),
+// in steps of CONNECTION_CONNECT_POLL_INTERVAL ms, so the end of the connection
+// or a client teardown stops the wait
+// returns 0 if the socket connected, 1 on error, timeout or cancel
+static u8 connection_connect_wait (Connection *connection) {
+
+	u8 retval = 1;
+
+	struct pollfd connecting;
+	connecting.fd = connection->socket->sock_fd;
+	connecting.events = POLLOUT;
+	connecting.revents = 0;
+
+	u32 waited = 0;
+	bool waiting = true;
+	while (waiting) {
+		const u32 remaining = (connection->connect_timeout > waited) ?
+			(connection->connect_timeout - waited) : 0;
+		const u32 step = (remaining < CONNECTION_CONNECT_POLL_INTERVAL) ?
+			remaining : CONNECTION_CONNECT_POLL_INTERVAL;
+
+		const int ready = poll (&connecting, 1, (int) step);
+		if (ready > 0) {
+			retval = connection_connect_result (connecting.fd);
+			waiting = false;
+		}
+
+		else if ((ready < 0) && (errno != EINTR)) {
+			waiting = false;
+		}
+
+		else if (ready == 0) {
+			waited += step;
+			waiting = (waited < connection->connect_timeout)
+				&& !connection_connect_cancelled (connection);
+		}
+	}
+
+	return retval;
+
+}
+
+// one connect () to the address that can take up to the connect timeout,
+// the socket is back in blocking mode after it
+// returns 0 on success, 1 on error
+static u8 connection_connect_address (
+	Connection *connection, const struct sockaddr_storage *address
+) {
+
+	u8 retval = 1;
+
+	const int sock_fd = connection->socket->sock_fd;
+	if (sock_set_blocking (sock_fd, false)) {
+		// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
+		if (!connect (sock_fd, (const struct sockaddr *) address, sock_address_size (address))) {
+			retval = 0;
+		}
+
+		else if (errno == EINPROGRESS) {
+			retval = connection_connect_wait (connection);
+		}
+
+		(void) sock_set_blocking (sock_fd, true);
+	}
+
+	return retval;
+
+}
+
+// the addresses of the host are resolved again in every round,
+// if the host can not be resolved the last address is tried
+static void connection_connect_addresses (
+	const Connection *connection, NetworkAddresses *addresses
+) {
+
+	if (network_resolve_addresses (
+		connection->ip, connection->port,
+		connection->use_ipv6, connection->protocol,
+		addresses
+	)) {
+		addresses->addresses[0] = connection->address;
+		addresses->count = 1;
+	}
+
+}
+
+// one connect () to each resolved address in turn, the first one that connects
+// is kept as the address of the connection
+// a fresh socket is used for the first address if it has the same family,
+// every other attempt gets a new socket
+// returns 0 on success, 1 if none of them connected
+static u8 connection_connect_round (Connection *connection, const bool fresh) {
+
+	u8 retval = 1;
+
+	NetworkAddresses addresses;
+	connection_connect_addresses (connection, &addresses);
+
+	bool reuse = fresh && (connection->socket->sock_fd >= 0);
+	for (
+		unsigned int index = 0;
+		retval && (index < addresses.count) && !connection_connect_cancelled (connection);
+		index++
+	) {
+		const struct sockaddr_storage *address = &addresses.addresses[index];
+		const bool same_family = (connection->address.ss_family == address->ss_family);
+
+		if ((reuse && same_family) || !connection_socket_replace (connection, address)) {
+			if (!connection_connect_address (connection, address)) {
+				connection->address = *address;
+				retval = 0;
+			}
+		}
+
+		reuse = false;
+	}
+
+	return retval;
+
+}
+
+// try to connect a client to the addresses of the cerver with exponential backoff
+// between each round, each wait can be interrupted by the end of the connection or a client teardown
+static u8 connection_try (Connection *connection) {
 
 	// the first attempt is always done, a max sleep smaller than the first wait
 	// never attempted to connect
 	u32 numsec = CONNECTION_FIRST_RETRY_SECONDS;
-	while (connect (connection->socket->sock_fd,
-		(const struct sockaddr *) &address,
-		address_size)) {
+	bool fresh = true;
+	while (connection_connect_round (connection, fresh)) {
+		fresh = false;
+
 		if (numsec > connection->max_sleep) return 1;
 
 		if (!connection_try_wait (connection, numsec)) return 1;
@@ -931,6 +1088,7 @@ static u8 connection_try (
 }
 
 // starts a connection -> connects to the specified ip and port
+// every address that the ip resolves to is tried in turn, see connection_set_connect_timeout ()
 // sets connection's state based on result
 // returns 0 on success, 1 on error
 int connection_connect (Connection *connection) {
@@ -940,7 +1098,7 @@ int connection_connect (Connection *connection) {
 	if (connection) {
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
-		retval = connection_try (connection, connection->address);
+		retval = connection_try (connection);
 
 		connection_set_state (
 			connection,
@@ -1032,7 +1190,7 @@ static void connection_send_queue_clear (Connection *connection) {
 	Job *job = NULL;
 	while ((job = (Job *) job_queue_pull (connection->send_queue))) {
 		packet_delete (job->args);
-		job_delete (job);
+		job_return (connection->send_queue, job);
 	}
 
 }
@@ -1043,7 +1201,7 @@ void connection_stop_send (Connection *connection) {
 	if (connection && connection->send_queue) {
 		if (connection->send_thread_id) {
 			__atomic_store_n (&connection->send_thread_running, false, __ATOMIC_SEQ_CST);
-			bsem_post_all (connection->send_queue->has_jobs);
+			job_queue_signal (connection->send_queue);
 
 			(void) pthread_join (connection->send_thread_id, NULL);
 			connection->send_thread_id = 0;
@@ -1601,14 +1759,8 @@ static bool connection_update_reconnect_attempt (
 	if (!connection_init (connection)) {
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
-		const socklen_t address_size = (connection->address.ss_family == AF_INET6) ?
-			sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
-
-		if (!connect (
-			connection->socket->sock_fd,
-			(const struct sockaddr *) &connection->address,
-			address_size
-		)) {
+		// the host is resolved again, so a cerver that moved to another address is found
+		if (!connection_connect_round (connection, true)) {
 			connection->active = true;
 			(void) time (&connection->connected_timestamp);
 
@@ -1772,10 +1924,13 @@ void connection_send_packet (
 ) {
 
 	if (connection && connection->send_queue && packet) {
-		Job *job = job_create (NULL, packet);
+		// the job comes from the pool of the queue
+		Job *job = job_get (connection->send_queue);
 		if (job) {
+			job->args = packet;
+
 			if (job_queue_push (connection->send_queue, job)) {
-				job_delete (job);
+				job_return (connection->send_queue, job);
 				packet_delete (packet);
 			}
 		}
@@ -1792,6 +1947,9 @@ static u8 connection_send_thread_send (Connection *connection, Job *job) {
 
 	Packet *packet = (Packet *) job->args;
 
+	struct timespec start = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &start);
+
 	size_t sent = 0;
 	const u8 failed = packet_send_actual (
 		packet,
@@ -1800,9 +1958,20 @@ static u8 connection_send_thread_send (Connection *connection, Job *job) {
 	);
 
 	packet_delete (packet);
-	job_delete (job);
+
+	job_queue_record_run (connection->send_queue, &start);
+	job_return (connection->send_queue, job);
 
 	return failed;
+
+}
+
+// the send thread was asked to end, read with the lock of the send queue
+static bool connection_send_thread_stopped (const void *connection_ptr) {
+
+	const Connection *connection = (const Connection *) connection_ptr;
+
+	return !__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST);
 
 }
 
@@ -1819,16 +1988,12 @@ static void *connection_send_thread (void *connection_ptr) {
 	#endif
 
 	// a failed send does not end the thread, the connection can be connected again
-	Job *job = NULL;
-	while (__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)) {
-		bsem_wait (connection->send_queue->has_jobs);
+	while (!connection_send_thread_stopped (connection)) {
+		Job *job = (Job *) job_queue_pull_interruptible (
+			connection->send_queue, connection_send_thread_stopped, connection
+		);
 
-		while (
-			__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)
-			&& (job = (Job *) job_queue_pull (connection->send_queue))
-		) {
-			(void) connection_send_thread_send (connection, job);
-		}
+		if (job) (void) connection_send_thread_send (connection, job);
 	}
 
 	#ifdef CONNECTION_DEBUG

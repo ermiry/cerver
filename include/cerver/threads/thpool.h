@@ -10,8 +10,6 @@
 
 #include "cerver/types/types.h"
 
-#include "cerver/threads/jobs.h"
-
 #define THPOOL_NAME_SIZE					64
 
 // the default queue size is the number of threads times this factor,

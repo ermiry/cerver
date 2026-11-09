@@ -1141,7 +1141,8 @@ static void test_peers_amplification (void) {
 		"a small request got the cerver info"
 	);
 
-	const SCerver padding = { 0 };
+	SCerver padding;
+	(void) memset (&padding, 0, sizeof (SCerver));
 	PeersSocket padded = peers_socket_open (PEERS_IPV4_LOOPBACK, port);
 	peers_socket_send (&padded, PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO, &padding, sizeof (SCerver), NULL);
 	test_check (

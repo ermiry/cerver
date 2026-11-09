@@ -5,6 +5,7 @@ SANITIZER=${SANITIZER:-}
 BUILD=${BUILD:-1}
 RUN_SECONDS=${RUN_SECONDS:-120}
 LOGS=${LOGS:-/tmp/repeat}
+CERVER_TEST_ADDRESS=${CERVER_TEST_ADDRESS:-127.0.0.1}
 
 TARGET="$1"
 COUNT="${2:-100}"
@@ -28,7 +29,8 @@ if [ ! -f /.dockerenv ]; then
 	exec $DOCKER run --rm \
 		--cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
 		--sysctl net.ipv6.conf.all.disable_ipv6=0 \
-		--add-host service-1:127.0.0.1 --add-host service-2:127.0.0.1 \
+		--add-host "service-1:$CERVER_TEST_ADDRESS" --add-host "service-2:$CERVER_TEST_ADDRESS" \
+		-e CERVER_TEST_ADDRESS="$CERVER_TEST_ADDRESS" \
 		-e ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1}" \
 		-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
 		-e TSAN_OPTIONS="${TSAN_OPTIONS:-halt_on_error=1:second_deadlock_stack=1}" \

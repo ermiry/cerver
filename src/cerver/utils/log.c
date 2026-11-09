@@ -45,7 +45,10 @@ static bool use_local_time = false;
 static String *logs_pathname = NULL;
 static FILE *logfile = NULL;
 
+// the update thread waits its interval in the condition, cerver_log_end () wakes it and joins it
 static pthread_t update_log_thread_id = 0;
+static pthread_mutex_t update_log_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t update_log_cond = PTHREAD_COND_INITIALIZER;
 static bool update_log_file = false;
 static unsigned int log_file_update_interval = LOG_DEFAULT_UPDATE_INTERVAL;
 
@@ -776,23 +779,45 @@ void cerver_log_line_break (void) {
 
 #pragma region main
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
+// syncs the log file every interval until cerver_log_end () wakes it up
 static void *cerver_log_update (void *data) {
 
-	(void) sleep (log_file_update_interval);
+	(void) data;
+
+	(void) pthread_mutex_lock (&update_log_mutex);
 
 	while (update_log_file) {
-		(void) fflush (logfile);
-		(void) sleep (log_file_update_interval);
+		struct timespec deadline = { 0, 0 };
+		(void) clock_gettime (CLOCK_REALTIME, &deadline);
+		deadline.tv_sec += (time_t) log_file_update_interval;
+
+		(void) pthread_cond_timedwait (&update_log_cond, &update_log_mutex, &deadline);
+
+		if (update_log_file) (void) fflush (logfile);
 	}
+
+	(void) pthread_mutex_unlock (&update_log_mutex);
 
 	return NULL;
 
 }
 
-#pragma GCC diagnostic pop
+// the file is closed only after the update thread ended
+static void cerver_log_update_end (void) {
+
+	(void) pthread_mutex_lock (&update_log_mutex);
+
+	update_log_file = false;
+	(void) pthread_cond_signal (&update_log_cond);
+
+	(void) pthread_mutex_unlock (&update_log_mutex);
+
+	if (update_log_thread_id) {
+		(void) pthread_join (update_log_thread_id, NULL);
+		update_log_thread_id = 0;
+	}
+
+}
 
 static void cerver_log_init_file (void) {
 
@@ -806,7 +831,10 @@ static void cerver_log_init_file (void) {
 	logfile = fopen (filename, "w+");
 	if (logfile) {
 		update_log_file = true;
-		(void) thread_create_detachable (&update_log_thread_id, cerver_log_update, NULL);
+		if (thread_create_joinable (&update_log_thread_id, cerver_log_update, NULL)) {
+			update_log_file = false;
+			update_log_thread_id = 0;
+		}
 	}
 
 	else {
@@ -843,14 +871,16 @@ void cerver_log_init (void) {
 
 void cerver_log_end (void) {
 
-	update_log_file = false;
+	cerver_log_update_end ();
 
 	if (logfile) {
 		(void) fclose (logfile);
 		logfile = NULL;
 	}
 
+	// a new cerver_log_init () uses the default path again
 	str_delete (logs_pathname);
+	logs_pathname = NULL;
 
 	pool_delete (log_pool);
 	log_pool = NULL;

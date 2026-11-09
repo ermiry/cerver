@@ -31,6 +31,11 @@
 #define CONNECTION_DEFAULT_MAX_SLEEP				60
 #define CONNECTION_FIRST_RETRY_SECONDS				2
 
+// how long a connect () to each resolved address can take (ms),
+// and how often the wait checks if the connection was ended
+#define CONNECTION_DEFAULT_CONNECT_TIMEOUT			4096
+#define CONNECTION_CONNECT_POLL_INTERVAL			128
+
 #define CONNECTION_DEFAULT_MAX_AUTH_TRIES			2
 #define CONNECTION_DEFAULT_BAD_PACKETS				4
 
@@ -145,6 +150,10 @@ struct _Connection {
 	struct _CerverReport *cerver_report;    // info about the cerver we are connecting to
 
 	u32 max_sleep;
+
+	// how long a connect () to each resolved address can take, in milliseconds
+	u32 connect_timeout;
+
 	bool active;
 
 	// the connection has a thread in connection_update (), set before the thread is created
@@ -285,6 +294,12 @@ CERVER_PRIVATE void connection_set_state (
 // sets the connection max sleep (wait time) to try to connect to the cerver
 CERVER_EXPORT void connection_set_max_sleep (
 	Connection *connection, u32 max_sleep
+);
+
+// sets how long a connect () to each address of the cerver can take, in milliseconds,
+// after it the next resolved address is tried (default CONNECTION_DEFAULT_CONNECT_TIMEOUT)
+CERVER_EXPORT void connection_set_connect_timeout (
+	Connection *connection, u32 timeout
 );
 
 // sets if the connection will receive packets or not (default true)

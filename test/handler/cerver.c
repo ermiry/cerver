@@ -13,6 +13,8 @@
 
 #include <app/handler.h>
 
+#include "../test.h"
+
 static const char *cerver_name = "test-cerver";
 static const char *welcome_message = "Hello there!";
 
@@ -46,6 +48,9 @@ int main (int argc, char **argv) {
 		false,
 		CERVER_DEFAULT_CONNECTION_QUEUE
 	);
+
+	test_check_ptr (cerver);
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
 
 	/*** configuration ***/
 	cerver_set_welcome_msg (cerver, welcome_message);

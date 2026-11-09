@@ -259,7 +259,7 @@ static unsigned int udp_peer_key (
 
 	unsigned int retval = 1;
 
-	char ip[INET6_ADDRSTRLEN] = { 0 };
+	char ip[NETWORK_ADDRESS_STRING_SIZE] = { 0 };
 	if (!sock_ip_to_string_actual ((const struct sockaddr *) address, ip)) {
 		(void) snprintf (
 			key, CERVER_UDP_PEER_KEY_SIZE, CERVER_UDP_PEER_KEY_FORMAT,
