@@ -7,7 +7,7 @@ SECONDS_PER_TARGET=${SECONDS_PER_TARGET:-30}
 MAX_LENGTH=${MAX_LENGTH:-16384}
 ARTIFACTS=${ARTIFACTS:-fuzz-artifacts}
 
-TARGETS=(receive packet client file)
+TARGETS=(receive packet client file datagram)
 
 if [ $# -gt 0 ]; then
 	TARGETS=("$@")

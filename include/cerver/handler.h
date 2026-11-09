@@ -211,6 +211,11 @@ CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
 	struct _Packet *packet
 );
 
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection,
+// the client, request and cerver packets of a peer are handled by its peers (udp.c)
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
+
 #pragma endregion
 
 #pragma region receive

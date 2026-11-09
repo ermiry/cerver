@@ -386,6 +386,12 @@ struct _Cerver {
 	// the teardown waits for them before the cerver is released
 	ThreadGroup event_threads;
 
+	// the peers of an UDP cerver (udp.c), created when it starts
+	struct CerverUdp *udp;
+	u32 udp_peer_timeout;
+	u32 udp_max_peers;
+	u32 udp_peers_count;                // read with __atomic by cerver_udp_peers_count ()
+
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
 	u16 current_n_fds;                  // n of active fds in the pollfd array

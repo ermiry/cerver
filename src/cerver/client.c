@@ -24,6 +24,7 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 #include "cerver/sessions.h"
+#include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
 
@@ -2054,6 +2055,17 @@ int client_connection_unregister (
 
 static void client_receive_handle_buffer (ReceiveHandle *receive_handle);
 
+static ReceiveError client_receive_actual (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size,
+	size_t *rc
+);
+
+static u8 client_receive_datagram (
+	Client *client, Connection *connection,
+	const char *datagram, const size_t size
+);
+
 // passes the received bytes of the next packet to the shared receive,
 // that assembles the packet and dispatches it when it is complete
 static void client_connection_get_next_packet_feed (
@@ -2145,6 +2157,38 @@ static unsigned int client_connection_get_next_packet_actual (
 
 }
 
+// a datagram is received whole and its packet is handled like in the update thread
+static unsigned int client_connection_get_next_datagram (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	char *buffer = (char *) malloc (MAX_UDP_PACKET_SIZE);
+	if (buffer) {
+		size_t received = 0;
+
+		ReceiveError error = RECEIVE_ERROR_TIMEOUT;
+		while (error == RECEIVE_ERROR_TIMEOUT) {
+			error = client_receive_actual (
+				client, connection, buffer, MAX_UDP_PACKET_SIZE, &received
+			);
+		}
+
+		if (error == RECEIVE_ERROR_NONE) {
+			CERVER_STATS_ADD (client->stats->n_receives_done, 1);
+			CERVER_STATS_ADD (client->stats->total_bytes_received, received);
+
+			retval = client_receive_datagram (client, connection, buffer, received);
+		}
+
+		free (buffer);
+	}
+
+	return retval;
+
+}
+
 // performs a receive in the connection's socket
 // to get a complete packet & handle it
 // returns 0 on success, 1 on error
@@ -2155,9 +2199,9 @@ unsigned int client_connection_get_next_packet (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		retval = client_connection_get_next_packet_actual (
-			client, connection
-		);
+		retval = (connection->protocol == PROTOCOL_UDP)
+			? client_connection_get_next_datagram (client, connection)
+			: client_connection_get_next_packet_actual (client, connection);
 	}
 
 	return retval;
@@ -2167,6 +2211,56 @@ unsigned int client_connection_get_next_packet (
 #pragma endregion
 
 #pragma region connect
+
+// the request of the cerver info has the size of the info,
+// a cerver does not answer an unproven address with more bytes than it sent (udp.c)
+static void client_connect_datagram_info (Client *client, Connection *connection) {
+
+	SCerver padding;
+	(void) memset (&padding, 0, sizeof (SCerver));
+
+	Packet *request = packet_generate_request (
+		PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+		&padding, sizeof (SCerver)
+	);
+
+	if (request) {
+		packet_set_network_values (request, NULL, client, connection, NULL);
+		(void) packet_send (request, 0, NULL, false);
+		packet_delete (request);
+	}
+
+}
+
+static void client_connect_datagram_auth (Client *client, Connection *connection) {
+
+	if (!connection->auth_packet) {
+		(void) connection_generate_auth_packet (connection);
+	}
+
+	if (connection->auth_packet) {
+		packet_set_network_values (connection->auth_packet, NULL, client, connection, NULL);
+
+		if (!packet_send (connection->auth_packet, 0, NULL, false)) {
+			client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
+		}
+	}
+
+}
+
+// an UDP cerver only knows a connection when it sends a datagram:
+// the connection asks for the cerver info and sends its auth packet (if it has auth data)
+void client_connect_datagram (Client *client, Connection *connection) {
+
+	if (client && connection && (connection->protocol == PROTOCOL_UDP)) {
+		client_connect_datagram_info (client, connection);
+
+		if (connection->auth_data) {
+			client_connect_datagram_auth (client, connection);
+		}
+	}
+
+}
 
 // connects a client to the host with the specified values in the connection
 // it can be a cerver or not
@@ -2186,6 +2280,8 @@ unsigned int client_connect (
 
 			// the event sees the connection already active
 			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
+
+			client_connect_datagram (client, connection);
 
 			retval = 0;     // success - connected to cerver
 		}
@@ -3153,9 +3249,34 @@ static u8 auth_strip_token (Packet *packet, Client *client) {
 
 }
 
-static void client_auth_success_handler (Packet *packet) {
+// the success of an UDP connection has the session token (when the cerver uses sessions)
+// followed by the datagram token, that its datagrams have from now on
+// returns 0 on success, 1 if the packet does not have them
+static u8 client_auth_success_datagram (Packet *packet) {
 
-	packet->connection->authenticated = true;
+	u8 retval = 1;
+
+	const bool valid = packet->data && (packet->data_size >= CONNECTION_DATAGRAM_TOKEN_SIZE);
+	const size_t session_size = valid ? (packet->data_size - CONNECTION_DATAGRAM_TOKEN_SIZE) : 0;
+
+	if (valid && (!session_size || (session_size == sizeof (SToken)))) {
+		const char *data = (const char *) packet->data;
+
+		// a session token without its NUL would be read past the packet
+		if (session_size && memchr (data, '\0', sizeof (SToken))) {
+			(void) client_set_session_id (packet->client, data);
+		}
+
+		connection_set_datagram_token (packet->connection, (const u8 *) data + session_size);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void client_auth_success_session (Packet *packet) {
 
 	if (packet->connection->cerver_report) {
 		if (packet->connection->cerver_report->uses_sessions) {
@@ -3170,6 +3291,20 @@ static void client_auth_success_handler (Packet *packet) {
 			}
 		}
 	}
+
+}
+
+static void client_auth_success_handler (Packet *packet) {
+
+	if (packet->connection->protocol == PROTOCOL_UDP) {
+		if (client_auth_success_datagram (packet)) return;
+	}
+
+	else {
+		client_auth_success_session (packet);
+	}
+
+	packet->connection->authenticated = true;
 
 	client_event_trigger (
 		CLIENT_EVENT_SUCCESS_AUTH,
@@ -3428,6 +3563,62 @@ static void client_receive_handle_buffer (
 
 }
 
+// a bad datagram of the cerver: the connection is ended when it reaches the client limit,
+// its socket is shut down, so its receive loop ends it like when the cerver closes it
+static void client_receive_datagram_bad (Client *client, Connection *connection) {
+
+	CERVER_STATS_ADD (client->stats->received_packets->n_bad_packets, 1);
+
+	connection->bad_packets += 1;
+
+	if (client->max_bad_packets && (connection->bad_packets >= client->max_bad_packets)) {
+		cerver_log_warning (
+			"Client %s connection %s received %u bad datagrams - ending it...",
+			client->name, connection->name, (unsigned int) connection->bad_packets
+		);
+
+		(void) connection_drop_request (connection);
+	}
+
+}
+
+// a datagram has a single packet, followed by the token of the connection once it authenticated
+// returns 0 when its packet was handled, 1 when it was a bad datagram
+static u8 client_receive_datagram (
+	Client *client, Connection *connection,
+	const char *datagram, const size_t size
+) {
+
+	u8 retval = 1;
+
+	PacketHeader header;
+	const UdpDatagram kind = udp_datagram_check (
+		datagram, size, client->max_received_packet_size, &header
+	);
+
+	u8 token[CONNECTION_DATAGRAM_TOKEN_SIZE];
+	const bool valid = connection_get_datagram_token (connection, token)
+		? ((kind == UDP_DATAGRAM_TOKEN) && udp_datagram_token_matches (datagram, &header, token))
+		: (kind == UDP_DATAGRAM_PLAIN);
+
+	Packet *packet = valid ? udp_datagram_packet_create (datagram, &header) : NULL;
+	if (packet) {
+		packet->client = client;
+		packet->connection = connection;
+
+		(void) client_packet_handler (packet);
+
+		retval = 0;
+	}
+
+	else {
+		client_receive_datagram_bad (client, connection);
+	}
+
+	return retval;
+
+}
+
 // handles a failed recive from a connection associatd with a client
 // in its update thread, the end is deferred until its receive loop ends (unless another thread owns it),
 // in any other thread (a direct receive), the connection is ended now
@@ -3446,6 +3637,14 @@ static void client_receive_handle_failed (
 	else if (connection->active) {
 		(void) client_connection_end (client, connection);
 	}
+
+}
+
+// a recv () of 0 bytes in an UDP socket that was not shut down is an empty datagram
+static bool client_receive_is_empty_datagram (const Connection *connection) {
+
+	return (connection->protocol == PROTOCOL_UDP)
+		&& !__atomic_load_n (&connection->shut_down, __ATOMIC_ACQUIRE);
 
 }
 
@@ -3498,6 +3697,9 @@ static ReceiveError client_receive_actual (
 		} break;
 
 		case 0: {
+			// an empty datagram is a bad one, it does not end the connection
+			if (client_receive_is_empty_datagram (connection)) break;
+
 			#ifdef CONNECTION_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
@@ -3611,14 +3813,21 @@ unsigned int client_receive_internal (
 	#endif
 
 	switch (error) {
+		// a datagram has a single packet, the bytes of a stream are assembled into packets
 		case RECEIVE_ERROR_NONE: {
-			connection->receive_handle.buffer = buffer;
-			connection->receive_handle.buffer_size = buffer_size;
-			connection->receive_handle.received_size = received;
+			if (connection->protocol == PROTOCOL_UDP) {
+				(void) client_receive_datagram (client, connection, buffer, received);
+			}
 
-			client_receive_handle_buffer (
-				&connection->receive_handle
-			);
+			else {
+				connection->receive_handle.buffer = buffer;
+				connection->receive_handle.buffer_size = buffer_size;
+				connection->receive_handle.received_size = received;
+
+				client_receive_handle_buffer (
+					&connection->receive_handle
+				);
+			}
 
 			retval = 0;
 		} break;

@@ -941,7 +941,10 @@ void cerver_test_packet_handler (Packet *packet) {
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &packet->header,
-		.packet_ref = true
+		.packet_ref = true,
+
+		.release = NULL,
+		.release_args = NULL
 	};
 
 	(void) packet_send (&request, 0, NULL, false);
@@ -1022,14 +1025,49 @@ static const char *cerver_bad_packet_type = { "The packet has an unknown type" }
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit
 // returns CERVER_HANDLER_ERROR_DROPPED when the connection is being dropped
+// the address of an UDP peer that did not authenticate can be forged,
+// so it is not answered, the answer could flood someone else
+static bool cerver_bad_packet_answer_allowed (const Connection *connection) {
+
+	return (connection->protocol != PROTOCOL_UDP) || connection_has_datagram_token (connection);
+
+}
+
+// an UDP peer does not have a socket, its peers remove it (udp.c)
+static void cerver_bad_packet_drop (const Packet *packet) {
+
+	if (packet->connection->protocol == PROTOCOL_UDP) {
+		cerver_log_warning (
+			"Cerver %s UDP peer %s:%u sent %u bad packets - dropping...",
+			packet->cerver->info->name,
+			packet->connection->ip, (unsigned int) packet->connection->port,
+			(unsigned int) packet->connection->bad_packets
+		);
+	}
+
+	else {
+		cerver_log_warning (
+			"Cerver %s connection <%d> sent %u bad packets - dropping...",
+			packet->cerver->info->name, packet->connection->socket->sock_fd,
+			(unsigned int) packet->connection->bad_packets
+		);
+
+		// the receive loop removes it, like when the client closes it
+		(void) connection_drop_request (packet->connection);
+	}
+
+}
+
 static CerverHandlerError cerver_bad_packet (const Packet *packet, const char *reason) {
 
 	CERVER_STATS_ADD (packet->cerver->stats->received_packets->n_bad_packets, 1);
 
-	(void) error_packet_generate_and_send (
-		CERVER_ERROR_PACKET_ERROR, reason,
-		packet->cerver, packet->client, packet->connection
-	);
+	if (cerver_bad_packet_answer_allowed (packet->connection)) {
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, reason,
+			packet->cerver, packet->client, packet->connection
+		);
+	}
 
 	packet->connection->bad_packets += 1;
 
@@ -1038,14 +1076,7 @@ static CerverHandlerError cerver_bad_packet (const Packet *packet, const char *r
 		return CERVER_HANDLER_ERROR_NONE;
 	}
 
-	cerver_log_warning (
-		"Cerver %s connection <%d> sent %u bad packets - dropping...",
-		packet->cerver->info->name, packet->connection->socket->sock_fd,
-		(unsigned int) packet->connection->bad_packets
-	);
-
-	// the receive loop removes it, like when the client closes it
-	(void) connection_drop_request (packet->connection);
+	cerver_bad_packet_drop (packet);
 
 	return CERVER_HANDLER_ERROR_DROPPED;
 
@@ -1247,6 +1278,24 @@ static u8 cerver_packet_handler (Packet *packet) {
 	}
 
 	return retval;
+
+}
+
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+u8 cerver_udp_packet_handle (Packet *packet) {
+
+	CERVER_STATS_ADD (packet->cerver->stats->client_n_packets_received, 1);
+	CERVER_STATS_ADD (packet->cerver->stats->total_n_packets_received, 1);
+
+	#ifdef CLIENT_STATS
+	packet->client->stats->n_packets_received += 1;
+	#endif
+	#ifdef CONNECTION_STATS
+	packet->connection->stats->n_packets_received += 1;
+	#endif
+
+	return cerver_packet_handler (packet);
 
 }
 

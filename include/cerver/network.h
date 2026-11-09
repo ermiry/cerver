@@ -16,7 +16,8 @@
 #define IPV6_TO_STR_LEN					46
 
 #define MAX_PORT_NUM					65535
-#define MAX_UDP_PACKET_SIZE				65515
+// the payload of an IPv4 UDP datagram: 65535 - 20 (IP header) - 8 (UDP header)
+#define MAX_UDP_PACKET_SIZE				65507
 
 // an IPv4 inside an IPv6 address (::ffff:a.b.c.d) starts after these bytes
 #define NETWORK_IPV4_MAPPED_OFFSET		12

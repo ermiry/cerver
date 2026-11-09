@@ -33,6 +33,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -462,6 +463,11 @@ Cerver *cerver_new (void) {
 
 		thread_group_init (&cerver->connection_threads);
 		thread_group_init (&cerver->event_threads);
+
+		cerver->udp = NULL;
+		cerver->udp_peer_timeout = CERVER_UDP_DEFAULT_PEER_TIMEOUT;
+		cerver->udp_max_peers = CERVER_UDP_DEFAULT_MAX_PEERS;
+		cerver->udp_peers_count = 0;
 
 		cerver->fds = NULL;
 		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
@@ -1905,6 +1911,20 @@ static void *cerver_update (void *args);
 
 static void *cerver_update_interval (void *args);
 
+// the thread that receives the packets of the on hold connections
+// joined in cerver_stop_threads () before its fds are released
+static void cerver_auth_start_poll (Cerver *cerver) {
+
+	if (thread_create_joinable (&cerver->on_hold_poll_thread_id, on_hold_poll, cerver)) {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to create cerver's %s on_hold_poll () thread!",
+			cerver->info->name
+		);
+	}
+
+}
+
 // inits cerver's auth capabilities
 static u8 cerver_auth_start (Cerver *cerver) {
 
@@ -1929,17 +1949,9 @@ static u8 cerver_auth_start (Cerver *cerver) {
 				cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 				pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
 
-				// joined in cerver_stop_threads () before its fds are released
-				if (!thread_create_joinable (&cerver->on_hold_poll_thread_id, on_hold_poll, cerver)) {
-					retval = 0;
-				}
-
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Failed to create cerver's %s on_hold_poll () thread!",
-						cerver->info->name
-					);
+				// the peers of an UDP cerver authenticate in its receive loop (udp.c)
+				if (cerver->protocol == PROTOCOL_TCP) {
+					cerver_auth_start_poll (cerver);
 				}
 
 				retval = 0;
@@ -2483,14 +2495,28 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
+// every datagram is a packet, the peers are logical connections (udp.c)
+// the admins have connections of their own, they can not connect to an UDP cerver
 static u8 cerver_start_udp (Cerver *cerver) {
 
-	cerver_log_warning (
-		"Cerver %s - udp server is not yet implemented!",
-		cerver->info->name
+	if (cerver->admin) {
+		cerver_log_error (
+			"Cerver %s can not handle admins with UDP!",
+			cerver->info->name
+		);
+
+		return 1;
+	}
+
+	(void) time (&cerver->info->time_started);
+
+	cerver_event_trigger (
+		CERVER_EVENT_STARTED,
+		cerver,
+		NULL, NULL
 	);
 
-	return 1;
+	return cerver_udp_start (cerver);
 
 }
 
@@ -2799,7 +2825,11 @@ static void cerver_stop_wake_threads (Cerver *cerver) {
 // the listening socket is only closed by cerver_teardown (),
 // so its fd can not be reused while another thread is inside accept ()
 // a request before cerver_start () cancels the start
+// it is called from signal handlers, so it keeps the errno of the thread that it interrupted,
+// the shutdown () of an UDP socket that is not connected fails with ENOTCONN
 void cerver_stop_request (Cerver *cerver) {
+
+	const int saved_errno = errno;
 
 	if (cerver) {
 		__atomic_store_n (&cerver->stop_requested, true, __ATOMIC_SEQ_CST);
@@ -2815,6 +2845,8 @@ void cerver_stop_request (Cerver *cerver) {
 
 		cerver_stop_wake_threads (cerver);
 	}
+
+	errno = saved_errno;
 
 }
 
@@ -3159,6 +3191,9 @@ static void cerver_clean_data (Cerver *cerver) {
 		// clean up on hold connections
 		cerver_destroy_on_hold_connections (cerver);
 
+		// the peers of an UDP cerver
+		cerver_udp_end (cerver);
+
 		// clean up cerver connected clients
 		cerver_destroy_clients (cerver);
 		#ifdef CERVER_DEBUG
@@ -3262,6 +3297,11 @@ static void cerver_report_check_info_handle_auth (
 	CerverReport *cerver_report,
 	Client *client, Connection *connection
 ) {
+
+	// an UDP connection sends its auth when it connects, the cerver can not ask for it (udp.c)
+	if (cerver_report && connection && (connection->protocol == PROTOCOL_UDP)) {
+		return;
+	}
 
 	if (cerver_report && connection) {
 		if (cerver_report->auth_required) {
