@@ -63,6 +63,9 @@ struct _Handler {
 	int id;
 	pthread_t thread_id;
 
+	// set when its thread was started and has not been joined yet
+	bool joinable;
+
 	// unique handler data
 	// will be passed to jobs alongside any job specific data as the args
 	void *data;
@@ -148,6 +151,19 @@ CERVER_EXPORT void handler_set_direct_handle (
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods
 CERVER_PRIVATE int handler_start (Handler *handler);
+
+// wakes the handler's thread until it sees that its owner stopped and joins it,
+// it is called after the cerver / client stopped running
+CERVER_PRIVATE void handler_stop (Handler *handler);
+
+// passes the packet to the handler of its type, directly or by its job queue,
+// a direct handler releases it after it returns only if delete_packet is set,
+// and the packet is always released when there is no handler or it can not be queued
+// owner_name and handler_name are only used in the logs
+CERVER_PRIVATE void handler_packet_dispatch (
+	Handler *handler, struct _Packet *packet, const bool delete_packet,
+	const char *owner_name, const char *handler_name
+);
 
 #pragma endregion
 
