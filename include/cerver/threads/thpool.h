@@ -7,6 +7,9 @@
 #include <time.h>
 
 #include "cerver/config.h"
+
+#include "cerver/types/types.h"
+
 #include "cerver/threads/jobs.h"
 
 #define THPOOL_NAME_SIZE					64
@@ -17,6 +20,16 @@
 
 // a drain timeout of 0 waits until every job has finished
 #define THPOOL_DRAIN_TIMEOUT_NONE			0
+
+// the time that a job waits in the queue and the time that it runs
+// are counted in buckets of up to 2^0, 2^1 ... 2^18 ms (262 secs),
+// and a last bucket for the longer ones
+#define THPOOL_HISTOGRAM_MAX_EXPONENT		18
+#define THPOOL_HISTOGRAM_BUCKETS			(THPOOL_HISTOGRAM_MAX_EXPONENT + 2)
+
+#define THPOOL_MICROSECONDS_PER_MILLISECOND		1000
+#define THPOOL_MICROSECONDS_PER_SECOND			1000000
+#define THPOOL_NANOSECONDS_PER_MICROSECOND		1000
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +47,31 @@ typedef struct ThpoolJob {
 	void (*reject) (void *args);
 	void *args;
 
+	// when the job entered the queue (CLOCK_MONOTONIC)
+	struct timespec queued;
+
 } ThpoolJob;
+
+// the values that a thpool counts since it was created
+typedef struct ThpoolStats {
+
+	u64 total_jobs;				// jobs that entered the queue
+	u64 completed_jobs;			// jobs that finished their work
+	u64 rejected_jobs;			// jobs that could not enter the queue (full or not accepting)
+	u64 dropped_jobs;			// queued jobs that were rejected by a drain or the destroy
+	u64 waited_jobs;			// times that a caller had to wait for space in the queue
+
+	unsigned int max_queued;	// the most jobs that were waiting in the queue at once
+
+	u64 wait_total_microseconds;
+	u64 run_total_microseconds;
+
+	// wait_histogram[i] are the jobs that waited up to 2^i ms,
+	// the last bucket is for the ones that waited more than 2^THPOOL_HISTOGRAM_MAX_EXPONENT ms
+	u64 wait_histogram[THPOOL_HISTOGRAM_BUCKETS];
+	u64 run_histogram[THPOOL_HISTOGRAM_BUCKETS];
+
+} ThpoolStats;
 
 typedef struct Thpool {
 
@@ -65,6 +102,9 @@ typedef struct Thpool {
 	// so a thread can wait for it with poll () and still be interrupted by a signal
 	int space_fd;
 	bool space_waiting;
+
+	// protected by the mutex
+	ThpoolStats stats;
 
 } Thpool;
 
@@ -108,6 +148,15 @@ CERVER_EXPORT unsigned int thpool_get_queued (Thpool *thpool);
 
 // gets how many jobs can wait in the queue
 CERVER_EXPORT unsigned int thpool_get_queue_size (Thpool *thpool);
+
+// copies the current stats of the thpool
+CERVER_EXPORT void thpool_get_stats (Thpool *thpool, ThpoolStats *stats);
+
+// returns the bucket of the histograms for an elapsed time
+CERVER_EXPORT unsigned int thpool_histogram_bucket (const u64 microseconds);
+
+// prints the stats with the cerver log
+CERVER_EXPORT void thpool_stats_print (const ThpoolStats *stats);
 
 // returns true if the thpool does NOT have any working thread
 CERVER_EXPORT bool thpool_is_empty (Thpool *thpool);
