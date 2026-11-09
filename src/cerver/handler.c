@@ -1899,9 +1899,13 @@ static Connection *cerver_connection_create (
 	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	return connection_create (
+	Connection *connection = connection_create (
 		new_fd, client_address, cerver->protocol
 	);
+
+	connection_set_send_timeout (connection, cerver->send_timeout);
+
+	return connection;
 
 }
 

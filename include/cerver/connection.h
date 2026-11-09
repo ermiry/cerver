@@ -184,6 +184,9 @@ struct _Connection {
 	// that is joined when the connection is destroyed
 	bool use_send_queue;
 	int send_flags;
+
+	// the secs that a send to a full socket waits for space, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+	u32 send_timeout;
 	bool send_thread_running;
 	pthread_t send_thread_id;
 	JobQueue *send_queue;
@@ -300,6 +303,12 @@ CERVER_EXPORT void connection_set_received_data (
 // this refers to the time the socket will block waiting for new data to araive
 // note that this only has effect in connection_update ()
 CERVER_EXPORT void connection_set_update_timeout (
+	Connection *connection, u32 timeout
+);
+
+// sets how many secs a send waits for space in a full non blocking socket
+// before it fails, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+CERVER_EXPORT void connection_set_send_timeout (
 	Connection *connection, u32 timeout
 );
 

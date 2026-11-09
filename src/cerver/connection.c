@@ -303,6 +303,7 @@ Connection *connection_new (void) {
 
 		connection->use_send_queue = CONNECTION_DEFAULT_USE_SEND_QUEUE;
 		connection->send_flags = CONNECTION_DEFAULT_SEND_FLAGS;
+		connection->send_timeout = CERVER_DEFAULT_SEND_TIMEOUT;
 		connection->send_thread_running = false;
 		connection->send_thread_id = 0;
 		connection->send_queue = NULL;
@@ -559,6 +560,13 @@ void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
 	if (connection) connection->update_timeout = timeout;
+
+}
+
+// sets how many secs a send waits for space in a full non blocking socket
+void connection_set_send_timeout (Connection *connection, u32 timeout) {
+
+	if (connection) connection->send_timeout = timeout;
 
 }
 
