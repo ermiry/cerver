@@ -161,13 +161,10 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 // only the bytes of the session id are copied, it is shorter than the token,
 // copying TOKEN_SIZE bytes read past its end
-static void auth_token_set (SToken *token, const String *session_id) {
+// the session id is read with the client's session lock
+static void auth_token_set (SToken *token, const Client *client) {
 
-	const size_t token_len = (session_id->len < (TOKEN_SIZE - 1)) ?
-		session_id->len : (TOKEN_SIZE - 1);
-
-	(void) memcpy (token->token, session_id->str, token_len);
-	token->token[token_len] = '\0';
+	(void) client_get_session_id (client, token->token, TOKEN_SIZE);
 
 }
 
@@ -608,7 +605,7 @@ static CerverAuthError auth_try (Packet *packet) {
 					// if we are successfull, send success packet
 					if (packet->cerver->use_sessions) {
 						SToken token = { { 0 } };
-						auth_token_set (&token, client->session_id);
+						auth_token_set (&token, client);
 
 						auth_send_success_packet (
 							packet->cerver,
@@ -744,7 +741,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 						// if we are successfull, send success packet
 						if (packet->cerver->use_sessions) {
 							SToken token = { { 0 } };
-							auth_token_set (&token, client->session_id);
+							auth_token_set (&token, client);
 
 							auth_send_success_packet (
 								packet->cerver,
