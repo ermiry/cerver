@@ -2,9 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef PACKETS_DEBUG
 #include <errno.h>
-#endif
 
 #include "cerver/config.h"
 
@@ -12,6 +10,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 #include "cerver/types/types.h"
 
@@ -19,6 +18,7 @@
 #include "cerver/client.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/game/lobby.h"
 
@@ -27,6 +27,9 @@
 #endif
 
 #define PACKET_ROUTE_BUFFER_SIZE			4096
+
+// a split packet is sent as its header and its data
+#define PACKET_SPLIT_PARTS					2
 
 #pragma region protocol
 
@@ -808,6 +811,47 @@ Packet *packet_create_ping (void) {
 
 }
 
+// initializes an already allocated packet with request related values
+void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	*packet = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
+
+		.packet_type = packet_type,
+		.req_type = request_type,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.version = packet_version_local (),
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true
+	};
+
+	// the header is sent from the packet itself, the literal does not zero its padding
+	packet_header_init (&packet->header, packet_type, sizeof (PacketHeader), request_type);
+
+}
+
+// initializes an already allocated packet as a ping request
+void packet_init_ping (Packet *packet) {
+
+	packet_init_request (packet, PACKET_TYPE_TEST, 0);
+
+}
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 Packet *packet_generate_request (
@@ -846,23 +890,14 @@ static inline u8 packet_send_tcp_actual (
 	int flags, size_t *total_sent, bool raw
 ) {
 
-	ssize_t sent = 0;
-	char *p = raw ? (char *) packet->data : (char *) packet->packet;
-	size_t packet_size = raw ? packet->data_size : packet->packet_size;
-
-	while (packet_size > 0) {
-		sent = send (connection->socket->sock_fd, p, packet_size, flags);
-		if (sent < 0) {
-			return 1;
-		}
-
-		p += sent;
-		packet_size -= (size_t) sent;
-	}
-
-	if (total_sent) *total_sent = (size_t) sent;
-
-	return 0;
+	// every byte that was sent, send () can send the packet in many parts
+	return socket_send_buffer (
+		connection->socket,
+		raw ? packet->data : packet->packet,
+		raw ? packet->data_size : packet->packet_size,
+		flags, (time_t) connection->send_timeout,
+		total_sent, NULL
+	);
 
 }
 
@@ -899,47 +934,20 @@ static u8 packet_send_split_tcp (
 	u8 retval = 1;
 
 	if (packet && connection) {
+		// the header and the data in a single call when the socket takes them
+		struct iovec parts[PACKET_SPLIT_PARTS] = {
+			{ .iov_base = (void *) &packet->header, .iov_len = sizeof (PacketHeader) },
+			{ .iov_base = packet->data, .iov_len = packet->data_size }
+		};
+
 		(void) pthread_mutex_lock (connection->socket->write_mutex);
 
-		size_t actual_sent = 0;
-
-		// first send the header
-		bool fail = false;
-		ssize_t sent = 0;
-		char *p = (char *) &packet->header;
-		size_t packet_size = sizeof (PacketHeader);
-
-		while (packet_size > 0) {
-			sent = send (connection->socket->sock_fd, p, packet_size, flags);
-			if (sent < 0) {
-				fail = true;
-				break;
-			}
-
-			p += sent;
-			actual_sent += (size_t) sent;
-			packet_size -= (size_t) sent;
-			fail = false;
-		}
-
-		// now send the data
-		if (!fail) {
-			sent = 0;
-			p = (char *) packet->data;
-			packet_size = packet->data_size;
-
-			while (packet_size > 0) {
-				sent = send (connection->socket->sock_fd, p, packet_size, flags);
-				if (sent < 0) break;
-				p += sent;
-				actual_sent += (size_t) sent;
-				packet_size -= (size_t) sent;
-			}
-
-			if (total_sent) *total_sent = actual_sent;
-
-			retval = 0;
-		}
+		retval = socket_send_vector (
+			connection->socket,
+			parts, (packet->data && packet->data_size) ? PACKET_SPLIT_PARTS : 1,
+			flags, (time_t) connection->send_timeout,
+			total_sent, NULL
+		);
 
 		(void) pthread_mutex_unlock (connection->socket->write_mutex);
 	}
@@ -1119,6 +1127,33 @@ static void packet_send_update_stats (
 
 }
 
+// sends a packet of a connection's send queue,
+// the socket's write mutex is held so the packet is not mixed with others
+// returns 0 on success, 1 on error
+u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	size_t sent = 0;
+	if (!packet_send_tcp (packet, connection, flags, &sent, false)) {
+		if (total_sent) *total_sent = sent;
+
+		packet_send_update_stats (
+			packet->packet_type, sent,
+			NULL, client, connection, NULL
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 static inline u8 packet_send_internal (
 	const Packet *packet,
 	int flags, size_t *total_sent,
@@ -1270,27 +1305,21 @@ u8 packet_send_to_split (
 }
 
 static u8 packet_send_pieces_actual (
-	Socket *socket,
+	Connection *connection,
 	char *data, size_t data_size,
 	int flags,
 	size_t *actual_sent
 ) {
 
-	u8 retval = 0;
+	size_t sent = 0;
 
-	ssize_t sent = 0;
-	char *p = data;
-	while (data_size > 0) {
-		sent = send (socket->sock_fd, p, data_size, flags);
-		if (sent < 0) {
-			retval = 1;
-			break;
-		}
+	const u8 retval = socket_send_buffer (
+		connection->socket, data, data_size,
+		flags, (time_t) connection->send_timeout,
+		&sent, NULL
+	);
 
-		p += sent;
-		*actual_sent += (size_t) sent;
-		data_size -= (size_t) sent;
-	}
+	*actual_sent += sent;
 
 	return retval;
 
@@ -1316,7 +1345,7 @@ u8 packet_send_pieces (
 
 		// first send the header
 		if (!packet_send_pieces_actual (
-			packet->connection->socket,
+			packet->connection,
 			(char *) &packet->header, sizeof (PacketHeader),
 			flags,
 			&actual_sent
@@ -1325,7 +1354,7 @@ u8 packet_send_pieces (
 			retval = 0;
 			for (u32 i = 0; (i < n_pieces) && !retval; i++) {
 				retval = packet_send_pieces_actual (
-					packet->connection->socket,
+					packet->connection,
 					(char *) pieces[i], sizes[i],
 					flags,
 					&actual_sent
@@ -1357,25 +1386,17 @@ u8 packet_send_to_socket (
 
 	u8 retval = 0;
 
-	if (packet) {
-		ssize_t sent = 0;
-		const char *p = raw ? (char *) packet->data : (char *) packet->packet;
-		size_t packet_size = raw ? packet->data_size : packet->packet_size;
-
+	if (packet && socket) {
 		(void) pthread_mutex_lock (socket->write_mutex);
 
-		while (packet_size > 0) {
-			sent = send (socket->sock_fd, p, packet_size, flags);
-			if (sent < 0) {
-				retval = 1;
-				break;
-			};
-
-			p += sent;
-			packet_size -= sent;
-		}
-
-		if (total_sent) *total_sent = (size_t) sent;
+		// a socket without its connection waits the default send timeout
+		retval = socket_send_buffer (
+			socket,
+			raw ? packet->data : packet->packet,
+			raw ? packet->data_size : packet->packet_size,
+			flags, (time_t) CERVER_DEFAULT_SEND_TIMEOUT,
+			total_sent, NULL
+		);
 
 		(void) pthread_mutex_unlock (socket->write_mutex);
 	}
