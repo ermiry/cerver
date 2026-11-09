@@ -323,6 +323,18 @@ void cerver_stats_set_threshold_time (
 
 }
 
+static void cerver_stats_print_thpool (Cerver *cerver) {
+
+	if (cerver->thpool) {
+		ThpoolStats thpool_stats;
+		thpool_get_stats (cerver->thpool, &thpool_stats);
+
+		cerver_log_msg ("\n");
+		thpool_stats_print (&thpool_stats);
+	}
+
+}
+
 void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
 	if (cerver) {
@@ -356,6 +368,8 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 			cerver_log_msg ("Total clients:                             %ld", CERVER_STATS_GET (stats->total_n_clients));
 			cerver_log_msg ("Unique clients:                            %ld", CERVER_STATS_GET (stats->unique_clients));
 			cerver_log_msg ("Total client connections:                  %ld", CERVER_STATS_GET (stats->total_client_connections));
+
+			cerver_stats_print_thpool (cerver);
 
 			if (received) {
 				cerver_log_msg ("\nReceived packets:");
