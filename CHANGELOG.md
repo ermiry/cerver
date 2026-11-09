@@ -1,31 +1,25 @@
 ## General
-- Renamed nightly workflow to scheduled with a dispatcher
-- Using each line's release names & image tags in workflows
-- Running workflows unit tests containers with IPv6 enabled
-- Added bounded intrusive free list to reuse deleted objects
-- Disabling the recycling with the sanitizers & fuzzing builds
-- Added thpool stats with wait & run time histograms per job
-- Added socket send methods with deadline & sendfile loop
-- Sending packets, balancer routes & files until the deadline
-- Resolving with getaddrinfo () & writing mapped ips as IPv4
-- Added cerver bind address & the IPv6 only socket options
-- Added incompatibilities file with the entries for every beta
+- Added thread groups to count & wait for detached threads
+- Joining handler threads & freeing packets with no handler
+- Waiting handlers, events & connections in cerver teardown
+- Counting cerver events & errors threads in an event group
+- Joining admin handlers & sleeping frames in the condition
+- Validating the file headers of received packets before use
+- Using a portable clock in the benchmarks when out of x86
+- Added the Beta 1.8b-3 changes to the incompatibilities file
 
 ## Connection
-- Recycling deleted sockets in the process bounded free list
-- Recycling connections with embedded stats & sync values
-- Recycling the cerver receives in a bounded free list as well
-- Added connection send timeout taken from the cerver one
-- Resolving client connection hosts & ips with getaddrinfo ()
+- Stopping the connect backoff with a connection condition
+- Recycling clients & reading next packets in shared receive
+- Reading the session id with its lock to send the auth token
 
 ## Tests
-- Added free list unit tests with limits & with multiple threads
-- Added connection storage & the recycled values unit tests
-- Added thpool stats unit tests with buckets, counts & times
-- Added socket send unit tests with full & with closed peers
-- Added client large packet test using a non blocking socket
-- Added network unit tests to parse & resolve the addresses
-- Added cerver core address tests in IPv6 & with dual stack
-- Added connections cerver & client to count the allocations
-- Added performance script with allocations per connection
-- Registering new unit tests in the makefile & in tests scripts
+- Added client fuzz target that reads packets of socket pairs
+- Added file fuzz target with the headers & the paths search
+- Added cerver teardown tests of handlers, events and drain
+- Added client tests of connect backoff and the next packet
+- Added client session id, its threads & recycled values tests
+- Added file header unit tests & a request outside the paths
+- Added cerver info unit test of unterminated strings & flags
+- Removed thpool test warnings of unused sanitizer helpers
+- Lowering allocations per connection in performance script
