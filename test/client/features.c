@@ -41,6 +41,11 @@
 
 #define FEATURES_PACKETS				64
 #define FEATURES_REQUEST_ECHO			1
+#define FEATURES_REQUEST_LARGE			2
+
+// more than the socket buffers, so the send finds a full socket
+#define FEATURES_LARGE_PACKET_SIZE		(1 << 24)
+#define FEATURES_MAX_PACKET_SIZE		(1 << 25)
 
 #define FEATURES_RECONNECT_SECONDS		1
 #define FEATURES_LONG_RECONNECT_SECONDS	32
@@ -75,9 +80,12 @@ static unsigned int failed_events = 0;
 static unsigned int success_auth_events = 0;
 static unsigned int new_connection_events = 0;
 
+static unsigned int large_packets = 0;
+
 static void features_counters_reset (void) {
 
 	echoes = 0;
+	large_packets = 0;
 	test_responses = 0;
 
 	connected_events = 0;
@@ -95,7 +103,11 @@ static void features_cerver_app_handler (void *packet_ptr) {
 
 	const Packet *packet = (const Packet *) packet_ptr;
 
-	if (packet->header.request_type == FEATURES_REQUEST_ECHO) {
+	if (packet->header.request_type == FEATURES_REQUEST_LARGE) {
+		if (packet->data_size == FEATURES_LARGE_PACKET_SIZE) test_counter_add (&large_packets);
+	}
+
+	else if (packet->header.request_type == FEATURES_REQUEST_ECHO) {
 		Packet *response = packet_generate_request (
 			PACKET_TYPE_APP, FEATURES_REQUEST_ECHO, NULL, 0
 		);
@@ -195,6 +207,7 @@ static void features_cerver_start_with (
 	cerver_set_thpool_n_threads (features->cerver, FEATURES_THREADS);
 	cerver_set_handler_type (features->cerver, CERVER_HANDLER_TYPE_POLL);
 	cerver_set_poll_time_out (features->cerver, FEATURES_POLL_TIMEOUT);
+	cerver_set_max_received_packet_size (features->cerver, FEATURES_MAX_PACKET_SIZE);
 
 	Handler *app_handler = handler_create (features_cerver_app_handler);
 	handler_set_direct_handle (app_handler, true);
@@ -660,6 +673,52 @@ static void test_features_packet_init_send (void) {
 
 }
 
+// a packet bigger than the socket buffers in a non blocking socket
+// waits for space until the cerver reads it, instead of failing with EAGAIN
+static void test_features_large_packet (void) {
+
+	features_counters_reset ();
+
+	const u16 port = features_port++;
+
+	FeaturesCerver features = { 0 };
+	features_cerver_start (&features, port);
+
+	Client *client = features_client_create ();
+	Connection *connection = features_connection_create (client, port);
+
+	// without the update thread, nothing else reads the non blocking socket
+	test_check_unsigned_eq (client_connect_to_cerver (client, connection), 0, NULL);
+	test_check_true (sock_set_blocking (connection->socket->sock_fd, false));
+
+	char *data = (char *) calloc (FEATURES_LARGE_PACKET_SIZE, sizeof (char));
+	test_check_ptr (data);
+
+	Packet *packet = packet_generate_request (
+		PACKET_TYPE_APP, FEATURES_REQUEST_LARGE, data, FEATURES_LARGE_PACKET_SIZE
+	);
+
+	test_check_ptr (packet);
+	packet_set_network_values (packet, NULL, client, connection, NULL);
+
+	size_t sent = 0;
+	test_check_unsigned_eq (packet_send (packet, 0, &sent, false), 0, NULL);
+	test_check_unsigned_eq ((unsigned int) sent, (unsigned int) packet->packet_size, NULL);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&large_packets, 1, TEST_WAIT_SECONDS),
+		1, "the cerver did not receive the large packet"
+	);
+
+	packet_delete (packet);
+	free (data);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
+	features_cerver_stop (&features);
+
+}
+
 // the client triggers CLIENT_EVENT_SUCCESS_AUTH after it saved its session token,
 // so the token is read after the event, never while the update thread writes it
 static unsigned int client_success_auth_events = 0;
@@ -757,6 +816,8 @@ int main (int argc, char **argv) {
 
 	test_features_packet_init ();
 	test_features_packet_init_send ();
+
+	test_features_large_packet ();
 
 	test_features_sessions ();
 

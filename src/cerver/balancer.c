@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
@@ -24,6 +25,9 @@
 
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
+
+// a routed packet is sent as its header and its body
+#define BALANCER_SEND_PARTS					2
 
 static const char *balancer_services_unavailable = { "Services unavailable" };
 
@@ -1014,27 +1018,8 @@ static BalancerReceiveResult balancer_receive_exact (
 
 }
 
-// sends every byte, the socket's write mutex must be held
-// returns 0 on success, 1 on error
-static u8 balancer_send_all (
-	const int sock_fd, const char *buffer, const size_t size
-) {
-
-	u8 retval = 0;
-
-	size_t sent = 0;
-	while (!retval && (sent < size)) {
-		ssize_t rc = send (sock_fd, buffer + sent, size - sent, MSG_NOSIGNAL);
-		if (rc > 0) sent += (size_t) rc;
-		else if ((rc < 0) && (errno == EINTR)) continue;
-		else retval = 1;
-	}
-
-	return retval;
-
-}
-
-// sends the header and the body of a packet to a socket
+// sends the header and the body of a packet to a socket,
+// with a single call when the socket takes them
 // returns 0 on success, 1 on error
 static u8 balancer_send_packet (
 	Socket *socket,
@@ -1043,13 +1028,20 @@ static u8 balancer_send_packet (
 
 	u8 retval = 1;
 
+	struct iovec parts[BALANCER_SEND_PARTS] = {
+		{ .iov_base = (void *) header, .iov_len = sizeof (PacketHeader) },
+		{ .iov_base = (void *) body, .iov_len = body_size }
+	};
+
 	(void) pthread_mutex_lock (socket->write_mutex);
 
 	if (socket->sock_fd > -1) {
-		retval = balancer_send_all (socket->sock_fd, (const char *) header, sizeof (PacketHeader));
-		if (!retval && body_size) {
-			retval = balancer_send_all (socket->sock_fd, body, body_size);
-		}
+		retval = socket_send_vector (
+			socket,
+			parts, (body && body_size) ? BALANCER_SEND_PARTS : 1,
+			0, (time_t) CERVER_DEFAULT_SEND_TIMEOUT,
+			NULL, NULL
+		);
 	}
 
 	(void) pthread_mutex_unlock (socket->write_mutex);

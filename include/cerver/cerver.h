@@ -29,7 +29,11 @@
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
+#define CERVER_DEFAULT_IPV6_ONLY					false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				SOMAXCONN
+
+// a literal IPv4 or IPv6 address, without the port
+#define CERVER_BIND_ADDRESS_SIZE					INET6_ADDRSTRLEN
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
@@ -317,6 +321,11 @@ struct _Cerver {
 	bool use_ipv6;
 	u16 connection_queue;               // each server can handle connection differently
 
+	// the address that the cerver binds, empty for every address of its family
+	char bind_address[CERVER_BIND_ADDRESS_SIZE];
+	// an IPv6 cerver accepts IPv4 connections when it is false (dual stack)
+	bool ipv6_only;
+
 	// read and written with __atomic, use cerver_is_running ()
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	// read and written with __atomic, a stop requested before cerver_start () cancels it
@@ -490,6 +499,21 @@ CERVER_EXPORT void cerver_set_reusable_address_flags (
 // the default value is CERVER_DEFAULT_REUSABLE_PORT
 CERVER_EXPORT void cerver_set_reusable_port (
 	Cerver *cerver, bool value
+);
+
+// sets the literal IPv4 or IPv6 address that the cerver binds, like "127.0.0.1" or "::1",
+// its family sets if the cerver uses IPv6, NULL binds every address again
+// must be called before cerver_start ()
+// returns 0 on success, 1 if it is not a valid ip
+CERVER_EXPORT unsigned int cerver_set_bind_address (
+	Cerver *cerver, const char *address
+);
+
+// sets IPV6_V6ONLY in the socket of an IPv6 cerver
+// false (the default) also accepts IPv4 connections, as ::ffff:a.b.c.d addresses
+// the default value is CERVER_DEFAULT_IPV6_ONLY
+CERVER_EXPORT void cerver_set_ipv6_only (
+	Cerver *cerver, bool ipv6_only
 );
 
 // returns true while the cerver is accepting connections

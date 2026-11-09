@@ -14,6 +14,8 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/collections/freelist.h"
+
 #include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
@@ -44,6 +46,9 @@
 
 #define CONNECTION_DEFAULT_ATTEMPT_RECONNECT		false
 #define CONNECTION_DEFAULT_RECONNECT_WAIT_TIME		30
+
+// the deleted connections that are kept to be reused
+#define CONNECTION_RECYCLE_LIMIT					FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
 #ifdef __cplusplus
 extern "C" {
@@ -96,8 +101,12 @@ struct _ConnectionStats {
 	u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
 	u64 n_packets_sent;                     // total number of packets sent to this connection
 
+	// point to the storage below, so the stats of a connection are not extra allocations
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
+
+	struct _PacketsPerType received_packets_storage;
+	struct _PacketsPerType sent_packets_storage;
 
 };
 
@@ -175,6 +184,9 @@ struct _Connection {
 	// that is joined when the connection is destroyed
 	bool use_send_queue;
 	int send_flags;
+
+	// the secs that a send to a full socket waits for space, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+	u32 send_timeout;
 	bool send_thread_running;
 	pthread_t send_thread_id;
 	JobQueue *send_queue;
@@ -197,6 +209,17 @@ struct _Connection {
 	pthread_cond_t *cond;
 	pthread_mutex_t *mutex;
 
+	// the pointers above point to these values,
+	// they are initialized once and kept while the connection is recycled
+	ConnectionStats stats_storage;
+
+	pthread_mutex_t state_mutex_storage;
+	pthread_cond_t cond_storage;
+	pthread_mutex_t mutex_storage;
+
+	// the next deleted connection that waits to be reused
+	struct _Connection *recycle_next;
+
 };
 
 typedef struct _Connection Connection;
@@ -210,6 +233,9 @@ CERVER_PUBLIC Connection *connection_create_empty (void);
 // creates an empty connection with its synchronization values,
 // ready to connect to a cerver
 CERVER_PUBLIC Connection *connection_create_complete (void);
+
+// sets the cond and the mutex that a connection uses to connect to a cerver
+CERVER_PRIVATE void connection_set_synchronization (Connection *connection);
 
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
@@ -277,6 +303,12 @@ CERVER_EXPORT void connection_set_received_data (
 // this refers to the time the socket will block waiting for new data to araive
 // note that this only has effect in connection_update ()
 CERVER_EXPORT void connection_set_update_timeout (
+	Connection *connection, u32 timeout
+);
+
+// sets how many secs a send waits for space in a full non blocking socket
+// before it fails, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+CERVER_EXPORT void connection_set_send_timeout (
 	Connection *connection, u32 timeout
 );
 

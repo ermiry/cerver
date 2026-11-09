@@ -72,25 +72,33 @@ const char *connection_state_description (
 
 #pragma region stats
 
+static void connection_stats_init (ConnectionStats *stats) {
+
+	(void) memset (stats, 0, sizeof (ConnectionStats));
+
+	stats->received_packets = &stats->received_packets_storage;
+	stats->sent_packets = &stats->sent_packets_storage;
+
+}
+
 ConnectionStats *connection_stats_new (void) {
 
 	ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
 	if (stats) {
-		(void) memset (stats, 0, sizeof (ConnectionStats));
-		stats->received_packets = packets_per_type_new ();
-		stats->sent_packets = packets_per_type_new ();
+		connection_stats_init (stats);
 	}
 
 	return stats;
 
 }
 
-static inline void connection_stats_delete (ConnectionStats *stats) {
+// the stats of a connection live inside it,
+// only stats that were created with connection_stats_new () are released
+static inline void connection_stats_delete (
+	Connection *connection, ConnectionStats *stats
+) {
 
-	if (stats) {
-		packets_per_type_delete (stats->received_packets);
-		packets_per_type_delete (stats->sent_packets);
-
+	if (stats && (stats != &connection->stats_storage)) {
 		free (stats);
 	}
 
@@ -136,11 +144,82 @@ void connection_stats_print (Connection *connection) {
 
 #pragma endregion
 
+#pragma region recycle
+
+static FreeList connection_recycled = FREELIST_INITIALIZER (
+	Connection, recycle_next, CONNECTION_RECYCLE_LIMIT
+);
+
+// a new connection initializes its synchronization values once,
+// a recycled one keeps them
+static Connection *connection_allocate (void) {
+
+	Connection *connection = (Connection *) freelist_pop (&connection_recycled);
+	if (!connection) {
+		connection = (Connection *) malloc (sizeof (Connection));
+		if (connection) {
+			(void) pthread_mutex_init (&connection->state_mutex_storage, NULL);
+			(void) pthread_cond_init (&connection->cond_storage, NULL);
+			(void) pthread_mutex_init (&connection->mutex_storage, NULL);
+		}
+	}
+
+	return connection;
+
+}
+
+static void connection_destroy (void *connection_ptr) {
+
+	Connection *connection = (Connection *) connection_ptr;
+
+	(void) pthread_mutex_destroy (&connection->state_mutex_storage);
+	(void) pthread_cond_destroy (&connection->cond_storage);
+	(void) pthread_mutex_destroy (&connection->mutex_storage);
+
+	free (connection);
+
+}
+
+// keeps the connection to be reused, or releases it if there are enough
+static void connection_recycle (Connection *connection) {
+
+	if (freelist_push (&connection_recycled, connection)) {
+		connection_destroy (connection);
+	}
+
+}
+
+// the recycled connections are released when the library is unloaded
+__attribute__ ((destructor)) static void connection_recycled_drain (void) {
+
+	freelist_drain (&connection_recycled, connection_destroy);
+
+}
+
+// only the values that were not taken from the connection's storage are released
+static void connection_synchronization_delete (Connection *connection) {
+
+	if (connection->state_mutex != &connection->state_mutex_storage) {
+		thread_mutex_delete (connection->state_mutex);
+	}
+
+	if (connection->cond != &connection->cond_storage) {
+		thread_cond_delete (connection->cond);
+	}
+
+	if (connection->mutex != &connection->mutex_storage) {
+		thread_mutex_delete (connection->mutex);
+	}
+
+}
+
+#pragma endregion
+
 #pragma region main
 
 Connection *connection_new (void) {
 
-	Connection *connection = (Connection *) malloc (sizeof (Connection));
+	Connection *connection = connection_allocate ();
 	if (connection) {
 		connection->client = NULL;
 
@@ -224,6 +303,7 @@ Connection *connection_new (void) {
 
 		connection->use_send_queue = CONNECTION_DEFAULT_USE_SEND_QUEUE;
 		connection->send_flags = CONNECTION_DEFAULT_SEND_FLAGS;
+		connection->send_timeout = CERVER_DEFAULT_SEND_TIMEOUT;
 		connection->send_thread_running = false;
 		connection->send_thread_id = 0;
 		connection->send_queue = NULL;
@@ -243,6 +323,8 @@ Connection *connection_new (void) {
 
 		connection->cond = NULL;
 		connection->mutex = NULL;
+
+		connection->recycle_next = NULL;
 	}
 
 	return connection;
@@ -279,14 +361,11 @@ void connection_delete (void *connection_ptr) {
 		connection_stop_send (connection);
 		job_queue_delete (connection->send_queue);
 
-		connection_stats_delete (connection->stats);
+		connection_stats_delete (connection, connection->stats);
 
-		thread_mutex_delete (connection->state_mutex);
+		connection_synchronization_delete (connection);
 
-		thread_cond_delete (connection->cond);
-		thread_mutex_delete (connection->mutex);
-
-		free (connection);
+		connection_recycle (connection);
 	}
 
 }
@@ -303,12 +382,23 @@ Connection *connection_create_empty (void) {
 
 		connection->socket = (Socket *) socket_create_empty ();
 
-		connection->state_mutex = thread_mutex_new ();
+		connection->state_mutex = &connection->state_mutex_storage;
 
-		connection->stats = connection_stats_new ();
+		connection_stats_init (&connection->stats_storage);
+		connection->stats = &connection->stats_storage;
 	}
 
 	return connection;
+
+}
+
+// sets the cond and the mutex that a connection uses to connect to a cerver
+void connection_set_synchronization (Connection *connection) {
+
+	if (connection) {
+		connection->cond = &connection->cond_storage;
+		connection->mutex = &connection->mutex_storage;
+	}
 
 }
 
@@ -317,10 +407,7 @@ Connection *connection_create_empty (void) {
 Connection *connection_create_complete (void) {
 
 	Connection *connection = connection_create_empty ();
-	if (connection) {
-		connection->cond = thread_cond_new ();
-		connection->mutex = thread_mutex_new ();
-	}
+	connection_set_synchronization (connection);
 
 	return connection;
 
@@ -476,6 +563,13 @@ void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
 }
 
+// sets how many secs a send waits for space in a full non blocking socket
+void connection_set_send_timeout (Connection *connection, u32 timeout) {
+
+	if (connection) connection->send_timeout = timeout;
+
+}
+
 // sets the connection received data
 // 01/01/2020 - a place to safely store the request response, like when using client_connection_request_to_cerver ()
 void connection_set_received_data (
@@ -610,6 +704,52 @@ void connection_set_attempt_reconnect (
 
 }
 
+// the ip of the connection can be a literal IPv4 or IPv6 address or a host name,
+// the family of the socket is the one of the resolved address
+// returns 0 on success, 1 on error
+static u8 connection_init_address (Connection *connection) {
+
+	u8 retval = 1;
+
+	if (!network_resolve_address (
+		connection->ip, connection->port, connection->use_ipv6, &connection->address
+	)) {
+		connection->use_ipv6 = (connection->address.ss_family == AF_INET6);
+		retval = 0;
+	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Connection %s failed to resolve %s!",
+			connection->name, connection->ip
+		);
+	}
+
+	return retval;
+
+}
+
+static int connection_init_socket_type (const Protocol protocol) {
+
+	int type = -1;
+
+	switch (protocol) {
+		case IPPROTO_TCP: type = SOCK_STREAM; break;
+		case IPPROTO_UDP: type = SOCK_DGRAM; break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				"Unkonw protocol type!"
+			);
+			break;
+	}
+
+	return type;
+
+}
+
 // sets up the new connection values
 u8 connection_init (Connection *connection) {
 
@@ -617,47 +757,13 @@ u8 connection_init (Connection *connection) {
 
 	if (connection) {
 		if (!connection->active) {
-			// init the new connection socket
-			switch (connection->protocol) {
-				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_STREAM, 0
-					);
-					break;
-				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_DGRAM, 0
-					);
-					break;
+			const int type = connection_init_socket_type (connection->protocol);
+			if ((type < 0) || connection_init_address (connection)) return 1;
 
-				default:
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Unkonw protocol type!"
-					);
-					return 1;
-			}
+			// init the new connection socket
+			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
 
 			if (connection->socket->sock_fd > -1) {
-				if (connection->use_ipv6) {
-					// the address of the cerver, in6addr_any only works for a local cerver
-					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-					addr->sin6_family = AF_INET6;
-					if (inet_pton (AF_INET6, connection->ip, &addr->sin6_addr) != 1) {
-						addr->sin6_addr = in6addr_any;
-					}
-					addr->sin6_port = htons (connection->port);
-				}
-
-				else {
-					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-					addr->sin_family = AF_INET;
-					addr->sin_addr.s_addr = inet_addr (connection->ip);
-					addr->sin_port = htons (connection->port);
-				}
-
 				retval = 0;     // connection setup was successfull
 			}
 
@@ -688,8 +794,7 @@ static u8 connection_try (
 ) {
 
 	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
-	const socklen_t address_size = (address.ss_family == AF_INET6) ?
-		sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
+	const socklen_t address_size = sock_address_size (&address);
 
 	// the first attempt is always done, a max sleep smaller than the first wait
 	// never attempted to connect

@@ -40,6 +40,8 @@ run ./test/bin/packets
 
 run ./test/bin/receive
 
+run ./test/bin/socket
+
 run ./test/bin/system
 
 run ./test/bin/threads

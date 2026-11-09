@@ -9,4 +9,6 @@ bash test/run.sh || { exit 1; }
 
 bash test/integration.sh || { exit 1; }
 
+bash test/performance.sh || { exit 1; }
+
 printf "\n\nDone\n\n"

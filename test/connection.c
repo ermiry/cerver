@@ -35,6 +35,68 @@ static void test_connection_base_configuration (void) {
 
 }
 
+#define CONNECTION_TEST_RECYCLE_ROUNDS			64
+#define CONNECTION_TEST_RECYCLE_BYTES			1024
+#define CONNECTION_TEST_RECYCLE_PACKETS			16
+
+// the stats, the state mutex and the synchronization values live inside the connection
+static void test_connection_storage (void) {
+
+	Connection *connection = test_connection_create ();
+
+	test_check_ptr_eq (connection->stats, &connection->stats_storage);
+	test_check_ptr_eq (connection->stats->received_packets, &connection->stats->received_packets_storage);
+	test_check_ptr_eq (connection->stats->sent_packets, &connection->stats->sent_packets_storage);
+	test_check_ptr_eq (connection->state_mutex, &connection->state_mutex_storage);
+	test_check_null_ptr (connection->cond);
+	test_check_null_ptr (connection->mutex);
+
+	test_check_ptr_eq (connection->socket->read_mutex, &connection->socket->read_mutex_storage);
+	test_check_ptr_eq (connection->socket->write_mutex, &connection->socket->write_mutex_storage);
+	test_check_unsigned_eq (connection->socket->references, 1, NULL);
+
+	connection_delete (connection);
+
+	connection = connection_create_complete ();
+	test_check_ptr_eq (connection->cond, &connection->cond_storage);
+	test_check_ptr_eq (connection->mutex, &connection->mutex_storage);
+	connection_delete (connection);
+
+}
+
+// a connection that is created after another one was deleted
+// starts without anything of the deleted one, whether it was reused or not
+static void test_connection_recycle (void) {
+
+	for (unsigned int i = 0; i < CONNECTION_TEST_RECYCLE_ROUNDS; i++) {
+		Connection *connection = test_connection_create ();
+
+		test_check_unsigned_eq (connection->stats->total_bytes_received, 0, NULL);
+		test_check_unsigned_eq (connection->stats->n_packets_received, 0, NULL);
+		test_check_unsigned_eq (connection->stats->received_packets->n_app_packets, 0, NULL);
+		test_check_unsigned_eq (connection->stats->sent_packets->n_app_packets, 0, NULL);
+		test_check_int_eq (connection->socket->sock_fd, -1, NULL);
+		test_check_null_ptr (connection->socket->packet_buffer);
+		test_check_unsigned_eq (connection->socket->references, 1, NULL);
+		test_check_null_ptr (connection->recycle_next);
+		test_check_null_ptr (connection->socket->recycle_next);
+		test_check_bool_eq (connection->active, false, NULL);
+
+		connection_set_name (connection, connection_name);
+		connection->stats->total_bytes_received = CONNECTION_TEST_RECYCLE_BYTES;
+		connection->stats->n_packets_received = CONNECTION_TEST_RECYCLE_PACKETS;
+		connection->stats->received_packets->n_app_packets = CONNECTION_TEST_RECYCLE_PACKETS;
+		connection->stats->sent_packets->n_app_packets = CONNECTION_TEST_RECYCLE_PACKETS;
+
+		// a reference that outlives the connection keeps the socket
+		Socket *socket = socket_reference (connection->socket);
+		connection_delete (connection);
+		test_check_unsigned_eq (socket->references, 1, NULL);
+		socket_delete (socket);
+	}
+
+}
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -42,6 +104,10 @@ int main (int argc, char **argv) {
 	(void) printf ("Testing CONNECTION...\n");
 
 	test_connection_base_configuration ();
+
+	test_connection_storage ();
+
+	test_connection_recycle ();
 
 	(void) printf ("\nDone with CONNECTION tests!\n\n");
 

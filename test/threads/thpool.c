@@ -469,6 +469,159 @@ static void thpool_test_sleep_work (void *counter_ptr) {
 
 }
 
+#pragma endregion
+
+#pragma region stats
+
+#define THPOOL_STATS_SLEEP_JOBS					2
+#define THPOOL_STATS_WAIT_SPACE_TIMEOUT			16
+#define THPOOL_STATS_SHORT_SLEEP_MICROSECONDS	(THPOOL_TEST_SHORT_SLEEP / THPOOL_NANOSECONDS_PER_MICROSECOND)
+
+// the first bucket whose upper bound is more than the short sleep
+#define THPOOL_STATS_SHORT_SLEEP_BUCKET			5
+
+static u64 thpool_test_histogram_total (const u64 histogram[THPOOL_HISTOGRAM_BUCKETS]) {
+
+	u64 total = 0;
+	for (unsigned int i = 0; i < THPOOL_HISTOGRAM_BUCKETS; i++) total += histogram[i];
+
+	return total;
+
+}
+
+static u64 thpool_test_histogram_below (
+	const u64 histogram[THPOOL_HISTOGRAM_BUCKETS], const unsigned int bucket
+) {
+
+	u64 total = 0;
+	for (unsigned int i = 0; i < bucket; i++) total += histogram[i];
+
+	return total;
+
+}
+
+static void test_thpool_stats_bucket (void) {
+
+	const u64 millisecond = THPOOL_MICROSECONDS_PER_MILLISECOND;
+	const u64 last = ((u64) 1 << THPOOL_HISTOGRAM_MAX_EXPONENT) * millisecond;
+
+	test_check_unsigned_eq (thpool_histogram_bucket (0), 0, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket (millisecond), 0, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket (millisecond + 1), 1, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket (2 * millisecond), 1, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket ((2 * millisecond) + 1), 2, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket (last), THPOOL_HISTOGRAM_MAX_EXPONENT, NULL);
+	test_check_unsigned_eq (thpool_histogram_bucket (last + 1), THPOOL_HISTOGRAM_BUCKETS - 1, NULL);
+	test_check_unsigned_eq (
+		thpool_histogram_bucket (THPOOL_STATS_SHORT_SLEEP_MICROSECONDS),
+		THPOOL_STATS_SHORT_SLEEP_BUCKET, NULL
+	);
+
+}
+
+// the jobs that ran, the one that did not fit and the most that were queued
+static void test_thpool_stats_counts (void) {
+
+	Thpool *thpool = thpool_test_create_small ();
+
+	ThpoolStats stats;
+	thpool_get_stats (thpool, &stats);
+	test_check_unsigned_eq (stats.total_jobs, 0, NULL);
+	test_check_unsigned_eq (thpool_test_histogram_total (stats.wait_histogram), 0, NULL);
+
+	ThpoolTestGate gate;
+	thpool_test_gate_init (&gate);
+
+	thpool_test_fill (thpool, &gate);
+	test_check_int_eq (thpool_add_work (thpool, thpool_test_gate_work, &gate), 1, NULL);
+
+	// a caller that waits for space and does not get it
+	test_check_int_eq (thpool_wait_space (thpool, THPOOL_STATS_WAIT_SPACE_TIMEOUT), 1, NULL);
+
+	thpool_test_gate_open (&gate);
+	thpool_wait (thpool);
+
+	const unsigned int expected = THPOOL_SMALL_THREADS + THPOOL_SMALL_QUEUE;
+
+	thpool_get_stats (thpool, &stats);
+	test_check_unsigned_eq (stats.total_jobs, expected, NULL);
+	test_check_unsigned_eq (stats.completed_jobs, expected, NULL);
+	test_check_unsigned_eq (stats.rejected_jobs, 1, NULL);
+	test_check_unsigned_eq (stats.dropped_jobs, 0, NULL);
+	test_check_unsigned_eq (stats.waited_jobs, 1, NULL);
+	test_check_unsigned_eq (stats.max_queued, THPOOL_SMALL_QUEUE, NULL);
+	test_check_unsigned_eq (thpool_test_histogram_total (stats.wait_histogram), expected, NULL);
+	test_check_unsigned_eq (thpool_test_histogram_total (stats.run_histogram), expected, NULL);
+
+	thpool_stats_print (&stats);
+
+	thpool_destroy (thpool);
+	thpool_test_gate_end (&gate);
+
+}
+
+// a job that sleeps runs for at least the sleep,
+// and the one that is queued behind it in a single thread waits for at least the same
+static void test_thpool_stats_times (void) {
+
+	Thpool *thpool = thpool_create (1);
+	test_check_ptr (thpool);
+	test_check_unsigned_eq (thpool_init (thpool), 0, NULL);
+
+	unsigned int counter = 0;
+	for (unsigned int i = 0; i < THPOOL_STATS_SLEEP_JOBS; i++) {
+		test_check_int_eq (thpool_add_work (thpool, thpool_test_sleep_work, &counter), 0, NULL);
+	}
+
+	thpool_wait (thpool);
+	test_check_unsigned_eq (thpool_test_counter_get (&counter), THPOOL_STATS_SLEEP_JOBS, NULL);
+
+	ThpoolStats stats;
+	thpool_get_stats (thpool, &stats);
+
+	test_check (
+		stats.run_total_microseconds >= (THPOOL_STATS_SLEEP_JOBS * THPOOL_STATS_SHORT_SLEEP_MICROSECONDS),
+		NULL
+	);
+	test_check (stats.wait_total_microseconds >= THPOOL_STATS_SHORT_SLEEP_MICROSECONDS, NULL);
+	test_check_unsigned_eq (
+		thpool_test_histogram_below (stats.run_histogram, THPOOL_STATS_SHORT_SLEEP_BUCKET), 0, NULL
+	);
+
+	thpool_destroy (thpool);
+
+}
+
+// the queued jobs that a drain rejects
+static void test_thpool_stats_dropped (void) {
+
+	Thpool *thpool = thpool_test_create_small ();
+
+	ThpoolTestGate gate;
+	thpool_test_gate_init (&gate);
+
+	thpool_test_fill (thpool, &gate);
+
+	test_check_unsigned_eq (thpool_drain (thpool, false, THPOOL_DRAIN_SHORT_TIMEOUT), 1, NULL);
+
+	thpool_test_gate_open (&gate);
+	thpool_wait (thpool);
+
+	ThpoolStats stats;
+	thpool_get_stats (thpool, &stats);
+	test_check_unsigned_eq (stats.dropped_jobs, THPOOL_SMALL_QUEUE, NULL);
+	test_check_unsigned_eq (stats.completed_jobs, THPOOL_SMALL_THREADS, NULL);
+
+	// a job after the drain is rejected
+	test_check_int_eq (thpool_add_work (thpool, thpool_test_gate_work, &gate), 1, NULL);
+	thpool_get_stats (thpool, &stats);
+	test_check_unsigned_eq (stats.rejected_jobs, 1, NULL);
+
+	thpool_destroy (thpool);
+	thpool_test_gate_end (&gate);
+
+}
+
 // the queued jobs still run, and new jobs are not accepted
 static void test_thpool_drain_run (void) {
 
@@ -734,6 +887,10 @@ void threads_tests_thpool (void) {
 	test_thpool_drain_run ();
 	test_thpool_drain_reject ();
 	test_thpool_drain_timeout ();
+	test_thpool_stats_bucket ();
+	test_thpool_stats_counts ();
+	test_thpool_stats_times ();
+	test_thpool_stats_dropped ();
 	test_thpool_destroy_full ();
 	test_thpool_signals ();
 	test_thpool_init_failure ();

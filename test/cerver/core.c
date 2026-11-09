@@ -72,6 +72,14 @@
 #define CORE_MAX_PACKET_SIZE			256
 #define CORE_BIG_PACKET_SIZE			1024
 #define CORE_REQUEST_DROP				2
+#define CORE_REQUEST_ADDRESS			3
+
+#define CORE_IPV4_LOOPBACK				"127.0.0.1"
+#define CORE_IPV6_LOOPBACK				"::1"
+#define CORE_IPV6_ANY					"::"
+#define CORE_LOCALHOST					"localhost"
+#define CORE_INVALID_ADDRESS			"127.0.0.256"
+#define CORE_CONNECT_SINGLE_ATTEMPT		1
 
 #define CORE_ON_HOLD_SECONDS			1
 #define CORE_ON_HOLD_POLL_TIMEOUT		200
@@ -107,6 +115,10 @@ static unsigned int update_ticks = 0;
 static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
 
+// written by the handler before it counts the request, read after the count
+static char client_ip[INET6_ADDRSTRLEN] = { 0 };
+static unsigned int address_requests = 0;
+
 // client side
 static unsigned int echoes = 0;
 static unsigned int packet_errors = 0;
@@ -120,6 +132,8 @@ static void core_counters_reset (void) {
 	update_ticks = 0;
 	interval_ticks = 0;
 	(void) memset (events, 0, sizeof (events));
+	(void) memset (client_ip, 0, sizeof (client_ip));
+	address_requests = 0;
 	echoes = 0;
 	packet_errors = 0;
 
@@ -154,6 +168,12 @@ static void core_app_handler (void *packet_ptr) {
 	switch (packet->header.request_type) {
 		case CORE_REQUEST_ECHO:
 			core_echo (packet);
+			break;
+
+		// the address that the cerver sees for the client
+		case CORE_REQUEST_ADDRESS:
+			(void) snprintf (client_ip, sizeof (client_ip), "%s", packet->connection->ip);
+			test_counter_add (&address_requests);
 			break;
 
 		// the echo is sent before the drop, so it still arrives
@@ -359,7 +379,9 @@ static void *core_client_packet_error (void *error_data_ptr) {
 
 }
 
-static CoreClient core_client_create (const u16 port, Credentials *credentials, const bool admin) {
+static CoreClient core_client_create_at (
+	const char *address, const u16 port, Credentials *credentials, const bool admin
+) {
 
 	CoreClient core = { NULL, NULL };
 
@@ -379,7 +401,7 @@ static CoreClient core_client_create (const u16 port, Credentials *credentials, 
 	client_set_app_handlers (core.client, app_handler, NULL);
 
 	core.connection = client_connection_create (
-		core.client, CORE_ADDRESS, port, PROTOCOL_TCP, false
+		core.client, address, port, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (core.connection);
@@ -393,6 +415,12 @@ static CoreClient core_client_create (const u16 port, Credentials *credentials, 
 	}
 
 	return core;
+
+}
+
+static CoreClient core_client_create (const u16 port, Credentials *credentials, const bool admin) {
+
+	return core_client_create_at (CORE_ADDRESS, port, credentials, admin);
 
 }
 
@@ -1195,6 +1223,123 @@ static void test_core_stop_while_starting (void) {
 
 #pragma endregion
 
+#pragma region address
+
+// a cerver that binds bind_address (NULL for every address)
+static Cerver *core_address_cerver_create (
+	const u16 port, const char *bind_address, const bool ipv6_only
+) {
+
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	if (bind_address) {
+		test_check_unsigned_eq (cerver_set_bind_address (cerver, bind_address), 0, NULL);
+	}
+
+	cerver_set_ipv6_only (cerver, ipv6_only);
+
+	return cerver;
+
+}
+
+// the client connects to client_address and the cerver sees it as expected_ip
+static void core_address_check (
+	const char *bind_address, const bool ipv6_only,
+	const char *client_address, const char *expected_ip
+) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, bind_address, ipv6_only), port);
+
+	CoreClient client = core_client_start (core_client_create_at (client_address, port, NULL, false));
+
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_ADDRESS, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&address_requests, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_str_eq (client_ip, expected_ip, NULL);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+}
+
+// a cerver that only listens in the loopback of one family
+static void test_core_address_loopback (void) {
+
+	core_address_check (CORE_IPV4_LOOPBACK, false, CORE_IPV4_LOOPBACK, CORE_IPV4_LOOPBACK);
+	core_address_check (CORE_IPV6_LOOPBACK, false, CORE_IPV6_LOOPBACK, CORE_IPV6_LOOPBACK);
+
+}
+
+// a dual stack cerver sees an IPv4 client as IPv4, not as ::ffff:127.0.0.1
+static void test_core_address_dual_stack (void) {
+
+	core_address_check (CORE_IPV6_ANY, false, CORE_IPV4_LOOPBACK, CORE_IPV4_LOOPBACK);
+	core_address_check (CORE_IPV6_ANY, false, CORE_IPV6_LOOPBACK, CORE_IPV6_LOOPBACK);
+
+}
+
+// the client resolves a host name
+static void test_core_address_host_name (void) {
+
+	core_address_check (CORE_IPV4_LOOPBACK, false, CORE_LOCALHOST, CORE_IPV4_LOOPBACK);
+
+}
+
+// a client fails to connect to a cerver that does not listen in its family
+static void core_address_check_refused (
+	const char *bind_address, const bool ipv6_only, const char *client_address
+) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, bind_address, ipv6_only), port);
+
+	CoreClient client = core_client_create_at (client_address, port, NULL, false);
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+
+	test_check_unsigned_ne (client_connect (client.client, client.connection), 0);
+	test_check_unsigned_eq (client_teardown (client.client), 0, NULL);
+
+	core_cerver_stop (&core);
+
+}
+
+static void test_core_address_refused (void) {
+
+	// IPV6_V6ONLY does not take IPv4 connections
+	core_address_check_refused (CORE_IPV6_ANY, true, CORE_IPV4_LOOPBACK);
+
+	// a cerver in the IPv4 loopback does not take IPv6 connections
+	core_address_check_refused (CORE_IPV4_LOOPBACK, false, CORE_IPV6_LOOPBACK);
+
+}
+
+static void test_core_address_invalid (void) {
+
+	Cerver *cerver = core_cerver_create (core_port++, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_INVALID_ADDRESS), 1, NULL);
+	test_check_str_empty (cerver->bind_address);
+	test_check_false (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_IPV6_LOOPBACK), 0, NULL);
+	test_check_true (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, NULL), 0, NULL);
+	test_check_str_empty (cerver->bind_address);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+#pragma endregion
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -1229,6 +1374,11 @@ int main (int argc, char **argv) {
 	test_core_stop_before_start_poll ();
 	test_core_stop_before_start_threads ();
 	test_core_stop_while_starting ();
+	test_core_address_loopback ();
+	test_core_address_dual_stack ();
+	test_core_address_host_name ();
+	test_core_address_refused ();
+	test_core_address_invalid ();
 
 	(void) printf ("\nDone with CERVER core tests!\n\n");
 

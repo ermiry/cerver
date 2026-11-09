@@ -1298,9 +1298,22 @@ static u8 cerver_packet_select_handler (
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 
+static FreeList cerver_receive_recycled = FREELIST_INITIALIZER (
+	CerverReceive, recycle_next, CERVER_RECEIVE_RECYCLE_LIMIT
+);
+
+// the recycled receives are released when the library is unloaded
+__attribute__ ((destructor)) static void cerver_receive_recycled_drain (void) {
+
+	freelist_drain (&cerver_receive_recycled, free);
+
+}
+
 CerverReceive *cerver_receive_new (void) {
 
-	CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
+	CerverReceive *cr = (CerverReceive *) freelist_pop (&cerver_receive_recycled);
+	if (!cr) cr = (CerverReceive *) malloc (sizeof (CerverReceive));
+
 	if (cr) {
 		cr->type = RECEIVE_TYPE_NONE;
 
@@ -1312,6 +1325,8 @@ CerverReceive *cerver_receive_new (void) {
 		cr->admin = NULL;
 
 		cr->lobby = NULL;
+
+		cr->recycle_next = NULL;
 	}
 
 	return cr;
@@ -1319,6 +1334,7 @@ CerverReceive *cerver_receive_new (void) {
 }
 
 // releases the reference that the receive holds to its socket
+// and keeps the receive to be reused
 void cerver_receive_delete (void *ptr) {
 
 	if (ptr) {
@@ -1326,7 +1342,7 @@ void cerver_receive_delete (void *ptr) {
 
 		socket_delete (cr->socket);
 
-		free (cr);
+		if (freelist_push (&cerver_receive_recycled, cr)) free (cr);
 	}
 
 }
@@ -1883,9 +1899,13 @@ static Connection *cerver_connection_create (
 	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	return connection_create (
+	Connection *connection = connection_create (
 		new_fd, client_address, cerver->protocol
 	);
+
+	connection_set_send_timeout (connection, cerver->send_timeout);
+
+	return connection;
 
 }
 

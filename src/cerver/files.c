@@ -25,6 +25,7 @@
 #include "cerver/files.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/threads/thread.h"
 
@@ -1054,7 +1055,7 @@ static ssize_t file_send_actual (
 	int file_fd, const char *actual_filename, size_t filelen
 ) {
 
-	ssize_t retval = 0;
+	ssize_t retval = -1;
 
 	(void) pthread_mutex_lock (connection->socket->write_mutex);
 
@@ -1063,10 +1064,23 @@ static ssize_t file_send_actual (
 		cerver, client, connection,
 		actual_filename, filelen
 	)) {
-		// send the actual file
-		retval = sendfile (
-			connection->socket->sock_fd, file_fd, NULL, filelen
-		);
+		// send the actual file, a sendfile () can send only a part of it
+		size_t sent = 0;
+		if (!socket_send_file (
+			connection->socket, file_fd, filelen,
+			(time_t) connection->send_timeout,
+			&sent, NULL
+		)) {
+			retval = (ssize_t) sent;
+		}
+
+		else {
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_FILE,
+				"file_send_actual () - sent %zu of %zu bytes",
+				sent, filelen
+			);
+		}
 	}
 
 	else {
