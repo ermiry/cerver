@@ -502,6 +502,10 @@ CERVER_PRIVATE bool connection_is_update_thread (
 // the connection's mutex must be held
 CERVER_PRIVATE void connection_wake_update (Connection *connection);
 
+// wakes up the connection that waits in the backoff of connection_connect (),
+// it stops waiting if its client was torn down
+CERVER_PRIVATE void connection_wake_connect (Connection *connection);
+
 #ifdef __cplusplus
 }
 #endif
