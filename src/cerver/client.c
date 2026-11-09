@@ -1943,8 +1943,7 @@ Connection *client_connection_create (
 			connection_init (connection);
 			connection_register_to_client (client, connection);
 
-			connection->cond = thread_cond_new ();
-			connection->mutex = thread_mutex_new ();
+			connection_set_synchronization (connection);
 		}
 	}
 
