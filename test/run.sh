@@ -14,6 +14,8 @@ run ./test/bin/cerver/core
 
 run ./test/bin/cerver/lobby
 
+run ./test/bin/cerver/peers
+
 run ./test/bin/client/test
 
 run ./test/bin/client/lifecycle
@@ -45,6 +47,8 @@ run ./test/bin/socket
 run ./test/bin/system
 
 run ./test/bin/threads
+
+run ./test/bin/udp
 
 run ./test/bin/utils
 
