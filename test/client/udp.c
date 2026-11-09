@@ -16,7 +16,6 @@
 // gets the cerver info, its session id and its datagram token,
 // and its requests and messages are answered with the token
 
-#define UDP_CLIENT_ADDRESS			"127.0.0.1"
 #define UDP_CLIENT_PORT				7000
 #define UDP_CLIENT_REQUESTS			64
 #define UDP_CLIENT_MESSAGES			16
@@ -126,7 +125,7 @@ int main (int argc, const char **argv) {
 	);
 
 	Connection *connection = client_connection_create (
-		client, UDP_CLIENT_ADDRESS, UDP_CLIENT_PORT, PROTOCOL_UDP, false
+		client, test_address (), UDP_CLIENT_PORT, PROTOCOL_UDP, false
 	);
 
 	test_check_ptr (connection);

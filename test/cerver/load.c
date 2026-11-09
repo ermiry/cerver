@@ -84,6 +84,8 @@ static void start (const BalancerType type) {
 	test_check_str_len (load_balancer->name->str, strlen (balancer_name), NULL);
 
 	/*** configuration ***/
+	test_check_unsigned_eq (cerver_set_bind_address (load_balancer->cerver, test_address ()), 0, NULL);
+
 	cerver_set_reusable_address_flags (load_balancer->cerver, true);
 	test_check_bool_eq (load_balancer->cerver->reusable, true, NULL);
 

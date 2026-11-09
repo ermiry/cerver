@@ -100,6 +100,8 @@ int main (int argc, char **argv) {
 	test_check_ptr (cerver);
 	test_check_int_eq (cerver->protocol, PROTOCOL_UDP, NULL);
 
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
+
 	cerver_set_reusable_address_flags (cerver, true);
 	cerver_set_thpool_n_threads (cerver, UDP_CERVER_THREADS);
 	cerver_set_poll_time_out (cerver, UDP_CERVER_POLL_TIMEOUT);
