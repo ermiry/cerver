@@ -3396,17 +3396,15 @@ static SCerver *cerver_serliaze (Cerver *cerver) {
 		if (scerver) {
 			scerver->type = cerver->type;
 
-			(void) strncpy (
-				scerver->name,
-				cerver->info->name,
-				S_CERVER_NAME_LENGTH - 1
+			(void) snprintf (
+				scerver->name, S_CERVER_NAME_LENGTH,
+				"%s", cerver->info->name
 			);
 
 			if (cerver->info->welcome_len) {
-				(void) strncpy (
-					scerver->welcome,
-					cerver->info->welcome,
-					S_CERVER_WELCOME_LENGTH - 1
+				(void) snprintf (
+					scerver->welcome, S_CERVER_WELCOME_LENGTH,
+					"%s", cerver->info->welcome
 				);
 			}
 
