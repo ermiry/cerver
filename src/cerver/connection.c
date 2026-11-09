@@ -766,7 +766,8 @@ void connection_set_attempt_reconnect (
 }
 
 // the ip of the connection can be a literal IPv4 or IPv6 address or a host name,
-// the family of the socket is the one of the resolved address
+// the family of the socket is the one of the first resolved address,
+// use_ipv6 stays as the preferred family for every new resolution
 // returns 0 on success, 1 on error
 static u8 connection_init_address (Connection *connection) {
 
@@ -775,7 +776,6 @@ static u8 connection_init_address (Connection *connection) {
 	if (!network_resolve_address (
 		connection->ip, connection->port, connection->use_ipv6, &connection->address
 	)) {
-		connection->use_ipv6 = (connection->address.ss_family == AF_INET6);
 		retval = 0;
 	}
 
@@ -1759,14 +1759,8 @@ static bool connection_update_reconnect_attempt (
 	if (!connection_init (connection)) {
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
-		const socklen_t address_size = (connection->address.ss_family == AF_INET6) ?
-			sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
-
-		if (!connect (
-			connection->socket->sock_fd,
-			(const struct sockaddr *) &connection->address,
-			address_size
-		)) {
+		// the host is resolved again, so a cerver that moved to another address is found
+		if (!connection_connect_round (connection, true)) {
 			connection->active = true;
 			(void) time (&connection->connected_timestamp);
 
