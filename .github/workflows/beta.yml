@@ -76,6 +76,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Image tags
+        id: tags
+        run: |
+          version="$(cat version.txt)"
+          case "${{ github.base_ref || github.ref_name }}" in
+            http-beta)    moving="beta" ;;
+            nightly-beta) moving="nightly-beta" ;;
+            beta)         moving="core-beta" ;;
+            *)            moving="" ;;
+          esac
+          tags="ermiry/cerver:${version}"
+          if [ -n "$moving" ]; then tags="${tags},ermiry/cerver:${moving}"; fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+
       # docker setup
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -89,6 +103,6 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.beta
-          tags: ermiry/cerver:beta
+          tags: ${{ steps.tags.outputs.tags }}
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }} 
