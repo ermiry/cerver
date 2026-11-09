@@ -14,6 +14,9 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/collections/freelist.h"
+
+#include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
 #define CONNECTION_NAME_SIZE						64
@@ -26,15 +29,26 @@
 
 // used for connection with exponential backoff (secs)
 #define CONNECTION_DEFAULT_MAX_SLEEP				60
+#define CONNECTION_FIRST_RETRY_SECONDS				2
 
 #define CONNECTION_DEFAULT_MAX_AUTH_TRIES			2
 #define CONNECTION_DEFAULT_BAD_PACKETS				4
 
+#define CONNECTION_DEFAULT_RECEIVE_FLAGS			0
 #define CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE		4096
 
 #define CONNECTION_DEFAULT_UPDATE_TIMEOUT			2
 
 #define CONNECTION_DEFAULT_RECEIVE_PACKETS			true
+
+#define CONNECTION_DEFAULT_USE_SEND_QUEUE			false
+#define CONNECTION_DEFAULT_SEND_FLAGS				0
+
+#define CONNECTION_DEFAULT_ATTEMPT_RECONNECT		false
+#define CONNECTION_DEFAULT_RECONNECT_WAIT_TIME		30
+
+// the deleted connections that are kept to be reused
+#define CONNECTION_RECYCLE_LIMIT					FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,6 +62,33 @@ struct _Connection;
 struct _PacketsPerType;
 struct _AdminCerver;
 
+#define CONNECTION_STATE_MAP(XX)														\
+	XX(0,	NONE,			None, 			(Undefined))								\
+	XX(1,	CONNECTING,		Connecting, 	(Performing connection))					\
+	XX(2,	READY,			Ready, 			(Connected and ready))						\
+	XX(3,	IDLE,			Idle,			(Available for work))						\
+	XX(4,	WORKING,		Working,		(Currently working))						\
+	XX(5,	BUSY,			Busy,			(Busy to work))								\
+	XX(6,	UNAVAILABLE,	Unavailable,	(Not available for work))					\
+	XX(7,	DISCONNECTING,	Disconnecting,	(In the process of ending the connection))	\
+	XX(8,	DISCONNECTED,	Disconnected,	(Connection has been ended))
+
+typedef enum ConnectionState {
+
+	#define XX(num, name, string, description) CONNECTION_STATE_##name = num,
+	CONNECTION_STATE_MAP (XX)
+	#undef XX
+
+} ConnectionState;
+
+CERVER_PUBLIC const char *connection_state_string (
+	const ConnectionState state
+);
+
+CERVER_PUBLIC const char *connection_state_description (
+	const ConnectionState state
+);
+
 struct _ConnectionStats {
 
 	time_t threshold_time;                  // every time we want to reset the connection's stats
@@ -60,8 +101,12 @@ struct _ConnectionStats {
 	u64 n_packets_received;                 // total number of packets received from this connection (packet header + data)
 	u64 n_packets_sent;                     // total number of packets sent to this connection
 
+	// point to the storage below, so the stats of a connection are not extra allocations
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
+
+	struct _PacketsPerType received_packets_storage;
+	struct _PacketsPerType sent_packets_storage;
 
 };
 
@@ -76,6 +121,9 @@ CERVER_PUBLIC void connection_stats_print (
 // a connection from a client
 struct _Connection {
 
+	// the client that owns the connection
+	struct _Client *client;
+
 	char name[CONNECTION_NAME_SIZE];
 
 	struct _Socket *socket;
@@ -85,6 +133,9 @@ struct _Connection {
 
 	char ip[CONNECTION_IP_SIZE];
 	struct sockaddr_storage address;
+
+	ConnectionState state;
+	pthread_mutex_t *state_mutex;
 
 	time_t connected_timestamp;             // when the connection started
 
@@ -105,6 +156,7 @@ struct _Connection {
 	u8 auth_tries;                          // remaining attempts to authenticate
 	u8 bad_packets;                         // number of bad packets before being disconnected
 
+	int receive_flags;                      // the flags that are passed to recv ()
 	u32 receive_packet_buffer_size;         // read packets into a buffer of this size in client_receive ()
 	
 	ReceiveHandle receive_handle;
@@ -128,6 +180,17 @@ struct _Connection {
 	void *custom_receive_args;              		// arguments to be passed to the custom receive method
 	void (*custom_receive_args_delete)(void *);		// method to delete the arguments when the connection gets deleted
 
+	// the packets of the send queue are sent by a dedicated thread
+	// that is joined when the connection is destroyed
+	bool use_send_queue;
+	int send_flags;
+
+	// the secs that a send to a full socket waits for space, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+	u32 send_timeout;
+	bool send_thread_running;
+	pthread_t send_thread_id;
+	JobQueue *send_queue;
+
 	bool authenticated;                     // the connection has been authenticated to the cerver
 	void *auth_data;                        // maybe auth credentials
 	size_t auth_data_size;
@@ -135,10 +198,27 @@ struct _Connection {
 	bool admin_auth;                        // attempt to connect as an admin
 	struct _Packet *auth_packet;
 
+	// the update thread reconnects when the cerver ends the connection,
+	// it waits reconnect_wait_time secs between each attempt
+	bool attempt_reconnect;
+	unsigned int reconnect_wait_time;
+	unsigned int reconnect_attempts;		// attempts since the connection was lost
+
 	ConnectionStats *stats;
 
 	pthread_cond_t *cond;
 	pthread_mutex_t *mutex;
+
+	// the pointers above point to these values,
+	// they are initialized once and kept while the connection is recycled
+	ConnectionStats stats_storage;
+
+	pthread_mutex_t state_mutex_storage;
+	pthread_cond_t cond_storage;
+	pthread_mutex_t mutex_storage;
+
+	// the next deleted connection that waits to be reused
+	struct _Connection *recycle_next;
 
 };
 
@@ -149,6 +229,13 @@ CERVER_PUBLIC Connection *connection_new (void);
 CERVER_PUBLIC void connection_delete (void *connection_ptr);
 
 CERVER_PUBLIC Connection *connection_create_empty (void);
+
+// creates an empty connection with its synchronization values,
+// ready to connect to a cerver
+CERVER_PUBLIC Connection *connection_create_complete (void);
+
+// sets the cond and the mutex that a connection uses to connect to a cerver
+CERVER_PRIVATE void connection_set_synchronization (Connection *connection);
 
 // creates a new client connection with the specified values
 CERVER_PUBLIC Connection *connection_create (
@@ -175,6 +262,14 @@ CERVER_PUBLIC void connection_set_values (
 	const char *ip_address, u16 port, Protocol protocol, bool use_ipv6
 );
 
+CERVER_PUBLIC ConnectionState connection_get_state (
+	Connection *connection
+);
+
+CERVER_PRIVATE void connection_set_state (
+	Connection *connection, const ConnectionState state
+);
+
 // sets the connection max sleep (wait time) to try to connect to the cerver
 CERVER_EXPORT void connection_set_max_sleep (
 	Connection *connection, u32 max_sleep
@@ -184,6 +279,11 @@ CERVER_EXPORT void connection_set_max_sleep (
 // if true, a new thread is created that handled incoming packets
 CERVER_EXPORT void connection_set_receive (
 	Connection *connection, bool receive
+);
+
+// sets the flags to be passed to recv () when handling packets
+CERVER_EXPORT void connection_set_receive_flags (
+	Connection *connection, int flags
 );
 
 // read packets into a buffer of this size in client_receive ()
@@ -206,6 +306,12 @@ CERVER_EXPORT void connection_set_update_timeout (
 	Connection *connection, u32 timeout
 );
 
+// sets how many secs a send waits for space in a full non blocking socket
+// before it fails, 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+CERVER_EXPORT void connection_set_send_timeout (
+	Connection *connection, u32 timeout
+);
+
 typedef struct ConnectionCustomReceiveData {
 
 	struct _Client *client;
@@ -225,6 +331,19 @@ CERVER_PUBLIC void connection_set_custom_receive (
 		char *buffer, const size_t buffer_size
 	),
 	void *args, void (*args_delete)(void *)
+);
+
+// enables the ability to send packets using the connection's queue
+// a dedicated thread will be created to send queued packets
+// when the connection starts, and it is joined when it is destroyed
+CERVER_PUBLIC void connection_set_send_queue (
+	Connection *connection, int flags
+);
+
+// pushes a packet to the connection's send queue,
+// the send thread sends it and deletes it
+CERVER_PUBLIC void connection_send_packet (
+	Connection *connection, struct _Packet *packet
 );
 
 // sets the connection auth data to send whenever the cerver requires authentication
@@ -250,12 +369,37 @@ CERVER_PUBLIC u8 connection_generate_auth_packet (
 	Connection *connection
 );
 
+// sets the ability to attempt a reconnection when the cerver ends the connection
+// the update thread waits wait_time secs before each attempt,
+// until it connects again or the connection is ended by the client
+CERVER_PUBLIC void connection_set_attempt_reconnect (
+	Connection *connection, unsigned int wait_time
+);
+
 // sets up the new connection values
 CERVER_PRIVATE u8 connection_init (Connection *connection);
 
 // starts a connection -> connects to the specified ip and port
+// sets connection's state based on result
 // returns 0 on success, 1 on error
 CERVER_PRIVATE int connection_connect (Connection *connection);
+
+// asks the update thread of a connection with attempt reconnect
+// to close its socket and to connect again
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int connection_reconnect (Connection *connection);
+
+// starts the threads of a connection that is connected,
+// like the send queue thread
+// returns 0 on success, 1 on error
+CERVER_PRIVATE unsigned int connection_start (Connection *connection);
+
+// waits until the send thread ends, the connection must not be active
+CERVER_PRIVATE void connection_stop_send (Connection *connection);
+
+// resets connection values to be able to connect it again,
+// the connection must not have an update thread
+CERVER_PRIVATE void connection_reset (Connection *connection);
 
 // ends a client connection
 CERVER_PRIVATE void connection_end (Connection *connection);
@@ -357,6 +501,10 @@ CERVER_PRIVATE bool connection_is_update_thread (
 // so its fd can not be reused while the update thread uses it
 // the connection's mutex must be held
 CERVER_PRIVATE void connection_wake_update (Connection *connection);
+
+// wakes up the connection that waits in the backoff of connection_connect (),
+// it stops waiting if its client was torn down
+CERVER_PRIVATE void connection_wake_connect (Connection *connection);
 
 #ifdef __cplusplus
 }

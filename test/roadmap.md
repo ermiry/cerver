@@ -380,7 +380,27 @@ Cada test se vio fallar contra la 2.0b-60.
   está aceptada y `cerver_run` la cubre en los servicios.
 - Ahora repite la señal hasta que el cerver se detiene: 1000 rondas limpias, y limpio con TSan.
 
+### 2.0b-63, el port del core de la 1.8
+
+Los tests del core vienen de `core` (cada uno se vio fallar allí contra la versión anterior de la 1.x):
+
+| Test | Qué fija |
+|---|---|
+| `test/routing.c` | El balancer en proceso con dos servicios reales: round robin, handler id, tipo desconocido, tamaño inválido, 1 MB, un servicio que cae y vuelve, sin servicios |
+| `test/socket.c` | Los envíos con deadline a sockets llenos y cerrados, `sendfile` en loop |
+| `test/network.c` | `network_parse_address`, `network_resolve_address`, las IPv4 mapeadas |
+| `test/client/features.c` | Estados, connect async, cola de envío, reconexión, `packet_init_*`, sessions, paquete grande |
+| `test/client/files.c` | Archivos en los dos sentidos, uno inexistente y uno fuera de los paths (`../`) |
+| `test/cerver/lobby.c` | Lobbies con jugadores conectados |
+| `test/cerver/core.c` | Además: el teardown de handlers con su propio hilo, un evento lento en su hilo, los hilos detachable, un update con fps bajo, la gracia del drenado, paquetes sin handler (LSan), y el orden de `CERVER_EVENT_CLIENT_CONNECTED` (el data race del TSan del push de la 2.0b-62) |
+| `test/client/lifecycle.c` | Además: el teardown durante el backoff de un connect, los handlers con su hilo, `client_connection_get_next_packet ()` con paquetes en pedazos y mayores que un datagrama |
+| `test/fuzz/{receive,packet,client,file}.c` | El ensamblado de paquetes, el header, el stream que lee un cliente y el `FileHeader` |
+| pares `cerver/queue`, `balancer/round_robin`, `balancer/handler_id` | El cliente con cola de envío y el balancer con dos servicios |
+
+Del lado HTTP, `test_features_metrics` revisa las métricas del thpool y `test/performance.sh` baja a GET 2 / POST JSON 20
+asignaciones.
+
 ### Pendiente
 
-- **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `nightly.yml`.
+- **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `scheduled.yml`.
 - **Los workflows** no se corrieron en GitHub (no hay `act`).

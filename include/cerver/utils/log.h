@@ -7,6 +7,7 @@
 #include "cerver/config.h"
 
 #define LOG_DEFAULT_PATH		"/var/log/cerver"
+#define LOG_FILENAME_SIZE		1024
 
 #define LOG_POOL_INIT			32
 
@@ -50,7 +51,7 @@ extern "C" {
 	XX(14, 	FILE, 		[FILE])					\
 	XX(15, 	HTTP, 		[HTTP])					\
 	XX(16, 	GAME, 		[GAME])					\
-	XX(17, 	PLAYER, 	[PLAYER)				\
+	XX(17, 	PLAYER, 	[PLAYER])
 
 typedef enum LogType {
 
@@ -78,7 +79,7 @@ CERVER_EXPORT LogOutputType cerver_log_get_output_type (void);
 
 // sets the log output type to use
 CERVER_EXPORT void cerver_log_set_output_type (
-	LogOutputType type
+	const LogOutputType type
 );
 
 // sets the path where logs files will be stored
@@ -90,7 +91,7 @@ CERVER_EXPORT unsigned int cerver_log_set_path (
 // sets the interval in secs which will be used to sync the contents of the log file to disk
 // the default values is 1 second
 CERVER_EXPORT void cerver_log_set_update_interval (
-	unsigned int interval
+	const unsigned int interval
 );
 
 #define LOG_TIME_TYPE_MAP(XX)										\
@@ -108,11 +109,11 @@ typedef enum LogTimeType {
 } LogTimeType;
 
 CERVER_PUBLIC const char *cerver_log_time_type_to_string (
-	LogTimeType type
+	const LogTimeType type
 );
 
 CERVER_PUBLIC const char *cerver_log_time_type_description (
-	LogTimeType type
+	const LogTimeType type
 );
 
 // returns the current log time configuration
@@ -123,15 +124,15 @@ CERVER_EXPORT LogTimeType cerver_log_get_time_config (void);
 // time: 24h time format
 // date: day/month/year format
 // both: day/month/year - 24h date time format
-CERVER_EXPORT void cerver_log_set_time_config (LogTimeType type);
+CERVER_EXPORT void cerver_log_set_time_config (const LogTimeType type);
 
 // set if logs datetimes will use local time or not
-CERVER_EXPORT void cerver_log_set_local_time (bool value);
+CERVER_EXPORT void cerver_log_set_local_time (const bool value);
 
 // if the log's quiet option is set to TRUE,
 // only success, warning & error messages will be handled
 // any other type will be ignored
-CERVER_EXPORT void cerver_log_set_quiet (bool value);
+CERVER_EXPORT void cerver_log_set_quiet (const bool value);
 
 #pragma endregion
 
@@ -140,7 +141,7 @@ CERVER_EXPORT void cerver_log_set_quiet (bool value);
 // creates and prints a message of custom types
 // based on the first type, the message can be printed with colors to stdout
 CERVER_PUBLIC void cerver_log (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 );
 
@@ -148,7 +149,7 @@ CERVER_PUBLIC void cerver_log (
 // and adds the date & time
 // if the log_time_type has been configured, it will be kept
 CERVER_PUBLIC void cerver_log_with_date (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 );
 
@@ -157,7 +158,7 @@ CERVER_PUBLIC void cerver_log_with_date (
 // and to log file if available
 // this messages ignore the quiet flag
 CERVER_PUBLIC void cerver_log_both (
-	LogType first_type, LogType second_type,
+	const LogType first_type, const LogType second_type,
 	const char *format, ...
 );
 

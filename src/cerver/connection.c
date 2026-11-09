@@ -9,6 +9,8 @@
 
 #include <sys/socket.h>
 
+#include <arpa/inet.h>
+
 #include "cerver/types/types.h"
 #include "cerver/types/string.h"
 
@@ -25,6 +27,8 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/threads/bsem.h"
+#include "cerver/threads/jobs.h"
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
@@ -32,27 +36,69 @@
 
 void connection_remove_auth_data (Connection *connection);
 
+static void *connection_send_thread (void *connection_ptr);
+
+#pragma region states
+
+const char *connection_state_string (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #string;
+		CONNECTION_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_string (CONNECTION_STATE_NONE);
+
+}
+
+const char *connection_state_description (
+	const ConnectionState state
+) {
+
+	switch (state) {
+		#define XX(num, name, string, description) case CONNECTION_STATE_##name: return #description;
+		CONNECTION_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return connection_state_description (CONNECTION_STATE_NONE);
+
+}
+
+#pragma endregion
+
 #pragma region stats
+
+static void connection_stats_init (ConnectionStats *stats) {
+
+	(void) memset (stats, 0, sizeof (ConnectionStats));
+
+	stats->received_packets = &stats->received_packets_storage;
+	stats->sent_packets = &stats->sent_packets_storage;
+
+}
 
 ConnectionStats *connection_stats_new (void) {
 
 	ConnectionStats *stats = (ConnectionStats *) malloc (sizeof (ConnectionStats));
 	if (stats) {
-		(void) memset (stats, 0, sizeof (ConnectionStats));
-		stats->received_packets = packets_per_type_new ();
-		stats->sent_packets = packets_per_type_new ();
+		connection_stats_init (stats);
 	}
 
 	return stats;
 
 }
 
-static inline void connection_stats_delete (ConnectionStats *stats) {
+// the stats of a connection live inside it,
+// only stats that were created with connection_stats_new () are released
+static inline void connection_stats_delete (
+	Connection *connection, ConnectionStats *stats
+) {
 
-	if (stats) {
-		packets_per_type_delete (stats->received_packets);
-		packets_per_type_delete (stats->sent_packets);
-
+	if (stats && (stats != &connection->stats_storage)) {
 		free (stats);
 	}
 
@@ -98,12 +144,85 @@ void connection_stats_print (Connection *connection) {
 
 #pragma endregion
 
+#pragma region recycle
+
+static FreeList connection_recycled = FREELIST_INITIALIZER (
+	Connection, recycle_next, CONNECTION_RECYCLE_LIMIT
+);
+
+// a new connection initializes its synchronization values once,
+// a recycled one keeps them
+static Connection *connection_allocate (void) {
+
+	Connection *connection = (Connection *) freelist_pop (&connection_recycled);
+	if (!connection) {
+		connection = (Connection *) malloc (sizeof (Connection));
+		if (connection) {
+			(void) pthread_mutex_init (&connection->state_mutex_storage, NULL);
+			(void) pthread_cond_init (&connection->cond_storage, NULL);
+			(void) pthread_mutex_init (&connection->mutex_storage, NULL);
+		}
+	}
+
+	return connection;
+
+}
+
+static void connection_destroy (void *connection_ptr) {
+
+	Connection *connection = (Connection *) connection_ptr;
+
+	(void) pthread_mutex_destroy (&connection->state_mutex_storage);
+	(void) pthread_cond_destroy (&connection->cond_storage);
+	(void) pthread_mutex_destroy (&connection->mutex_storage);
+
+	free (connection);
+
+}
+
+// keeps the connection to be reused, or releases it if there are enough
+static void connection_recycle (Connection *connection) {
+
+	if (freelist_push (&connection_recycled, connection)) {
+		connection_destroy (connection);
+	}
+
+}
+
+// the recycled connections are released when the library is unloaded
+__attribute__ ((destructor)) static void connection_recycled_drain (void) {
+
+	freelist_drain (&connection_recycled, connection_destroy);
+
+}
+
+// only the values that were not taken from the connection's storage are released
+static void connection_synchronization_delete (Connection *connection) {
+
+	if (connection->state_mutex != &connection->state_mutex_storage) {
+		thread_mutex_delete (connection->state_mutex);
+	}
+
+	if (connection->cond != &connection->cond_storage) {
+		thread_cond_delete (connection->cond);
+	}
+
+	if (connection->mutex != &connection->mutex_storage) {
+		thread_mutex_delete (connection->mutex);
+	}
+
+}
+
+#pragma endregion
+
 #pragma region main
 
 Connection *connection_new (void) {
 
-	Connection *connection = (Connection *) malloc (sizeof (Connection));
+	Connection *connection = connection_allocate ();
 	if (connection) {
+		connection->client = NULL;
+
 		(void) memset (connection->name, 0, CONNECTION_NAME_SIZE);
 
 		connection->socket = NULL;
@@ -113,6 +232,9 @@ Connection *connection_new (void) {
 
 		(void) memset (connection->ip, 0, CONNECTION_IP_SIZE);
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+		connection->state = CONNECTION_STATE_NONE;
+		connection->state_mutex = NULL;
 
 		connection->connected_timestamp = 0;
 
@@ -127,6 +249,7 @@ Connection *connection_new (void) {
 		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
 		connection->bad_packets = 0;
 
+		connection->receive_flags = CONNECTION_DEFAULT_RECEIVE_FLAGS;
 		connection->receive_packet_buffer_size = CONNECTION_DEFAULT_RECEIVE_BUFFER_SIZE;
 
 		connection->receive_handle = (ReceiveHandle) {
@@ -158,7 +281,11 @@ Connection *connection_new (void) {
 			.header_end = NULL,
 			.remaining_header = 0,
 
-			.spare_packet = NULL
+			.spare_packet = NULL,
+
+			.trailing = NULL,
+			.trailing_size = 0,
+			.trailing_taken = 0
 		};
 
 		connection->update_thread_id = 0;
@@ -174,6 +301,13 @@ Connection *connection_new (void) {
 		connection->custom_receive_args = NULL;
 		connection->custom_receive_args_delete = NULL;
 
+		connection->use_send_queue = CONNECTION_DEFAULT_USE_SEND_QUEUE;
+		connection->send_flags = CONNECTION_DEFAULT_SEND_FLAGS;
+		connection->send_timeout = CERVER_DEFAULT_SEND_TIMEOUT;
+		connection->send_thread_running = false;
+		connection->send_thread_id = 0;
+		connection->send_queue = NULL;
+
 		connection->authenticated = false;
 		connection->auth_data = NULL;
 		connection->auth_data_size = 0;
@@ -181,10 +315,16 @@ Connection *connection_new (void) {
 		connection->admin_auth = false;
 		connection->auth_packet = NULL;
 
+		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
+		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
+		connection->reconnect_attempts = 0;
+
 		connection->stats = NULL;
 
 		connection->cond = NULL;
 		connection->mutex = NULL;
+
+		connection->recycle_next = NULL;
 	}
 
 	return connection;
@@ -217,12 +357,15 @@ void connection_delete (void *connection_ptr) {
 
 		connection_remove_auth_data (connection);
 
-		connection_stats_delete (connection->stats);
+		// the send thread was already joined by the owner of the connection's end
+		connection_stop_send (connection);
+		job_queue_delete (connection->send_queue);
 
-		thread_cond_delete (connection->cond);
-		thread_mutex_delete (connection->mutex);
+		connection_stats_delete (connection, connection->stats);
 
-		free (connection);
+		connection_synchronization_delete (connection);
+
+		connection_recycle (connection);
 	}
 
 }
@@ -239,8 +382,32 @@ Connection *connection_create_empty (void) {
 
 		connection->socket = (Socket *) socket_create_empty ();
 
-		connection->stats = connection_stats_new ();
+		connection->state_mutex = &connection->state_mutex_storage;
+
+		connection_stats_init (&connection->stats_storage);
+		connection->stats = &connection->stats_storage;
 	}
+
+	return connection;
+
+}
+
+// sets the cond and the mutex that a connection uses to connect to a cerver
+void connection_set_synchronization (Connection *connection) {
+
+	if (connection) {
+		connection->cond = &connection->cond_storage;
+		connection->mutex = &connection->mutex_storage;
+	}
+
+}
+
+// creates an empty connection with its synchronization values,
+// ready to connect to a cerver
+Connection *connection_create_complete (void) {
+
+	Connection *connection = connection_create_empty ();
+	connection_set_synchronization (connection);
 
 	return connection;
 
@@ -327,6 +494,36 @@ void connection_set_values (
 
 }
 
+ConnectionState connection_get_state (Connection *connection) {
+
+	ConnectionState state = CONNECTION_STATE_NONE;
+
+	if (connection && connection->state_mutex) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		state = connection->state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
+	}
+
+	return state;
+
+}
+
+void connection_set_state (
+	Connection *connection, const ConnectionState state
+) {
+
+	if (connection && connection->state_mutex) {
+		(void) pthread_mutex_lock (connection->state_mutex);
+
+		connection->state = state;
+
+		(void) pthread_mutex_unlock (connection->state_mutex);
+	}
+
+}
+
 // sets the connection max sleep (wait time) to try to connect to the cerver
 void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 
@@ -339,6 +536,13 @@ void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 void connection_set_receive (Connection *connection, bool receive) {
 
 	if (connection) connection->receive_packets = receive;
+
+}
+
+// sets the flags to be passed to recv () when handling packets
+void connection_set_receive_flags (Connection *connection, int flags) {
+
+	if (connection) connection->receive_flags = flags;
 
 }
 
@@ -356,6 +560,13 @@ void connection_set_receive_buffer_size (Connection *connection, u32 size) {
 void connection_set_update_timeout (Connection *connection, u32 timeout) {
 
 	if (connection) connection->update_timeout = timeout;
+
+}
+
+// sets how many secs a send waits for space in a full non blocking socket
+void connection_set_send_timeout (Connection *connection, u32 timeout) {
+
+	if (connection) connection->send_timeout = timeout;
 
 }
 
@@ -392,6 +603,23 @@ void connection_set_custom_receive (
 		connection->custom_receive_args = args;
 		connection->custom_receive_args_delete = args_delete;
 		if (connection->custom_receive) connection->receive_packets = true;
+	}
+
+}
+
+// enables the ability to send packets using the connection's queue
+// a dedicated thread will be created to send queued packets
+// when the connection starts, and it is joined when it is destroyed
+void connection_set_send_queue (
+	Connection *connection, int flags
+) {
+
+	if (connection && !connection->send_queue) {
+		connection->send_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+		if (connection->send_queue) {
+			connection->use_send_queue = true;
+			connection->send_flags = flags;
+		}
 	}
 
 }
@@ -462,6 +690,66 @@ u8 connection_generate_auth_packet (Connection *connection) {
 
 }
 
+// sets the ability to attempt a reconnection when the cerver ends the connection
+// the update thread waits wait_time secs before each attempt,
+// until it connects again or the connection is ended by the client
+void connection_set_attempt_reconnect (
+	Connection *connection, unsigned int wait_time
+) {
+
+	if (connection) {
+		connection->attempt_reconnect = true;
+		connection->reconnect_wait_time = wait_time;
+	}
+
+}
+
+// the ip of the connection can be a literal IPv4 or IPv6 address or a host name,
+// the family of the socket is the one of the resolved address
+// returns 0 on success, 1 on error
+static u8 connection_init_address (Connection *connection) {
+
+	u8 retval = 1;
+
+	if (!network_resolve_address (
+		connection->ip, connection->port, connection->use_ipv6, &connection->address
+	)) {
+		connection->use_ipv6 = (connection->address.ss_family == AF_INET6);
+		retval = 0;
+	}
+
+	else {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Connection %s failed to resolve %s!",
+			connection->name, connection->ip
+		);
+	}
+
+	return retval;
+
+}
+
+static int connection_init_socket_type (const Protocol protocol) {
+
+	int type = -1;
+
+	switch (protocol) {
+		case IPPROTO_TCP: type = SOCK_STREAM; break;
+		case IPPROTO_UDP: type = SOCK_DGRAM; break;
+
+		default:
+			cerver_log (
+				LOG_TYPE_ERROR, LOG_TYPE_NONE,
+				"Unkonw protocol type!"
+			);
+			break;
+	}
+
+	return type;
+
+}
+
 // sets up the new connection values
 u8 connection_init (Connection *connection) {
 
@@ -469,44 +757,13 @@ u8 connection_init (Connection *connection) {
 
 	if (connection) {
 		if (!connection->active) {
+			const int type = connection_init_socket_type (connection->protocol);
+			if ((type < 0) || connection_init_address (connection)) return 1;
+
 			// init the new connection socket
-			switch (connection->protocol) {
-				case IPPROTO_TCP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_STREAM, 0
-					);
-					break;
-				case IPPROTO_UDP:
-					connection->socket->sock_fd = socket (
-						(connection->use_ipv6 == 1 ? AF_INET6 : AF_INET),
-						SOCK_DGRAM, 0
-					);
-					break;
+			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
 
-				default:
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Unkonw protocol type!"
-					);
-					return 1;
-			}
-
-			if (connection->socket->sock_fd > 0) {
-				if (connection->use_ipv6) {
-					struct sockaddr_in6 *addr = (struct sockaddr_in6 *) &connection->address;
-					addr->sin6_family = AF_INET6;
-					addr->sin6_addr = in6addr_any;
-					addr->sin6_port = htons (connection->port);
-				}
-
-				else {
-					struct sockaddr_in *addr = (struct sockaddr_in *) &connection->address;
-					addr->sin_family = AF_INET;
-					addr->sin_addr.s_addr = inet_addr (connection->ip);
-					addr->sin_port = htons (connection->port);
-				}
-
+			if (connection->socket->sock_fd > -1) {
 				retval = 0;     // connection setup was successfull
 			}
 
@@ -531,34 +788,260 @@ u8 connection_init (Connection *connection) {
 
 }
 
-// try to connect a client to an address (server) with exponential backoff
+// true when the connection must stop its connect backoff:
+// it is ending, or its client is being torn down
+static bool connection_connect_cancelled (const Connection *connection) {
+
+	return connection->ending || client_teardown_is_requested (connection->client);
+
+}
+
+// waits the seconds of a backoff step in the connection's condition,
+// connection_wake_connect () and the end of the connection interrupt it
+// returns true if the connection can attempt to connect again
+static bool connection_try_wait (Connection *connection, const u32 seconds) {
+
+	if (!connection->mutex || !connection->cond) {
+		(void) sleep (seconds);
+		return true;
+	}
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += (time_t) seconds;
+
+	(void) pthread_mutex_lock (connection->mutex);
+
+	int result = 0;
+	while (!connection_connect_cancelled (connection) && (result != ETIMEDOUT)) {
+		result = pthread_cond_timedwait (connection->cond, connection->mutex, &deadline);
+	}
+
+	const bool proceed = !connection_connect_cancelled (connection);
+
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	return proceed;
+
+}
+
+// wakes up the connection that waits in the backoff of connection_connect (),
+// it stops waiting if its client was torn down
+void connection_wake_connect (Connection *connection) {
+
+	if (connection && connection->mutex && connection->cond) {
+		(void) pthread_mutex_lock (connection->mutex);
+		(void) pthread_cond_broadcast (connection->cond);
+		(void) pthread_mutex_unlock (connection->mutex);
+	}
+
+}
+
+// try to connect a client to an address (server) with exponential backoff,
+// each wait can be interrupted by the end of the connection or a client teardown
 static u8 connection_try (
 	Connection *connection, const struct sockaddr_storage address
 ) {
 
 	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
-	const socklen_t address_size = (address.ss_family == AF_INET6) ?
-		sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
+	const socklen_t address_size = sock_address_size (&address);
 
-	u32 numsec = 0;
-	for (numsec = 2; numsec <= connection->max_sleep; numsec <<= 1) {
-		if (!connect (connection->socket->sock_fd,
-			(const struct sockaddr *) &address,
-			address_size))
-			return 0;
+	// the first attempt is always done, a max sleep smaller than the first wait
+	// never attempted to connect
+	u32 numsec = CONNECTION_FIRST_RETRY_SECONDS;
+	while (connect (connection->socket->sock_fd,
+		(const struct sockaddr *) &address,
+		address_size)) {
+		if (numsec > connection->max_sleep) return 1;
 
-		if (numsec <= connection->max_sleep / 2) sleep (numsec);
+		if (!connection_try_wait (connection, numsec)) return 1;
+
+		numsec <<= 1;
 	}
 
-	return 1;
+	return 0;
 
 }
 
 // starts a connection -> connects to the specified ip and port
+// sets connection's state based on result
 // returns 0 on success, 1 on error
 int connection_connect (Connection *connection) {
 
-	return (connection ? connection_try (connection, connection->address) : 1);
+	int retval = 1;
+
+	if (connection) {
+		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
+
+		retval = connection_try (connection, connection->address);
+
+		connection_set_state (
+			connection,
+			retval ? CONNECTION_STATE_UNAVAILABLE : CONNECTION_STATE_READY
+		);
+	}
+
+	return retval;
+
+}
+
+// asks the update thread of a connection with attempt reconnect
+// to close its socket and to connect again
+// returns 0 on success, 1 on error
+unsigned int connection_reconnect (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection && connection->attempt_reconnect && connection->mutex) {
+		(void) pthread_mutex_lock (connection->mutex);
+
+		if (connection->updating && !connection->ending) {
+			connection_wake_update (connection);
+			retval = 0;
+		}
+
+		(void) pthread_mutex_unlock (connection->mutex);
+	}
+
+	return retval;
+
+}
+
+static unsigned int connection_start_send (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	__atomic_store_n (&connection->send_thread_running, true, __ATOMIC_SEQ_CST);
+
+	if (!thread_create_joinable (
+		&connection->send_thread_id,
+		connection_send_thread,
+		connection
+	)) {
+		retval = 0;
+	}
+
+	else {
+		__atomic_store_n (&connection->send_thread_running, false, __ATOMIC_SEQ_CST);
+
+		cerver_log_error (
+			"connection_start () - "
+			"Failed to create send thread for connection %s",
+			connection->name
+		);
+	}
+
+	return retval;
+
+}
+
+// starts the threads of a connection that is connected,
+// like the send queue thread
+// returns 0 on success, 1 on error
+unsigned int connection_start (Connection *connection) {
+
+	unsigned int retval = 1;
+
+	if (connection && connection->active) {
+		retval = 0;
+
+		if (
+			connection->use_send_queue
+			&& !__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)
+		) {
+			retval = connection_start_send (connection);
+		}
+
+		if (!retval) connection_set_state (connection, CONNECTION_STATE_WORKING);
+	}
+
+	return retval;
+
+}
+
+// the packets that were not sent are deleted
+static void connection_send_queue_clear (Connection *connection) {
+
+	Job *job = NULL;
+	while ((job = (Job *) job_queue_pull (connection->send_queue))) {
+		packet_delete (job->args);
+		job_delete (job);
+	}
+
+}
+
+// waits until the send thread ends, the connection must not be active
+void connection_stop_send (Connection *connection) {
+
+	if (connection && connection->send_queue) {
+		if (connection->send_thread_id) {
+			__atomic_store_n (&connection->send_thread_running, false, __ATOMIC_SEQ_CST);
+			bsem_post_all (connection->send_queue->has_jobs);
+
+			(void) pthread_join (connection->send_thread_id, NULL);
+			connection->send_thread_id = 0;
+		}
+
+		connection_send_queue_clear (connection);
+	}
+
+}
+
+static void connection_reset_received_data (Connection *connection) {
+
+	if (connection->received_data && connection->received_data_delete) {
+		connection->received_data_delete (connection->received_data);
+	}
+
+	connection->received_data = NULL;
+	connection->received_data_size = 0;
+
+}
+
+// resets connection values to be able to connect it again,
+// the connection must not have an update thread
+void connection_reset (Connection *connection) {
+
+	if (connection) {
+		if (connection->active) connection_end (connection);
+
+		connection_stop_send (connection);
+
+		connection->socket->sock_fd = -1;
+
+		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
+
+		connection_set_state (connection, CONNECTION_STATE_NONE);
+
+		connection->connected_timestamp = 0;
+
+		cerver_report_delete (
+			__atomic_exchange_n (&connection->cerver_report, NULL, __ATOMIC_ACQ_REL)
+		);
+
+		if (connection->mutex) (void) pthread_mutex_lock (connection->mutex);
+		connection->updating = false;
+		connection->ending = false;
+		connection->end_deferred = false;
+		if (connection->mutex) (void) pthread_mutex_unlock (connection->mutex);
+
+		connection->auth_tries = CONNECTION_DEFAULT_MAX_AUTH_TRIES;
+		connection->bad_packets = 0;
+
+		// a packet that was only partially received
+		receive_handle_end (&connection->receive_handle);
+
+		connection->update_thread_id = 0;
+
+		connection_reset_received_data (connection);
+
+		connection->authenticated = false;
+
+		connection->reconnect_attempts = 0;
+
+		// a new socket and the address of the cerver
+		(void) connection_init (connection);
+	}
 
 }
 
@@ -585,6 +1068,8 @@ void connection_end (Connection *connection) {
 			}
 
 			connection->socket->sock_fd = -1;
+
+			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
 			connection->active = false;
 		}
 	}
@@ -706,6 +1191,8 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 	u8 retval = 1;
 
 	if (client && connection) {
+		connection->client = client;
+
 		if (!dlist_insert_at_end (client->connections, connection)) {
 			#ifdef CERVER_DEBUG
 			if (client->session_id) {
@@ -910,6 +1397,9 @@ void connection_wake_update (Connection *connection) {
 		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
 	}
 
+	// an update thread that waits to reconnect
+	if (connection->cond) (void) pthread_cond_broadcast (connection->cond);
+
 }
 
 // the receive loop has ended: the thread that waits for it is woken up,
@@ -929,6 +1419,194 @@ static void connection_update_end (Client *client, Connection *connection) {
 	connection_update_current = NULL;
 
 	client_update_thread_ended (client);
+
+}
+
+// receives from the connection until it ends or fails
+static void connection_update_receive (
+	Client *client, Connection *connection,
+	char *buffer, const size_t buffer_size
+) {
+
+	connection->receive_handle.client = client;
+	connection->receive_handle.connection = connection;
+
+	connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
+
+	(void) sock_set_timeout (
+		connection->socket->sock_fd,
+		connection->update_timeout
+	);
+
+	// check if we have a custom receive method
+	if (connection->custom_receive) {
+		ConnectionCustomReceiveData custom_data = {
+			.client = client,
+			.connection = connection,
+			.args = connection->custom_receive_args
+		};
+
+		while (
+			client_is_running (client)
+			&& connection->active
+			&& !connection->custom_receive (
+				&custom_data,
+				buffer, buffer_size
+			)
+		);
+	}
+
+	// use the default receive method
+	// that handles cerver type packages
+	else {
+		while (
+			client_is_running (client)
+			&& connection->active
+			&& !client_receive_internal (
+				client, connection,
+				buffer, buffer_size
+			)
+		);
+	}
+
+}
+
+// returns true if the connection must connect again,
+// only when the cerver ended it and the client did not ask for its end
+static bool connection_update_should_reconnect (
+	Client *client, Connection *connection
+) {
+
+	bool reconnect = false;
+
+	if (connection->attempt_reconnect && client_is_running (client)) {
+		(void) pthread_mutex_lock (connection->mutex);
+		reconnect = !connection->ending;
+		(void) pthread_mutex_unlock (connection->mutex);
+	}
+
+	return reconnect;
+
+}
+
+// waits the reconnect time, the end of the connection wakes it up
+// returns true if the connection can attempt to connect
+static bool connection_update_reconnect_wait (
+	Client *client, Connection *connection
+) {
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += (time_t) connection->reconnect_wait_time;
+
+	(void) pthread_mutex_lock (connection->mutex);
+
+	int result = 0;
+	while (
+		!connection->ending
+		&& client_is_running (client)
+		&& (result != ETIMEDOUT)
+	) {
+		result = pthread_cond_timedwait (connection->cond, connection->mutex, &deadline);
+	}
+
+	const bool proceed = !connection->ending && client_is_running (client);
+
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	return proceed;
+
+}
+
+// a single attempt with a new socket, so the end of the connection
+// never waits for an exponential backoff
+static bool connection_update_reconnect_attempt (
+	Client *client, Connection *connection
+) {
+
+	bool connected = false;
+
+	if (!connection_init (connection)) {
+		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
+
+		const socklen_t address_size = (connection->address.ss_family == AF_INET6) ?
+			sizeof (struct sockaddr_in6) : sizeof (struct sockaddr_in);
+
+		if (!connect (
+			connection->socket->sock_fd,
+			(const struct sockaddr *) &connection->address,
+			address_size
+		)) {
+			connection->active = true;
+			(void) time (&connection->connected_timestamp);
+
+			connection_set_state (connection, CONNECTION_STATE_WORKING);
+
+			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
+
+			connected = true;
+		}
+
+		else {
+			// the socket of the failed attempt
+			(void) close (connection->socket->sock_fd);
+			connection->socket->sock_fd = -1;
+
+			connection_set_state (connection, CONNECTION_STATE_UNAVAILABLE);
+		}
+	}
+
+	if (!connected) {
+		client_event_trigger (CLIENT_EVENT_CONNECTION_FAILED, client, connection);
+	}
+
+	return connected;
+
+}
+
+// closes the socket that the cerver ended
+static void connection_update_reconnect_close (
+	Client *client, Connection *connection
+) {
+
+	if (connection->active) {
+		client_event_trigger (CLIENT_EVENT_CONNECTION_CLOSE, client, connection);
+		connection_end (connection);
+	}
+
+	// the cerver sends its info again
+	cerver_report_delete (
+		__atomic_exchange_n (&connection->cerver_report, NULL, __ATOMIC_ACQ_REL)
+	);
+
+	// a packet that was only partially received
+	receive_handle_end (&connection->receive_handle);
+
+}
+
+// connects again a connection that the cerver ended
+// returns true if the connection is connected again
+static bool connection_update_reconnect (
+	Client *client, Connection *connection
+) {
+
+	bool reconnected = false;
+
+	if (connection_update_should_reconnect (client, connection)) {
+		connection_update_reconnect_close (client, connection);
+
+		while (
+			!reconnected
+			&& connection_update_reconnect_wait (client, connection)
+		) {
+			connection->reconnect_attempts += 1;
+			reconnected = connection_update_reconnect_attempt (client, connection);
+		}
+
+		if (reconnected) connection->reconnect_attempts = 0;
+	}
+
+	return reconnected;
 
 }
 
@@ -962,49 +1640,16 @@ void *connection_update (void *client_connection_ptr) {
 			(void) thread_set_name (connection_name);
 		}
 
-		cc->connection->receive_handle.client = cc->client;
-		cc->connection->receive_handle.connection = cc->connection;
-
-		cc->connection->receive_handle.state = RECEIVE_HANDLE_STATE_NORMAL;
-
 		const size_t buffer_size = cc->connection->receive_packet_buffer_size;
 		char *buffer = (char *) calloc (buffer_size, sizeof (char));
 		if (buffer) {
-			(void) sock_set_timeout (
-				cc->connection->socket->sock_fd,
-				cc->connection->update_timeout
-			);
-
-			// check if we have a custom receive method
-			if (cc->connection->custom_receive) {
-				ConnectionCustomReceiveData custom_data = {
-					.client = cc->client,
-					.connection = cc->connection,
-					.args = cc->connection->custom_receive_args
-				};
-
-				while (
-					client_is_running (cc->client)
-					&& cc->connection->active
-					&& !cc->connection->custom_receive (
-						&custom_data,
-						buffer, buffer_size
-					)
+			// a connection with attempt reconnect receives again after it connects again
+			do {
+				connection_update_receive (
+					cc->client, cc->connection,
+					buffer, buffer_size
 				);
-			}
-
-			// use the default receive method
-			// that handles cerver type packages
-			else {
-				while (
-					client_is_running (cc->client)
-					&& cc->connection->active
-					&& !client_receive_internal (
-						cc->client, cc->connection,
-						buffer, buffer_size
-					)
-				);
-			}
+			} while (connection_update_reconnect (cc->client, cc->connection));
 
 			free (buffer);
 		}
@@ -1033,6 +1678,88 @@ void *connection_update (void *client_connection_ptr) {
 		);
 		#endif
 	}
+
+	return NULL;
+
+}
+
+#pragma endregion
+
+#pragma region send
+
+// pushes a packet to the connection's send queue,
+// the send thread sends it and deletes it
+void connection_send_packet (
+	Connection *connection, Packet *packet
+) {
+
+	if (connection && connection->send_queue && packet) {
+		Job *job = job_create (NULL, packet);
+		if (job) {
+			if (job_queue_push (connection->send_queue, job)) {
+				job_delete (job);
+				packet_delete (packet);
+			}
+		}
+
+		else {
+			packet_delete (packet);
+		}
+	}
+
+}
+
+// sends a queued packet, returns 0 on success, 1 on error
+static u8 connection_send_thread_send (Connection *connection, Job *job) {
+
+	Packet *packet = (Packet *) job->args;
+
+	size_t sent = 0;
+	const u8 failed = packet_send_actual (
+		packet,
+		connection->send_flags, &sent,
+		connection->client, connection
+	);
+
+	packet_delete (packet);
+	job_delete (job);
+
+	return failed;
+
+}
+
+static void *connection_send_thread (void *connection_ptr) {
+
+	Connection *connection = (Connection *) connection_ptr;
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Connection %s connection_send () thread has started",
+		connection->name
+	);
+	#endif
+
+	// a failed send does not end the thread, the connection can be connected again
+	Job *job = NULL;
+	while (__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)) {
+		bsem_wait (connection->send_queue->has_jobs);
+
+		while (
+			__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)
+			&& (job = (Job *) job_queue_pull (connection->send_queue))
+		) {
+			(void) connection_send_thread_send (connection, job);
+		}
+	}
+
+	#ifdef CONNECTION_DEBUG
+	cerver_log (
+		LOG_TYPE_DEBUG, LOG_TYPE_CONNECTION,
+		"Connection %s connection_send () thread has ended",
+		connection->name
+	);
+	#endif
 
 	return NULL;
 

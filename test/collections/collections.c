@@ -39,6 +39,8 @@ int main (int argc, char **argv) {
 
 	collections_tests_dlist_invariants ();
 
+	collections_tests_freelist ();
+
 	collections_tests_htab ();
 
 	collections_tests_htab_hashing ();

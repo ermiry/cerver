@@ -85,6 +85,10 @@ ReceiveHandle *receive_handle_new (void) {
 		receive_handle->remaining_header = 0;
 
 		receive_handle->spare_packet = NULL;
+
+		receive_handle->trailing = NULL;
+		receive_handle->trailing_size = 0;
+		receive_handle->trailing_taken = 0;
 	}
 
 	return receive_handle;
@@ -175,6 +179,53 @@ static u8 receive_handle_lost (
 
 }
 
+// the bytes after the packet are offered to its handler,
+// the ones that it takes are skipped when it returns
+static u8 receive_handle_dispatch (
+	ReceiveHandle *receive_handle, ReceiveCursor *cursor, Packet *packet
+) {
+
+	const bool trailing = (cursor->remaining > 0);
+
+	receive_handle->trailing = trailing ? cursor->data : NULL;
+	receive_handle->trailing_size = cursor->remaining;
+	receive_handle->trailing_taken = 0;
+
+	const u8 stop = cursor->dispatch (receive_handle, packet);
+
+	// a handler may have deleted the connection, so its receive handle is only used
+	// when the buffer has more bytes and the handler did not stop, like before the trailing bytes
+	if (!stop && trailing) {
+		receive_cursor_advance (cursor, receive_handle->trailing_taken);
+
+		receive_handle->trailing = NULL;
+		receive_handle->trailing_size = 0;
+		receive_handle->trailing_taken = 0;
+	}
+
+	return stop;
+
+}
+
+size_t receive_handle_take_trailing (
+	ReceiveHandle *receive_handle,
+	const char **data, const size_t max_size
+) {
+
+	size_t length = 0;
+
+	if (receive_handle && data && receive_handle->trailing) {
+		const size_t available = receive_handle->trailing_size - receive_handle->trailing_taken;
+		length = (available < max_size) ? available : max_size;
+
+		*data = receive_handle->trailing + receive_handle->trailing_taken;
+		receive_handle->trailing_taken += length;
+	}
+
+	return length;
+
+}
+
 static bool receive_packet_size_is_valid (
 	const ReceiveCursor *cursor, const size_t packet_size
 ) {
@@ -215,7 +266,7 @@ static u8 receive_handle_packet_data (
 			receive_handle->spare_packet = NULL;
 			receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 
-			stop = cursor->dispatch (receive_handle, packet);
+			stop = receive_handle_dispatch (receive_handle, cursor, packet);
 		}
 
 		else {
@@ -265,7 +316,7 @@ static u8 receive_handle_packet_start (
 
 		if (packet->data_size == 0) {
 			receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
-			stop = cursor->dispatch (receive_handle, packet);
+			stop = receive_handle_dispatch (receive_handle, cursor, packet);
 		}
 
 		else {

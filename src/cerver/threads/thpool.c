@@ -143,6 +143,8 @@ static Thpool *thpool_new (void) {
 
 		thpool->space_fd = -1;
 		thpool->space_waiting = false;
+
+		(void) memset (&thpool->stats, 0, sizeof (ThpoolStats));
 	}
 
 	return thpool;
@@ -212,6 +214,61 @@ static void thpool_space_clear (Thpool *thpool) {
 
 }
 
+#pragma region stats
+
+static u64 thpool_elapsed_microseconds (
+	const struct timespec *start, const struct timespec *end
+) {
+
+	const long long elapsed =
+		((long long) (end->tv_sec - start->tv_sec) * THPOOL_MICROSECONDS_PER_SECOND)
+		+ ((end->tv_nsec - start->tv_nsec) / THPOOL_NANOSECONDS_PER_MICROSECOND);
+
+	return (elapsed > 0) ? (u64) elapsed : 0;
+
+}
+
+static u64 thpool_elapsed_since (const struct timespec *start) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return thpool_elapsed_microseconds (start, &now);
+
+}
+
+// the stats methods must be called with the mutex locked
+static void thpool_stats_queued (Thpool *thpool) {
+
+	thpool->stats.total_jobs += 1;
+
+	if (thpool->queue_count > thpool->stats.max_queued) {
+		thpool->stats.max_queued = thpool->queue_count;
+	}
+
+}
+
+static void thpool_stats_waited (Thpool *thpool, const ThpoolJob *job) {
+
+	const u64 elapsed = thpool_elapsed_since (&job->queued);
+
+	thpool->stats.wait_total_microseconds += elapsed;
+	thpool->stats.wait_histogram[thpool_histogram_bucket (elapsed)] += 1;
+
+}
+
+static void thpool_stats_completed (Thpool *thpool, const struct timespec *start) {
+
+	const u64 elapsed = thpool_elapsed_since (start);
+
+	thpool->stats.completed_jobs += 1;
+	thpool->stats.run_total_microseconds += elapsed;
+	thpool->stats.run_histogram[thpool_histogram_bucket (elapsed)] += 1;
+
+}
+
+#pragma endregion
+
 // the queue methods must be called with the mutex locked
 static void thpool_queue_push (
 	Thpool *thpool,
@@ -224,8 +281,11 @@ static void thpool_queue_push (
 	thpool->jobs[idx].work = work;
 	thpool->jobs[idx].reject = reject;
 	thpool->jobs[idx].args = args;
+	(void) clock_gettime (CLOCK_MONOTONIC, &thpool->jobs[idx].queued);
 
 	thpool->queue_count += 1;
+
+	thpool_stats_queued (thpool);
 
 	(void) pthread_cond_signal (thpool->has_jobs);
 
@@ -256,6 +316,7 @@ static void thpool_queue_reject_all (Thpool *thpool) {
 
 	while (thpool->queue_count) {
 		ThpoolJob job = thpool_queue_pop (thpool);
+		thpool->stats.dropped_jobs += 1;
 
 		(void) pthread_mutex_unlock (thpool->mutex);
 
@@ -324,11 +385,18 @@ static void *thread_do (void *thread_ptr) {
 		ThpoolJob job = thpool_queue_pop (thpool);
 		thpool->num_threads_working += 1;
 
+		thpool_stats_waited (thpool, &job);
+
 		(void) pthread_mutex_unlock (thpool->mutex);
+
+		struct timespec start = { 0, 0 };
+		(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
 		if (job.work) job.work (job.args);
 
 		(void) pthread_mutex_lock (thpool->mutex);
+
+		thpool_stats_completed (thpool, &start);
 
 		thread_do_finish_job (thpool);
 	}
@@ -440,6 +508,10 @@ static int thpool_add_work_internal (
 
 	(void) pthread_mutex_lock (thpool->mutex);
 
+	if (wait && thpool->accepting && thpool_queue_is_full (thpool)) {
+		thpool->stats.waited_jobs += 1;
+	}
+
 	while (wait && thpool->accepting && thpool_queue_is_full (thpool)) {
 		(void) pthread_cond_wait (thpool->has_space, thpool->mutex);
 	}
@@ -447,6 +519,10 @@ static int thpool_add_work_internal (
 	if (thpool->accepting && !thpool_queue_is_full (thpool)) {
 		thpool_queue_push (thpool, work, reject, args);
 		retval = 0;
+	}
+
+	else {
+		thpool->stats.rejected_jobs += 1;
 	}
 
 	(void) pthread_mutex_unlock (thpool->mutex);
@@ -625,6 +701,73 @@ unsigned int thpool_get_queue_size (Thpool *thpool) {
 
 }
 
+// copies the current stats of the thpool
+void thpool_get_stats (Thpool *thpool, ThpoolStats *stats) {
+
+	if (thpool && stats) {
+		(void) pthread_mutex_lock (thpool->mutex);
+		(void) memcpy (stats, &thpool->stats, sizeof (ThpoolStats));
+		(void) pthread_mutex_unlock (thpool->mutex);
+	}
+
+}
+
+// returns the bucket of the histograms for an elapsed time
+unsigned int thpool_histogram_bucket (const u64 microseconds) {
+
+	unsigned int bucket = 0;
+	while (
+		(bucket <= THPOOL_HISTOGRAM_MAX_EXPONENT)
+		&& (microseconds > (((u64) 1 << bucket) * THPOOL_MICROSECONDS_PER_MILLISECOND))
+	) {
+		bucket += 1;
+	}
+
+	return bucket;
+
+}
+
+static void thpool_histogram_print (
+	const char *name, const u64 histogram[THPOOL_HISTOGRAM_BUCKETS]
+) {
+
+	cerver_log_msg ("%s:", name);
+
+	for (unsigned int i = 0; i <= THPOOL_HISTOGRAM_MAX_EXPONENT; i++) {
+		if (histogram[i]) {
+			cerver_log_msg ("\t<= %lu ms: %lu", ((u64) 1 << i), histogram[i]);
+		}
+	}
+
+	if (histogram[THPOOL_HISTOGRAM_BUCKETS - 1]) {
+		cerver_log_msg (
+			"\t> %lu ms: %lu",
+			((u64) 1 << THPOOL_HISTOGRAM_MAX_EXPONENT),
+			histogram[THPOOL_HISTOGRAM_BUCKETS - 1]
+		);
+	}
+
+}
+
+// prints the stats with the cerver log
+void thpool_stats_print (const ThpoolStats *stats) {
+
+	if (stats) {
+		cerver_log_msg ("Thpool total jobs:             %lu", stats->total_jobs);
+		cerver_log_msg ("Thpool completed jobs:         %lu", stats->completed_jobs);
+		cerver_log_msg ("Thpool rejected jobs:          %lu", stats->rejected_jobs);
+		cerver_log_msg ("Thpool dropped jobs:           %lu", stats->dropped_jobs);
+		cerver_log_msg ("Thpool waited jobs:            %lu", stats->waited_jobs);
+		cerver_log_msg ("Thpool max queued:             %u", stats->max_queued);
+		cerver_log_msg ("Thpool wait total (us):        %lu", stats->wait_total_microseconds);
+		cerver_log_msg ("Thpool run total (us):         %lu", stats->run_total_microseconds);
+
+		thpool_histogram_print ("Thpool wait", stats->wait_histogram);
+		thpool_histogram_print ("Thpool run", stats->run_histogram);
+	}
+
+}
+
 // returns true if the thpool does NOT have any working thread
 bool thpool_is_empty (Thpool *thpool) {
 
@@ -712,6 +855,8 @@ static int thpool_wait_space_check (Thpool *thpool, const bool wait) {
 
 	// a notification is only written while there is someone waiting
 	thpool->space_waiting = (retval == -1);
+
+	if (retval == -1) thpool->stats.waited_jobs += 1;
 
 	(void) pthread_mutex_unlock (thpool->mutex);
 

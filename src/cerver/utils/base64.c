@@ -3,8 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// the AVX implementation is only compiled when the target supports it
-#if defined (__AVX__) || defined (__AVX2__)
+// the AVX2 implementation is only compiled when the target supports it,
+// its intrinsics are AVX2 only, AVX alone is not enough
+#if defined (__AVX2__)
 #include <x86intrin.h>
 #endif
 
@@ -411,7 +412,7 @@ size_t chromium_base64_decode (char *dest, const char *src, size_t len) {
 
 }
 
-#if defined (__AVX__) || defined (__AVX2__)
+#if defined (__AVX2__)
 
 /**
 * This code borrows from Wojciech Mula's library at
@@ -620,7 +621,7 @@ size_t base64_encode (
 	char *encoded, const char *input, size_t inlen
 ) {
 
-	#if defined (__AVX__) || defined (__AVX2__)
+	#if defined (__AVX2__)
 	return fast_avx2_base64_encode (encoded, input, inlen);
 	#endif
 
@@ -632,7 +633,7 @@ size_t base64_decode (
 	char *output, const char *bufcoded, size_t codedlen
 ) {
 
-	#if defined (__AVX__) || defined (__AVX2__)
+	#if defined (__AVX2__)
 	return fast_avx2_base64_decode (output, bufcoded, codedlen);
 	#endif
 

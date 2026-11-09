@@ -59,6 +59,47 @@ static void test_cerver_base_configuration (void) {
 
 }
 
+#define CERVER_INFO_FILL				'a'
+#define CERVER_INFO_FLAG_VALUE			2
+#define CERVER_INFO_PORT				7400
+
+// the info of a cerver comes from the network: its strings without a NUL are read up to their sizes,
+// and a flag with any other value than 0 or 1 is read as true, without loading an invalid bool
+static void test_cerver_deserialize (void) {
+
+	SCerver scerver;
+	(void) memset (&scerver, 0, sizeof (SCerver));
+
+	scerver.type = CERVER_TYPE_CUSTOM;
+	(void) memset (scerver.name, CERVER_INFO_FILL, S_CERVER_NAME_LENGTH);
+	(void) memset (scerver.welcome, CERVER_INFO_FILL, S_CERVER_WELCOME_LENGTH);
+	scerver.protocol = PROTOCOL_TCP;
+	scerver.port = CERVER_INFO_PORT;
+
+	(void) memset (&scerver.use_ipv6, CERVER_INFO_FLAG_VALUE, sizeof (bool));
+	(void) memset (&scerver.auth_required, CERVER_INFO_FLAG_VALUE, sizeof (bool));
+
+	CerverReport *report = cerver_deserialize (&scerver);
+	test_check_ptr (report);
+
+	test_check_unsigned_eq (report->name->len, S_CERVER_NAME_LENGTH, NULL);
+	test_check_unsigned_eq (report->welcome->len, S_CERVER_WELCOME_LENGTH, NULL);
+	test_check_true (report->use_ipv6);
+	test_check_true (report->auth_required);
+	test_check_false (report->uses_sessions);
+	test_check_unsigned_eq (report->port, CERVER_INFO_PORT, NULL);
+
+	cerver_report_delete (report);
+
+	// an empty welcome is not created
+	scerver.welcome[0] = '\0';
+	report = cerver_deserialize (&scerver);
+	test_check_ptr (report);
+	test_check_null_ptr (report->welcome);
+	cerver_report_delete (report);
+
+}
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -68,6 +109,7 @@ int main (int argc, char **argv) {
 	(void) printf ("Testing CERVER...\n");
 
 	test_cerver_base_configuration ();
+	test_cerver_deserialize ();
 
 	(void) printf ("\nDone with CERVER tests!\n\n");
 

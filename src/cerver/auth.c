@@ -161,13 +161,10 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 // only the bytes of the session id are copied, it is shorter than the token,
 // copying TOKEN_SIZE bytes read past its end
-static void auth_token_set (SToken *token, const String *session_id) {
+// the session id is read with the client's session lock
+static void auth_token_set (SToken *token, const Client *client) {
 
-	const size_t token_len = (session_id->len < (TOKEN_SIZE - 1)) ?
-		session_id->len : (TOKEN_SIZE - 1);
-
-	(void) memcpy (token->token, session_id->str, token_len);
-	token->token[token_len] = '\0';
+	(void) client_get_session_id (client, token->token, TOKEN_SIZE);
 
 }
 
@@ -608,7 +605,7 @@ static CerverAuthError auth_try (Packet *packet) {
 					// if we are successfull, send success packet
 					if (packet->cerver->use_sessions) {
 						SToken token = { { 0 } };
-						auth_token_set (&token, client->session_id);
+						auth_token_set (&token, client);
 
 						auth_send_success_packet (
 							packet->cerver,
@@ -625,13 +622,8 @@ static CerverAuthError auth_try (Packet *packet) {
 						);
 					}
 
-					// FIXME: this is a quick fix
-					// we should have a better way when after we refactor handler methods
-					// create a dedicated thread to handle connection if needed
-					(void) cerver_register_new_connection_normal_default_select_handler (
-						packet->cerver, client, packet->connection
-					);
-
+					// the events run before the handler owns the connection,
+					// its receive thread can delete it as soon as it starts
 					cerver_event_trigger (
 						CERVER_EVENT_CLIENT_SUCCESS_AUTH,
 						packet->cerver,
@@ -642,6 +634,13 @@ static CerverAuthError auth_try (Packet *packet) {
 						CERVER_EVENT_CLIENT_CONNECTED,
 						packet->cerver,
 						client, packet->connection
+					);
+
+					// FIXME: this is a quick fix
+					// we should have a better way when after we refactor handler methods
+					// create a dedicated thread to handle connection if needed
+					(void) cerver_register_new_connection_normal_default_select_handler (
+						packet->cerver, client, packet->connection
 					);
 				}
 
@@ -676,12 +675,6 @@ static CerverAuthError auth_try (Packet *packet) {
 				);
 
 				if (match) {
-					// select how client connection will be handled
-					// based on cerver's handler type
-					(void) cerver_handler_register_connection (
-						packet->cerver, match, packet->connection
-					);
-
 					// send success auth packet to client
 					auth_send_success_packet (
 						packet->cerver,
@@ -689,10 +682,17 @@ static CerverAuthError auth_try (Packet *packet) {
 						NULL, 0
 					);
 
+					// the event runs before the handler owns the connection
 					cerver_event_trigger (
 						CERVER_EVENT_CLIENT_NEW_CONNECTION,
 						packet->cerver,
 						match, packet->connection
+					);
+
+					// select how client connection will be handled
+					// based on cerver's handler type
+					(void) cerver_handler_register_connection (
+						packet->cerver, match, packet->connection
 					);
 				}
 			}
@@ -741,7 +741,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 						// if we are successfull, send success packet
 						if (packet->cerver->use_sessions) {
 							SToken token = { { 0 } };
-							auth_token_set (&token, client->session_id);
+							auth_token_set (&token, client);
 
 							auth_send_success_packet (
 								packet->cerver,

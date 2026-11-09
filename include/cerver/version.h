@@ -3,10 +3,10 @@
 
 #include "cerver/config.h"
 
-#define CERVER_VERSION				"2.0b-62"
-#define CERVER_VERSION_NAME			"Beta 2.0b-62"
-#define CERVER_VERSION_DATE			"08/11/2026"
-#define CERVER_VERSION_TIME			"18:33 CST"
+#define CERVER_VERSION				"2.0b-63"
+#define CERVER_VERSION_NAME			"Beta 2.0b-63"
+#define CERVER_VERSION_DATE			"09/11/2026"
+#define CERVER_VERSION_TIME			"06:35 CST"
 #define CERVER_VERSION_AUTHOR		"Erick Salas"
 
 #ifdef __cplusplus

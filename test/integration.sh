@@ -19,7 +19,10 @@ PAIRS=(
 	cerver/auth
 	cerver/sessions
 	cerver/threads
+	cerver/queue
 	handler
+	balancer/round_robin
+	balancer/handler_id
 	web/web
 	web/json
 	web/auth
@@ -33,6 +36,8 @@ PAIRS=(
 	web/router
 	web/features
 )
+
+SERVICES_ADDRESS=127.0.0.1
 
 TAG=test
 
@@ -59,6 +64,8 @@ RUN_FLAGS=(
 	--rm
 	--cap-add=SYS_PTRACE
 	--security-opt seccomp=unconfined
+	--add-host service-1:$SERVICES_ADDRESS
+	--add-host service-2:$SERVICES_ADDRESS
 	-e CLIENT_SECONDS="$CLIENT_SECONDS"
 	-e ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:abort_on_error=0}"
 	-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}"

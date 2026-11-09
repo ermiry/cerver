@@ -420,6 +420,16 @@ CERVER_EXPORT Packet *packet_create_request (
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_ping (void);
 
+// initializes an already allocated packet with request related values
+CERVER_EXPORT void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
+// initializes an already allocated packet as a ping request
+CERVER_EXPORT void packet_init_ping (Packet *packet);
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
@@ -433,6 +443,14 @@ CERVER_EXPORT Packet *packet_generate_request (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
+);
+
+// sends a packet of a connection's send queue
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	struct _Client *client, struct _Connection *connection
 );
 
 // works just as packet_send () but the socket's write mutex won't be locked
