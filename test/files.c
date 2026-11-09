@@ -303,6 +303,74 @@ static void test_files_image_get_type_without_file (void) {
 
 #pragma endregion
 
+#define FILES_HEADER_NAME			"image.png"
+#define FILES_HEADER_LENGTH			256
+
+static void files_header_set (FileHeader *file_header, const char *filename) {
+
+	(void) memset (file_header, 0, sizeof (FileHeader));
+	(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
+	file_header->len = FILES_HEADER_LENGTH;
+
+}
+
+// only a single, NUL terminated name is a valid filename of a FileHeader
+static void test_files_header_is_valid (void) {
+
+	FileHeader file_header;
+
+	files_header_set (&file_header, FILES_HEADER_NAME);
+	test_check_true (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, "");
+	test_check_false (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, ".");
+	test_check_false (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, "..");
+	test_check_false (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, "../secret");
+	test_check_false (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, "/etc/passwd");
+	test_check_false (file_header_is_valid (&file_header));
+
+	files_header_set (&file_header, "directory/image.png");
+	test_check_false (file_header_is_valid (&file_header));
+
+	// a name with dots that is not a directory reference is valid
+	files_header_set (&file_header, "..image.png");
+	test_check_true (file_header_is_valid (&file_header));
+
+	// a filename without its NUL would be read past the header
+	(void) memset (file_header.filename, 'a', FILENAME_DEFAULT_SIZE);
+	test_check_false (file_header_is_valid (&file_header));
+
+	test_check_false (file_header_is_valid (NULL));
+
+}
+
+// the header is copied from the data of a packet, even if it is not aligned
+static void test_files_header_get (void) {
+
+	FileHeader expected;
+	files_header_set (&expected, FILES_HEADER_NAME);
+
+	char data[sizeof (FileHeader) + 1] = { 0 };
+	(void) memcpy (data + 1, &expected, sizeof (FileHeader));
+
+	FileHeader file_header;
+	test_check_true (file_header_get (data + 1, sizeof (FileHeader), &file_header));
+	test_check_str_eq (file_header.filename, FILES_HEADER_NAME, NULL);
+	test_check_unsigned_eq (file_header.len, FILES_HEADER_LENGTH, NULL);
+
+	test_check_false (file_header_get (data + 1, sizeof (FileHeader) - 1, &file_header));
+	test_check_false (file_header_get (NULL, sizeof (FileHeader), &file_header));
+
+}
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -316,6 +384,8 @@ int main (int argc, char **argv) {
 	test_files_get_file_extension_reference ();
 	test_file_read ();
 	test_file_n_read ();
+	test_files_header_is_valid ();
+	test_files_header_get ();
 
 	// images
 	test_files_image_type_to_string ();
