@@ -391,10 +391,15 @@ static void *handler_do (void *handler_ptr) {
 		if (handler->data_create)
 			handler->data = handler->data_create (handler->data_create_args);
 
-		// mark the handler as alive and ready
+		// mark the handler as alive and ready, the cerver waits for it in its condition
 		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {
-			case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive += 1; break;
+			case HANDLER_TYPE_CERVER:
+				handler->cerver->num_handlers_alive += 1;
+				if (handler->cerver->handlers_alive_cond) {
+					(void) pthread_cond_broadcast (handler->cerver->handlers_alive_cond);
+				}
+				break;
 			case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive += 1; break;
 			case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive += 1; break;
 			default: break;

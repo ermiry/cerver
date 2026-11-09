@@ -515,6 +515,7 @@ Cerver *cerver_new (void) {
 		cerver->num_handlers_alive = 0;
 		cerver->num_handlers_working = 0;
 		cerver->handlers_lock = NULL;
+		cerver->handlers_alive_cond = NULL;
 
 		cerver->check_packets = CERVER_DEFAULT_CHECK_PACKETS;
 		cerver->max_bad_packets = CERVER_DEFAULT_MAX_BAD_PACKETS;
@@ -603,6 +604,8 @@ void cerver_delete (void *ptr) {
 			pthread_mutex_destroy (cerver->handlers_lock);
 			free (cerver->handlers_lock);
 		}
+
+		thread_cond_delete (cerver->handlers_alive_cond);
 
 		admin_cerver_delete (cerver->admin);
 
@@ -2006,11 +2009,12 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
 
 		if (!errors) {
 			// wait for all handlers to be initialized,
-			// they mark themselves alive with the handlers lock
-			const struct timespec interval = { 0, CERVER_HANDLERS_WAIT_NANOSECONDS };
-			while (cerver_get_n_handlers_alive (cerver) < started) {
-				(void) nanosleep (&interval, NULL);
+			// they mark themselves alive with the handlers lock and signal its condition
+			(void) pthread_mutex_lock (cerver->handlers_lock);
+			while (cerver->num_handlers_alive < started) {
+				(void) pthread_cond_wait (cerver->handlers_alive_cond, cerver->handlers_lock);
 			}
+			(void) pthread_mutex_unlock (cerver->handlers_lock);
 
 			#ifdef CERVER_DEBUG
 			cerver_log (
@@ -2189,6 +2193,8 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 
 		cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (cerver->handlers_lock, NULL);
+
+		cerver->handlers_alive_cond = thread_cond_new ();
 
 		errors |= cerver_app_handlers_start (cerver);
 
