@@ -1008,6 +1008,50 @@ bool files_image_extension_is_png (const char *filename) {
 
 #pragma region send
 
+static const char *FILE_HEADER_CURRENT_DIRECTORY = ".";
+static const char *FILE_HEADER_PARENT_DIRECTORY = "..";
+
+// a FileHeader that comes from a packet is used only if its filename is NUL terminated,
+// not empty, a single name (without '/') and different from "." and "..",
+// so it can not read past the header or reach a file outside of the configured paths
+bool file_header_is_valid (const FileHeader *file_header) {
+
+	bool valid = false;
+
+	if (file_header) {
+		const char *end = (const char *) memchr (
+			file_header->filename, '\0', FILENAME_DEFAULT_SIZE
+		);
+
+		valid = end
+			&& (end != file_header->filename)
+			&& !strchr (file_header->filename, '/')
+			&& strcmp (file_header->filename, FILE_HEADER_CURRENT_DIRECTORY)
+			&& strcmp (file_header->filename, FILE_HEADER_PARENT_DIRECTORY);
+	}
+
+	return valid;
+
+}
+
+// copies the FileHeader at the start of the data of a packet and validates it
+// returns true if the data has a valid header
+bool file_header_get (
+	const void *data, const size_t data_size, FileHeader *file_header
+) {
+
+	bool valid = false;
+
+	if (data && file_header && (data_size >= sizeof (FileHeader))) {
+		(void) memcpy (file_header, data, sizeof (FileHeader));
+
+		valid = file_header_is_valid (file_header);
+	}
+
+	return valid;
+
+}
+
 // sends a first packet with file info
 // returns 0 on success, 1 on error
 static u8 file_send_header (
