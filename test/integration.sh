@@ -20,6 +20,7 @@ PAIRS=(
 	cerver/sessions
 	cerver/threads
 	cerver/queue
+	cerver/udp
 	handler
 	balancer/round_robin
 	balancer/handler_id
