@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#include <poll.h>
+
 #include <sys/socket.h>
 
 #include <arpa/inet.h>
@@ -241,6 +243,7 @@ Connection *connection_new (void) {
 		connection->cerver_report = NULL;
 
 		connection->max_sleep = CONNECTION_DEFAULT_MAX_SLEEP;
+		connection->connect_timeout = CONNECTION_DEFAULT_CONNECT_TIMEOUT;
 		connection->active = false;
 		connection->updating = false;
 		connection->ending = false;
@@ -532,6 +535,14 @@ void connection_set_state (
 void connection_set_max_sleep (Connection *connection, u32 max_sleep) {
 
 	if (connection) connection->max_sleep = max_sleep;
+
+}
+
+// sets how long a connect () to each address of the cerver can take, in milliseconds,
+// after it the next resolved address is tried (default CONNECTION_DEFAULT_CONNECT_TIMEOUT)
+void connection_set_connect_timeout (Connection *connection, u32 timeout) {
+
+	if (connection) connection->connect_timeout = timeout;
 
 }
 
@@ -904,21 +915,167 @@ void connection_wake_connect (Connection *connection) {
 
 }
 
-// try to connect a client to an address (server) with exponential backoff,
-// each wait can be interrupted by the end of the connection or a client teardown
-static u8 connection_try (
-	Connection *connection, const struct sockaddr_storage address
+// a new socket of the family of the address, in place of the current one,
+// a socket whose connect () failed can not be used again
+// returns 0 on success, 1 on error
+static u8 connection_socket_replace (
+	Connection *connection, const struct sockaddr_storage *address
 ) {
 
-	// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
-	const socklen_t address_size = sock_address_size (&address);
+	if (connection->socket->sock_fd >= 0) {
+		(void) close (connection->socket->sock_fd);
+	}
+
+	const int type = connection_init_socket_type (connection->protocol);
+	connection->socket->sock_fd = (type < 0) ? -1 : socket (address->ss_family, type, 0);
+
+	return (connection->socket->sock_fd >= 0) ? 0 : 1;
+
+}
+
+// the result of a non blocking connect () that finished
+// returns 0 if the socket is connected, 1 on error
+static u8 connection_connect_result (const int sock_fd) {
+
+	int error = 0;
+	socklen_t length = (socklen_t) sizeof (int);
+
+	return (!getsockopt (sock_fd, SOL_SOCKET, SO_ERROR, &error, &length) && !error) ? 0 : 1;
+
+}
+
+// waits up to the connect timeout for a non blocking connect (),
+// in steps of CONNECTION_CONNECT_POLL_INTERVAL ms, so the end of the connection
+// or a client teardown stops the wait
+// returns 0 if the socket connected, 1 on error, timeout or cancel
+static u8 connection_connect_wait (Connection *connection) {
+
+	u8 retval = 1;
+
+	struct pollfd connecting;
+	connecting.fd = connection->socket->sock_fd;
+	connecting.events = POLLOUT;
+	connecting.revents = 0;
+
+	u32 waited = 0;
+	bool waiting = true;
+	while (waiting) {
+		const u32 remaining = (connection->connect_timeout > waited) ?
+			(connection->connect_timeout - waited) : 0;
+		const u32 step = (remaining < CONNECTION_CONNECT_POLL_INTERVAL) ?
+			remaining : CONNECTION_CONNECT_POLL_INTERVAL;
+
+		const int ready = poll (&connecting, 1, (int) step);
+		if (ready > 0) {
+			retval = connection_connect_result (connecting.fd);
+			waiting = false;
+		}
+
+		else if ((ready < 0) && (errno != EINTR)) {
+			waiting = false;
+		}
+
+		else if (ready == 0) {
+			waited += step;
+			waiting = (waited < connection->connect_timeout)
+				&& !connection_connect_cancelled (connection);
+		}
+	}
+
+	return retval;
+
+}
+
+// one connect () to the address that can take up to the connect timeout,
+// the socket is back in blocking mode after it
+// returns 0 on success, 1 on error
+static u8 connection_connect_address (
+	Connection *connection, const struct sockaddr_storage *address
+) {
+
+	u8 retval = 1;
+
+	const int sock_fd = connection->socket->sock_fd;
+	if (sock_set_blocking (sock_fd, false)) {
+		// the real size of the address family, sizeof (struct sockaddr) breaks IPv6
+		if (!connect (sock_fd, (const struct sockaddr *) address, sock_address_size (address))) {
+			retval = 0;
+		}
+
+		else if (errno == EINPROGRESS) {
+			retval = connection_connect_wait (connection);
+		}
+
+		(void) sock_set_blocking (sock_fd, true);
+	}
+
+	return retval;
+
+}
+
+// the addresses of the host are resolved again in every round,
+// if the host can not be resolved the last address is tried
+static void connection_connect_addresses (
+	const Connection *connection, NetworkAddresses *addresses
+) {
+
+	if (network_resolve_addresses (
+		connection->ip, connection->port,
+		connection->use_ipv6, connection->protocol,
+		addresses
+	)) {
+		addresses->addresses[0] = connection->address;
+		addresses->count = 1;
+	}
+
+}
+
+// one connect () to each resolved address in turn, the first one that connects
+// is kept as the address of the connection
+// a fresh socket is used for the first address if it has the same family,
+// every other attempt gets a new socket
+// returns 0 on success, 1 if none of them connected
+static u8 connection_connect_round (Connection *connection, const bool fresh) {
+
+	u8 retval = 1;
+
+	NetworkAddresses addresses;
+	connection_connect_addresses (connection, &addresses);
+
+	bool reuse = fresh && (connection->socket->sock_fd >= 0);
+	for (
+		unsigned int index = 0;
+		retval && (index < addresses.count) && !connection_connect_cancelled (connection);
+		index++
+	) {
+		const struct sockaddr_storage *address = &addresses.addresses[index];
+		const bool same_family = (connection->address.ss_family == address->ss_family);
+
+		if ((reuse && same_family) || !connection_socket_replace (connection, address)) {
+			if (!connection_connect_address (connection, address)) {
+				connection->address = *address;
+				retval = 0;
+			}
+		}
+
+		reuse = false;
+	}
+
+	return retval;
+
+}
+
+// try to connect a client to the addresses of the cerver with exponential backoff
+// between each round, each wait can be interrupted by the end of the connection or a client teardown
+static u8 connection_try (Connection *connection) {
 
 	// the first attempt is always done, a max sleep smaller than the first wait
 	// never attempted to connect
 	u32 numsec = CONNECTION_FIRST_RETRY_SECONDS;
-	while (connect (connection->socket->sock_fd,
-		(const struct sockaddr *) &address,
-		address_size)) {
+	bool fresh = true;
+	while (connection_connect_round (connection, fresh)) {
+		fresh = false;
+
 		if (numsec > connection->max_sleep) return 1;
 
 		if (!connection_try_wait (connection, numsec)) return 1;
@@ -931,6 +1088,7 @@ static u8 connection_try (
 }
 
 // starts a connection -> connects to the specified ip and port
+// every address that the ip resolves to is tried in turn, see connection_set_connect_timeout ()
 // sets connection's state based on result
 // returns 0 on success, 1 on error
 int connection_connect (Connection *connection) {
@@ -940,7 +1098,7 @@ int connection_connect (Connection *connection) {
 	if (connection) {
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
-		retval = connection_try (connection, connection->address);
+		retval = connection_try (connection);
 
 		connection_set_state (
 			connection,
