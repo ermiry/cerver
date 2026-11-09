@@ -105,6 +105,17 @@ jobs:
           BUILD: 0
         run: bash test/repeat.sh test/bin/cerver/core 100
 
+  performance:
+    name: Cerver allocations per connection
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Allocations
+        run: bash test/performance.sh
+
   fuzz:
     name: Cerver long fuzzing
     if: github.event_name == 'workflow_dispatch'
