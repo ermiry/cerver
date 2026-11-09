@@ -237,7 +237,8 @@ char *c_string_create (const char *format, ...) {
 		va_list args;
 		va_start (args, format);
 
-		vasprintf (&result, format, args);
+		// the result is undefined when vasprintf () fails
+		if (vasprintf (&result, format, args) < 0) result = NULL;
 
 		va_end (args);
 	}

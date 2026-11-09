@@ -35,6 +35,9 @@ void lobby_poll (void *ptr);
 
 void *lobby_default_id_generator (const void *data_ptr) {
 
+	// the default id does not depend on the data
+	(void) data_ptr;
+
 	time_t rawtime = time (NULL);
 	struct tm *timeinfo = localtime (&rawtime);
 	// we generate the string timestamp in order to generate the lobby id
@@ -117,12 +120,12 @@ void lobby_stats_print (Lobby *lobby) {
 			printf ("\nLobby's %s stats: ", lobby->id->str);
 			printf ("\nThreshold time:            %ld\n", lobby->stats->threshold_time);
 
-			printf ("Total packets received:        %ld\n", lobby->stats->n_packets_received);
-			printf ("Total receives done:           %ld\n", lobby->stats->n_receives_done);
-			printf ("Total bytes received:          %ld\n\n", lobby->stats->bytes_received);
+			printf ("Total packets received:        %lu\n", lobby->stats->n_packets_received);
+			printf ("Total receives done:           %lu\n", lobby->stats->n_receives_done);
+			printf ("Total bytes received:          %lu\n\n", lobby->stats->bytes_received);
 
-			printf ("N packets sent:                %ld\n", lobby->stats->n_packets_sent);
-			printf ("Total bytes sent:              %ld\n", lobby->stats->bytes_sent);
+			printf ("N packets sent:                %lu\n", lobby->stats->n_packets_sent);
+			printf ("Total bytes sent:              %lu\n", lobby->stats->bytes_sent);
 
 			printf ("\nReceived packets:\n");
 			packets_per_type_print (lobby->stats->received_packets);
@@ -668,6 +671,12 @@ Lobby *lobby_create (Cerver *cerver, Client *client,
 					}
 				}
 
+				// the custom handler was ignored before
+				else if (custom_handler) {
+					lobby->handler = custom_handler;
+					lobby->default_handler = false;
+				}
+
 				// make the client that make the request, the lobby owner
 				Player *owner = player_new ();
 				if (owner) {
@@ -852,6 +861,26 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 }
 
 // starts the lobby's handler and/or update method in the cervers thpool
+// the lobby handler & update are actions that return void,
+// so they are called from threads with the signature that pthread expects
+static void *lobby_handler_thread (void *cerver_lobby_ptr) {
+
+	CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+	cerver_lobby->lobby->handler (cerver_lobby_ptr);
+
+	return NULL;
+
+}
+
+static void *lobby_update_thread (void *cerver_lobby_ptr) {
+
+	CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+	cerver_lobby->lobby->update (cerver_lobby_ptr);
+
+	return NULL;
+
+}
+
 u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 	u8 retval = 1;
@@ -882,7 +911,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 			if (thread_create_detachable (
 				&lobby->handler_thread_id,
-				(void *(*)(void *)) lobby->handler,
+				lobby_handler_thread,
 				cerver_lobby
 			)) {
 				cerver_log_error (
@@ -921,7 +950,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 			if (thread_create_detachable (
 				&lobby->update_thread_id,
-				(void *(*)(void *)) lobby->update,
+				lobby_update_thread,
 				cerver_lobby
 			)) {
 				cerver_log_error (
@@ -974,8 +1003,8 @@ SLobby *lobby_serialize (Lobby *lobby) {
 	if (lobby) {
 		slobby = slobby_new ();
 		if (slobby) {
-			strncpy (slobby->id.str, lobby->id->str, 64);
-			slobby->id.len = (lobby->id->len >= 64) ? 64 : lobby->id->len;
+			(void) snprintf (slobby->id.str, sizeof (slobby->id.str), "%s", lobby->id->str);
+			slobby->id.len = (u16) strlen (slobby->id.str);
 			slobby->creation_timestamp = lobby->creation_time_stamp;
 			slobby->in_game = lobby->in_game;
 			slobby->running = lobby->running;

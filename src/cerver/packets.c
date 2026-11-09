@@ -966,6 +966,10 @@ static void packet_send_update_stats (
 	Lobby *lobby
 ) {
 
+	// they are only used with CLIENT_STATS and CONNECTION_STATS
+	(void) client;
+	(void) connection;
+
 	if (cerver) {
 		CERVER_STATS_ADD (cerver->stats->n_packets_sent, 1);
 		CERVER_STATS_ADD (cerver->stats->total_bytes_sent, sent);

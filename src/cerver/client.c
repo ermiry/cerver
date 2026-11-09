@@ -1712,8 +1712,7 @@ Packet *client_error_packet_generate (
 		SError *s_error = (SError *) end;
 		s_error->error_type = type;
 		s_error->timestamp = time (NULL);
-		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
-		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
 	}
 
 	return packet;

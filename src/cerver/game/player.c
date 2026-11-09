@@ -259,6 +259,9 @@ Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
 void player_broadcast_to_all (Cerver *cerver, const Lobby *lobby, Packet *packet,
 	Protocol protocol, int flags) {
 
+	// the protocol is taken from each player's connection
+	(void) protocol;
+
 	if (lobby && packet) {
 		Player *player = NULL;
 		for (ListElement *le = dlist_start (lobby->players); le; le = le->next) {

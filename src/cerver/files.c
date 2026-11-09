@@ -838,6 +838,9 @@ const char *files_image_type_extension (const ImageType type) {
 
 }
 
+// the bytes that are read to find the type of an image
+#define FILES_IMAGE_HEADER_SIZE			24
+
 ImageType files_image_get_type_from_file (const void *file_ptr) {
 
 	FILE *file = (FILE *) file_ptr;
@@ -847,9 +850,13 @@ ImageType files_image_get_type_from_file (const void *file_ptr) {
 	(void) fseek (file, 0, SEEK_END);
 	long len = ftell (file);
 	(void) fseek (file, 0, SEEK_SET);
-	if (len > 24) {
-		unsigned char buf[24] = { 0 };
-		(void) fread (buf, 1, 24, file);
+	if (len > FILES_IMAGE_HEADER_SIZE) {
+		unsigned char buf[FILES_IMAGE_HEADER_SIZE] = { 0 };
+
+		// a short read leaves the header zeroed, it has no known type then
+		if (fread (buf, 1, FILES_IMAGE_HEADER_SIZE, file) < FILES_IMAGE_HEADER_SIZE) {
+			(void) memset (buf, 0, FILES_IMAGE_HEADER_SIZE);
+		}
 
 		if (buf[0] == 0xFF && buf[1] == 0xD8 && buf[2] == 0xFF) {
 			type = IMAGE_TYPE_JPEG;
