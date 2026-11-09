@@ -1190,7 +1190,7 @@ static void connection_send_queue_clear (Connection *connection) {
 	Job *job = NULL;
 	while ((job = (Job *) job_queue_pull (connection->send_queue))) {
 		packet_delete (job->args);
-		job_delete (job);
+		job_return (connection->send_queue, job);
 	}
 
 }
@@ -1201,7 +1201,7 @@ void connection_stop_send (Connection *connection) {
 	if (connection && connection->send_queue) {
 		if (connection->send_thread_id) {
 			__atomic_store_n (&connection->send_thread_running, false, __ATOMIC_SEQ_CST);
-			bsem_post_all (connection->send_queue->has_jobs);
+			job_queue_signal (connection->send_queue);
 
 			(void) pthread_join (connection->send_thread_id, NULL);
 			connection->send_thread_id = 0;
@@ -1924,10 +1924,13 @@ void connection_send_packet (
 ) {
 
 	if (connection && connection->send_queue && packet) {
-		Job *job = job_create (NULL, packet);
+		// the job comes from the pool of the queue
+		Job *job = job_get (connection->send_queue);
 		if (job) {
+			job->args = packet;
+
 			if (job_queue_push (connection->send_queue, job)) {
-				job_delete (job);
+				job_return (connection->send_queue, job);
 				packet_delete (packet);
 			}
 		}
@@ -1944,6 +1947,9 @@ static u8 connection_send_thread_send (Connection *connection, Job *job) {
 
 	Packet *packet = (Packet *) job->args;
 
+	struct timespec start = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &start);
+
 	size_t sent = 0;
 	const u8 failed = packet_send_actual (
 		packet,
@@ -1952,9 +1958,20 @@ static u8 connection_send_thread_send (Connection *connection, Job *job) {
 	);
 
 	packet_delete (packet);
-	job_delete (job);
+
+	job_queue_record_run (connection->send_queue, &start);
+	job_return (connection->send_queue, job);
 
 	return failed;
+
+}
+
+// the send thread was asked to end, read with the lock of the send queue
+static bool connection_send_thread_stopped (const void *connection_ptr) {
+
+	const Connection *connection = (const Connection *) connection_ptr;
+
+	return !__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST);
 
 }
 
@@ -1971,16 +1988,12 @@ static void *connection_send_thread (void *connection_ptr) {
 	#endif
 
 	// a failed send does not end the thread, the connection can be connected again
-	Job *job = NULL;
-	while (__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)) {
-		bsem_wait (connection->send_queue->has_jobs);
+	while (!connection_send_thread_stopped (connection)) {
+		Job *job = (Job *) job_queue_pull_interruptible (
+			connection->send_queue, connection_send_thread_stopped, connection
+		);
 
-		while (
-			__atomic_load_n (&connection->send_thread_running, __ATOMIC_SEQ_CST)
-			&& (job = (Job *) job_queue_pull (connection->send_queue))
-		) {
-			(void) connection_send_thread_send (connection, job);
-		}
+		if (job) (void) connection_send_thread_send (connection, job);
 	}
 
 	#ifdef CONNECTION_DEBUG
