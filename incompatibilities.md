@@ -3,6 +3,20 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-4 (from 1.8b-3)
+
+- New fields (ABI): `Packet` (`release`, `release_args`), `Connection` (`shut_down`, `datagram_token`, `datagram_token_set`) and `Cerver` (`udp`, `udp_peer_timeout`, `udp_max_peers`, `udp_peers_count`)
+- `packet_delete ()` calls the `release` of the packet before it releases it, a packet that is filled by hand must have it as NULL
+- `MAX_UDP_PACKET_SIZE` is 65507 (the payload of an IPv4 UDP datagram), it was 65515: it is the default max received packet size of a cerver and of a client, so a TCP packet of 65508 to 65515 bytes is now too big by default
+- `PROTOCOL_UDP` works: a cerver receives datagrams of a single packet each, one with another size is a bad packet, and `packet_send ()` sends a packet in a single datagram and fails when it does not fit
+- An UDP cerver with authentication: a client sends its auth packet when it connects (the cerver does not ask for it), its success has the datagram token (after the session token with sessions), and every datagram after it carries the token after its packet, in both ways; the token stops a forged address but not someone who sees the traffic
+- An UDP cerver does not take admins: `cerver_start ()` fails when it has one, and an admin auth packet is a bad packet
+- An UDP cerver only sends its info to a peer that asks for it, and only answers a peer that did not authenticate up to `CERVER_UDP_AMPLIFICATION_FACTOR` times the bytes that it sent
+- The request (files) and game packets are bad packets in UDP: they need the socket of a connection, a peer does not have one
+- The auth packet of a cerver is sent by a TCP client when it gets the cerver info, an UDP client already sent it when it connected
+- The on hold poll thread only runs in a TCP cerver
+- An auth packet with a token of `sizeof (SToken)` bytes without its NUL is taken as credentials, it was read past the packet
+
 ## 1.8b-3 (from 1.8b-2)
 
 - New fields (ABI): `Handler` (`joinable`), `Client` (`session_lock`, `teardown_requested`, `event_threads`, the storages of its stats, file stats and lock, `recycle_next`), `ClientStats` (the storages of its packets per type) and `Cerver` (`connection_threads`, `event_threads`)
