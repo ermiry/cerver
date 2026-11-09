@@ -1,8 +1,6 @@
-name: Cerver Nightly
+name: Cerver Scheduled
 
 on:
-  schedule:
-    - cron: '0 3 * * *'
   workflow_dispatch:
 
 jobs:
@@ -55,7 +53,7 @@ jobs:
 
       - name: Fuzzing
         env:
-          SECONDS_PER_TARGET: 300
+          SECONDS_PER_TARGET: 1800
         run: bash test/fuzz.sh
 
       - name: Upload crashes
