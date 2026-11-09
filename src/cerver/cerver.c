@@ -1600,6 +1600,20 @@ static i32 cerver_network_create_socket (const Cerver *cerver) {
 
 }
 
+// a bind address decides the family of the socket,
+// even if cerver_set_network_values () changed use_ipv6 after cerver_set_bind_address ()
+static void cerver_network_init_family (Cerver *cerver) {
+
+	struct sockaddr_storage parsed;
+	if (
+		cerver->bind_address[0]
+		&& !network_parse_address (cerver->bind_address, cerver->port, &parsed)
+	) {
+		cerver->use_ipv6 = (parsed.ss_family == AF_INET6);
+	}
+
+}
+
 // inits the cerver networking capabilities
 // the socket is stored with __atomic, cerver_stop_request () can read it from another thread
 static u8 cerver_network_init (Cerver *cerver) {
@@ -1607,6 +1621,8 @@ static u8 cerver_network_init (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
+		cerver_network_init_family (cerver);
+
 		__atomic_store_n (&cerver->sock, cerver_network_create_socket (cerver), __ATOMIC_SEQ_CST);
 
 		if (cerver->sock >= 0) {
