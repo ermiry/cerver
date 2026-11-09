@@ -1,0 +1,127 @@
+name: Cerver Scheduled
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch the scheduled tests of each line
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: [core, http, nightly]
+    steps:
+      - name: Dispatch
+        run: gh workflow run scheduled.yml --repo "${{ github.repository }}" --ref "${{ matrix.ref }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  integration-thread:
+    name: Cerver integration tests with thread sanitizer
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Integration Tests
+        env:
+          SANITIZER: thread
+        run: bash test/integration.sh
+
+  units-thread:
+    name: Cerver in process tests with thread sanitizer
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Routing
+        env:
+          SANITIZER: thread
+        run: bash test/repeat.sh test/bin/routing 20
+
+      - name: Client features
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/features 20
+
+      - name: Client files
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/files 20
+
+      - name: Cerver lobby
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/lobby 20
+
+  repeat:
+    name: Cerver flaky hunter
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Threads pair
+        run: bash test/repeat.sh cerver/threads 200
+
+      - name: Balancer round robin pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/round_robin 50
+
+      - name: Balancer handler id pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh balancer/handler_id 50
+
+      - name: Client lifecycle
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/client/lifecycle 200
+
+      - name: Cerver core
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/core 100
+
+  fuzz:
+    name: Cerver long fuzzing
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Fuzzing
+        env:
+          SECONDS_PER_TARGET: 300
+        run: bash test/fuzz.sh
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts
+          path: ./fuzz-artifacts/
+          retention-days: 14
