@@ -354,13 +354,15 @@ int lobby_teardown (GameCerver *game_cerver, Lobby *lobby) {
 		lobby->running = false;
 		lobby->in_game = false;
 
-		// call the game type end method
-		if (lobby->game_type->end) lobby->game_type->end (lobby);
+		// call the game type end method, a lobby can have no game type
+		if (lobby->game_type && lobby->game_type->end) lobby->game_type->end (lobby);
 
-		// destroy the lobby game data
-		if (lobby->game_type) {
+		// destroy the lobby game data, lobby_delete () deleted it again before
+		if (lobby->game_data) {
 			if (lobby->game_data_delete) lobby->game_data_delete (lobby->game_data);
 			else free (lobby->game_data);
+
+			lobby->game_data = NULL;
 		}
 
 		// unregister the lobby from the game cerver
@@ -808,26 +810,19 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 		// check that the player is in the lobby
 		Player *found = player_get_from_lobby (lobby, player);
 		if (found) {
-			// remove the player from the lobby
-			player_unregister_from_lobby (lobby, player);
+			// the last player destroys the lobby when it is unregistered,
+			// so the lobby can not be used after it
+			const bool last = (lobby->n_current_players <= 1);
+			const bool owner = (lobby->owner == player);
 
-			// check if there are players left inside the lobby
-			if (lobby->n_current_players <= 0) {
-				// destroy the lobby
-				#ifdef CERVER_DEBUG
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Destroying lobby %s -- it is empty.",
-					lobby->id->str
-				);
-				#endif
-				lobby_delete (lobby);
-			}
+			// remove the player from the lobby
+			(void) player_unregister_from_lobby (lobby, player);
 
 			// check if the player was the owner
-			else if (!str_compare (lobby->owner->id, player->id)) {
+			if (!last && owner) {
 				// get a new owner
-				Player *new_owner = (Player *) (dlist_start (lobby->players))->data;
+				ListElement *start = dlist_start (lobby->players);
+				Player *new_owner = start ? (Player *) start->data : NULL;
 				if (new_owner) {
 					lobby->owner = new_owner;
 					#ifdef CERVER_DEBUG
@@ -860,7 +855,6 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 
 }
 
-// starts the lobby's handler and/or update method in the cervers thpool
 // the lobby handler & update are actions that return void,
 // so they are called from threads with the signature that pthread expects
 static void *lobby_handler_thread (void *cerver_lobby_ptr) {
@@ -881,6 +875,7 @@ static void *lobby_update_thread (void *cerver_lobby_ptr) {
 
 }
 
+// starts the lobby's handler and/or update method in the cervers thpool
 u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 	u8 retval = 1;

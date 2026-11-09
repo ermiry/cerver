@@ -177,7 +177,8 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
 				player_unregister_from_lobby_poll (lobby, player);
 			}
 
-			if (!dlist_remove (lobby->players, player, NULL)) {
+			// dlist_remove () returns the removed player, the check was inverted
+			if (dlist_remove (lobby->players, player, NULL)) {
 				lobby->n_current_players--;
 
 				#ifdef CERVER_DEBUG
