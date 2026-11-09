@@ -43,7 +43,8 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-#define CERVER_HANDLERS_WAIT_NANOSECONDS		1000000L
+// the inactive clients of one check that are logged by their id, the rest only by their count
+#define CERVER_INACTIVE_LOG_BATCH		256
 
 #pragma region global
 
@@ -2298,23 +2299,36 @@ void cerver_sleep (Cerver *cerver, u32 seconds) {
 
 static void cerver_shutdown_connection (void *connection_ptr, void *args);
 
-// the connections of an inactive client are shut down,
-// so their receive handlers end and remove them like any other closed connection
+// the ids of the clients that a check dropped, they are logged after the clients lock is released
+typedef struct CerverInactiveDropped {
+
+	u64 ids[CERVER_INACTIVE_LOG_BATCH];
+	unsigned int count;
+	unsigned int total;
+
+} CerverInactiveDropped;
+
+// the connections of an inactive client are shut down with the clients lock,
+// so their receive handlers end and remove them like any other closed connection,
+// a connection can not close its socket in the meantime and give its fd to another one
 static void cerver_inactive_check_client (
-	const Client *client, const Cerver *cerver, time_t current_time
+	const Client *client, const Cerver *cerver, time_t current_time,
+	CerverInactiveDropped *dropped
 ) {
 
 	const time_t last_activity = __atomic_load_n (&client->last_activity, __ATOMIC_RELAXED);
 
 	if ((current_time - last_activity) >= (time_t) cerver->max_inactive_time) {
-		cerver_log_warning (
-			"Client %ld has been inactive more than %d secs and will be dropped",
-			client->id, cerver->max_inactive_time
-		);
-
 		if (client->connections) {
 			(void) dlist_traverse (client->connections, cerver_shutdown_connection, NULL);
 		}
+
+		if (dropped->count < CERVER_INACTIVE_LOG_BATCH) {
+			dropped->ids[dropped->count] = client->id;
+			dropped->count += 1;
+		}
+
+		dropped->total += 1;
 	}
 
 }
@@ -2322,17 +2336,39 @@ static void cerver_inactive_check_client (
 // the recursion depth is the tree height, that is log (n) in an avl
 // must be called with the clients tree locked
 static void cerver_inactive_check (
-	const AVLNode *node, const Cerver *cerver, time_t current_time
+	const AVLNode *node, const Cerver *cerver, time_t current_time,
+	CerverInactiveDropped *dropped
 ) {
 
 	if (node) {
-		cerver_inactive_check (node->right, cerver, current_time);
+		cerver_inactive_check (node->right, cerver, current_time, dropped);
 
 		if (node->id) {
-			cerver_inactive_check_client ((const Client *) node->id, cerver, current_time);
+			cerver_inactive_check_client ((const Client *) node->id, cerver, current_time, dropped);
 		}
 
-		cerver_inactive_check (node->left, cerver, current_time);
+		cerver_inactive_check (node->left, cerver, current_time, dropped);
+	}
+
+}
+
+// the logs of a check are written without the clients lock
+static void cerver_inactive_check_log (
+	const Cerver *cerver, const CerverInactiveDropped *dropped
+) {
+
+	for (unsigned int index = 0; index < dropped->count; index++) {
+		cerver_log_warning (
+			"Client %lu has been inactive more than %d secs and will be dropped",
+			dropped->ids[index], cerver->max_inactive_time
+		);
+	}
+
+	if (dropped->total > dropped->count) {
+		cerver_log_warning (
+			"%u more inactive clients will be dropped from cerver %s",
+			dropped->total - dropped->count, cerver->info->name
+		);
 	}
 
 }
@@ -2346,11 +2382,17 @@ static void cerver_inactive_check_all (Cerver *cerver) {
 
 	time_t current_time = time (NULL);
 
+	CerverInactiveDropped dropped;
+	dropped.count = 0;
+	dropped.total = 0;
+
 	(void) pthread_mutex_lock (cerver->clients->mutex);
 
-	cerver_inactive_check (cerver->clients->root, cerver, current_time);
+	cerver_inactive_check (cerver->clients->root, cerver, current_time, &dropped);
 
 	(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+	cerver_inactive_check_log (cerver, &dropped);
 
 	cerver_log_debug (
 		"Done checking for inactive clients in cerver %s",
