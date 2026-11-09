@@ -687,6 +687,34 @@ Llegan a `nightly` por la rama. Cada uno tiene su test, que se vio fallar contra
 
   Los workflows no cambian.
 
+#### 4.3.7 El port del core de la 1.8 (Beta 2.0b-63)
+
+El core de `core` (de la 1.8b-1 a la 1.8b-3) entra a `http`. Los archivos sin HTTP se toman de `core` y en `handler.c`,
+`handler.h`, `cerver.c` y `cerver.h` se conservan las partes web (el receive HTTP, el contexto por hilo, el 503, el
+registro de las conexiones web y `cerver_create_web`).
+
+- **La funcionalidad de la 1.x:** el balancer (`CERVER_TYPE_BALANCER`), connect async, estados de la conexión, cola de
+  envío y la reconexión real del cliente.
+- **Asignaciones:** `Connection`, `Socket`, `CerverReceive` y `Client` reciclados en free-lists acotadas, con sus
+  stats y sus valores de sincronización dentro. GET de 8 a **2** asignaciones y POST JSON de 28 a **20**
+  (`test/performance.sh`), con el mismo throughput.
+- **Envío:** `http/response.c` usa `socket_send_vector ()` y `socket_send_can_retry ()` del core, sus helpers locales
+  se quitaron.
+- **Métricas:** los contadores y los histogramas del thpool (`ThpoolStats`) en `/cerver/metrics`.
+- **IPv6:** `cerver_set_bind_address`, `cerver_set_ipv6_only`, las IPv4 mapeadas como IPv4 en las conexiones y en
+  `http/proxy.c` (`NETWORK_IPV4_MAPPED_OFFSET`).
+- **Teardown:** handlers joinables, eventos y conexiones detachable contados en grupos, backoff interrumpible y la
+  gracia del drenado.
+- **Bugs del core que también estaban aquí:** el orden de `CERVER_EVENT_CLIENT_CONNECTED` (el data race del TSan del
+  push de la 2.0b-62), los paquetes sin handler que se fugaban, el `FileHeader` sin NUL o con `../`, el info del cerver
+  sin NUL, el `total_sent` de los envíos, `file_send_actual` con un solo `sendfile`, y los de la lista de
+  `branches.md` §5.
+- **Tests:** los del core (`routing`, `socket`, `network`, `client/{features,files}`, `cerver/lobby`, los pares
+  `cerver/queue` y `balancer/*`, los fuzzers `receive`, `packet`, `client` y `file`), y las métricas del thpool en
+  `test/http/features.c`.
+- **Workflows:** los de `nightly` (`container: gcc:16.2`, `scheduled.yml`, nombres de release e imagen por rama), con
+  `--sysctl net.ipv6.conf.all.disable_ipv6=0` en los contenedores de tests.
+
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
 Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.
