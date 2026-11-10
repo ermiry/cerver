@@ -4,7 +4,6 @@
 
 #include <pthread.h>
 
-#include <cerver/collections/dlist.h>
 #include <cerver/collections/pool.h>
 
 #include "../test.h"
@@ -12,6 +11,12 @@
 #define POOL_TEST_INITIAL_ELEMENTS			64
 #define POOL_TEST_THREADS					8
 #define POOL_TEST_ITERATIONS				100000
+
+#define POOL_TEST_ORDER_ELEMENTS			3
+#define POOL_TEST_MAX_ELEMENTS				4
+#define POOL_TEST_OVER_LIMIT				6
+
+static unsigned int destroyed_elements = 0;
 
 typedef struct PoolTestElement {
 
@@ -34,37 +39,111 @@ static void pool_test_element_delete (void *element_ptr) {
 
 }
 
-// walks the pool's list and checks that size, start and end are consistent
-static void pool_test_check_list (const Pool *pool, const size_t expected_size) {
+static void pool_test_element_destroy_counted (void *element_ptr) {
 
-	const DoubleList *list = pool->dlist;
+	test_counter_add (&destroyed_elements);
 
-	test_check_unsigned_eq ((unsigned int) list->size, (unsigned int) expected_size, NULL);
+	pool_test_element_delete (element_ptr);
 
-	if (expected_size) {
-		test_check_ptr (list->start);
-		test_check_ptr (list->end);
-		test_check_null_ptr (list->start->prev);
-		test_check_null_ptr (list->end->next);
+}
+
+// the pool keeps expected_size elements, each one in its place of the stack
+static void pool_test_check_list (Pool *pool, const size_t expected_size) {
+
+	test_check_unsigned_eq ((unsigned int) pool_size (pool), (unsigned int) expected_size, NULL);
+	test_check (pool->capacity >= pool->count, "the pool has more elements than its capacity");
+
+	for (size_t index = 0; index < pool->count; index++) {
+		test_check_ptr (pool->elements[index]);
 	}
 
-	else {
-		test_check_null_ptr (list->start);
-		test_check_null_ptr (list->end);
+}
+
+// the last element that was returned is the first one that is taken
+static void test_pool_order (void) {
+
+	Pool *pool = pool_create (pool_test_element_delete);
+	test_check_ptr (pool);
+
+	void *elements[POOL_TEST_ORDER_ELEMENTS] = { NULL };
+	for (unsigned int i = 0; i < POOL_TEST_ORDER_ELEMENTS; i++) {
+		elements[i] = pool_test_element_new ();
+		test_check_int_eq (pool_push (pool, elements[i]), 0, NULL);
 	}
 
-	size_t count = 0;
-	const ListElement *last = NULL;
-	for (const ListElement *element = list->start; element; element = element->next) {
-		test_check_ptr (element->data);
-		test_check (element->prev == last, NULL);
-
-		last = element;
-		count += 1;
+	for (unsigned int i = POOL_TEST_ORDER_ELEMENTS; i > 0; i--) {
+		void *element = pool_pop (pool);
+		test_check (element == elements[i - 1], "the pool did not return the last element first");
+		pool_test_element_delete (element);
 	}
 
-	test_check_unsigned_eq ((unsigned int) count, (unsigned int) expected_size, NULL);
-	test_check (last == list->end, NULL);
+	test_check_null_ptr (pool_pop (pool));
+
+	pool_delete (pool);
+
+}
+
+// the pool grows past its first capacity, and a steady pop and push does not grow it again
+static void test_pool_growth (void) {
+
+	Pool *pool = pool_create (pool_test_element_delete);
+	test_check_ptr (pool);
+	test_check_unsigned_eq ((unsigned int) pool->capacity, POOL_DEFAULT_CAPACITY, NULL);
+
+	test_check_int_eq (pool_init (pool, pool_test_element_new, POOL_TEST_INITIAL_ELEMENTS), 0, NULL);
+	pool_test_check_list (pool, POOL_TEST_INITIAL_ELEMENTS);
+	test_check (pool->capacity >= POOL_TEST_INITIAL_ELEMENTS, "the pool did not grow");
+
+	const size_t capacity = pool->capacity;
+	void **elements = pool->elements;
+	for (unsigned int i = 0; i < POOL_TEST_ITERATIONS; i++) {
+		test_check_int_eq (pool_push (pool, pool_pop (pool)), 0, NULL);
+	}
+
+	test_check_unsigned_eq ((unsigned int) pool->capacity, (unsigned int) capacity, NULL);
+	test_check (pool->elements == elements, "a pop and a push reallocated the pool");
+
+	pool_delete (pool);
+
+}
+
+// a full pool destroys the elements that are returned to it
+static void test_pool_max_elements (void) {
+
+	destroyed_elements = 0;
+
+	Pool *pool = pool_create (pool_test_element_destroy_counted);
+	test_check_ptr (pool);
+	test_check_unsigned_eq ((unsigned int) pool->max_elements, POOL_NO_LIMIT, NULL);
+
+	pool_set_max_elements (pool, POOL_TEST_MAX_ELEMENTS);
+	test_check_unsigned_eq ((unsigned int) pool->max_elements, POOL_TEST_MAX_ELEMENTS, NULL);
+
+	for (unsigned int i = 0; i < POOL_TEST_OVER_LIMIT; i++) {
+		test_check_int_eq (pool_push (pool, pool_test_element_new ()), 0, NULL);
+	}
+
+	pool_test_check_list (pool, POOL_TEST_MAX_ELEMENTS);
+	test_check_unsigned_eq (destroyed_elements, POOL_TEST_OVER_LIMIT - POOL_TEST_MAX_ELEMENTS, NULL);
+
+	// without a limit it keeps every element again
+	pool_set_max_elements (pool, POOL_NO_LIMIT);
+	test_check_int_eq (pool_push (pool, pool_test_element_new ()), 0, NULL);
+	pool_test_check_list (pool, POOL_TEST_MAX_ELEMENTS + 1);
+
+	pool_delete (pool);
+
+	test_check_unsigned_eq (destroyed_elements, POOL_TEST_OVER_LIMIT + 1, NULL);
+
+	// pool_clear () keeps the data, it belongs to someone else
+	pool = pool_create (pool_test_element_destroy_counted);
+	PoolTestElement element = { 0 };
+	test_check_int_eq (pool_push (pool, &element), 0, NULL);
+	pool_clear (pool);
+	pool_test_check_list (pool, 0);
+	pool_delete (pool);
+
+	test_check_unsigned_eq (destroyed_elements, POOL_TEST_OVER_LIMIT + 1, NULL);
 
 }
 
@@ -215,6 +294,12 @@ void collections_tests_pool (void) {
 	(void) printf ("Testing COLLECTIONS pool...\n");
 
 	test_pool_push_pop_single ();
+
+	test_pool_order ();
+
+	test_pool_growth ();
+
+	test_pool_max_elements ();
 
 	test_pool_push_pop_threads ();
 

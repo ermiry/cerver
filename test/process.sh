@@ -9,7 +9,8 @@ is_alive () {
 
 is_listening () {
 	local port_hex=$(printf ':%04X' "$1")
-	cat /proc/net/tcp /proc/net/tcp6 2> /dev/null | awk '{ print $2, $4 }' | grep -q "$port_hex 0A"
+	cat /proc/net/tcp /proc/net/tcp6 2> /dev/null | awk '{ print $2, $4 }' | grep -q "$port_hex 0A" \
+		|| cat /proc/net/udp /proc/net/udp6 2> /dev/null | awk '{ print $2 }' | grep -q "$port_hex$"
 }
 
 is_finished () {
