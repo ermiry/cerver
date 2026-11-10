@@ -38,7 +38,7 @@ static const size_t CERVER_UDP_MAP_SIZE = 64;
 static const i32 CERVER_UDP_PEER_SOCK_FD = -1;
 
 // the answer to a failed authentication, to limit the answers to a peer that is not proven
-static const size_t CERVER_UDP_AUTH_FAILED_SIZE = sizeof (PacketHeader) + sizeof (SError);
+static const size_t CERVER_UDP_AUTH_FAILED_SIZE = PACKET_HEADER_SIZE + ERROR_MESSAGE_MAX_ENCODED_SIZE;
 
 #define CERVER_UDP_PEER_KEY_FORMAT		"%s:%u"
 

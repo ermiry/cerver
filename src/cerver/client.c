@@ -1643,9 +1643,9 @@ u8 client_error_trigger (
 // handles error packets
 static void client_error_packet_handler (Packet *packet) {
 
-	if (packet->data_size >= sizeof (SError)) {
-		char *end = (char *) packet->data;
-		SError *s_error = (SError *) end;
+	ErrorMessage message;
+	if (packet_get_object (packet, &error_message_schema, NULL, &message) == SERIALIZER_RESULT_NONE) {
+		const ErrorMessage *s_error = &message;
 
 		switch (s_error->error_type) {
 			case CLIENT_ERROR_NONE: break;
@@ -1759,31 +1759,7 @@ Packet *client_error_packet_generate (
 	const ClientErrorType type, const char *msg
 ) {
 
-	Packet *packet = packet_new ();
-	if (packet) {
-		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
-
-		// zeroed, the whole buffer is sent
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_ERROR;
-		header->packet_size = packet_len;
-
-		header->request_type = REQUEST_PACKET_TYPE_NONE;
-		header->version = packet_version_local ();
-
-		end += sizeof (PacketHeader);
-
-		SError *s_error = (SError *) end;
-		s_error->error_type = type;
-		s_error->timestamp = time (NULL);
-		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
-	}
-
-	return packet;
+	return error_message_packet_create ((u32) type, msg);
 
 }
 
