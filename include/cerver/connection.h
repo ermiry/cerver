@@ -221,6 +221,9 @@ struct _Connection {
 	u8 datagram_token[CONNECTION_DATAGRAM_TOKEN_SIZE];
 	bool datagram_token_set;
 
+	// the route that a load balancer gave to the connection of a client, 0 without one
+	u32 route_id;
+
 	// the update thread reconnects when the cerver ends the connection,
 	// it waits reconnect_wait_time secs between each attempt
 	bool attempt_reconnect;

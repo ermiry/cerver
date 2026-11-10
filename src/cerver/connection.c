@@ -319,6 +319,8 @@ Connection *connection_new (void) {
 		(void) memset (connection->datagram_token, 0, CONNECTION_DATAGRAM_TOKEN_SIZE);
 		connection->datagram_token_set = false;
 
+		connection->route_id = 0;
+
 		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
 		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
 		connection->reconnect_attempts = 0;

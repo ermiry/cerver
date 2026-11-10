@@ -165,6 +165,8 @@ Balancer *balancer_new (void) {
 
 		balancer->routes = NULL;
 		balancer->routes_size = 0;
+		balancer->routes_used = 0;
+		balancer->free_route = BALANCER_ROUTE_NONE;
 
 		balancer->running = false;
 		balancer->cond = NULL;
@@ -174,17 +176,30 @@ Balancer *balancer_new (void) {
 
 }
 
+// a slot that was never used starts in the first generation
+static void balancer_routes_init (BalancerRoute *routes, const u32 count) {
+
+	for (u32 i = 0; i < count; i++) {
+		routes[i].socket = NULL;
+		routes[i].next_free = BALANCER_ROUTE_NONE;
+		routes[i].generation = BALANCER_ROUTE_FIRST_GENERATION;
+	}
+
+}
+
 // releases the references of the routes that are left
 static void balancer_routes_delete (Balancer *balancer) {
 
 	if (balancer->routes) {
-		for (size_t i = 0; i < balancer->routes_size; i++) {
+		for (u32 i = 0; i < balancer->routes_used; i++) {
 			socket_delete (balancer->routes[i].socket);
 		}
 
 		free (balancer->routes);
 		balancer->routes = NULL;
 		balancer->routes_size = 0;
+		balancer->routes_used = 0;
+		balancer->free_route = BALANCER_ROUTE_NONE;
 	}
 
 }
@@ -264,8 +279,11 @@ static bool balancer_create_values (
 	balancer->mutex = thread_mutex_new ();
 	balancer->cond = thread_cond_new ();
 
-	balancer->routes = (BalancerRoute *) calloc (BALANCER_DEFAULT_ROUTES_SIZE, sizeof (BalancerRoute));
-	if (balancer->routes) balancer->routes_size = BALANCER_DEFAULT_ROUTES_SIZE;
+	balancer->routes = (BalancerRoute *) malloc (BALANCER_DEFAULT_ROUTES_SIZE * sizeof (BalancerRoute));
+	if (balancer->routes) {
+		balancer_routes_init (balancer->routes, BALANCER_DEFAULT_ROUTES_SIZE);
+		balancer->routes_size = BALANCER_DEFAULT_ROUTES_SIZE;
+	}
 
 	return balancer->cerver && balancer->client
 		&& balancer->services && balancer->stats
@@ -551,7 +569,7 @@ static unsigned int balancer_service_register_internal (
 			// a single attempt, the reconnect thread and the connection itself retry
 			connection_set_max_sleep (connection, SERVICE_CONNECT_MAX_SLEEP);
 
-			connection_set_receive_buffer_size (connection, sizeof (PacketHeader));
+			connection_set_receive_buffer_size (connection, PACKET_HEADER_SIZE);
 			connection_set_custom_receive (
 				connection,
 				balancer_client_receive,
@@ -978,7 +996,8 @@ typedef enum BalancerReceiveResult {
 
 	BALANCER_RECEIVE_RESULT_DONE		= 0,
 	BALANCER_RECEIVE_RESULT_IDLE		= 1,	// nothing was received before the timeout
-	BALANCER_RECEIVE_RESULT_FAILED		= 2
+	BALANCER_RECEIVE_RESULT_FAILED		= 2,
+	BALANCER_RECEIVE_RESULT_BAD			= 3		// a header with another format, flags or reserved bytes
 
 } BalancerReceiveResult;
 
@@ -1028,8 +1047,11 @@ static u8 balancer_send_packet (
 
 	u8 retval = 1;
 
+	u8 encoded[PACKET_HEADER_SIZE];
+	packet_header_encode (header, encoded);
+
 	struct iovec parts[BALANCER_SEND_PARTS] = {
-		{ .iov_base = (void *) header, .iov_len = sizeof (PacketHeader) },
+		{ .iov_base = (void *) encoded, .iov_len = PACKET_HEADER_SIZE },
 		{ .iov_base = (void *) body, .iov_len = body_size }
 	};
 
@@ -1055,8 +1077,32 @@ static inline bool balancer_header_is_valid (
 	const PacketHeader *header, const size_t max_packet_size
 ) {
 
-	return (header->packet_size >= sizeof (PacketHeader))
-		&& (!max_packet_size || (header->packet_size <= max_packet_size));
+	return (header->packet_size >= PACKET_HEADER_SIZE)
+		&& (!max_packet_size || (header->packet_size <= (u64) max_packet_size));
+
+}
+
+// receives the bytes of a header and decodes them,
+// a header that can not be decoded is a bad packet, the result is BALANCER_RECEIVE_RESULT_BAD
+static BalancerReceiveResult balancer_receive_header (
+	const int sock_fd, PacketHeader *header
+) {
+
+	u8 encoded[PACKET_HEADER_SIZE] = { 0 };
+	(void) memset (header, 0, sizeof (PacketHeader));
+
+	BalancerReceiveResult result = balancer_receive_exact (
+		sock_fd, (char *) encoded, PACKET_HEADER_SIZE, true
+	);
+
+	if (
+		(result == BALANCER_RECEIVE_RESULT_DONE)
+		&& (packet_header_decode (encoded, header) != PACKET_HEADER_RESULT_NONE)
+	) {
+		result = BALANCER_RECEIVE_RESULT_BAD;
+	}
+
+	return result;
 
 }
 
@@ -1069,7 +1115,7 @@ static u8 balancer_receive_body (
 
 	u8 retval = 0;
 
-	*body_size = header->packet_size - sizeof (PacketHeader);
+	*body_size = (size_t) header->packet_size - PACKET_HEADER_SIZE;
 	*body = NULL;
 
 	if (*body_size) {
@@ -1202,7 +1248,7 @@ static void balancer_handle_unavailable_services (
 }
 
 // routes the received packet to a service to be handled
-// the header carries the client's sock fd to route the response back
+// the header carries the route id of the client connection to route the response back
 static void balancer_route_to_service (
 	CerverReceive *cr, Balancer *balancer,
 	PacketHeader *header, char *body, const size_t body_size
@@ -1212,7 +1258,7 @@ static void balancer_route_to_service (
 	if (selected_service >= 0) {
 		Service *service = balancer->services[selected_service];
 
-		header->sock_fd = (u16) cr->socket->sock_fd;
+		header->route_id = cr->connection ? cr->connection->route_id : 0;
 
 		if (!balancer_send_packet (service->connection->socket, header, body, body_size)) {
 			const unsigned int type = balancer_packet_type_index (header->packet_type);
@@ -1247,50 +1293,143 @@ static void balancer_route_to_service (
 
 }
 
-// registers the route of a client connection that the balancer receives from
-void balancer_connection_start (
-	Balancer *balancer, const i32 sock_fd, Socket *socket
-) {
+u32 balancer_route_id (const u32 slot, const u16 generation) {
 
-	if (balancer && (sock_fd > -1) && socket) {
-		(void) pthread_mutex_lock (balancer->mutex);
-
-		size_t new_size = balancer->routes_size;
-		while ((size_t) sock_fd >= new_size) new_size *= BALANCER_ROUTES_GROWTH_FACTOR;
-
-		if (new_size != balancer->routes_size) {
-			BalancerRoute *routes = (BalancerRoute *) realloc (balancer->routes, new_size * sizeof (BalancerRoute));
-			if (routes) {
-				(void) memset (routes + balancer->routes_size, 0, (new_size - balancer->routes_size) * sizeof (BalancerRoute));
-				balancer->routes = routes;
-				balancer->routes_size = new_size;
-			}
-		}
-
-		if ((size_t) sock_fd < balancer->routes_size) {
-			socket_delete (balancer->routes[sock_fd].socket);
-			balancer->routes[sock_fd].socket = socket_reference (socket);
-		}
-
-		(void) pthread_mutex_unlock (balancer->mutex);
-	}
+	return (((u32) generation & BALANCER_ROUTE_GENERATION_MASK) << BALANCER_ROUTE_SLOT_BITS)
+		| (slot & BALANCER_ROUTE_SLOT_MASK);
 
 }
 
-// removes the route of a client connection that has ended,
-// its pending responses are discarded
-void balancer_connection_end (
-	Balancer *balancer, const i32 sock_fd
+u32 balancer_route_id_slot (const u32 route_id) {
+
+	return route_id & BALANCER_ROUTE_SLOT_MASK;
+
+}
+
+u16 balancer_route_id_generation (const u32 route_id) {
+
+	return (u16) ((route_id >> BALANCER_ROUTE_SLOT_BITS) & BALANCER_ROUTE_GENERATION_MASK);
+
+}
+
+u16 balancer_route_next_generation (const u16 generation) {
+
+	const u16 next = (u16) ((generation + 1) & BALANCER_ROUTE_GENERATION_MASK);
+
+	return next ? next : BALANCER_ROUTE_FIRST_GENERATION;
+
+}
+
+// doubles the slots up to BALANCER_ROUTES_MAX, with the balancer's mutex
+// returns true when there are more slots
+static bool balancer_routes_grow (Balancer *balancer) {
+
+	bool grown = false;
+
+	u32 new_size = balancer->routes_size * BALANCER_ROUTES_GROWTH_FACTOR;
+	if (new_size > BALANCER_ROUTES_MAX) new_size = BALANCER_ROUTES_MAX;
+
+	if (new_size > balancer->routes_size) {
+		BalancerRoute *routes = (BalancerRoute *) realloc (balancer->routes, (size_t) new_size * sizeof (BalancerRoute));
+		if (routes) {
+			balancer_routes_init (routes + balancer->routes_size, new_size - balancer->routes_size);
+			balancer->routes = routes;
+			balancer->routes_size = new_size;
+			grown = true;
+		}
+	}
+
+	return grown;
+
+}
+
+// takes the free slot that was released last, or one that was never used,
+// with the balancer's mutex
+// returns the slot, or BALANCER_ROUTE_NONE when every slot is taken
+static u32 balancer_route_take_slot (Balancer *balancer) {
+
+	u32 slot = balancer->free_route;
+
+	if (slot != BALANCER_ROUTE_NONE) {
+		balancer->free_route = balancer->routes[slot].next_free;
+		balancer->routes[slot].next_free = BALANCER_ROUTE_NONE;
+	}
+
+	else if ((balancer->routes_used < balancer->routes_size) || balancer_routes_grow (balancer)) {
+		slot = balancer->routes_used++;
+	}
+
+	return slot;
+
+}
+
+// gives a route to a client connection that the balancer receives from,
+// in a free slot, with a reference to its socket
+// returns the route id, or 0 when every slot is taken (BALANCER_ROUTES_MAX)
+u32 balancer_connection_start (
+	Balancer *balancer, Socket *socket
 ) {
 
-	if (balancer && (sock_fd > -1)) {
+	u32 route_id = 0;
+
+	if (balancer && socket) {
+		(void) pthread_mutex_lock (balancer->mutex);
+
+		const u32 slot = balancer_route_take_slot (balancer);
+		if (slot != BALANCER_ROUTE_NONE) {
+			balancer->routes[slot].socket = socket_reference (socket);
+			route_id = balancer_route_id (slot, balancer->routes[slot].generation);
+		}
+
+		(void) pthread_mutex_unlock (balancer->mutex);
+
+		if (!route_id) {
+			cerver_log_warning ("The balancer can not route more than %u connections!", BALANCER_ROUTES_MAX);
+		}
+	}
+
+	return route_id;
+
+}
+
+// the route of the id with the balancer's mutex, NULL if its slot has another generation or is free
+static BalancerRoute *balancer_route_find (Balancer *balancer, const u32 route_id) {
+
+	BalancerRoute *route = NULL;
+
+	const u32 slot = balancer_route_id_slot (route_id);
+
+	if (
+		route_id && (slot < balancer->routes_used)
+		&& balancer->routes[slot].socket
+		&& (balancer->routes[slot].generation == balancer_route_id_generation (route_id))
+	) {
+		route = &balancer->routes[slot];
+	}
+
+	return route;
+
+}
+
+// releases the route of a client connection that has ended,
+// the next generation of its slot discards its pending responses
+void balancer_connection_end (
+	Balancer *balancer, const u32 route_id
+) {
+
+	if (balancer) {
 		Socket *socket = NULL;
 
 		(void) pthread_mutex_lock (balancer->mutex);
 
-		if ((size_t) sock_fd < balancer->routes_size) {
-			socket = balancer->routes[sock_fd].socket;
-			balancer->routes[sock_fd].socket = NULL;
+		BalancerRoute *route = balancer_route_find (balancer, route_id);
+		if (route) {
+			socket = route->socket;
+			route->socket = NULL;
+			route->generation = balancer_route_next_generation (route->generation);
+
+			route->next_free = balancer->free_route;
+			balancer->free_route = balancer_route_id_slot (route_id);
 		}
 
 		(void) pthread_mutex_unlock (balancer->mutex);
@@ -1300,20 +1439,24 @@ void balancer_connection_end (
 
 }
 
-// returns a reference to the socket of the client connection, NULL if it has ended
-static Socket *balancer_route_get (
-	Balancer *balancer, const i32 sock_fd
+// returns a reference to the socket of the client connection of the route id,
+// NULL if the connection has ended, even when its slot belongs to another connection now
+Socket *balancer_route_get (
+	Balancer *balancer, const u32 route_id
 ) {
 
 	Socket *socket = NULL;
 
-	(void) pthread_mutex_lock (balancer->mutex);
+	if (balancer) {
+		(void) pthread_mutex_lock (balancer->mutex);
 
-	if (((size_t) sock_fd < balancer->routes_size) && balancer->routes[sock_fd].socket) {
-		socket = socket_reference (balancer->routes[sock_fd].socket);
+		const BalancerRoute *route = balancer_route_find (balancer, route_id);
+		if (route) {
+			socket = socket_reference (route->socket);
+		}
+
+		(void) pthread_mutex_unlock (balancer->mutex);
 	}
-
-	(void) pthread_mutex_unlock (balancer->mutex);
 
 	return socket;
 
@@ -1403,8 +1546,7 @@ u8 balancer_receive (CerverReceive *cr) {
 	Balancer *balancer = cr->cerver->balancer;
 
 	PacketHeader header;
-	(void) memset (&header, 0, sizeof (PacketHeader));
-	switch (balancer_receive_exact (cr->socket->sock_fd, (char *) &header, sizeof (PacketHeader), true)) {
+	switch (balancer_receive_header (cr->socket->sock_fd, &header)) {
 		case BALANCER_RECEIVE_RESULT_DONE: {
 			char *body = NULL;
 			size_t body_size = 0;
@@ -1423,6 +1565,9 @@ u8 balancer_receive (CerverReceive *cr) {
 
 		case BALANCER_RECEIVE_RESULT_IDLE: retval = 0; break;
 
+		// the stream of the client can not be parsed, its connection is closed
+		case BALANCER_RECEIVE_RESULT_BAD: balancer_receive_bad_packet (balancer, &header); break;
+
 		default: break;
 	}
 
@@ -1439,7 +1584,7 @@ static void balancer_client_route_response (
 
 	Balancer *balancer = bs->balancer;
 
-	Socket *socket = balancer_route_get (balancer, (i32) header->sock_fd);
+	Socket *socket = balancer_route_get (balancer, header->route_id);
 	if (socket) {
 		if (!balancer_send_packet (socket, header, body, body_size)) {
 			CERVER_STATS_ADD (balancer->stats->n_packets_sent, 1);
@@ -1458,8 +1603,8 @@ static void balancer_client_route_response (
 		#ifdef SERVICE_DEBUG
 		cerver_log_warning (
 			"balancer_client_route_response () - "
-			"the connection with sock fd %u has ended",
-			(unsigned int) header->sock_fd
+			"the connection with route id %u has ended",
+			header->route_id
 		);
 		#endif
 
@@ -1493,7 +1638,7 @@ static void balancer_client_receive_success (
 		// a packet of the service itself, like the cerver info
 		case PACKET_TYPE_CERVER:
 		case PACKET_TYPE_TEST: {
-			if (header->sock_fd) {
+			if (header->route_id) {
 				balancer_client_route_response (bs, header, body, body_size);
 			}
 
@@ -1558,8 +1703,7 @@ static u8 balancer_client_receive (
 	Connection *connection = custom_data->connection;
 
 	PacketHeader header;
-	(void) memset (&header, 0, sizeof (PacketHeader));
-	switch (balancer_receive_exact (connection->socket->sock_fd, (char *) &header, sizeof (PacketHeader), true)) {
+	switch (balancer_receive_header (connection->socket->sock_fd, &header)) {
 		case BALANCER_RECEIVE_RESULT_DONE: {
 			char *body = NULL;
 			size_t body_size = 0;
@@ -1579,6 +1723,9 @@ static u8 balancer_client_receive (
 		} break;
 
 		case BALANCER_RECEIVE_RESULT_IDLE: retval = 0; break;
+
+		// the stream of the service can not be parsed, the connection connects again
+		case BALANCER_RECEIVE_RESULT_BAD: balancer_client_bad_packet (bs, &header); break;
 
 		default: break;
 	}

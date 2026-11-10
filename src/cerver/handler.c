@@ -1846,22 +1846,23 @@ static inline u8 cerver_receive_threads_actual (
 }
 
 // the load balancer receives complete packets and routes them to its services,
-// the route of the connection lives while it is received
-static void cerver_receive_threads_balancer (
-	CerverReceive *cr, const i32 sock_fd
-) {
+// the route of the connection lives while it is received, a connection without one is not received
+// a packet can end the connection, so it is never used after the receive loop
+static void cerver_receive_threads_balancer (CerverReceive *cr) {
 
 	Balancer *balancer = cr->cerver->balancer;
 
-	balancer_connection_start (balancer, sock_fd, cr->socket);
+	const u32 route_id = balancer_connection_start (balancer, cr->socket);
+	if (cr->connection) cr->connection->route_id = route_id;
 
 	while (
-		(cr->socket->sock_fd > -1)
+		route_id
+		&& (cr->socket->sock_fd > -1)
 		&& cerver_is_running (cr->cerver)
 		&& !balancer_receive (cr)
 	);
 
-	balancer_connection_end (balancer, sock_fd);
+	balancer_connection_end (balancer, route_id);
 
 }
 
@@ -1886,7 +1887,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	char *buffer = (char *) calloc (buffer_size, sizeof (char));
 	if (cr->cerver->type == CERVER_TYPE_BALANCER) {
 		free (buffer);
-		cerver_receive_threads_balancer (cr, sock_fd);
+		cerver_receive_threads_balancer (cr);
 	}
 
 	else if (buffer) {
