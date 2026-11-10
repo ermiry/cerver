@@ -170,8 +170,8 @@ static size_t receive_test_append_packet (
 	header.packet_size = packet_size;
 	header.request_type = request_type;
 
-	(void) memcpy (stream + position, &header, sizeof (PacketHeader));
-	position += sizeof (PacketHeader);
+	packet_header_encode (&header, (u8 *) (stream + position));
+	position += PACKET_HEADER_SIZE;
 
 	for (size_t i = 0; i < data_size; i++) {
 		stream[position + i] = receive_test_data_byte (request_type, i);
@@ -185,7 +185,7 @@ static char *receive_test_stream_create (size_t *stream_size) {
 
 	size_t total = 0;
 	for (unsigned int i = 0; i < RECEIVE_TEST_PACKETS; i++) {
-		total += sizeof (PacketHeader) + receive_test_data_sizes[i];
+		total += PACKET_HEADER_SIZE + receive_test_data_sizes[i];
 	}
 
 	char *stream = (char *) malloc (total);
@@ -195,7 +195,7 @@ static char *receive_test_stream_create (size_t *stream_size) {
 	for (unsigned int i = 0; i < RECEIVE_TEST_PACKETS; i++) {
 		position = receive_test_append_packet (
 			stream, position, i, receive_test_data_sizes[i],
-			sizeof (PacketHeader) + receive_test_data_sizes[i]
+			PACKET_HEADER_SIZE + receive_test_data_sizes[i]
 		);
 	}
 
@@ -340,7 +340,7 @@ static void test_receive_buffer_partial (const char *stream) {
 	receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 
 	// the header and a part of the data of the second packet (1 byte)
-	receive_test_feed_piece (receive_handle, stream, (2 * sizeof (PacketHeader)));
+	receive_test_feed_piece (receive_handle, stream, (2 * PACKET_HEADER_SIZE));
 	test_check_unsigned_eq (dispatched.n_packets, 1, NULL);
 	test_check_ptr (receive_handle->spare_packet);
 	test_check (receive_handle->state == RECEIVE_HANDLE_STATE_SPLIT_PACKET, NULL);
@@ -352,7 +352,8 @@ static void test_receive_buffer_partial (const char *stream) {
 
 }
 
-static void receive_test_invalid_case (const size_t packet_size) {
+// the second packet has an invalid size, or a header with another format when the format is given
+static void receive_test_invalid_case (const size_t packet_size, const u8 format) {
 
 	(void) memset (&dispatched, 0, sizeof (ReceiveTestDispatched));
 
@@ -360,10 +361,12 @@ static void receive_test_invalid_case (const size_t packet_size) {
 	test_check_int_eq (socketpair (AF_UNIX, SOCK_STREAM, 0, fds), 0, NULL);
 
 	// a valid packet, an invalid one and another valid one
-	char stream[(3 * sizeof (PacketHeader))];
-	size_t position = receive_test_append_packet (stream, 0, 0, 0, sizeof (PacketHeader));
+	char stream[(3 * PACKET_HEADER_SIZE)];
+	size_t position = receive_test_append_packet (stream, 0, 0, 0, PACKET_HEADER_SIZE);
 	position = receive_test_append_packet (stream, position, 1, 0, packet_size);
-	position = receive_test_append_packet (stream, position, 2, 0, sizeof (PacketHeader));
+	position = receive_test_append_packet (stream, position, 2, 0, PACKET_HEADER_SIZE);
+
+	if (format) stream[PACKET_HEADER_SIZE + PACKET_HEADER_FORMAT_OFFSET] = (char) format;
 
 	Socket *socket = socket_create (fds[0]);
 	ReceiveHandle *receive_handle = receive_handle_new ();
@@ -395,9 +398,12 @@ static void receive_test_invalid_case (const size_t packet_size) {
 
 static void test_receive_buffer_invalid (void) {
 
-	receive_test_invalid_case (0);
-	receive_test_invalid_case (sizeof (PacketHeader) - 1);
-	receive_test_invalid_case (RECEIVE_TEST_MAX_PACKET_SIZE + 1);
+	receive_test_invalid_case (0, 0);
+	receive_test_invalid_case (PACKET_HEADER_SIZE - 1, 0);
+	receive_test_invalid_case (RECEIVE_TEST_MAX_PACKET_SIZE + 1, 0);
+
+	// a peer that speaks another format of the header is closed too
+	receive_test_invalid_case (PACKET_HEADER_SIZE, PACKET_HEADER_FORMAT + 1);
 
 }
 

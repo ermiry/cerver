@@ -39,7 +39,7 @@ static void end (int dummy) {
 
 }
 
-// the response is sent with the sock fd of the request, so the balancer routes it back
+// the response is sent with the route id of the request, so the balancer routes it back
 static void upstream_answer (
 	const Packet *packet, const void *body, const size_t body_size
 ) {
@@ -50,7 +50,7 @@ static void upstream_answer (
 
 	test_check_ptr (response);
 
-	((PacketHeader *) response->packet)->sock_fd = packet->header.sock_fd;
+	packet_set_route_id (response, packet->header.route_id);
 
 	packet_set_network_values (
 		response, packet->cerver, packet->client, packet->connection, NULL
