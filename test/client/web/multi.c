@@ -11,7 +11,9 @@
 #define DEFAULT_REQUESTS		16
 #define RESPONSE_BUFFER_SIZE	1024
 
-static const char *address = { "127.0.0.1:8080/test" };
+#define MULTI_CLIENT_PATH		"/test"
+
+static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static size_t multi_request_all_data_handler (
 	void *contents, size_t size, size_t nmemb, void *storage
@@ -145,6 +147,8 @@ int main (int argc, char **argv) {
 	}
 
 	cerver_log_init ();
+
+	web_test_address (address, MULTI_CLIENT_PATH);
 
 	code = multi_request_all (requests);
 

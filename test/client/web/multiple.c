@@ -8,7 +8,7 @@
 
 #include "curl.h"
 
-static const char *address = { "127.0.0.1:8080" };
+static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static size_t multiple_request_all_data_handler (
 	void *contents, size_t size, size_t nmemb, void *storage
@@ -122,6 +122,8 @@ int main (int argc, char **argv) {
 	int code = 0;
 
 	cerver_log_init ();
+
+	web_test_address (address, NULL);
 
 	code = multiple_request_all ();
 

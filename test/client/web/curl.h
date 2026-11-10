@@ -7,6 +7,16 @@
 
 #include <cerver/http/status.h>
 
+// the port of the web cerver of an integration pair
+#define WEB_TEST_PORT					8080
+
+// the host, the port and the path of a request to the web cerver of a pair
+#define WEB_TEST_ADDRESS_SIZE			128
+
+// writes the host (CERVER_TEST_ADDRESS, an IPv6 address between brackets),
+// the port and the path (NULL for none) of the web cerver of a pair
+extern void web_test_address (char *buffer, const char *path);
+
 typedef enum CurlResult {
 
 	CURL_RESULT_NONE			= 0,

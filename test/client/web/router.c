@@ -10,7 +10,7 @@
 
 #include "curl.h"
 
-#define ROUTER_CLIENT_ADDRESS			"http://127.0.0.1:8080"
+#define ROUTER_CLIENT_SCHEME			"http://"
 #define ROUTER_CLIENT_URL_SIZE			256
 #define ROUTER_CLIENT_BUFFER_SIZE		4096
 #define ROUTER_CLIENT_HEADERS			4
@@ -77,12 +77,18 @@ static struct curl_slist *router_client_headers_list (const RouterClientRequest 
 
 }
 
+// the host and the port of the cerver, set in main ()
+static char router_client_address[WEB_TEST_ADDRESS_SIZE] = { 0 };
+
 static void router_client_setup (
 	CURL *curl, const RouterClientRequest *request, struct curl_slist *headers
 ) {
 
 	char url[ROUTER_CLIENT_URL_SIZE] = { 0 };
-	(void) snprintf (url, ROUTER_CLIENT_URL_SIZE, "%s%s", ROUTER_CLIENT_ADDRESS, request->path);
+	(void) snprintf (
+		url, ROUTER_CLIENT_URL_SIZE, "%s%s%s",
+		ROUTER_CLIENT_SCHEME, router_client_address, request->path
+	);
 
 	(void) memset (&router_client_body, 0, sizeof (RouterClientBuffer));
 	(void) memset (&router_client_headers, 0, sizeof (RouterClientBuffer));
@@ -187,6 +193,8 @@ int main (int argc, char **argv) {
 	(void) argv;
 
 	unsigned int errors = 0;
+
+	web_test_address (router_client_address, NULL);
 
 	(void) curl_global_init (CURL_GLOBAL_ALL);
 

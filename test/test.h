@@ -268,4 +268,6 @@ static inline void test_counter_add (unsigned int *counter) {
 
 #pragma endregion
 
+#include "address.h"
+
 #endif

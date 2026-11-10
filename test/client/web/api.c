@@ -13,7 +13,9 @@
 
 #include "curl.h"
 
-static const char *address = { "127.0.0.1:8080/api/users" };
+#define API_CLIENT_PATH			"/api/users"
+
+static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static const char *name = { "Erick Salas" };
 static const char *username = { "ermiry" };
@@ -172,6 +174,8 @@ int main (int argc, char **argv) {
 	int code = 0;
 
 	cerver_log_init ();
+
+	web_test_address (address, API_CLIENT_PATH);
 
 	code = (int) api_request_all ();
 

@@ -73,7 +73,7 @@ int main (int argc, const char **argv) {
 	client_set_app_handlers (client, app_packet_handler, NULL);
 
 	Connection *connection = client_connection_create (
-		client, "127.0.0.1", 7000, PROTOCOL_TCP, false
+		client, test_address (), 7000, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (connection);

@@ -58,6 +58,8 @@ int main (int argc, char **argv) {
 	test_check_bool_eq (cerver->use_ipv6, false, NULL);
 	test_check_int_eq (cerver->connection_queue, CERVER_DEFAULT_CONNECTION_QUEUE, NULL);
 
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, test_address ()), 0, NULL);
+
 	cerver_set_welcome_msg (cerver, welcome_message);
 	test_check_str_eq (cerver->info->welcome, welcome_message, NULL);
 	test_check_str_len (cerver->info->welcome, strlen (welcome_message), NULL);
