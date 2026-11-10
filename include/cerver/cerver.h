@@ -405,6 +405,10 @@ struct _Cerver {
 	u8 max_auth_tries;                  // client's chances of auth before being dropped
 	delegate authenticate;              // authentication function
 
+	// the schema of the credentials, the authenticate method gets the decoded object,
+	// NULL to take the bytes of the credentials as they come
+	const SerializerSchema *auth_schema;
+
 	AVLTree *on_hold_connections;       // hold on the connections until they authenticate
 	Htab *on_hold_connection_sock_fd_map;
 	struct pollfd *hold_fds;
@@ -660,6 +664,14 @@ CERVER_EXPORT void cerver_set_auth_max_tries (
 // must return 0 on success authentication
 CERVER_EXPORT void cerver_set_auth_method (
 	Cerver *cerver, delegate authenticate
+);
+
+// sets the schema of the credentials of the clients,
+// the credentials are decoded and validated with it before the authenticate method gets them,
+// and its auth data is the object; a packet that is not an object of the schema fails the auth
+// the fields of the schema can not take memory from an arena
+CERVER_EXPORT void cerver_set_auth_schema (
+	Cerver *cerver, const SerializerSchema *schema
 );
 
 // sets the cerver on poll timeout in ms

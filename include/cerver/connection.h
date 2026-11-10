@@ -212,6 +212,8 @@ struct _Connection {
 	size_t auth_data_size;
 	Action delete_auth_data;                // destroys the auth data when the connection ends
 	bool admin_auth;                        // attempt to connect as an admin
+	bool auth_serialized;                   // the auth data is an encoded object
+	bool auth_token;                        // the auth data is an encoded session token
 	struct _Packet *auth_packet;
 
 	// the token of an authenticated UDP connection, it goes after the packet in every datagram,
@@ -379,6 +381,23 @@ CERVER_PUBLIC void connection_send_packet (
 CERVER_PUBLIC void connection_set_auth_data (
 	Connection *connection,
 	void *auth_data, size_t auth_data_size, Action delete_auth_data,
+	bool admin_auth
+);
+
+// sets the credentials as an object of the auth schema of the cerver (cerver_set_auth_schema ()),
+// the object is encoded now, so it can be released after this
+// returns 0 on success, 1 if the object can not be encoded
+CERVER_PUBLIC u8 connection_set_auth_object (
+	Connection *connection,
+	const SerializerSchema *schema, const void *object,
+	bool admin_auth
+);
+
+// sets the session token that a cerver with sessions gave to the client,
+// to authenticate the connection with it instead of the credentials
+// returns 0 on success, 1 on error
+CERVER_PUBLIC u8 connection_set_auth_token (
+	Connection *connection, const char *token,
 	bool admin_auth
 );
 

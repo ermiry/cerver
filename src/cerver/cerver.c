@@ -483,6 +483,7 @@ Cerver *cerver_new (void) {
 		cerver->auth_packet = NULL;
 		cerver->max_auth_tries = CERVER_DEFAULT_MAX_AUTH_TRIES;
 		cerver->authenticate = NULL;
+		cerver->auth_schema = NULL;
 
 		cerver->on_hold_connections = NULL;
 		cerver->on_hold_connection_sock_fd_map = NULL;
@@ -947,6 +948,18 @@ void cerver_set_auth_method (
 ) {
 
 	if (cerver && authenticate) cerver->authenticate = authenticate;
+
+}
+
+// sets the schema of the credentials of the clients,
+// the credentials are decoded and validated with it before the authenticate method gets them,
+// and its auth data is the object; a packet that is not an object of the schema fails the auth
+// the fields of the schema can not take memory from an arena
+void cerver_set_auth_schema (
+	Cerver *cerver, const SerializerSchema *schema
+) {
+
+	if (cerver) cerver->auth_schema = schema;
 
 }
 

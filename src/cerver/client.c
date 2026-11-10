@@ -3234,15 +3234,9 @@ static u8 auth_strip_token (Packet *packet, Client *client) {
 
 	u8 retval = 1;
 
-	// check we have a big enough packet
-	if (packet->data_size > 0) {
-		char *end = (char *) packet->data;
-
-		// check if we have a token
-		if (packet->data_size == (sizeof (SToken))) {
-			SToken *s_token = (SToken *) (end);
-			retval = client_set_session_id (client, s_token->token);
-		}
+	SessionToken token;
+	if (packet_get_object (packet, &session_token_schema, NULL, &token) == SERIALIZER_RESULT_NONE) {
+		retval = client_set_session_id (client, token.token);
 	}
 
 	return retval;
@@ -3259,15 +3253,17 @@ static u8 client_auth_success_datagram (Packet *packet) {
 	const bool valid = packet->data && (packet->data_size >= CONNECTION_DATAGRAM_TOKEN_SIZE);
 	const size_t session_size = valid ? (packet->data_size - CONNECTION_DATAGRAM_TOKEN_SIZE) : 0;
 
-	if (valid && (!session_size || (session_size == sizeof (SToken)))) {
-		const char *data = (const char *) packet->data;
+	SessionToken token;
+	const bool valid_session = !session_size || (serializer_decode (
+		&session_token_schema, packet->data, session_size, NULL, &token
+	) == SERIALIZER_RESULT_NONE);
 
-		// a session token without its NUL would be read past the packet
-		if (session_size && memchr (data, '\0', sizeof (SToken))) {
-			(void) client_set_session_id (packet->client, data);
-		}
+	if (valid && valid_session) {
+		const u8 *data = (const u8 *) packet->data;
 
-		connection_set_datagram_token (packet->connection, (const u8 *) data + session_size);
+		if (session_size) (void) client_set_session_id (packet->client, token.token);
+
+		connection_set_datagram_token (packet->connection, data + session_size);
 
 		retval = 0;
 	}

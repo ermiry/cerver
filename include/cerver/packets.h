@@ -301,7 +301,9 @@ typedef enum RequestPacketType {
 	XX(1, 	REQUEST_AUTH)					\
 	XX(2, 	CLIENT_AUTH)					\
 	XX(3, 	ADMIN_AUTH)						\
-	XX(4, 	SUCCESS)
+	XX(4, 	SUCCESS)						\
+	XX(5, 	CLIENT_TOKEN)					\
+	XX(6, 	ADMIN_TOKEN)
 
 typedef enum AuthPacketType {
 

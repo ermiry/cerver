@@ -615,12 +615,14 @@ static u8 udp_peer_migrate (
 // the session token when the cerver uses sessions, followed by the datagram token
 static void udp_auth_success_send (Cerver *cerver, const UdpPeer *peer) {
 
-	const size_t session_size = cerver->use_sessions ? sizeof (SToken) : 0;
+	u8 data[SESSION_TOKEN_MAX_ENCODED_SIZE + CONNECTION_DATAGRAM_TOKEN_SIZE] = { 0 };
 
-	char data[sizeof (SToken) + CONNECTION_DATAGRAM_TOKEN_SIZE] = { 0 };
+	size_t session_size = 0;
+	if (cerver->use_sessions) {
+		char session_id[TOKEN_SIZE] = { 0 };
+		(void) client_get_session_id (peer->client, session_id, TOKEN_SIZE);
 
-	if (session_size) {
-		(void) client_get_session_id (peer->client, data, TOKEN_SIZE);
+		if (session_token_encode (session_id, data, &session_size)) session_size = 0;
 	}
 
 	(void) memcpy (data + session_size, peer->connection->datagram_token, CONNECTION_DATAGRAM_TOKEN_SIZE);
@@ -797,8 +799,10 @@ static void udp_auth (Cerver *cerver, UdpPeer *peer, Packet *packet) {
 // the auth packets of a pending peer, an admin can not authenticate with UDP
 static void udp_auth_packet (Cerver *cerver, UdpPeer *peer, Packet *packet) {
 
-	const bool valid = (packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_AUTH)
-		&& cerver->authenticate;
+	const bool valid = (
+		(packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_AUTH)
+		|| (packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_TOKEN)
+	) && cerver->authenticate;
 
 	if (valid) udp_auth (cerver, peer, packet);
 	else udp_peer_bad (cerver, peer);
@@ -967,8 +971,8 @@ static bool udp_auth_repeat_allowed (
 	const Cerver *cerver, const PacketHeader *header, const size_t size
 ) {
 
-	const size_t session_size = cerver->use_sessions ? sizeof (SToken) : 0;
-	const size_t success_size = sizeof (PacketHeader) + session_size + CONNECTION_DATAGRAM_TOKEN_SIZE;
+	const size_t session_size = cerver->use_sessions ? SESSION_TOKEN_MAX_ENCODED_SIZE : 0;
+	const size_t success_size = PACKET_HEADER_SIZE + session_size + CONNECTION_DATAGRAM_TOKEN_SIZE;
 
 	return (header->packet_type == PACKET_TYPE_AUTH)
 		&& ((size * CERVER_UDP_AMPLIFICATION_FACTOR) >= success_size);
