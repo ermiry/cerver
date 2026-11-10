@@ -58,6 +58,7 @@ static const long HANDLER_NANOSECONDS_PER_SECOND = 1000000000L;
 
 #pragma region handler
 
+// handlers are created by every client and cerver, also from different threads at the same time
 static int unique_handler_id = 0;
 
 static HandlerData *handler_data_new (void) {
@@ -132,8 +133,7 @@ Handler *handler_create (Action handler_method) {
 
 	Handler *handler = handler_new ();
 	if (handler) {
-		handler->unique_id = unique_handler_id;
-		unique_handler_id += 1;
+		handler->unique_id = __atomic_fetch_add (&unique_handler_id, 1, __ATOMIC_RELAXED);
 
 		handler->handler = handler_method;
 
