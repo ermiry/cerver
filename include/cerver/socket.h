@@ -42,6 +42,10 @@ struct _Socket {
 	pthread_mutex_t read_mutex_storage;
 	pthread_mutex_t write_mutex_storage;
 
+	// serializes the close of the fd with a shutdown from another thread,
+	// so a shutdown never reaches an fd that was closed and given to another connection
+	pthread_mutex_t close_mutex;
+
 	// the connection owns one reference, and every CerverReceive another one,
 	// so a receive thread can still read the socket after a handler deleted its connection
 	unsigned int references;
@@ -65,6 +69,18 @@ CERVER_PUBLIC Socket *socket_reference (Socket *socket);
 CERVER_PUBLIC void *socket_create_empty (void);
 
 CERVER_PUBLIC Socket *socket_create (int fd);
+
+// closes the fd of the socket and sets it to -1, with the close mutex
+// returns the result of close (), 0 if the socket was already closed
+CERVER_PUBLIC int socket_close (Socket *socket);
+
+// closes the fd of the socket if it is open and sets the new one, with the close mutex
+CERVER_PUBLIC void socket_replace (Socket *socket, const int fd);
+
+// shuts down both ways of the fd of the socket if it is still open, with the close mutex,
+// it can be called from any thread that has a reference to the socket
+// returns 0 on success, 1 if the socket is closed or shutdown () failed
+CERVER_PUBLIC u8 socket_shutdown (Socket *socket);
 
 #pragma region send
 
