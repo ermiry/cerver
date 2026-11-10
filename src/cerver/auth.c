@@ -356,6 +356,40 @@ static CerverAuthError auth_failed (
 
 }
 
+// the on hold thread gives the authenticated connection to the handler of the cerver,
+// a connection that no handler could take is dropped without its client
+static void auth_client_connection_start (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	if (cerver_register_new_connection_normal_default_select_handler (cerver, client, connection)) {
+		cerver_new_connection_release (cerver, client, connection);
+		connection_drop (cerver, connection);
+	}
+
+}
+
+// the failed auth event of the connection, or without it when the failure dropped it,
+// a connection that reached its max auth tries was deleted
+static CerverAuthError auth_failed_with_event (
+	const Packet *packet, const bool admin, const char *error_message
+) {
+
+	Connection *connection = packet->connection;
+
+	const CerverAuthError error = auth_failed (packet->cerver, connection, error_message);
+	if (error == CERVER_AUTH_ERROR_DROPPED) connection = NULL;
+
+	cerver_event_trigger (
+		admin ? CERVER_EVENT_ADMIN_FAILED_AUTH : CERVER_EVENT_CLIENT_FAILED_AUTH,
+		packet->cerver,
+		NULL, connection
+	);
+
+	return error;
+
+}
+
 static CerverAuthError auth_with_token_admin (
 	const Packet *packet, const AuthData *auth_data
 ) {
@@ -717,12 +751,7 @@ static CerverAuthError auth_try (Packet *packet) {
 						client, packet->connection
 					);
 
-					// FIXME: this is a quick fix
-					// we should have a better way when after we refactor handler methods
-					// create a dedicated thread to handle connection if needed
-					(void) cerver_register_new_connection_normal_default_select_handler (
-						packet->cerver, client, packet->connection
-					);
+					auth_client_connection_start (packet->cerver, client, packet->connection);
 				}
 
 				else {

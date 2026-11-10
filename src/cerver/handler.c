@@ -2131,6 +2131,24 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 
 }
 
+// a new connection that no handler could take is taken out of the cerver with its new client,
+// the client is unregistered while it still has the connection, so its sock fd leaves the maps,
+// and the connection is left for its caller to drop
+void cerver_new_connection_release (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	cerver_log_error (
+		"Cerver %s failed to start the handler of the connection with sock fd <%d>",
+		cerver->info->name, connection->socket->sock_fd
+	);
+
+	(void) client_unregister_from_cerver (cerver, client);
+	(void) client_connection_remove (client, connection);
+	client_delete (client);
+
+}
+
 // select how client connection will be handled based on cerver's handler type
 u8 cerver_register_new_connection_normal_default_select_handler (
 	Cerver *cerver, Client *client, Connection *connection
@@ -2184,12 +2202,12 @@ static u8 cerver_register_new_connection_normal_default (
 				client, connection
 			);
 
-			// TODO: better error handling
-			if (!cerver_register_new_connection_normal_default_select_handler (
+			// a connection that no handler took is dropped by the caller, without its client
+			retval = cerver_register_new_connection_normal_default_select_handler (
 				cerver, client, connection
-			)) {
-				retval = 0;
-			}
+			);
+
+			if (retval) cerver_new_connection_release (cerver, client, connection);
 		}
 	}
 
