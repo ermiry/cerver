@@ -24,6 +24,11 @@ PAIRS=(
 	handler
 	balancer/round_robin
 	balancer/handler_id
+	balancer/reconnect
+	balancer/large
+	balancer/unavailable
+	balancer/concurrent
+	balancer/abandon
 	web/web
 	web/json
 	web/auth

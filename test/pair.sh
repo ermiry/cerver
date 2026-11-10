@@ -4,6 +4,8 @@ TCP_PORT=7000
 FIRST_SERVICE_PORT=7001
 SECOND_SERVICE_PORT=7002
 WEB_PORT=8080
+SERVICE_RESTART_SECONDS=1
+SERVICES_DOWN_SECONDS=4
 READY_SECONDS=16
 CLIENT_SECONDS=${CLIENT_SECONDS:-120}
 STOP_SECONDS=16
@@ -16,6 +18,7 @@ source "$ROOT/test/process.sh"
 
 SERVERS=()
 PORTS=()
+RESTARTS=()
 DIRECTORY="."
 
 balancer_servers () {
@@ -25,6 +28,19 @@ balancer_servers () {
 		"test/bin/cerver/load --type $1"
 	)
 	PORTS=($FIRST_SERVICE_PORT $SECOND_SERVICE_PORT $TCP_PORT)
+}
+
+# the upstream services of the balancer pairs, started again by test/supervise.sh
+# after the seconds in the first argument when they stop (none if it is empty)
+upstream_servers () {
+	SERVERS=(
+		"test/bin/cerver/upstream -p $FIRST_SERVICE_PORT -i 0"
+		"test/bin/cerver/upstream -p $SECOND_SERVICE_PORT -i 1"
+		"test/bin/cerver/load --type round_robin"
+	)
+	PORTS=($FIRST_SERVICE_PORT $SECOND_SERVICE_PORT $TCP_PORT)
+	RESTARTS=("$1" "$1" "")
+	CLIENT="test/bin/client/load/$2"
 }
 
 case "$PAIR" in
@@ -45,6 +61,15 @@ case "$PAIR" in
 	balancer/handler_id)
 		balancer_servers handler_id
 		CLIENT="test/bin/client/load/id"
+		;;
+	balancer/reconnect)
+		upstream_servers $SERVICE_RESTART_SECONDS reconnect
+		;;
+	balancer/unavailable)
+		upstream_servers $SERVICES_DOWN_SECONDS unavailable
+		;;
+	balancer/large | balancer/concurrent | balancer/abandon)
+		upstream_servers "" "${PAIR#balancer/}"
 		;;
 	web/*)
 		SERVERS=("test/bin/web/${PAIR#web/}")
@@ -90,7 +115,11 @@ for index in "${!SERVERS[@]}"; do
 	SERVER_LOG="$LOGS/$NAME-server-$index.log"
 	SERVER_LOGS+=("$SERVER_LOG")
 
-	(cd "$ROOT/$DIRECTORY" && exec $ROOT/${SERVERS[$index]}) > "$SERVER_LOG" 2>&1 &
+	if [ -n "${RESTARTS[$index]}" ]; then
+		(cd "$ROOT/$DIRECTORY" && exec bash "$ROOT/test/supervise.sh" "${RESTARTS[$index]}" $ROOT/${SERVERS[$index]}) > "$SERVER_LOG" 2>&1 &
+	else
+		(cd "$ROOT/$DIRECTORY" && exec $ROOT/${SERVERS[$index]}) > "$SERVER_LOG" 2>&1 &
+	fi
 	SERVER_PIDS+=($!)
 
 	if ! wait_until $READY_SECONDS is_listening "${PORTS[$index]}"; then
