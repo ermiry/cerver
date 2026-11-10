@@ -38,12 +38,17 @@ nginx_wait () {
 	run_in_nginx
 }
 
-nginx_features () {
+nginx_features_at () {
 	COMMAND="./test/bin/client/web/features"
 	run_in_nginx \
-		-e FEATURES_ADDRESS="http://127.0.0.1:$NGINX_PORT" \
+		-e CERVER_TEST_ADDRESS="$1" \
+		-e FEATURES_ADDRESS="http://$2:$NGINX_PORT" \
 		-e FEATURES_PROXY=1 \
 		-e FEATURES_UNBUFFERED_PREFIX="$UNBUFFERED_PREFIX"
+}
+
+nginx_features () {
+	nginx_features_at 127.0.0.1 127.0.0.1 && nginx_features_at ::1 "[::1]"
 }
 
 nginx_load () {
