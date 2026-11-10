@@ -1,16 +1,27 @@
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
-#include "cerver/collections/dlist.h"
+#include <pthread.h>
+#include <time.h>
 
-#include "cerver/threads/bsem.h"
+#include "cerver/collections/pool.h"
+
 #include "cerver/threads/jobs.h"
+#include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
 
-#ifdef THREADS_DEBUG
 #include "cerver/utils/log.h"
-#endif
+
+// the capacity of a priority is doubled each time it grows
+#define JOB_QUEUE_RING_GROWTH_FACTOR		2
+
+#define JOB_QUEUE_MICROSECONDS_PER_SECOND			1000000
+#define JOB_QUEUE_NANOSECONDS_PER_MICROSECOND		1000
 
 void job_queue_clear (JobQueue *job_queue);
+
+#pragma region job
 
 void *job_new (void) {
 
@@ -47,9 +58,10 @@ int job_comparator (const void *a, const void *b) {
 
 }
 
+// allocates a new job, job_get () takes one from the pool of a queue instead
 Job *job_create (void (*work) (void *args), void *args) {
 
-	Job *job = job_new ();
+	Job *job = (Job *) job_new ();
 	if (job) {
 		job->work = work;
 		job->args = args;
@@ -59,19 +71,25 @@ Job *job_create (void (*work) (void *args), void *args) {
 
 }
 
+// takes a job from the pool of the queue, it allocates one only if the pool is empty
 Job *job_get (JobQueue *job_queue) {
 
-	return (Job *) pool_pop (job_queue->pool);
+	Job *job = job_queue ? (Job *) pool_pop (job_queue->pool) : NULL;
+	if (job) job->id = 0;
+
+	return job;
 
 }
 
 void job_reset (Job *job) {
 
+	job->id = 0;
 	job->work = NULL;
 	job->args = NULL;
 
 }
 
+// returns a job to the pool of the queue, to be used again by job_get ()
 void job_return (
 	JobQueue *job_queue, Job *job
 ) {
@@ -82,6 +100,10 @@ void job_return (
 	}
 
 }
+
+#pragma endregion
+
+#pragma region handler
 
 void *job_handler_new (void) {
 
@@ -139,7 +161,7 @@ void *job_handler_create (void) {
 
 JobHandler *job_handler_get (JobQueue *job_queue) {
 
-	return (JobHandler *) pool_pop (job_queue->pool);
+	return job_queue ? (JobHandler *) pool_pop (job_queue->pool) : NULL;
 
 }
 
@@ -155,6 +177,7 @@ void job_handler_reset (JobHandler *job_handler) {
 			job_handler->data_delete (job_handler->data);
 
 		job_handler->data = NULL;
+		job_handler->data_delete = NULL;
 	}
 
 }
@@ -189,7 +212,7 @@ void job_handler_wait (
 	void *data, void (*data_delete) (void *data_ptr)
 ) {
 
-	JobHandler *handler = (JobHandler *) pool_pop (job_queue->pool);
+	JobHandler *handler = job_handler_get (job_queue);
 	if (handler) {
 		handler->data = data;
 		handler->data_delete = data_delete;
@@ -200,9 +223,6 @@ void job_handler_wait (
 			(void) pthread_mutex_lock (handler->mutex);
 
 			while (!handler->done) {
-				#ifdef THREADS_DEBUG
-				cerver_log_debug ("job_handler_wait () waiting...");
-				#endif
 				(void) pthread_cond_wait (handler->cond, handler->mutex);
 			}
 
@@ -214,18 +234,168 @@ void job_handler_wait (
 
 }
 
+#pragma endregion
+
+#pragma region time
+
+static u64 job_queue_elapsed_microseconds (
+	const struct timespec *start, const struct timespec *end
+) {
+
+	const long long elapsed =
+		((long long) (end->tv_sec - start->tv_sec) * JOB_QUEUE_MICROSECONDS_PER_SECOND)
+		+ ((long long) (end->tv_nsec - start->tv_nsec) / JOB_QUEUE_NANOSECONDS_PER_MICROSECOND);
+
+	return (elapsed > 0) ? (u64) elapsed : 0;
+
+}
+
+static u64 job_queue_elapsed_since (const struct timespec *start) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	return job_queue_elapsed_microseconds (start, &now);
+
+}
+
+// the absolute CLOCK_MONOTONIC time after timeout ms
+static void job_queue_deadline (struct timespec *deadline, const u32 timeout) {
+
+	(void) clock_gettime (CLOCK_MONOTONIC, deadline);
+
+	deadline->tv_sec += (time_t) (timeout / JOB_QUEUE_MILLISECONDS_PER_SECOND);
+	deadline->tv_nsec += (long) (timeout % JOB_QUEUE_MILLISECONDS_PER_SECOND)
+		* JOB_QUEUE_NANOSECONDS_PER_MILLISECOND;
+
+	if (deadline->tv_nsec >= JOB_QUEUE_NANOSECONDS_PER_SECOND) {
+		deadline->tv_sec += 1;
+		deadline->tv_nsec -= JOB_QUEUE_NANOSECONDS_PER_SECOND;
+	}
+
+}
+
+#pragma endregion
+
+#pragma region ring
+
+static void job_queue_ring_delete (JobQueueRing *ring) {
+
+	free (ring->entries);
+
+	ring->entries = NULL;
+	ring->head = 0;
+	ring->count = 0;
+	ring->capacity = 0;
+
+}
+
+// the entries keep their order from the head, starting at 0 in the new array
+// returns 0 on success, 1 if the ring could not grow
+static unsigned int job_queue_ring_grow (JobQueueRing *ring) {
+
+	unsigned int retval = 1;
+
+	const size_t capacity = ring->capacity ?
+		(ring->capacity * JOB_QUEUE_RING_GROWTH_FACTOR) : JOB_QUEUE_DEFAULT_RING_CAPACITY;
+
+	JobQueueEntry *entries = (JobQueueEntry *) malloc (capacity * sizeof (JobQueueEntry));
+	if (entries) {
+		for (size_t index = 0; index < ring->count; index++) {
+			entries[index] = ring->entries[(ring->head + index) % ring->capacity];
+		}
+
+		free (ring->entries);
+
+		ring->entries = entries;
+		ring->head = 0;
+		ring->capacity = capacity;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// returns 0 on success, 1 if there is no room for the job
+static unsigned int job_queue_ring_push (JobQueueRing *ring, void *job) {
+
+	unsigned int retval = 1;
+
+	if ((ring->count < ring->capacity) || !job_queue_ring_grow (ring)) {
+		JobQueueEntry *entry = &ring->entries[(ring->head + ring->count) % ring->capacity];
+		entry->job = job;
+		(void) clock_gettime (CLOCK_MONOTONIC, &entry->queued);
+
+		ring->count += 1;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static JobQueueEntry job_queue_ring_pop (JobQueueRing *ring) {
+
+	JobQueueEntry entry = ring->entries[ring->head];
+
+	ring->head = (ring->head + 1) % ring->capacity;
+	ring->count -= 1;
+
+	return entry;
+
+}
+
+// removes the entry at the position from the head, the ones after it move one place
+static JobQueueEntry job_queue_ring_remove (JobQueueRing *ring, const size_t position) {
+
+	JobQueueEntry entry = ring->entries[(ring->head + position) % ring->capacity];
+
+	for (size_t index = position; (index + 1) < ring->count; index++) {
+		ring->entries[(ring->head + index) % ring->capacity] =
+			ring->entries[(ring->head + index + 1) % ring->capacity];
+	}
+
+	ring->count -= 1;
+
+	return entry;
+
+}
+
+#pragma endregion
+
+#pragma region queue
+
 JobQueue *job_queue_new (void) {
 
 	JobQueue *job_queue = (JobQueue *) malloc (sizeof (JobQueue));
 	if (job_queue) {
+		(void) memset (job_queue, 0, sizeof (JobQueue));
+
 		job_queue->type = JOB_QUEUE_TYPE_NONE;
 
 		job_queue->pool = NULL;
 
-		job_queue->queue = NULL;
+		(void) pthread_mutex_init (&job_queue->mutex, NULL);
 
-		job_queue->rwmutex = NULL;
-		job_queue->has_jobs = NULL;
+		// the deadlines of the waits are in CLOCK_MONOTONIC
+		pthread_condattr_t attributes;
+		(void) pthread_condattr_init (&attributes);
+		(void) pthread_condattr_setclock (&attributes, CLOCK_MONOTONIC);
+		(void) pthread_cond_init (&job_queue->has_jobs, &attributes);
+		(void) pthread_cond_init (&job_queue->has_request, &attributes);
+		(void) pthread_condattr_destroy (&attributes);
+
+		job_queue->n_priorities = JOB_QUEUE_DEFAULT_PRIORITIES;
+		job_queue->count = 0;
+
+		job_queue->starvation_limit = JOB_QUEUE_DEFAULT_STARVATION_LIMIT;
+		job_queue->starvation_streak = 0;
+
+		job_queue->signals = 0;
+		job_queue->signaled = false;
 
 		job_queue->waiting = false;
 		job_queue->requested_id = 0;
@@ -234,6 +404,8 @@ JobQueue *job_queue_new (void) {
 		job_queue->running = false;
 		job_queue->handler_thread_id = 0;
 		job_queue->handler = NULL;
+
+		job_queue->destroy = NULL;
 	}
 
 	return job_queue;
@@ -248,22 +420,17 @@ void job_queue_delete (void *job_queue_ptr) {
 		// its thread must end before anything it uses is released
 		(void) job_queue_stop (job_queue);
 
-		if (job_queue->rwmutex) {
-			(void) pthread_mutex_lock (job_queue->rwmutex);
+		job_queue_clear (job_queue);
+
+		for (unsigned int priority = 0; priority < JOB_QUEUE_MAX_PRIORITIES; priority++) {
+			job_queue_ring_delete (&job_queue->rings[priority]);
 		}
 
 		pool_delete (job_queue->pool);
 
-		// job_queue_clear (job_queue);
-		dlist_delete (job_queue->queue);
-
-		if (job_queue->rwmutex) {
-			(void) pthread_mutex_unlock (job_queue->rwmutex);
-			(void) pthread_mutex_destroy (job_queue->rwmutex);
-			free (job_queue->rwmutex);
-		}
-
-		bsem_delete (job_queue->has_jobs);
+		(void) pthread_cond_destroy (&job_queue->has_request);
+		(void) pthread_cond_destroy (&job_queue->has_jobs);
+		(void) pthread_mutex_destroy (&job_queue->mutex);
 
 		free (job_queue);
 	}
@@ -284,7 +451,7 @@ static void job_queue_create_jobs (JobQueue *job_queue) {
 		);
 	}
 
-	job_queue->queue = dlist_init (job_delete, NULL);
+	job_queue->destroy = job_delete;
 
 }
 
@@ -302,15 +469,30 @@ static void job_queue_create_handlers (JobQueue *job_queue) {
 		);
 	}
 
-	job_queue->queue = dlist_init (job_handler_delete, NULL);
+	job_queue->destroy = job_handler_delete;
 
 }
 
-JobQueue *job_queue_create (const JobQueueType type) {
+static unsigned int job_queue_priorities_valid (const unsigned int n_priorities) {
+
+	unsigned int priorities = n_priorities;
+
+	if (!priorities) priorities = 1;
+	else if (priorities > JOB_QUEUE_MAX_PRIORITIES) priorities = JOB_QUEUE_MAX_PRIORITIES;
+
+	return priorities;
+
+}
+
+// creates a queue with n_priorities priorities (1 to JOB_QUEUE_MAX_PRIORITIES)
+JobQueue *job_queue_create_with_priorities (
+	const JobQueueType type, const unsigned int n_priorities
+) {
 
 	JobQueue *job_queue = job_queue_new ();
 	if (job_queue) {
 		job_queue->type = type;
+		job_queue->n_priorities = job_queue_priorities_valid (n_priorities);
 
 		switch (job_queue->type) {
 			case JOB_QUEUE_TYPE_JOBS:
@@ -323,15 +505,16 @@ JobQueue *job_queue_create (const JobQueueType type) {
 
 			default: break;
 		}
-
-		job_queue->rwmutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		(void) pthread_mutex_init (job_queue->rwmutex, NULL);
-
-		job_queue->has_jobs = bsem_new ();
-		bsem_init (job_queue->has_jobs, 0);
 	}
 
 	return job_queue;
+
+}
+
+// creates a queue with JOB_QUEUE_DEFAULT_PRIORITIES priorities
+JobQueue *job_queue_create (const JobQueueType type) {
+
+	return job_queue_create_with_priorities (type, JOB_QUEUE_DEFAULT_PRIORITIES);
 
 }
 
@@ -343,84 +526,207 @@ void job_queue_set_handler (
 
 }
 
-static unsigned int job_queue_push_internal (
-	JobQueue *job_queue, void *job_ptr
+// sets how many jobs can be taken ahead of a waiting job of a lower priority
+// before it is taken (JOB_QUEUE_DEFAULT_STARVATION_LIMIT),
+// JOB_QUEUE_STARVATION_DISABLED always takes the highest priority first
+void job_queue_set_starvation_limit (
+	JobQueue *job_queue, const unsigned int limit
 ) {
-
-	unsigned int retval = 1;
-
-	(void) pthread_mutex_lock (job_queue->rwmutex);
-
-	retval = dlist_insert_at_end (job_queue->queue, job_ptr);
-
-	bsem_post (job_queue->has_jobs);
-
-	(void) pthread_mutex_unlock (job_queue->rwmutex);
-
-	return retval;
-
-}
-
-// add a new job to the queue
-// returns 0 on success, 1 on error
-unsigned int job_queue_push (JobQueue *job_queue, void *job_ptr) {
-
-	return (job_queue && job_ptr) ?
-		job_queue_push_internal (job_queue, job_ptr) : 1;
-
-}
-
-unsigned int job_queue_push_job (
-	JobQueue *job_queue,
-	void (*work) (void *args), void *args
-) {
-
-	unsigned int retval = 1;
 
 	if (job_queue) {
-		Job *job = (Job *) pool_pop (job_queue->pool);
-		if (job) {
-			job->work = work;
-			job->args = args;
+		(void) pthread_mutex_lock (&job_queue->mutex);
 
-			if (!job_queue_push_internal (
-				job_queue, job
-			)) {
-				retval = 0;
+		job_queue->starvation_limit = limit;
+		job_queue->starvation_streak = 0;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+}
+
+// the priority that job_queue_push () uses, the one in the middle
+unsigned int job_queue_default_priority (const JobQueue *job_queue) {
+
+	return job_queue ? (job_queue->n_priorities / 2) : 0;
+
+}
+
+// returns how many jobs are in the queue
+size_t job_queue_size (JobQueue *job_queue) {
+
+	size_t size = 0;
+
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		size = job_queue->count;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+	return size;
+
+}
+
+// returns the milliseconds that the oldest job in the queue has waited, 0 if it is empty
+u64 job_queue_oldest_wait (JobQueue *job_queue) {
+
+	u64 oldest = 0;
+
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		for (unsigned int priority = 0; priority < job_queue->n_priorities; priority++) {
+			const JobQueueRing *ring = &job_queue->rings[priority];
+			if (ring->count) {
+				const u64 waited = job_queue_elapsed_since (&ring->entries[ring->head].queued);
+				if (waited > oldest) oldest = waited;
 			}
 		}
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+	return oldest / THPOOL_MICROSECONDS_PER_MILLISECOND;
+
+}
+
+#pragma endregion
+
+#pragma region push
+
+// called with the queue's lock
+static unsigned int job_queue_push_locked (
+	JobQueue *job_queue, void *job_ptr, const unsigned int priority
+) {
+
+	const unsigned int selected = (priority < job_queue->n_priorities) ?
+		priority : (job_queue->n_priorities - 1);
+
+	unsigned int retval = job_queue_ring_push (&job_queue->rings[selected], job_ptr);
+	if (!retval) {
+		job_queue->count += 1;
+
+		job_queue->stats.total_jobs += 1;
+		job_queue->stats.priority_jobs[selected] += 1;
+		if (job_queue->count > job_queue->stats.max_queued) {
+			job_queue->stats.max_queued = job_queue->count;
+		}
+
+		(void) pthread_cond_signal (&job_queue->has_jobs);
 	}
 
 	return retval;
 
 }
 
+static unsigned int job_queue_push_internal (
+	JobQueue *job_queue, void *job_ptr, const unsigned int priority
+) {
+
+	(void) pthread_mutex_lock (&job_queue->mutex);
+
+	const unsigned int retval = job_queue_push_locked (job_queue, job_ptr, priority);
+
+	(void) pthread_mutex_unlock (&job_queue->mutex);
+
+	return retval;
+
+}
+
+// adds a new job to the queue with a priority, 0 is the highest one
+// a priority that does not exist is the lowest one
+// returns 0 on success, 1 on error
+unsigned int job_queue_push_priority (
+	JobQueue *job_queue, void *job_ptr, const unsigned int priority
+) {
+
+	return (job_queue && job_ptr) ?
+		job_queue_push_internal (job_queue, job_ptr, priority) : 1;
+
+}
+
+// adds a new job to the queue with the default priority
+// returns 0 on success, 1 on error
+unsigned int job_queue_push (JobQueue *job_queue, void *job_ptr) {
+
+	return job_queue_push_priority (
+		job_queue, job_ptr, job_queue_default_priority (job_queue)
+	);
+
+}
+
+// creates & adds a new job to the queue with a priority
+// returns 0 on success, 1 on error
+unsigned int job_queue_push_job_priority (
+	JobQueue *job_queue,
+	void (*work) (void *args), void *args,
+	const unsigned int priority
+) {
+
+	unsigned int retval = 1;
+
+	Job *job = job_get (job_queue);
+	if (job) {
+		job->work = work;
+		job->args = args;
+
+		retval = job_queue_push_internal (job_queue, job, priority);
+		if (retval) job_return (job_queue, job);
+	}
+
+	return retval;
+
+}
+
+// creates & adds a new job to the queue
+// returns 0 on success, 1 on error
+unsigned int job_queue_push_job (
+	JobQueue *job_queue,
+	void (*work) (void *args), void *args
+) {
+
+	return job_queue_push_job_priority (
+		job_queue, work, args, job_queue_default_priority (job_queue)
+	);
+
+}
+
+// the job goes directly to the thread that waits for its id
 static unsigned int job_queue_push_job_with_id_internal (
 	JobQueue *job_queue, Job *job
 ) {
 
 	unsigned int retval = 1;
 
-	(void) pthread_mutex_lock (job_queue->rwmutex);
+	(void) pthread_mutex_lock (&job_queue->mutex);
 
-	if (job_queue->waiting && (job_queue->requested_id == job->id)) {
+	if (
+		job_queue->waiting && !job_queue->requested_job
+		&& (job_queue->requested_id == job->id)
+	) {
 		job_queue->requested_job = job;
+		job_queue->stats.total_jobs += 1;
 
-		bsem_post (job_queue->has_jobs);
+		(void) pthread_cond_broadcast (&job_queue->has_request);
 
 		retval = 0;
 	}
 
 	else {
-		retval = dlist_insert_at_end (job_queue->queue, job);
+		retval = job_queue_push_locked (
+			job_queue, job, job_queue_default_priority (job_queue)
+		);
 	}
 
-	(void) pthread_mutex_unlock (job_queue->rwmutex);
+	(void) pthread_mutex_unlock (&job_queue->mutex);
 
 	return retval;
 
 }
 
+// adds a job with an id, a thread that waits for it in job_queue_request () gets it directly
+// returns 0 on success, 1 on error
 unsigned int job_queue_push_job_with_id (
 	JobQueue *job_queue,
 	const u64 job_id,
@@ -429,23 +735,22 @@ unsigned int job_queue_push_job_with_id (
 
 	unsigned int retval = 1;
 
-	if (job_queue) {
-		Job *job = (Job *) pool_pop (job_queue->pool);
-		if (job) {
-			job->id = job_id;
-			job->work = work;
-			job->args = args;
+	Job *job = job_get (job_queue);
+	if (job) {
+		job->id = job_id;
+		job->work = work;
+		job->args = args;
 
-			retval = job_queue_push_job_with_id_internal (
-				job_queue, job
-			);
-		}
+		retval = job_queue_push_job_with_id_internal (job_queue, job);
+		if (retval) job_return (job_queue, job);
 	}
 
 	return retval;
 
 }
 
+// creates & adds a new handler to the queue
+// returns 0 on success, 1 on error
 unsigned int job_queue_push_handler (
 	JobQueue *job_queue,
 	struct _Cerver *cerver,
@@ -455,96 +760,206 @@ unsigned int job_queue_push_handler (
 
 	unsigned int retval = 1;
 
-	if (job_queue) {
-		JobHandler *job_handler = (JobHandler *) pool_pop (job_queue->pool);
-		if (job_handler) {
-			job_handler->cerver = cerver;
-			job_handler->connection = connection;
+	JobHandler *job_handler = job_handler_get (job_queue);
+	if (job_handler) {
+		job_handler->cerver = cerver;
+		job_handler->connection = connection;
 
-			job_handler->data = data;
-			job_handler->data_delete = data_delete;
+		job_handler->data = data;
+		job_handler->data_delete = data_delete;
 
-			if (!job_queue_push_internal (
-				job_queue, job_handler
-			)) {
-				retval = 0;
-			}
-		}
+		retval = job_queue_push (job_queue, job_handler);
+		if (retval) job_handler_return (job_queue, job_handler);
 	}
 
 	return retval;
 
 }
 
-// get the job at the start of the queue
-void *job_queue_pull (JobQueue *job_queue) {
+#pragma endregion
 
-	void *retval = NULL;
+#pragma region pull
 
-	if (job_queue) {
-		(void) pthread_mutex_lock (job_queue->rwmutex);
+// the highest priority with jobs, or a lower one when the jobs taken ahead of it
+// reached the starvation limit, called with the queue's lock
+// returns the priority, or -1 if the queue is empty
+static int job_queue_select_priority (JobQueue *job_queue) {
 
-		switch (job_queue->queue->size) {
-			case 0: break;
-
-			case 1:
-				// remove at the start of the list
-				retval = dlist_remove_element (job_queue->queue, NULL);
-				break;
-
-			default:
-				// remove at the start of the list
-				retval = dlist_remove_element (job_queue->queue, NULL);
-				bsem_post (job_queue->has_jobs);
-				break;
-		}
-
-		(void) pthread_mutex_unlock (job_queue->rwmutex);
+	int first = -1;
+	for (unsigned int priority = 0; (priority < job_queue->n_priorities) && (first < 0); priority++) {
+		if (job_queue->rings[priority].count) first = (int) priority;
 	}
 
-	return retval;
+	int selected = first;
+	if ((first >= 0) && (job_queue->starvation_limit != JOB_QUEUE_STARVATION_DISABLED)) {
+		int lower = -1;
+		for (unsigned int priority = (unsigned int) first + 1; (priority < job_queue->n_priorities) && (lower < 0); priority++) {
+			if (job_queue->rings[priority].count) lower = (int) priority;
+		}
 
-}
+		if (lower < 0) {
+			job_queue->starvation_streak = 0;
+		}
 
-// requests to get an specific job from the queue by matching id
-// blocks and waits until the requested job is available
-void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
-
-	void *match = NULL;
-
-	if (job_queue) {
-		(void) pthread_mutex_lock (job_queue->rwmutex);
-
-		// check if the job is already in the queue
-		Job query = { .id = job_id, .work = NULL, .args = NULL };
-		match = dlist_remove (job_queue->queue, &query, job_comparator);
-
-		if (!match) {
-			// request job
-			job_queue->waiting = true;
-			job_queue->requested_id = job_id;
-			job_queue->requested_job = NULL;
-
-			(void) pthread_mutex_unlock (job_queue->rwmutex);
-
-			// wait until the job is inserted in the queue
-			bsem_wait (job_queue->has_jobs);
-
-			(void) pthread_mutex_lock (job_queue->rwmutex);
-
-			// get the requested job
-			match = job_queue->requested_job;
-
-			// reset request values
-			job_queue->waiting = false;
-			job_queue->requested_id = 0;
-			job_queue->requested_job = NULL;
-
-			(void) pthread_mutex_unlock (job_queue->rwmutex);
+		else if (job_queue->starvation_streak >= job_queue->starvation_limit) {
+			job_queue->starvation_streak = 0;
+			job_queue->stats.promoted_jobs += 1;
+			selected = lower;
 		}
 
 		else {
-			(void) pthread_mutex_unlock (job_queue->rwmutex);
+			job_queue->starvation_streak += 1;
+		}
+	}
+
+	return selected;
+
+}
+
+// takes the next job, called with the queue's lock
+static void *job_queue_take (JobQueue *job_queue) {
+
+	void *job = NULL;
+
+	const int priority = job_queue_select_priority (job_queue);
+	if (priority >= 0) {
+		const JobQueueEntry entry = job_queue_ring_pop (&job_queue->rings[priority]);
+		job_queue->count -= 1;
+
+		const u64 waited = job_queue_elapsed_since (&entry.queued);
+		job_queue->stats.pulled_jobs += 1;
+		job_queue->stats.wait_total_microseconds += waited;
+		job_queue->stats.wait_histogram[thpool_histogram_bucket (waited)] += 1;
+
+		job = entry.job;
+	}
+
+	return job;
+
+}
+
+// waits for the next job with the queue's lock, until the deadline (NULL for none),
+// a signal or interrupted (args), an interrupted wait leaves the jobs in the queue
+static void *job_queue_pull_wait (
+	JobQueue *job_queue, const struct timespec *deadline,
+	bool (*interrupted) (const void *args), const void *args
+) {
+
+	void *job = NULL;
+
+	const u64 signals = job_queue->signals;
+
+	bool waiting = true;
+	while (waiting) {
+		if (interrupted && interrupted (args)) {
+			waiting = false;
+		}
+
+		else if ((job = job_queue_take (job_queue)) || (job_queue->signals != signals)) {
+			waiting = false;
+		}
+
+		else if (deadline) {
+			if (pthread_cond_timedwait (&job_queue->has_jobs, &job_queue->mutex, deadline) == ETIMEDOUT) {
+				job = job_queue_take (job_queue);
+				if (!job) job_queue->stats.timed_out_waits += 1;
+
+				waiting = false;
+			}
+		}
+
+		else {
+			(void) pthread_cond_wait (&job_queue->has_jobs, &job_queue->mutex);
+		}
+	}
+
+	return job;
+
+}
+
+// gets the next job without waiting, NULL if the queue is empty
+void *job_queue_pull (JobQueue *job_queue) {
+
+	void *job = NULL;
+
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		job = job_queue_take (job_queue);
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+	return job;
+
+}
+
+// waits up to timeout ms (or JOB_QUEUE_WAIT_FOREVER) for the next job
+// returns NULL if the deadline passed or job_queue_signal () was called
+void *job_queue_pull_timeout (JobQueue *job_queue, const u32 timeout) {
+
+	void *job = NULL;
+
+	if (job_queue) {
+		struct timespec deadline = { 0, 0 };
+		if (timeout != JOB_QUEUE_WAIT_FOREVER) job_queue_deadline (&deadline, timeout);
+
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		job = job_queue_pull_wait (
+			job_queue,
+			(timeout != JOB_QUEUE_WAIT_FOREVER) ? &deadline : NULL,
+			NULL, NULL
+		);
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+	return job;
+
+}
+
+// waits for the next job until interrupted (args) is true,
+// the thread that changes what interrupted () reads must call job_queue_signal () after it,
+// interrupted () is called with the queue's lock, so the wake up is never lost
+// returns NULL when it was interrupted or signaled
+void *job_queue_pull_interruptible (
+	JobQueue *job_queue,
+	bool (*interrupted) (const void *args), const void *args
+) {
+
+	void *job = NULL;
+
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		job = job_queue_pull_wait (job_queue, NULL, interrupted, args);
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+	return job;
+
+}
+
+#pragma endregion
+
+#pragma region request
+
+// a job with the id that is already in the queue, called with the queue's lock
+static void *job_queue_request_find (JobQueue *job_queue, const u64 job_id) {
+
+	void *match = NULL;
+
+	for (unsigned int priority = 0; (priority < job_queue->n_priorities) && !match; priority++) {
+		JobQueueRing *ring = &job_queue->rings[priority];
+
+		for (size_t position = 0; (position < ring->count) && !match; position++) {
+			const Job *job = (const Job *) ring->entries[(ring->head + position) % ring->capacity].job;
+			if (job->id == job_id) {
+				match = job_queue_ring_remove (ring, position).job;
+				job_queue->count -= 1;
+			}
 		}
 	}
 
@@ -552,23 +967,169 @@ void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
 
 }
 
+// waits with the queue's lock for the job with the id to be pushed
+static void *job_queue_request_wait (
+	JobQueue *job_queue, const u64 job_id, const struct timespec *deadline
+) {
+
+	job_queue->waiting = true;
+	job_queue->requested_id = job_id;
+	job_queue->requested_job = NULL;
+
+	bool waiting = true;
+	while (waiting && !job_queue->requested_job) {
+		if (deadline) {
+			waiting = (pthread_cond_timedwait (
+				&job_queue->has_request, &job_queue->mutex, deadline
+			) != ETIMEDOUT);
+		}
+
+		else {
+			(void) pthread_cond_wait (&job_queue->has_request, &job_queue->mutex);
+		}
+	}
+
+	void *match = job_queue->requested_job;
+	if (!match) job_queue->stats.timed_out_waits += 1;
+
+	job_queue->waiting = false;
+	job_queue->requested_id = 0;
+	job_queue->requested_job = NULL;
+
+	return match;
+
+}
+
+static void *job_queue_request_internal (
+	JobQueue *job_queue, const u64 job_id, const u32 timeout
+) {
+
+	struct timespec deadline = { 0, 0 };
+	if (timeout != JOB_QUEUE_WAIT_FOREVER) job_queue_deadline (&deadline, timeout);
+
+	(void) pthread_mutex_lock (&job_queue->mutex);
+
+	void *match = job_queue_request_find (job_queue, job_id);
+	if (!match) {
+		match = job_queue_request_wait (
+			job_queue, job_id, (timeout != JOB_QUEUE_WAIT_FOREVER) ? &deadline : NULL
+		);
+	}
+
+	if (match) job_queue->stats.requested_jobs += 1;
+
+	(void) pthread_mutex_unlock (&job_queue->mutex);
+
+	return match;
+
+}
+
+// requests to get an specific job from the queue by matching id
+// blocks and waits until the requested job is available
+void *job_queue_request (JobQueue *job_queue, const u64 job_id) {
+
+	return job_queue ?
+		job_queue_request_internal (job_queue, job_id, JOB_QUEUE_WAIT_FOREVER) : NULL;
+
+}
+
+// requests a job by its id and waits up to timeout ms for it
+// returns NULL if it did not arrive before the deadline
+void *job_queue_request_timeout (
+	JobQueue *job_queue, const u64 job_id, const u32 timeout
+) {
+
+	return job_queue ?
+		job_queue_request_internal (job_queue, job_id, timeout) : NULL;
+
+}
+
+#pragma endregion
+
+#pragma region stats
+
+// records that a job that was pulled finished its work, it started at start (CLOCK_MONOTONIC)
+void job_queue_record_run (JobQueue *job_queue, const struct timespec *start) {
+
+	if (job_queue && start) {
+		const u64 elapsed = job_queue_elapsed_since (start);
+
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		job_queue->stats.completed_jobs += 1;
+		job_queue->stats.run_total_microseconds += elapsed;
+		job_queue->stats.run_histogram[thpool_histogram_bucket (elapsed)] += 1;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+}
+
+// copies the stats of the queue
+void job_queue_get_stats (JobQueue *job_queue, JobQueueStats *stats) {
+
+	if (job_queue && stats) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		*stats = job_queue->stats;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
+
+}
+
+void job_queue_stats_print (JobQueue *job_queue) {
+
+	if (job_queue) {
+		JobQueueStats stats;
+		job_queue_get_stats (job_queue, &stats);
+
+		cerver_log_msg ("Job queue total jobs: %lu", stats.total_jobs);
+		cerver_log_msg ("Job queue pulled jobs: %lu", stats.pulled_jobs);
+		cerver_log_msg ("Job queue completed jobs: %lu", stats.completed_jobs);
+		cerver_log_msg ("Job queue requested jobs: %lu", stats.requested_jobs);
+		cerver_log_msg ("Job queue timed out waits: %lu", stats.timed_out_waits);
+		cerver_log_msg ("Job queue promoted jobs: %lu", stats.promoted_jobs);
+		cerver_log_msg ("Job queue max queued: %lu", stats.max_queued);
+
+		for (unsigned int priority = 0; priority < job_queue->n_priorities; priority++) {
+			cerver_log_msg ("Job queue priority %u jobs: %lu", priority, stats.priority_jobs[priority]);
+		}
+
+		cerver_log_msg ("Job queue wait total: %lu us", stats.wait_total_microseconds);
+		cerver_log_msg ("Job queue run total: %lu us", stats.run_total_microseconds);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region thread
+
+static bool job_queue_is_stopped (const void *job_queue_ptr) {
+
+	const JobQueue *job_queue = (const JobQueue *) job_queue_ptr;
+
+	return !__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE);
+
+}
+
 static void *job_queue_jobs (void *job_queue_ptr) {
 
 	JobQueue *job_queue = (JobQueue *) job_queue_ptr;
 
-	Job *job = NULL;
-	while (__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE)) {
-		bsem_wait (job_queue->has_jobs);
+	while (!job_queue_is_stopped (job_queue)) {
+		Job *job = (Job *) job_queue_pull_interruptible (
+			job_queue, job_queue_is_stopped, job_queue
+		);
 
-		job = (Job *) job_queue_pull (job_queue);
 		if (job) {
-			#ifdef THREADS_DEBUG
-			cerver_log_debug ("job_queue_jobs () new job!");
-			#endif
+			struct timespec start = { 0, 0 };
+			(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
-			// do work
-			if (job->work)
-				job->work (job->args);
+			if (job->work) job->work (job->args);
+
+			job_queue_record_run (job_queue, &start);
 
 			job_return (job_queue, job);
 		}
@@ -582,29 +1143,20 @@ static void *job_queue_handlers (void *job_queue_ptr) {
 
 	JobQueue *job_queue = (JobQueue *) job_queue_ptr;
 
-	JobHandler *job_handler = NULL;
-	while (__atomic_load_n (&job_queue->running, __ATOMIC_ACQUIRE)) {
-		bsem_wait (job_queue->has_jobs);
+	while (!job_queue_is_stopped (job_queue)) {
+		JobHandler *job_handler = (JobHandler *) job_queue_pull_interruptible (
+			job_queue, job_queue_is_stopped, job_queue
+		);
 
-		job_handler = (JobHandler *) job_queue_pull (job_queue);
 		if (job_handler) {
-			#ifdef THREADS_DEBUG
-			cerver_log_debug ("job_queue_handlers () new job!");
-			#endif
+			struct timespec start = { 0, 0 };
+			(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
-			// do work
 			job_queue->handler (job_handler->data);
 
-			// signal
-			#ifdef THREADS_DEBUG
-			cerver_log_debug ("BEFORE job_handler_signal ()");
-			#endif
+			job_queue_record_run (job_queue, &start);
 
 			job_handler_signal (job_handler);
-
-			#ifdef THREADS_DEBUG
-			cerver_log_debug ("AFTER job_handler_signal ()");
-			#endif
 		}
 	}
 
@@ -657,17 +1209,38 @@ unsigned int job_queue_start (JobQueue *job_queue) {
 
 }
 
-// wait for work or signal on the job queue
+// waits until there is a job in the queue or the queue is signaled,
+// a signal that arrives before the wait is kept
 void job_queue_wait (JobQueue *job_queue) {
 
-	bsem_wait (job_queue->has_jobs);
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		while (!job_queue->count && !job_queue->signaled) {
+			(void) pthread_cond_wait (&job_queue->has_jobs, &job_queue->mutex);
+		}
+
+		job_queue->signaled = false;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
 
 }
 
-// signal a job queue
+// wakes up every thread that waits in the queue
 void job_queue_signal (JobQueue *job_queue) {
 
-	bsem_post (job_queue->has_jobs);
+	if (job_queue) {
+		(void) pthread_mutex_lock (&job_queue->mutex);
+
+		job_queue->signals += 1;
+		job_queue->signaled = true;
+
+		(void) pthread_cond_broadcast (&job_queue->has_jobs);
+		(void) pthread_cond_broadcast (&job_queue->has_request);
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
+	}
 
 }
 
@@ -697,7 +1270,7 @@ unsigned int job_queue_stop (JobQueue *job_queue) {
 	if (job_queue) {
 		// the queue thread reads it while it waits for jobs
 		if (__atomic_exchange_n (&job_queue->running, false, __ATOMIC_ACQ_REL)) {
-			bsem_post (job_queue->has_jobs);
+			job_queue_signal (job_queue);
 			job_queue_join (job_queue);
 			retval = 0;
 		}
@@ -711,9 +1284,22 @@ unsigned int job_queue_stop (JobQueue *job_queue) {
 void job_queue_clear (JobQueue *job_queue) {
 
 	if (job_queue) {
-		dlist_reset (job_queue->queue);
+		(void) pthread_mutex_lock (&job_queue->mutex);
 
-		bsem_reset (job_queue->has_jobs);
+		for (unsigned int priority = 0; priority < job_queue->n_priorities; priority++) {
+			JobQueueRing *ring = &job_queue->rings[priority];
+			while (ring->count) {
+				const JobQueueEntry entry = job_queue_ring_pop (ring);
+				if (job_queue->destroy) job_queue->destroy (entry.job);
+			}
+		}
+
+		job_queue->count = 0;
+		job_queue->signaled = false;
+
+		(void) pthread_mutex_unlock (&job_queue->mutex);
 	}
 
 }
+
+#pragma endregion
