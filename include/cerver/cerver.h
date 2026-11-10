@@ -33,8 +33,8 @@
 #define CERVER_DEFAULT_IPV6_ONLY					false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				SOMAXCONN
 
-// a literal IPv4 or IPv6 address, without the port
-#define CERVER_BIND_ADDRESS_SIZE					INET6_ADDRSTRLEN
+// a literal IPv4 or IPv6 address with its zone, without the port
+#define CERVER_BIND_ADDRESS_SIZE					NETWORK_ADDRESS_STRING_SIZE
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
@@ -386,6 +386,12 @@ struct _Cerver {
 	// the teardown waits for them before the cerver is released
 	ThreadGroup event_threads;
 
+	// the peers of an UDP cerver (udp.c), created when it starts
+	struct CerverUdp *udp;
+	u32 udp_peer_timeout;
+	u32 udp_max_peers;
+	u32 udp_peers_count;                // read with __atomic by cerver_udp_peers_count ()
+
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
 	u16 current_n_fds;                  // n of active fds in the pollfd array
@@ -441,8 +447,9 @@ struct _Cerver {
 	unsigned int num_handlers_alive;       // handlers currently alive
 	unsigned int num_handlers_working;     // handlers currently working
 	pthread_mutex_t *handlers_lock;
-	// TODO: add ability to control handler execution
-	// pthread_cond_t *handlers_wait;
+
+	// signaled with the handlers lock when a handler marks itself alive
+	pthread_cond_t *handlers_alive_cond;
 
 	bool check_packets;                     // enable / disbale packet checking
 	u8 max_bad_packets;                     // bad packets of a connection before it is dropped, 0 disables it
