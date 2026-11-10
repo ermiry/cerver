@@ -70,7 +70,9 @@ CERVER_PUBLIC void *socket_create_empty (void);
 
 CERVER_PUBLIC Socket *socket_create (int fd);
 
-// closes the fd of the socket and sets it to -1, with the close mutex
+// closes the fd of the socket and sets it to -1, with the close mutex,
+// it shuts the fd down first and waits for a send of another thread to end (the write mutex),
+// so the caller must not have the write mutex
 // returns the result of close (), 0 if the socket was already closed
 CERVER_PUBLIC int socket_close (Socket *socket);
 
