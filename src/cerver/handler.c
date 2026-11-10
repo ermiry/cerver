@@ -945,6 +945,9 @@ void cerver_test_packet_handler (Packet *packet) {
 		.release_args = NULL
 	};
 
+	// only the header goes back, a test packet with data must not announce it
+	request.header.packet_size = PACKET_HEADER_SIZE;
+
 	(void) packet_send (&request, 0, NULL, false);
 
 }
