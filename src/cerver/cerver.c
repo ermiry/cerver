@@ -3586,88 +3586,58 @@ u8 cerver_report_check_info (
 
 #pragma region serialization
 
-static inline SCerver *scerver_new (void) {
+SERIALIZER_DEFINE (CerverSummary, cerver_summary, CERVER_SUMMARY_VERSION, CERVER_SUMMARY_FIELDS)
 
-	SCerver *scerver = (SCerver *) malloc (sizeof (SCerver));
-	if (scerver) memset (scerver, 0, sizeof (SCerver));
-	return scerver;
+// the summary of the cerver that its clients get, the texts are cut to their fields
+static void cerver_summary_set (CerverSummary *summary, const Cerver *cerver) {
 
-}
+	serializer_object_init (&cerver_summary_schema, summary);
 
-static inline void scerver_delete (void *ptr) {
-	
-	if (ptr) free (ptr);
-	
-}
+	summary->type = (i32) cerver->type;
 
-// srealizes the cerver
-static SCerver *cerver_serliaze (Cerver *cerver) {
+	(void) snprintf (
+		summary->name, CERVER_SUMMARY_NAME_SIZE,
+		"%s", cerver->info->name
+	);
 
-	SCerver *scerver = NULL;
-
-	if (cerver) {
-		scerver = scerver_new ();
-		if (scerver) {
-			scerver->type = cerver->type;
-
-			(void) snprintf (
-				scerver->name, S_CERVER_NAME_LENGTH,
-				"%s", cerver->info->name
-			);
-
-			if (cerver->info->welcome_len) {
-				(void) snprintf (
-					scerver->welcome, S_CERVER_WELCOME_LENGTH,
-					"%s", cerver->info->welcome
-				);
-			}
-
-			scerver->use_ipv6 = cerver->use_ipv6;
-			scerver->protocol = cerver->protocol;
-			scerver->port = cerver->port;
-
-			scerver->auth_required = cerver->auth_required;
-			scerver->uses_sessions = cerver->use_sessions;
-		}
+	if (cerver->info->welcome_len) {
+		(void) snprintf (
+			summary->welcome, CERVER_SUMMARY_WELCOME_SIZE,
+			"%s", cerver->info->welcome
+		);
 	}
 
-	return scerver;
+	summary->use_ipv6 = cerver->use_ipv6;
+	summary->protocol = (i32) cerver->protocol;
+	summary->port = cerver->port;
+
+	summary->auth_required = cerver->auth_required;
+	summary->uses_sessions = cerver->use_sessions;
 
 }
 
-// a flag that comes from the network can have any value, it is read as a byte
-static bool cerver_deserialize_flag (const bool *flag) {
-
-	return *((const unsigned char *) flag) != 0;
-
-}
-
-// the scerver comes from the network: its strings may not be NUL terminated
-// and its flags may have any value, so they are read up to their sizes and as bytes
-CerverReport *cerver_deserialize (const SCerver *scerver) {
+// the summary comes from the network already validated by its schema
+CerverReport *cerver_deserialize (const CerverSummary *summary) {
 
 	CerverReport *cerver_report = NULL;
 
-	if (scerver) {
+	if (summary) {
 		cerver_report = cerver_report_new ();
 		if (cerver_report) {
-			cerver_report->type = scerver->type;
+			cerver_report->type = (CerverType) summary->type;
 
-			cerver_report->name = str_create_from_bytes (
-				scerver->name, strnlen (scerver->name, S_CERVER_NAME_LENGTH)
-			);
+			cerver_report->name = str_new (summary->name);
 
-			const size_t welcome_len = strnlen (scerver->welcome, S_CERVER_WELCOME_LENGTH);
-			if (welcome_len) {
-				cerver_report->welcome = str_create_from_bytes (scerver->welcome, welcome_len);
+			if (summary->welcome[0]) {
+				cerver_report->welcome = str_new (summary->welcome);
 			}
 
-			cerver_report->use_ipv6 = cerver_deserialize_flag (&scerver->use_ipv6);
-			cerver_report->protocol = scerver->protocol;
-			cerver_report->port = scerver->port;
+			cerver_report->use_ipv6 = summary->use_ipv6;
+			cerver_report->protocol = (Protocol) summary->protocol;
+			cerver_report->port = summary->port;
 
-			cerver_report->auth_required = cerver_deserialize_flag (&scerver->auth_required);
-			cerver_report->uses_sessions = cerver_deserialize_flag (&scerver->uses_sessions);
+			cerver_report->auth_required = summary->auth_required;
+			cerver_report->uses_sessions = summary->uses_sessions;
 		}
 	}
 
@@ -3681,15 +3651,13 @@ Packet *cerver_packet_generate (Cerver *cerver) {
 	Packet *packet = NULL;
 
 	if (cerver) {
-		SCerver *scerver = cerver_serliaze (cerver);
-		if (scerver) {
-			packet = packet_generate_request (
-				PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
-				scerver, sizeof (SCerver)
-			);
-			
-			scerver_delete (scerver);
-		}
+		CerverSummary summary;
+		cerver_summary_set (&summary, cerver);
+
+		packet = packet_create_serialized (
+			PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+			&cerver_summary_schema, &summary
+		);
 	}
 
 	return packet;

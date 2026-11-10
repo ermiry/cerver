@@ -2215,16 +2215,15 @@ unsigned int client_connection_get_next_packet (
 
 #pragma region connect
 
-// the request of the cerver info has the size of the info,
+// the request of the cerver info has the biggest size of the info,
 // a cerver does not answer an unproven address with more bytes than it sent (udp.c)
 static void client_connect_datagram_info (Client *client, Connection *connection) {
 
-	SCerver padding;
-	(void) memset (&padding, 0, sizeof (SCerver));
+	u8 padding[CERVER_SUMMARY_MAX_ENCODED_SIZE] = { 0 };
 
 	Packet *request = packet_generate_request (
 		PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
-		&padding, sizeof (SCerver)
+		padding, CERVER_SUMMARY_MAX_ENCODED_SIZE
 	);
 
 	if (request) {
@@ -2923,18 +2922,16 @@ const char *client_handler_error_description (
 
 }
 
-// the info is copied, a packet smaller than it was read past its data
+// the info is an object of the summary schema, validated when it is decoded
 static void client_cerver_packet_handle_info (Packet *packet) {
 
-	if (packet->data && (packet->data_size >= sizeof (SCerver))) {
-		SCerver scerver;
-		(void) memcpy (&scerver, packet->data, sizeof (SCerver));
-
+	CerverSummary summary;
+	if (packet_get_object (packet, &cerver_summary_schema, NULL, &summary) == SERIALIZER_RESULT_NONE) {
 		#ifdef CLIENT_DEBUG
 		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver info packet.");
 		#endif
 
-		CerverReport *cerver_report = cerver_deserialize (&scerver);
+		CerverReport *cerver_report = cerver_deserialize (&summary);
 		if (cerver_report_check_info (
 			cerver_report, packet->client, packet->connection
 		)) {

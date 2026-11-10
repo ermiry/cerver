@@ -19,6 +19,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/serializer.h"
 
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
@@ -927,30 +928,34 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                128
-#define S_CERVER_WELCOME_LENGTH             512
+#define CERVER_SUMMARY_NAME_SIZE			128
+#define CERVER_SUMMARY_WELCOME_SIZE			512
 
-// serialized cerver structure
-typedef struct SCerver {
+// the bytes of the map, the version, the keys, the lengths and the values that are not texts
+#define CERVER_SUMMARY_ENCODING_OVERHEAD	64
 
-	CerverType type;
+// the biggest encoded cerver summary
+#define CERVER_SUMMARY_MAX_ENCODED_SIZE		\
+	(CERVER_SUMMARY_NAME_SIZE + CERVER_SUMMARY_WELCOME_SIZE + CERVER_SUMMARY_ENCODING_OVERHEAD)
 
-	char name[S_CERVER_NAME_LENGTH];
-	char welcome[S_CERVER_WELCOME_LENGTH];
+#define CERVER_SUMMARY_VERSION				1
 
-	bool use_ipv6;
-	Protocol protocol;
-	u16 port;
+// the info of a cerver that it sends to its clients
+#define CERVER_SUMMARY_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)								\
+	ENUM(T, 1, type, SERIALIZER_REQUIRED, CERVER_TYPE_NONE, CERVER_TYPE_NONE, CERVER_TYPE_BALANCER)		\
+	STRING(T, 2, TEXT, name, CERVER_SUMMARY_NAME_SIZE, SERIALIZER_REQUIRED)								\
+	STRING(T, 3, TEXT, welcome, CERVER_SUMMARY_WELCOME_SIZE, SERIALIZER_OPTIONAL)							\
+	SCALAR(T, 4, BOOL, use_ipv6, SERIALIZER_OPTIONAL, false)												\
+	ENUM(T, 5, protocol, SERIALIZER_OPTIONAL, PROTOCOL_TCP, PROTOCOL_TCP, PROTOCOL_UDP)					\
+	SCALAR(T, 6, U16, port, SERIALIZER_OPTIONAL, 0)														\
+	SCALAR(T, 7, BOOL, auth_required, SERIALIZER_OPTIONAL, false)											\
+	SCALAR(T, 8, BOOL, uses_sessions, SERIALIZER_OPTIONAL, false)
 
-	bool auth_required;
-	bool uses_sessions;
+SERIALIZER_DECLARE (CerverSummary, cerver_summary, CERVER_SUMMARY_FIELDS)
 
-} SCerver;
-
-// the scerver comes from the network: its strings may not be NUL terminated
-// and its flags may have any value, so they are read up to their sizes and as bytes
+// the summary comes from the network already validated by its schema
 CERVER_PRIVATE CerverReport *cerver_deserialize (
-	const SCerver *scerver
+	const CerverSummary *summary
 );
 
 // creates a cerver info packet ready to be sent
