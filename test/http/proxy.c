@@ -14,6 +14,8 @@
 static const char *test_proxy_nginx = { "172.18.0.5" };
 static const char *test_proxy_client = { "203.0.113.7" };
 static const char *test_proxy_outside = { "198.51.100.20" };
+static const char *test_proxy_link_local = { "fe80::1%eth0" };
+static const char *test_proxy_long_zone = { "fe80:1111:2222:3333:4444:5555:6666:7777%cerver-zone-0" };
 
 static bool test_contains (const char *cidr, const char *ip) {
 
@@ -216,6 +218,15 @@ static void test_proxy_resolve (void) {
 
 	// IPv6 clients
 	test_proxy_expect_client (http_cerver, "::1", "2001:db8::7", NULL, "2001:db8::7");
+
+	// a link local proxy with its zone is in fe80::/10, the zone is not part of the network
+	test_check_true (test_trusted (http_cerver, test_proxy_link_local));
+	test_proxy_expect_client (http_cerver, test_proxy_link_local, test_proxy_client, NULL, test_proxy_client);
+
+	// a peer with a long zone is kept whole, it was cut at INET6_ADDRSTRLEN bytes
+	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_NONE);
+	test_proxy_expect_client (http_cerver, test_proxy_long_zone, test_proxy_client, NULL, test_proxy_long_zone);
+	http_cerver_set_trusted_proxies (http_cerver, HTTP_TRUSTED_PROXIES_PRIVATE);
 
 	// a peer that is not a trusted proxy is the client
 	test_proxy_expect_client (http_cerver, test_proxy_outside, test_proxy_client, test_proxy_client, test_proxy_outside);

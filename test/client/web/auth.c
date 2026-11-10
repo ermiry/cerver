@@ -12,7 +12,7 @@
 
 #include "curl.h"
 
-static const char *address = { "127.0.0.1:8080" };
+static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static const char *token = { "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2MjUwNDY4NjksImlkIjoiMTYyNTA0Njg2NyIsIm5hbWUiOiJFcmljayBTYWxhcyIsInJvbGUiOiJjb21tb24iLCJ1c2VybmFtZSI6ImVyaWNrIn0.U3Mf0d4Mob0ufH-UZFJgaY2_k8NvFr_bM9Xq487Vktga32IKSQLhEgqyUsOwOwBnEKhIMnkfpU4hmkJlwnI8FUSqtUd_yP4QVsBBrdBoZyjsbvCCBL5oUoAWuikFOJGnY09lh47EOYkzp2jNAdHBveCg4YMRxsdwAFh0ZuWUEMlbU-mx_YRiSoFjhmhS0A0V3hKwbx835vOU9Gwbq011drMRF-KflR3sVvUUGdpIfSq7HNzasMfSH4TRjpTvuad3pKnh7ZXvOeixD7L3fMOavdX8UdoFnNFiS-SWCxMi0F5lmTX86xBkJ_xIydDRRIQFIEbMWDuzm5pa1zJYi8wlTEqyN_lOZl9Ld-wQ43xJIg1YCTNaG04wSdemEInbpb9VlcY7M56OpxLu0ZFmnUtQLUaVvobx4PozE3W8B2mh0OfL1PMgxnHpJssE_2y0AXw_v71v2S-stLPsKVfpT-PHPixxwWqqvLMPPi0ivw4-ot4O0jdHODYTHlphS58Xr7lHi7IbMfbegS8ccu-SOGbDGBJsYErjU-ycUesqSxD25V5NUSjNfBza8kV5cKnK7FaS1HOeAzS1aHKiBJUJH5_ruoEoQe4Jj8WljE-P15ExvlYyDEQdr7GGx_X6KG26VH62kzzIrRq3Yjk_E5q8fC2RbfEgtdsqyR1j3FwP6pQRQmE" };
 
@@ -142,6 +142,8 @@ int main (int argc, char **argv) {
 	int code = 0;
 
 	cerver_log_init ();
+
+	web_test_address (address, NULL);
 
 	code = (int) auth_request_all ();
 

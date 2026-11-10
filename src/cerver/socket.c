@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <pthread.h>
 
@@ -35,6 +36,7 @@ static Socket *socket_allocate (void) {
 		if (socket) {
 			(void) pthread_mutex_init (&socket->read_mutex_storage, NULL);
 			(void) pthread_mutex_init (&socket->write_mutex_storage, NULL);
+			(void) pthread_mutex_init (&socket->close_mutex, NULL);
 		}
 	}
 
@@ -48,6 +50,7 @@ static void socket_destroy (void *socket_ptr) {
 
 	(void) pthread_mutex_destroy (&socket->read_mutex_storage);
 	(void) pthread_mutex_destroy (&socket->write_mutex_storage);
+	(void) pthread_mutex_destroy (&socket->close_mutex);
 
 	free (socket);
 
@@ -144,6 +147,74 @@ Socket *socket_create (int fd) {
 	}
 
 	return socket;
+
+}
+
+// a send that another thread is doing on the fd must end before it is closed,
+// or it could write to another connection that took the same fd,
+// the shutdown wakes up a send that waits for room, so the wait for the write mutex is short
+static void socket_close_wait_sends (Socket *socket) {
+
+	(void) socket_shutdown (socket);
+
+	if (socket->write_mutex) (void) pthread_mutex_lock (socket->write_mutex);
+
+}
+
+int socket_close (Socket *socket) {
+
+	int retval = 0;
+
+	if (socket) {
+		socket_close_wait_sends (socket);
+
+		(void) pthread_mutex_lock (&socket->close_mutex);
+
+		if (socket->sock_fd >= 0) {
+			retval = close (socket->sock_fd);
+			socket->sock_fd = -1;
+		}
+
+		(void) pthread_mutex_unlock (&socket->close_mutex);
+
+		if (socket->write_mutex) (void) pthread_mutex_unlock (socket->write_mutex);
+	}
+
+	return retval;
+
+}
+
+void socket_replace (Socket *socket, const int fd) {
+
+	if (socket) {
+		(void) pthread_mutex_lock (&socket->close_mutex);
+
+		if (socket->sock_fd >= 0) {
+			(void) close (socket->sock_fd);
+		}
+
+		socket->sock_fd = fd;
+
+		(void) pthread_mutex_unlock (&socket->close_mutex);
+	}
+
+}
+
+u8 socket_shutdown (Socket *socket) {
+
+	u8 retval = 1;
+
+	if (socket) {
+		(void) pthread_mutex_lock (&socket->close_mutex);
+
+		if (socket->sock_fd >= 0) {
+			retval = (u8) (shutdown (socket->sock_fd, SHUT_RDWR) != 0);
+		}
+
+		(void) pthread_mutex_unlock (&socket->close_mutex);
+	}
+
+	return retval;
 
 }
 

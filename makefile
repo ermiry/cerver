@@ -208,6 +208,34 @@ EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
 EXAMPLES	:= $(shell find $(EXAMDIR) -type f -name *.$(SRCEXT))
 EXOBJS		:= $(patsubst $(EXAMDIR)/%,$(EXABUILD)/%,$(EXAMPLES:.$(SRCEXT)=.$(OBJEXT)))
 
+EXAPP		:= ./$(EXATARGET)/app/libapp.so
+EXAPPSRC  	:= $(shell find $(EXAMDIR)/app -type f -name *.$(SRCEXT))
+
+EXAPPFGS	:= $(DEFINES) -D_FORTIFY_SOURCE=2 -O2 -fPIC
+
+ifeq ($(TYPE), development)
+	EXAPPFGS += -g
+endif
+
+ifeq ($(DEBUG), 1)
+	EXAPPFGS += -D EXAMPLE_APP_DEBUG
+endif
+
+# check which compiler we are using
+ifeq ($(CC), g++)
+	EXAPPFGS += -std=c++11 -fpermissive
+else
+	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
+endif
+
+EXAPPFGS += $(COMMON) $(SANITIZERFLAGS)
+
+EXAPPLIBS := -L /usr/local/lib -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
+
+exapp:
+	@mkdir -p ./$(EXATARGET)/app
+	$(CC) $(EXAPPFGS) -I $(INCDIR) $(EXAPPSRC) -shared -o $(EXAPP) $(EXAPPLIBS)
+
 base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/welcome.o -o ./$(EXATARGET)/welcome $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/test.o -o ./$(EXATARGET)/test $(EXALIBS)
@@ -230,6 +258,11 @@ client: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS)
 
+# the load balancer and its service, with the app library
+services: $(EXOBJS)
+	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
+	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
+
 web: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)/web
 	$(CC) $(EXAINC) ./$(EXABUILD)/web/admin.o -o ./$(EXATARGET)/web/admin $(EXALIBS)
@@ -246,7 +279,9 @@ web: $(EXOBJS)
 examples: $(EXOBJS)
 	@mkdir -p ./$(EXATARGET)
 	$(MAKE) $(EXOBJS)
+	$(MAKE) exapp
 	$(MAKE) base
+	$(MAKE) services
 	$(MAKE) client
 	$(MAKE) web
 
@@ -331,6 +366,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/test.o -o ./$(TESTTARGET)/cerver/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/core.o -o ./$(TESTTARGET)/cerver/core $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/lobby.o -o ./$(TESTTARGET)/cerver/lobby $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/cerver/peers.o -o ./$(TESTTARGET)/cerver/peers $(TESTLIBS) $(TESTAPPLIB)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/game/*.o -o ./$(TESTTARGET)/game $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/test.o -o ./$(TESTTARGET)/client/test $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/client/lifecycle.o -o ./$(TESTTARGET)/client/lifecycle $(TESTLIBS)
@@ -349,6 +385,7 @@ units: testout $(TESTOBJS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/system.o -o ./$(TESTTARGET)/system $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/threads/*.o -o ./$(TESTTARGET)/threads $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/types/*.o -o ./$(TESTTARGET)/types $(TESTLIBS)
+	$(CC) $(TESTINC) ./$(TESTBUILD)/udp.o -o ./$(TESTTARGET)/udp $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/utils/*.o -o ./$(TESTTARGET)/utils $(TESTLIBS)
 	$(CC) $(TESTINC) ./$(TESTBUILD)/version.o -o ./$(TESTTARGET)/version $(TESTLIBS)
 
@@ -367,6 +404,8 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/service.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/service $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/udp.o -o $(INTCERVEROUT)/udp $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/upstream.o -o $(INTCERVEROUT)/upstream $(TESTLIBS)
 
 INTCLIENTIN		:= ./$(TESTBUILD)/client
 INTCLIENTOUT	:= ./$(TESTTARGET)/client
@@ -375,14 +414,20 @@ INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/connections.o -o $(INTCLIENTOUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/abandon.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/abandon $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/concurrent.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/concurrent $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/large.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/large $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/reconnect.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/reconnect $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/simple.o -o $(INTCLIENTOUT)/load/simple $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/unavailable.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/unavailable $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/queue.o -o $(INTCLIENTOUT)/queue $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/udp.o -o $(INTCLIENTOUT)/udp $(INTCLIENTLIBS)
 
 INTWEBIN		:= ./$(TESTBUILD)/web
 INTWEBOUT		:= ./$(TESTTARGET)/web
@@ -506,6 +551,7 @@ BENCHOBJS	:= $(patsubst $(BENCHDIR)/%,$(BENCHBUILD)/%,$(BENCHS:.$(SRCEXT)=.$(OBJ
 bench: $(BENCHOBJS)
 	@mkdir -p ./$(BENCHTARGET)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/base64.o -o ./$(BENCHTARGET)/base64 $(BENCHLIBS)
+	$(CC) $(BENCHINC) ./$(BENCHBUILD)/handler.o -o ./$(BENCHTARGET)/handler $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/http-parser.o -o ./$(BENCHTARGET)/http-parser $(BENCHLIBS)
 	$(CC) $(BENCHINC) ./$(BENCHBUILD)/web.o ./$(BENCHBUILD)/curl.o -o ./$(BENCHTARGET)/web $(BENCHLIBS)
 

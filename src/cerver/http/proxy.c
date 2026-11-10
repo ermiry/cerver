@@ -89,6 +89,7 @@ static void http_proxy_address_unmap (int *family, unsigned char *address) {
 }
 
 // parses an IPv4 or an IPv6 address of length bytes (it does not need a '\0')
+// the zone of a link local address (fe80::1%eth0) is not part of a network, it is ignored
 // returns true on success
 static bool http_proxy_address_parse (
 	const char *ip, const size_t ip_length,
@@ -100,6 +101,9 @@ static bool http_proxy_address_parse (
 	if (ip && ip_length && (ip_length < HTTP_CLIENT_IP_SIZE)) {
 		char value[HTTP_CLIENT_IP_SIZE] = { 0 };
 		(void) memcpy (value, ip, ip_length);
+
+		char *zone = strchr (value, NETWORK_ZONE_SEPARATOR);
+		if (zone) *zone = '\0';
 
 		(void) memset (address, 0, HTTP_PROXY_ADDRESS_SIZE);
 		if (inet_pton (AF_INET, value, address) == 1) {

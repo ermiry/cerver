@@ -715,6 +715,100 @@ registro de las conexiones web y `cerver_create_web`).
 - **Workflows:** los de `nightly` (`container: gcc:16.2`, `scheduled.yml`, nombres de release e imagen por rama), con
   `--sysctl net.ipv6.conf.all.disable_ipv6=0` en los contenedores de tests.
 
+#### 4.3.8 El port de la 1.8b-4 y la 1.8b-5 (Beta 2.0b-64) — aprobado e implementado, sin commits
+
+**El estado (2026-11-09):**
+
+- **Sembrados desde `core`:** 63 archivos más el corpus `datagram`.
+- **Mezclados a mano:** `cerver.{h,c}` y `handler.{h,c}`. Contra `core` solo les queda el bloque web.
+- **En http:**
+  - los pares `web/*` y nginx corren en las dos familias (`test/address.h`, `web_test_address ()` en
+    `test/client/web/curl.c`, nginx con `listen [::]:80` y el cerver en `::`);
+  - `proxy.c` ignora la zona al comparar con las redes de confianza;
+  - `HTTP_CLIENT_IP_SIZE` y `HTTP_REQUEST_CLIENT_IP_SIZE` pasan a `NETWORK_ADDRESS_STRING_SIZE`.
+- **Lo que no cambió:** el admin de workers y los pools de response, multipart y JWT no necesitaron cambios.
+- **Medido con `test/performance.sh`:** GET pasa de 2 a **1** asignación por request y POST JSON de 20 a **19**
+  (los umbrales nuevos), con 101–143k req/s en arm64.
+
+**Los pendientes de la 1.8b-5, hechos en http primero (2026-11-09)**, para commitear la 2.0b-64 final. Después se
+llevan a `core` como la 1.8b-6. El plan está en `~/.claude/plans/quiero-hacer-el-plan-refactored-cookie.md`.
+
+- **El core:**
+  - el mutex de cierre del `Socket`: `socket_close`, `socket_replace` y `socket_shutdown`;
+  - el chequeo de inactivos, que hace los shutdowns fuera del lock de clientes;
+  - la sincronización en `connection_connect`, sin el `sleep` de respaldo;
+  - un bug que apareció de paso: los clientes con un connect fallido, o que nunca conectan, dejaban su fd abierto.
+- **Los tests:**
+  - el fuzzer `address`;
+  - `test/allocations.sh`, que mide por conexión y por paquete de un handler;
+  - los pares de proceso del balancer, `balancer/{reconnect,large,unavailable,concurrent,abandon}`;
+  - `test_run ()` en los tests del servidor y de los peers, y los logs de las corridas que fallan en `repeat.sh`.
+- **Los examples:** se portan los del balancer y el servicio con su `examples/app` (target `services`), el reloj
+  portable de `benchmarks/bench.h`, el guard AVX2 de `base64.c` y `benchmarks/handler.c`.
+
+El plan aprobado:
+
+**Por qué:** antes de que `nightly` empiece su F3, `http` tiene que tener el core completo de la 1.8 hasta la b-5. Lo
+que más le sirve a HTTP:
+- el `Pool` sin un malloc por push: lo usan `http_response_get`, los multiparts, el JWT y los logs;
+- el connect por dirección, las zonas y `sock_ip_equal` normalizado;
+- el hilo de logs joinable;
+- los handlers con jobs del pool.
+
+**Las decisiones del usuario (2026-11-09):**
+
+| Tema | Decisión |
+|---|---|
+| UDP | **Se porta también** (cambia la decisión de `branches.md` §5): los archivos se siembran completos y `http` no diverge del core |
+| Siembra | Se copian los archivos del árbol de `core`, sin commits todavía, con la excepción de siembra de `manual-edits-only`; las mezclas y los cambios propios de http se hacen a mano |
+| Validación | El gate del repo completo, sin despliegue en test (ese va con los commits) |
+| `::1` | Todos los pares, también `web/*` y nginx, corren en las dos familias |
+| Git | Ninguna acción: sin commits; lo que salga del gate de `core` se arregla en los dos lados |
+
+**Las etapas:**
+
+1. **La siembra desde `core`**, archivo completo:
+   - `udp.{h,c}`, `network.{h,c}`, `connection.{h,c}`, `packets.{h,c}`, `client.{h,c}`, `auth.{h,c}`, `sessions.h`,
+     `admin.c`, `socket.c`;
+   - `collections/pool.{h,c}`, `threads/{jobs,worker,manager,thpool}.{h,c}`, `utils/log.c`, `version.h`;
+   - lo que la diferencia contra `http` muestre que se tocó en la 1.8b-4 / b-5 sin partes web.
+
+   Se reportan todos los archivos sembrados.
+2. **Las mezclas a mano:**
+   - `handler.{h,c}`: el de `core` más el bloque web (receive HTTP, contexto por hilo, 503, registro web);
+   - `cerver.{h,c}`: más `cerver_create_web`, los casos `CERVER_TYPE_WEB` y `http.h`.
+
+   El UDP y los web conviven en el switch por tipo.
+3. **Lo propio de HTTP:**
+   - **Buffers de ips:** cada llamada a `sock_ip_to_string_actual` en `http/` (`proxy.c`, los logs de acceso, el
+     admin) pasa a buffers de `NETWORK_ADDRESS_STRING_SIZE`. Con una zona, un buffer de `INET6_ADDRSTRLEN` se
+     desborda.
+   - **`proxy.c`:** compara las direcciones con `sock_ip_equal`.
+   - **El admin de http:** se revisa contra el `Worker` nuevo (`worker_get_state` público, hilo joinable).
+   - **Los `Pool` de response, multipart y JWT:** se revisa si alguno dependía del orden FIFO.
+4. **Los tests:**
+   - los del core (`network`, `cerver/core`, `client/features`, `collections/pool`, `threads/{jobs,worker,manager}`,
+     `utils/log`, `udp`, `cerver/peers`, el par `cerver/udp` y el fuzzer `datagram`);
+   - `CERVER_TEST_ADDRESS` en los servidores y los clientes de los pares `web/*`: las URLs de IPv6 van con corchetes
+     (`http://[::1]:7000`);
+   - `integration.sh` en las dos familias, y nginx con su upstream en `CERVER_TEST_ADDRESS`.
+5. **Los docs y la versión:**
+   - `incompatibilities.md` (la entrada 2.0b-64 con las de la 1.8b-4 / b-5 que aplican);
+   - `CHANGELOG.md` y la versión `2.0b-64`;
+   - esta sección, `test/roadmap.md` y `CLAUDE.md`;
+   - `branches.md` §5 en `core`.
+
+**La verificación (el gate del repo):**
+- gcc / g++ en los TYPEs, con los 6 warnings conocidos de `jwt/openssl.c`;
+- `run.sh` normal, con ASan+UBSan, con TSan y con valgrind;
+- integración × {IPv4, `::1`} × {normal, ASan, TSan, `COVERAGE=1`};
+- fuzz de todos los targets × 30 s;
+- nginx 1.31.6 y 1.30.6;
+- `performance.sh`, con la meta de que GET siga en 2 y POST JSON baje de 20 por el `Pool`;
+- `repeat.sh` de `test/bin/http`, `web/features` y `cerver/core`.
+
+Cada test nuevo debe fallar contra la 2.0b-63.
+
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
 Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.

@@ -400,6 +400,39 @@ Los tests del core vienen de `core` (cada uno se vio fallar allí contra la vers
 Del lado HTTP, `test_features_metrics` revisa las métricas del thpool y `test/performance.sh` baja a GET 2 / POST JSON 20
 asignaciones.
 
+### 2.0b-64, el port de la 1.8b-4 y la 1.8b-5
+
+Los tests del core vienen de `core`. Cada uno se vio fallar allí contra la beta anterior de la 1.x.
+
+| Test | Qué fija |
+|---|---|
+| `test/udp.c`, `test/cerver/peers.c`, el par `cerver/udp`, `test/fuzz/datagram.c` | El UDP del core: datagramas, tokens, peers con referencias, auth, sesiones, migración y amplificación |
+| `test/network.c` | Además: zonas, la lista resuelta alternando familias y `sock_ip_equal` con mapeadas |
+| `test/cerver/core.c` | Además: el connect que prueba la siguiente dirección, el timeout por dirección, la familia del bind y las zonas en el bind |
+| `test/client/features.c` | Además: la reconexión que vuelve a resolver el host |
+| `test/collections/pool.c` | El `Pool` como pila: orden, crecimiento y límite |
+| `test/threads/{jobs,worker,manager}.c` | Las prioridades, la anti-starvation, los timeouts, los requests, los stats, el worker sin espera de 100 ms y el manager con escalado |
+| `test/utils/log.c` | El hilo del archivo de logs, joinable |
+
+**Del lado HTTP:**
+- `test/http/proxy.c`: un proxy link-local con zona es de confianza, y la ip de un cliente con zona larga no se corta;
+- todos los pares (`web/*` incluidos) y el cliente `features` detrás de nginx corren en IPv4 y en `::1`.
+
+**Los pendientes de la 1.8b-5, hechos aquí primero** (pasan a `core` como la 1.8b-6):
+
+| Test | Qué fija |
+|---|---|
+| `test_core_inactive_churn_{poll,threads}` | Los inactivos se cierran fuera del lock mientras otros clientes conectan y se van. Con TSan encontró una carrera de la base: `unique_handler_id` de `handler_create` sin atomic, con clientes creados desde varios hilos |
+| `test_core_connect_unsynchronized` | Una conexión sin sincronización corta su backoff. Contra la base: no tenía sincronización y dormía cada paso |
+| `test_core_unused_connections` | Los clientes con un connect fallido, y los que nunca conectan, cierran su fd. Contra la base: 22 fds contra 6 |
+| `test_job_queue_pool_steady` | El push y el pull de jobs no asignan en estado estable |
+| `test/fuzz/address.c` | `network_parse_address` con zonas, y el ida y vuelta por texto con `sock_ip_equal` |
+| `test/allocations.sh` | Las asignaciones por conexión (POLL 6, THREADS 7) y por paquete de un handler con cola (1; eran 3 en la 1.8b-4) |
+| `balancer/{reconnect,large,unavailable,concurrent,abandon}` | Los pares de proceso del balancer con `test/cerver/upstream` y `test/supervise.sh`. Cada uno se vio fallar contra un mutante del balancer |
+
+- `test_run ()` de `test/test.h` imprime el nombre de cada test de `test/http/server.c` y de `test/cerver/peers.c`;
+- `repeat.sh` guarda los logs de la corrida que falla en `repeat-artifacts`.
+
 ### Pendiente
 
 - **La línea base x86_64:** se llena con la salida de un `workflow_dispatch` de `scheduled.yml`.

@@ -705,6 +705,12 @@ CERVER_EXPORT unsigned int client_connect (
 	Client *client, struct _Connection *connection
 );
 
+// an UDP cerver only knows a connection when it sends a datagram:
+// the connection asks for the cerver info and sends its auth packet (if it has auth data)
+CERVER_PRIVATE void client_connect_datagram (
+	Client *client, struct _Connection *connection
+);
+
 // connects a client to the host with the specified values in the connection
 // performs a first read to get the cerver info packet
 // this is a blocking method, and works exactly the same as if only calling client_connect ()

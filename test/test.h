@@ -19,6 +19,16 @@ static inline void test_output_init (void) {
 
 #define where (void) fprintf (stderr, "%s:%d -> ", __FILE__, __LINE__)
 
+// runs a test after it prints its name, so a failure shows which test it was
+#define						\
+	test_run(test)			\
+	({						\
+		(void) printf (		\
+			"\t%s\n", #test	\
+		);					\
+		test ();			\
+	})
+
 #define											\
 	fail(msg) 									\
 	({ 											\
@@ -267,5 +277,7 @@ static inline void test_counter_add (unsigned int *counter) {
 }
 
 #pragma endregion
+
+#include "address.h"
 
 #endif

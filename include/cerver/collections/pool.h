@@ -4,19 +4,35 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#include "cerver/collections/dlist.h"
+#include <pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// the elements that a new pool has room for, it grows by doubling
+#define POOL_DEFAULT_CAPACITY			16
+
+// a pool without a limit keeps every element that is returned to it
+#define POOL_NO_LIMIT					0
+
+// a stack of reusable elements:
+// the last element that was returned is the first one that is taken,
+// so it is the one that is still in the cache,
+// pushing and popping does not allocate, only growing beyond its capacity does
 typedef struct Pool {
 
-	DoubleList *dlist;
+	void **elements;
+	size_t count;
+	size_t capacity;
+
+	// the most elements that the pool keeps, POOL_NO_LIMIT to keep all of them
+	size_t max_elements;
+
+	pthread_mutex_t mutex;
 
 	void (*destroy)(void *data);
 	void *(*create)(void);
-
 	bool produce;
 
 } Pool;
@@ -31,6 +47,10 @@ extern void pool_set_create (Pool *pool, void *(*create)(void));
 // the pool will use its create method to allocate a new element and fullfil the request
 extern void pool_set_produce_if_empty (Pool *pool, bool produce);
 
+// sets the most elements that the pool keeps (POOL_NO_LIMIT by default),
+// an element that is pushed to a full pool is destroyed with the destroy method
+extern void pool_set_max_elements (Pool *pool, size_t max_elements);
+
 // returns how many elements are inside the pool
 extern size_t pool_size (Pool *pool);
 
@@ -44,11 +64,12 @@ extern int pool_init (
 	void *(*create)(void), unsigned int n_elements
 );
 
-// inserts the new data at the end of the pool
+// returns an element to the pool, it is the next one that pool_pop () takes
+// an element that does not fit in a full pool is destroyed
 // returns 0 on success, 1 on error
 extern int pool_push (Pool *pool, void *data);
 
-// returns the data that is first in the pool
+// returns the last element that was pushed to the pool
 extern void *pool_pop (Pool *pool);
 
 // only gets rid of the pool's elements, but the data is kept

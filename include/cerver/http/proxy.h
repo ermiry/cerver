@@ -7,9 +7,10 @@
 #include <arpa/inet.h>
 
 #include "cerver/config.h"
+#include "cerver/network.h"
 
-// the longest IP address (an IPv6) and its '\0'
-#define HTTP_CLIENT_IP_SIZE				INET6_ADDRSTRLEN
+// the longest IP address (an IPv6 with its zone) and its '\0'
+#define HTTP_CLIENT_IP_SIZE				NETWORK_ADDRESS_STRING_SIZE
 
 // the most networks of trusted proxies of a cerver
 #define HTTP_TRUSTED_PROXIES_SIZE		32

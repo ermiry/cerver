@@ -33,6 +33,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
 #include "cerver/threads/thpool.h"
@@ -44,7 +45,11 @@
 #include "cerver/utils/log.h"
 #include "cerver/utils/utils.h"
 
-#define CERVER_HANDLERS_WAIT_NANOSECONDS		1000000L
+// the inactive clients of one check that are logged by their id, the rest only by their count
+#define CERVER_INACTIVE_LOG_BATCH		256
+
+// the first room for the sockets of a check that are shut down after the clients lock, it doubles
+#define CERVER_INACTIVE_SHUTDOWN_BATCH	256
 
 #pragma region global
 
@@ -465,6 +470,11 @@ Cerver *cerver_new (void) {
 		thread_group_init (&cerver->connection_threads);
 		thread_group_init (&cerver->event_threads);
 
+		cerver->udp = NULL;
+		cerver->udp_peer_timeout = CERVER_UDP_DEFAULT_PEER_TIMEOUT;
+		cerver->udp_max_peers = CERVER_UDP_DEFAULT_MAX_PEERS;
+		cerver->udp_peers_count = 0;
+
 		cerver->fds = NULL;
 		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
@@ -511,6 +521,7 @@ Cerver *cerver_new (void) {
 		cerver->num_handlers_alive = 0;
 		cerver->num_handlers_working = 0;
 		cerver->handlers_lock = NULL;
+		cerver->handlers_alive_cond = NULL;
 
 		cerver->check_packets = CERVER_DEFAULT_CHECK_PACKETS;
 		cerver->max_bad_packets = CERVER_DEFAULT_MAX_BAD_PACKETS;
@@ -599,6 +610,8 @@ void cerver_delete (void *ptr) {
 			pthread_mutex_destroy (cerver->handlers_lock);
 			free (cerver->handlers_lock);
 		}
+
+		thread_cond_delete (cerver->handlers_alive_cond);
 
 		admin_cerver_delete (cerver->admin);
 
@@ -1218,13 +1231,13 @@ void cerver_handlers_print_info (Cerver *cerver) {
 
 	if (cerver) {
 		cerver_log_debug (
-			"%d - current ACTIVE handlers in cerver %s",
-			cerver->num_handlers_alive, cerver->info->name
+			"%u - current ACTIVE handlers in cerver %s",
+			cerver_get_n_handlers_alive (cerver), cerver->info->name
 		);
 
 		cerver_log_debug (
-			"%d - current WORKING handlers in cerver %s",
-			cerver->num_handlers_working, cerver->info->name
+			"%u - current WORKING handlers in cerver %s",
+			cerver_get_n_handlers_working (cerver), cerver->info->name
 		);
 	}
 
@@ -1288,10 +1301,9 @@ unsigned int cerver_get_n_handlers_working (Cerver *cerver) {
 
 	unsigned int retval = 0;
 
-	if (cerver && cerver->handlers_lock) {
-		(void) pthread_mutex_lock (cerver->handlers_lock);
-		retval = cerver->num_handlers_working;
-		(void) pthread_mutex_unlock (cerver->handlers_lock);
+	// the handlers count themselves with __atomic while they handle a packet
+	if (cerver) {
+		retval = __atomic_load_n (&cerver->num_handlers_working, __ATOMIC_SEQ_CST);
 	}
 
 	return retval;
@@ -1612,6 +1624,20 @@ static i32 cerver_network_create_socket (const Cerver *cerver) {
 
 }
 
+// a bind address decides the family of the socket,
+// even if cerver_set_network_values () changed use_ipv6 after cerver_set_bind_address ()
+static void cerver_network_init_family (Cerver *cerver) {
+
+	struct sockaddr_storage parsed;
+	if (
+		cerver->bind_address[0]
+		&& !network_parse_address (cerver->bind_address, cerver->port, &parsed)
+	) {
+		cerver->use_ipv6 = (parsed.ss_family == AF_INET6);
+	}
+
+}
+
 // inits the cerver networking capabilities
 // the socket is stored with __atomic, cerver_stop_request () can read it from another thread
 static u8 cerver_network_init (Cerver *cerver) {
@@ -1619,6 +1645,8 @@ static u8 cerver_network_init (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
+		cerver_network_init_family (cerver);
+
 		__atomic_store_n (&cerver->sock, cerver_network_create_socket (cerver), __ATOMIC_SEQ_CST);
 
 		if (cerver->sock >= 0) {
@@ -1925,6 +1953,20 @@ static void *cerver_update (void *args);
 
 static void *cerver_update_interval (void *args);
 
+// the thread that receives the packets of the on hold connections
+// joined in cerver_stop_threads () before its fds are released
+static void cerver_auth_start_poll (Cerver *cerver) {
+
+	if (thread_create_joinable (&cerver->on_hold_poll_thread_id, on_hold_poll, cerver)) {
+		cerver_log (
+			LOG_TYPE_ERROR, LOG_TYPE_NONE,
+			"Failed to create cerver's %s on_hold_poll () thread!",
+			cerver->info->name
+		);
+	}
+
+}
+
 // inits cerver's auth capabilities
 static u8 cerver_auth_start (Cerver *cerver) {
 
@@ -1949,17 +1991,9 @@ static u8 cerver_auth_start (Cerver *cerver) {
 				cerver->on_hold_poll_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 				pthread_mutex_init (cerver->on_hold_poll_lock, NULL);
 
-				// joined in cerver_stop_threads () before its fds are released
-				if (!thread_create_joinable (&cerver->on_hold_poll_thread_id, on_hold_poll, cerver)) {
-					retval = 0;
-				}
-
-				else {
-					cerver_log (
-						LOG_TYPE_ERROR, LOG_TYPE_NONE,
-						"Failed to create cerver's %s on_hold_poll () thread!",
-						cerver->info->name
-					);
+				// the peers of an UDP cerver authenticate in its receive loop (udp.c)
+				if (cerver->protocol == PROTOCOL_TCP) {
+					cerver_auth_start_poll (cerver);
 				}
 
 				retval = 0;
@@ -1999,11 +2033,12 @@ static u8 cerver_multiple_app_handlers_start (Cerver *cerver) {
 
 		if (!errors) {
 			// wait for all handlers to be initialized,
-			// they mark themselves alive with the handlers lock
-			const struct timespec interval = { 0, CERVER_HANDLERS_WAIT_NANOSECONDS };
-			while (cerver_get_n_handlers_alive (cerver) < started) {
-				(void) nanosleep (&interval, NULL);
+			// they mark themselves alive with the handlers lock and signal its condition
+			(void) pthread_mutex_lock (cerver->handlers_lock);
+			while (cerver->num_handlers_alive < started) {
+				(void) pthread_cond_wait (cerver->handlers_alive_cond, cerver->handlers_lock);
 			}
+			(void) pthread_mutex_unlock (cerver->handlers_lock);
 
 			#ifdef CERVER_DEBUG
 			cerver_log (
@@ -2183,6 +2218,8 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 		cerver->handlers_lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
 		pthread_mutex_init (cerver->handlers_lock, NULL);
 
+		cerver->handlers_alive_cond = thread_cond_new ();
+
 		errors |= cerver_app_handlers_start (cerver);
 
 		errors |= cerver_app_error_handler_start (cerver);
@@ -2283,25 +2320,96 @@ void cerver_sleep (Cerver *cerver, u32 seconds) {
 
 }
 
-static void cerver_shutdown_connection (void *connection_ptr, void *args);
+// the ids of the clients that a check dropped, they are logged after the clients lock is released,
+// and a reference to the socket of each of their connections, that are shut down after it
+typedef struct CerverInactiveDropped {
 
-// the connections of an inactive client are shut down,
-// so their receive handlers end and remove them like any other closed connection
+	u64 ids[CERVER_INACTIVE_LOG_BATCH];
+	unsigned int count;
+	unsigned int total;
+
+	Socket **sockets;
+	size_t sockets_count;
+	size_t sockets_size;
+
+} CerverInactiveDropped;
+
+// returns true if there is room for one more socket
+static bool cerver_inactive_sockets_room (CerverInactiveDropped *dropped) {
+
+	bool room = (dropped->sockets_count < dropped->sockets_size);
+	if (!room) {
+		const size_t size = dropped->sockets_size ?
+			(dropped->sockets_size << 1) : CERVER_INACTIVE_SHUTDOWN_BATCH;
+
+		Socket **sockets = (Socket **) realloc (dropped->sockets, size * sizeof (Socket *));
+		if (sockets) {
+			dropped->sockets = sockets;
+			dropped->sockets_size = size;
+			room = true;
+		}
+	}
+
+	return room;
+
+}
+
+// takes a reference to the socket of a connection of an inactive client,
+// without memory for it the socket is shut down right away, with the clients lock
+static void cerver_inactive_take_socket (void *connection_ptr, void *dropped_ptr) {
+
+	Connection *connection = (Connection *) connection_ptr;
+	CerverInactiveDropped *dropped = (CerverInactiveDropped *) dropped_ptr;
+
+	if (connection && connection->socket) {
+		if (cerver_inactive_sockets_room (dropped)) {
+			dropped->sockets[dropped->sockets_count] = socket_reference (connection->socket);
+			dropped->sockets_count += 1;
+		}
+
+		else {
+			(void) socket_shutdown (connection->socket);
+		}
+	}
+
+}
+
+// the sockets of the inactive clients are shut down without the clients lock,
+// so their receive handlers end and remove them like any other closed connection,
+// the close mutex of each socket keeps a shutdown from reaching an fd that was closed and reused
+static void cerver_inactive_shutdown_sockets (CerverInactiveDropped *dropped) {
+
+	for (size_t index = 0; index < dropped->sockets_count; index++) {
+		(void) socket_shutdown (dropped->sockets[index]);
+		socket_delete (dropped->sockets[index]);
+	}
+
+	free (dropped->sockets);
+	dropped->sockets = NULL;
+	dropped->sockets_count = 0;
+	dropped->sockets_size = 0;
+
+}
+
+// with the clients lock, only the sockets of the connections of an inactive client are taken
 static void cerver_inactive_check_client (
-	const Client *client, const Cerver *cerver, time_t current_time
+	const Client *client, const Cerver *cerver, time_t current_time,
+	CerverInactiveDropped *dropped
 ) {
 
 	const time_t last_activity = __atomic_load_n (&client->last_activity, __ATOMIC_RELAXED);
 
 	if ((current_time - last_activity) >= (time_t) cerver->max_inactive_time) {
-		cerver_log_warning (
-			"Client %ld has been inactive more than %d secs and will be dropped",
-			client->id, cerver->max_inactive_time
-		);
-
 		if (client->connections) {
-			(void) dlist_traverse (client->connections, cerver_shutdown_connection, NULL);
+			(void) dlist_traverse (client->connections, cerver_inactive_take_socket, dropped);
 		}
+
+		if (dropped->count < CERVER_INACTIVE_LOG_BATCH) {
+			dropped->ids[dropped->count] = client->id;
+			dropped->count += 1;
+		}
+
+		dropped->total += 1;
 	}
 
 }
@@ -2309,17 +2417,39 @@ static void cerver_inactive_check_client (
 // the recursion depth is the tree height, that is log (n) in an avl
 // must be called with the clients tree locked
 static void cerver_inactive_check (
-	const AVLNode *node, const Cerver *cerver, time_t current_time
+	const AVLNode *node, const Cerver *cerver, time_t current_time,
+	CerverInactiveDropped *dropped
 ) {
 
 	if (node) {
-		cerver_inactive_check (node->right, cerver, current_time);
+		cerver_inactive_check (node->right, cerver, current_time, dropped);
 
 		if (node->id) {
-			cerver_inactive_check_client ((const Client *) node->id, cerver, current_time);
+			cerver_inactive_check_client ((const Client *) node->id, cerver, current_time, dropped);
 		}
 
-		cerver_inactive_check (node->left, cerver, current_time);
+		cerver_inactive_check (node->left, cerver, current_time, dropped);
+	}
+
+}
+
+// the logs of a check are written without the clients lock
+static void cerver_inactive_check_log (
+	const Cerver *cerver, const CerverInactiveDropped *dropped
+) {
+
+	for (unsigned int index = 0; index < dropped->count; index++) {
+		cerver_log_warning (
+			"Client %lu has been inactive more than %d secs and will be dropped",
+			dropped->ids[index], cerver->max_inactive_time
+		);
+	}
+
+	if (dropped->total > dropped->count) {
+		cerver_log_warning (
+			"%u more inactive clients will be dropped from cerver %s",
+			dropped->total - dropped->count, cerver->info->name
+		);
 	}
 
 }
@@ -2333,11 +2463,22 @@ static void cerver_inactive_check_all (Cerver *cerver) {
 
 	time_t current_time = time (NULL);
 
+	CerverInactiveDropped dropped;
+	dropped.count = 0;
+	dropped.total = 0;
+	dropped.sockets = NULL;
+	dropped.sockets_count = 0;
+	dropped.sockets_size = 0;
+
 	(void) pthread_mutex_lock (cerver->clients->mutex);
 
-	cerver_inactive_check (cerver->clients->root, cerver, current_time);
+	cerver_inactive_check (cerver->clients->root, cerver, current_time, &dropped);
 
 	(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+	cerver_inactive_shutdown_sockets (&dropped);
+
+	cerver_inactive_check_log (cerver, &dropped);
 
 	cerver_log_debug (
 		"Done checking for inactive clients in cerver %s",
@@ -2503,14 +2644,28 @@ static u8 cerver_start_tcp (Cerver *cerver) {
 
 }
 
+// every datagram is a packet, the peers are logical connections (udp.c)
+// the admins have connections of their own, they can not connect to an UDP cerver
 static u8 cerver_start_udp (Cerver *cerver) {
 
-	cerver_log_warning (
-		"Cerver %s - udp server is not yet implemented!",
-		cerver->info->name
+	if (cerver->admin) {
+		cerver_log_error (
+			"Cerver %s can not handle admins with UDP!",
+			cerver->info->name
+		);
+
+		return 1;
+	}
+
+	(void) time (&cerver->info->time_started);
+
+	cerver_event_trigger (
+		CERVER_EVENT_STARTED,
+		cerver,
+		NULL, NULL
 	);
 
-	return 1;
+	return cerver_udp_start (cerver);
 
 }
 
@@ -2819,7 +2974,11 @@ static void cerver_stop_wake_threads (Cerver *cerver) {
 // the listening socket is only closed by cerver_teardown (),
 // so its fd can not be reused while another thread is inside accept ()
 // a request before cerver_start () cancels the start
+// it is called from signal handlers, so it keeps the errno of the thread that it interrupted,
+// the shutdown () of an UDP socket that is not connected fails with ENOTCONN
 void cerver_stop_request (Cerver *cerver) {
+
+	const int saved_errno = errno;
 
 	if (cerver) {
 		__atomic_store_n (&cerver->stop_requested, true, __ATOMIC_SEQ_CST);
@@ -2835,6 +2994,8 @@ void cerver_stop_request (Cerver *cerver) {
 
 		cerver_stop_wake_threads (cerver);
 	}
+
+	errno = saved_errno;
 
 }
 
@@ -2903,8 +3064,8 @@ static void cerver_shutdown_connection (void *connection_ptr, void *args) {
 	(void) args;
 
 	Connection *connection = (Connection *) connection_ptr;
-	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
-		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+	if (connection && connection->socket) {
+		(void) socket_shutdown (connection->socket);
 	}
 
 }
@@ -3185,6 +3346,9 @@ static void cerver_clean_data (Cerver *cerver) {
 		// clean up on hold connections
 		cerver_destroy_on_hold_connections (cerver);
 
+		// the peers of an UDP cerver
+		cerver_udp_end (cerver);
+
 		// clean up cerver connected clients
 		cerver_destroy_clients (cerver);
 		#ifdef CERVER_DEBUG
@@ -3288,6 +3452,11 @@ static void cerver_report_check_info_handle_auth (
 	CerverReport *cerver_report,
 	Client *client, Connection *connection
 ) {
+
+	// an UDP connection sends its auth when it connects, the cerver can not ask for it (udp.c)
+	if (cerver_report && connection && (connection->protocol == PROTOCOL_UDP)) {
+		return;
+	}
 
 	if (cerver_report && connection) {
 		if (cerver_report->auth_required) {

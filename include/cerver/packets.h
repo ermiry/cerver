@@ -301,6 +301,11 @@ struct _Packet {
 	void *packet;
 	bool packet_ref;
 
+	// called by packet_delete () before the packet is released,
+	// like a received packet that holds a reference to its UDP peer
+	void (*release) (void *release_args);
+	void *release_args;
+
 };
 
 typedef struct _Packet Packet;
@@ -444,6 +449,11 @@ CERVER_EXPORT Packet *packet_generate_request (
 CERVER_EXPORT u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
 );
+
+// sends the packet in a datagram without the token of its UDP connection,
+// like the answers to an authentication, that the peer reads before it has the token
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_without_datagram_token (const Packet *packet);
 
 // sends a packet of a connection's send queue
 // returns 0 on success, 1 on error

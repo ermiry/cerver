@@ -13,4 +13,6 @@ extern void utils_tests_timer (void);
 
 extern void utils_tests_serializer (void);
 
+extern void utils_tests_log (void);
+
 #endif
