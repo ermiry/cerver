@@ -1105,6 +1105,10 @@ int connection_connect (Connection *connection) {
 
 		retval = connection_try (connection);
 
+		// a socket whose connect () failed can not be used again,
+		// the next connect starts with a new one
+		if (retval) (void) socket_close (connection->socket);
+
 		connection_set_state (
 			connection,
 			retval ? CONNECTION_STATE_UNAVAILABLE : CONNECTION_STATE_READY
@@ -1237,7 +1241,8 @@ void connection_reset (Connection *connection) {
 
 		connection_stop_send (connection);
 
-		connection->socket->sock_fd = -1;
+		// the socket of an init that never connected is closed too
+		(void) socket_close (connection->socket);
 
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
