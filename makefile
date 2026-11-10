@@ -230,7 +230,8 @@ base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS)
 
-load: $(EXOBJS)
+# the load balancer and its service, with the app library
+services: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 
@@ -245,7 +246,7 @@ examples:
 	$(MAKE) $(EXOBJS)
 	$(MAKE) exapp
 	$(MAKE) base
-	$(MAKE) load
+	$(MAKE) services
 	$(MAKE) client
 
 # compile examples
