@@ -150,11 +150,24 @@ Socket *socket_create (int fd) {
 
 }
 
+// a send that another thread is doing on the fd must end before it is closed,
+// or it could write to another connection that took the same fd,
+// the shutdown wakes up a send that waits for room, so the wait for the write mutex is short
+static void socket_close_wait_sends (Socket *socket) {
+
+	(void) socket_shutdown (socket);
+
+	if (socket->write_mutex) (void) pthread_mutex_lock (socket->write_mutex);
+
+}
+
 int socket_close (Socket *socket) {
 
 	int retval = 0;
 
 	if (socket) {
+		socket_close_wait_sends (socket);
+
 		(void) pthread_mutex_lock (&socket->close_mutex);
 
 		if (socket->sock_fd >= 0) {
@@ -163,6 +176,8 @@ int socket_close (Socket *socket) {
 		}
 
 		(void) pthread_mutex_unlock (&socket->close_mutex);
+
+		if (socket->write_mutex) (void) pthread_mutex_unlock (socket->write_mutex);
 	}
 
 	return retval;
