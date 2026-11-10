@@ -22,6 +22,7 @@
 #include "cerver/admin.h"
 #include "cerver/auth.h"
 #include "cerver/cerver.h"
+#include "cerver/sessions.h"
 #include "cerver/client.h"
 #include "cerver/handler.h"
 #include "cerver/network.h"
@@ -274,13 +275,7 @@ Connection *connection_new (void) {
 
 			.state = RECEIVE_HANDLE_STATE_NONE,
 
-			.header = (PacketHeader) {
-				.packet_type = PACKET_TYPE_NONE,
-				.packet_size = 0,
-				.handler_id = 0,
-				.request_type = 0,
-				.sock_fd = 0
-			},
+			.header = { 0 },
 
 			.header_end = NULL,
 			.remaining_header = 0,
@@ -317,10 +312,14 @@ Connection *connection_new (void) {
 		connection->auth_data_size = 0;
 		connection->delete_auth_data = NULL;
 		connection->admin_auth = false;
+		connection->auth_serialized = false;
+		connection->auth_token = false;
 		connection->auth_packet = NULL;
 
 		(void) memset (connection->datagram_token, 0, CONNECTION_DATAGRAM_TOKEN_SIZE);
 		connection->datagram_token_set = false;
+
+		connection->route_id = 0;
 
 		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
 		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
@@ -659,6 +658,86 @@ void connection_set_auth_data (
 
 }
 
+// encodes the object as the auth data of the connection
+// returns 0 on success, 1 on error
+static u8 connection_set_auth_encoded (
+	Connection *connection,
+	const SerializerSchema *schema, const void *object,
+	const bool admin_auth, const bool token
+) {
+
+	u8 retval = 1;
+
+	const size_t size = serializer_encoded_size (schema, object);
+	void *buffer = size ? malloc (size) : NULL;
+
+	if (buffer && (serializer_encode (schema, object, buffer, size, NULL) == SERIALIZER_RESULT_NONE)) {
+		connection_set_auth_data (connection, buffer, size, free, admin_auth);
+		connection->auth_serialized = true;
+		connection->auth_token = token;
+
+		retval = 0;
+	}
+
+	else {
+		free (buffer);
+	}
+
+	return retval;
+
+}
+
+// sets the credentials as an object of the auth schema of the cerver (cerver_set_auth_schema ()),
+// the object is encoded now, so it can be released after this
+// returns 0 on success, 1 if the object can not be encoded
+u8 connection_set_auth_object (
+	Connection *connection,
+	const SerializerSchema *schema, const void *object,
+	bool admin_auth
+) {
+
+	return (connection && schema && object)
+		? connection_set_auth_encoded (connection, schema, object, admin_auth, false)
+		: 1;
+
+}
+
+// sets the session token that a cerver with sessions gave to the client,
+// to authenticate the connection with it instead of the credentials
+// returns 0 on success, 1 on error
+u8 connection_set_auth_token (
+	Connection *connection, const char *token,
+	bool admin_auth
+) {
+
+	u8 retval = 1;
+
+	if (connection && token && (strlen (token) < TOKEN_SIZE)) {
+		SessionToken session_token = { { 0 } };
+		(void) strncpy (session_token.token, token, TOKEN_SIZE - 1);
+
+		retval = connection_set_auth_encoded (
+			connection, &session_token_schema, &session_token, admin_auth, true
+		);
+	}
+
+	return retval;
+
+}
+
+// the request type of the auth packet: the credentials or a session token, of a client or an admin
+static u32 connection_auth_request_type (const Connection *connection) {
+
+	u32 request_type = connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH;
+
+	if (connection->auth_token) {
+		request_type = connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_TOKEN : AUTH_PACKET_TYPE_CLIENT_TOKEN;
+	}
+
+	return request_type;
+
+}
+
 // removes the connection auth data using the connection's delete_auth_data method
 // if not such method, the data won't be deleted
 // the connection's auth data & delete method will be equal to NULL
@@ -678,6 +757,8 @@ void connection_remove_auth_data (Connection *connection) {
 		connection->auth_data = NULL;
 		connection->auth_data_size = 0;
 		connection->delete_auth_data = NULL;
+		connection->auth_serialized = false;
+		connection->auth_token = false;
 	}
 
 }
@@ -693,9 +774,18 @@ u8 connection_generate_auth_packet (Connection *connection) {
 		if (connection->auth_data) {
 			connection->auth_packet = packet_generate_request (
 				PACKET_TYPE_AUTH,
-				connection->admin_auth ? AUTH_PACKET_TYPE_ADMIN_AUTH : AUTH_PACKET_TYPE_CLIENT_AUTH,
+				connection_auth_request_type (connection),
 				connection->auth_data, connection->auth_data_size
 			);
+
+			// an encoded object is sent with its flag
+			if (connection->auth_packet && connection->auth_serialized) {
+				connection->auth_packet->header.flags |= PACKET_FLAG_SERIALIZED;
+				if (packet_generate (connection->auth_packet)) {
+					packet_delete (connection->auth_packet);
+					connection->auth_packet = NULL;
+				}
+			}
 
 			if (connection->auth_packet) retval = 0;
 		}

@@ -96,7 +96,7 @@ struct _ReceiveHandle {
 
 	// used to handle split headers between buffers
 	// this can happen when the header is at the buffer's end
-	PacketHeader header;
+	u8 header[PACKET_HEADER_SIZE];
 	char *header_end;
 	unsigned int remaining_header;
 

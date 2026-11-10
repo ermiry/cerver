@@ -130,7 +130,7 @@ static bool routing_body_check (const char *body, const size_t size) {
 
 #pragma region services
 
-// the response is sent with the sock fd of the request, so the balancer routes it back
+// the response is sent with the route id of the request, so the balancer routes it back
 static void routing_service_echo (const Packet *packet) {
 
 	Packet *response = packet_generate_request (
@@ -140,7 +140,7 @@ static void routing_service_echo (const Packet *packet) {
 
 	test_check_ptr (response);
 
-	((PacketHeader *) response->packet)->sock_fd = packet->header.sock_fd;
+	packet_set_route_id (response, packet->header.route_id);
 
 	packet_set_network_values (
 		response, packet->cerver, packet->client, packet->connection, NULL
@@ -475,10 +475,14 @@ static void routing_client_send (
 	char *body = body_size ? (char *) malloc (body_size) : NULL;
 	if (body) routing_body_fill (body, body_size);
 
-	Packet *packet = packet_generate_request (packet_type, request_type, body, body_size);
+	Packet *packet = packet_new ();
 	test_check_ptr (packet);
 
-	((PacketHeader *) packet->packet)->handler_id = handler_id;
+	packet->packet_type = packet_type;
+	packet->req_type = request_type;
+	packet->header.handler_id = handler_id;
+	if (body) test_check_unsigned_eq (packet_append_data (packet, body, body_size), 0, NULL);
+	test_check_unsigned_eq (packet_generate (packet), 0, NULL);
 
 	packet_set_network_values (packet, NULL, routing->client, routing->connection, NULL);
 	test_check_unsigned_eq (packet_send (packet, 0, NULL, false), 0, NULL);
@@ -655,8 +659,11 @@ static void test_routing_bad_packet_size (void) {
 	header.packet_size = ROUTING_BAD_PACKET_SIZE;
 	header.version = packet_version_local ();
 
+	u8 encoded[PACKET_HEADER_SIZE];
+	packet_header_encode (&header, encoded);
+
 	test_check (
-		send (bad.connection->socket->sock_fd, &header, sizeof (PacketHeader), 0) == (ssize_t) sizeof (PacketHeader),
+		send (bad.connection->socket->sock_fd, encoded, PACKET_HEADER_SIZE, 0) == (ssize_t) PACKET_HEADER_SIZE,
 		"failed to send the bad header"
 	);
 

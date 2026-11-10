@@ -1643,9 +1643,9 @@ u8 client_error_trigger (
 // handles error packets
 static void client_error_packet_handler (Packet *packet) {
 
-	if (packet->data_size >= sizeof (SError)) {
-		char *end = (char *) packet->data;
-		SError *s_error = (SError *) end;
+	ErrorMessage message;
+	if (packet_get_object (packet, &error_message_schema, NULL, &message) == SERIALIZER_RESULT_NONE) {
+		const ErrorMessage *s_error = &message;
 
 		switch (s_error->error_type) {
 			case CLIENT_ERROR_NONE: break;
@@ -1759,31 +1759,7 @@ Packet *client_error_packet_generate (
 	const ClientErrorType type, const char *msg
 ) {
 
-	Packet *packet = packet_new ();
-	if (packet) {
-		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
-
-		// zeroed, the whole buffer is sent
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_ERROR;
-		header->packet_size = packet_len;
-
-		header->request_type = REQUEST_PACKET_TYPE_NONE;
-		header->version = packet_version_local ();
-
-		end += sizeof (PacketHeader);
-
-		SError *s_error = (SError *) end;
-		s_error->error_type = type;
-		s_error->timestamp = time (NULL);
-		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
-	}
-
-	return packet;
+	return error_message_packet_create ((u32) type, msg);
 
 }
 
@@ -2120,28 +2096,31 @@ static unsigned int client_connection_get_next_packet_actual (
 	connection->receive_handle.connection = connection;
 
 	const ReceiveError error = client_receive_data (
-		client, connection, buffer, sizeof (PacketHeader), sizeof (PacketHeader)
+		client, connection, buffer, PACKET_HEADER_SIZE, PACKET_HEADER_SIZE
 	);
 
 	if (error != RECEIVE_ERROR_NONE) return 1;
 
 	PacketHeader header;
-	(void) memcpy (&header, buffer, sizeof (PacketHeader));
+	const bool valid_header = (
+		packet_header_decode ((const u8 *) buffer, &header) == PACKET_HEADER_RESULT_NONE
+	);
 
 	#ifdef CLIENT_RECEIVE_DEBUG
-	packet_header_log (&header);
+	if (valid_header) packet_header_log (&header);
 	#endif
 
-	const bool valid_size = (header.packet_size >= sizeof (PacketHeader))
-		&& (header.packet_size <= client->max_received_packet_size);
+	const bool valid_size = valid_header
+		&& (header.packet_size >= PACKET_HEADER_SIZE)
+		&& (header.packet_size <= (u64) client->max_received_packet_size);
 
-	// an invalid size closes the connection, a packet with only its header is dispatched,
+	// an invalid header or size closes the connection, a packet with only its header is dispatched,
 	// in both cases the connection must not be used after it
-	client_connection_get_next_packet_feed (client, connection, buffer, sizeof (PacketHeader));
+	client_connection_get_next_packet_feed (client, connection, buffer, PACKET_HEADER_SIZE);
 
 	if (!valid_size) return 1;
 
-	size_t remaining = header.packet_size - sizeof (PacketHeader);
+	size_t remaining = (size_t) header.packet_size - PACKET_HEADER_SIZE;
 	while (remaining > 0) {
 		const size_t piece = (remaining < CLIENT_NEXT_PACKET_BUFFER_SIZE)
 			? remaining : CLIENT_NEXT_PACKET_BUFFER_SIZE;
@@ -2212,16 +2191,15 @@ unsigned int client_connection_get_next_packet (
 
 #pragma region connect
 
-// the request of the cerver info has the size of the info,
+// the request of the cerver info has the biggest size of the info,
 // a cerver does not answer an unproven address with more bytes than it sent (udp.c)
 static void client_connect_datagram_info (Client *client, Connection *connection) {
 
-	SCerver padding;
-	(void) memset (&padding, 0, sizeof (SCerver));
+	u8 padding[CERVER_SUMMARY_MAX_ENCODED_SIZE] = { 0 };
 
 	Packet *request = packet_generate_request (
 		PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
-		&padding, sizeof (SCerver)
+		padding, CERVER_SUMMARY_MAX_ENCODED_SIZE
 	);
 
 	if (request) {
@@ -2739,7 +2717,7 @@ void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	)
@@ -2806,28 +2784,11 @@ u8 client_file_get (
 
 	if (client && connection && filename) {
 		if (client->uploads_path) {
-			Packet *packet = packet_new ();
+			Packet *packet = file_header_packet_create (
+				REQUEST_PACKET_TYPE_GET_FILE, filename, 0
+			);
+
 			if (packet) {
-				size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
-
-				// zeroed, the whole buffer is sent
-				packet->packet = calloc (1, packet_len);
-				packet->packet_size = packet_len;
-
-				char *end = (char *) packet->packet;
-				PacketHeader *header = (PacketHeader *) end;
-				header->packet_type = PACKET_TYPE_REQUEST;
-				header->packet_size = packet_len;
-
-				header->request_type = REQUEST_PACKET_TYPE_GET_FILE;
-				header->version = packet_version_local ();
-
-				end += sizeof (PacketHeader);
-
-				FileHeader *file_header = (FileHeader *) end;
-				(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
-				file_header->len = 0;
-
 				packet_set_network_values (packet, NULL, client, connection, NULL);
 
 				retval = packet_send (packet, 0, NULL, false);
@@ -2920,18 +2881,16 @@ const char *client_handler_error_description (
 
 }
 
-// the info is copied, a packet smaller than it was read past its data
+// the info is an object of the summary schema, validated when it is decoded
 static void client_cerver_packet_handle_info (Packet *packet) {
 
-	if (packet->data && (packet->data_size >= sizeof (SCerver))) {
-		SCerver scerver;
-		(void) memcpy (&scerver, packet->data, sizeof (SCerver));
-
+	CerverSummary summary;
+	if (packet_get_object (packet, &cerver_summary_schema, NULL, &summary) == SERIALIZER_RESULT_NONE) {
 		#ifdef CLIENT_DEBUG
 		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver info packet.");
 		#endif
 
-		CerverReport *cerver_report = cerver_deserialize (&scerver);
+		CerverReport *cerver_report = cerver_deserialize (&summary);
 		if (cerver_report_check_info (
 			cerver_report, packet->client, packet->connection
 		)) {
@@ -3021,7 +2980,7 @@ static void client_request_get_file (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader requested = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &requested)) {
+	if (file_header_get (packet, &requested)) {
 		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
@@ -3107,25 +3066,16 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader received = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &received)) {
-		char *end = (char *) packet->data;
+	if (file_header_get (packet, &received)) {
 		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
-		// printf (
-		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
-		// 	packet->data_size, sizeof (FileHeader)
-		// );
-		if (packet->data_size > sizeof (FileHeader)) {
-			file_data = end += sizeof (FileHeader);
-			file_data_len = packet->data_size - sizeof (FileHeader);
-		}
 
 		// the file is sent after its packet, so its first bytes can be in the same buffer
-		else if (packet->connection) {
+		if (packet->connection) {
 			file_data_len = receive_handle_take_trailing (
-				&packet->connection->receive_handle, &file_data, file_header->len
+				&packet->connection->receive_handle, &file_data, (size_t) file_header->len
 			);
 		}
 
@@ -3234,15 +3184,9 @@ static u8 auth_strip_token (Packet *packet, Client *client) {
 
 	u8 retval = 1;
 
-	// check we have a big enough packet
-	if (packet->data_size > 0) {
-		char *end = (char *) packet->data;
-
-		// check if we have a token
-		if (packet->data_size == (sizeof (SToken))) {
-			SToken *s_token = (SToken *) (end);
-			retval = client_set_session_id (client, s_token->token);
-		}
+	SessionToken token;
+	if (packet_get_object (packet, &session_token_schema, NULL, &token) == SERIALIZER_RESULT_NONE) {
+		retval = client_set_session_id (client, token.token);
 	}
 
 	return retval;
@@ -3259,15 +3203,17 @@ static u8 client_auth_success_datagram (Packet *packet) {
 	const bool valid = packet->data && (packet->data_size >= CONNECTION_DATAGRAM_TOKEN_SIZE);
 	const size_t session_size = valid ? (packet->data_size - CONNECTION_DATAGRAM_TOKEN_SIZE) : 0;
 
-	if (valid && (!session_size || (session_size == sizeof (SToken)))) {
-		const char *data = (const char *) packet->data;
+	SessionToken token;
+	const bool valid_session = !session_size || (serializer_decode (
+		&session_token_schema, packet->data, session_size, NULL, &token
+	) == SERIALIZER_RESULT_NONE);
 
-		// a session token without its NUL would be read past the packet
-		if (session_size && memchr (data, '\0', sizeof (SToken))) {
-			(void) client_set_session_id (packet->client, data);
-		}
+	if (valid && valid_session) {
+		const u8 *data = (const u8 *) packet->data;
 
-		connection_set_datagram_token (packet->connection, (const u8 *) data + session_size);
+		if (session_size) (void) client_set_session_id (packet->client, token.token);
+
+		connection_set_datagram_token (packet->connection, data + session_size);
 
 		retval = 0;
 	}

@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <cerver/files.h>
+#include <cerver/packets.h>
 
 #include "test.h"
 
@@ -352,22 +353,39 @@ static void test_files_header_is_valid (void) {
 
 }
 
-// the header is copied from the data of a packet, even if it is not aligned
+// the header is decoded from the data of a packet, that must be a complete FileHeader object
 static void test_files_header_get (void) {
 
-	FileHeader expected;
-	files_header_set (&expected, FILES_HEADER_NAME);
+	Packet *packet = file_header_packet_create (
+		REQUEST_PACKET_TYPE_SEND_FILE, FILES_HEADER_NAME, FILES_HEADER_LENGTH
+	);
 
-	char data[sizeof (FileHeader) + 1] = { 0 };
-	(void) memcpy (data + 1, &expected, sizeof (FileHeader));
+	test_check_ptr (packet);
+	test_check_true ((packet->header.flags & PACKET_FLAG_SERIALIZED) != 0);
 
 	FileHeader file_header;
-	test_check_true (file_header_get (data + 1, sizeof (FileHeader), &file_header));
+	test_check_true (file_header_get (packet, &file_header));
 	test_check_str_eq (file_header.filename, FILES_HEADER_NAME, NULL);
 	test_check_unsigned_eq (file_header.len, FILES_HEADER_LENGTH, NULL);
 
-	test_check_false (file_header_get (data + 1, sizeof (FileHeader) - 1, &file_header));
-	test_check_false (file_header_get (NULL, sizeof (FileHeader), &file_header));
+	// a truncated object is not a header
+	packet->data_size -= 1;
+	test_check_false (file_header_get (packet, &file_header));
+	packet->data_size += 1;
+
+	// the data of a packet without the flag is not an object
+	packet->header.flags = 0;
+	test_check_false (file_header_get (packet, &file_header));
+
+	test_check_false (file_header_get (NULL, &file_header));
+
+	packet_delete (packet);
+
+	// a name that is not valid is never decoded
+	Packet *parent = file_header_packet_create (REQUEST_PACKET_TYPE_SEND_FILE, "..", 0);
+	test_check_ptr (parent);
+	test_check_false (file_header_get (parent, &file_header));
+	packet_delete (parent);
 
 }
 

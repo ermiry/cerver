@@ -37,13 +37,14 @@ static void app_handler_test (const Packet *packet) {
 
 		.header = (PacketHeader) {
 			.packet_type = PACKET_TYPE_APP,
-			.packet_size = sizeof (PacketHeader),
+			.packet_size = PACKET_HEADER_SIZE,
 
 			.handler_id = 0,
+			.flags = 0,
 
 			.request_type = APP_REQUEST_TEST,
 
-			.sock_fd = packet->header.sock_fd,
+			.route_id = packet->header.route_id,
 
 			.version = packet_version_local ()
 		},
@@ -56,8 +57,9 @@ static void app_handler_test (const Packet *packet) {
 			}
 		},
 
-		.packet_size = sizeof (PacketHeader),
-		.packet = &response.header,
+		// the header is encoded from the packet when it is sent
+		.packet_size = PACKET_HEADER_SIZE,
+		.packet = response.encoded_header,
 		.packet_ref = false
 	};
 
@@ -83,26 +85,16 @@ static void app_handler_message (const Packet *packet) {
 		cerver_log_error ("Message [%lu] mismatch!", app_message->id);
 	}
 
-	Packet *response = packet_new ();
+	Packet *response = packet_create (
+		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
+		app_message, sizeof (AppMessage)
+	);
 
-	// generate the packet
-	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	response->packet = calloc (1, packet_len);
-	response->packet_size = packet_len;
+	if (!response) return;
 
-	char *end = (char *) response->packet;
-	PacketHeader *header = (PacketHeader *) end;
-	header->packet_type = PACKET_TYPE_APP;
-	header->packet_size = packet_len;
-
-	header->request_type = APP_REQUEST_MESSAGE;
-	header->version = packet_version_local ();
-
-	header->sock_fd = packet->header.sock_fd;
-
-	end += sizeof (PacketHeader);
-
-	(void) memcpy (end, app_message, sizeof (AppMessage));
+	// the response goes back through the route of the balancer
+	response->header.route_id = packet->header.route_id;
+	(void) packet_generate (response);
 
 	// send the packet
 	packet_set_network_values (

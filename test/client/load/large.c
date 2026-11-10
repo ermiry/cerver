@@ -21,7 +21,7 @@
 #define LARGE_AFTER_PACKETS			16
 
 // the header and the body of the biggest packet that the balancer takes
-#define LARGE_BIGGEST_BODY			(UPSTREAM_MAX_PACKET_SIZE - sizeof (PacketHeader))
+#define LARGE_BIGGEST_BODY			(UPSTREAM_MAX_PACKET_SIZE - PACKET_HEADER_SIZE)
 
 static unsigned int large_send_sizes (BalancerClient *client) {
 

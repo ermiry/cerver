@@ -19,6 +19,7 @@
 #include "cerver/handler.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/serializer.h"
 
 #include "cerver/threads/thpool.h"
 #include "cerver/threads/thread.h"
@@ -331,7 +332,7 @@ struct _Cerver {
 	bool ipv6_only;
 
 	// read and written with __atomic, use cerver_is_running ()
-	bool isRunning;                     // the server is recieving and/or sending packetss
+	bool running;                       // the server is receiving and/or sending packets
 	// read and written with __atomic, a stop requested before cerver_start () cancels it
 	bool stop_requested;
 	bool blocking;                     // sokcet fd is blocking?
@@ -403,6 +404,10 @@ struct _Cerver {
 	struct _Packet *auth_packet;        // requests client authentication
 	u8 max_auth_tries;                  // client's chances of auth before being dropped
 	delegate authenticate;              // authentication function
+
+	// the schema of the credentials, the authenticate method gets the decoded object,
+	// NULL to take the bytes of the credentials as they come
+	const SerializerSchema *auth_schema;
 
 	AVLTree *on_hold_connections;       // hold on the connections until they authenticate
 	Htab *on_hold_connection_sock_fd_map;
@@ -659,6 +664,14 @@ CERVER_EXPORT void cerver_set_auth_max_tries (
 // must return 0 on success authentication
 CERVER_EXPORT void cerver_set_auth_method (
 	Cerver *cerver, delegate authenticate
+);
+
+// sets the schema of the credentials of the clients,
+// the credentials are decoded and validated with it before the authenticate method gets them,
+// and its auth data is the object; a packet that is not an object of the schema fails the auth
+// the fields of the schema can not take memory from an arena
+CERVER_EXPORT void cerver_set_auth_schema (
+	Cerver *cerver, const SerializerSchema *schema
 );
 
 // sets the cerver on poll timeout in ms
@@ -927,30 +940,34 @@ CERVER_PRIVATE u8 cerver_report_check_info (
 
 #pragma region serialization
 
-#define S_CERVER_NAME_LENGTH                128
-#define S_CERVER_WELCOME_LENGTH             512
+#define CERVER_SUMMARY_NAME_SIZE			128
+#define CERVER_SUMMARY_WELCOME_SIZE			512
 
-// serialized cerver structure
-typedef struct SCerver {
+// the bytes of the map, the version, the keys, the lengths and the values that are not texts
+#define CERVER_SUMMARY_ENCODING_OVERHEAD	64
 
-	CerverType type;
+// the biggest encoded cerver summary
+#define CERVER_SUMMARY_MAX_ENCODED_SIZE		\
+	(CERVER_SUMMARY_NAME_SIZE + CERVER_SUMMARY_WELCOME_SIZE + CERVER_SUMMARY_ENCODING_OVERHEAD)
 
-	char name[S_CERVER_NAME_LENGTH];
-	char welcome[S_CERVER_WELCOME_LENGTH];
+#define CERVER_SUMMARY_VERSION				1
 
-	bool use_ipv6;
-	Protocol protocol;
-	u16 port;
+// the info of a cerver that it sends to its clients
+#define CERVER_SUMMARY_FIELDS(T, SCALAR, ENUM, STRING, ARRAY, OBJECT, OBJECTS)								\
+	ENUM(T, 1, type, SERIALIZER_REQUIRED, CERVER_TYPE_NONE, CERVER_TYPE_NONE, CERVER_TYPE_BALANCER)		\
+	STRING(T, 2, TEXT, name, CERVER_SUMMARY_NAME_SIZE, SERIALIZER_REQUIRED)								\
+	STRING(T, 3, TEXT, welcome, CERVER_SUMMARY_WELCOME_SIZE, SERIALIZER_OPTIONAL)							\
+	SCALAR(T, 4, BOOL, use_ipv6, SERIALIZER_OPTIONAL, false)												\
+	ENUM(T, 5, protocol, SERIALIZER_OPTIONAL, PROTOCOL_TCP, PROTOCOL_TCP, PROTOCOL_UDP)					\
+	SCALAR(T, 6, U16, port, SERIALIZER_OPTIONAL, 0)														\
+	SCALAR(T, 7, BOOL, auth_required, SERIALIZER_OPTIONAL, false)											\
+	SCALAR(T, 8, BOOL, uses_sessions, SERIALIZER_OPTIONAL, false)
 
-	bool auth_required;
-	bool uses_sessions;
+SERIALIZER_DECLARE (CerverSummary, cerver_summary, CERVER_SUMMARY_FIELDS)
 
-} SCerver;
-
-// the scerver comes from the network: its strings may not be NUL terminated
-// and its flags may have any value, so they are read up to their sizes and as bytes
+// the summary comes from the network already validated by its schema
 CERVER_PRIVATE CerverReport *cerver_deserialize (
-	const SCerver *scerver
+	const CerverSummary *summary
 );
 
 // creates a cerver info packet ready to be sent

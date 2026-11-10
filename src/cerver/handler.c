@@ -386,8 +386,7 @@ static void *handler_do (void *handler_ptr) {
 			(void) prctl (PR_SET_NAME, thread_name);
 		}
 
-		// TODO: register to signals to handle multiple actions
-
+		// the signals belong to the process, a handler is stopped with its cerver (cerver_stop_request ())
 		if (handler->data_create)
 			handler->data = handler->data_create (handler->data_create_args);
 
@@ -700,7 +699,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader requested = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &requested)) {
+	if (file_header_get (packet, &requested)) {
 		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
@@ -812,25 +811,16 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader received = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &received)) {
-		char *end = (char *) packet->data;
+	if (file_header_get (packet, &received)) {
 		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
-		// printf (
-		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
-		// 	packet->data_size, sizeof (FileHeader)
-		// );
-		if (packet->data_size > sizeof (FileHeader)) {
-			file_data = end += sizeof (FileHeader);
-			file_data_len = packet->data_size - sizeof (FileHeader);
-		}
 
 		// the file is sent after its packet, so its first bytes can be in the same buffer
-		else if (packet->connection) {
+		if (packet->connection) {
 			file_data_len = receive_handle_take_trailing (
-				&packet->connection->receive_handle, &file_data, file_header->len
+				&packet->connection->receive_handle, &file_data, (size_t) file_header->len
 			);
 		}
 
@@ -944,13 +934,19 @@ void cerver_test_packet_handler (Packet *packet) {
 		.connection = packet->connection,
 		.lobby = packet->lobby,
 
-		.packet_size = sizeof (PacketHeader),
-		.packet = (void *) &packet->header,
+		.header = packet->header,
+
+		// the header of the test packet is encoded again from here when it is sent
+		.packet_size = PACKET_HEADER_SIZE,
+		.packet = (void *) request.encoded_header,
 		.packet_ref = true,
 
 		.release = NULL,
 		.release_args = NULL
 	};
+
+	// only the header goes back, a test packet with data must not announce it
+	request.header.packet_size = PACKET_HEADER_SIZE;
 
 	(void) packet_send (&request, 0, NULL, false);
 
@@ -1026,6 +1022,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
 
 static const char *cerver_bad_packet_version = { "The packet has an incompatible version" };
 static const char *cerver_bad_packet_type = { "The packet has an unknown type" };
+static const char *cerver_already_authenticated = { "The connection is already authenticated" };
 
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit
@@ -1162,7 +1159,13 @@ static CerverHandlerError cerver_packet_handler_actual (
 			packet->connection->stats->received_packets->n_auth_packets += 1;
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
-			/* TODO: */
+
+			// the connection is already authenticated, the packet is answered and discarded
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_PACKET_ERROR, cerver_already_authenticated,
+				packet->cerver, packet->client, packet->connection
+			);
+
 			packet_delete (packet);
 		} break;
 
@@ -1852,22 +1855,23 @@ static inline u8 cerver_receive_threads_actual (
 }
 
 // the load balancer receives complete packets and routes them to its services,
-// the route of the connection lives while it is received
-static void cerver_receive_threads_balancer (
-	CerverReceive *cr, const i32 sock_fd
-) {
+// the route of the connection lives while it is received, a connection without one is not received
+// a packet can end the connection, so it is never used after the receive loop
+static void cerver_receive_threads_balancer (CerverReceive *cr) {
 
 	Balancer *balancer = cr->cerver->balancer;
 
-	balancer_connection_start (balancer, sock_fd, cr->socket);
+	const u32 route_id = balancer_connection_start (balancer, cr->socket);
+	if (cr->connection) cr->connection->route_id = route_id;
 
 	while (
-		(cr->socket->sock_fd > -1)
+		route_id
+		&& (cr->socket->sock_fd > -1)
 		&& cerver_is_running (cr->cerver)
 		&& !balancer_receive (cr)
 	);
 
-	balancer_connection_end (balancer, sock_fd);
+	balancer_connection_end (balancer, route_id);
 
 }
 
@@ -1892,7 +1896,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	char *buffer = (char *) calloc (buffer_size, sizeof (char));
 	if (cr->cerver->type == CERVER_TYPE_BALANCER) {
 		free (buffer);
-		cerver_receive_threads_balancer (cr, sock_fd);
+		cerver_receive_threads_balancer (cr);
 	}
 
 	else if (buffer) {
@@ -2136,6 +2140,24 @@ static u8 cerver_register_new_connection_normal_default_select_handler_threads (
 
 }
 
+// a new connection that no handler could take is taken out of the cerver with its new client,
+// the client is unregistered while it still has the connection, so its sock fd leaves the maps,
+// and the connection is left for its caller to drop
+void cerver_new_connection_release (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	cerver_log_error (
+		"Cerver %s failed to start the handler of the connection with sock fd <%d>",
+		cerver->info->name, connection->socket->sock_fd
+	);
+
+	(void) client_unregister_from_cerver (cerver, client);
+	(void) client_connection_remove (client, connection);
+	client_delete (client);
+
+}
+
 // select how client connection will be handled based on cerver's handler type
 u8 cerver_register_new_connection_normal_default_select_handler (
 	Cerver *cerver, Client *client, Connection *connection
@@ -2189,12 +2211,12 @@ static u8 cerver_register_new_connection_normal_default (
 				client, connection
 			);
 
-			// TODO: better error handling
-			if (!cerver_register_new_connection_normal_default_select_handler (
+			// a connection that no handler took is dropped by the caller, without its client
+			retval = cerver_register_new_connection_normal_default_select_handler (
 				cerver, client, connection
-			)) {
-				retval = 0;
-			}
+			);
+
+			if (retval) cerver_new_connection_release (cerver, client, connection);
 		}
 	}
 

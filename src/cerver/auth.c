@@ -26,6 +26,9 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
+static const char *auth_missing_data = { "Missing auth data!" };
+static const char *auth_internal_error = { "Internal cerver error!" };
+
 static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection);
 static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connection);
 u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
@@ -161,26 +164,40 @@ static void auth_method_delete (AuthMethod *auth_method) {
 
 #pragma region auth
 
-// only the bytes of the session id are copied, it is shorter than the token,
-// copying TOKEN_SIZE bytes read past its end
-// the session id is read with the client's session lock
-static void auth_token_set (SToken *token, const Client *client) {
+// the success of a cerver with sessions has the session token of the client,
+// its session id is read with the client's session lock
+static Packet *auth_success_packet_create (const Client *client, const bool with_token) {
 
-	(void) client_get_session_id (client, token->token, TOKEN_SIZE);
+	Packet *packet = NULL;
+
+	if (with_token) {
+		SessionToken token = { { 0 } };
+		(void) client_get_session_id (client, token.token, TOKEN_SIZE);
+
+		packet = packet_create_serialized (
+			PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_SUCCESS,
+			&session_token_schema, &token
+		);
+	}
+
+	else {
+		packet = packet_generate_request (
+			PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_SUCCESS, NULL, 0
+		);
+	}
+
+	return packet;
 
 }
 
 static void auth_send_success_packet (
 	const Cerver *cerver,
 	const Client *client, const Connection *connection,
-	SToken *token, size_t token_size
+	const bool with_token
 ) {
 
 	if (cerver && connection) {
-		Packet *success_packet = packet_generate_request (
-			PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_SUCCESS,
-			token, token_size
-		);
+		Packet *success_packet = auth_success_packet_create (client, with_token);
 
 		if (success_packet) {
 			packet_set_network_values (
@@ -278,6 +295,18 @@ static Client *auth_create_new_client (
 		}
 	}
 
+	// without a client the connection can not go on, it is told why and dropped
+	else {
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_CERVER_ERROR, auth_internal_error,
+			packet->cerver, NULL, packet->connection
+		);
+
+		on_hold_connection_drop (packet->cerver, packet->connection);
+
+		*error = CERVER_AUTH_ERROR_DROPPED;
+	}
+
 	return client;
 
 }
@@ -322,6 +351,40 @@ static CerverAuthError auth_failed (
 			error = CERVER_AUTH_ERROR_DROPPED;
 		}
 	}
+
+	return error;
+
+}
+
+// the on hold thread gives the authenticated connection to the handler of the cerver,
+// a connection that no handler could take is dropped without its client
+static void auth_client_connection_start (
+	Cerver *cerver, Client *client, Connection *connection
+) {
+
+	if (cerver_register_new_connection_normal_default_select_handler (cerver, client, connection)) {
+		cerver_new_connection_release (cerver, client, connection);
+		connection_drop (cerver, connection);
+	}
+
+}
+
+// the failed auth event of the connection, or without it when the failure dropped it,
+// a connection that reached its max auth tries was deleted
+static CerverAuthError auth_failed_with_event (
+	const Packet *packet, const bool admin, const char *error_message
+) {
+
+	Connection *connection = packet->connection;
+
+	const CerverAuthError error = auth_failed (packet->cerver, connection, error_message);
+	if (error == CERVER_AUTH_ERROR_DROPPED) connection = NULL;
+
+	cerver_event_trigger (
+		admin ? CERVER_EVENT_ADMIN_FAILED_AUTH : CERVER_EVENT_CLIENT_FAILED_AUTH,
+		packet->cerver,
+		NULL, connection
+	);
 
 	return error;
 
@@ -504,7 +567,6 @@ static CerverAuthError auth_with_defined_method (
 			);
 			#endif
 
-			// TODO: handle if we failed to generate a new client
 			*client = auth_create_new_client (packet, auth_data, &error);
 		}
 
@@ -517,27 +579,10 @@ static CerverAuthError auth_with_defined_method (
 			);
 			#endif
 
-			error = auth_failed (
-				packet->cerver, packet->connection,
+			error = auth_failed_with_event (
+				packet, admin,
 				auth_method->error_message ? auth_method->error_message->str : NULL
 			);
-
-			// TODO: handle when the connection has been dropped
-			if (admin) {
-				cerver_event_trigger (
-					CERVER_EVENT_ADMIN_FAILED_AUTH,
-					packet->cerver,
-					NULL, packet->connection
-				);
-			}
-
-			else {
-				cerver_event_trigger (
-					CERVER_EVENT_CLIENT_FAILED_AUTH,
-					packet->cerver,
-					NULL, packet->connection
-				);
-			}
 		}
 
 		auth_method_delete (auth_method);
@@ -547,28 +592,63 @@ static CerverAuthError auth_with_defined_method (
 
 }
 
-// strip out the auth data from the packet
+// a session token is sent with its own request type
+static bool auth_packet_has_token (const Packet *packet) {
+
+	return (packet->header.request_type == AUTH_PACKET_TYPE_CLIENT_TOKEN)
+		|| (packet->header.request_type == AUTH_PACKET_TYPE_ADMIN_TOKEN);
+
+}
+
+// the session token is a serialized SessionToken, a packet that is not one has no auth data
+static AuthData *auth_strip_token (const Packet *packet) {
+
+	AuthData *auth_data = NULL;
+
+	SessionToken token;
+	if (packet_get_object (packet, &session_token_schema, NULL, &token) == SERIALIZER_RESULT_NONE) {
+		auth_data = auth_data_create (token.token, NULL, 0);
+	}
+
+	return auth_data;
+
+}
+
+// with an auth schema, the credentials are an object of it, decoded and validated,
+// so the authenticate method gets the object in the auth data
+// the fields of an auth schema can not take memory from an arena
+static AuthData *auth_strip_object (const Packet *packet, const SerializerSchema *schema) {
+
+	AuthData *auth_data = NULL;
+
+	void *object = malloc (schema->size);
+	if (object && (packet_get_object (packet, schema, NULL, object) == SERIALIZER_RESULT_NONE)) {
+		auth_data = auth_data_create (NULL, object, schema->size);
+	}
+
+	free (object);
+
+	return auth_data;
+
+}
+
+// strip out the auth data from the packet:
+// a session token, an object of the auth schema of the cerver, or the bytes of the credentials
 static AuthData *auth_strip_auth_data (Packet *packet) {
 
 	AuthData *auth_data = NULL;
 
-	// check we have a big enough packet
 	if (packet->data_size > 0) {
-		char *end = (char *) packet->data;
-
-		// a token is a string inside the SToken, one without its NUL was read past the packet,
-		// so the data is taken as credentials
-		if (
-			(packet->data_size == (sizeof (SToken)))
-			&& memchr (end, '\0', sizeof (SToken))
-		) {
-			auth_data = auth_data_create (end, NULL, 0);
+		if (auth_packet_has_token (packet)) {
+			auth_data = auth_strip_token (packet);
 		}
 
-		// we have custom data credentials
+		else if (packet->cerver && packet->cerver->auth_schema) {
+			auth_data = auth_strip_object (packet, packet->cerver->auth_schema);
+		}
+
 		else {
-			size_t data_size = packet->data_size;
-			auth_data = auth_data_create (NULL, end, data_size);
+			auth_data = auth_data_create (NULL, packet->data, packet->data_size);
 		}
 	}
 
@@ -622,26 +702,7 @@ static CerverAuthError auth_try_common (
 		);
 		#endif
 
-		error = auth_failed (
-			packet->cerver, packet->connection, "Missing auth data!"
-		);
-
-		// TODO: handle when the connection has been dropped
-		if (admin) {
-			cerver_event_trigger (
-				CERVER_EVENT_ADMIN_FAILED_AUTH,
-				packet->cerver,
-				NULL, packet->connection
-			);
-		}
-
-		else {
-			cerver_event_trigger (
-				CERVER_EVENT_CLIENT_FAILED_AUTH,
-				packet->cerver,
-				NULL, packet->connection
-			);
-		}
+		error = auth_failed_with_event (packet, admin, auth_missing_data);
 	}
 
 	return error;
@@ -670,24 +731,11 @@ static CerverAuthError auth_try (Packet *packet) {
 				// register the new client & its connection to the cerver main structures & poll
 				if (!client_register_to_cerver (packet->cerver, client)) {
 					// if we are successfull, send success packet
-					if (packet->cerver->use_sessions) {
-						SToken token = { { 0 } };
-						auth_token_set (&token, client);
-
-						auth_send_success_packet (
-							packet->cerver,
-							client, packet->connection,
-							&token, sizeof (SToken)
-						);
-					}
-
-					else {
-						auth_send_success_packet (
-							packet->cerver,
-							client, packet->connection,
-							NULL, 0
-						);
-					}
+					auth_send_success_packet (
+						packet->cerver,
+						client, packet->connection,
+						packet->cerver->use_sessions
+					);
 
 					// the events run before the handler owns the connection,
 					// its receive thread can delete it as soon as it starts
@@ -703,12 +751,7 @@ static CerverAuthError auth_try (Packet *packet) {
 						client, packet->connection
 					);
 
-					// FIXME: this is a quick fix
-					// we should have a better way when after we refactor handler methods
-					// create a dedicated thread to handle connection if needed
-					(void) cerver_register_new_connection_normal_default_select_handler (
-						packet->cerver, client, packet->connection
-					);
+					auth_client_connection_start (packet->cerver, client, packet->connection);
 				}
 
 				else {
@@ -746,7 +789,7 @@ static CerverAuthError auth_try (Packet *packet) {
 					auth_send_success_packet (
 						packet->cerver,
 						match, packet->connection,
-						NULL, 0
+						false
 					);
 
 					// the event runs before the handler owns the connection
@@ -806,24 +849,11 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 					Admin *admin = admin_create_with_client (client);
 					if (!admin_cerver_register_admin (packet->cerver->admin, admin)) {
 						// if we are successfull, send success packet
-						if (packet->cerver->use_sessions) {
-							SToken token = { { 0 } };
-							auth_token_set (&token, client);
-
-							auth_send_success_packet (
-								packet->cerver,
-								client, packet->connection,
-								&token, sizeof (SToken)
-							);
-						}
-
-						else {
-							auth_send_success_packet (
-								packet->cerver,
-								client, packet->connection,
-								NULL, 0
-							);
-						}
+						auth_send_success_packet (
+							packet->cerver,
+							client, packet->connection,
+							packet->cerver->use_sessions
+						);
 
 						cerver_event_trigger (
 							CERVER_EVENT_ADMIN_CONNECTED,
@@ -871,7 +901,7 @@ static CerverAuthError admin_auth_try (Packet *packet) {
 						auth_send_success_packet (
 							packet->cerver,
 							admin->client, packet->connection,
-							NULL, 0
+							false
 						);
 
 						cerver_event_trigger (
@@ -967,10 +997,12 @@ static CerverAuthError cerver_auth_packet_handler (Packet *packet) {
 		switch (packet->header.request_type) {
 			// the client sent use its data to authenticate itself
 			case AUTH_PACKET_TYPE_CLIENT_AUTH:
+			case AUTH_PACKET_TYPE_CLIENT_TOKEN:
 				error = auth_try (packet);
 				break;
 
 			case AUTH_PACKET_TYPE_ADMIN_AUTH:
+			case AUTH_PACKET_TYPE_ADMIN_TOKEN:
 				error = admin_auth_try (packet);
 				break;
 

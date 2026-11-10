@@ -8,6 +8,8 @@
 #include "app.h"
 #include "auth.h"
 
+SERIALIZER_DEFINE (Credentials, credentials, CREDENTIALS_VERSION, CREDENTIALS_FIELDS)
+
 Credentials *credentials_new (
 	const char *username, const char *password
 ) {
