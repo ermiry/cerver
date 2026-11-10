@@ -184,7 +184,7 @@ void file_cerver_set_file_upload_handler (
 	FileCerver *file_cerver,
 	u8 (*file_upload_handler) (
 		struct _Cerver *, struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	)
@@ -1011,6 +1011,8 @@ bool files_image_extension_is_png (const char *filename) {
 static const char *FILE_HEADER_CURRENT_DIRECTORY = ".";
 static const char *FILE_HEADER_PARENT_DIRECTORY = "..";
 
+SERIALIZER_DEFINE (FileHeader, file_header, FILE_HEADER_VERSION, FILE_HEADER_FIELDS)
+
 // a FileHeader that comes from a packet is used only if its filename is NUL terminated,
 // not empty, a single name (without '/') and different from "." and "..",
 // so it can not read past the header or reach a file outside of the configured paths
@@ -1034,21 +1036,48 @@ bool file_header_is_valid (const FileHeader *file_header) {
 
 }
 
-// copies the FileHeader at the start of the data of a packet and validates it
-// returns true if the data has a valid header
+// decodes the FileHeader of a packet and validates it
+// returns true if the packet has a valid header
 bool file_header_get (
-	const void *data, const size_t data_size, FileHeader *file_header
+	const Packet *packet, FileHeader *file_header
 ) {
 
 	bool valid = false;
 
-	if (data && file_header && (data_size >= sizeof (FileHeader))) {
-		(void) memcpy (file_header, data, sizeof (FileHeader));
-
-		valid = file_header_is_valid (file_header);
+	if (packet && file_header) {
+		FileHeader decoded;
+		if (packet_get_object (packet, &file_header_schema, NULL, &decoded) == SERIALIZER_RESULT_NONE) {
+			valid = file_header_is_valid (&decoded);
+			if (valid) (void) memcpy (file_header, &decoded, sizeof (FileHeader));
+		}
 	}
 
 	return valid;
+
+}
+
+// creates a request packet ready to be sent with the FileHeader of the file
+// returns NULL on error
+Packet *file_header_packet_create (
+	const u32 request_type, const char *filename, const u64 len
+) {
+
+	Packet *packet = NULL;
+
+	if (filename && (strlen (filename) < FILENAME_DEFAULT_SIZE)) {
+		FileHeader file_header;
+		serializer_object_init (&file_header_schema, &file_header);
+
+		(void) strncpy (file_header.filename, filename, FILENAME_DEFAULT_SIZE - 1);
+		file_header.len = len;
+
+		packet = packet_create_serialized (
+			PACKET_TYPE_REQUEST, request_type,
+			&file_header_schema, &file_header
+		);
+	}
+
+	return packet;
 
 }
 
@@ -1061,28 +1090,11 @@ static u8 file_send_header (
 
 	u8 retval = 1;
 
-	Packet *packet = packet_new ();
+	Packet *packet = file_header_packet_create (
+		REQUEST_PACKET_TYPE_SEND_FILE, filename, (u64) filelen
+	);
+
 	if (packet) {
-		size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
-
-		// zeroed, the whole buffer is sent
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_REQUEST;
-		header->packet_size = packet_len;
-
-		header->request_type = REQUEST_PACKET_TYPE_SEND_FILE;
-		header->version = packet_version_local ();
-
-		end += sizeof (PacketHeader);
-
-		FileHeader *file_header = (FileHeader *) end;
-		(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
-		file_header->len = filelen;
-
 		packet_set_network_values (packet, cerver, client, connection, NULL);
 
 		retval = packet_send_unsafe (packet, 0, NULL, false);

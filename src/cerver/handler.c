@@ -700,7 +700,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader requested = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &requested)) {
+	if (file_header_get (packet, &requested)) {
 		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
@@ -812,25 +812,16 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader received = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &received)) {
-		char *end = (char *) packet->data;
+	if (file_header_get (packet, &received)) {
 		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
-		// printf (
-		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
-		// 	packet->data_size, sizeof (FileHeader)
-		// );
-		if (packet->data_size > sizeof (FileHeader)) {
-			file_data = end += sizeof (FileHeader);
-			file_data_len = packet->data_size - sizeof (FileHeader);
-		}
 
 		// the file is sent after its packet, so its first bytes can be in the same buffer
-		else if (packet->connection) {
+		if (packet->connection) {
 			file_data_len = receive_handle_take_trailing (
-				&packet->connection->receive_handle, &file_data, file_header->len
+				&packet->connection->receive_handle, &file_data, (size_t) file_header->len
 			);
 		}
 

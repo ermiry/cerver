@@ -2717,7 +2717,7 @@ void client_files_set_file_upload_handler (
 	Client *client,
 	u8 (*file_upload_handler) (
 		struct _Client *, struct _Connection *,
-		struct _FileHeader *,
+		struct FileHeader *,
 		const char *file_data, size_t file_data_len,
 		char **saved_filename
 	)
@@ -2784,28 +2784,11 @@ u8 client_file_get (
 
 	if (client && connection && filename) {
 		if (client->uploads_path) {
-			Packet *packet = packet_new ();
+			Packet *packet = file_header_packet_create (
+				REQUEST_PACKET_TYPE_GET_FILE, filename, 0
+			);
+
 			if (packet) {
-				size_t packet_len = sizeof (PacketHeader) + sizeof (FileHeader);
-
-				// zeroed, the whole buffer is sent
-				packet->packet = calloc (1, packet_len);
-				packet->packet_size = packet_len;
-
-				char *end = (char *) packet->packet;
-				PacketHeader *header = (PacketHeader *) end;
-				header->packet_type = PACKET_TYPE_REQUEST;
-				header->packet_size = packet_len;
-
-				header->request_type = REQUEST_PACKET_TYPE_GET_FILE;
-				header->version = packet_version_local ();
-
-				end += sizeof (PacketHeader);
-
-				FileHeader *file_header = (FileHeader *) end;
-				(void) strncpy (file_header->filename, filename, FILENAME_DEFAULT_SIZE - 1);
-				file_header->len = 0;
-
 				packet_set_network_values (packet, NULL, client, connection, NULL);
 
 				retval = packet_send (packet, 0, NULL, false);
@@ -2997,7 +2980,7 @@ static void client_request_get_file (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader requested = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &requested)) {
+	if (file_header_get (packet, &requested)) {
 		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
@@ -3083,25 +3066,16 @@ static void client_request_send_file_actual (Packet *packet) {
 
 	// get the necessary information to fulfil the request
 	FileHeader received = { { 0 }, 0 };
-	if (file_header_get (packet->data, packet->data_size, &received)) {
-		char *end = (char *) packet->data;
+	if (file_header_get (packet, &received)) {
 		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
-		// printf (
-		// 	"\n\npacket->data_size %ld > sizeof (FileHeader) %ld\n\n",
-		// 	packet->data_size, sizeof (FileHeader)
-		// );
-		if (packet->data_size > sizeof (FileHeader)) {
-			file_data = end += sizeof (FileHeader);
-			file_data_len = packet->data_size - sizeof (FileHeader);
-		}
 
 		// the file is sent after its packet, so its first bytes can be in the same buffer
-		else if (packet->connection) {
+		if (packet->connection) {
 			file_data_len = receive_handle_take_trailing (
-				&packet->connection->receive_handle, &file_data, file_header->len
+				&packet->connection->receive_handle, &file_data, (size_t) file_header->len
 			);
 		}
 
