@@ -3,6 +3,26 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-7 (from 1.8b-6)
+
+The wire changes: a 1.8b-7 does not talk with a 1.8b-6, clients, services and balancers are updated together.
+
+- The `PacketHeader` travels in `PACKET_HEADER_SIZE` (32) bytes in network byte order, written field by field with `packet_header_encode ()` and read with `packet_header_decode ()`, it used to be sent as it is in memory (40 bytes in LP64, in the order of the host); a header with another `PACKET_HEADER_FORMAT`, unknown flags or reserved bytes that are not zero is a bad packet that closes the connection (a datagram is dropped), and the cerver answers it with an error that says the format it expects
+- Changed fields (ABI): `PacketHeader` (`packet_size` is `u64`, `sock_fd` is now the `u32` `route_id`, new `flags`); `Packet` (new `encoded_header`, that a request packet sends: it is encoded again from `header` when it is sent); `ReceiveHandle` (`header` is the bytes of a split header)
+- `sizeof (PacketHeader)` is not the size of the header in the wire anymore, `PACKET_HEADER_SIZE` is
+- A service answers a request of a load balancer with its `route_id` (`packet_set_route_id ()` sets it in a generated packet); the balancer gives each client connection a route id with a slot of its own, that does not depend on its sock fd, and a generation that changes when the connection ends, so the response for a connection that ended is discarded even when its slot or its sock fd were given to another connection; up to `BALANCER_ROUTES_MAX` (2^20) connections are routed at the same time, `balancer_connection_start ()` returns the route id and `balancer_connection_end ()` takes it
+- `packet_set_header_values ()` takes a `u32 route_id` (it was `u16 sock_fd`)
+- `serializer.h` is new: the schemas, `SERIALIZER_DECLARE ()` / `SERIALIZER_DEFINE ()`, `serializer_encode ()` / `serializer_decode ()`, `packet_create_serialized ()` and `packet_get_object ()`; the old `SRelativePtr`, `SArray` and `s_*` functions were removed
+- The info of a cerver is a `CerverSummary` object (`SCerver`, `S_CERVER_NAME_LENGTH` and `S_CERVER_WELCOME_LENGTH` were removed), `cerver_deserialize ()` takes it
+- The session token is a `SessionToken` object (`SToken` was removed), sent with its own auth request types, `AUTH_PACKET_TYPE_CLIENT_TOKEN` and `AUTH_PACKET_TYPE_ADMIN_TOKEN`; a client sets it with `connection_set_auth_token ()` (the size of the auth data no longer tells a token from credentials)
+- The error packets have an `ErrorMessage` object (`SError` was removed), its `timestamp` is an `i64` of seconds
+- `FileHeader` is an object of its schema: `len` is `u64`, `file_header_get ()` takes the packet, a filename that does not fit in the header is not sent (it was cut), and the callbacks of the file uploads take a `struct FileHeader *` (it was `struct _FileHeader *`)
+- New: `cerver_set_auth_schema ()`, the credentials are decoded and validated with it and the authenticate method gets the object; `connection_set_auth_object ()` sends them; the credentials as bytes still work without a schema
+- New fields (ABI): `Cerver` (`auth_schema`), `Connection` (`auth_serialized`, `auth_token`, `route_id`), `BalancerRoute` (`generation`, `next_free`), `Balancer` (`routes_used`, `free_route`; `routes_size` is `u32`)
+- An auth packet in an authenticated connection is answered with an error
+- A connection that no handler could take is dropped and its client is removed from the cerver; the failed auth events of a connection that reached its max auth tries do not have the connection (it was deleted)
+- Renamed field: `Cerver` (`isRunning` is now `running`); it is still read with `cerver_is_running ()`
+
 ## 1.8b-6 (from 1.8b-5)
 
 The changes were made first in `http` (2.0b-64) and were brought back here.
