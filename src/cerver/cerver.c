@@ -48,6 +48,9 @@
 // the inactive clients of one check that are logged by their id, the rest only by their count
 #define CERVER_INACTIVE_LOG_BATCH		256
 
+// the first room for the sockets of a check that are shut down after the clients lock, it doubles
+#define CERVER_INACTIVE_SHUTDOWN_BATCH	256
+
 #pragma region global
 
 // initializes global cerver values
@@ -2317,20 +2320,78 @@ void cerver_sleep (Cerver *cerver, u32 seconds) {
 
 }
 
-static void cerver_shutdown_connection (void *connection_ptr, void *args);
-
-// the ids of the clients that a check dropped, they are logged after the clients lock is released
+// the ids of the clients that a check dropped, they are logged after the clients lock is released,
+// and a reference to the socket of each of their connections, that are shut down after it
 typedef struct CerverInactiveDropped {
 
 	u64 ids[CERVER_INACTIVE_LOG_BATCH];
 	unsigned int count;
 	unsigned int total;
 
+	Socket **sockets;
+	size_t sockets_count;
+	size_t sockets_size;
+
 } CerverInactiveDropped;
 
-// the connections of an inactive client are shut down with the clients lock,
+// returns true if there is room for one more socket
+static bool cerver_inactive_sockets_room (CerverInactiveDropped *dropped) {
+
+	bool room = (dropped->sockets_count < dropped->sockets_size);
+	if (!room) {
+		const size_t size = dropped->sockets_size ?
+			(dropped->sockets_size << 1) : CERVER_INACTIVE_SHUTDOWN_BATCH;
+
+		Socket **sockets = (Socket **) realloc (dropped->sockets, size * sizeof (Socket *));
+		if (sockets) {
+			dropped->sockets = sockets;
+			dropped->sockets_size = size;
+			room = true;
+		}
+	}
+
+	return room;
+
+}
+
+// takes a reference to the socket of a connection of an inactive client,
+// without memory for it the socket is shut down right away, with the clients lock
+static void cerver_inactive_take_socket (void *connection_ptr, void *dropped_ptr) {
+
+	Connection *connection = (Connection *) connection_ptr;
+	CerverInactiveDropped *dropped = (CerverInactiveDropped *) dropped_ptr;
+
+	if (connection && connection->socket) {
+		if (cerver_inactive_sockets_room (dropped)) {
+			dropped->sockets[dropped->sockets_count] = socket_reference (connection->socket);
+			dropped->sockets_count += 1;
+		}
+
+		else {
+			(void) socket_shutdown (connection->socket);
+		}
+	}
+
+}
+
+// the sockets of the inactive clients are shut down without the clients lock,
 // so their receive handlers end and remove them like any other closed connection,
-// a connection can not close its socket in the meantime and give its fd to another one
+// the close mutex of each socket keeps a shutdown from reaching an fd that was closed and reused
+static void cerver_inactive_shutdown_sockets (CerverInactiveDropped *dropped) {
+
+	for (size_t index = 0; index < dropped->sockets_count; index++) {
+		(void) socket_shutdown (dropped->sockets[index]);
+		socket_delete (dropped->sockets[index]);
+	}
+
+	free (dropped->sockets);
+	dropped->sockets = NULL;
+	dropped->sockets_count = 0;
+	dropped->sockets_size = 0;
+
+}
+
+// with the clients lock, only the sockets of the connections of an inactive client are taken
 static void cerver_inactive_check_client (
 	const Client *client, const Cerver *cerver, time_t current_time,
 	CerverInactiveDropped *dropped
@@ -2340,7 +2401,7 @@ static void cerver_inactive_check_client (
 
 	if ((current_time - last_activity) >= (time_t) cerver->max_inactive_time) {
 		if (client->connections) {
-			(void) dlist_traverse (client->connections, cerver_shutdown_connection, NULL);
+			(void) dlist_traverse (client->connections, cerver_inactive_take_socket, dropped);
 		}
 
 		if (dropped->count < CERVER_INACTIVE_LOG_BATCH) {
@@ -2405,12 +2466,17 @@ static void cerver_inactive_check_all (Cerver *cerver) {
 	CerverInactiveDropped dropped;
 	dropped.count = 0;
 	dropped.total = 0;
+	dropped.sockets = NULL;
+	dropped.sockets_count = 0;
+	dropped.sockets_size = 0;
 
 	(void) pthread_mutex_lock (cerver->clients->mutex);
 
 	cerver_inactive_check (cerver->clients->root, cerver, current_time, &dropped);
 
 	(void) pthread_mutex_unlock (cerver->clients->mutex);
+
+	cerver_inactive_shutdown_sockets (&dropped);
 
 	cerver_inactive_check_log (cerver, &dropped);
 
@@ -2998,8 +3064,8 @@ static void cerver_shutdown_connection (void *connection_ptr, void *args) {
 	(void) args;
 
 	Connection *connection = (Connection *) connection_ptr;
-	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
-		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+	if (connection && connection->socket) {
+		(void) socket_shutdown (connection->socket);
 	}
 
 }
