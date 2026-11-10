@@ -1,37 +1,45 @@
 ## General
-- Added the bounded free list of the core for deleted objects
-- Added thread groups to count & wait for detached threads
-- Added thpool stats with wait & run time histograms per job
-- Added socket send methods with deadline & sendfile loop
-- Resolving with getaddrinfo () & writing mapped ips as IPv4
-- Sending packets of the core until their deadline & in pieces
-- Taking the trailing bytes of a packet in the shared receive
-- Ported the 1.x connection states, send queue & reconnects
-- Ported the 1.x client with async connect & recycled clients
-- Added the load balancer of the 1.x rewritten on a new core
-- Ported the handler with recycled receives & joined threads
-- Ported cerver with its bind address, balancer & drain grace
-- Ported admin, auth, errors and events changes of the core
-- Validating the file headers and sending files until deadline
-- Ported the game fixes of the core in lobbies and in players
-- Ported log file name, player log type & base64 AVX2 guard
-- Updated makefile with the core tests, defines & recycling
-- Using gcc 16.2 containers & each line's names in workflow
-- Renamed nightly workflow to scheduled, with its own gate
-- Added incompatibilities file with the 2.0b-63 core changes
-- Updated roadmaps with the port of the core of the 1.8 line
-- Updated CLAUDE.md with balancer, free lists & teardowns
+- Ported the UDP cervers & clients of the core with the peers
+- Ported the network address lists, zones & the ip equalities
+- Connecting to each resolved address with its own timeout
+- Ported the array pool, the job queue priorities & their stats
+- Ported the joinable workers & added their worker manager
+- Ported the handlers with pooled jobs & the alive condition
+- Ported cerver with its UDP start, the bind family & address
+- Joining the log file thread & logging the inactive ones later
+- Closing & shutting down the sockets with their close mutex
+- Shutting the inactive sockets down without the clients lock
+- Giving its synchronization to the connection that connects
+- Closing the sockets of failed & unused client connections
+- Taking the unique id of every new handler with atomic add
+- Closing a socket only after the send of other threads ends
+- Added incompatibilities of the 2.0b-64 with core changes
+- Updated roadmaps with the port of the 1.8b-4 up to 1.8b-6
+- Updated CLAUDE.md with the balancer pairs & allocations
 
 ## HTTP
-- Sending responses with the socket send methods of core
-- Added the thpool counters & histograms to cerver metrics
-- Unmapping the IPv4 proxies with the core's network offset
+- Keeping the zones in the client ips & matching the proxies
+- Exporting the response & worker deletes, multipart checks
+
+## Examples
+- Ported the balancer & service examples with an app library
+- Ported the portable bench clock & the handler benchmark
+- Ended the sources of the common examples with newlines
 
 ## Tests
-- Updated the tests scripts with balancer pairs & the fuzzers
-- Added core unit tests of the balancer, sockets & free lists
-- Added cerver core tests of teardowns, lobbies & balancers
-- Added client tests of the 1.x features, files and its lifecycle
-- Added core fuzz targets for the receive, packets & clients
-- Added the thpool metrics checks to the features unit tests
-- Lowering allocations per request in the performance script
+- Ported the core tests of UDP, network, threads & the pools
+- Added a test address to the pairs & to the web test cervers
+- Running every integration pair in IPv4 & the IPv6 loopback
+- Running the nginx features client in IPv4 & IPv6 loopback
+- Added proxy tests of zones in trusted proxies & client ips
+- Lowering allocations per request with the array pool stack
+- Printing the name of each test of the server & of the peers
+- Retrying the first request of a cerver that ran out of its fds
+- Keeping the logs of the repeated runs that fail as artifacts
+- Added core tests of inactive churn, synchronization & fds
+- Added an address fuzzer of zones & of the text round trips
+- Counting allocations per connection & per queued packet
+- Added a job queue test of the jobs pool in its steady state
+- Added an upstream service & the clients of balancer pairs
+- Running balancer pairs of restarts, large packets & clients
+- Stopping the supervised servers of the pairs with SIGTERM
