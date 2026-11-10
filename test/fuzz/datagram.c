@@ -27,11 +27,13 @@ static void fuzz_datagram_fix_size (char *datagram, const size_t size, const boo
 
 	const size_t token_size = with_token ? CONNECTION_DATAGRAM_TOKEN_SIZE : 0;
 
-	if (size >= (sizeof (PacketHeader) + token_size)) {
-		PacketHeader header;
-		(void) memcpy (&header, datagram, sizeof (PacketHeader));
+	PacketHeader header;
+	if (
+		(size >= (PACKET_HEADER_SIZE + token_size))
+		&& (packet_header_decode ((const u8 *) datagram, &header) == PACKET_HEADER_RESULT_NONE)
+	) {
 		header.packet_size = size - token_size;
-		(void) memcpy (datagram, &header, sizeof (PacketHeader));
+		packet_header_encode (&header, (u8 *) datagram);
 	}
 
 }
@@ -41,11 +43,12 @@ static UdpDatagram fuzz_datagram_expected (const char *datagram, const size_t si
 
 	UdpDatagram expected = UDP_DATAGRAM_INVALID;
 
-	if (size >= sizeof (PacketHeader)) {
-		PacketHeader header;
-		(void) memcpy (&header, datagram, sizeof (PacketHeader));
-
-		const bool valid_size = (header.packet_size >= sizeof (PacketHeader))
+	PacketHeader header;
+	if (
+		(size >= PACKET_HEADER_SIZE)
+		&& (packet_header_decode ((const u8 *) datagram, &header) == PACKET_HEADER_RESULT_NONE)
+	) {
+		const bool valid_size = (header.packet_size >= PACKET_HEADER_SIZE)
 			&& (header.packet_size <= FUZZ_DATAGRAM_MAX_PACKET_SIZE)
 			&& (header.packet_size <= size);
 
@@ -62,9 +65,9 @@ static void fuzz_datagram_packet (const char *datagram, const PacketHeader *head
 	Packet *packet = udp_datagram_packet_create (datagram, header);
 	if (packet) {
 		if (packet->packet_size != header->packet_size) abort ();
-		if (packet->data_size != (header->packet_size - sizeof (PacketHeader))) abort ();
+		if (packet->data_size != (header->packet_size - PACKET_HEADER_SIZE)) abort ();
 
-		if (packet->data_size && memcmp (packet->data, datagram + sizeof (PacketHeader), packet->data_size)) {
+		if (packet->data_size && memcmp (packet->data, datagram + PACKET_HEADER_SIZE, packet->data_size)) {
 			abort ();
 		}
 
