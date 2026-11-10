@@ -88,6 +88,10 @@
 #define SERVER_TEST_FILES_LIMIT				(1 << 5)
 #define SERVER_TEST_FILES_CONNECTIONS		(1 << 6)
 
+// a cerver that ran out of fds recovers once it closed what it could not handle,
+// that takes longer in a loaded machine, so its first request is tried again until then
+#define SERVER_TEST_RECOVER_SECONDS			16
+
 #define SERVER_TEST_PRELOAD_VARIABLE		"LD_PRELOAD"
 #define SERVER_TEST_VALGRIND_PRELOAD		"vgpreload"
 
@@ -848,6 +852,34 @@ static void server_test_request (const u16 port, const char *request, const char
 	server_test_send (fd, request);
 	server_test_expect (fd, status);
 	(void) close (fd);
+
+}
+
+// sends the request in a new connection until its response has the status,
+// a connection that the cerver closes without an answer is tried again
+// returns true if the status arrived before the deadline
+static bool server_test_request_until (
+	const u16 port, const char *request, const char *status, const unsigned int seconds
+) {
+
+	bool answered = false;
+
+	const double deadline = test_wait_now () + (double) seconds;
+	while (!answered && (test_wait_now () < deadline)) {
+		int fd = server_test_connect (port);
+
+		// the cerver can close the connection before the request is sent
+		(void) send (fd, request, strlen (request), MSG_NOSIGNAL);
+
+		char response[SERVER_TEST_RESPONSE_SIZE];
+		(void) server_test_read (fd, response);
+		(void) close (fd);
+
+		answered = server_test_starts_with (response, status);
+		if (!answered) server_test_sleep (SERVER_TEST_CONNECT_INTERVAL);
+	}
+
+	return answered;
 
 }
 
@@ -1788,9 +1820,11 @@ static void test_server_out_of_fds (void) {
 
 	for (unsigned int i = 0; i < SERVER_TEST_FILES_CONNECTIONS; i++) (void) close (fds[i]);
 
-	// the cerver recovers
-	server_test_sleep (SERVER_TEST_SLOW_SLEEP);
-	server_test_request (port, ok_request, status_ok);
+	// the cerver recovers, a request that it still can not take is closed and tried again
+	test_check (
+		server_test_request_until (port, ok_request, status_ok, SERVER_TEST_RECOVER_SECONDS),
+		"the cerver did not recover after it ran out of fds"
+	);
 
 	(void) kill (pid, SIGTERM);
 
