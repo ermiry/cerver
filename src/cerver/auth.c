@@ -26,6 +26,9 @@
 #include "cerver/utils/utils.h"
 #include "cerver/utils/log.h"
 
+static const char *auth_missing_data = { "Missing auth data!" };
+static const char *auth_internal_error = { "Internal cerver error!" };
+
 static u8 on_hold_connection_remove (const Cerver *cerver, Connection *connection);
 static u8 on_hold_poll_register_connection (Cerver *cerver, Connection *connection);
 u8 on_hold_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
@@ -292,6 +295,18 @@ static Client *auth_create_new_client (
 		}
 	}
 
+	// without a client the connection can not go on, it is told why and dropped
+	else {
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_CERVER_ERROR, auth_internal_error,
+			packet->cerver, NULL, packet->connection
+		);
+
+		on_hold_connection_drop (packet->cerver, packet->connection);
+
+		*error = CERVER_AUTH_ERROR_DROPPED;
+	}
+
 	return client;
 
 }
@@ -518,7 +533,6 @@ static CerverAuthError auth_with_defined_method (
 			);
 			#endif
 
-			// TODO: handle if we failed to generate a new client
 			*client = auth_create_new_client (packet, auth_data, &error);
 		}
 
@@ -531,27 +545,10 @@ static CerverAuthError auth_with_defined_method (
 			);
 			#endif
 
-			error = auth_failed (
-				packet->cerver, packet->connection,
+			error = auth_failed_with_event (
+				packet, admin,
 				auth_method->error_message ? auth_method->error_message->str : NULL
 			);
-
-			// TODO: handle when the connection has been dropped
-			if (admin) {
-				cerver_event_trigger (
-					CERVER_EVENT_ADMIN_FAILED_AUTH,
-					packet->cerver,
-					NULL, packet->connection
-				);
-			}
-
-			else {
-				cerver_event_trigger (
-					CERVER_EVENT_CLIENT_FAILED_AUTH,
-					packet->cerver,
-					NULL, packet->connection
-				);
-			}
 		}
 
 		auth_method_delete (auth_method);
@@ -671,26 +668,7 @@ static CerverAuthError auth_try_common (
 		);
 		#endif
 
-		error = auth_failed (
-			packet->cerver, packet->connection, "Missing auth data!"
-		);
-
-		// TODO: handle when the connection has been dropped
-		if (admin) {
-			cerver_event_trigger (
-				CERVER_EVENT_ADMIN_FAILED_AUTH,
-				packet->cerver,
-				NULL, packet->connection
-			);
-		}
-
-		else {
-			cerver_event_trigger (
-				CERVER_EVENT_CLIENT_FAILED_AUTH,
-				packet->cerver,
-				NULL, packet->connection
-			);
-		}
+		error = auth_failed_with_event (packet, admin, auth_missing_data);
 	}
 
 	return error;
