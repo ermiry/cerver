@@ -8,13 +8,8 @@
 
 #include "app.h"
 
-// static const char *MESSAGE = { 
-// 	"Lorem ipsum dolor sit amet, consectetur adipiscing elit, "
-// 	"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. "
-// 	"Ut enim ad minim veniam, quis nostrud exercitation ullamco "
-// 	"laboris nisi ut aliquip ex ea commodo consequat."
-// };
-
+// sends back a test message to the client of the packet,
+// with the sock fd of the packet so a balancer routes it back
 void send_test_message (const Packet *packet) {
 
 	Packet response = {
@@ -43,6 +38,8 @@ void send_test_message (const Packet *packet) {
 			.request_type = APP_REQUEST_TEST,
 
 			.sock_fd = packet->header.sock_fd,
+
+			.version = packet_version_local ()
 		},
 
 		.version = (PacketVersion) {
@@ -55,7 +52,10 @@ void send_test_message (const Packet *packet) {
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = &response.header,
-		.packet_ref = false
+		.packet_ref = false,
+
+		.release = NULL,
+		.release_args = NULL
 	};
 
 	size_t sent = 0;
@@ -74,66 +74,57 @@ static void app_handler_test (const Packet *packet) {
 
 // echo the same message back
 static void app_handler_message (const Packet *packet) {
-	
-	AppMessage *app_message = (AppMessage *) (char *) packet->data;
+
+	if (!packet->data || (packet->data_size < sizeof (AppMessage))) {
+		cerver_log_error (
+			"Message packet of %lu bytes is too small!", packet->data_size
+		);
+
+		return;
+	}
+
+	const AppMessage *app_message = (const AppMessage *) packet->data;
 
 	Packet *response = packet_new ();
+	if (!response) return;
 
-	// generate the packet
-	size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	response->packet = malloc (packet_len);
+	// the header is zeroed, so no byte of the heap goes to the network
+	const size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
+	response->packet = calloc (1, packet_len);
 	response->packet_size = packet_len;
 
-	char *end = (char *) response->packet;
-	PacketHeader *header = (PacketHeader *) end;
-	header->packet_type = PACKET_TYPE_APP;
-	header->packet_size = packet_len;
+	if (response->packet) {
+		char *end = (char *) response->packet;
+		PacketHeader *header = (PacketHeader *) end;
+		header->packet_type = PACKET_TYPE_APP;
+		header->packet_size = packet_len;
 
-	header->request_type = APP_REQUEST_MESSAGE;
+		header->request_type = APP_REQUEST_MESSAGE;
+		header->version = packet_version_local ();
 
-	header->sock_fd = packet->header.sock_fd;
+		header->sock_fd = packet->header.sock_fd;
 
-	end += sizeof (PacketHeader);
+		end += sizeof (PacketHeader);
 
-	// print the client's message
-	#ifdef EXAMPLE_APP_DEBUG
-	(void) printf ("|%s|\n", end);
-	#endif
+		// print the client's message
+		#ifdef EXAMPLE_APP_DEBUG
+		(void) printf ("|%s|\n", app_message->message);
+		#endif
 
-	// if (strcmp (MESSAGE, app_message->message)) {
-	// 	cerver_log_error (
-	// 		"Message [%lu] mismatch!",
-	// 		app_message->id
-	// 	);
+		(void) memcpy (end, app_message, sizeof (AppMessage));
 
-	// 	(void) printf ("|%s|\n", app_message->message);
-	// }
+		// send the packet
+		packet_set_network_values (
+			response, packet->cerver, packet->client, packet->connection, NULL
+		);
 
-	(void) memcpy (end, app_message, sizeof (AppMessage));
+		size_t sent = 0;
+		(void) packet_send (response, 0, &sent, false);
+	}
 
-	// send the packet
-	packet_set_network_values (
-		response, packet->cerver, packet->client, packet->connection, NULL
-	);
-
-	size_t sent = 0;
-	(void) packet_send (response, 0, &sent, false);
-
-	// done
 	packet_delete (response);
 
 }
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
-static void app_handler_multi (const Packet *packet) {
-	
-	// TODO:
-
-}
-
-#pragma GCC diagnostic pop
 
 void app_handler (void *packet_ptr) {
 
@@ -151,9 +142,8 @@ void app_handler (void *packet_ptr) {
 				app_handler_message (packet);
 				break;
 
-			case APP_REQUEST_MULTI:
-				app_handler_multi (packet);
-				break;
+			// the multi message is not implemented in the example app
+			case APP_REQUEST_MULTI: break;
 
 			default: break;
 		}
