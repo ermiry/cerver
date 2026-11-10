@@ -833,8 +833,8 @@ u8 connection_init (Connection *connection) {
 			const int type = connection_init_socket_type (connection->protocol);
 			if ((type < 0) || connection_init_address (connection)) return 1;
 
-			// init the new connection socket
-			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
+			// init the new connection socket, a socket from an earlier init is closed
+			socket_replace (connection->socket, socket (connection->address.ss_family, type, 0));
 
 			if (connection->socket->sock_fd > -1) {
 				// a new socket that was not shut down
@@ -922,12 +922,8 @@ static u8 connection_socket_replace (
 	Connection *connection, const struct sockaddr_storage *address
 ) {
 
-	if (connection->socket->sock_fd >= 0) {
-		(void) close (connection->socket->sock_fd);
-	}
-
 	const int type = connection_init_socket_type (connection->protocol);
-	connection->socket->sock_fd = (type < 0) ? -1 : socket (address->ss_family, type, 0);
+	socket_replace (connection->socket, (type < 0) ? -1 : socket (address->ss_family, type, 0));
 
 	return (connection->socket->sock_fd >= 0) ? 0 : 1;
 
@@ -1287,15 +1283,16 @@ void connection_end (Connection *connection) {
 			);
 			#endif
 
-			if (close (connection->socket->sock_fd)) {
+			// with the close mutex, so a shutdown from another thread
+			// never reaches the fd after it is closed and reused
+			const int sock_fd = connection->socket->sock_fd;
+			if (socket_close (connection->socket)) {
 				cerver_log_with_date (
 					LOG_TYPE_WARNING, LOG_TYPE_CONNECTION,
 					"connection_end () - close () failed - fd %d - errno %d",
-					connection->socket->sock_fd, errno
+					sock_fd, errno
 				);
 			}
-
-			connection->socket->sock_fd = -1;
 
 			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
 			connection->active = false;
@@ -1324,9 +1321,9 @@ u8 connection_drop_request (Connection *connection) {
 
 	u8 retval = 1;
 
-	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
+	if (connection && connection->socket) {
 		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
-		retval = (u8) (shutdown (connection->socket->sock_fd, SHUT_RDWR) != 0);
+		retval = socket_shutdown (connection->socket);
 	}
 
 	return retval;
@@ -1622,9 +1619,9 @@ bool connection_is_update_thread (const Connection *connection) {
 // the connection's mutex must be held
 void connection_wake_update (Connection *connection) {
 
-	if (connection->socket && (connection->socket->sock_fd >= 0)) {
+	if (connection->socket) {
 		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
-		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+		(void) socket_shutdown (connection->socket);
 	}
 
 	// an update thread that waits to reconnect
@@ -1776,8 +1773,7 @@ static bool connection_update_reconnect_attempt (
 
 		else {
 			// the socket of the failed attempt
-			(void) close (connection->socket->sock_fd);
-			connection->socket->sock_fd = -1;
+			(void) socket_close (connection->socket);
 
 			connection_set_state (connection, CONNECTION_STATE_UNAVAILABLE);
 		}
