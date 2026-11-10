@@ -151,7 +151,13 @@ SERVER_CODES=()
 for (( index = ${#SERVER_PIDS[@]} - 1; index >= 0; index-- )); do
 	pid="${SERVER_PIDS[$index]}"
 	if is_alive "$pid"; then
-		kill -INT "$pid"
+		# a command in the background of a script starts with SIGINT ignored, and bash can not trap it,
+		# so test/supervise.sh is stopped with SIGTERM and passes a SIGINT to its server
+		if [ -n "${RESTARTS[$index]}" ]; then
+			kill -TERM "$pid"
+		else
+			kill -INT "$pid"
+		fi
 		if ! wait_until $STOP_SECONDS is_finished "$pid"; then
 			SERVER_HUNG=1
 			echo "$PAIR: the server $index did not stop after $STOP_SECONDS seconds"
