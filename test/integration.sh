@@ -16,6 +16,7 @@ PAIRS=(
 	cerver/ping
 	cerver/packets
 	cerver/requests
+	cerver/schemas
 	cerver/auth
 	cerver/sessions
 	cerver/threads
