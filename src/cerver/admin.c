@@ -823,10 +823,9 @@ unsigned int admin_cerver_get_n_handlers_working (
 
 	unsigned int retval = 0;
 
+	// the handlers count themselves with __atomic while they handle a packet
 	if (admin_cerver) {
-		(void) pthread_mutex_lock (admin_cerver->handlers_lock);
-		retval = admin_cerver->num_handlers_working;
-		(void) pthread_mutex_unlock (admin_cerver->handlers_lock);
+		retval = __atomic_load_n (&admin_cerver->num_handlers_working, __ATOMIC_SEQ_CST);
 	}
 
 	return retval;
