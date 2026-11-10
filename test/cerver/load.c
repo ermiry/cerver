@@ -14,8 +14,12 @@
 #include <app/handler.h>
 
 #include "cerver.h"
+#include "upstream.h"
 
 #include "../test.h"
+
+// a service that went down is tried again every second, so the pairs that stop one see it back quickly
+#define LOAD_RECONNECT_SECONDS		1
 
 static const char *balancer_name = "test-balancer";
 static unsigned int n_services = 2;
@@ -111,6 +115,14 @@ static void start (const BalancerType type) {
 	service_result = balancer_service_register (load_balancer, service_ip, 7002);
 	test_check_unsigned_eq (service_result, 0, "Failed to register SECOND service!");
 	free (service_ip);
+
+	for (unsigned int i = 0; i < n_services; i++) {
+		balancer_service_set_reconnect_wait_time (load_balancer->services[i], LOAD_RECONNECT_SECONDS);
+	}
+
+	// the big packets of the balancer/large pair go through the balancer both ways
+	cerver_set_max_received_packet_size (load_balancer->cerver, UPSTREAM_MAX_PACKET_SIZE);
+	client_set_max_received_packet_size (load_balancer->client, UPSTREAM_MAX_PACKET_SIZE);
 
 	/*** events ***/
 	u8 event_result = 0;
