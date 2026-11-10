@@ -167,21 +167,9 @@ static int request_message (Client *client, Connection *connection) {
 
 	int retval = 1;
 
-	// manually create a packet to send
-	Packet *packet = packet_new ();
+	// a request is only its header
+	Packet *packet = packet_create_request (PACKET_TYPE_APP, GET_MSG);
 	if (packet) {
-		size_t packet_len = sizeof (PacketHeader);
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_APP;
-		header->packet_size = packet_len;
-		header->handler_id = 0;
-		header->request_type = GET_MSG;
-		header->version = packet_version_local ();
-
 		printf ("Requesting to cerver...\n");
 		if (client_request_to_cerver (client, connection, packet)) {
 			cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Failed to send message request to cerver");

@@ -31,13 +31,14 @@ void send_test_message (const Packet *packet) {
 
 		.header = (PacketHeader) {
 			.packet_type = PACKET_TYPE_APP,
-			.packet_size = sizeof (PacketHeader),
+			.packet_size = PACKET_HEADER_SIZE,
 
 			.handler_id = 0,
+			.flags = 0,
 
 			.request_type = APP_REQUEST_TEST,
 
-			.sock_fd = packet->header.sock_fd,
+			.route_id = packet->header.route_id,
 
 			.version = packet_version_local ()
 		},
@@ -50,8 +51,9 @@ void send_test_message (const Packet *packet) {
 			}
 		},
 
-		.packet_size = sizeof (PacketHeader),
-		.packet = &response.header,
+		// the header is encoded from the packet when it is sent
+		.packet_size = PACKET_HEADER_SIZE,
+		.packet = response.encoded_header,
 		.packet_ref = false,
 
 		.release = NULL,
@@ -85,34 +87,22 @@ static void app_handler_message (const Packet *packet) {
 
 	const AppMessage *app_message = (const AppMessage *) packet->data;
 
-	Packet *response = packet_new ();
+	// print the client's message
+	#ifdef EXAMPLE_APP_DEBUG
+	(void) printf ("|%s|\n", app_message->message);
+	#endif
+
+	Packet *response = packet_create (
+		PACKET_TYPE_APP, APP_REQUEST_MESSAGE,
+		app_message, sizeof (AppMessage)
+	);
+
 	if (!response) return;
 
-	// the header is zeroed, so no byte of the heap goes to the network
-	const size_t packet_len = sizeof (PacketHeader) + sizeof (AppMessage);
-	response->packet = calloc (1, packet_len);
-	response->packet_size = packet_len;
+	// the response goes back through the route of the balancer
+	response->header.route_id = packet->header.route_id;
 
-	if (response->packet) {
-		char *end = (char *) response->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_APP;
-		header->packet_size = packet_len;
-
-		header->request_type = APP_REQUEST_MESSAGE;
-		header->version = packet_version_local ();
-
-		header->sock_fd = packet->header.sock_fd;
-
-		end += sizeof (PacketHeader);
-
-		// print the client's message
-		#ifdef EXAMPLE_APP_DEBUG
-		(void) printf ("|%s|\n", app_message->message);
-		#endif
-
-		(void) memcpy (end, app_message, sizeof (AppMessage));
-
+	if (!packet_generate (response)) {
 		// send the packet
 		packet_set_network_values (
 			response, packet->cerver, packet->client, packet->connection, NULL
