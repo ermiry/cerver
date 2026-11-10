@@ -553,6 +553,74 @@ Packet *packet_create_with_data (
 
 }
 
+static u8 packet_serialized_data (
+	Packet *packet, const SerializerSchema *schema, const void *object, const size_t size
+) {
+
+	u8 retval = 1;
+
+	if (!packet_create_data (packet, size)) {
+		size_t written = 0;
+		if (serializer_encode (schema, object, packet->data, size, &written) == SERIALIZER_RESULT_NONE) {
+			packet->remaining_data = 0;
+			packet->header.flags |= PACKET_FLAG_SERIALIZED;
+
+			retval = packet_generate (packet);
+		}
+	}
+
+	return retval;
+
+}
+
+// creates a packet ready to be sent with the object encoded by its schema as its data,
+// its header has PACKET_FLAG_SERIALIZED
+// returns NULL if the object can not be encoded
+Packet *packet_create_serialized (
+	const PacketType type, const u32 request_type,
+	const SerializerSchema *schema, const void *object
+) {
+
+	Packet *packet = NULL;
+
+	const size_t size = serializer_encoded_size (schema, object);
+	if (size) {
+		packet = packet_new ();
+		if (packet) {
+			packet->packet_type = type;
+			packet->req_type = request_type;
+
+			if (packet_serialized_data (packet, schema, object, size)) {
+				packet_delete (packet);
+				packet = NULL;
+			}
+		}
+	}
+
+	return packet;
+
+}
+
+// decodes the object of a packet that has PACKET_FLAG_SERIALIZED with its schema,
+// the arena gives the memory of the arena fields, it can be NULL for a schema without them
+// the object is only written when the result is SERIALIZER_RESULT_NONE
+SerializerResult packet_get_object (
+	const Packet *packet, const SerializerSchema *schema,
+	Arena *arena, void *object
+) {
+
+	SerializerResult result = SERIALIZER_RESULT_ARGUMENTS;
+
+	if (packet && schema && object) {
+		result = ((packet->header.flags & PACKET_FLAG_SERIALIZED) && packet->data)
+			? serializer_decode (schema, packet->data, packet->data_size, arena, object)
+			: SERIALIZER_RESULT_TYPE;
+	}
+
+	return result;
+
+}
+
 // sets the pakcet destinatary
 void packet_set_network_values (
 	Packet *packet,

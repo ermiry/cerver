@@ -7,6 +7,9 @@
 
 #include "cerver/config.h"
 #include "cerver/network.h"
+#include "cerver/serializer.h"
+
+#include "cerver/collections/arena.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -386,6 +389,22 @@ CERVER_EXPORT Packet *packet_create (
 // creates a packet with a data buffer of the specified size
 CERVER_PRIVATE Packet *packet_create_with_data (
 	const size_t data_size
+);
+
+// creates a packet ready to be sent with the object encoded by its schema as its data,
+// its header has PACKET_FLAG_SERIALIZED
+// returns NULL if the object can not be encoded
+CERVER_EXPORT Packet *packet_create_serialized (
+	const PacketType type, const u32 request_type,
+	const SerializerSchema *schema, const void *object
+);
+
+// decodes the object of a packet that has PACKET_FLAG_SERIALIZED with its schema,
+// the arena gives the memory of the arena fields, it can be NULL for a schema without them
+// the object is only written when the result is SERIALIZER_RESULT_NONE
+CERVER_EXPORT SerializerResult packet_get_object (
+	const Packet *packet, const SerializerSchema *schema,
+	Arena *arena, void *object
 );
 
 // sets the packet destinatary to whom this packet is going to be sent
