@@ -22,10 +22,12 @@ static Cerver *client_cerver = NULL;
 
 #pragma region auth
 
+#define CREDENTIALS_FIELD_SIZE			64
+
 typedef struct Credentials {
 
-	char username[64];
-	char password[64];
+	char username[CREDENTIALS_FIELD_SIZE];
+	char password[CREDENTIALS_FIELD_SIZE];
 
 } Credentials;
 
@@ -33,8 +35,8 @@ Credentials *credentials_new (const char *username, const char *password) {
 
 	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
 	if (credentials) {
-		strncpy (credentials->username, username, 64);
-		strncpy (credentials->password, password, 64);
+		(void) snprintf (credentials->username, CREDENTIALS_FIELD_SIZE, "%s", username);
+		(void) snprintf (credentials->password, CREDENTIALS_FIELD_SIZE, "%s", password);
 	}
 
 	return credentials;
@@ -48,16 +50,19 @@ void credentials_delete (void *credentials_ptr) { if (credentials_ptr) free (cre
 #pragma region end
 
 // correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the cerver, it is released when cerver_start () returns
 static void end (int dummy) {
 
-	if (client_cerver) {
-		cerver_stats_print (client_cerver, true, true);
-		cerver_teardown (client_cerver);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (client_cerver) (void) cerver_shutdown (client_cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	cerver_stats_print (client_cerver, true, true);
+	(void) cerver_teardown (client_cerver);
 
 }
 
@@ -459,7 +464,11 @@ int main (void) {
 			&client_thread, cerver_client_connect_and_start, NULL
 		);
 
-		if (cerver_start (client_cerver)) {
+		if (!cerver_start (client_cerver)) {
+			finish ();
+		}
+
+		else {
 			cerver_log_error (
 				"Failed to start %s!",
 				client_cerver->info->name

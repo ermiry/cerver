@@ -833,8 +833,8 @@ u8 connection_init (Connection *connection) {
 			const int type = connection_init_socket_type (connection->protocol);
 			if ((type < 0) || connection_init_address (connection)) return 1;
 
-			// init the new connection socket
-			connection->socket->sock_fd = socket (connection->address.ss_family, type, 0);
+			// init the new connection socket, a socket from an earlier init is closed
+			socket_replace (connection->socket, socket (connection->address.ss_family, type, 0));
 
 			if (connection->socket->sock_fd > -1) {
 				// a new socket that was not shut down
@@ -877,12 +877,8 @@ static bool connection_connect_cancelled (const Connection *connection) {
 // waits the seconds of a backoff step in the connection's condition,
 // connection_wake_connect () and the end of the connection interrupt it
 // returns true if the connection can attempt to connect again
+// the connection always has its synchronization, see connection_connect_synchronization ()
 static bool connection_try_wait (Connection *connection, const u32 seconds) {
-
-	if (!connection->mutex || !connection->cond) {
-		(void) sleep (seconds);
-		return true;
-	}
 
 	struct timespec deadline = { 0, 0 };
 	(void) clock_gettime (CLOCK_REALTIME, &deadline);
@@ -922,12 +918,8 @@ static u8 connection_socket_replace (
 	Connection *connection, const struct sockaddr_storage *address
 ) {
 
-	if (connection->socket->sock_fd >= 0) {
-		(void) close (connection->socket->sock_fd);
-	}
-
 	const int type = connection_init_socket_type (connection->protocol);
-	connection->socket->sock_fd = (type < 0) ? -1 : socket (address->ss_family, type, 0);
+	socket_replace (connection->socket, (type < 0) ? -1 : socket (address->ss_family, type, 0));
 
 	return (connection->socket->sock_fd >= 0) ? 0 : 1;
 
@@ -1087,8 +1079,19 @@ static u8 connection_try (Connection *connection) {
 
 }
 
+// a connection without its mutex or its condition takes the ones that it has embedded,
+// so its backoff can always be interrupted by connection_wake_connect () and its end
+// a mutex or a condition that was set before is kept
+static void connection_connect_synchronization (Connection *connection) {
+
+	if (!connection->mutex) connection->mutex = &connection->mutex_storage;
+	if (!connection->cond) connection->cond = &connection->cond_storage;
+
+}
+
 // starts a connection -> connects to the specified ip and port
 // every address that the ip resolves to is tried in turn, see connection_set_connect_timeout ()
+// a connection without synchronization gets it before it starts, see connection_set_synchronization ()
 // sets connection's state based on result
 // returns 0 on success, 1 on error
 int connection_connect (Connection *connection) {
@@ -1096,9 +1099,15 @@ int connection_connect (Connection *connection) {
 	int retval = 1;
 
 	if (connection) {
+		connection_connect_synchronization (connection);
+
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
 		retval = connection_try (connection);
+
+		// a socket whose connect () failed can not be used again,
+		// the next connect starts with a new one
+		if (retval) (void) socket_close (connection->socket);
 
 		connection_set_state (
 			connection,
@@ -1232,7 +1241,8 @@ void connection_reset (Connection *connection) {
 
 		connection_stop_send (connection);
 
-		connection->socket->sock_fd = -1;
+		// the socket of an init that never connected is closed too
+		(void) socket_close (connection->socket);
 
 		(void) memset (&connection->address, 0, sizeof (struct sockaddr_storage));
 
@@ -1287,15 +1297,16 @@ void connection_end (Connection *connection) {
 			);
 			#endif
 
-			if (close (connection->socket->sock_fd)) {
+			// with the close mutex, so a shutdown from another thread
+			// never reaches the fd after it is closed and reused
+			const int sock_fd = connection->socket->sock_fd;
+			if (socket_close (connection->socket)) {
 				cerver_log_with_date (
 					LOG_TYPE_WARNING, LOG_TYPE_CONNECTION,
 					"connection_end () - close () failed - fd %d - errno %d",
-					connection->socket->sock_fd, errno
+					sock_fd, errno
 				);
 			}
-
-			connection->socket->sock_fd = -1;
 
 			connection_set_state (connection, CONNECTION_STATE_DISCONNECTED);
 			connection->active = false;
@@ -1324,9 +1335,9 @@ u8 connection_drop_request (Connection *connection) {
 
 	u8 retval = 1;
 
-	if (connection && connection->socket && (connection->socket->sock_fd >= 0)) {
+	if (connection && connection->socket) {
 		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
-		retval = (u8) (shutdown (connection->socket->sock_fd, SHUT_RDWR) != 0);
+		retval = socket_shutdown (connection->socket);
 	}
 
 	return retval;
@@ -1622,9 +1633,9 @@ bool connection_is_update_thread (const Connection *connection) {
 // the connection's mutex must be held
 void connection_wake_update (Connection *connection) {
 
-	if (connection->socket && (connection->socket->sock_fd >= 0)) {
+	if (connection->socket) {
 		__atomic_store_n (&connection->shut_down, true, __ATOMIC_RELEASE);
-		(void) shutdown (connection->socket->sock_fd, SHUT_RDWR);
+		(void) socket_shutdown (connection->socket);
 	}
 
 	// an update thread that waits to reconnect
@@ -1776,8 +1787,7 @@ static bool connection_update_reconnect_attempt (
 
 		else {
 			// the socket of the failed attempt
-			(void) close (connection->socket->sock_fd);
-			connection->socket->sock_fd = -1;
+			(void) socket_close (connection->socket);
 
 			connection_set_state (connection, CONNECTION_STATE_UNAVAILABLE);
 		}

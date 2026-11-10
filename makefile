@@ -230,7 +230,8 @@ base: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/logs.o -o ./$(EXATARGET)/logs $(EXALIBS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/game.o -o ./$(EXATARGET)/game $(EXALIBS)
 
-load: $(EXOBJS)
+# the load balancer and its service, with the app library
+services: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/balancer.o -o ./$(EXATARGET)/balancer $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 	$(CC) $(EXAINC) ./$(EXABUILD)/service.o -o ./$(EXATARGET)/service $(EXALIBS) -Wl,-rpath=./$(EXATARGET)/app -L ./$(EXATARGET)/app -l app
 
@@ -245,7 +246,7 @@ examples:
 	$(MAKE) $(EXOBJS)
 	$(MAKE) exapp
 	$(MAKE) base
-	$(MAKE) load
+	$(MAKE) services
 	$(MAKE) client
 
 # compile examples
@@ -365,6 +366,7 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/udp.o -o $(INTCERVEROUT)/udp $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/upstream.o -o $(INTCERVEROUT)/upstream $(TESTLIBS)
 
 INTCLIENTIN		:= ./$(TESTBUILD)/client
 INTCLIENTOUT	:= ./$(TESTTARGET)/client
@@ -373,8 +375,13 @@ INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/connections.o -o $(INTCLIENTOUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/abandon.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/abandon $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/concurrent.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/concurrent $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/large.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/large $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/reconnect.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/reconnect $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/simple.o -o $(INTCLIENTOUT)/load/simple $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/load/unavailable.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/unavailable $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/packets.o -o $(INTCLIENTOUT)/packets $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/ping.o -o $(INTCLIENTOUT)/ping $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/queue.o -o $(INTCLIENTOUT)/queue $(TESTLIBS)

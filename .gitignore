@@ -12,6 +12,8 @@ uploads
 
 logs
 
+repeat-artifacts
+
 !test/http/keys
 !test/jwt/keys
 !test/web/keys

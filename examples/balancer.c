@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdbool.h>
 
 #include <time.h>
@@ -16,20 +17,33 @@
 #include <app/app.h>
 #include <app/handler.h>
 
+#define BALANCER_PORT				7000
+#define BALANCER_CONNECTION_QUEUE	10
+#define BALANCER_SERVICES			2
+
+#define BALANCER_SERVICE_ADDRESS	"127.0.0.1"
+#define BALANCER_FIRST_SERVICE		7001
+#define BALANCER_SECOND_SERVICE		7002
+
 static Balancer *load_balancer = NULL;
 
 #pragma region end
 
+// correctly closes any on-going server and process when quitting the appplication
+// the signals only stop the balancer, it is released when balancer_start () returns
 static void end (int dummy) {
 
-	if (load_balancer) {
-		balancer_stats_print (load_balancer);
-		balancer_teardown (load_balancer);
-	}
+	(void) dummy;
 
-	cerver_end ();
+	if (load_balancer) (void) cerver_shutdown (load_balancer->cerver);
 
-	exit (0);
+}
+
+static void finish (void) {
+
+	balancer_stats_print (load_balancer);
+	(void) balancer_teardown (load_balancer);
+	load_balancer = NULL;
 
 }
 
@@ -58,8 +72,9 @@ static void on_unavailable_services (void *packet_ptr) {
 
 	packet_header_print (&packet->header);
 
-	AppMessage *app_message = (AppMessage *) packet->data;
-	app_message_print (app_message);
+	if (packet->data && (packet->data_size >= sizeof (AppMessage))) {
+		app_message_print ((const AppMessage *) packet->data);
+	}
 
 	// send back test message to client
 	send_test_message (packet);
@@ -77,6 +92,8 @@ static void *on_cever_started (void *event_data_ptr) {
 			"Cerver %s has started!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -94,6 +111,8 @@ static void *on_cever_teardown (void *event_data_ptr) {
 			"Cerver %s is going to be destroyed!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -113,6 +132,8 @@ static void *on_client_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -130,6 +151,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -149,10 +172,10 @@ static BalancerType get_balancer_type (int argc, char **argv) {
 		for (int i = 1; i < argc; i++) {
 			curr_arg = argv[i];
 
-			// port
+			// balancer type
 			if (!strcmp (curr_arg, "--type")) {
 				j = i + 1;
-				if (j <= argc) {
+				if (j < argc) {
 					if (!strcmp ("round_robin", argv[j]))
 						type = BALANCER_TYPE_ROUND_ROBIN;
 
@@ -164,9 +187,7 @@ static BalancerType get_balancer_type (int argc, char **argv) {
 			}
 
 			else {
-				cerver_log_warning (
-					"Unknown argument: %s", curr_arg
-				);
+				cerver_log_warning ("Unknown argument: %s", curr_arg);
 			}
 		}
 	}
@@ -175,14 +196,64 @@ static BalancerType get_balancer_type (int argc, char **argv) {
 
 }
 
+static void start_events (void) {
+
+	(void) cerver_event_register (
+		load_balancer->cerver,
+		CERVER_EVENT_STARTED,
+		on_cever_started, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		load_balancer->cerver,
+		CERVER_EVENT_TEARDOWN,
+		on_cever_teardown, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		load_balancer->cerver,
+		CERVER_EVENT_CLIENT_CONNECTED,
+		on_client_connected, NULL, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		load_balancer->cerver,
+		CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
+		on_client_close_connection, NULL, NULL,
+		false, false
+	);
+
+}
+
+static void start_services (void) {
+
+	if (balancer_service_register (load_balancer, BALANCER_SERVICE_ADDRESS, BALANCER_FIRST_SERVICE)) {
+		cerver_log_error ("Failed to register FIRST service!");
+	}
+
+	if (balancer_service_register (load_balancer, BALANCER_SERVICE_ADDRESS, BALANCER_SECOND_SERVICE)) {
+		cerver_log_error ("Failed to register SECOND service!");
+	}
+
+	for (int idx = 0; idx < load_balancer->n_services; idx++) {
+		balancer_service_set_on_status_change (
+			load_balancer->services[idx], on_service_status_change
+		);
+	}
+
+}
+
 static void start (const BalancerType type) {
 
 	load_balancer = balancer_create (
 		"test-balancer",
 		type,
-		7000,
-		10,
-		2
+		BALANCER_PORT,
+		BALANCER_CONNECTION_QUEUE,
+		BALANCER_SERVICES
 	);
 
 	if (load_balancer) {
@@ -195,59 +266,42 @@ static void start (const BalancerType type) {
 		/*** balancer configuration ***/
 		balancer_set_on_unavailable_services (load_balancer, on_unavailable_services);
 
-		/*** register services ***/
-		if (balancer_service_register (load_balancer, "127.0.0.1", 7001)) {
-			cerver_log_error ("Failed to register FIRST service!");
+		start_services ();
+
+		start_events ();
+
+		if (!balancer_start (load_balancer)) {
+			finish ();
 		}
 
-		if (balancer_service_register (load_balancer, "127.0.0.1", 7002)) {
-			cerver_log_error ("Failed to register SECOND service!");
-		}
+		else {
+			cerver_log_error ("Failed to start the load balancer!");
 
-		Service *service = NULL;
-		for (int idx = 0; idx < load_balancer->n_services; idx++) {
-			service = load_balancer->services[idx];
-			balancer_service_set_on_status_change (
-				service, on_service_status_change
-			);
-		}
-
-		/*** register to events ***/
-		(void) cerver_event_register (
-			load_balancer->cerver,
-			CERVER_EVENT_STARTED,
-			on_cever_started, NULL, NULL,
-			false, false
-		);
-
-		(void) cerver_event_register (
-			load_balancer->cerver,
-			CERVER_EVENT_TEARDOWN,
-			on_cever_teardown, NULL, NULL,
-			false, false
-		);
-
-		(void) cerver_event_register (
-			load_balancer->cerver,
-			CERVER_EVENT_CLIENT_CONNECTED,
-			on_client_connected, NULL, NULL,
-			false, false
-		);
-
-		(void) cerver_event_register (
-			load_balancer->cerver,
-			CERVER_EVENT_CLIENT_CLOSE_CONNECTION,
-			on_client_close_connection, NULL, NULL,
-			false, false
-		);
-
-		if (balancer_start (load_balancer)) {
-			balancer_delete (load_balancer);
+			(void) balancer_teardown (load_balancer);
+			load_balancer = NULL;
 		}
 	}
 
 	else {
 		cerver_log_error ("Failed to create load balancer!");
+	}
+
+}
+
+static void print_type (const BalancerType type) {
+
+	switch (type) {
+		case BALANCER_TYPE_ROUND_ROBIN:
+			cerver_log_debug ("Simple Round Robin Load Balancer");
+			cerver_log_line_break ();
+			break;
+
+		case BALANCER_TYPE_HANDLER_ID:
+			cerver_log_debug ("Simple Handler ID Load Balancer");
+			cerver_log_line_break ();
+			break;
+
+		default: break;
 	}
 
 }
@@ -258,7 +312,6 @@ int main (int argc, char **argv) {
 
 	(void) signal (SIGINT, end);
 	(void) signal (SIGTERM, end);
-	(void) signal (SIGKILL, end);
 
 	(void) signal (SIGPIPE, SIG_IGN);
 
@@ -272,20 +325,8 @@ int main (int argc, char **argv) {
 	cerver_log_line_break ();
 
 	if (argc > 1) {
-		BalancerType type = get_balancer_type (argc, argv);
-		switch (type) {
-			case BALANCER_TYPE_ROUND_ROBIN:
-				cerver_log_debug ("Simple Round Robin Load Balancer");
-				cerver_log_line_break ();
-				break;
-
-			case BALANCER_TYPE_HANDLER_ID:
-				cerver_log_debug ("Simple Handler ID Load Balancer");
-				cerver_log_line_break ();
-				break;
-
-			default: break;
-		}
+		const BalancerType type = get_balancer_type (argc, argv);
+		print_type (type);
 
 		start (type);
 	}

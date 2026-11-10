@@ -1170,23 +1170,23 @@ int main (int argc, char **argv) {
 
 	(void) printf ("Testing CERVER UDP peers...\n");
 
-	test_peers_echo ();
-	test_peers_biggest_packet ();
-	test_peers_invalid_datagrams ();
-	test_peers_bad_packets ();
-	test_peers_request ();
-	test_peers_timeout ();
-	test_peers_max_peers ();
-	test_peers_disconnect ();
-	test_peers_stop ();
-	test_peers_queued_handler ();
-	test_peers_auth_success ();
-	test_peers_auth_failed ();
-	test_peers_pending ();
-	test_peers_token ();
-	test_peers_migration ();
-	test_peers_sessions ();
-	test_peers_amplification ();
+	test_run (test_peers_echo);
+	test_run (test_peers_biggest_packet);
+	test_run (test_peers_invalid_datagrams);
+	test_run (test_peers_bad_packets);
+	test_run (test_peers_request);
+	test_run (test_peers_timeout);
+	test_run (test_peers_max_peers);
+	test_run (test_peers_disconnect);
+	test_run (test_peers_stop);
+	test_run (test_peers_queued_handler);
+	test_run (test_peers_auth_success);
+	test_run (test_peers_auth_failed);
+	test_run (test_peers_pending);
+	test_run (test_peers_token);
+	test_run (test_peers_migration);
+	test_run (test_peers_sessions);
+	test_run (test_peers_amplification);
 
 	(void) printf ("\nDone with CERVER UDP peers tests!\n\n");
 

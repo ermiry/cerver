@@ -12,6 +12,8 @@
 
 #include "../test.h"
 
+#define JOB_QUEUE_STEADY_ROUNDS		1024
+
 static void work_method (void *args) {
 
 	(void) printf ("Some work that needs to be done!");
@@ -460,6 +462,49 @@ static void test_job_queue_pool (void) {
 
 }
 
+static bool job_queue_pool_owns (Job **jobs, const Job *job) {
+
+	bool owned = false;
+	for (unsigned int index = 0; !owned && (index < JOB_QUEUE_POOL_INIT); index++) {
+		owned = (jobs[index] == job);
+	}
+
+	return owned;
+
+}
+
+// in a steady state every push takes a job that the pool already had,
+// so pushing and pulling jobs never allocates (before 1.8b-5 each push allocated its job)
+static void test_job_queue_pool_steady (void) {
+
+	JobQueue *job_queue = job_queue_create (JOB_QUEUE_TYPE_JOBS);
+
+	Job *jobs[JOB_QUEUE_POOL_INIT];
+	for (unsigned int index = 0; index < JOB_QUEUE_POOL_INIT; index++) {
+		jobs[index] = job_get (job_queue);
+		test_check_ptr (jobs[index]);
+	}
+
+	for (unsigned int index = 0; index < JOB_QUEUE_POOL_INIT; index++) {
+		job_return (job_queue, jobs[index]);
+	}
+
+	for (unsigned int round = 0; round < JOB_QUEUE_STEADY_ROUNDS; round++) {
+		test_check_unsigned_eq (job_queue_push_job (job_queue, work_method, NULL), 0, NULL);
+
+		Job *job = (Job *) job_queue_pull (job_queue);
+		test_check_ptr (job);
+		test_check (job_queue_pool_owns (jobs, job), "a push allocated a new job");
+
+		job_return (job_queue, job);
+	}
+
+	test_check_unsigned_eq ((unsigned int) pool_size (job_queue->pool), JOB_QUEUE_POOL_INIT, NULL);
+
+	job_queue_delete (job_queue);
+
+}
+
 typedef struct JobsTestShared {
 
 	JobQueue *job_queue;
@@ -636,6 +681,7 @@ void threads_tests_jobs (void) {
 	test_job_queue_timeouts ();
 	test_job_queue_request ();
 	test_job_queue_pool ();
+	test_job_queue_pool_steady ();
 	test_job_queue_threads ();
 	test_job_queue_thread ();
 	test_job_queue_oldest_wait ();

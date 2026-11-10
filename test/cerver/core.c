@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <time.h>
+#include <dirent.h>
 #include <pthread.h>
 
 #include <cerver/admin.h>
@@ -24,7 +25,9 @@
 // - authentication that succeeds, and one that fails until the connection is dropped
 // - an on hold connection that never authenticates expires, unless the timeout is 0
 // - a handler drops its connection with connection_drop_request (), with POLL and THREADS
-// - inactive clients are closed by the cerver
+// - inactive clients are closed by the cerver, also while other clients connect and leave
+// - a connection without synchronization can stop its connect backoff,
+//   and the sockets of failed or unused client connections are closed
 // - the update and interval threads run and stop with the cerver
 // - the teardown with connected clients, that see the remote close
 // - a stop requested before or while cerver_start () runs ends with the cerver stopped
@@ -58,6 +61,18 @@
 
 #define CORE_INACTIVE_SECONDS			1
 #define CORE_INACTIVE_INTERVAL			1
+
+#define CORE_CHURN_IDLE_CLIENTS			16
+#define CORE_CHURN_THREADS				2
+#define CORE_CHURN_SECONDS				3
+#define CORE_CHURN_MIN_ROUNDS			8
+
+#define CORE_UNSYNCHRONIZED_MAX_SLEEP			64
+#define CORE_UNSYNCHRONIZED_BACKOFF_NANOSECONDS	(1L << 27)
+#define CORE_UNSYNCHRONIZED_CANCEL_SECONDS		1
+
+#define CORE_UNUSED_CONNECTIONS			8
+#define CORE_FD_DIRECTORY				"/proc/self/fd"
 
 #define CORE_UPDATE_FPS					32
 #define CORE_UPDATE_INTERVAL			1
@@ -1752,6 +1767,229 @@ static void test_core_address_network_values (void) {
 
 #pragma endregion
 
+#pragma region sockets
+
+typedef struct CoreChurn {
+
+	u16 port;
+	bool running;
+	unsigned int rounds;
+
+} CoreChurn;
+
+// clients that connect, send a packet and leave while the cerver drops the inactive ones,
+// so the fds of the inactive connections are closed and reused while they are shut down
+static void *core_churn_thread (void *churn_ptr) {
+
+	CoreChurn *churn = (CoreChurn *) churn_ptr;
+
+	while (__atomic_load_n (&churn->running, __ATOMIC_SEQ_CST)) {
+		CoreClient client = core_client_connect (churn->port, NULL);
+		core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+		core_client_end (&client);
+
+		test_counter_add (&churn->rounds);
+	}
+
+	return NULL;
+
+}
+
+// the sockets of the inactive clients are shut down after the clients lock is released,
+// while other clients connect and leave (TSan checks the shutdown against the close)
+static void test_core_inactive_churn (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, handler_type);
+	cerver_set_inactive_clients (cerver, CORE_INACTIVE_SECONDS, CORE_INACTIVE_INTERVAL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient idle[CORE_CHURN_IDLE_CLIENTS];
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		idle[index] = core_client_connect (port, NULL);
+	}
+
+	CoreChurn churn = { port, true, 0 };
+	pthread_t threads[CORE_CHURN_THREADS];
+	for (unsigned int index = 0; index < CORE_CHURN_THREADS; index++) {
+		test_check_int_eq (pthread_create (&threads[index], NULL, core_churn_thread, &churn), 0, NULL);
+	}
+
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		test_check (core_client_stopped (&idle[index]), "an inactive client was not closed");
+	}
+
+	test_check (
+		test_wait_counter (&events[CERVER_EVENT_CLIENT_DROPPED], CORE_CHURN_IDLE_CLIENTS, TEST_WAIT_SECONDS)
+			>= CORE_CHURN_IDLE_CLIENTS,
+		"the cerver did not drop the inactive clients"
+	);
+
+	// the clients keep connecting while the cerver checks for inactive clients again
+	const struct timespec churn_time = { CORE_CHURN_SECONDS, 0 };
+	(void) nanosleep (&churn_time, NULL);
+
+	__atomic_store_n (&churn.running, false, __ATOMIC_SEQ_CST);
+	for (unsigned int index = 0; index < CORE_CHURN_THREADS; index++) {
+		test_check_int_eq (pthread_join (threads[index], NULL), 0, NULL);
+	}
+
+	test_check (
+		__atomic_load_n (&churn.rounds, __ATOMIC_SEQ_CST) >= CORE_CHURN_MIN_ROUNDS,
+		"the clients did not connect while the inactive ones were dropped"
+	);
+
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		core_client_end (&idle[index]);
+	}
+
+	core_cerver_stop (&core);
+
+}
+
+static void test_core_inactive_churn_poll (void) {
+
+	test_core_inactive_churn (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_inactive_churn_threads (void) {
+
+	test_core_inactive_churn (CERVER_HANDLER_TYPE_THREADS);
+
+}
+
+static void *core_unsynchronized_connect (void *connection_ptr) {
+
+	(void) connection_connect ((Connection *) connection_ptr);
+
+	return NULL;
+
+}
+
+// waits until the connection started to connect
+static bool core_connection_connecting (Connection *connection) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + TEST_WAIT_SECONDS;
+
+	while (
+		(connection_get_state (connection) != CONNECTION_STATE_CONNECTING)
+		&& (test_wait_now () < deadline)
+	) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	return connection_get_state (connection) == CONNECTION_STATE_CONNECTING;
+
+}
+
+// a connection without its mutex and its condition gets them when it connects,
+// so its end interrupts the backoff to a cerver that is down,
+// before it slept each backoff step and only stopped after its max sleep
+static void test_core_connect_unsynchronized (void) {
+
+	Connection *connection = connection_create_empty ();
+	test_check_ptr (connection);
+
+	// nothing listens in this port
+	connection_set_values (connection, CORE_IPV4_LOOPBACK, core_port++, PROTOCOL_TCP, false);
+	test_check_unsigned_eq (connection_init (connection), 0, NULL);
+	connection_set_max_sleep (connection, CORE_UNSYNCHRONIZED_MAX_SLEEP);
+
+	test_check (!connection->mutex && !connection->cond, "the connection already has synchronization");
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, core_unsynchronized_connect, connection), 0, NULL);
+
+	test_check (core_connection_connecting (connection), "the connection did not start to connect");
+	test_check (connection->mutex && connection->cond, "the connection has no synchronization");
+
+	// the first attempt is refused at once, so the connection waits in its backoff
+	const struct timespec backoff = { 0, CORE_UNSYNCHRONIZED_BACKOFF_NANOSECONDS };
+	(void) nanosleep (&backoff, NULL);
+
+	const double start = test_wait_now ();
+
+	(void) pthread_mutex_lock (connection->mutex);
+	connection->ending = true;
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	connection_wake_connect (connection);
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += CORE_JOIN_SECONDS;
+
+	test_check_int_eq (pthread_timedjoin_np (thread, NULL, &deadline), 0, "the connect did not stop");
+	test_check (
+		(test_wait_now () - start) < CORE_UNSYNCHRONIZED_CANCEL_SECONDS,
+		"the connect did not stop its backoff"
+	);
+
+	test_check (connection->socket->sock_fd < 0, "the socket of the failed connect is still open");
+
+	connection_delete (connection);
+
+}
+
+static unsigned int core_open_fds (void) {
+
+	unsigned int count = 0;
+
+	DIR *directory = opendir (CORE_FD_DIRECTORY);
+	test_check_ptr (directory);
+
+	const struct dirent *entry = NULL;
+	while ((entry = readdir (directory))) {
+		if (entry->d_name[0] != '.') count += 1;
+	}
+
+	(void) closedir (directory);
+
+	return count;
+
+}
+
+// one client whose connect fails and one that never connects
+static void core_unused_connections_round (const u16 port) {
+
+	CoreClient failed = core_client_create_at (CORE_IPV4_LOOPBACK, port, NULL, false);
+	connection_set_max_sleep (failed.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+	test_check_unsigned_ne (client_connect (failed.client, failed.connection), 0);
+	test_check_unsigned_eq (client_teardown (failed.client), 0, NULL);
+
+	CoreClient unused = core_client_create_at (CORE_IPV4_LOOPBACK, port, NULL, false);
+	test_check_unsigned_eq (client_teardown (unused.client), 0, NULL);
+
+}
+
+// the clients whose connect failed, and the ones that never connected, close their sockets,
+// before each one kept an open fd after its teardown
+static void test_core_unused_connections (void) {
+
+	// nothing listens in this port
+	const u16 port = core_port++;
+
+	// the first round opens what the library keeps for the whole process
+	core_unused_connections_round (port);
+
+	const unsigned int before = core_open_fds ();
+
+	for (unsigned int index = 0; index < CORE_UNUSED_CONNECTIONS; index++) {
+		core_unused_connections_round (port);
+	}
+
+	test_check_unsigned_eq (core_open_fds (), before, "the client connections left open fds");
+
+}
+
+#pragma endregion
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -1784,6 +2022,10 @@ int main (int argc, char **argv) {
 	test_core_bad_packet_size ();
 	test_core_on_hold_bad_packets ();
 	test_core_inactive_clients ();
+	test_core_inactive_churn_poll ();
+	test_core_inactive_churn_threads ();
+	test_core_connect_unsynchronized ();
+	test_core_unused_connections ();
 	test_core_update ();
 	test_core_teardown_connected ();
 	test_core_event_thread_teardown ();
