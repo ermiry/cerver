@@ -8,6 +8,7 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
+#include "cerver/network.h"
 
 #include "cerver/http/content.h"
 #include "cerver/http/custom.h"
@@ -34,8 +35,8 @@
 // the length of a UUID v4, "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
 #define HTTP_REQUEST_ID_UUID_LENGTH		36
 
-// the longest client address (an IPv6) and its '\0', the same as HTTP_CLIENT_IP_SIZE
-#define HTTP_REQUEST_CLIENT_IP_SIZE		46
+// the longest client address (an IPv6 with its zone) and its '\0', the same as HTTP_CLIENT_IP_SIZE
+#define HTTP_REQUEST_CLIENT_IP_SIZE		NETWORK_ADDRESS_STRING_SIZE
 
 #ifdef __cplusplus
 extern "C" {
