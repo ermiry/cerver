@@ -332,7 +332,7 @@ struct _Cerver {
 	bool ipv6_only;
 
 	// read and written with __atomic, use cerver_is_running ()
-	bool isRunning;                     // the server is recieving and/or sending packetss
+	bool running;                       // the server is receiving and/or sending packets
 	// read and written with __atomic, a stop requested before cerver_start () cancels it
 	bool stop_requested;
 	bool blocking;                     // sokcet fd is blocking?

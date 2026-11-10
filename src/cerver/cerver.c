@@ -428,7 +428,7 @@ Cerver *cerver_new (void) {
 		(void) memset (cerver->bind_address, 0, CERVER_BIND_ADDRESS_SIZE);
 		cerver->ipv6_only = CERVER_DEFAULT_IPV6_ONLY;
 
-		cerver->isRunning = false;
+		cerver->running = false;
 		cerver->stop_requested = false;
 		cerver->blocking = true;
 		cerver->reusable = CERVER_DEFAULT_REUSABLE_FLAGS;
@@ -732,13 +732,13 @@ void cerver_set_ipv6_only (
 // returns true while the cerver is accepting connections
 bool cerver_is_running (const Cerver *cerver) {
 
-	return cerver ? __atomic_load_n (&cerver->isRunning, __ATOMIC_SEQ_CST) : false;
+	return cerver ? __atomic_load_n (&cerver->running, __ATOMIC_SEQ_CST) : false;
 
 }
 
 static void cerver_set_running (Cerver *cerver, bool value) {
 
-	__atomic_store_n (&cerver->isRunning, value, __ATOMIC_SEQ_CST);
+	__atomic_store_n (&cerver->running, value, __ATOMIC_SEQ_CST);
 
 }
 
