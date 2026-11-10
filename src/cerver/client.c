@@ -4029,6 +4029,10 @@ static void client_connection_destroy (
 
 	if (client->lock) (void) pthread_mutex_unlock (client->lock);
 
+	// the socket of a connection that never connected, or whose connect failed,
+	// is still open: only connection_end () closes it, and only for an active connection
+	(void) socket_close (connection->socket);
+
 	connection_delete (connection);
 
 }
