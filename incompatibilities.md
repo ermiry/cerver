@@ -3,6 +3,18 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-6 (from 1.8b-5)
+
+The changes were made first in `http` (2.0b-64) and were brought back here.
+
+- New field (ABI): `Socket` (`close_mutex`); the fd of a connection is closed with `socket_close ()`, replaced with `socket_replace ()` and shut down from other threads with `socket_shutdown ()`, all with that mutex, so a shutdown never reaches an fd that was closed and given to another connection; `socket_close ()` shuts the fd down and waits for a send of another thread (the write mutex) before it closes it, so it must not be called with the write mutex
+- The check of the inactive clients shuts their sockets down after it releases the clients lock, with a reference to each socket
+- `connection_connect ()` gives a connection without its mutex or its condition the ones that it has embedded, so its backoff can always be interrupted: the `sleep ()` of a connection without synchronization was removed
+- A client connection whose connect failed, or that never connected, closes its socket: the failed connect closes it and `client_connection_end ()` closes it too (before, the fd stayed open after the teardown of the client)
+- `worker_delete ()` is public
+- `test/performance.sh` is now `test/allocations.sh`, that also counts the allocations per packet of a handler with its own queue
+- The examples stop their cerver in the signal handler and release it after `cerver_start ()` returns, their event actions release their data, and the target of the balancer and service examples is `services` (it was `load`)
+
 ## 1.8b-5 (from 1.8b-4)
 
 - New fields (ABI): `Connection` (`connect_timeout`), `Cerver` (`handlers_alive_cond`), `Worker` (`joinable`, `idle_since`, `owns_queue`, `state_changed`); `Pool` and `JobQueue` changed completely
