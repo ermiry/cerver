@@ -877,12 +877,8 @@ static bool connection_connect_cancelled (const Connection *connection) {
 // waits the seconds of a backoff step in the connection's condition,
 // connection_wake_connect () and the end of the connection interrupt it
 // returns true if the connection can attempt to connect again
+// the connection always has its synchronization, see connection_connect_synchronization ()
 static bool connection_try_wait (Connection *connection, const u32 seconds) {
-
-	if (!connection->mutex || !connection->cond) {
-		(void) sleep (seconds);
-		return true;
-	}
 
 	struct timespec deadline = { 0, 0 };
 	(void) clock_gettime (CLOCK_REALTIME, &deadline);
@@ -1083,8 +1079,19 @@ static u8 connection_try (Connection *connection) {
 
 }
 
+// a connection without its mutex or its condition takes the ones that it has embedded,
+// so its backoff can always be interrupted by connection_wake_connect () and its end
+// a mutex or a condition that was set before is kept
+static void connection_connect_synchronization (Connection *connection) {
+
+	if (!connection->mutex) connection->mutex = &connection->mutex_storage;
+	if (!connection->cond) connection->cond = &connection->cond_storage;
+
+}
+
 // starts a connection -> connects to the specified ip and port
 // every address that the ip resolves to is tried in turn, see connection_set_connect_timeout ()
+// a connection without synchronization gets it before it starts, see connection_set_synchronization ()
 // sets connection's state based on result
 // returns 0 on success, 1 on error
 int connection_connect (Connection *connection) {
@@ -1092,6 +1099,8 @@ int connection_connect (Connection *connection) {
 	int retval = 1;
 
 	if (connection) {
+		connection_connect_synchronization (connection);
+
 		connection_set_state (connection, CONNECTION_STATE_CONNECTING);
 
 		retval = connection_try (connection);
