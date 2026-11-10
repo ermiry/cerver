@@ -2007,40 +2007,40 @@ void http_tests_server (void) {
 	// a hang fails the suite instead of blocking it forever
 	(void) alarm (SERVER_TEST_ALARM);
 
-	test_server_blocking ();
-	test_server_reusable ();
-	test_server_policies_strings ();
+	test_run (test_server_blocking);
+	test_run (test_server_reusable);
+	test_run (test_server_policies_strings);
 
-	test_server_ok ();
-	test_server_routes_error ();
-	test_server_large_response ();
-	test_server_poll ();
-	test_server_reset_during_response ();
-	test_server_huge_body ();
-	test_server_slowloris ();
-	test_server_idle ();
-	test_server_slow_body ();
-	test_server_request_timeout ();
-	test_server_send_timeout ();
+	test_run (test_server_ok);
+	test_run (test_server_routes_error);
+	test_run (test_server_large_response);
+	test_run (test_server_poll);
+	test_run (test_server_reset_during_response);
+	test_run (test_server_huge_body);
+	test_run (test_server_slowloris);
+	test_run (test_server_idle);
+	test_run (test_server_slow_body);
+	test_run (test_server_request_timeout);
+	test_run (test_server_send_timeout);
 
-	test_server_unanswered ();
-	test_server_unanswered_gone ();
-	test_server_nonblocking ();
-	test_server_nonblocking_timeout ();
+	test_run (test_server_unanswered);
+	test_run (test_server_unanswered_gone);
+	test_run (test_server_nonblocking);
+	test_run (test_server_nonblocking_timeout);
 
-	test_server_overload_reject ();
-	test_server_overload_wait ();
+	test_run (test_server_overload_reject);
+	test_run (test_server_overload_wait);
 
-	test_server_drain_run ();
-	test_server_drain_reject ();
+	test_run (test_server_drain_run);
+	test_run (test_server_drain_reject);
 
-	test_server_signal ();
+	test_run (test_server_signal);
 
-	test_server_two_cervers ();
-	test_server_stop_before_start ();
+	test_run (test_server_two_cervers);
+	test_run (test_server_stop_before_start);
 
-	test_server_out_of_fds ();
-	test_server_zero_fd ();
+	test_run (test_server_out_of_fds);
+	test_run (test_server_zero_fd);
 
 	(void) alarm (0);
 
