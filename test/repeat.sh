@@ -5,6 +5,7 @@ SANITIZER=${SANITIZER:-}
 BUILD=${BUILD:-1}
 RUN_SECONDS=${RUN_SECONDS:-120}
 LOGS=${LOGS:-/tmp/repeat}
+ARTIFACTS=${ARTIFACTS:-repeat-artifacts}
 CERVER_TEST_ADDRESS=${CERVER_TEST_ADDRESS:-127.0.0.1}
 
 TARGET="$1"
@@ -26,7 +27,11 @@ if [ ! -f /.dockerenv ]; then
 		$DOCKER build -t "$IMAGE" --build-arg SANITIZER="$SANITIZER" -f Dockerfile.test . || exit 1
 	fi
 
+	mkdir -p "$ARTIFACTS"
+
 	exec $DOCKER run --rm \
+		-v "$(cd "$ARTIFACTS" && pwd):/opt/cerver/repeat-artifacts" \
+		-e ARTIFACTS=repeat-artifacts \
 		--cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
 		--sysctl net.ipv6.conf.all.disable_ipv6=0 \
 		--add-host "service-1:$CERVER_TEST_ADDRESS" --add-host "service-2:$CERVER_TEST_ADDRESS" \
@@ -86,7 +91,9 @@ for (( run = 1; run <= COUNT; run++ )); do
 	fi
 
 	if [ $? -ne 0 ]; then
-		echo "$TARGET failed in run $run of $COUNT"
+		mkdir -p "$ARTIFACTS"
+		cp "$LOGS"/*.log "$ARTIFACTS/" 2> /dev/null
+		echo "$TARGET failed in run $run of $COUNT, its logs are in $ARTIFACTS"
 		exit 1
 	fi
 done
