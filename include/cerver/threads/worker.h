@@ -80,7 +80,7 @@ struct _Worker {
 typedef struct _Worker Worker;
 
 // ends the worker if it is running and deletes it
-CERVER_PRIVATE void worker_delete (void *worker_ptr);
+CERVER_PUBLIC void worker_delete (void *worker_ptr);
 
 CERVER_PUBLIC Worker *worker_create (void);
 
