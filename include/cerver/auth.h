@@ -88,6 +88,32 @@ struct _AuthMethod {
 
 typedef struct _AuthMethod AuthMethod;
 
+// the auth data of an auth packet: a session token, or the credentials of the authenticate method
+// returns NULL if the packet does not have data
+CERVER_PRIVATE AuthData *auth_data_get (struct _Packet *packet);
+
+CERVER_PRIVATE void auth_data_release (AuthData *auth_data);
+
+// runs the authenticate method with the auth data, without the on hold structures,
+// when it fails, its error message (if it has one) is moved to error_message
+// returns 0 when the method accepted the auth data, 1 when it did not
+CERVER_PRIVATE u8 auth_authenticate (
+	struct _Packet *packet, delegate authenticate, AuthData *auth_data,
+	String **error_message
+);
+
+// generates the session id of a new client with the session id generator of the cerver,
+// any new connection that authenticates with the session id (token) is added to the client
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 auth_session_create (
+	struct _Packet *packet, AuthData *auth_data, struct _Client *client
+);
+
+// sends an ERR_FAILED_AUTH with the message to the connection
+CERVER_PRIVATE void auth_send_failed_packet (
+	struct _Cerver *cerver, struct _Connection *connection, const char *error_message
+);
+
 #pragma endregion
 
 #pragma region handler
