@@ -386,8 +386,7 @@ static void *handler_do (void *handler_ptr) {
 			(void) prctl (PR_SET_NAME, thread_name);
 		}
 
-		// TODO: register to signals to handle multiple actions
-
+		// the signals belong to the process, a handler is stopped with its cerver (cerver_stop_request ())
 		if (handler->data_create)
 			handler->data = handler->data_create (handler->data_create_args);
 
@@ -1020,6 +1019,7 @@ static void cerver_custom_packet_handler (Packet *packet) {
 
 static const char *cerver_bad_packet_version = { "The packet has an incompatible version" };
 static const char *cerver_bad_packet_type = { "The packet has an unknown type" };
+static const char *cerver_already_authenticated = { "The connection is already authenticated" };
 
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit
@@ -1156,7 +1156,13 @@ static CerverHandlerError cerver_packet_handler_actual (
 			packet->connection->stats->received_packets->n_auth_packets += 1;
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
-			/* TODO: */
+
+			// the connection is already authenticated, the packet is answered and discarded
+			(void) error_packet_generate_and_send (
+				CERVER_ERROR_PACKET_ERROR, cerver_already_authenticated,
+				packet->cerver, packet->client, packet->connection
+			);
+
 			packet_delete (packet);
 		} break;
 
