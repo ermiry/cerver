@@ -103,7 +103,7 @@ CERVER_PRIVATE void *http_response_new (void);
 CERVER_PRIVATE void http_response_reset (HttpResponse *response);
 
 // correctly deletes the response and all of its data
-CERVER_PRIVATE void http_response_delete (void *res_ptr);
+CERVER_EXPORT void http_response_delete (void *res_ptr);
 
 // get a new HTTP response ready to be used
 CERVER_EXPORT HttpResponse *http_response_get (void);
