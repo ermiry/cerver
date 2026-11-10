@@ -944,8 +944,11 @@ void cerver_test_packet_handler (Packet *packet) {
 		.connection = packet->connection,
 		.lobby = packet->lobby,
 
-		.packet_size = sizeof (PacketHeader),
-		.packet = (void *) &packet->header,
+		.header = packet->header,
+
+		// the header of the test packet is encoded again from here when it is sent
+		.packet_size = PACKET_HEADER_SIZE,
+		.packet = (void *) request.encoded_header,
 		.packet_ref = true,
 
 		.release = NULL,

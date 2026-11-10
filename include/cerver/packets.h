@@ -144,16 +144,43 @@ CERVER_PUBLIC void packets_per_type_array_print (
 
 #pragma region header
 
+// the header travels in PACKET_HEADER_SIZE bytes in network byte order, field by field,
+// so it never depends on the layout of PacketHeader in memory
+#define PACKET_HEADER_SIZE							32
+
+// the format of the header in the wire, a peer that sends another one is closed
+#define PACKET_HEADER_FORMAT						1
+
+#define PACKET_HEADER_PROTOCOL_ID_OFFSET			0
+#define PACKET_HEADER_MAJOR_OFFSET					4
+#define PACKET_HEADER_MINOR_OFFSET					6
+#define PACKET_HEADER_PACKET_TYPE_OFFSET			8
+#define PACKET_HEADER_HANDLER_ID_OFFSET				9
+#define PACKET_HEADER_FORMAT_OFFSET					10
+#define PACKET_HEADER_FLAGS_OFFSET					11
+#define PACKET_HEADER_REQUEST_TYPE_OFFSET			12
+#define PACKET_HEADER_ROUTE_ID_OFFSET				16
+#define PACKET_HEADER_PACKET_SIZE_OFFSET			20
+#define PACKET_HEADER_RESERVED_OFFSET				28
+
+// the data of the packet is an object of the serializer
+#define PACKET_FLAG_SERIALIZED						0x01
+
+// a header with any other flag is a bad packet
+#define PACKET_FLAGS_KNOWN							(PACKET_FLAG_SERIALIZED)
+
 struct _PacketHeader {
 
-	PacketType packet_type;		// the main packet type
-	size_t packet_size;			// total size of the packet (header + data)
+	PacketType packet_type;		// the main packet type, a single byte in the wire
+	u64 packet_size;			// total size of the packet (header + data)
 
 	u8 handler_id;				// used in cervers with multiple app handlers
+	u8 flags;					// PACKET_FLAG_*
 
 	u32 request_type;			// the packet's subtype
 
-	u16 sock_fd;				// used in when working with load balancers
+	// the route of a client of a load balancer, to send the responses of a service back to it
+	u32 route_id;
 
 	// the protocol of the sender, packet_check () validates it with the local one
 	PacketVersion version;
@@ -161,6 +188,35 @@ struct _PacketHeader {
 };
 
 typedef struct _PacketHeader PacketHeader;
+
+#define PACKET_HEADER_RESULT_MAP(XX)																\
+	XX(0,	NONE,		"The header is valid")														\
+	XX(1,	FORMAT,		"The header has a different format")										\
+	XX(2,	FLAGS,		"The header has unknown flags")												\
+	XX(3,	RESERVED,	"The reserved bytes of the header are not zero")
+
+typedef enum PacketHeaderResult {
+
+	#define XX(num, name, string) PACKET_HEADER_RESULT_##name = num,
+	PACKET_HEADER_RESULT_MAP (XX)
+	#undef XX
+
+} PacketHeaderResult;
+
+CERVER_PUBLIC const char *packet_header_result_string (
+	const PacketHeaderResult result
+);
+
+// writes the header in the wire format, PACKET_HEADER_SIZE bytes in network byte order
+CERVER_EXPORT void packet_header_encode (
+	const PacketHeader *header, u8 buffer[PACKET_HEADER_SIZE]
+);
+
+// reads a header in the wire format, the buffer does not need to be aligned
+// the header is only written when the result is PACKET_HEADER_RESULT_NONE
+CERVER_EXPORT PacketHeaderResult packet_header_decode (
+	const u8 buffer[PACKET_HEADER_SIZE], PacketHeader *header
+);
 
 // the protocol id and version of this process, to send them in every header
 CERVER_PUBLIC PacketVersion packet_version_local (void);
@@ -294,6 +350,10 @@ struct _Packet {
 
 	PacketHeader header;
 
+	// a request packet sends its own header from here,
+	// encoded again from header when it is sent
+	u8 encoded_header[PACKET_HEADER_SIZE];
+
 	PacketVersion version;
 
 	// the actual packet to be sent
@@ -348,7 +408,13 @@ CERVER_EXPORT void packet_set_header_values (
 	Packet *packet,
 	PacketType packet_type, size_t packet_size,
 	u8 handler_id, u32 request_type,
-	u16 sock_fd
+	u32 route_id
+);
+
+// sets the route id of the packet, like the one of a request that came through a load balancer,
+// so the response goes back to its client; the header of a generated packet is encoded again
+CERVER_EXPORT void packet_set_route_id (
+	Packet *packet, const u32 route_id
 );
 
 // allocates the packet's data with size data_size

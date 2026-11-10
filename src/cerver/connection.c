@@ -274,13 +274,7 @@ Connection *connection_new (void) {
 
 			.state = RECEIVE_HANDLE_STATE_NONE,
 
-			.header = (PacketHeader) {
-				.packet_type = PACKET_TYPE_NONE,
-				.packet_size = 0,
-				.handler_id = 0,
-				.request_type = 0,
-				.sock_fd = 0
-			},
+			.header = { 0 },
 
 			.header_end = NULL,
 			.remaining_header = 0,

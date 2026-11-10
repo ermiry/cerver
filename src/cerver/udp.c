@@ -58,15 +58,17 @@ UdpDatagram udp_datagram_check (
 
 	UdpDatagram kind = UDP_DATAGRAM_INVALID;
 
-	if (datagram && (size >= sizeof (PacketHeader))) {
-		(void) memcpy (header, datagram, sizeof (PacketHeader));
-
-		const bool valid_size = (header->packet_size >= sizeof (PacketHeader))
-			&& (header->packet_size <= max_packet_size)
-			&& (header->packet_size <= size);
+	// a header with another format, unknown flags or reserved bytes is invalid
+	if (
+		datagram && (size >= PACKET_HEADER_SIZE)
+		&& (packet_header_decode ((const u8 *) datagram, header) == PACKET_HEADER_RESULT_NONE)
+	) {
+		const bool valid_size = (header->packet_size >= PACKET_HEADER_SIZE)
+			&& (header->packet_size <= (u64) max_packet_size)
+			&& (header->packet_size <= (u64) size);
 
 		if (valid_size) {
-			const size_t trailing = size - header->packet_size;
+			const size_t trailing = size - (size_t) header->packet_size;
 
 			if (!trailing) kind = UDP_DATAGRAM_PLAIN;
 			else if (trailing == CONNECTION_DATAGRAM_TOKEN_SIZE) kind = UDP_DATAGRAM_TOKEN;
@@ -98,15 +100,15 @@ Packet *udp_datagram_packet_create (
 	const char *datagram, const PacketHeader *header
 ) {
 
-	Packet *packet = packet_create_with_data (header->packet_size - sizeof (PacketHeader));
+	Packet *packet = packet_create_with_data ((size_t) header->packet_size - PACKET_HEADER_SIZE);
 	if (packet) {
 		(void) memcpy (&packet->header, header, sizeof (PacketHeader));
 		packet->packet_type = header->packet_type;
 		packet->req_type = header->request_type;
-		packet->packet_size = header->packet_size;
+		packet->packet_size = (size_t) header->packet_size;
 
 		if (packet->data_size) {
-			(void) memcpy (packet->data, datagram + sizeof (PacketHeader), packet->data_size);
+			(void) memcpy (packet->data, datagram + PACKET_HEADER_SIZE, packet->data_size);
 		}
 	}
 
@@ -825,7 +827,7 @@ static void udp_info_answer (Cerver *cerver, UdpPeer *peer, const PacketHeader *
 // a test packet goes back to the peer, to one that is not proven only up to the bytes that it sent
 static void udp_test_answer (UdpPeer *peer, Packet *packet) {
 
-	if (udp_peer_answer_allowed (peer, sizeof (PacketHeader))) {
+	if (udp_peer_answer_allowed (peer, PACKET_HEADER_SIZE)) {
 		cerver_test_packet_handler (packet);
 	}
 

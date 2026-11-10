@@ -2120,28 +2120,31 @@ static unsigned int client_connection_get_next_packet_actual (
 	connection->receive_handle.connection = connection;
 
 	const ReceiveError error = client_receive_data (
-		client, connection, buffer, sizeof (PacketHeader), sizeof (PacketHeader)
+		client, connection, buffer, PACKET_HEADER_SIZE, PACKET_HEADER_SIZE
 	);
 
 	if (error != RECEIVE_ERROR_NONE) return 1;
 
 	PacketHeader header;
-	(void) memcpy (&header, buffer, sizeof (PacketHeader));
+	const bool valid_header = (
+		packet_header_decode ((const u8 *) buffer, &header) == PACKET_HEADER_RESULT_NONE
+	);
 
 	#ifdef CLIENT_RECEIVE_DEBUG
-	packet_header_log (&header);
+	if (valid_header) packet_header_log (&header);
 	#endif
 
-	const bool valid_size = (header.packet_size >= sizeof (PacketHeader))
-		&& (header.packet_size <= client->max_received_packet_size);
+	const bool valid_size = valid_header
+		&& (header.packet_size >= PACKET_HEADER_SIZE)
+		&& (header.packet_size <= (u64) client->max_received_packet_size);
 
-	// an invalid size closes the connection, a packet with only its header is dispatched,
+	// an invalid header or size closes the connection, a packet with only its header is dispatched,
 	// in both cases the connection must not be used after it
-	client_connection_get_next_packet_feed (client, connection, buffer, sizeof (PacketHeader));
+	client_connection_get_next_packet_feed (client, connection, buffer, PACKET_HEADER_SIZE);
 
 	if (!valid_size) return 1;
 
-	size_t remaining = header.packet_size - sizeof (PacketHeader);
+	size_t remaining = (size_t) header.packet_size - PACKET_HEADER_SIZE;
 	while (remaining > 0) {
 		const size_t piece = (remaining < CLIENT_NEXT_PACKET_BUFFER_SIZE)
 			? remaining : CLIENT_NEXT_PACKET_BUFFER_SIZE;
