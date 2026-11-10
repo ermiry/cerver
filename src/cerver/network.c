@@ -1,15 +1,22 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <ctype.h>
 
 #include <netdb.h>
 
 #include <arpa/inet.h>
+#include <net/if.h>
 #include <netinet/in.h>
 
 #include <sys/socket.h>
 #include <sys/time.h>
 
 #include "cerver/network.h"
+
+// the base of a zone given as an interface index (fe80::1%2)
+#define NETWORK_ZONE_INDEX_BASE			10
 
 #pragma region resolve
 
@@ -27,21 +34,153 @@ static void network_address_set_port (
 
 }
 
-// the first address of the preferred family, or the first one of any family
-static const struct addrinfo *network_resolve_select (
-	const struct addrinfo *results, const int preferred_family
-) {
+static int network_resolve_socket_type (const int protocol) {
 
-	const struct addrinfo *selected = NULL;
-
-	for (const struct addrinfo *result = results; result && !selected; result = result->ai_next) {
-		if (result->ai_family == preferred_family) selected = result;
-	}
-
-	return selected ? selected : results;
+	return (protocol == IPPROTO_UDP) ? SOCK_DGRAM : SOCK_STREAM;
 
 }
 
+// copies the addresses of one family from the results, keeping their order
+// returns how many addresses were copied
+static unsigned int network_resolve_collect (
+	const struct addrinfo *results, const int family,
+	struct sockaddr_storage *collected
+) {
+
+	unsigned int count = 0;
+
+	for (
+		const struct addrinfo *result = results;
+		result && (count < NETWORK_MAX_RESOLVED_ADDRESSES);
+		result = result->ai_next
+	) {
+		if (
+			(result->ai_family == family)
+			&& (result->ai_addrlen <= (socklen_t) sizeof (struct sockaddr_storage))
+		) {
+			(void) memset (&collected[count], 0, sizeof (struct sockaddr_storage));
+			(void) memcpy (&collected[count], result->ai_addr, result->ai_addrlen);
+			count += 1;
+		}
+	}
+
+	return count;
+
+}
+
+// one address of each family in turn, starting with the first family,
+// so an unreachable family only delays the connection by one attempt
+static void network_resolve_interleave (
+	const struct sockaddr_storage *first, const unsigned int first_count,
+	const struct sockaddr_storage *second, const unsigned int second_count,
+	NetworkAddresses *addresses
+) {
+
+	unsigned int first_index = 0;
+	unsigned int second_index = 0;
+
+	addresses->count = 0;
+	while (
+		((first_index < first_count) || (second_index < second_count))
+		&& (addresses->count < NETWORK_MAX_RESOLVED_ADDRESSES)
+	) {
+		if (first_index < first_count) {
+			addresses->addresses[addresses->count] = first[first_index];
+			addresses->count += 1;
+			first_index += 1;
+		}
+
+		if ((second_index < second_count) && (addresses->count < NETWORK_MAX_RESOLVED_ADDRESSES)) {
+			addresses->addresses[addresses->count] = second[second_index];
+			addresses->count += 1;
+			second_index += 1;
+		}
+	}
+
+}
+
+static void network_resolve_order (
+	const struct addrinfo *results, const bool prefer_ipv6,
+	NetworkAddresses *addresses
+) {
+
+	struct sockaddr_storage ipv6[NETWORK_MAX_RESOLVED_ADDRESSES];
+	struct sockaddr_storage ipv4[NETWORK_MAX_RESOLVED_ADDRESSES];
+
+	const unsigned int ipv6_count = network_resolve_collect (results, AF_INET6, ipv6);
+	const unsigned int ipv4_count = network_resolve_collect (results, AF_INET, ipv4);
+
+	if (prefer_ipv6) {
+		network_resolve_interleave (ipv6, ipv6_count, ipv4, ipv4_count, addresses);
+	}
+
+	else {
+		network_resolve_interleave (ipv4, ipv4_count, ipv6, ipv6_count, addresses);
+	}
+
+}
+
+// resolves a literal ip or a host name with getaddrinfo (),
+// a literal ip is parsed first so its zone is validated the same way as a bind address
+// returns 0 on success, 1 if the host could not be resolved
+static unsigned int network_resolve_lookup (
+	const char *host, const bool prefer_ipv6, const int protocol,
+	NetworkAddresses *addresses
+) {
+
+	unsigned int retval = 1;
+
+	addresses->count = 0;
+
+	if (!network_parse_address (host, 0, &addresses->addresses[0])) {
+		addresses->count = 1;
+		retval = 0;
+	}
+
+	else {
+		struct addrinfo hints;
+		(void) memset (&hints, 0, sizeof (struct addrinfo));
+		hints.ai_family = AF_UNSPEC;
+		hints.ai_socktype = network_resolve_socket_type (protocol);
+
+		struct addrinfo *results = NULL;
+		if (!getaddrinfo (host, NULL, &hints, &results) && results) {
+			network_resolve_order (results, prefer_ipv6, addresses);
+			retval = addresses->count ? 0 : 1;
+		}
+
+		if (results) freeaddrinfo (results);
+	}
+
+	return retval;
+
+}
+
+// resolves a literal ip (with its zone) or a host name into every address of the protocol,
+// alternating the families and starting with the one of prefer_ipv6,
+// each family keeps the order of getaddrinfo () (RFC 6724)
+// returns 0 on success, 1 if the host could not be resolved
+unsigned int network_resolve_addresses (
+	const char *host, const in_port_t port,
+	const bool prefer_ipv6, const int protocol,
+	NetworkAddresses *addresses
+) {
+
+	unsigned int retval = 1;
+
+	if (host && addresses) {
+		retval = network_resolve_lookup (host, prefer_ipv6, protocol, addresses);
+
+		for (unsigned int index = 0; index < addresses->count; index++) {
+			network_address_set_port (&addresses->addresses[index], port);
+		}
+	}
+
+	return retval;
+
+}
+
+// the first address of the preferred family, or the first one of any family
 static unsigned int network_resolve (
 	const char *host, const bool prefer_ipv6,
 	struct sockaddr_storage *address
@@ -49,24 +188,11 @@ static unsigned int network_resolve (
 
 	unsigned int retval = 1;
 
-	struct addrinfo hints;
-	(void) memset (&hints, 0, sizeof (struct addrinfo));
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-
-	struct addrinfo *results = NULL;
-	if (host && !getaddrinfo (host, NULL, &hints, &results) && results) {
-		const struct addrinfo *selected = network_resolve_select (
-			results, prefer_ipv6 ? AF_INET6 : AF_INET
-		);
-
-		(void) memset (address, 0, sizeof (struct sockaddr_storage));
-		(void) memcpy (address, selected->ai_addr, selected->ai_addrlen);
-
+	NetworkAddresses addresses;
+	if (!network_resolve_addresses (host, 0, prefer_ipv6, IPPROTO_TCP, &addresses)) {
+		*address = addresses.addresses[0];
 		retval = 0;
 	}
-
-	if (results) freeaddrinfo (results);
 
 	return retval;
 
@@ -108,7 +234,112 @@ unsigned int network_resolve_address (
 
 }
 
+// a zone only means something for a link local address
+static bool network_address_is_link_local (const struct in6_addr *address) {
+
+	return IN6_IS_ADDR_LINKLOCAL (address) || IN6_IS_ADDR_MC_LINKLOCAL (address);
+
+}
+
+static bool network_zone_is_index (const char *zone) {
+
+	bool is_index = (zone[0] != '\0');
+
+	for (const char *current = zone; *current && is_index; current++) {
+		is_index = isdigit ((unsigned char) *current) ? true : false;
+	}
+
+	return is_index;
+
+}
+
+// a zone is an interface name (eth0) or its index (2)
+// returns 0 on success, 1 if there is not an interface with that zone
+static unsigned int network_parse_zone (const char *zone, uint32_t *scope_id) {
+
+	unsigned int retval = 1;
+
+	if (network_zone_is_index (zone)) {
+		char *end = NULL;
+		const unsigned long index = strtoul (zone, &end, NETWORK_ZONE_INDEX_BASE);
+		if (end && !*end && index && (index <= UINT32_MAX)) {
+			*scope_id = (uint32_t) index;
+			retval = 0;
+		}
+	}
+
+	else if (zone[0] && (strlen (zone) < IF_NAMESIZE)) {
+		const unsigned int index = if_nametoindex (zone);
+		if (index) {
+			*scope_id = (uint32_t) index;
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// a link local IPv6 address with its zone (fe80::1%eth0)
+// returns 0 on success, 1 if it is not a valid address with a zone
+static unsigned int network_parse_address_zone (
+	const char *ip, const char *separator,
+	struct sockaddr_storage *address
+) {
+
+	unsigned int retval = 1;
+
+	const size_t length = (size_t) (separator - ip);
+	if (length < INET6_ADDRSTRLEN) {
+		char literal[INET6_ADDRSTRLEN] = { 0 };
+		(void) memcpy (literal, ip, length);
+
+		struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *) address;
+		uint32_t scope_id = 0;
+		if (
+			(inet_pton (AF_INET6, literal, &ipv6->sin6_addr) == 1)
+			&& network_address_is_link_local (&ipv6->sin6_addr)
+			&& !network_parse_zone (separator + 1, &scope_id)
+		) {
+			ipv6->sin6_family = AF_INET6;
+			ipv6->sin6_scope_id = scope_id;
+			retval = 0;
+		}
+	}
+
+	if (retval) (void) memset (address, 0, sizeof (struct sockaddr_storage));
+
+	return retval;
+
+}
+
+// a literal IPv4 or IPv6 address without a zone
+// returns 0 on success, 1 if it is not a valid ip
+static unsigned int network_parse_address_literal (
+	const char *ip, struct sockaddr_storage *address
+) {
+
+	unsigned int retval = 1;
+
+	struct sockaddr_in *ipv4 = (struct sockaddr_in *) address;
+	struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *) address;
+
+	if (inet_pton (AF_INET, ip, &ipv4->sin_addr) == 1) {
+		ipv4->sin_family = AF_INET;
+		retval = 0;
+	}
+
+	else if (inet_pton (AF_INET6, ip, &ipv6->sin6_addr) == 1) {
+		ipv6->sin6_family = AF_INET6;
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // parses a literal IPv4 or IPv6 address, without a port, into an address
+// a link local IPv6 address can have its zone, as an interface name or index (fe80::1%eth0)
 // returns 0 on success, 1 if it is not a valid ip
 unsigned int network_parse_address (
 	const char *ip, const in_port_t port,
@@ -120,18 +351,10 @@ unsigned int network_parse_address (
 	if (ip && address) {
 		(void) memset (address, 0, sizeof (struct sockaddr_storage));
 
-		struct sockaddr_in *ipv4 = (struct sockaddr_in *) address;
-		struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *) address;
-
-		if (inet_pton (AF_INET, ip, &ipv4->sin_addr) == 1) {
-			ipv4->sin_family = AF_INET;
-			retval = 0;
-		}
-
-		else if (inet_pton (AF_INET6, ip, &ipv6->sin6_addr) == 1) {
-			ipv6->sin6_family = AF_INET6;
-			retval = 0;
-		}
+		const char *separator = strchr (ip, NETWORK_ZONE_SEPARATOR);
+		retval = separator ?
+			network_parse_address_zone (ip, separator, address) :
+			network_parse_address_literal (ip, address);
 
 		if (!retval) network_address_set_port (address, port);
 	}
@@ -190,6 +413,30 @@ bool sock_set_blocking (int32_t fd, bool blocking) {
 
 }
 
+// the zone of an address with a scope id: its interface name, or its index
+static void sock_ip_to_string_zone (
+	const struct sockaddr_in6 *address, char *ip_buffer
+) {
+
+	const size_t length = strlen (ip_buffer);
+	char interface[IF_NAMESIZE] = { 0 };
+
+	if (if_indextoname (address->sin6_scope_id, interface)) {
+		(void) snprintf (
+			ip_buffer + length, NETWORK_ADDRESS_STRING_SIZE - length,
+			"%c%s", NETWORK_ZONE_SEPARATOR, interface
+		);
+	}
+
+	else {
+		(void) snprintf (
+			ip_buffer + length, NETWORK_ADDRESS_STRING_SIZE - length,
+			"%c%u", NETWORK_ZONE_SEPARATOR, (unsigned int) address->sin6_scope_id
+		);
+	}
+
+}
+
 // an IPv4 inside an IPv6 address is written as the IPv4,
 // so a dual stack cerver logs and compares its IPv4 clients as IPv4
 static void sock_ip_to_string_ipv6 (
@@ -206,6 +453,8 @@ static void sock_ip_to_string_ipv6 (
 
 	else {
 		(void) inet_ntop (AF_INET6, &address->sin6_addr, ip_buffer, INET6_ADDRSTRLEN);
+
+		if (address->sin6_scope_id) sock_ip_to_string_zone (address, ip_buffer);
 	}
 
 }
@@ -246,7 +495,7 @@ char *sock_ip_to_string (const struct sockaddr *address) {
 	char *ip_buffer = NULL;
 
 	if (address) {
-		ip_buffer = (char *) calloc (INET6_ADDRSTRLEN, sizeof (char));
+		ip_buffer = (char *) calloc (NETWORK_ADDRESS_STRING_SIZE, sizeof (char));
 		if (ip_buffer) {
 			if (sock_ip_to_string_actual (address, ip_buffer)) {
 				free (ip_buffer);
@@ -259,6 +508,73 @@ char *sock_ip_to_string (const struct sockaddr *address) {
 
 }
 
+// an IPv4 inside an IPv6 address becomes the IPv4, so both forms compare equal
+static void sock_ip_normalize (
+	const struct sockaddr *address, struct sockaddr_storage *normalized
+) {
+
+	(void) memset (normalized, 0, sizeof (struct sockaddr_storage));
+
+	if (sock_ip_is_mapped (address)) {
+		const struct sockaddr_in6 *mapped = (const struct sockaddr_in6 *) address;
+		struct sockaddr_in *ipv4 = (struct sockaddr_in *) normalized;
+
+		ipv4->sin_family = AF_INET;
+		ipv4->sin_port = mapped->sin6_port;
+		(void) memcpy (
+			&ipv4->sin_addr,
+			&mapped->sin6_addr.s6_addr[NETWORK_IPV4_MAPPED_OFFSET],
+			sizeof (struct in_addr)
+		);
+	}
+
+	else if (address->sa_family == AF_INET6) {
+		(void) memcpy (normalized, address, sizeof (struct sockaddr_in6));
+	}
+
+	else if (address->sa_family == AF_INET) {
+		(void) memcpy (normalized, address, sizeof (struct sockaddr_in));
+	}
+
+}
+
+// the flow info is not part of the identity of an address
+static bool sock_ip_equal_normalized (
+	const struct sockaddr_storage *a, const struct sockaddr_storage *b
+) {
+
+	bool retval = false;
+
+	if (a->ss_family == b->ss_family) {
+		switch (a->ss_family) {
+			case AF_INET: {
+				const struct sockaddr_in *a_in = (const struct sockaddr_in *) a;
+				const struct sockaddr_in *b_in = (const struct sockaddr_in *) b;
+				retval = (a_in->sin_port == b_in->sin_port)
+					&& (a_in->sin_addr.s_addr == b_in->sin_addr.s_addr);
+			} break;
+
+			case AF_INET6: {
+				const struct sockaddr_in6 *a_in6 = (const struct sockaddr_in6 *) a;
+				const struct sockaddr_in6 *b_in6 = (const struct sockaddr_in6 *) b;
+				retval = (a_in6->sin6_port == b_in6->sin6_port)
+					&& !memcmp (
+						a_in6->sin6_addr.s6_addr, b_in6->sin6_addr.s6_addr,
+						SOCK_SIZEOF_MEMBER (struct in6_addr, s6_addr)
+					)
+					&& (a_in6->sin6_scope_id == b_in6->sin6_scope_id);
+			} break;
+
+			default: break;
+		}
+	}
+
+	return retval;
+
+}
+
+// true if both addresses have the same ip, port and zone,
+// an IPv4 inside an IPv6 address (::ffff:a.b.c.d) is equal to the IPv4
 bool sock_ip_equal (
 	const struct sockaddr *a, const struct sockaddr *b
 ) {
@@ -266,28 +582,13 @@ bool sock_ip_equal (
 	bool retval = false;
 
 	if (a && b) {
-		if (a->sa_family == b->sa_family) {
-			switch (a->sa_family) {
-				case AF_INET: {
-					struct sockaddr_in *a_in = (struct sockaddr_in *) a;
-					struct sockaddr_in *b_in = (struct sockaddr_in *) b;
-					retval = a_in->sin_port == b_in->sin_port
-						&& a_in->sin_addr.s_addr == b_in->sin_addr.s_addr;
-				} break;
+		struct sockaddr_storage a_normalized;
+		struct sockaddr_storage b_normalized;
 
-				case AF_INET6: {
-					struct sockaddr_in6 *a_in6 = (struct sockaddr_in6 *) a;
-					struct sockaddr_in6 *b_in6 = (struct sockaddr_in6 *) b;
-					retval = a_in6->sin6_port == b_in6->sin6_port
-						&& a_in6->sin6_flowinfo == b_in6->sin6_flowinfo
-						&& memcmp (a_in6->sin6_addr.s6_addr, b_in6->sin6_addr.s6_addr,
-								SOCK_SIZEOF_MEMBER (struct in6_addr, s6_addr)) == 0
-						&& a_in6->sin6_scope_id == b_in6->sin6_scope_id;
-				} break;
+		sock_ip_normalize (a, &a_normalized);
+		sock_ip_normalize (b, &b_normalized);
 
-				default: break;
-			}
-		}
+		retval = sock_ip_equal_normalized (&a_normalized, &b_normalized);
 	}
 
 	return retval;
