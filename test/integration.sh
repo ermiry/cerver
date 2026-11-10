@@ -24,6 +24,11 @@ PAIRS=(
 	handler
 	balancer/round_robin
 	balancer/handler_id
+	balancer/reconnect
+	balancer/large
+	balancer/unavailable
+	balancer/concurrent
+	balancer/abandon
 )
 
 ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
