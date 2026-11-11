@@ -135,10 +135,45 @@ static Balancer *test_balancer_create (const BalancerType type) {
 	test_check_int_eq (balancer->n_services, n_services, NULL);
 	test_check_ptr (balancer->services);
 	test_check_null_ptr (balancer->on_unavailable_services);
+	test_check_null_ptr (balancer->select_service);
+	test_check_null_ptr (balancer->select_service_args);
 	test_check_ptr (balancer->stats);
 	test_check_ptr (balancer->mutex);
 
 	return balancer;
+
+}
+
+static int test_balancer_select_service (
+	const PacketHeader *header, const char *body, const size_t body_size, void *args
+) {
+
+	(void) body;
+	(void) body_size;
+	(void) args;
+
+	return (int) header->request_type;
+
+}
+
+// #299: a custom balancer takes the method that selects the service of each packet
+static void test_balancer_create_custom (void) {
+
+	const BalancerType balancer_type = BALANCER_TYPE_CUSTOM;
+
+	Balancer *balancer = test_balancer_create (balancer_type);
+
+	test_check_int_eq (balancer_get_type (balancer), balancer_type, NULL);
+	test_check_str_eq (balancer_type_to_string (balancer_type), "Custom", NULL);
+
+	int args = 0;
+	balancer_set_select_service (balancer, test_balancer_select_service, &args);
+	test_check_ptr_eq (balancer->select_service, test_balancer_select_service);
+	test_check_ptr_eq (balancer->select_service_args, &args);
+
+	balancer_set_select_service (NULL, test_balancer_select_service, &args);
+
+	balancer_delete (balancer);
 
 }
 
@@ -341,6 +376,7 @@ int main (int argc, char **argv) {
 	// balancer
 	test_balancer_create_round_robin ();
 	test_balancer_create_handler_id ();
+	test_balancer_create_custom ();
 
 	// routes
 	test_balancer_route_id ();
