@@ -40,6 +40,7 @@ EXAMPLE_PAIRS=(
 	examples/handlers
 	examples/requests
 	examples/threads
+	examples/game
 )
 
 EXAMPLES_ADDRESS=127.0.0.1
