@@ -10,6 +10,7 @@ examples/bin
 examples/objs
 fuzz-artifacts
 objs
+repeat-artifacts
 test/bin
 test/objs
 uploads

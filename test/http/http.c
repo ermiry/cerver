@@ -554,7 +554,12 @@ static void test_http_receive_new (void) {
 
 	test_check_null_ptr (http_receive->http_cerver);
 
-	test_check_null_ptr (http_receive->parser);
+	// the parser is embedded and empty until the receive is created for a connection
+	test_check_null_ptr (http_receive->parser.data);
+	test_check_null_ptr (http_receive->parser.settings);
+	test_check_null_ptr (http_receive->settings.on_url);
+	test_check_false (http_receive->keep_alive_requested);
+	test_check_unsigned_eq (http_receive->unparsed, 0, NULL);
 
 	test_check_null_ptr (http_receive->mpart_parser);
 
@@ -601,20 +606,28 @@ static void test_http_receive_create (void) {
 
 	test_check_ptr (http_receive->http_cerver);
 
-	test_check_ptr (http_receive->parser);
-
-	http_receive->parser->data = http_receive;
+	// the parser is embedded, it parses requests with the receive's own settings
+	test_check (http_receive->parser.data == http_receive, NULL);
+	test_check (http_receive->parser.settings == &http_receive->settings, NULL);
+	test_check_unsigned_eq (llhttp_get_type (&http_receive->parser), HTTP_REQUEST, NULL);
+	test_check_unsigned_eq (http_receive->parser.lenient_flags, HTTP_PARSER_LENIENT_NONE, NULL);
 
 	test_check_null_ptr (http_receive->settings.on_message_begin);
 	test_check_ptr (http_receive->settings.on_url);
+	test_check_ptr (http_receive->settings.on_url_complete);
 	test_check_null_ptr (http_receive->settings.on_status);
+	test_check_null_ptr (http_receive->settings.on_method);
+	test_check_null_ptr (http_receive->settings.on_version);
 	test_check_ptr (http_receive->settings.on_header_field);
+	test_check_null_ptr (http_receive->settings.on_header_field_complete);
 	test_check_ptr (http_receive->settings.on_header_value);
+	test_check_ptr (http_receive->settings.on_header_value_complete);
 	test_check_ptr (http_receive->settings.on_headers_complete);
 	test_check_ptr (http_receive->settings.on_body);
 	test_check_ptr (http_receive->settings.on_message_complete);
 	test_check_null_ptr (http_receive->settings.on_chunk_header);
 	test_check_null_ptr (http_receive->settings.on_chunk_complete);
+	test_check_null_ptr (http_receive->settings.on_reset);
 
 	test_check_null_ptr (http_receive->mpart_parser);
 
@@ -629,6 +642,42 @@ static void test_http_receive_create (void) {
 
 	test_check_ptr (http_receive->file_stats);
 
+	http_receive_delete (http_receive);
+
+}
+
+// the lenient flags of the cerver are set in the parser of each receive
+static void test_http_receive_create_lenient (void) {
+
+	HttpCerver http_cerver;
+	(void) memset (&http_cerver, 0, sizeof (HttpCerver));
+
+	http_cerver_set_parser_lenient (&http_cerver, HTTP_PARSER_LENIENT_VERSION | HTTP_PARSER_LENIENT_HEADERS);
+	test_check_unsigned_eq (http_cerver.parser_lenient, (LENIENT_VERSION | LENIENT_HEADERS), NULL);
+
+	test_check_str_eq (http_parser_lenient_string (HTTP_PARSER_LENIENT_VERSION), "version", NULL);
+	test_check_str_eq (http_parser_lenient_string (HTTP_PARSER_LENIENT_NONE), "none", NULL);
+	test_check_str_eq (http_parser_lenient_description (HTTP_PARSER_LENIENT_VERSION), "any HTTP version", NULL);
+
+	Cerver cerver;
+	(void) memset (&cerver, 0, sizeof (Cerver));
+	cerver.cerver_data = &http_cerver;
+
+	CerverReceive cerver_receive;
+	(void) memset (&cerver_receive, 0, sizeof (CerverReceive));
+	cerver_receive.cerver = &cerver;
+
+	HttpReceive *http_receive = http_receive_create (&cerver_receive);
+	test_check_ptr (http_receive);
+	test_check_unsigned_eq (http_receive->parser.lenient_flags, (LENIENT_VERSION | LENIENT_HEADERS), NULL);
+	http_receive_delete (http_receive);
+
+	// the strict mode again for the next receives
+	http_cerver_set_parser_lenient (&http_cerver, HTTP_PARSER_LENIENT_NONE);
+
+	http_receive = http_receive_create (&cerver_receive);
+	test_check_ptr (http_receive);
+	test_check_unsigned_eq (http_receive->parser.lenient_flags, 0, NULL);
 	http_receive_delete (http_receive);
 
 }
@@ -669,14 +718,23 @@ static void http_tests_main (void) {
 	// receive
 	test_http_receive_new ();
 	test_http_receive_create ();
+	test_http_receive_create_lenient ();
 
 	(void) printf ("Done!\n");
 
 }
 
+// the full matrix of test/disconnect.sh runs alone, without the other suites
+#define DISCONNECT_ONLY_VARIABLE			"DISCONNECT_ONLY"
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
+
+	if (getenv (DISCONNECT_ONLY_VARIABLE)) {
+		http_tests_disconnect ();
+		return 0;
+	}
 
 	(void) printf ("Testing HTTP...\n");
 
@@ -716,6 +774,9 @@ int main (int argc, char **argv) {
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();
+
+	// clients that leave in every part of the HTTP process
+	http_tests_disconnect ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 

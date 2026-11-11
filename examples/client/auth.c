@@ -22,10 +22,12 @@ static Cerver *client_cerver = NULL;
 
 #pragma region auth
 
+#define CREDENTIALS_FIELD_SIZE			64
+
 typedef struct Credentials {
 
-	char username[64];
-	char password[64];
+	char username[CREDENTIALS_FIELD_SIZE];
+	char password[CREDENTIALS_FIELD_SIZE];
 
 } Credentials;
 
@@ -33,8 +35,8 @@ Credentials *credentials_new (const char *username, const char *password) {
 
 	Credentials *credentials = (Credentials *) malloc (sizeof (Credentials));
 	if (credentials) {
-		strncpy (credentials->username, username, 64);
-		strncpy (credentials->password, password, 64);
+		(void) snprintf (credentials->username, CREDENTIALS_FIELD_SIZE, "%s", username);
+		(void) snprintf (credentials->password, CREDENTIALS_FIELD_SIZE, "%s", password);
 	}
 
 	return credentials;

@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <curl/curl.h>
 
@@ -8,10 +10,32 @@
 
 #include "curl.h"
 
+#include "../../address.h"
+
 #define AUTHORIZATION_HEADER_SIZE		1024
 
 #define CURL_REQUEST_TIMEOUT_SECONDS	32L
 #define CURL_CONNECT_TIMEOUT_SECONDS	8L
+
+// an IPv6 address has a ':', in a URL it goes between brackets
+#define WEB_TEST_IPV6_SEPARATOR			':'
+
+// writes the host (CERVER_TEST_ADDRESS, an IPv6 address between brackets),
+// the port and the path (NULL for none) of the web cerver of a pair
+void web_test_address (char *buffer, const char *path) {
+
+	const char *host = test_address ();
+	const char *suffix = path ? path : "";
+
+	if (strchr (host, WEB_TEST_IPV6_SEPARATOR)) {
+		(void) snprintf (buffer, WEB_TEST_ADDRESS_SIZE, "[%s]:%d%s", host, WEB_TEST_PORT, suffix);
+	}
+
+	else {
+		(void) snprintf (buffer, WEB_TEST_ADDRESS_SIZE, "%s:%d%s", host, WEB_TEST_PORT, suffix);
+	}
+
+}
 
 // performs the request with custom headers
 // and removes them from the handle before releasing them

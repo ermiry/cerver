@@ -13,7 +13,7 @@
 #define ADDRESS_SIZE			128
 #define STATS_BUFFER_SIZE		(1 << 16)
 
-static const char *address = { "127.0.0.1:8080" };
+static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
 static const char *stats_counters[] = {
 	"n_incompleted_requests", "n_unhandled_requests",
@@ -181,6 +181,8 @@ static unsigned int admin_request_all (void) {
 int main (int argc, char **argv) {
 
 	cerver_log_init ();
+
+	web_test_address (address, NULL);
 
 	const unsigned int errors = admin_request_all ();
 

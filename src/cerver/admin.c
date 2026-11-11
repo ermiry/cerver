@@ -823,10 +823,9 @@ unsigned int admin_cerver_get_n_handlers_working (
 
 	unsigned int retval = 0;
 
+	// the handlers count themselves with __atomic while they handle a packet
 	if (admin_cerver) {
-		(void) pthread_mutex_lock (admin_cerver->handlers_lock);
-		retval = admin_cerver->num_handlers_working;
-		(void) pthread_mutex_unlock (admin_cerver->handlers_lock);
+		retval = __atomic_load_n (&admin_cerver->num_handlers_working, __ATOMIC_SEQ_CST);
 	}
 
 	return retval;
@@ -1081,6 +1080,18 @@ u8 admin_cerver_drop_admin (
 
 static void *admin_poll (void *cerver_ptr);
 
+static const i64 ADMIN_MICROSECONDS_PER_SECOND = 1000000;
+static const i64 ADMIN_NANOSECONDS_PER_MICROSECOND = 1000;
+
+static i64 admin_timespec_diff_microseconds (
+	const struct timespec *start, const struct timespec *end
+) {
+
+	return ((i64) (end->tv_sec - start->tv_sec) * ADMIN_MICROSECONDS_PER_SECOND)
+		+ ((i64) (end->tv_nsec - start->tv_nsec) / ADMIN_NANOSECONDS_PER_MICROSECOND);
+
+}
+
 // called in a dedicated thread only if a user method was set
 // executes methods every tick
 static void *admin_cerver_update (void *args) {
@@ -1097,27 +1108,23 @@ static void *admin_cerver_update (void *args) {
 
 		CerverUpdate *cu = cerver_update_new (admin_cerver->cerver, admin_cerver->update_args);
 
-		u32 time_per_frame = 1000000 / admin_cerver->update_ticks;
-		// printf ("time per frame: %d\n", time_per_frame);
-		u32 temp = 0;
-		i32 sleep_time = 0;
+		const i64 time_per_frame = ADMIN_MICROSECONDS_PER_SECOND / (admin_cerver->update_ticks ? admin_cerver->update_ticks : 1);
+		i64 sleep_time = 0;
 
 		struct timespec start = { 0 }, middle = { 0 };
 
 		while (cerver_is_running (admin_cerver->cerver)) {
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &start);
+			(void) clock_gettime (CLOCK_MONOTONIC, &start);
 
 			// do stuff
 			if (admin_cerver->update) admin_cerver->update (cu);
 
-			// limit the fps
-			(void) clock_gettime (CLOCK_MONOTONIC_RAW, &middle);
-			temp = (middle.tv_nsec - start.tv_nsec) / 1000;
-			// printf ("temp: %d\n", temp);
-			sleep_time = time_per_frame - temp;
-			// printf ("sleep time: %d\n", sleep_time);
+			// limit the fps, the full timespec is used to cross every second
+			(void) clock_gettime (CLOCK_MONOTONIC, &middle);
+			sleep_time = time_per_frame - admin_timespec_diff_microseconds (&start, &middle);
 			if (sleep_time > 0) {
-				(void) usleep (sleep_time);
+				// the stop wakes it up, it does not wait for the end of the frame
+				cerver_sleep_microseconds (admin_cerver->cerver, sleep_time);
 			}
 		}
 
@@ -1461,67 +1468,9 @@ u8 admin_cerver_start (AdminCerver *admin_cerver) {
 
 #pragma region end
 
-static u8 admin_cerver_app_handler_destroy (AdminCerver *admin_cerver) {
-
-	u8 errors = 0;
-
-	if (admin_cerver) {
-		if (admin_cerver->app_packet_handler) {
-			if (!admin_cerver->app_packet_handler->direct_handle) {
-				// stop app handler
-				bsem_post_all (
-					admin_cerver->app_packet_handler->job_queue->has_jobs
-				);
-			}
-		}
-	}
-
-	return errors;
-
-}
-
-static u8 admin_cerver_app_error_handler_destroy (AdminCerver *admin_cerver) {
-
-	u8 errors = 0;
-
-	if (admin_cerver) {
-		if (admin_cerver->app_error_packet_handler) {
-			if (!admin_cerver->app_error_packet_handler->direct_handle) {
-				// stop app error handler
-				bsem_post_all (
-					admin_cerver->app_error_packet_handler->job_queue->has_jobs
-				);
-			}
-		}
-	}
-
-	return errors;
-
-}
-
-static u8 admin_cerver_custom_handler_destroy (AdminCerver *admin_cerver) {
-
-	u8 errors = 0;
-
-	if (admin_cerver) {
-		if (admin_cerver->custom_packet_handler) {
-			if (!admin_cerver->custom_packet_handler->direct_handle) {
-				// stop custom handler
-				bsem_post_all (
-					admin_cerver->custom_packet_handler->job_queue->has_jobs
-				);
-			}
-		}
-	}
-
-	return errors;
-
-}
-
-// correctly destroy admin cerver's custom handlers
+// correctly destroy admin cerver's custom handlers,
+// each thread is woken and joined, a handler that never started is skipped
 static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
-
-	u8 errors = 0;
 
 	if (admin_cerver) {
 		#ifdef ADMIN_DEBUG
@@ -1531,28 +1480,14 @@ static u8 admin_cerver_handlers_end (AdminCerver *admin_cerver) {
 		);
 		#endif
 
-		errors |= admin_cerver_app_handler_destroy (admin_cerver);
+		handler_stop (admin_cerver->app_packet_handler);
 
-		errors |= admin_cerver_app_error_handler_destroy (admin_cerver);
+		handler_stop (admin_cerver->app_error_packet_handler);
 
-		errors |= admin_cerver_custom_handler_destroy (admin_cerver);
-
-		// poll remaining handlers
-		while (admin_cerver->num_handlers_alive) {
-			if (admin_cerver->app_packet_handler)
-				bsem_post_all (admin_cerver->app_packet_handler->job_queue->has_jobs);
-
-			if (admin_cerver->app_error_packet_handler)
-				bsem_post_all (admin_cerver->app_error_packet_handler->job_queue->has_jobs);
-
-			if (admin_cerver->custom_packet_handler)
-				bsem_post_all (admin_cerver->custom_packet_handler->job_queue->has_jobs);
-
-			sleep (1);
-		}
+		handler_stop (admin_cerver->custom_packet_handler);
 	}
 
-	return errors;
+	return 0;
 
 }
 
@@ -1748,111 +1683,33 @@ static void admin_cerver_request_packet_handler (Packet *packet) {
 // handles an PACKET_TYPE_APP packet type
 static void admin_app_packet_handler (Packet *packet) {
 
-	if (packet->cerver->admin->app_packet_handler) {
-		if (packet->cerver->admin->app_packet_handler->direct_handle) {
-			// printf ("app_packet_handler - direct handle!\n");
-			packet->cerver->admin->app_packet_handler->handler (packet);
-			if (packet->cerver->admin->app_packet_handler_delete_packet)
-				packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->cerver->admin->app_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to cerver's %s ADMIN app_packet_handler!",
-					packet->cerver->info->name
-				);
-			}
-		}
-	}
-
-	else {
-		#ifdef ADMIN_DEBUG
-		cerver_log_warning (
-			"Cerver %s ADMIN does not have an app_packet_handler!",
-			packet->cerver->info->name
-		);
-		#endif
-	}
+	handler_packet_dispatch (
+		packet->cerver->admin->app_packet_handler, packet,
+		packet->cerver->admin->app_packet_handler_delete_packet,
+		packet->cerver->info->name, "admin app_packet_handler"
+	);
 
 }
 
 // handles an PACKET_TYPE_APP_ERROR packet type
 static void admin_app_error_packet_handler (Packet *packet) {
 
-	if (packet->cerver->admin->app_error_packet_handler) {
-		if (packet->cerver->admin->app_error_packet_handler->direct_handle) {
-			// printf ("app_error_packet_handler - direct handle!\n");
-			packet->cerver->admin->app_error_packet_handler->handler (packet);
-			if (packet->cerver->admin->app_error_packet_handler_delete_packet)
-				packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->cerver->admin->app_error_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to cerver's %s ADMIN app_error_packet_handler!",
-					packet->cerver->info->name
-				);
-			}
-		}
-	}
-
-	else {
-		#ifdef ADMIN_DEBUG
-		cerver_log_warning (
-			"Cerver %s ADMIN does not have an app_error_packet_handler!",
-			packet->cerver->info->name
-		);
-		#endif
-	}
+	handler_packet_dispatch (
+		packet->cerver->admin->app_error_packet_handler, packet,
+		packet->cerver->admin->app_error_packet_handler_delete_packet,
+		packet->cerver->info->name, "admin app_error_packet_handler"
+	);
 
 }
 
 // handles a PACKET_TYPE_CUSTOM packet type
 static void admin_custom_packet_handler (Packet *packet) {
 
-	if (packet->cerver->admin->custom_packet_handler) {
-		if (packet->cerver->admin->custom_packet_handler->direct_handle) {
-			// printf ("custom_packet_handler - direct handle!\n");
-			packet->cerver->admin->custom_packet_handler->handler (packet);
-			if (packet->cerver->admin->custom_packet_handler_delete_packet)
-				packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->cerver->admin->custom_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to cerver's %s ADMIN custom_packet_handler!",
-					packet->cerver->info->name
-				);
-			}
-		}
-	}
-
-	else {
-		#ifdef ADMIN_DEBUG
-		cerver_log_warning (
-			"Cerver %s ADMIN does not have an custom_packet_handler!",
-			packet->cerver->info->name
-		);
-		#endif
-	}
+	handler_packet_dispatch (
+		packet->cerver->admin->custom_packet_handler, packet,
+		packet->cerver->admin->custom_packet_handler_delete_packet,
+		packet->cerver->info->name, "admin custom_packet_handler"
+	);
 
 }
 

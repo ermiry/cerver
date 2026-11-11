@@ -168,6 +168,149 @@ unsigned int thread_set_name (const char *name, ...) {
 
 #pragma endregion
 
+#pragma region group
+
+// the work of a thread of a group, its data is released by the thread
+typedef struct ThreadGroupWork {
+
+	ThreadGroup *group;
+
+	void *(*work) (void *);
+	void *args;
+
+} ThreadGroupWork;
+
+void thread_group_init (ThreadGroup *group) {
+
+	if (group) {
+		group->alive = 0;
+
+		(void) pthread_mutex_init (&group->mutex, NULL);
+		(void) pthread_cond_init (&group->ended, NULL);
+	}
+
+}
+
+void thread_group_end (ThreadGroup *group) {
+
+	if (group) {
+		(void) pthread_mutex_destroy (&group->mutex);
+		(void) pthread_cond_destroy (&group->ended);
+	}
+
+}
+
+static void thread_group_count (ThreadGroup *group, const bool started) {
+
+	(void) pthread_mutex_lock (&group->mutex);
+
+	if (started) group->alive += 1;
+	else group->alive -= 1;
+
+	(void) pthread_cond_broadcast (&group->ended);
+	(void) pthread_mutex_unlock (&group->mutex);
+
+}
+
+static void *thread_group_run (void *group_work_ptr) {
+
+	ThreadGroupWork *group_work = (ThreadGroupWork *) group_work_ptr;
+	ThreadGroup *group = group_work->group;
+
+	(void) group_work->work (group_work->args);
+
+	free (group_work);
+
+	// the last access to the group, its owner can be released after it
+	thread_group_count (group, false);
+
+	return NULL;
+
+}
+
+// creates a detached thread that is counted in the group until its work returns
+// returns 0 on success, 1 on error
+unsigned int thread_group_create (
+	ThreadGroup *group, void *(*work) (void *), void *args
+) {
+
+	unsigned int retval = 1;
+
+	if (group && work) {
+		ThreadGroupWork *group_work = (ThreadGroupWork *) malloc (sizeof (ThreadGroupWork));
+		if (group_work) {
+			group_work->group = group;
+			group_work->work = work;
+			group_work->args = args;
+
+			// counted before the thread exists, so a wait never misses it
+			thread_group_count (group, true);
+
+			pthread_t thread_id = 0;
+			retval = thread_create_detachable (&thread_id, thread_group_run, group_work);
+			if (retval) {
+				free (group_work);
+
+				thread_group_count (group, false);
+			}
+		}
+	}
+
+	return retval;
+
+}
+
+// returns the number of threads of the group that are alive
+unsigned int thread_group_alive (ThreadGroup *group) {
+
+	unsigned int alive = 0;
+
+	if (group) {
+		(void) pthread_mutex_lock (&group->mutex);
+		alive = group->alive;
+		(void) pthread_mutex_unlock (&group->mutex);
+	}
+
+	return alive;
+
+}
+
+// waits until every thread of the group has ended,
+// or until the timeout in seconds passes (THREAD_GROUP_WAIT_FOREVER waits for them)
+// returns the number of threads that are still alive
+unsigned int thread_group_wait (ThreadGroup *group, const time_t timeout) {
+
+	unsigned int alive = 0;
+
+	if (group) {
+		struct timespec deadline = { 0, 0 };
+		(void) clock_gettime (CLOCK_REALTIME, &deadline);
+		deadline.tv_sec += timeout;
+
+		(void) pthread_mutex_lock (&group->mutex);
+
+		int result = 0;
+		while (group->alive && (result != ETIMEDOUT)) {
+			if (timeout == THREAD_GROUP_WAIT_FOREVER) {
+				result = pthread_cond_wait (&group->ended, &group->mutex);
+			}
+
+			else {
+				result = pthread_cond_timedwait (&group->ended, &group->mutex, &deadline);
+			}
+		}
+
+		alive = group->alive;
+
+		(void) pthread_mutex_unlock (&group->mutex);
+	}
+
+	return alive;
+
+}
+
+#pragma endregion
+
 #pragma region mutex
 
 // allocates & initializes a new mutex that should be deleted after use

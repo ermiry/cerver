@@ -10,6 +10,7 @@
 
 #include "cerver/collections/avl.h"
 #include "cerver/collections/dlist.h"
+#include "cerver/collections/freelist.h"
 
 #include "cerver/cerver.h"
 #include "cerver/config.h"
@@ -17,6 +18,8 @@
 #include "cerver/network.h"
 #include "cerver/packets.h"
 #include "cerver/handler.h"
+
+#include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
 
@@ -27,6 +30,12 @@
 
 #define CLIENT_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
 #define CLIENT_DEFAULT_MAX_BAD_PACKETS				16
+
+// the pieces in which client_connection_get_next_packet () reads a packet
+#define CLIENT_NEXT_PACKET_BUFFER_SIZE				(1 << 12)
+
+// the deleted clients that are kept to be reused, a cerver creates one per connection
+#define CLIENT_RECYCLE_LIMIT						FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,8 +67,12 @@ struct _ClientStats {
 	u64 n_packets_received;			// total number of packets received from this client (packet header + data)
 	u64 n_packets_sent;				// total number of packets sent to this client (all connections)
 
+	// point to the storage below, so the stats of a client are not extra allocations
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
+
+	struct _PacketsPerType received_packets_storage;
+	struct _PacketsPerType sent_packets_storage;
 
 };
 
@@ -133,7 +146,9 @@ struct _Client {
 	DoubleList *connections;
 
 	// multiple connections can be associated with the same client using the same session id
+	// it is set and read with the session lock, use client_get_session_id ()
 	String *session_id;
+	pthread_mutex_t session_lock;
 
 	time_t last_activity;	// the last time the client sent / receive data
 
@@ -172,6 +187,13 @@ struct _Client {
 	// client_teardown () waits for them before it ends the connections
 	unsigned int n_async_threads;
 
+	// set by client_teardown (), it cancels the connect backoff of its connections
+	bool teardown_requested;
+
+	// the events and errors actions that run in their own threads,
+	// client_teardown () waits for them before the client is released
+	ThreadGroup event_threads;
+
 	struct _ClientEvent *events[CLIENT_MAX_EVENTS];
 	struct _ClientError *errors[CLIENT_MAX_ERRORS];
 
@@ -197,6 +219,15 @@ struct _Client {
 	ClientFileStats *file_stats;
 
 	ClientStats *stats;
+
+	// client_create () points the values above to these ones,
+	// so a client is not extra allocations, they are kept while the client is recycled
+	ClientFileStats file_stats_storage;
+	ClientStats stats_storage;
+	pthread_mutex_t lock_storage;
+
+	// the next deleted client that waits to be reused
+	struct _Client *recycle_next;
 
 };
 
@@ -228,6 +259,13 @@ CERVER_EXPORT void client_set_name (
 // sets the client's session id
 CERVER_PUBLIC u8 client_set_session_id (
 	Client *client, const char *session_id
+);
+
+// copies the client's session id into session_id, cut to size - 1 bytes and NUL terminated,
+// it can be called from any thread while the client exists
+// returns the number of bytes copied, 0 if the client does not have a session id
+CERVER_EXPORT size_t client_get_session_id (
+	const Client *client, char *session_id, const size_t size
 );
 
 // returns the client's app data
@@ -612,6 +650,9 @@ CERVER_PRIVATE void client_connection_aux_delete (
 // returns true while the client is running, it is read by its update threads
 CERVER_PUBLIC bool client_is_running (const Client *client);
 
+// true when client_teardown () was called, the connections stop their connect backoff
+CERVER_PRIVATE bool client_teardown_is_requested (const Client *client);
+
 // completes the end of a connection that its update thread owns,
 // called by the update thread when its receive loop has ended
 CERVER_PRIVATE void client_connection_end_deferred (
@@ -664,6 +705,12 @@ CERVER_EXPORT unsigned int client_connect (
 	Client *client, struct _Connection *connection
 );
 
+// an UDP cerver only knows a connection when it sends a datagram:
+// the connection asks for the cerver info and sends its auth packet (if it has auth data)
+CERVER_PRIVATE void client_connect_datagram (
+	Client *client, struct _Connection *connection
+);
+
 // connects a client to the host with the specified values in the connection
 // performs a first read to get the cerver info packet
 // this is a blocking method, and works exactly the same as if only calling client_connect ()
@@ -678,6 +725,15 @@ CERVER_EXPORT unsigned int client_connect_to_cerver (
 // user must manually handle how he wants to receive / handle incomming packets and also send requests
 // returns 0 on success connection thread creation, 1 on error
 CERVER_EXPORT unsigned int client_connect_async (
+	Client *client, struct _Connection *connection
+);
+
+// works like client_connect_to_cerver ()
+// performs a first read to get the cerver info packet
+// this is NOT a blocking method, a new thread will be created,
+// client_requests_wait () and client_teardown () wait for it
+// returns 0 on success creating connection thread, 1 on error
+CERVER_EXPORT unsigned int client_connect_to_cerver_async (
 	Client *client, struct _Connection *connection
 );
 

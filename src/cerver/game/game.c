@@ -49,8 +49,8 @@ void game_cerver_stats_print (Cerver *cerver) {
 		if (cerver->type == CERVER_TYPE_GAME) {
 			GameCerver *game_cerver = (GameCerver *) cerver->cerver_data;
 
-			printf ("Current active lobbys:         %d\n", game_cerver->stats->current_active_lobbys);
-			printf ("Total lobbys created:          %d\n", game_cerver->stats->lobbys_created);
+			printf ("Current active lobbys:         %u\n", game_cerver->stats->current_active_lobbys);
+			printf ("Total lobbys created:          %u\n", game_cerver->stats->lobbys_created);
 		}
 
 		else {
@@ -194,6 +194,7 @@ void game_cerver_register_lobby (GameCerver *game_cerver, Lobby *lobby) {
 void game_cerver_unregister_lobby (GameCerver *game_cerver, Lobby *lobby) {
 
 	if (game_cerver && lobby) {
+		// dlist_remove_element () with a NULL element removes the start of the list
 		ListElement *lobby_element = dlist_get_element (
 			game_cerver->current_lobbys, lobby, NULL
 		);
@@ -496,6 +497,7 @@ static void game_lobby_leave (Packet *packet) {
 static void game_lobby_init (Packet *packet) {
 
 	// TODO:
+	(void) packet;
 
 }
 

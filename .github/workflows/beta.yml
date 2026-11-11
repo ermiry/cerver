@@ -43,7 +43,9 @@ jobs:
     name: Cerver beta tests
     needs: build
     runs-on: ubuntu-latest
-    container: gcc:16.2
+    container:
+      image: gcc:16.2
+      options: --sysctl net.ipv6.conf.all.disable_ipv6=0
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -24,6 +24,7 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 #include "cerver/sessions.h"
+#include "cerver/udp.h"
 
 #include "cerver/threads/thread.h"
 
@@ -89,27 +90,13 @@ void client_connection_aux_delete (ClientConnection *cc) { if (cc) free (cc); }
 
 #pragma region stats
 
-static ClientStats *client_stats_new (void) {
+// the stats and their packets per type live inside the client
+static void client_stats_init (ClientStats *client_stats) {
 
-	ClientStats *client_stats = (ClientStats *) malloc (sizeof (ClientStats));
-	if (client_stats) {
-		(void) memset (client_stats, 0, sizeof (ClientStats));
-		client_stats->received_packets = packets_per_type_new ();
-		client_stats->sent_packets = packets_per_type_new ();
-	}
+	(void) memset (client_stats, 0, sizeof (ClientStats));
 
-	return client_stats;
-
-}
-
-static inline void client_stats_delete (ClientStats *client_stats) {
-
-	if (client_stats) {
-		packets_per_type_delete (client_stats->received_packets);
-		packets_per_type_delete (client_stats->sent_packets);
-
-		free (client_stats);
-	}
+	client_stats->received_packets = &client_stats->received_packets_storage;
+	client_stats->sent_packets = &client_stats->sent_packets_storage;
 
 }
 
@@ -152,20 +139,10 @@ void client_stats_print (Client *client) {
 
 }
 
-static ClientFileStats *client_file_stats_new (void) {
+// the file stats live inside the client
+static void client_file_stats_init (ClientFileStats *file_stats) {
 
-	ClientFileStats *file_stats = (ClientFileStats *) malloc (sizeof (ClientFileStats));
-	if (file_stats) {
-		(void) memset (file_stats, 0, sizeof (ClientFileStats));
-	}
-
-	return file_stats;
-
-}
-
-static void client_file_stats_delete (ClientFileStats *file_stats) {
-
-	if (file_stats) free (file_stats);
+	(void) memset (file_stats, 0, sizeof (ClientFileStats));
 
 }
 
@@ -222,16 +199,79 @@ const char *client_connections_status_description (
 
 }
 
+#pragma region recycle
+
+static FreeList client_recycled = FREELIST_INITIALIZER (
+	Client, recycle_next, CLIENT_RECYCLE_LIMIT
+);
+
+// a new client initializes its synchronization values once,
+// a recycled one keeps them, and also its connections list, that is empty
+static Client *client_allocate (void) {
+
+	Client *client = (Client *) freelist_pop (&client_recycled);
+	if (!client) {
+		client = (Client *) malloc (sizeof (Client));
+		if (client) {
+			client->connections = NULL;
+
+			(void) pthread_mutex_init (&client->session_lock, NULL);
+			(void) pthread_mutex_init (&client->lock_storage, NULL);
+			(void) pthread_cond_init (&client->updates_cond, NULL);
+
+			thread_group_init (&client->event_threads);
+		}
+	}
+
+	return client;
+
+}
+
+static void client_destroy (void *client_ptr) {
+
+	Client *client = (Client *) client_ptr;
+
+	dlist_delete (client->connections);
+
+	(void) pthread_mutex_destroy (&client->session_lock);
+	(void) pthread_mutex_destroy (&client->lock_storage);
+	(void) pthread_cond_destroy (&client->updates_cond);
+
+	thread_group_end (&client->event_threads);
+
+	free (client);
+
+}
+
+// keeps the client to be reused, or releases it if there are enough,
+// its connections are deleted and the list is kept
+static void client_recycle (Client *client) {
+
+	dlist_reset (client->connections);
+
+	if (freelist_push (&client_recycled, client)) {
+		client_destroy (client);
+	}
+
+}
+
+// the recycled clients are released when the library is unloaded
+__attribute__ ((destructor)) static void client_recycled_drain (void) {
+
+	freelist_drain (&client_recycled, client_destroy);
+
+}
+
+#pragma endregion
+
 Client *client_new (void) {
 
-	Client *client = (Client *) malloc (sizeof (Client));
+	Client *client = client_allocate ();
 	if (client) {
 		client->id = 0;
 		client->session_id = NULL;
 
 		(void) memset (client->name, 0, CLIENT_NAME_SIZE);
-
-		client->connections = NULL;
 
 		client->drop_client = false;
 
@@ -259,9 +299,10 @@ Client *client_new (void) {
 		client->lock = NULL;
 
 		client->n_update_threads = 0;
-		(void) pthread_cond_init (&client->updates_cond, NULL);
 
 		client->n_async_threads = 0;
+
+		client->teardown_requested = false;
 
 		for (unsigned int i = 0; i < CLIENT_MAX_EVENTS; i++)
 			client->events[i] = NULL;
@@ -282,6 +323,8 @@ Client *client_new (void) {
 		client->file_stats = NULL;
 
 		client->stats = NULL;
+
+		client->recycle_next = NULL;
 	}
 
 	return client;
@@ -294,8 +337,7 @@ void client_delete (void *ptr) {
 		Client *client = (Client *) ptr;
 
 		str_delete (client->session_id);
-
-		dlist_delete (client->connections);
+		client->session_id = NULL;
 
 		if (client->data) {
 			if (client->delete_data) client->delete_data (client->data);
@@ -311,13 +353,6 @@ void client_delete (void *ptr) {
 		handler_delete (client->app_error_packet_handler);
 		handler_delete (client->custom_packet_handler);
 
-		if (client->lock) {
-			pthread_mutex_destroy (client->lock);
-			free (client->lock);
-		}
-
-		(void) pthread_cond_destroy (&client->updates_cond);
-
 		for (unsigned int i = 0; i < CLIENT_MAX_EVENTS; i++)
 			if (client->events[i]) client_event_delete (client->events[i]);
 
@@ -329,11 +364,8 @@ void client_delete (void *ptr) {
 
 		str_delete (client->uploads_path);
 
-		client_file_stats_delete (client->file_stats);
-
-		client_stats_delete (client->stats);
-
-		free (client);
+		// the stats, the lock and the synchronization values live inside the client
+		client_recycle (client);
 	}
 
 }
@@ -357,16 +389,20 @@ Client *client_create (void) {
 
 		(void) time (&client->connected_timestamp);
 
-		client->connections = dlist_init (
-			connection_delete, connection_comparator
-		);
+		// a recycled client keeps its empty connections list
+		if (!client->connections) {
+			client->connections = dlist_init (
+				connection_delete, connection_comparator
+			);
+		}
 
-		client->lock = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t));
-		pthread_mutex_init (client->lock, NULL);
+		client->lock = &client->lock_storage;
 
-		client->file_stats = client_file_stats_new ();
+		client_file_stats_init (&client->file_stats_storage);
+		client->file_stats = &client->file_stats_storage;
 
-		client->stats = client_stats_new ();
+		client_stats_init (&client->stats_storage);
+		client->stats = &client->stats_storage;
 	}
 
 	return client;
@@ -412,13 +448,45 @@ u8 client_set_session_id (
 	u8 retval = 1;
 
 	if (client) {
-		str_delete (client->session_id);
-		client->session_id = session_id ? str_new (session_id) : NULL;
+		String *next = session_id ? str_new (session_id) : NULL;
+
+		(void) pthread_mutex_lock (&client->session_lock);
+		String *previous = client->session_id;
+		client->session_id = next;
+		(void) pthread_mutex_unlock (&client->session_lock);
+
+		str_delete (previous);
 
 		retval = 0;
 	}
 
 	return retval;
+
+}
+
+// copies the client's session id into session_id, cut to size - 1 bytes and NUL terminated,
+// it can be called from any thread while the client exists
+// returns the number of bytes copied, 0 if the client does not have a session id
+size_t client_get_session_id (
+	const Client *client, char *session_id, const size_t size
+) {
+
+	size_t copied = 0;
+
+	if (client && session_id && size) {
+		(void) pthread_mutex_lock ((pthread_mutex_t *) &client->session_lock);
+
+		if (client->session_id) {
+			copied = (client->session_id->len < (size - 1)) ? client->session_id->len : (size - 1);
+			(void) memcpy (session_id, client->session_id->str, copied);
+		}
+
+		(void) pthread_mutex_unlock ((pthread_mutex_t *) &client->session_lock);
+
+		session_id[copied] = '\0';
+	}
+
+	return copied;
 
 }
 
@@ -1338,10 +1406,10 @@ void client_event_trigger (
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				// the thread is counted, so client_teardown () waits for it
 				if (event->create_thread) {
-					pthread_t thread_id = 0;
-					thread_create_detachable (
-						&thread_id,
+					(void) thread_group_create (
+						(ThreadGroup *) &client->event_threads,
 						event->work,
 						client_event_data_create (
 							client, connection,
@@ -1538,10 +1606,10 @@ u8 client_error_trigger (
 		if (error) {
 			// trigger the action
 			if (error->work) {
+				// the thread is counted, so client_teardown () waits for it
 				if (error->create_thread) {
-					pthread_t thread_id = 0;
-					retval = thread_create_detachable (
-						&thread_id,
+					retval = thread_group_create (
+						(ThreadGroup *) &client->event_threads,
 						error->work,
 						client_error_data_create (
 							client, connection,
@@ -1712,8 +1780,7 @@ Packet *client_error_packet_generate (
 		SError *s_error = (SError *) end;
 		s_error->error_type = type;
 		s_error->timestamp = time (NULL);
-		memset (s_error->msg, 0, ERROR_MESSAGE_LENGTH);
-		if (msg) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH);
+		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
 	}
 
 	return packet;
@@ -1944,8 +2011,7 @@ Connection *client_connection_create (
 			connection_init (connection);
 			connection_register_to_client (client, connection);
 
-			connection->cond = thread_cond_new ();
-			connection->mutex = thread_mutex_new ();
+			connection_set_synchronization (connection);
 		}
 	}
 
@@ -1987,103 +2053,136 @@ int client_connection_unregister (
 
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+static void client_receive_handle_buffer (ReceiveHandle *receive_handle);
 
-static inline void client_connection_get_next_packet_handler (
-	const size_t received,
+static ReceiveError client_receive_actual (
 	Client *client, Connection *connection,
-	Packet *packet
+	char *buffer, const size_t buffer_size,
+	size_t *rc
+);
+
+static u8 client_receive_datagram (
+	Client *client, Connection *connection,
+	const char *datagram, const size_t size
+);
+
+// passes the received bytes of the next packet to the shared receive,
+// that assembles the packet and dispatches it when it is complete
+static void client_connection_get_next_packet_feed (
+	Client *client, Connection *connection,
+	char *buffer, const size_t size
 ) {
 
-	// update stats
 	CERVER_STATS_ADD (client->stats->n_receives_done, 1);
-	CERVER_STATS_ADD (client->stats->total_bytes_received, received);
+	CERVER_STATS_ADD (client->stats->total_bytes_received, size);
 
 	#ifdef CONNECTION_STATS
 	connection->stats->n_receives_done += 1;
-	connection->stats->total_bytes_received += received;
+	connection->stats->total_bytes_received += size;
 	#endif
 
-	// handle the actual packet
-	(void) client_packet_handler (packet);
+	connection->receive_handle.buffer = buffer;
+	connection->receive_handle.buffer_size = size;
+	connection->receive_handle.received_size = size;
+
+	client_receive_handle_buffer (&connection->receive_handle);
 
 }
 
-#pragma GCC diagnostic pop
+// receives exactly size bytes of the next packet and feeds them
+static ReceiveError client_connection_get_next_packet_piece (
+	Client *client, Connection *connection,
+	char *buffer, const size_t size
+) {
 
+	const ReceiveError error = client_receive_data (
+		client, connection, buffer, size, size
+	);
+
+	if (error == RECEIVE_ERROR_NONE) {
+		client_connection_get_next_packet_feed (client, connection, buffer, size);
+	}
+
+	return error;
+
+}
+
+// reads the header and then the body of the next packet in pieces of a fixed buffer,
+// so the bytes after it stay in the socket, and the packet is assembled, checked against
+// the max packet size of the client and dispatched by the same receive that the update thread uses
 static unsigned int client_connection_get_next_packet_actual (
+	Client *client, Connection *connection
+) {
+
+	char buffer[CLIENT_NEXT_PACKET_BUFFER_SIZE];
+
+	connection->receive_handle.client = client;
+	connection->receive_handle.connection = connection;
+
+	const ReceiveError error = client_receive_data (
+		client, connection, buffer, sizeof (PacketHeader), sizeof (PacketHeader)
+	);
+
+	if (error != RECEIVE_ERROR_NONE) return 1;
+
+	PacketHeader header;
+	(void) memcpy (&header, buffer, sizeof (PacketHeader));
+
+	#ifdef CLIENT_RECEIVE_DEBUG
+	packet_header_log (&header);
+	#endif
+
+	const bool valid_size = (header.packet_size >= sizeof (PacketHeader))
+		&& (header.packet_size <= client->max_received_packet_size);
+
+	// an invalid size closes the connection, a packet with only its header is dispatched,
+	// in both cases the connection must not be used after it
+	client_connection_get_next_packet_feed (client, connection, buffer, sizeof (PacketHeader));
+
+	if (!valid_size) return 1;
+
+	size_t remaining = header.packet_size - sizeof (PacketHeader);
+	while (remaining > 0) {
+		const size_t piece = (remaining < CLIENT_NEXT_PACKET_BUFFER_SIZE)
+			? remaining : CLIENT_NEXT_PACKET_BUFFER_SIZE;
+
+		if (client_connection_get_next_packet_piece (client, connection, buffer, piece) != RECEIVE_ERROR_NONE) {
+			return 1;
+		}
+
+		remaining -= piece;
+	}
+
+	return 0;
+
+}
+
+// a datagram is received whole and its packet is handled like in the update thread
+static unsigned int client_connection_get_next_datagram (
 	Client *client, Connection *connection
 ) {
 
 	unsigned int retval = 1;
 
-	// TODO: use a static packet
-	Packet *packet = packet_new ();
-	packet->cerver = NULL;
-	packet->client = client;
-	packet->connection = connection;
-	packet->lobby = NULL;
+	char *buffer = (char *) malloc (MAX_UDP_PACKET_SIZE);
+	if (buffer) {
+		size_t received = 0;
 
-	// first receive the packet header
-	size_t data_size = sizeof (PacketHeader);
-
-	if (
-		client_receive_data (
-			client, connection,
-			(char *) &packet->header, sizeof (PacketHeader),
-			data_size
-		) == RECEIVE_ERROR_NONE
-	) {
-		#ifdef CLIENT_RECEIVE_DEBUG
-		packet_header_log (&packet->header);
-		#endif
-
-		// check if need more data to complete the packet
-		if (packet->header.packet_size > sizeof (PacketHeader)) {
-			// TODO: add ability to configure this value
-			// check that the packet is not to big
-			if (packet->header.packet_size <= MAX_UDP_PACKET_SIZE) {
-				(void) packet_create_data (
-					packet, packet->header.packet_size - sizeof (PacketHeader)
-				);
-
-				data_size = packet->data_size;
-
-				if (
-					client_receive_data (
-						client, connection,
-						packet->data, packet->data_size,
-						data_size
-					) == RECEIVE_ERROR_NONE
-				) {
-					// we can safely handle the packet
-					client_connection_get_next_packet_handler (
-						packet->packet_size,
-						client, connection,
-						packet
-					);
-
-					retval = 0;
-				}
-			}
-
-			else {
-				// we received a bad packet
-				packet_delete (packet);
-			}
-		}
-
-		else {
-			// we can safely handle the packet
-			client_connection_get_next_packet_handler (
-				packet->packet_size,
-				client, connection,
-				packet
+		ReceiveError error = RECEIVE_ERROR_TIMEOUT;
+		while (error == RECEIVE_ERROR_TIMEOUT) {
+			error = client_receive_actual (
+				client, connection, buffer, MAX_UDP_PACKET_SIZE, &received
 			);
-
-			retval = 0;
 		}
+
+		if (error == RECEIVE_ERROR_NONE) {
+			CERVER_STATS_ADD (client->stats->n_receives_done, 1);
+			CERVER_STATS_ADD (client->stats->total_bytes_received, received);
+
+			retval = client_receive_datagram (client, connection, buffer, received);
+		}
+
+		free (buffer);
 	}
 
 	return retval;
@@ -2100,9 +2199,9 @@ unsigned int client_connection_get_next_packet (
 	unsigned int retval = 1;
 
 	if (client && connection) {
-		retval = client_connection_get_next_packet_actual (
-			client, connection
-		);
+		retval = (connection->protocol == PROTOCOL_UDP)
+			? client_connection_get_next_datagram (client, connection)
+			: client_connection_get_next_packet_actual (client, connection);
 	}
 
 	return retval;
@@ -2112,6 +2211,56 @@ unsigned int client_connection_get_next_packet (
 #pragma endregion
 
 #pragma region connect
+
+// the request of the cerver info has the size of the info,
+// a cerver does not answer an unproven address with more bytes than it sent (udp.c)
+static void client_connect_datagram_info (Client *client, Connection *connection) {
+
+	SCerver padding;
+	(void) memset (&padding, 0, sizeof (SCerver));
+
+	Packet *request = packet_generate_request (
+		PACKET_TYPE_CERVER, CERVER_PACKET_TYPE_INFO,
+		&padding, sizeof (SCerver)
+	);
+
+	if (request) {
+		packet_set_network_values (request, NULL, client, connection, NULL);
+		(void) packet_send (request, 0, NULL, false);
+		packet_delete (request);
+	}
+
+}
+
+static void client_connect_datagram_auth (Client *client, Connection *connection) {
+
+	if (!connection->auth_packet) {
+		(void) connection_generate_auth_packet (connection);
+	}
+
+	if (connection->auth_packet) {
+		packet_set_network_values (connection->auth_packet, NULL, client, connection, NULL);
+
+		if (!packet_send (connection->auth_packet, 0, NULL, false)) {
+			client_event_trigger (CLIENT_EVENT_AUTH_SENT, client, connection);
+		}
+	}
+
+}
+
+// an UDP cerver only knows a connection when it sends a datagram:
+// the connection asks for the cerver info and sends its auth packet (if it has auth data)
+void client_connect_datagram (Client *client, Connection *connection) {
+
+	if (client && connection && (connection->protocol == PROTOCOL_UDP)) {
+		client_connect_datagram_info (client, connection);
+
+		if (connection->auth_data) {
+			client_connect_datagram_auth (client, connection);
+		}
+	}
+
+}
 
 // connects a client to the host with the specified values in the connection
 // it can be a cerver or not
@@ -2131,6 +2280,8 @@ unsigned int client_connect (
 
 			// the event sees the connection already active
 			client_event_trigger (CLIENT_EVENT_CONNECTED, client, connection);
+
+			client_connect_datagram (client, connection);
 
 			retval = 0;     // success - connected to cerver
 		}
@@ -2255,6 +2406,49 @@ unsigned int client_connect_async (
 
 }
 
+static void *client_connect_to_cerver_thread (void *client_connection_ptr) {
+
+	if (client_connection_ptr) {
+		ClientConnection *cc = (ClientConnection *) client_connection_ptr;
+		Client *client = cc->client;
+
+		// handles the packet with the cerver's information
+		(void) client_connect_to_cerver (cc->client, cc->connection);
+
+		client_connection_aux_delete (cc);
+
+		client_async_thread_count (client, -1);
+	}
+
+	return NULL;
+
+}
+
+// works like client_connect_to_cerver ()
+// this is NOT a blocking method, a new thread will be created,
+// client_requests_wait () and client_teardown () wait for it
+// returns 0 on success creating connection thread, 1 on error
+unsigned int client_connect_to_cerver_async (
+	Client *client, Connection *connection
+) {
+
+	unsigned int retval = 1;
+
+	if (client && connection) {
+		ClientConnection *cc = client_connection_aux_new (client, connection);
+		if (cc) {
+			retval = client_async_thread_create (cc, client_connect_to_cerver_thread);
+
+			#ifdef CLIENT_DEBUG
+			if (retval) cerver_log_error ("Failed to create client_connect_to_cerver_thread () detachable thread!");
+			#endif
+		}
+	}
+
+	return retval;
+
+}
+
 #pragma endregion
 
 #pragma region start
@@ -2269,7 +2463,7 @@ int client_connection_start (Client *client, Connection *connection) {
 
 	if (client && connection) {
 		if (connection->active) {
-			if (!client_start (client)) {
+			if (!client_start (client) && !connection_start (connection)) {
 				// set before the thread exists, so an end that arrives first waits for it
 				client_update_thread_started (client, connection, true);
 
@@ -2516,6 +2710,9 @@ u8 client_files_add_path (Client *client, const char *path) {
 		if (client->n_paths < CLIENT_FILES_MAX_PATHS) {
 			client->paths[client->n_paths] = str_new (path);
 			client->n_paths += 1;
+
+			// the path was added, it always returned an error before
+			retval = 0;
 		}
 	}
 
@@ -2723,16 +2920,18 @@ const char *client_handler_error_description (
 
 }
 
+// the info is copied, a packet smaller than it was read past its data
 static void client_cerver_packet_handle_info (Packet *packet) {
 
-	if (packet->data && (packet->data_size > 0)) {
-		char *end = (char *) packet->data;
+	if (packet->data && (packet->data_size >= sizeof (SCerver))) {
+		SCerver scerver;
+		(void) memcpy (&scerver, packet->data, sizeof (SCerver));
 
 		#ifdef CLIENT_DEBUG
 		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Received a cerver info packet.");
 		#endif
 
-		CerverReport *cerver_report = cerver_deserialize ((SCerver *) end);
+		CerverReport *cerver_report = cerver_deserialize (&scerver);
 		if (cerver_report_check_info (
 			cerver_report, packet->client, packet->connection
 		)) {
@@ -2821,9 +3020,9 @@ static void client_request_get_file (Packet *packet) {
 	client->file_stats->n_files_requests += 1;
 
 	// get the necessary information to fulfil the request
-	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = (char *) packet->data;
-		FileHeader *file_header = (FileHeader *) end;
+	FileHeader requested = { { 0 }, 0 };
+	if (file_header_get (packet->data, packet->data_size, &requested)) {
+		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
 		String *actual_filename = client_files_search_file (
@@ -2891,7 +3090,7 @@ static void client_request_get_file (Packet *packet) {
 
 		// return a bad request error packet
 		(void) client_error_packet_generate_and_send (
-			CLIENT_ERROR_GET_FILE, "Missing file header",
+			CLIENT_ERROR_GET_FILE, "Missing or invalid file header",
 			packet->client, packet->connection
 		);
 
@@ -2907,9 +3106,10 @@ static void client_request_send_file_actual (Packet *packet) {
 	client->file_stats->n_files_upload_requests += 1;
 
 	// get the necessary information to fulfil the request
-	if (packet->data_size >= sizeof (FileHeader)) {
+	FileHeader received = { { 0 }, 0 };
+	if (file_header_get (packet->data, packet->data_size, &received)) {
 		char *end = (char *) packet->data;
-		FileHeader *file_header = (FileHeader *) end;
+		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
@@ -2920,6 +3120,13 @@ static void client_request_send_file_actual (Packet *packet) {
 		if (packet->data_size > sizeof (FileHeader)) {
 			file_data = end += sizeof (FileHeader);
 			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
+		// the file is sent after its packet, so its first bytes can be in the same buffer
+		else if (packet->connection) {
+			file_data_len = receive_handle_take_trailing (
+				&packet->connection->receive_handle, &file_data, file_header->len
+			);
 		}
 
 		char *saved_filename = NULL;
@@ -2963,7 +3170,7 @@ static void client_request_send_file_actual (Packet *packet) {
 
 		// return a bad request error packet
 		(void) client_error_packet_generate_and_send (
-			CLIENT_ERROR_SEND_FILE, "Missing file header",
+			CLIENT_ERROR_SEND_FILE, "Missing or invalid file header",
 			client, packet->connection
 		);
 
@@ -3042,9 +3249,34 @@ static u8 auth_strip_token (Packet *packet, Client *client) {
 
 }
 
-static void client_auth_success_handler (Packet *packet) {
+// the success of an UDP connection has the session token (when the cerver uses sessions)
+// followed by the datagram token, that its datagrams have from now on
+// returns 0 on success, 1 if the packet does not have them
+static u8 client_auth_success_datagram (Packet *packet) {
 
-	packet->connection->authenticated = true;
+	u8 retval = 1;
+
+	const bool valid = packet->data && (packet->data_size >= CONNECTION_DATAGRAM_TOKEN_SIZE);
+	const size_t session_size = valid ? (packet->data_size - CONNECTION_DATAGRAM_TOKEN_SIZE) : 0;
+
+	if (valid && (!session_size || (session_size == sizeof (SToken)))) {
+		const char *data = (const char *) packet->data;
+
+		// a session token without its NUL would be read past the packet
+		if (session_size && memchr (data, '\0', sizeof (SToken))) {
+			(void) client_set_session_id (packet->client, data);
+		}
+
+		connection_set_datagram_token (packet->connection, (const u8 *) data + session_size);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void client_auth_success_session (Packet *packet) {
 
 	if (packet->connection->cerver_report) {
 		if (packet->connection->cerver_report->uses_sessions) {
@@ -3059,6 +3291,20 @@ static void client_auth_success_handler (Packet *packet) {
 			}
 		}
 	}
+
+}
+
+static void client_auth_success_handler (Packet *packet) {
+
+	if (packet->connection->protocol == PROTOCOL_UDP) {
+		if (client_auth_success_datagram (packet)) return;
+	}
+
+	else {
+		client_auth_success_session (packet);
+	}
+
+	packet->connection->authenticated = true;
 
 	client_event_trigger (
 		CLIENT_EVENT_SUCCESS_AUTH,
@@ -3096,102 +3342,30 @@ static void client_auth_packet_handler (Packet *packet) {
 // handles a PACKET_TYPE_APP packet type
 static void client_app_packet_handler (Packet *packet) {
 
-	if (packet->client->app_packet_handler) {
-		if (packet->client->app_packet_handler->direct_handle) {
-			// printf ("app_packet_handler - direct handle!\n");
-			packet->client->app_packet_handler->handler (packet);
-			packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->client->app_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to client's %s app_packet_handler!",
-					packet->client->name
-				);
-			}
-		}
-	}
-
-	else {
-		cerver_log_warning (
-			"Client %s does not have a app_packet_handler!",
-			packet->client->name
-		);
-	}
+	handler_packet_dispatch (
+		packet->client->app_packet_handler, packet, true,
+		packet->client->name, "app_packet_handler"
+	);
 
 }
 
 // handles a PACKET_TYPE_APP_ERROR packet type
 static void client_app_error_packet_handler (Packet *packet) {
 
-	if (packet->client->app_error_packet_handler) {
-		if (packet->client->app_error_packet_handler->direct_handle) {
-			// printf ("app_error_packet_handler - direct handle!\n");
-			packet->client->app_error_packet_handler->handler (packet);
-			packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->client->app_error_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to client's %s app_error_packet_handler!",
-					packet->client->name
-				);
-			}
-		}
-	}
-
-	else {
-		cerver_log_warning (
-			"Client %s does not have a app_error_packet_handler!",
-			packet->client->name
-		);
-	}
+	handler_packet_dispatch (
+		packet->client->app_error_packet_handler, packet, true,
+		packet->client->name, "app_error_packet_handler"
+	);
 
 }
 
 // handles a PACKET_TYPE_CUSTOM packet type
 static void client_custom_packet_handler (Packet *packet) {
 
-	if (packet->client->custom_packet_handler) {
-		if (packet->client->custom_packet_handler->direct_handle) {
-			// printf ("custom_packet_handler - direct handle!\n");
-			packet->client->custom_packet_handler->handler (packet);
-			packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->client->custom_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to client's %s custom_packet_handler!",
-					packet->client->name
-				);
-			}
-		}
-	}
-
-	else {
-		cerver_log_warning (
-			"Client %s does not have a custom_packet_handler!",
-			packet->client->name
-		);
-	}
+	handler_packet_dispatch (
+		packet->client->custom_packet_handler, packet, true,
+		packet->client->name, "custom_packet_handler"
+	);
 
 }
 
@@ -3229,7 +3403,10 @@ static ClientHandlerError client_packet_handler_actual (
 	ClientHandlerError error = CLIENT_HANDLER_ERROR_NONE;	
 
 	switch (packet->header.packet_type) {
-		case PACKET_TYPE_NONE: break;
+		// a packet without a type is not handled, it was leaked
+		case PACKET_TYPE_NONE:
+			packet_delete (packet);
+			break;
 
 		// handles cerver type packets
 		case PACKET_TYPE_CERVER:
@@ -3386,6 +3563,62 @@ static void client_receive_handle_buffer (
 
 }
 
+// a bad datagram of the cerver: the connection is ended when it reaches the client limit,
+// its socket is shut down, so its receive loop ends it like when the cerver closes it
+static void client_receive_datagram_bad (Client *client, Connection *connection) {
+
+	CERVER_STATS_ADD (client->stats->received_packets->n_bad_packets, 1);
+
+	connection->bad_packets += 1;
+
+	if (client->max_bad_packets && (connection->bad_packets >= client->max_bad_packets)) {
+		cerver_log_warning (
+			"Client %s connection %s received %u bad datagrams - ending it...",
+			client->name, connection->name, (unsigned int) connection->bad_packets
+		);
+
+		(void) connection_drop_request (connection);
+	}
+
+}
+
+// a datagram has a single packet, followed by the token of the connection once it authenticated
+// returns 0 when its packet was handled, 1 when it was a bad datagram
+static u8 client_receive_datagram (
+	Client *client, Connection *connection,
+	const char *datagram, const size_t size
+) {
+
+	u8 retval = 1;
+
+	PacketHeader header;
+	const UdpDatagram kind = udp_datagram_check (
+		datagram, size, client->max_received_packet_size, &header
+	);
+
+	u8 token[CONNECTION_DATAGRAM_TOKEN_SIZE];
+	const bool valid = connection_get_datagram_token (connection, token)
+		? ((kind == UDP_DATAGRAM_TOKEN) && udp_datagram_token_matches (datagram, &header, token))
+		: (kind == UDP_DATAGRAM_PLAIN);
+
+	Packet *packet = valid ? udp_datagram_packet_create (datagram, &header) : NULL;
+	if (packet) {
+		packet->client = client;
+		packet->connection = connection;
+
+		(void) client_packet_handler (packet);
+
+		retval = 0;
+	}
+
+	else {
+		client_receive_datagram_bad (client, connection);
+	}
+
+	return retval;
+
+}
+
 // handles a failed recive from a connection associatd with a client
 // in its update thread, the end is deferred until its receive loop ends (unless another thread owns it),
 // in any other thread (a direct receive), the connection is ended now
@@ -3395,12 +3628,23 @@ static void client_receive_handle_failed (
 ) {
 
 	if (connection_is_update_thread (connection)) {
-		(void) client_connection_end_request (connection);
+		// the update thread connects again when its receive loop ends
+		if (!connection->attempt_reconnect || !client_is_running (client)) {
+			(void) client_connection_end_request (connection);
+		}
 	}
 
 	else if (connection->active) {
 		(void) client_connection_end (client, connection);
 	}
+
+}
+
+// a recv () of 0 bytes in an UDP socket that was not shut down is an empty datagram
+static bool client_receive_is_empty_datagram (const Connection *connection) {
+
+	return (connection->protocol == PROTOCOL_UDP)
+		&& !__atomic_load_n (&connection->shut_down, __ATOMIC_ACQUIRE);
 
 }
 
@@ -3418,7 +3662,7 @@ static ReceiveError client_receive_actual (
 	ssize_t received = recv (
 		connection->socket->sock_fd,
 		buffer, buffer_size,
-		0
+		connection->receive_flags
 	);
 
 	switch (received) {
@@ -3453,6 +3697,9 @@ static ReceiveError client_receive_actual (
 		} break;
 
 		case 0: {
+			// an empty datagram is a bad one, it does not end the connection
+			if (client_receive_is_empty_datagram (connection)) break;
+
 			#ifdef CONNECTION_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
@@ -3469,13 +3716,13 @@ static ReceiveError client_receive_actual (
 		} break;
 
 		default: {
-			// #ifdef CLIENT_RECEIVE_DEBUG
+			#ifdef CLIENT_RECEIVE_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 				"client_receive_actual () - received %ld from connection %s",
 				received, connection->name
 			);
-			// #endif
+			#endif
 		} break;
 	}
 
@@ -3566,21 +3813,28 @@ unsigned int client_receive_internal (
 	#endif
 
 	switch (error) {
+		// a datagram has a single packet, the bytes of a stream are assembled into packets
 		case RECEIVE_ERROR_NONE: {
-			connection->receive_handle.buffer = buffer;
-			connection->receive_handle.buffer_size = buffer_size;
-			connection->receive_handle.received_size = received;
+			if (connection->protocol == PROTOCOL_UDP) {
+				(void) client_receive_datagram (client, connection, buffer, received);
+			}
 
-			client_receive_handle_buffer (
-				&connection->receive_handle
-			);
+			else {
+				connection->receive_handle.buffer = buffer;
+				connection->receive_handle.buffer_size = buffer_size;
+				connection->receive_handle.received_size = received;
+
+				client_receive_handle_buffer (
+					&connection->receive_handle
+				);
+			}
 
 			retval = 0;
 		} break;
 
 		case RECEIVE_ERROR_TIMEOUT: {
 			retval = 0;
-		};
+		} break;
 
 		default: break;
 	}
@@ -3775,6 +4029,10 @@ static void client_connection_destroy (
 
 	if (client->lock) (void) pthread_mutex_unlock (client->lock);
 
+	// the socket of a connection that never connected, or whose connect failed,
+	// is still open: only connection_end () closes it, and only for an active connection
+	(void) socket_close (connection->socket);
+
 	connection_delete (connection);
 
 }
@@ -3802,6 +4060,8 @@ static ClientConnectionEnd client_connection_claim_end (
 		connection->ending = true;
 		connection->end_deferred = deferred;
 		end = CLIENT_CONNECTION_END_OWNER;
+
+		connection_set_state (connection, CONNECTION_STATE_DISCONNECTING);
 	}
 
 	// the update thread has not finished its loop yet, so its deferred end can be taken
@@ -3965,72 +4225,22 @@ static bool client_connection_end_request (Connection *connection) {
 
 }
 
-static void client_app_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_packet_handler) {
-			if (!client->app_packet_handler->direct_handle) {
-				// stop app handler
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_app_error_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->app_error_packet_handler) {
-			if (!client->app_error_packet_handler->direct_handle) {
-				// stop app error handler
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
-static void client_custom_handler_destroy (Client *client) {
-
-	if (client) {
-		if (client->custom_packet_handler) {
-			if (!client->custom_packet_handler->direct_handle) {
-				// stop custom handler
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-			}
-		}
-	}
-
-}
-
+// each handler thread is woken and joined, a handler that never started is skipped
 static void client_handlers_destroy (Client *client) {
 
 	if (client) {
+		#ifdef CLIENT_DEBUG
 		cerver_log_debug (
 			"Client %s num_handlers_alive: %d",
 			client->name, client->num_handlers_alive
 		);
+		#endif
 
-		client_app_handler_destroy (client);
+		handler_stop (client->app_packet_handler);
 
-		client_app_error_handler_destroy (client);
+		handler_stop (client->app_error_packet_handler);
 
-		client_custom_handler_destroy (client);
-
-		// poll remaining handlers
-		while (client->num_handlers_alive) {
-			if (client->app_packet_handler)
-				bsem_post_all (client->app_packet_handler->job_queue->has_jobs);
-
-			if (client->app_error_packet_handler)
-				bsem_post_all (client->app_error_packet_handler->job_queue->has_jobs);
-
-			if (client->custom_packet_handler)
-				bsem_post_all (client->custom_packet_handler->job_queue->has_jobs);
-
-			sleep (1);
-		}
+		handler_stop (client->custom_packet_handler);
 	}
 
 }
@@ -4112,6 +4322,31 @@ void client_requests_wait (Client *client) {
 
 }
 
+// marks the teardown and wakes the connections that wait in the connect backoff,
+// a connection that starts its backoff later sees the mark first
+static void client_teardown_cancel_connects (Client *client) {
+
+	__atomic_store_n (&client->teardown_requested, true, __ATOMIC_SEQ_CST);
+
+	if (client->lock) {
+		(void) pthread_mutex_lock (client->lock);
+
+		for (ListElement *le = dlist_start (client->connections); le; le = le->next) {
+			connection_wake_connect ((Connection *) le->data);
+		}
+
+		(void) pthread_mutex_unlock (client->lock);
+	}
+
+}
+
+// true when client_teardown () was called, the connections stop their connect backoff
+bool client_teardown_is_requested (const Client *client) {
+
+	return client ? __atomic_load_n (&client->teardown_requested, __ATOMIC_SEQ_CST) : false;
+
+}
+
 // returns 0 on success, 1 on error
 static u8 client_teardown_actual (Client *client) {
 
@@ -4123,6 +4358,9 @@ static u8 client_teardown_actual (Client *client) {
 		client_teardown_wait_updates (client);
 
 		client_handlers_destroy (client);
+
+		// no connection or handler can trigger an event after this
+		(void) thread_group_wait (&client->event_threads, THREAD_GROUP_WAIT_FOREVER);
 
 		// the connections were already deleted
 		dlist_delete (client->connections);
@@ -4156,6 +4394,8 @@ u8 client_teardown (Client *client) {
 
 	if (client) {
 		__atomic_store_n (&client->running, false, __ATOMIC_SEQ_CST);
+
+		client_teardown_cancel_connects (client);
 
 		retval = client_teardown_actual (client);
 	}

@@ -7,7 +7,6 @@
 
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
-#include "cerver/http/http_parser.h"
 #include "cerver/http/response.h"
 #include "cerver/http/stream.h"
 
@@ -25,14 +24,14 @@ static const size_t http_stream_last_chunk_length = sizeof (HTTP_STREAM_LAST_CHU
 #define HTTP_STREAM_CHUNKED_MAJOR			1
 #define HTTP_STREAM_CHUNKED_MINOR			1
 
+// the version of the request, a receive whose parser did not parse a request has 0.0
 static bool http_stream_is_chunked (const HttpReceive *http_receive) {
 
-	const http_parser *parser = http_receive->parser;
+	const uint8_t major = llhttp_get_http_major (&http_receive->parser);
+	const uint8_t minor = llhttp_get_http_minor (&http_receive->parser);
 
-	return parser && (
-		(parser->http_major > HTTP_STREAM_CHUNKED_MAJOR)
-		|| ((parser->http_major == HTTP_STREAM_CHUNKED_MAJOR) && (parser->http_minor >= HTTP_STREAM_CHUNKED_MINOR))
-	);
+	return (major > HTTP_STREAM_CHUNKED_MAJOR)
+		|| ((major == HTTP_STREAM_CHUNKED_MAJOR) && (minor >= HTTP_STREAM_CHUNKED_MINOR));
 
 }
 
@@ -72,7 +71,7 @@ u8 http_response_stream_begin (
 				);
 
 				// a stream whose header was not sent can not continue
-				if (retval) receive->stream.state = HTTP_STREAM_STATE_ENDED;
+				if (retval) receive->stream.state = HTTP_STREAM_STATE_FAILED;
 			}
 		}
 	}
@@ -126,9 +125,12 @@ u8 http_response_stream_write (
 
 			retval = http_response_send_pieces (http_receive, &part, 1);
 		}
+
+		if (retval) ((HttpReceive *) http_receive)->stream.state = HTTP_STREAM_STATE_FAILED;
 	}
 
-	else {
+	// the client of a failed stream is gone, it is not an error of the handler
+	else if (!http_receive || (http_receive->stream.state != HTTP_STREAM_STATE_FAILED)) {
 		cerver_log_error ("http_response_stream_write () - The stream was not started");
 	}
 
@@ -154,6 +156,8 @@ u8 http_response_stream_end (
 				part.iov_len = http_stream_last_chunk_length;
 
 				retval = http_response_send_pieces (receive, &part, 1);
+
+				if (retval) receive->stream.state = HTTP_STREAM_STATE_FAILED;
 			}
 		}
 

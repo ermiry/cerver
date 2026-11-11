@@ -19,6 +19,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include "../address.h"
+
 static Cerver *web_cerver = NULL;
 static JobQueue *job_queue = NULL;
 
@@ -135,6 +137,7 @@ int main (int argc, char **argv) {
 
 	if (web_cerver) {
 		/*** cerver configuration ***/
+		(void) cerver_set_bind_address (web_cerver, test_address ());
 		cerver_set_receive_buffer_size (web_cerver, 4096);
 		cerver_set_thpool_n_threads (web_cerver, 4);
 		cerver_set_handler_type (web_cerver, CERVER_HANDLER_TYPE_THREADS);

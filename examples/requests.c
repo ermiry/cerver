@@ -29,11 +29,13 @@ typedef struct AppData {
 
 } AppData;
 
+#define APP_MESSAGE_SIZE			128
+
 // message to be sent to the client
 typedef struct AppMessage {
 
 	unsigned int len;
-	char message[128];
+	char message[APP_MESSAGE_SIZE];
 
 } AppMessage;
 
@@ -150,7 +152,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 
 		AppMessage *app_message = (AppMessage *) malloc (sizeof (AppMessage));
 		memset (app_message, 0, sizeof (AppMessage));
-		strncpy (app_message->message, msg->str, 128);
+		(void) snprintf (app_message->message, APP_MESSAGE_SIZE, "%s", msg->str);
 		app_message->len = msg->len;
 		
 		Packet *msg_packet = packet_generate_request (PACKET_TYPE_APP, GET_MSG, app_message, sizeof (AppMessage));

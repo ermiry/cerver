@@ -728,14 +728,6 @@ void http_response_print (const HttpResponse *response) {
 
 #pragma region send
 
-static bool http_response_socket_is_blocking (const int sock_fd) {
-
-	const int flags = fcntl (sock_fd, F_GETFL, 0);
-
-	return (flags >= 0) && !(flags & O_NONBLOCK);
-
-}
-
 // every response that cerver tries to send marks the request as answered,
 // even if the client is already gone, so it is never answered twice
 static void http_response_mark_responded (const HttpReceive *http_receive) {
@@ -756,82 +748,14 @@ static time_t http_response_send_timeout (const HttpReceive *http_receive) {
 
 }
 
-static void http_response_send_deadline (
-	const HttpReceive *http_receive, struct timespec *deadline
-) {
+static void http_response_sent_bytes (
+	const HttpReceive *http_receive, const size_t bytes
+);
 
-	(void) clock_gettime (CLOCK_MONOTONIC, deadline);
-	deadline->tv_sec += http_response_send_timeout (http_receive);
-
-}
-
-// returns the milliseconds that are left until the deadline, 0 if it has expired
-static int http_response_send_remaining (const struct timespec *deadline) {
-
-	struct timespec now = { 0, 0 };
-	(void) clock_gettime (CLOCK_MONOTONIC, &now);
-
-	const long long remaining =
-		((long long) (deadline->tv_sec - now.tv_sec) * HTTP_RESPONSE_MILLISECONDS_PER_SECOND)
-		+ ((deadline->tv_nsec - now.tv_nsec) / HTTP_RESPONSE_NANOSECONDS_PER_MILLISECOND);
-
-	return (remaining > 0) ? (int) remaining : 0;
-
-}
-
-// waits until a full non blocking socket can be written again
-// returns true if it can be written before the deadline
-static bool http_response_send_wait_writable (
-	const int sock_fd, const struct timespec *deadline
-) {
-
-	bool writable = false;
-
-	int remaining = http_response_send_remaining (deadline);
-	while (remaining > 0) {
-		struct pollfd poll_fd = { .fd = sock_fd, .events = POLLOUT, .revents = 0 };
-
-		const int ready = poll (&poll_fd, 1, remaining);
-		if (ready > 0) {
-			writable = true;
-			break;
-		}
-
-		if ((ready < 0) && (errno != EINTR)) break;
-
-		remaining = http_response_send_remaining (deadline);
-	}
-
-	return writable;
-
-}
-
-// an interrupted send () is always retried,
-// a full non blocking socket buffer (EAGAIN) is retried when it can be written before the deadline
-// in a blocking socket, EAGAIN means that SO_SNDTIMEO expired without any progress
-static bool http_response_send_can_retry (
-	const int sock_fd, const int error, const struct timespec *deadline
-) {
-
-	bool retry = false;
-
-	if (error == EINTR) {
-		retry = true;
-	}
-
-	else if (
-		((error == EAGAIN) || (error == EWOULDBLOCK))
-		&& !http_response_socket_is_blocking (sock_fd)
-	) {
-		retry = http_response_send_wait_writable (sock_fd, deadline);
-	}
-
-	return retry;
-
-}
-
+// a response that could not be sent completely marks its request,
+// it is counted once as a failed response and where its client left
 static void http_response_send_failed (
-	const Socket *socket, const char *operation,
+	const HttpReceive *http_receive, const char *operation,
 	const int error, const size_t pending
 ) {
 
@@ -839,66 +763,42 @@ static void http_response_send_failed (
 	cerver_log_with_date (
 		LOG_TYPE_WARNING, LOG_TYPE_HTTP,
 		"http_response_send () - %s () failed - fd %d - errno %d (%s) - pending %zu",
-		operation, socket->sock_fd, error,
+		operation, http_receive->cr->connection->socket->sock_fd, error,
 		strerror_r (error, error_description, sizeof (error_description)),
 		pending
 	);
 
-}
-
-// skips the parts that were sent completely and moves the start of a partial one
-static void http_response_parts_advance (
-	struct iovec **parts, int *n_parts, size_t sent
-) {
-
-	while ((*n_parts > 0) && (sent >= (*parts)->iov_len)) {
-		sent -= (*parts)->iov_len;
-		*parts += 1;
-		*n_parts -= 1;
-	}
-
-	if ((*n_parts > 0) && sent) {
-		(*parts)->iov_base = ((char *) (*parts)->iov_base) + sent;
-		(*parts)->iov_len -= sent;
-	}
+	http_receive_response_failed (http_receive, error);
 
 }
 
-// sends all the parts with a single system call when the socket takes them,
-// like writev (), but with MSG_NOSIGNAL
+// sends all the parts with as few system calls as the socket takes,
+// with the send of the core (MSG_NOSIGNAL, EINTR, and poll () on a full non blocking socket
+// until the send timeout of the cerver)
 // returns 0 on success, 1 on error
 static u8 http_response_send_vector (
 	const HttpReceive *http_receive, struct iovec *parts, int n_parts
 ) {
 
-	u8 retval = 0;
-
 	const Socket *socket = http_receive->cr->connection->socket;
 
 	http_response_mark_responded (http_receive);
 
-	struct timespec deadline = { 0, 0 };
-	http_response_send_deadline (http_receive, &deadline);
+	size_t total = 0;
+	for (int i = 0; i < n_parts; i++) total += parts[i].iov_len;
 
-	while (n_parts > 0) {
-		struct msghdr message;
-		(void) memset (&message, 0, sizeof (struct msghdr));
-		message.msg_iov = parts;
-		message.msg_iovlen = (size_t) n_parts;
+	size_t sent = 0;
+	int error = 0;
+	const u8 retval = socket_send_vector (
+		socket, parts, n_parts, 0, http_response_send_timeout (http_receive),
+		&sent, &error
+	);
 
-		// MSG_NOSIGNAL: a client that reset the connection returns EPIPE instead of raising SIGPIPE
-		const ssize_t sent = sendmsg (socket->sock_fd, &message, MSG_NOSIGNAL);
-		if (sent < 0) {
-			const int error = errno;
-			if (http_response_send_can_retry (socket->sock_fd, error, &deadline)) continue;
+	if (retval) {
+		// the bytes that left before the failure are part of the response
+		http_response_sent_bytes (http_receive, sent);
 
-			http_response_send_failed (socket, "sendmsg", error, parts->iov_len);
-
-			retval = 1;
-			break;
-		}
-
-		http_response_parts_advance (&parts, &n_parts, (size_t) sent);
+		http_response_send_failed (http_receive, "sendmsg", error ? error : EPIPE, total - sent);
 	}
 
 	return retval;
@@ -923,7 +823,11 @@ static void http_response_sent_bytes (
 
 	http_receive->cr->connection->stats->total_bytes_sent += bytes;
 
-	((HttpReceive *) http_receive)->sent += bytes;
+	HttpReceive *receive = (HttpReceive *) http_receive;
+	receive->sent += bytes;
+
+	// the first bytes of the response that its handler sends start the response stage
+	if (bytes && (receive->stage == HTTP_STAGE_HANDLER)) receive->stage = HTTP_STAGE_RESPONSE;
 
 }
 
@@ -1411,6 +1315,11 @@ static u8 http_response_message_send (
 		);
 	}
 
+	// the request is logged with the status that it tried to send
+	else {
+		((HttpReceive *) http_receive)->status = message->status;
+	}
+
 	return retval;
 
 }
@@ -1578,6 +1487,7 @@ static u8 http_response_send_raw (
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent (http_receive, status, header_len + body_len);
+	else ((HttpReceive *) http_receive)->status = status;
 
 	return retval;
 
@@ -1839,7 +1749,7 @@ static u8 http_response_send_file_pipe (
 	const Socket *socket = http_receive->cr->connection->socket;
 
 	struct timespec deadline = { 0, 0 };
-	http_response_send_deadline (http_receive, &deadline);
+	socket_deadline_create (&deadline, http_response_send_timeout (http_receive));
 
 	ssize_t copied = 0;
 	do {
@@ -1851,9 +1761,9 @@ static u8 http_response_send_file_pipe (
 
 		else if (copied < 0) {
 			const int error = errno;
-			if (http_response_send_can_retry (socket->sock_fd, error, &deadline)) continue;
+			if (socket_send_can_retry (socket->sock_fd, error, &deadline)) continue;
 
-			http_response_send_failed (socket, "sendfile", error, http_response_pipe_pending (remaining));
+			http_response_send_failed (http_receive, "sendfile", error, http_response_pipe_pending (remaining));
 			retval = 1;
 		}
 	} while ((copied != 0) && remaining && !retval);

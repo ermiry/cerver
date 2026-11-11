@@ -19,6 +19,8 @@
 
 #include <cerver/utils/log.h>
 
+#include "../address.h"
+
 #define ROUTER_PORT						8080
 #define ROUTER_THREADS					4
 #define ROUTER_RECEIVE_BUFFER_SIZE		4096
@@ -184,6 +186,7 @@ int main (int argc, char **argv) {
 
 	router_cerver = cerver_create_web ("router-cerver", ROUTER_PORT, CERVER_DEFAULT_CONNECTION_QUEUE);
 	if (router_cerver) {
+		(void) cerver_set_bind_address (router_cerver, test_address ());
 		cerver_set_receive_buffer_size (router_cerver, ROUTER_RECEIVE_BUFFER_SIZE);
 		cerver_set_thpool_n_threads (router_cerver, ROUTER_THREADS);
 		cerver_set_handler_type (router_cerver, CERVER_HANDLER_TYPE_THREADS);

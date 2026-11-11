@@ -1,183 +1,247 @@
-#include <stdio.h>
+/*
+ * llhttp 9.4.3 (https://github.com/nodejs/llhttp), split and restyled for cerver
+ * the decisions of the parser after the headers and after a message,
+ * the method CONNECT is the one of cerver/http/method.h
+ *
+ * This software is licensed under the MIT License.
+ *
+ * Copyright Fedor Indutny, 2018.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the
+ * following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#include <stdbool.h>
+
+#include "cerver/http/method.h"
 
 #include "cerver/http/parser/api.h"
 #include "cerver/http/parser/helpers.h"
 #include "cerver/http/parser/llhttp.h"
 
-int llhttp_message_needs_eof (const llhttp_t *parser);
-int llhttp_should_keep_alive (const llhttp_t *parser);
+// the statuses of the responses that change how their body is read
+#define LLHTTP_STATUS_CONTINUE					100
+#define LLHTTP_STATUS_SWITCHING_PROTOCOLS		101
+#define LLHTTP_STATUS_PROCESSING				102
+#define LLHTTP_STATUS_EARLY_HINTS				103
+#define LLHTTP_STATUS_NO_CONTENT				204
+#define LLHTTP_STATUS_NOT_MODIFIED				304
+#define LLHTTP_STATUS_CLASS						100
+#define LLHTTP_STATUS_INFORMATIONAL_CLASS		1
+
+// the values that llhttp__after_headers_complete () returns to the generated parser
+#define LLHTTP_AFTER_HEADERS_NO_BODY					0
+#define LLHTTP_AFTER_HEADERS_UPGRADE					1
+#define LLHTTP_AFTER_HEADERS_CHUNKED					2
+#define LLHTTP_AFTER_HEADERS_IDENTITY					3
+#define LLHTTP_AFTER_HEADERS_IDENTITY_EOF				4
+#define LLHTTP_AFTER_HEADERS_INVALID_TRANSFER_ENCODING	5
+
+typedef const unsigned char *llhttp_span;
+
+// the prototypes are declared by the generated parser
+int llhttp__before_headers_complete (llhttp_t *parser, llhttp_span p, llhttp_span endp);
+int llhttp__after_headers_complete (llhttp_t *parser, llhttp_span p, llhttp_span endp);
+int llhttp__after_message_complete (llhttp_t *parser, llhttp_span p, llhttp_span endp);
 
 int llhttp__before_headers_complete (
-	llhttp_t *parser, const char *p, const char *endp
+	llhttp_t *parser, llhttp_span p, llhttp_span endp
 ) {
 
-	/* Set this here so that on_headers_complete() callbacks can see it */
+	(void) p;
+	(void) endp;
+
+	// set here, so the on_headers_complete () callbacks can see it
 	if ((parser->flags & F_UPGRADE) && (parser->flags & F_CONNECTION_UPGRADE)) {
-		/* For responses, "Upgrade: foo" and "Connection: upgrade" are
-		 * mandatory only when it is a 101 Switching Protocols response,
-		 * otherwise it is purely informational, to announce support.
-		 */
-		parser->upgrade = (parser->type == HTTP_REQUEST || parser->status_code == 101);
+		// for the responses, "Upgrade: foo" and "Connection: upgrade" are mandatory
+		// only in a 101 Switching Protocols response, otherwise they only announce the support
+		parser->upgrade = (uint8_t) (
+			(parser->type == HTTP_REQUEST) || (parser->status_code == LLHTTP_STATUS_SWITCHING_PROTOCOLS)
+		);
 	}
 
 	else {
-		parser->upgrade = (parser->method == HTTP_CONNECT);
+		parser->upgrade = (uint8_t) (parser->method == REQUEST_METHOD_CONNECT);
 	}
 
 	return 0;
 
 }
 
+static bool llhttp_response_without_body (const llhttp_t *parser) {
 
-/* Return values:
- * 0 - No body, `restart`, message_complete
- * 1 - CONNECT request, `restart`, message_complete, and pause
- * 2 - chunk_size_start
- * 3 - body_identity
- * 4 - body_identity_eof
- * 5 - invalid transfer-encoding for request
- */
-int llhttp__after_headers_complete (
-	llhttp_t *parser, const char *p, const char *endp
-) {
-
-	int hasBody = 0;
-
-	hasBody = parser->flags & F_CHUNKED || parser->content_length > 0;
-	if (parser->upgrade && (
-		parser->method == HTTP_CONNECT || (parser->flags & F_SKIPBODY) || !hasBody
-	)) {
-		/* Exit, the rest of the message is in a different protocol. */
-		return 1;
-	}
-
-	if (parser->flags & F_SKIPBODY) {
-		return 0;
-	}
-
-	else if (parser->flags & F_CHUNKED) {
-		/* chunked encoding - ignore Content-Length header, prepare for a chunk */
-		return 2;
-	}
-
-	else if (parser->flags & F_TRANSFER_ENCODING) {
-		if (
-			(parser->type == HTTP_REQUEST)
-			&& ((parser->lenient_flags & LENIENT_CHUNKED_LENGTH) == 0)
-		) {
-			/* RFC 7230 3.3.3 */
-
-			/* If a Transfer-Encoding header field
-			 * is present in a request and the chunked transfer coding is not
-			 * the final encoding, the message body length cannot be determined
-			 * reliably; the server MUST respond with the 400 (Bad Request)
-			 * status code and then close the connection.
-			 */
-			return 5;
-		}
-
-		else {
-			/* RFC 7230 3.3.3 */
-
-			/* If a Transfer-Encoding header field is present in a response and
-			 * the chunked transfer coding is not the final encoding, the
-			 * message body length is determined by reading the connection until
-			 * it is closed by the server.
-			 */
-			return 4;
-		}
-	}
-
-	else {
-		if (!(parser->flags & F_CONTENT_LENGTH)) {
-			if (!llhttp_message_needs_eof (parser)) {
-				/* Assume content-length 0 - read the next */
-				return 0;
-			}
-
-			else {
-				/* Read body until EOF */
-				return 4;
-			}
-		}
-
-		else if (parser->content_length == 0) {
-			/* Content-Length header given but zero: Content-Length: 0\r\n */
-			return 0;
-		}
-
-		else {
-			/* Content-Length header given and non-zero */
-			return 3;
-		}
-	}
+	return (parser->type == HTTP_RESPONSE) && (
+		(parser->status_code == LLHTTP_STATUS_PROCESSING)
+		|| (parser->status_code == LLHTTP_STATUS_EARLY_HINTS)
+		|| (parser->status_code == LLHTTP_STATUS_NO_CONTENT)
+		|| (parser->status_code == LLHTTP_STATUS_NOT_MODIFIED)
+	);
 
 }
 
+// RFC 7230 3.3.3: a request whose Transfer-Encoding does not end with chunked
+// can not tell the length of its body, it is answered with 400 and closed,
+// a response like that is read until the connection is closed
+static int llhttp_after_headers_transfer_encoding (const llhttp_t *parser) {
 
-int llhttp__after_message_complete (
-	llhttp_t *parser, const char *p, const char *endp
+	return (
+		(parser->type == HTTP_REQUEST)
+		&& !(parser->lenient_flags & LENIENT_CHUNKED_LENGTH)
+		&& !(parser->lenient_flags & LENIENT_TRANSFER_ENCODING)
+	) ? LLHTTP_AFTER_HEADERS_INVALID_TRANSFER_ENCODING : LLHTTP_AFTER_HEADERS_IDENTITY_EOF;
+
+}
+
+static int llhttp_after_headers_identity (const llhttp_t *parser) {
+
+	int retval = LLHTTP_AFTER_HEADERS_IDENTITY;
+
+	// without a Content-Length, a body is read until the connection is closed if the message needs it
+	if (!(parser->flags & F_CONTENT_LENGTH)) {
+		retval = llhttp_message_needs_eof (parser) ?
+			LLHTTP_AFTER_HEADERS_IDENTITY_EOF : LLHTTP_AFTER_HEADERS_NO_BODY;
+	}
+
+	// "Content-Length: 0"
+	else if (parser->content_length == 0) {
+		retval = LLHTTP_AFTER_HEADERS_NO_BODY;
+	}
+
+	return retval;
+
+}
+
+// returns how the body is read:
+// 0 - no body, restart, message complete
+// 1 - CONNECT request, restart, message complete and pause
+// 2 - chunk size start
+// 3 - body identity
+// 4 - body identity until EOF
+// 5 - invalid transfer encoding for a request
+int llhttp__after_headers_complete (
+	llhttp_t *parser, llhttp_span p, llhttp_span endp
 ) {
 
-	int should_keep_alive = 0;
+	(void) p;
+	(void) endp;
 
-	should_keep_alive = llhttp_should_keep_alive (parser);
+	const bool has_body = (parser->flags & F_CHUNKED) || (parser->content_length > 0);
+
+	int retval = LLHTTP_AFTER_HEADERS_NO_BODY;
+
+	// the rest of the message is in a different protocol
+	if (
+		(parser->upgrade && ((parser->method == REQUEST_METHOD_CONNECT) || (parser->flags & F_SKIPBODY) || !has_body))
+		|| ((parser->type == HTTP_RESPONSE) && (parser->status_code == LLHTTP_STATUS_SWITCHING_PROTOCOLS))
+	) {
+		retval = LLHTTP_AFTER_HEADERS_UPGRADE;
+	}
+
+	// no body, the message is complete
+	else if ((parser->type == HTTP_RESPONSE) && (parser->status_code == LLHTTP_STATUS_CONTINUE)) {
+		retval = LLHTTP_AFTER_HEADERS_NO_BODY;
+	}
+
+	// a response to a HEAD request or a response without body (RFC 2616 section 4.4)
+	else if ((parser->flags & F_SKIPBODY) || llhttp_response_without_body (parser)) {
+		retval = LLHTTP_AFTER_HEADERS_NO_BODY;
+	}
+
+	// the Content-Length is ignored, the chunks are read
+	else if (parser->flags & F_CHUNKED) {
+		retval = LLHTTP_AFTER_HEADERS_CHUNKED;
+	}
+
+	else if (parser->flags & F_TRANSFER_ENCODING) {
+		retval = llhttp_after_headers_transfer_encoding (parser);
+	}
+
+	else {
+		retval = llhttp_after_headers_identity (parser);
+	}
+
+	return retval;
+
+}
+
+int llhttp__after_message_complete (
+	llhttp_t *parser, llhttp_span p, llhttp_span endp
+) {
+
+	(void) p;
+	(void) endp;
+
+	const int should_keep_alive = llhttp_should_keep_alive (parser);
+
 	parser->finish = HTTP_FINISH_SAFE;
 	parser->flags = 0;
 
-	/* NOTE: this is ignored in loose parsing mode */
+	// ignored in loose parsing mode
 	return should_keep_alive;
 
 }
 
 int llhttp_message_needs_eof (const llhttp_t *parser) {
 
+	int retval = 1;
+
 	if (parser->type == HTTP_REQUEST) {
-		return 0;
+		retval = 0;
 	}
 
-	/* See RFC 2616 section 4.4 */
-	if (
-		((parser->status_code / 100) == 1)	/* 1xx e.g. Continue */
-		|| (parser->status_code == 204)		/* No Content */
-		|| (parser->status_code == 304)		/* Not Modified */
-		|| (parser->flags & F_SKIPBODY)		/* response to a HEAD request */
+	// 1xx, 204, 304 and the responses to a HEAD request (RFC 2616 section 4.4)
+	else if (
+		((parser->status_code / LLHTTP_STATUS_CLASS) == LLHTTP_STATUS_INFORMATIONAL_CLASS)
+		|| (parser->status_code == LLHTTP_STATUS_NO_CONTENT)
+		|| (parser->status_code == LLHTTP_STATUS_NOT_MODIFIED)
+		|| (parser->flags & F_SKIPBODY)
 	) {
-		return 0;
+		retval = 0;
 	}
 
-	/* RFC 7230 3.3.3, see `llhttp__after_headers_complete` */
-	if (
-		(parser->flags & F_TRANSFER_ENCODING)
-		&& ((parser->flags & F_CHUNKED) == 0)
-	) {
-		return 1;
+	// RFC 7230 3.3.3, see llhttp__after_headers_complete ()
+	else if ((parser->flags & F_TRANSFER_ENCODING) && !(parser->flags & F_CHUNKED)) {
+		retval = 1;
 	}
 
-	if (parser->flags & (F_CHUNKED | F_CONTENT_LENGTH)) {
-		return 0;
+	else if (parser->flags & (F_CHUNKED | F_CONTENT_LENGTH)) {
+		retval = 0;
 	}
 
-	return 1;
+	return retval;
 
 }
 
 int llhttp_should_keep_alive (const llhttp_t *parser) {
 
+	int retval = !llhttp_message_needs_eof (parser);
+
+	// HTTP/1.1
 	if ((parser->http_major > 0) && (parser->http_minor > 0)) {
-		/* HTTP/1.1 */
-		if (parser->flags & F_CONNECTION_CLOSE) {
-			return 0;
-		}
+		if (parser->flags & F_CONNECTION_CLOSE) retval = 0;
 	}
 
-	else {
-		/* HTTP/1.0 or earlier */
-		if (!(parser->flags & F_CONNECTION_KEEP_ALIVE)) {
-			return 0;
-		}
+	// HTTP/1.0 or earlier
+	else if (!(parser->flags & F_CONNECTION_KEEP_ALIVE)) {
+		retval = 0;
 	}
 
-	return !llhttp_message_needs_eof (parser);
+	return retval;
 
 }

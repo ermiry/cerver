@@ -188,10 +188,10 @@ void cerver_event_trigger (
 		if (event) {
 			// trigger the action
 			if (event->work) {
+				// the thread is counted, so the cerver teardown waits for it
 				if (event->create_thread) {
-					pthread_t thread_id = 0;
-					(void) thread_create_detachable (
-						&thread_id,
+					(void) thread_group_create (
+						(ThreadGroup *) &cerver->event_threads,
 						event->work,
 						cerver_event_data_create (
 							cerver,

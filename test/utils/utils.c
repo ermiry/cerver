@@ -23,6 +23,8 @@ int main (int argc, char **argv) {
 
 	utils_tests_serializer ();
 
+	utils_tests_log ();
+
 	(void) printf ("\nDone with UTILS tests!\n\n");
 
 	return 0;

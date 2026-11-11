@@ -12,11 +12,14 @@
 
 #include "curl.h"
 
+#include "../../address.h"
+
 // the client of test/web/features: standalone, against the cerver,
 // and behind nginx (test/nginx), where the request id is the one of nginx,
 // the peer is nginx and the client's address is forwarded by it
 
-#define FEATURES_CLIENT_DEFAULT_ADDRESS		"http://127.0.0.1:8080"
+// standalone the client connects to the cerver of the pair (web_test_address ())
+#define FEATURES_CLIENT_SCHEME				"http://"
 
 // the address of the cerver or of nginx
 #define FEATURES_CLIENT_ADDRESS_VARIABLE	"FEATURES_ADDRESS"
@@ -43,7 +46,8 @@
 static const char *features_client_upload = { "a chunked body that arrives in pieces through the proxy" };
 static const size_t features_client_upload_piece = 7;
 
-static const char *features_client_loopback = { "127.0.0.1" };
+// the address that the client connects from, the one of the pair (CERVER_TEST_ADDRESS)
+static const char *features_client_loopback = NULL;
 static const char *features_client_spoofed = { "203.0.113.50" };
 
 typedef struct FeaturesClientBuffer {
@@ -56,7 +60,8 @@ typedef struct FeaturesClientBuffer {
 static FeaturesClientBuffer features_body;
 static FeaturesClientBuffer features_headers;
 
-static const char *features_address = FEATURES_CLIENT_DEFAULT_ADDRESS;
+static char features_default_address[FEATURES_CLIENT_URL_SIZE] = { 0 };
+static const char *features_address = features_default_address;
 static const char *features_unbuffered = "";
 static bool features_proxy = false;
 
@@ -486,6 +491,14 @@ static unsigned int features_client_metrics (CURL *curl) {
 }
 
 static void features_client_environment (void) {
+
+	char host[WEB_TEST_ADDRESS_SIZE] = { 0 };
+	web_test_address (host, NULL);
+	(void) snprintf (
+		features_default_address, FEATURES_CLIENT_URL_SIZE, "%s%s", FEATURES_CLIENT_SCHEME, host
+	);
+
+	features_client_loopback = test_address ();
 
 	const char *address = getenv (FEATURES_CLIENT_ADDRESS_VARIABLE);
 	if (address && address[0]) features_address = address;

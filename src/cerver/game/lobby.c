@@ -35,6 +35,9 @@ void lobby_poll (void *ptr);
 
 void *lobby_default_id_generator (const void *data_ptr) {
 
+	// the default id does not depend on the data
+	(void) data_ptr;
+
 	time_t rawtime = time (NULL);
 	struct tm *timeinfo = localtime (&rawtime);
 	// we generate the string timestamp in order to generate the lobby id
@@ -117,12 +120,12 @@ void lobby_stats_print (Lobby *lobby) {
 			printf ("\nLobby's %s stats: ", lobby->id->str);
 			printf ("\nThreshold time:            %ld\n", lobby->stats->threshold_time);
 
-			printf ("Total packets received:        %ld\n", lobby->stats->n_packets_received);
-			printf ("Total receives done:           %ld\n", lobby->stats->n_receives_done);
-			printf ("Total bytes received:          %ld\n\n", lobby->stats->bytes_received);
+			printf ("Total packets received:        %lu\n", lobby->stats->n_packets_received);
+			printf ("Total receives done:           %lu\n", lobby->stats->n_receives_done);
+			printf ("Total bytes received:          %lu\n\n", lobby->stats->bytes_received);
 
-			printf ("N packets sent:                %ld\n", lobby->stats->n_packets_sent);
-			printf ("Total bytes sent:              %ld\n", lobby->stats->bytes_sent);
+			printf ("N packets sent:                %lu\n", lobby->stats->n_packets_sent);
+			printf ("Total bytes sent:              %lu\n", lobby->stats->bytes_sent);
 
 			printf ("\nReceived packets:\n");
 			packets_per_type_print (lobby->stats->received_packets);
@@ -351,13 +354,15 @@ int lobby_teardown (GameCerver *game_cerver, Lobby *lobby) {
 		lobby->running = false;
 		lobby->in_game = false;
 
-		// call the game type end method
-		if (lobby->game_type->end) lobby->game_type->end (lobby);
+		// call the game type end method, a lobby can have no game type
+		if (lobby->game_type && lobby->game_type->end) lobby->game_type->end (lobby);
 
-		// destroy the lobby game data
-		if (lobby->game_type) {
+		// destroy the lobby game data, lobby_delete () deleted it again before
+		if (lobby->game_data) {
 			if (lobby->game_data_delete) lobby->game_data_delete (lobby->game_data);
 			else free (lobby->game_data);
+
+			lobby->game_data = NULL;
 		}
 
 		// unregister the lobby from the game cerver
@@ -668,6 +673,12 @@ Lobby *lobby_create (Cerver *cerver, Client *client,
 					}
 				}
 
+				// the custom handler was ignored before
+				else if (custom_handler) {
+					lobby->handler = custom_handler;
+					lobby->default_handler = false;
+				}
+
 				// make the client that make the request, the lobby owner
 				Player *owner = player_new ();
 				if (owner) {
@@ -799,26 +810,19 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 		// check that the player is in the lobby
 		Player *found = player_get_from_lobby (lobby, player);
 		if (found) {
-			// remove the player from the lobby
-			player_unregister_from_lobby (lobby, player);
+			// the last player destroys the lobby when it is unregistered,
+			// so the lobby can not be used after it
+			const bool last = (lobby->n_current_players <= 1);
+			const bool owner = (lobby->owner == player);
 
-			// check if there are players left inside the lobby
-			if (lobby->n_current_players <= 0) {
-				// destroy the lobby
-				#ifdef CERVER_DEBUG
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Destroying lobby %s -- it is empty.",
-					lobby->id->str
-				);
-				#endif
-				lobby_delete (lobby);
-			}
+			// remove the player from the lobby
+			(void) player_unregister_from_lobby (lobby, player);
 
 			// check if the player was the owner
-			else if (!str_compare (lobby->owner->id, player->id)) {
+			if (!last && owner) {
 				// get a new owner
-				Player *new_owner = (Player *) (dlist_start (lobby->players))->data;
+				ListElement *start = dlist_start (lobby->players);
+				Player *new_owner = start ? (Player *) start->data : NULL;
 				if (new_owner) {
 					lobby->owner = new_owner;
 					#ifdef CERVER_DEBUG
@@ -848,6 +852,26 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 	}
 
 	return retval;
+
+}
+
+// the lobby handler & update are actions that return void,
+// so they are called from threads with the signature that pthread expects
+static void *lobby_handler_thread (void *cerver_lobby_ptr) {
+
+	CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+	cerver_lobby->lobby->handler (cerver_lobby_ptr);
+
+	return NULL;
+
+}
+
+static void *lobby_update_thread (void *cerver_lobby_ptr) {
+
+	CerverLobby *cerver_lobby = (CerverLobby *) cerver_lobby_ptr;
+	cerver_lobby->lobby->update (cerver_lobby_ptr);
+
+	return NULL;
 
 }
 
@@ -882,7 +906,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 			if (thread_create_detachable (
 				&lobby->handler_thread_id,
-				(void *(*)(void *)) lobby->handler,
+				lobby_handler_thread,
 				cerver_lobby
 			)) {
 				cerver_log_error (
@@ -921,7 +945,7 @@ u8 lobby_start (Cerver *cerver, Lobby *lobby) {
 
 			if (thread_create_detachable (
 				&lobby->update_thread_id,
-				(void *(*)(void *)) lobby->update,
+				lobby_update_thread,
 				cerver_lobby
 			)) {
 				cerver_log_error (
@@ -974,8 +998,8 @@ SLobby *lobby_serialize (Lobby *lobby) {
 	if (lobby) {
 		slobby = slobby_new ();
 		if (slobby) {
-			strncpy (slobby->id.str, lobby->id->str, 64);
-			slobby->id.len = (lobby->id->len >= 64) ? 64 : lobby->id->len;
+			(void) snprintf (slobby->id.str, sizeof (slobby->id.str), "%s", lobby->id->str);
+			slobby->id.len = (u16) strlen (slobby->id.str);
 			slobby->creation_timestamp = lobby->creation_time_stamp;
 			slobby->in_game = lobby->in_game;
 			slobby->running = lobby->running;

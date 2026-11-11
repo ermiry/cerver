@@ -8,21 +8,16 @@
 #include "cerver/collections/dlist.h"
 
 #include "cerver/config.h"
+#include "cerver/network.h"
 
 #include "cerver/http/content.h"
 #include "cerver/http/custom.h"
 #include "cerver/http/headers.h"
+#include "cerver/http/method.h"
 #include "cerver/http/multipart.h"
 #include "cerver/http/utils.h"
 
 #define REQUEST_DIRNAME_SIZE			512
-
-// the values of the methods are the ones of the HTTP parser (method.h),
-// any method outside REQUEST_METHOD_MAP is undefined
-#define REQUEST_METHOD_UNDEFINED		34
-
-// the size of the tables indexed by a request method (the highest value + 1)
-#define REQUEST_METHOD_SIZE				29
 
 // the arena of a request that was not created in the arena of its thread
 #define REQUEST_ARENA_CHUNK_SIZE		(1 << 10)
@@ -34,43 +29,14 @@
 // the length of a UUID v4, "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
 #define HTTP_REQUEST_ID_UUID_LENGTH		36
 
-// the longest client address (an IPv6) and its '\0', the same as HTTP_CLIENT_IP_SIZE
-#define HTTP_REQUEST_CLIENT_IP_SIZE		46
+// the longest client address (an IPv6 with its zone) and its '\0', the same as HTTP_CLIENT_IP_SIZE
+#define HTTP_REQUEST_CLIENT_IP_SIZE		NETWORK_ADDRESS_STRING_SIZE
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 struct Arena;
-
-#define REQUEST_METHOD_MAP(XX)			\
-	XX(0,  DELETE,      DELETE)			\
-	XX(1,  GET,         GET)			\
-	XX(2,  HEAD,        HEAD)			\
-	XX(3,  POST,        POST)			\
-	XX(4,  PUT,         PUT)			\
-	XX(5,  CONNECT,     CONNECT)		\
-	XX(6,  OPTIONS,     OPTIONS)		\
-	XX(7,  TRACE,       TRACE)			\
-	XX(28, PATCH,       PATCH)
-
-typedef enum RequestMethod {
-
-	#define XX(num, name, string) REQUEST_METHOD_##name = num,
-	REQUEST_METHOD_MAP(XX)
-	#undef XX
-
-} RequestMethod;
-
-// returns a string version of the HTTP request method
-CERVER_PUBLIC const char *http_request_method_str (
-	const RequestMethod request_method
-);
-
-// returns true if the method is one of REQUEST_METHOD_MAP
-CERVER_PUBLIC bool http_request_method_is_valid (
-	const RequestMethod request_method
-);
 
 // a route param is a slice of the request's url,
 // its percent-decoded value is created in the request's arena when it is requested

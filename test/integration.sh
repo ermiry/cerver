@@ -19,7 +19,16 @@ PAIRS=(
 	cerver/auth
 	cerver/sessions
 	cerver/threads
+	cerver/queue
+	cerver/udp
 	handler
+	balancer/round_robin
+	balancer/handler_id
+	balancer/reconnect
+	balancer/large
+	balancer/unavailable
+	balancer/concurrent
+	balancer/abandon
 	web/web
 	web/json
 	web/auth
@@ -33,6 +42,8 @@ PAIRS=(
 	web/router
 	web/features
 )
+
+ADDRESSES=(${ADDRESSES:-127.0.0.1 ::1})
 
 TAG=test
 
@@ -59,6 +70,7 @@ RUN_FLAGS=(
 	--rm
 	--cap-add=SYS_PTRACE
 	--security-opt seccomp=unconfined
+	--sysctl net.ipv6.conf.all.disable_ipv6=0
 	-e CLIENT_SECONDS="$CLIENT_SECONDS"
 	-e ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:abort_on_error=0}"
 	-e UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}"
@@ -98,18 +110,25 @@ if [ "$COVERAGE" -ne 0 ]; then
 fi
 
 FAILED=()
-for pair in "${PAIRS[@]}"; do
-	echo "Integration test $pair..."
-	if ! $DOCKER run "${RUN_FLAGS[@]}" "$IMAGE" bash test/pair.sh "$pair"; then
-		FAILED+=("$pair")
-	fi
+RUNS=0
+for address in "${ADDRESSES[@]}"; do
+	for pair in "${PAIRS[@]}"; do
+		echo "Integration test $pair in $address..."
+		RUNS=$(( RUNS + 1 ))
+		if ! $DOCKER run "${RUN_FLAGS[@]}" \
+			--add-host "service-1:$address" --add-host "service-2:$address" \
+			-e CERVER_TEST_ADDRESS="$address" \
+			"$IMAGE" bash test/pair.sh "$pair"; then
+			FAILED+=("$pair@$address")
+		fi
+	done
 done
 
 if [ "$COVERAGE" -ne 0 ]; then
 	coverage_report
 fi
 
-printf "\n%d pairs - %d failed\n" "${#PAIRS[@]}" "${#FAILED[@]}"
+printf "\n%d pairs - %d failed\n" "$RUNS" "${#FAILED[@]}"
 
 if [ ${#FAILED[@]} -gt 0 ]; then
 	printf "failed: %s\n" "${FAILED[*]}"
