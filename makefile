@@ -469,12 +469,12 @@ coverage: coverage-init test-coverage
 $(BUILDDIR)/%.$(SRCEXT).$(COVEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p ./$(COVDIR)/$(dir $<)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(COVDIR)/$<.gcov
+	if [ -f $(notdir $@) ]; then mv $(notdir $@) ./$(COVDIR)/$<.gcov; fi
 
 # get tests coverage reports
 $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(TESTCOVDIR)
+	if [ -f $(notdir $@) ]; then mv $(notdir $@) ./$(TESTCOVDIR); fi
 
 # benchmarks
 BENCHDIR	:= benchmarks
