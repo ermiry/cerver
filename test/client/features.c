@@ -57,6 +57,8 @@
 #define FEATURES_RECEIVE_FLAGS			0
 
 #define FEATURES_AUTH_MAX_TRIES			2
+
+#define FEATURES_PING_DATA_SIZE			64
 #define FEATURES_USERNAME				"ermiry"
 #define FEATURES_PASSWORD				"049ec1af7c1332193d602986f2fdad5b4d1c2ff90e5cdc65388c794c1f10226b"
 
@@ -85,6 +87,7 @@ static unsigned int failed_events = 0;
 
 static unsigned int success_auth_events = 0;
 static unsigned int new_connection_events = 0;
+static unsigned int failed_auth_events = 0;
 
 static unsigned int large_packets = 0;
 
@@ -100,6 +103,7 @@ static void features_counters_reset (void) {
 
 	success_auth_events = 0;
 	new_connection_events = 0;
+	failed_auth_events = 0;
 
 }
 
@@ -190,6 +194,12 @@ static void features_cerver_sessions (Cerver *cerver) {
 	(void) cerver_event_register (
 		cerver, CERVER_EVENT_CLIENT_NEW_CONNECTION,
 		features_cerver_event, &new_connection_events, NULL,
+		false, false
+	);
+
+	(void) cerver_event_register (
+		cerver, CERVER_EVENT_CLIENT_FAILED_AUTH,
+		features_cerver_event, &failed_auth_events, NULL,
 		false, false
 	);
 
@@ -379,7 +389,7 @@ static void test_features_states (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -431,7 +441,7 @@ static void test_features_connect_to_cerver_async (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -463,7 +473,7 @@ static void test_features_send_queue (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -518,7 +528,7 @@ static void test_features_reconnect (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -565,7 +575,7 @@ static void test_features_reconnect_address (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features.bind_address = FEATURES_ADDRESS;
 	features_cerver_start (&features, port);
 
@@ -610,7 +620,7 @@ static void test_features_reconnect_request (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -643,7 +653,7 @@ static void test_features_reconnect_end (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -674,12 +684,12 @@ static void test_features_packet_init (void) {
 
 	test_check_int_eq (ping.packet_type, PACKET_TYPE_TEST, NULL);
 	test_check_int_eq (ping.header.packet_type, PACKET_TYPE_TEST, NULL);
-	test_check_unsigned_eq (ping.header.packet_size, sizeof (PacketHeader), NULL);
+	test_check_unsigned_eq (ping.header.packet_size, PACKET_HEADER_SIZE, NULL);
 	test_check_unsigned_eq (ping.header.request_type, 0, NULL);
 	test_check_unsigned_eq (ping.header.version.protocol_id, local.protocol_id, NULL);
 	test_check_unsigned_eq (ping.header.version.protocol_version.major, local.protocol_version.major, NULL);
-	test_check_ptr_eq (ping.packet, &ping.header);
-	test_check_unsigned_eq (ping.packet_size, sizeof (PacketHeader), NULL);
+	test_check_ptr_eq (ping.packet, ping.encoded_header);
+	test_check_unsigned_eq (ping.packet_size, PACKET_HEADER_SIZE, NULL);
 	test_check_bool_eq (ping.packet_ref, true, NULL);
 
 	Packet request;
@@ -698,7 +708,7 @@ static void test_features_packet_init_send (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -730,6 +740,48 @@ static void test_features_packet_init_send (void) {
 
 }
 
+// the answer to a test packet with data is only its header, and it says so,
+// it used to announce the data that it did not send, and the client waited for it
+static void test_features_ping_with_data (void) {
+
+	features_counters_reset ();
+
+	const u16 port = features_port++;
+
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
+	features_cerver_start (&features, port);
+
+	Client *client = features_client_create ();
+	Connection *connection = features_connection_create (client, port);
+
+	test_check_unsigned_eq (client_connect_to_cerver (client, connection), 0, NULL);
+
+	char data[FEATURES_PING_DATA_SIZE] = { 0 };
+	Packet *ping = packet_generate_request (PACKET_TYPE_TEST, 0, data, FEATURES_PING_DATA_SIZE);
+	test_check_ptr (ping);
+
+	test_check_unsigned_eq (client_request_to_cerver (client, connection, ping), 0, NULL);
+	test_check_unsigned_eq (
+		CERVER_STATS_GET (client->stats->received_packets->n_test_packets), 1, NULL
+	);
+
+	packet_delete (ping);
+
+	test_check_int_eq (client_connection_start (client, connection), 0, NULL);
+
+	Packet request;
+	packet_init_request (&request, PACKET_TYPE_APP, FEATURES_REQUEST_ECHO);
+	packet_set_network_values (&request, NULL, client, connection, NULL);
+	test_check_unsigned_eq (packet_send (&request, 0, NULL, false), 0, NULL);
+
+	features_check_echoes (1);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
+	features_cerver_stop (&features);
+
+}
+
 // a packet bigger than the socket buffers in a non blocking socket
 // waits for space until the cerver reads it, instead of failing with EAGAIN
 static void test_features_large_packet (void) {
@@ -738,7 +790,7 @@ static void test_features_large_packet (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -795,7 +847,7 @@ static void test_features_sessions (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start_with (&features, port, true);
 
 	// the first connection authenticates with the credentials
@@ -820,13 +872,11 @@ static void test_features_sessions (void) {
 	test_check_unsigned_eq (test_wait_counter (&success_auth_events, 1, TEST_WAIT_SECONDS), 1, NULL);
 
 	// the second connection authenticates with the token of the first one
-	SToken *token = (SToken *) calloc (1, sizeof (SToken));
-	test_check_ptr (token);
-	(void) snprintf (token->token, TOKEN_SIZE, "%s", first->session_id->str);
-
 	Client *second = features_client_create ();
 	Connection *second_connection = features_connection_create (second, port);
-	connection_set_auth_data (second_connection, token, sizeof (SToken), free, false);
+	test_check_unsigned_eq (
+		connection_set_auth_token (second_connection, first->session_id->str, false), 0, NULL
+	);
 
 	test_check_int_eq (client_connect_and_start (second, second_connection), 0, NULL);
 
@@ -842,6 +892,54 @@ static void test_features_sessions (void) {
 
 	test_check_unsigned_eq (client_teardown (second), 0, NULL);
 	test_check_unsigned_eq (client_teardown (first), 0, NULL);
+
+	features_cerver_stop (&features);
+
+}
+
+// a cerver with an auth schema takes the credentials as an object of it,
+// the bytes of the same credentials are not an object and fail the auth
+static void test_features_auth_schema (void) {
+
+	client_success_auth_events = 0;
+
+	features_counters_reset ();
+
+	const u16 port = features_port++;
+
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
+	features_cerver_start_with (&features, port, true);
+	cerver_set_auth_schema (features.cerver, &credentials_schema);
+
+	Credentials *credentials = credentials_new (FEATURES_USERNAME, FEATURES_PASSWORD);
+	test_check_ptr (credentials);
+
+	Client *object_client = features_client_create ();
+	Connection *object_connection = features_connection_create (object_client, port);
+	test_check_unsigned_eq (
+		connection_set_auth_object (object_connection, &credentials_schema, credentials, false), 0, NULL
+	);
+
+	(void) client_event_register (
+		object_client, CLIENT_EVENT_SUCCESS_AUTH,
+		features_client_event, &client_success_auth_events, NULL,
+		false, false
+	);
+
+	test_check_int_eq (client_connect_and_start (object_client, object_connection), 0, NULL);
+	test_check (features_session_received (object_client), "the object credentials did not authenticate");
+	test_check_unsigned_eq (test_wait_counter (&success_auth_events, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	Client *bytes_client = features_client_create ();
+	Connection *bytes_connection = features_connection_create (bytes_client, port);
+	connection_set_auth_data (bytes_connection, credentials, sizeof (Credentials), credentials_delete, false);
+
+	test_check_int_eq (client_connect_and_start (bytes_client, bytes_connection), 0, NULL);
+	test_check_unsigned_eq (test_wait_counter (&failed_auth_events, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_unsigned_eq (success_auth_events, 1, NULL);
+
+	test_check_unsigned_eq (client_teardown (bytes_client), 0, NULL);
+	test_check_unsigned_eq (client_teardown (object_client), 0, NULL);
 
 	features_cerver_stop (&features);
 
@@ -874,10 +972,12 @@ int main (int argc, char **argv) {
 
 	test_features_packet_init ();
 	test_features_packet_init_send ();
+	test_features_ping_with_data ();
 
 	test_features_large_packet ();
 
 	test_features_sessions ();
+	test_features_auth_schema ();
 
 	(void) printf ("Done with CLIENT features tests!\n\n");
 
