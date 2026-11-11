@@ -22,6 +22,33 @@ jobs:
           SANITIZER: thread
         run: bash test/integration.sh
 
+  units-thread:
+    name: Cerver in process tests with thread sanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Routing
+        env:
+          SANITIZER: thread
+        run: bash test/repeat.sh test/bin/routing 20
+
+      - name: Game
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 20
+
+      - name: Game pair
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 20
+
   repeat:
     name: Cerver flaky hunter
     runs-on: ubuntu-latest
@@ -41,6 +68,27 @@ jobs:
         env:
           BUILD: 0
         run: bash test/repeat.sh test/bin/cerver/core 50
+
+      - name: Cerver UDP peers
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/peers 100
+
+      - name: Game
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 50
+
+      - name: Game pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 50
+
+      - name: Balancer reconnect pair in IPv6
+        env:
+          BUILD: 0
+          CERVER_TEST_ADDRESS: '::1'
+        run: bash test/repeat.sh balancer/reconnect 50
 
       - name: HTTP
         env:
