@@ -7,7 +7,6 @@
 
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
-#include "cerver/http/http_parser.h"
 #include "cerver/http/response.h"
 #include "cerver/http/stream.h"
 
@@ -25,14 +24,14 @@ static const size_t http_stream_last_chunk_length = sizeof (HTTP_STREAM_LAST_CHU
 #define HTTP_STREAM_CHUNKED_MAJOR			1
 #define HTTP_STREAM_CHUNKED_MINOR			1
 
+// the version of the request, a receive whose parser did not parse a request has 0.0
 static bool http_stream_is_chunked (const HttpReceive *http_receive) {
 
-	const http_parser *parser = http_receive->parser;
+	const uint8_t major = llhttp_get_http_major (&http_receive->parser);
+	const uint8_t minor = llhttp_get_http_minor (&http_receive->parser);
 
-	return parser && (
-		(parser->http_major > HTTP_STREAM_CHUNKED_MAJOR)
-		|| ((parser->http_major == HTTP_STREAM_CHUNKED_MAJOR) && (parser->http_minor >= HTTP_STREAM_CHUNKED_MINOR))
-	);
+	return (major > HTTP_STREAM_CHUNKED_MAJOR)
+		|| ((major == HTTP_STREAM_CHUNKED_MAJOR) && (minor >= HTTP_STREAM_CHUNKED_MINOR));
 
 }
 

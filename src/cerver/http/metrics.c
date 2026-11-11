@@ -61,7 +61,7 @@ typedef struct HttpMetricsRequests {
 
 static const HttpMetricsRequests http_metrics_requests[] = {
 	{
-		"cerver_http_requests_incompleted_total", "The requests that http_parser could not parse.",
+		"cerver_http_requests_incompleted_total", "The requests that the parser could not parse.",
 		offsetof (HttpCerver, n_incompleted_requests)
 	},
 	{

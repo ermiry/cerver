@@ -2289,11 +2289,14 @@ static void cerver_receive_http_log_rejected (
 	char client[CERVER_RECEIVE_HTTP_LOG_CLIENT_SIZE] = { 0 };
 	cerver_receive_http_log_client (cr, http_receive, client);
 
+	// the method that the parser found, the request was rejected before its headers were complete
+	const uint8_t method = llhttp_get_method (&http_receive->parser);
+
 	cerver_log_with_date (
 		LOG_TYPE_NONE, LOG_TYPE_NONE,
 		"%s -> [%s] %s - %zu -> %fs -> %s -> %d - %zu%s%s",
 		client,
-		http_request_method_str ((RequestMethod) http_receive->parser->method),
+		http_request_method_str ((RequestMethod) method),
 		path,
 		total_received,
 		process_time,
@@ -2306,7 +2309,7 @@ static void cerver_receive_http_log_rejected (
 }
 
 // a request that did not complete: the client left (aborted), it stopped sending
-// until a timeout ended it (vanished), or http_parser could not parse it (incompleted)
+// until a timeout ended it (vanished), or the parser could not parse it (incompleted)
 // a request whose response failed was already counted where its client left
 static void cerver_receive_http_count_incomplete (const HttpReceive *http_receive) {
 
@@ -2499,7 +2502,7 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 				http_stage_string (http_receive->stage),
 				total_received, diagnostics.n_recvs,
 				diagnostics.last_rc, diagnostics.last_errno,
-				http_errno_name (HTTP_PARSER_ERRNO (http_receive->parser)),
+				llhttp_errno_name (llhttp_get_errno (&http_receive->parser)),
 				cerver_is_running (cr->cerver), process_time
 			);
 
