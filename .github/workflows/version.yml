@@ -20,7 +20,7 @@ jobs:
     container: gcc:16.2
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: gcc make
         run: make
