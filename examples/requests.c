@@ -12,6 +12,8 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -246,6 +248,8 @@ int main (void) {
 
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 		
+		app_cerver_events_register (my_cerver);
+
 		if (!cerver_start (my_cerver)) {
 			finish ();
 		}

@@ -15,6 +15,7 @@
 #include <cerver/utils/utils.h>
 
 #include <app/app.h>
+#include <app/events.h>
 #include <app/handler.h>
 
 #define SERVICE_DEFAULT_PORT			7000
@@ -234,6 +235,8 @@ int main (int argc, char **argv) {
 		cerver_set_app_handlers (my_cerver, app_packet_handler, NULL);
 
 		register_events ();
+
+		app_cerver_events_register (my_cerver);
 
 		if (!cerver_start (my_cerver)) {
 			finish ();

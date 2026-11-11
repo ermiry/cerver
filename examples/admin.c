@@ -14,6 +14,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0
@@ -201,6 +203,8 @@ static void *on_hold_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -218,6 +222,8 @@ static void *on_hold_disconnected (void *event_data_ptr) {
 			"An on hold connection disconnected in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -235,6 +241,8 @@ static void *on_hold_drop (void *event_data_ptr) {
 			"An on hold connection was dropped in cerver %s!\n", 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -253,6 +261,8 @@ static void *on_admin_failed_auth (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -272,6 +282,8 @@ static void *on_admin_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -291,6 +303,8 @@ static void *on_admin_new_connection (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -308,6 +322,8 @@ static void *on_admin_close_connection (void *event_data_ptr) {
 			"An admin closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -325,6 +341,8 @@ static void *on_admin_disconnected (void *event_data_ptr) {
 			"An admin disconnected from cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -342,6 +360,8 @@ static void *on_admin_dropped (void *event_data_ptr) {
 			"An admin was dropped from cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -492,6 +512,8 @@ int main (void) {
 			on_admin_dropped, NULL, NULL,
 			false, false
 		);
+
+		app_cerver_events_register (my_cerver);
 
 		if (!cerver_start (my_cerver)) {
 			finish ();
