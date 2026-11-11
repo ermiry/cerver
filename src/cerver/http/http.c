@@ -330,6 +330,8 @@ HttpCerver *http_cerver_new (void) {
 		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS;
 		http_cerver->idle_timeout = HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 
+		http_cerver->send_timeout = 0;
+
 		http_cerver->n_timeout_requests = 0;
 
 		http_cerver->n_unanswered_requests = 0;
@@ -1500,6 +1502,14 @@ void http_cerver_set_idle_timeout_milliseconds (
 		http_cerver->idle_timeout = idle_timeout ?
 			idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 	}
+
+}
+
+void http_cerver_set_send_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int send_timeout
+) {
+
+	if (http_cerver) http_cerver->send_timeout = send_timeout;
 
 }
 
@@ -3582,6 +3592,10 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->response_failed = false;
 		http_receive->response_error = 0;
+
+		http_receive->send_deadline.tv_sec = 0;
+		http_receive->send_deadline.tv_nsec = 0;
+		http_receive->send_deadline_set = false;
 
 		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
 	}
