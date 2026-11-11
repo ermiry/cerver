@@ -2218,6 +2218,12 @@ static u8 cerver_register_new_connection_normal_default (
 
 			if (retval) cerver_new_connection_release (cerver, client, connection);
 		}
+
+		// the poll is full or it failed, the caller drops the connection
+		else {
+			(void) client_connection_remove (client, connection);
+			client_delete (client);
+		}
 	}
 
 	else {

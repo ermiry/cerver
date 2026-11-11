@@ -393,6 +393,7 @@ CERVER_PRIVATE Client *client_remove_from_cerver (
 );
 
 // registers a client to the cerver --> add it to cerver's structures
+// on error the client is not registered and the caller releases it with its connections
 // returns 0 on success, 1 on error
 CERVER_PRIVATE u8 client_register_to_cerver (
 	struct _Cerver *cerver, Client *client
