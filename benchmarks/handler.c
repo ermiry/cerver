@@ -24,7 +24,7 @@ static const char *MESSAGE = {
 	"incididunt ut labore et dolore magna aliqua."
 };
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	char buffer[BUFFER_SIZE] = { 0 };
 	char *buffer_end = buffer;
@@ -38,7 +38,7 @@ int main (int argc, char **argv) {
 		MESSAGE, strlen (MESSAGE)
 	);
 
-	char *packet_offset = packet->packet;
+	char *packet_offset = (char *) packet->packet;
 
 	size_t DATA_LEN = packet->packet_size;
 
@@ -50,13 +50,13 @@ int main (int argc, char **argv) {
 	receive_handle->received_size = BUFFER_SIZE;
 	receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 
-	struct timeval start = { 0 };
-	struct timeval end = { 0 };
+	struct timeval start = CERVER_ZERO_INITIALIZER;
+	struct timeval end = CERVER_ZERO_INITIALIZER;
 
 	(void) gettimeofday (&start, NULL);
 
 	// bench
-	register int64_t i = 0;
+	int64_t i = 0;
 	for (i = 0; i < iterations; i++) {
 		do {
 			next_pos = buffer_pos + DATA_LEN;
@@ -67,7 +67,7 @@ int main (int argc, char **argv) {
 				buffer_pos += DATA_LEN;
 				buffer_end += DATA_LEN;
 
-				packet_offset = packet->packet;
+				packet_offset = (char *) packet->packet;
 			}
 
 			else {
@@ -95,7 +95,7 @@ int main (int argc, char **argv) {
 	(void) fprintf (stdout, "Benchmark result:\n");
 
 	elapsed = (double) (end.tv_sec - start.tv_sec) +
-		(end.tv_usec - start.tv_usec) * 1e-6f;
+		(double) (end.tv_usec - start.tv_usec) * 1e-6;
 
 	total = (double) iterations * DATA_LEN;
 	bw = (double) total / elapsed;
