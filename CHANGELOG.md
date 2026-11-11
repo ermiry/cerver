@@ -1,45 +1,24 @@
 ## General
-- Ported the UDP cervers & clients of the core with the peers
-- Ported the network address lists, zones & the ip equalities
-- Connecting to each resolved address with its own timeout
-- Ported the array pool, the job queue priorities & their stats
-- Ported the joinable workers & added their worker manager
-- Ported the handlers with pooled jobs & the alive condition
-- Ported cerver with its UDP start, the bind family & address
-- Joining the log file thread & logging the inactive ones later
-- Closing & shutting down the sockets with their close mutex
-- Shutting the inactive sockets down without the clients lock
-- Giving its synchronization to the connection that connects
-- Closing the sockets of failed & unused client connections
-- Taking the unique id of every new handler with atomic add
-- Closing a socket only after the send of other threads ends
-- Added incompatibilities of the 2.0b-64 with core changes
-- Updated roadmaps with the port of the 1.8b-4 up to 1.8b-6
-- Updated CLAUDE.md with the balancer pairs & allocations
+- Building the disconnect web cerver & its raw client in tests
+- Running the disconnect matrix of each image in scheduled
+- Updated roadmaps with the stage J of the disconnections
+- Updated CLAUDE.md with the disconnect matrix & its pair
+- Added incompatibilities of the 2.0b-65 with their counters
 
 ## HTTP
-- Keeping the zones in the client ips & matching the proxies
-- Exporting the response & worker deletes, multipart checks
-
-## Examples
-- Ported the balancer & service examples with an app library
-- Ported the portable bench clock & the handler benchmark
-- Ended the sources of the common examples with newlines
+- Added request stages, client states & millisecond timeouts
+- Ending a stream whose piece failed, without sending more
+- Marking requests whose responses could not be sent fully
+- Counting the clients that left by their stage & how they left
+- Added metrics of the aborted, vanished & failed responses
+- Sending all the requests counters in the admin stats JSON
 
 ## Tests
-- Ported the core tests of UDP, network, threads & the pools
-- Added a test address to the pairs & to the web test cervers
-- Running every integration pair in IPv4 & the IPv6 loopback
-- Running the nginx features client in IPv4 & IPv6 loopback
-- Added proxy tests of zones in trusted proxies & client ips
-- Lowering allocations per request with the array pool stack
-- Printing the name of each test of the server & of the peers
-- Retrying the first request of a cerver that ran out of its fds
-- Keeping the logs of the repeated runs that fail as artifacts
-- Added core tests of inactive churn, synchronization & fds
-- Added an address fuzzer of zones & of the text round trips
-- Counting allocations per connection & per queued packet
-- Added a job queue test of the jobs pool in its steady state
-- Added an upstream service & the clients of balancer pairs
-- Running balancer pairs of restarts, large packets & clients
-- Stopping the supervised servers of the pairs with SIGTERM
+- Added disconnect tests of clients that leave on every byte
+- Registering the disconnect tests in the main of HTTP tests
+- Added receive tests of the uploads that can not be written
+- Added a script to run the disconnect matrix in each image
+- Added a disconnect web cerver to test behind every nginx
+- Added a raw disconnect client for the nginx configurations
+- Added nginx configurations of services & of two instances
+- Running the disconnect client in every nginx configuration

@@ -89,3 +89,16 @@ jobs:
 
       - name: nginx
         run: bash test/nginx/run.sh
+
+  disconnect:
+    name: Cerver clients that disconnect
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Disable address randomization
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Disconnect matrix
+        run: bash test/disconnect.sh

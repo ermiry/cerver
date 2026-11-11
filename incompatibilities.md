@@ -3,6 +3,37 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-65 (from 2.0b-64)
+
+The clients that leave in every part of the HTTP process. The port of the 1.8b-7 waits for a later beta.
+
+- New fields (ABI): `HttpCerver` (`idle_timeout`, `half_close_is_gone`, `n_aborted_requests`, `n_vanished_requests`,
+  `n_failed_responses`), `HttpReceive` (`upload_directory_created`, `stage`, `abort_reason`, `response_failed`,
+  `response_error`, `client_state`)
+- `HttpCerver.headers_timeout` and `HttpCerver.request_timeout` are in milliseconds (they were secs);
+  `http_cerver_set_headers_timeout ()` and `http_cerver_set_request_timeout ()` still take secs, the new
+  `*_milliseconds ()` setters take milliseconds, and `http_cerver_set_idle_timeout_milliseconds ()` replaces the fixed
+  `CERVER_DEFAULT_SOCKET_RECV_TIMEOUT` (5 secs, still the default) of the HTTP receive
+- `n_incompleted_requests` (`cerver_http_requests_incompleted_total`) only counts the requests that http_parser could
+  not parse: a client that left is counted in `n_aborted_requests` (`cerver_http_aborted_requests_total{stage,reason}`),
+  one that stopped sending until a timeout ended it in `n_vanished_requests`
+  (`cerver_http_vanished_requests_total{stage}`), and a 408 is no longer counted as incompleted
+- A response that could not be sent is `HTTP_RECEIVE_STATUS_RESPONSE_FAILED` (it was `COMPLETED` with status 0), is
+  counted in `n_failed_responses` (`cerver_http_failed_responses_total`) and where its client left, it is not counted
+  in `n_responses_by_status`, and its route counts it with the status that it tried to send
+- `HttpStreamState` has `HTTP_STREAM_STATE_FAILED`: a piece that fails ends the stream, the next ones fail without
+  being sent and cerver does not send the last chunk; a stream whose header failed is `FAILED` (it was `ENDED`)
+- The files and the generated directory of a request that was not completed are always removed, even if
+  `uploads_delete_when_done` is false (it only applies to the completed requests); a generated directory that ends
+  empty is removed
+- A filename generator that does not set a name saves the file with its sanitized filename, a path that does not fit
+  in `HTTP_MULTI_PART_SAVED_FILENAME_SIZE` and a directory that can not be created are answered with 500
+  (`UPLOAD_ERROR`); a part that could not open its file never removes a file with its name
+- A `100 Continue` that can not be sent ends the request as a client that left, without a response
+- New: `http_receive_get_stage ()`, `http_receive_get_client_state ()`, `http_receive_is_client_gone ()`,
+  `http_cerver_set_half_close_is_gone ()`, `HttpStage`, `HttpAbortReason`, `HttpClientState` and their strings
+- The admin stats JSON and `http_cerver_all_stats_print ()` have every counter of the requests and the responses
+
 ## 2.0b-64 (from 2.0b-63)
 
 The port of the core of the 1.8b-4 and the 1.8b-5, so the entries of `incompatibilities.md` in `core` for those betas

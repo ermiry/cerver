@@ -748,8 +748,14 @@ static time_t http_response_send_timeout (const HttpReceive *http_receive) {
 
 }
 
+static void http_response_sent_bytes (
+	const HttpReceive *http_receive, const size_t bytes
+);
+
+// a response that could not be sent completely marks its request,
+// it is counted once as a failed response and where its client left
 static void http_response_send_failed (
-	const Socket *socket, const char *operation,
+	const HttpReceive *http_receive, const char *operation,
 	const int error, const size_t pending
 ) {
 
@@ -757,10 +763,12 @@ static void http_response_send_failed (
 	cerver_log_with_date (
 		LOG_TYPE_WARNING, LOG_TYPE_HTTP,
 		"http_response_send () - %s () failed - fd %d - errno %d (%s) - pending %zu",
-		operation, socket->sock_fd, error,
+		operation, http_receive->cr->connection->socket->sock_fd, error,
 		strerror_r (error, error_description, sizeof (error_description)),
 		pending
 	);
+
+	http_receive_response_failed (http_receive, error);
 
 }
 
@@ -786,7 +794,12 @@ static u8 http_response_send_vector (
 		&sent, &error
 	);
 
-	if (retval) http_response_send_failed (socket, "sendmsg", error, total - sent);
+	if (retval) {
+		// the bytes that left before the failure are part of the response
+		http_response_sent_bytes (http_receive, sent);
+
+		http_response_send_failed (http_receive, "sendmsg", error ? error : EPIPE, total - sent);
+	}
 
 	return retval;
 
@@ -810,7 +823,11 @@ static void http_response_sent_bytes (
 
 	http_receive->cr->connection->stats->total_bytes_sent += bytes;
 
-	((HttpReceive *) http_receive)->sent += bytes;
+	HttpReceive *receive = (HttpReceive *) http_receive;
+	receive->sent += bytes;
+
+	// the first bytes of the response that its handler sends start the response stage
+	if (bytes && (receive->stage == HTTP_STAGE_HANDLER)) receive->stage = HTTP_STAGE_RESPONSE;
 
 }
 
@@ -1298,6 +1315,11 @@ static u8 http_response_message_send (
 		);
 	}
 
+	// the request is logged with the status that it tried to send
+	else {
+		((HttpReceive *) http_receive)->status = message->status;
+	}
+
 	return retval;
 
 }
@@ -1465,6 +1487,7 @@ static u8 http_response_send_raw (
 	const u8 retval = http_response_send_vector (http_receive, parts, n_parts);
 
 	if (!retval) http_response_sent (http_receive, status, header_len + body_len);
+	else ((HttpReceive *) http_receive)->status = status;
 
 	return retval;
 
@@ -1740,7 +1763,7 @@ static u8 http_response_send_file_pipe (
 			const int error = errno;
 			if (socket_send_can_retry (socket->sock_fd, error, &deadline)) continue;
 
-			http_response_send_failed (socket, "sendfile", error, http_response_pipe_pending (remaining));
+			http_response_send_failed (http_receive, "sendfile", error, http_response_pipe_pending (remaining));
 			retval = 1;
 		}
 	} while ((copied != 0) && remaining && !retval);

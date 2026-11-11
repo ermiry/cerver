@@ -674,9 +674,17 @@ static void http_tests_main (void) {
 
 }
 
+// the full matrix of test/disconnect.sh runs alone, without the other suites
+#define DISCONNECT_ONLY_VARIABLE			"DISCONNECT_ONLY"
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
+
+	if (getenv (DISCONNECT_ONLY_VARIABLE)) {
+		http_tests_disconnect ();
+		return 0;
+	}
 
 	(void) printf ("Testing HTTP...\n");
 
@@ -716,6 +724,9 @@ int main (int argc, char **argv) {
 
 	// the headers that cerver adds, entity tags, compression, streams and metrics
 	http_tests_features ();
+
+	// clients that leave in every part of the HTTP process
+	http_tests_disconnect ();
 
 	(void) printf ("\nDone with HTTP tests!\n\n");
 

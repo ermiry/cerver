@@ -8,7 +8,7 @@
 > | **Fecha** | 2026-11-05 |
 > | **Rama base** | `http`: Beta 2.0b-58 + la Fase 3 sin commitear + el arreglo del ciclo de vida del cliente (§2) |
 > | **Origen** | El cuelgue del par TCP `threads` (1 de 55 corridas). Se debía a un auto-deadlock del cliente que ningún test ejercitaba, y motivó el inventario de §1 |
-> | **Estado** | **Implementado** (etapas A–I), con las funcionalidades nuevas de §7. El resultado, los bugs que encontró y lo pendiente están en §7 |
+> | **Estado** | **Implementado** (etapas A–J; la J en la 2.0b-65), con las funcionalidades nuevas de §7. El resultado, los bugs que encontró y lo pendiente están en §7 |
 
 ---
 
@@ -221,6 +221,25 @@ que el timeout de inactividad de cerver.
   timeouts de keepalive. Pasa con 0 respuestas 502 y 0 `Connection reset by peer` en el error log de nginx.
 - **CI:** nightly.
 
+### Etapa J — El cliente que se desconecta (2.0b-65)
+
+Un cliente se va en cada parte del proceso HTTP de cuatro formas: cierre (FIN), reset (RST), half-close (`SHUT_WR`) y
+desaparecer (deja de mandar y de leer). Después de cada caso, cerver responde una petición nueva, sus fds vuelven a
+los de antes, su path de uploads queda vacío y sus contadores cambian exactamente lo esperado por etapa y forma.
+
+| # | Trabajo | Archivos |
+|---|---|---|
+| J1 | La matriz de peticiones: 8 peticiones modelo (GET, muchos headers, Content-Length, chunked, multipart con 2 archivos, `Expect: 100-continue`, JWT y archivo estático) cortadas en cada offset de byte, con la etapa esperada calculada con las reglas del parser | `test/http/disconnect.c` |
+| J2 | El handler: el cliente se va mientras su handler espera, que debe encontrarlo `CLOSED`, `RESET` o `CONNECTED`, con una respuesta chica y una grande; `half_close_is_gone` en false | `test/http/disconnect.c` |
+| J3 | Las respuestas grandes (render, stream, `sendfile` y video) cortadas en varios bytes leídos, con buffers chicos para que nunca quepan | `test/http/disconnect.c` |
+| J4 | La cola del thpool llena, el pipeline, el 503 de un cerver lleno y el drenado | `test/http/disconnect.c` |
+| J5 | Los dos niveles: `DISCONNECT_LEVEL=sample` en `test/run.sh` (semilla impresa, `DISCONNECT_SEED`) y `full` en `test/disconnect.sh` (normal, ASan + UBSan y TSan; valgrind con la muestra; las dos familias) | `test/disconnect.sh`, `test/http/http.c` |
+| J6 | Detrás de nginx: tres configuraciones sintéticas (directa con HTTP/1.1 y sin buffer, estilo servicios con HTTP/1.0 y buffers, y dos instancias con `max_fails`), con 1.31.6 y 1.30.6 en las dos familias | `test/web/disconnect.c`, `test/client/web/disconnect.c`, `test/nginx/` |
+| J7 | Los bugs de los uploads que la matriz no alcanza | `test/http/receive.c` |
+| J8 | El handler que pasa su trabajo a un worker (`job_handler_wait`), con el estado del cliente leído desde el hilo del worker | `test/http/disconnect.c` |
+| J9 | Una respuesta grande con gzip cortada, y los status que no son 200: 304, 404, 405, un 500 del handler, y los rechazos antes del body (401, 413) mientras cerver drena | `test/http/disconnect.c` |
+| J10 | Un `recv` interrumpido por una señal sin `SA_RESTART` (`SIGUSR1` a los hilos que esperan en `recvfrom`, leídos de `/proc/self/task`) | `test/http/disconnect.c` |
+
 ## 5. Orden y estimación
 
 | Orden | Etapa | Por qué en ese orden | Tamaño |
@@ -234,6 +253,7 @@ que el timeout de inactividad de cerver.
 | 7 | E — admin y game | cobertura de módulos sin uso en los servicios | medio |
 | 8 | H — rendimiento | necesita las fixtures y la línea base | bajo |
 | 9 | I — nginx | la regresión de extremo a extremo | medio |
+| 10 | J — el cliente que se desconecta | necesita los contadores por etapa de la 2.0b-65 y el nginx de I | alto |
 
 ## 6. Verificación de esta etapa de trabajo
 
@@ -432,6 +452,28 @@ Los tests del core vienen de `core`. Cada uno se vio fallar allí contra la beta
 
 - `test_run ()` de `test/test.h` imprime el nombre de cada test de `test/http/server.c` y de `test/cerver/peers.c`;
 - `repeat.sh` guarda los logs de la corrida que falla en `repeat-artifacts`.
+
+### 2.0b-65, el cliente que se desconecta (etapa J)
+
+Los tests de la librería no compilan contra la 2.0b-64 (la API es nueva), así que cada uno se vio fallar contra un
+**mutante** que revierte su arreglo en una copia del árbol:
+
+| Test | Qué fija | Mutante |
+|---|---|---|
+| `test/http/disconnect.c` (la matriz) | Los abortos por etapa y por forma, separados de los errores del parser | la etapa `UPLOAD`; el `reason` siempre `closed`; el 408 que sumaba en incompleted |
+| `test/http/disconnect.c` (la matriz) | Una petición incompleta no deja archivos ni su directorio | los uploads que se conservan; el `rmdir` del directorio |
+| `test/http/disconnect.c` (respuestas) | El envío fallido se cuenta en `n_failed_responses` y en la etapa donde el cliente se fue | el contador de envíos fallidos |
+| `test/http/disconnect.c` (stream) | Un stream que falla no está activo, no manda más y su cliente se fue | el estado `FAILED` |
+| `test/http/disconnect.c` (handler) | `http_receive_get_client_state ()` da `CLOSED`, `RESET` o `CONNECTED` | el estado siempre `CONNECTED` |
+| `test_receive_foreign_files` | Una parte que no abrió su archivo no borra el archivo ajeno con su nombre | el `saved_filename_len` que no se ponía en 0 |
+| `test_receive_empty_generated_filename` | Un generador que no pone nombre guarda el archivo con su nombre saneado | el nombre vacío del generador |
+| `test_receive_directory_error` | Un directorio que no se puede crear responde 500 sin dejar nada | sin mutante: antes fallaba el `open` con el mismo 500 |
+| `test_disconnect_interrupted` | Un `recv` interrumpido por una señal no termina la petición | el `EINTR` sin reintentar: «an interrupted recv () ended the request» |
+| `test_disconnect_worker`, `test_disconnect_statuses` | El estado del cliente desde un worker, y los status que no son 200 en las cuatro formas | — (cubren caminos sin arreglo) |
+| `test/client/web/disconnect.c` | Detrás de nginx: el cuerpo que se corta con y sin buffer, el upload a medias, el handler que ve irse a nginx, la respuesta cortada, la suma de las dos instancias, el GET que se reintenta y el POST que da 502, el drenado y la instancia que vuelve después de `fail_timeout` | — |
+
+El mutante del `100 Continue` es equivalente: si no se puede mandar, el `recv` siguiente encuentra el EOF o el reset
+en la misma etapa. El arreglo es defensivo.
 
 ### Pendiente
 

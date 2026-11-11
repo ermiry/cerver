@@ -21,6 +21,9 @@
 
 #include "cerver/utils/log.h"
 
+// the decimal status code, the key of the responses by status
+#define HTTP_ADMIN_STATUS_CODE_SIZE				8
+
 HttpAdminFileSystemStats *http_admin_file_system_stats_new (void) {
 
 	HttpAdminFileSystemStats *stats = (HttpAdminFileSystemStats *) malloc (sizeof (HttpAdminFileSystemStats));
@@ -462,6 +465,72 @@ static void http_cerver_admin_handler_requests_stats (
 		json, "n_failed_auth_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_failed_auth_requests))
 	);
 
+	(void) json_object_set_new (
+		json, "n_limited_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_limited_requests))
+	);
+
+	(void) json_object_set_new (
+		json, "n_timeout_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_timeout_requests))
+	);
+
+	(void) json_object_set_new (
+		json, "n_unanswered_requests", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_unanswered_requests))
+	);
+
+	(void) json_object_set_new (
+		json, "n_failed_responses", json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_failed_responses))
+	);
+
+}
+
+// the responses sent by their status code, only the codes that were sent
+static void http_cerver_admin_handler_responses_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	json_t *responses = json_object ();
+
+	char code[HTTP_ADMIN_STATUS_CODE_SIZE] = { 0 };
+	for (size_t status = 0; status < HTTP_CERVER_RESPONSES_STATUS_SIZE; status++) {
+		const size_t count = CERVER_STATS_GET (http_cerver->n_responses_by_status[status]);
+		if (count) {
+			(void) snprintf (code, HTTP_ADMIN_STATUS_CODE_SIZE, "%zu", status);
+			(void) json_object_set_new (responses, code, json_integer ((json_int_t) count));
+		}
+	}
+
+	(void) json_object_set_new (json, "n_responses_by_status", responses);
+
+}
+
+// the requests whose client left, by stage and reason, and the ones that vanished, by stage
+static void http_cerver_admin_handler_gone_stats (
+	const HttpCerver *http_cerver, json_t *json
+) {
+
+	json_t *aborted = json_object ();
+	json_t *vanished = json_object ();
+
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		json_t *reasons = json_object ();
+		for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
+			(void) json_object_set_new (
+				reasons, http_abort_reason_label ((HttpAbortReason) reason),
+				json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason]))
+			);
+		}
+
+		(void) json_object_set_new (aborted, http_stage_label ((HttpStage) stage), reasons);
+
+		(void) json_object_set_new (
+			vanished, http_stage_label ((HttpStage) stage),
+			json_integer ((json_int_t) CERVER_STATS_GET (http_cerver->n_vanished_requests[stage]))
+		);
+	}
+
+	(void) json_object_set_new (json, "n_aborted_requests", aborted);
+	(void) json_object_set_new (json, "n_vanished_requests", vanished);
+
 }
 
 char *http_cerver_admin_generate_routes_stats_json (
@@ -479,6 +548,10 @@ char *http_cerver_admin_generate_routes_stats_json (
 		http_cerver_admin_handler_endpoints_stats (http_cerver, json);
 
 		http_cerver_admin_handler_requests_stats (http_cerver, json);
+
+		http_cerver_admin_handler_responses_stats (http_cerver, json);
+
+		http_cerver_admin_handler_gone_stats (http_cerver, json);
 
 		json_string = json_dumps (json, 0);
 
