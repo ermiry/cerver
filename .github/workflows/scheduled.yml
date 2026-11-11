@@ -9,6 +9,9 @@ permissions:
   actions: write
   contents: read
 
+env:
+  WERROR: 1
+
 jobs:
   dispatch:
     name: Dispatch the scheduled tests of each line
