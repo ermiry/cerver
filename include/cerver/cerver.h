@@ -26,6 +26,8 @@
 
 #include "cerver/game/game.h"
 
+#include "cerver/utils/histogram.h"
+
 #define CERVER_DEFAULT_ALIAS						"my-cerver"
 
 #define CERVER_DEFAULT_PORT							7000
@@ -313,6 +315,44 @@ CERVER_EXPORT void cerver_stats_print (
 	struct _Cerver *cerver, bool received, bool sent
 );
 
+// the request types below it have their own stats in each packet type,
+// the bigger ones share the last entry
+#define CERVER_REQUEST_STATS_SIZE					32
+#define CERVER_REQUEST_STATS_ENTRIES				(CERVER_REQUEST_STATS_SIZE + 1)
+
+// PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR and PACKET_TYPE_CUSTOM have request stats and handlers
+#define CERVER_REQUEST_PACKET_TYPES					3
+
+// the request types below it can have their own handler
+#define CERVER_REQUEST_HANDLERS_MAX					1024
+
+// the packets of a request type that the handlers of the cerver handled
+typedef struct RequestStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} RequestStats;
+
+// copies the stats of a request type of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR or PACKET_TYPE_CUSTOM,
+// a request type of CERVER_REQUEST_STATS_SIZE or bigger gets the stats that they share
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_get_request_stats (
+	const struct _Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	RequestStats *stats
+);
+
+// prints the stats of the request types that have packets
+CERVER_EXPORT void cerver_request_stats_print (const struct _Cerver *cerver);
+
+// adds a packet that a handler of the cerver handled to the stats of its request type
+CERVER_PRIVATE void cerver_request_stats_add (
+	struct _Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	const u64 size, const u64 microseconds
+);
+
 #pragma endregion
 
 #pragma region main
@@ -485,6 +525,9 @@ struct _Cerver {
 
 	CerverInfo *info;
 	CerverStats *stats;
+
+	// [packet type][request type], see cerver_get_request_stats ()
+	RequestStats (*request_stats)[CERVER_REQUEST_STATS_ENTRIES];
 
 	// reference to the parent load balancer
 	struct _Balancer *balancer;
