@@ -622,7 +622,7 @@ in_port_t sock_ip_port (const struct sockaddr *address) {
 // returns 0 on success, 1 on error
 int sock_set_timeout (int sock_fd, time_t timeout) {
 
-	struct timeval tv = { 0 };
+	struct timeval tv = CERVER_ZERO_INITIALIZER;
 	tv.tv_sec = timeout;
 	tv.tv_usec = 0;
 
@@ -639,7 +639,7 @@ int sock_set_timeout (int sock_fd, time_t timeout) {
 // returns 0 on success, 1 on error
 int sock_set_send_timeout (int sock_fd, time_t timeout) {
 
-	struct timeval tv = { 0 };
+	struct timeval tv = CERVER_ZERO_INITIALIZER;
 	tv.tv_sec = timeout;
 	tv.tv_usec = 0;
 
