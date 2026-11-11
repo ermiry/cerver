@@ -526,7 +526,7 @@ static void *worker_thread (void *worker_ptr) {
 
 	Worker *worker = (Worker *) worker_ptr;
 
-	(void) thread_set_name (worker->name);
+	(void) thread_set_name ("%s", worker->name);
 
 	#ifdef THREADS_DEBUG
 	cerver_log_debug ("Worker <%s> thread has started!", worker->name);

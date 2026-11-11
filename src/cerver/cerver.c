@@ -486,29 +486,29 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 			CerverStats *stats = cerver->stats;
 
 			if (cerver->auth_required) {
-				cerver_log_msg ("Client packets received:       %ld", CERVER_STATS_GET (stats->client_n_packets_received));
-				cerver_log_msg ("Client receives done:          %ld", CERVER_STATS_GET (stats->client_receives_done));
-				cerver_log_msg ("Client bytes received:         %ld\n", CERVER_STATS_GET (stats->client_bytes_received));
+				cerver_log_msg ("Client packets received:       %lu", CERVER_STATS_GET (stats->client_n_packets_received));
+				cerver_log_msg ("Client receives done:          %lu", CERVER_STATS_GET (stats->client_receives_done));
+				cerver_log_msg ("Client bytes received:         %lu\n", CERVER_STATS_GET (stats->client_bytes_received));
 
-				cerver_log_msg ("On hold packets received:      %ld", CERVER_STATS_GET (stats->on_hold_n_packets_received));
-				cerver_log_msg ("On hold receives done:         %ld", CERVER_STATS_GET (stats->on_hold_receives_done));
-				cerver_log_msg ("On hold bytes received:        %ld\n", CERVER_STATS_GET (stats->on_hold_bytes_received));
+				cerver_log_msg ("On hold packets received:      %lu", CERVER_STATS_GET (stats->on_hold_n_packets_received));
+				cerver_log_msg ("On hold receives done:         %lu", CERVER_STATS_GET (stats->on_hold_receives_done));
+				cerver_log_msg ("On hold bytes received:        %lu\n", CERVER_STATS_GET (stats->on_hold_bytes_received));
 			}
 
-			cerver_log_msg ("Total packets received:        %ld", CERVER_STATS_GET (stats->total_n_packets_received));
-			cerver_log_msg ("Total receives done:           %ld", CERVER_STATS_GET (stats->total_n_receives_done));
-			cerver_log_msg ("Total bytes received:          %ld\n", CERVER_STATS_GET (stats->total_bytes_received));
+			cerver_log_msg ("Total packets received:        %lu", CERVER_STATS_GET (stats->total_n_packets_received));
+			cerver_log_msg ("Total receives done:           %lu", CERVER_STATS_GET (stats->total_n_receives_done));
+			cerver_log_msg ("Total bytes received:          %lu\n", CERVER_STATS_GET (stats->total_bytes_received));
 
-			cerver_log_msg ("N packets sent:                %ld", CERVER_STATS_GET (stats->n_packets_sent));
-			cerver_log_msg ("Total bytes sent:              %ld\n", CERVER_STATS_GET (stats->total_bytes_sent));
+			cerver_log_msg ("N packets sent:                %lu", CERVER_STATS_GET (stats->n_packets_sent));
+			cerver_log_msg ("Total bytes sent:              %lu\n", CERVER_STATS_GET (stats->total_bytes_sent));
 
-			cerver_log_msg ("Current active client connections:         %ld", CERVER_STATS_GET (stats->current_active_client_connections));
-			cerver_log_msg ("Current connected clients:                 %ld", CERVER_STATS_GET (stats->current_n_connected_clients));
-			cerver_log_msg ("Current on hold connections:               %ld", CERVER_STATS_GET (stats->current_n_hold_connections));
-			cerver_log_msg ("Total on hold connections:                 %ld", CERVER_STATS_GET (stats->total_on_hold_connections));
-			cerver_log_msg ("Total clients:                             %ld", CERVER_STATS_GET (stats->total_n_clients));
-			cerver_log_msg ("Unique clients:                            %ld", CERVER_STATS_GET (stats->unique_clients));
-			cerver_log_msg ("Total client connections:                  %ld", CERVER_STATS_GET (stats->total_client_connections));
+			cerver_log_msg ("Current active client connections:         %lu", CERVER_STATS_GET (stats->current_active_client_connections));
+			cerver_log_msg ("Current connected clients:                 %lu", CERVER_STATS_GET (stats->current_n_connected_clients));
+			cerver_log_msg ("Current on hold connections:               %lu", CERVER_STATS_GET (stats->current_n_hold_connections));
+			cerver_log_msg ("Total on hold connections:                 %lu", CERVER_STATS_GET (stats->total_on_hold_connections));
+			cerver_log_msg ("Total clients:                             %lu", CERVER_STATS_GET (stats->total_n_clients));
+			cerver_log_msg ("Unique clients:                            %lu", CERVER_STATS_GET (stats->unique_clients));
+			cerver_log_msg ("Total client connections:                  %lu", CERVER_STATS_GET (stats->total_client_connections));
 
 			cerver_stats_print_thpool (cerver);
 
@@ -2756,7 +2756,7 @@ static void cerver_inactive_check_log (
 
 	for (unsigned int index = 0; index < dropped->count; index++) {
 		cerver_log_warning (
-			"Client %lu has been inactive more than %d secs and will be dropped",
+			"Client %lu has been inactive more than %u secs and will be dropped",
 			dropped->ids[index], cerver->max_inactive_time
 		);
 	}
@@ -2828,7 +2828,7 @@ static u8 cerver_start_inactive (Cerver *cerver) {
 
 	if (cerver) {
 		cerver_log_debug (
-			"Cerver %s is set to check for inactive clients with max time of <%d> secs every <%d> secs",
+			"Cerver %s is set to check for inactive clients with max time of <%u> secs every <%u> secs",
 			cerver->info->name,
 			cerver->max_inactive_time,
 			cerver->check_inactive_interval
@@ -3553,7 +3553,7 @@ static void cerver_clean_thpool (Cerver *cerver) {
 		#ifdef CERVER_DEBUG
 		cerver_log (
 			LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-			"Cerver %s active thpool threads: %i",
+			"Cerver %s active thpool threads: %u",
 			cerver->info->name,
 			thpool_get_num_threads_working (cerver->thpool)
 		);

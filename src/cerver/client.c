@@ -107,13 +107,13 @@ void client_stats_print (Client *client) {
 			cerver_log_msg ("\nClient's stats:\n");
 			cerver_log_msg ("Threshold time:            %ld", client->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld", client->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %lu", client->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld", client->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld", client->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %lu", client->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %lu", client->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld", client->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld", client->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %lu", client->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %lu", client->stats->n_packets_sent);
 
 			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (client->stats->received_packets);
@@ -150,18 +150,18 @@ void client_file_stats_print (Client *client) {
 
 	if (client) {
 		if (client->file_stats) {
-			cerver_log_msg ("Files requests:                %ld", client->file_stats->n_files_requests);
-			cerver_log_msg ("Success requests:              %ld", client->file_stats->n_success_files_requests);
-			cerver_log_msg ("Bad requests:                  %ld", client->file_stats->n_bad_files_requests);
-			cerver_log_msg ("Files sent:                    %ld", client->file_stats->n_files_sent);
-			cerver_log_msg ("Failed files sent:             %ld", client->file_stats->n_bad_files_sent);
-			cerver_log_msg ("Files bytes sent:              %ld\n", client->file_stats->n_bytes_sent);
+			cerver_log_msg ("Files requests:                %lu", client->file_stats->n_files_requests);
+			cerver_log_msg ("Success requests:              %lu", client->file_stats->n_success_files_requests);
+			cerver_log_msg ("Bad requests:                  %lu", client->file_stats->n_bad_files_requests);
+			cerver_log_msg ("Files sent:                    %lu", client->file_stats->n_files_sent);
+			cerver_log_msg ("Failed files sent:             %lu", client->file_stats->n_bad_files_sent);
+			cerver_log_msg ("Files bytes sent:              %lu\n", client->file_stats->n_bytes_sent);
 
-			cerver_log_msg ("Files upload requests:         %ld", client->file_stats->n_files_upload_requests);
-			cerver_log_msg ("Success uploads:               %ld", client->file_stats->n_success_files_uploaded);
-			cerver_log_msg ("Bad uploads:                   %ld", client->file_stats->n_bad_files_upload_requests);
-			cerver_log_msg ("Bad files received:            %ld", client->file_stats->n_bad_files_received);
-			cerver_log_msg ("Files bytes received:          %ld\n", client->file_stats->n_bytes_received);
+			cerver_log_msg ("Files upload requests:         %lu", client->file_stats->n_files_upload_requests);
+			cerver_log_msg ("Success uploads:               %lu", client->file_stats->n_success_files_uploaded);
+			cerver_log_msg ("Bad uploads:                   %lu", client->file_stats->n_bad_files_upload_requests);
+			cerver_log_msg ("Bad files received:            %lu", client->file_stats->n_bad_files_received);
+			cerver_log_msg ("Files bytes received:          %lu\n", client->file_stats->n_bytes_received);
 		}
 	}
 
@@ -743,7 +743,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%ld> does not have ANY connection - removing him from cerver...",
+					"Client <%lu> does not have ANY connection - removing him from cerver...",
 					client->id
 				);
 				#endif
@@ -759,7 +759,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%d> has only 1 connection left!",
+					"Client <%lu> has only 1 connection left!",
 					client->id
 				);
 				#endif
@@ -800,7 +800,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%d> has %ld connections left!",
+					"Client <%lu> has %zu connections left!",
 					client->id, dlist_size (client->connections)
 				);
 				#endif
@@ -835,7 +835,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 					cerver_log (
 						LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
 						"client_remove_connection_by_sock_fd () - Client with id "
-						"%ld does not have a connection related to sock fd %d",
+						"%lu does not have a connection related to sock fd %d",
 						client->id, sock_fd
 					);
 					#endif
@@ -871,7 +871,7 @@ u8 client_register_connections_to_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to register all the connections for client %ld (id) to cerver %s",
+				"Failed to register all the connections for client %lu (id) to cerver %s",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -907,7 +907,7 @@ u8 client_unregister_connections_from_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to unregister all the connections for client %ld (id) from cerver %s",
+				"Failed to unregister all the connections for client %lu (id) from cerver %s",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -946,7 +946,7 @@ u8 client_register_connections_to_cerver_poll (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to register all the connections for client %ld (id) to cerver %s poll",
+				"Failed to register all the connections for client %lu (id) to cerver %s poll",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -983,7 +983,7 @@ u8 client_unregister_connections_from_cerver_poll (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to unregister all the connections for client %ld (id) from cerver %s poll",
+				"Failed to unregister all the connections for client %lu (id) from cerver %s poll",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -1021,7 +1021,7 @@ Client *client_remove_from_cerver (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				"Connected clients to cerver %s: %i.",
+				"Connected clients to cerver %s: %lu.",
 				cerver->info->name, cerver->stats->current_n_connected_clients
 			);
 			#endif
@@ -1062,7 +1062,7 @@ static void client_register_to_cerver_internal (
 	#ifdef CERVER_STATS
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-		"Connected clients to cerver %s: %i.",
+		"Connected clients to cerver %s: %lu.",
 		cerver->info->name,
 		cerver->stats->current_n_connected_clients
 	);
@@ -4178,7 +4178,7 @@ static void client_handlers_destroy (Client *client) {
 	if (client) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_debug (
-			"Client %s num_handlers_alive: %d",
+			"Client %s num_handlers_alive: %u",
 			client->name, client->num_handlers_alive
 		);
 		#endif

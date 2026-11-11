@@ -2804,7 +2804,7 @@ static u8 cerver_poll_register_connection_internal (
 		#ifdef CERVER_STATS
 		cerver_log (
 			LOG_TYPE_CERVER, LOG_TYPE_NONE,
-			"Cerver %s current active connections: %ld",
+			"Cerver %s current active connections: %lu",
 			cerver->info->name,
 			cerver->stats->current_active_client_connections
 		);
@@ -2925,7 +2925,7 @@ u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd) {
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_NONE,
-				"Cerver %s current active connections: %ld",
+				"Cerver %s current active connections: %lu",
 				cerver->info->name,
 				cerver->stats->current_active_client_connections
 			);

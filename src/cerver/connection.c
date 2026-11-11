@@ -113,13 +113,13 @@ void connection_stats_print (Connection *connection) {
 		if (connection->stats) {
 			cerver_log_msg ("Threshold time:            %ld", connection->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld", connection->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %lu", connection->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld", connection->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld", connection->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %lu", connection->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %lu", connection->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld", connection->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld", connection->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %lu", connection->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %lu", connection->stats->n_packets_sent);
 
 			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (connection->stats->received_packets);
@@ -1536,7 +1536,7 @@ u8 connection_register_to_client (Client *client, Connection *connection) {
 			else {
 				cerver_log (
 					LOG_TYPE_SUCCESS, LOG_TYPE_CLIENT,
-					"Registered a new connection to client (id): %ld",
+					"Registered a new connection to client (id): %lu",
 					client->id
 				);
 			}
@@ -1967,7 +1967,7 @@ void *connection_update (void *client_connection_ptr) {
 				"%s", cc->connection->name
 			);
 
-			(void) thread_set_name (connection_name);
+			(void) thread_set_name ("%s", connection_name);
 		}
 
 		const size_t buffer_size = cc->connection->receive_packet_buffer_size;
