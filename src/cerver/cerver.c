@@ -2129,12 +2129,32 @@ static u8 cerver_init_internal (Cerver *cerver) {
 
 }
 
+// only the threads handler type takes connections with the thpool,
+// the poll () handles every connection in its own thread
+static inline bool cerver_uses_thpool (const Cerver *cerver) {
+
+	return (cerver->handler_type == CERVER_HANDLER_TYPE_THREADS) && (cerver->n_thpool_threads > 0);
+
+}
+
+static void cerver_one_time_init_thpool_unused (const Cerver *cerver) {
+
+	if (cerver->n_thpool_threads > 0) {
+		cerver_log_msg (
+			"Cerver %s does not create its thpool of %u threads with the %s handler type",
+			cerver->info->name, cerver->n_thpool_threads,
+			cerver_handler_type_to_string (cerver->handler_type)
+		);
+	}
+
+}
+
 static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 
 	u8 errors = 0;
 
 	if (cerver) {
-		if (cerver->n_thpool_threads) {
+		if (cerver_uses_thpool (cerver)) {
 			#ifdef CERVER_DEBUG
 			cerver_log_debug (
 				"Cerver %s is configured to use a thpool with %d threads",
@@ -2176,12 +2196,7 @@ static u8 cerver_one_time_init_thpool (Cerver *cerver) {
 		}
 
 		else {
-			#ifdef CERVER_DEBUG
-			cerver_log_debug (
-				"Cerver %s is configured to NOT use a thpool for receive methods",
-				cerver->info->name
-			);
-			#endif
+			cerver_one_time_init_thpool_unused (cerver);
 		}
 	}
 
@@ -3457,13 +3472,21 @@ static void cerver_drain_report (Cerver *cerver) {
 
 // waits for the connections in progress using the drain policy and timeout,
 // if they do not finish, a short grace is given before reporting them
+// a cerver configured with threads shuts its clients down and waits for them,
+// also with the poll handler type, that does not create the thpool
+static inline bool cerver_drain_needed (const Cerver *cerver, const bool connection_threads) {
+
+	return cerver->thpool || (cerver->n_thpool_threads > 0) || connection_threads;
+
+}
+
 static void cerver_drain (Cerver *cerver) {
 
 	cerver->drained = true;
 
 	const bool connection_threads = thread_group_alive (&cerver->connection_threads) > 0;
 
-	if (cerver->thpool || connection_threads) {
+	if (cerver_drain_needed (cerver, connection_threads)) {
 		cerver_log_msg (
 			"Draining cerver %s - %u working - %u queued - %u connection threads - %s policy - %u secs timeout",
 			cerver->info->name,
