@@ -3,6 +3,14 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8 (from 1.8b-9)
+
+The wire does not change: a 1.8 talks with a 1.8b-9.
+
+- `files_create_recursive_dir ()` returns 0 for a path that already is a directory (it returned 1), also when another thread or process creates it at the same time; an empty path, `NULL` or a path that does not fit in `DIRNAME_DEFAULT_SIZE` returns 1 without creating anything (it was truncated)
+- The sends of `socket_send_vector ()`, `socket_send_buffer ()` and `socket_send_file ()` end with their deadline also in a blocking socket: a send used to wait the `SO_SNDTIMEO` of the socket in each system call, now `sendmsg ()` uses `MSG_DONTWAIT` and waits for space in `poll ()`, and `sendfile ()` also waits for space in `poll ()` and sends only what fits in the send buffer of the socket (the kernel applies `SO_SNDTIMEO` to each piece of a `sendfile ()`, so one call could block longer than it), with the `SO_SNDTIMEO` limited to what is left of the deadline and restored after the file
+- New: `socket_deadline_create_milliseconds ()`, and `socket_send_vector_until ()`, `socket_send_buffer_until ()` and `socket_send_file_until ()` (from an offset of the file, or its current one), that take a deadline that several sends can share
+
 ## 1.8b-9 (from 1.8b-8)
 
 The wire of the game packets changes: their requests and answers are serializer objects, a 1.8b-9 game cerver does not talk with 1.8b-8 game clients. The other packets do not change.
