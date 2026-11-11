@@ -5,6 +5,7 @@
 
 #include <time.h>
 #include <dirent.h>
+#include <signal.h>
 #include <pthread.h>
 
 #include <cerver/admin.h>
@@ -110,6 +111,11 @@
 #define CORE_SLOW_HANDLER_SECONDS		2
 #define CORE_SLOW_UPDATE_FPS			1
 #define CORE_DRAIN_TIMEOUT				1
+
+#define CORE_INTERRUPT_SIGNAL			SIGUSR1
+#define CORE_INTERRUPTS					8
+#define CORE_INTERRUPT_NANOSECONDS		16000000L
+#define CORE_INTERRUPTED_PACKETS		2
 
 #define CORE_IPV4_LOOPBACK				"127.0.0.1"
 #define CORE_IPV6_LOOPBACK				"::1"
@@ -2386,6 +2392,120 @@ static void test_core_on_hold_poll_fds (void) {
 
 }
 
+static pthread_t interrupted_thread;
+static unsigned int interrupted_packets = 0;
+static unsigned int interrupt_signals = 0;
+
+static void core_interrupt_signal (int signal_number) {
+
+	(void) signal_number;
+
+	(void) __atomic_add_fetch (&interrupt_signals, 1, __ATOMIC_SEQ_CST);
+
+}
+
+// a direct handler runs in the thread that receives the connection,
+// so the first packet tells which thread the test interrupts
+static void core_interrupted_handler (void *packet_ptr) {
+
+	(void) packet_ptr;
+
+	if (__atomic_load_n (&interrupted_packets, __ATOMIC_SEQ_CST) == 0) {
+		interrupted_thread = pthread_self ();
+	}
+
+	test_counter_add (&interrupted_packets);
+
+}
+
+static void core_interrupt_receive_thread (void) {
+
+	const struct timespec interval = { 0, CORE_INTERRUPT_NANOSECONDS };
+
+	for (unsigned int i = 0; i < CORE_INTERRUPTS; i++) {
+		(void) nanosleep (&interval, NULL);
+		test_check_int_eq (pthread_kill (interrupted_thread, CORE_INTERRUPT_SIGNAL), 0, NULL);
+	}
+
+}
+
+// a signal that interrupts the receive of a connection with the threads handler
+// does not end the connection, the next packet still reaches its handler
+static void test_core_receive_interrupted (void) {
+
+	core_counters_reset ();
+
+	interrupted_packets = 0;
+	interrupt_signals = 0;
+
+	struct sigaction action;
+	(void) memset (&action, 0, sizeof (struct sigaction));
+	action.sa_handler = core_interrupt_signal;
+	(void) sigemptyset (&action.sa_mask);
+
+	struct sigaction previous;
+	test_check_int_eq (sigaction (CORE_INTERRUPT_SIGNAL, &action, &previous), 0, NULL);
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create_base (port, CERVER_HANDLER_TYPE_THREADS);
+
+	Handler *app_handler = handler_create (core_interrupted_handler);
+	handler_set_direct_handle (app_handler, true);
+	cerver_set_app_handlers (cerver, app_handler, NULL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&interrupted_packets, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	core_interrupt_receive_thread ();
+	test_check_unsigned_eq (
+		test_wait_counter (&interrupt_signals, CORE_INTERRUPTS, TEST_WAIT_SECONDS),
+		CORE_INTERRUPTS, "the receive thread did not get the signals"
+	);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+	test_check_unsigned_eq (
+		test_wait_counter (&interrupted_packets, CORE_INTERRUPTED_PACKETS, TEST_WAIT_SECONDS),
+		CORE_INTERRUPTED_PACKETS, "the interrupted connection did not receive the next packet"
+	);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_CLOSE_CONNECTION], 0, NULL);
+	test_check_unsigned_eq (events[CERVER_EVENT_CLIENT_DROPPED], 0, NULL);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	test_check_int_eq (sigaction (CORE_INTERRUPT_SIGNAL, &previous, NULL), 0, NULL);
+
+}
+
+static void core_thpool_check (const CerverHandlerType handler_type, const bool expected) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_cerver_create (port, handler_type), port);
+
+	test_check_bool_eq ((core.cerver->thpool != NULL), expected, NULL);
+
+	core_cerver_stop (&core);
+
+}
+
+// only a cerver with the threads handler creates its thpool
+static void test_core_thpool_handler_types (void) {
+
+	core_thpool_check (CERVER_HANDLER_TYPE_POLL, false);
+	core_thpool_check (CERVER_HANDLER_TYPE_THREADS, true);
+
+}
+
 #pragma endregion
 
 int main (int argc, char **argv) {
@@ -2412,6 +2532,8 @@ int main (int argc, char **argv) {
 	test_core_on_hold_without_timeout ();
 	test_core_drop_request_poll ();
 	test_core_drop_request_threads ();
+	test_core_receive_interrupted ();
+	test_core_thpool_handler_types ();
 	test_core_admin ();
 	test_core_admin_bad_packets ();
 	test_core_check_packets ();
