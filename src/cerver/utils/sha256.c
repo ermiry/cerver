@@ -95,7 +95,7 @@ static int calc_chunk (
 		const size_t left = space_in_chunk - TOTAL_LEN_LEN;
 		size_t len = state->total_len;
 		int i;
-		(void) memset(chunk, 0x00, left);
+		(void) memset (chunk, 0x00, left);
 		chunk += left;
 
 		/* Storing of len * 8 as a big endian 64-bit without overflow. */

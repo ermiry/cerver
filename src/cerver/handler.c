@@ -693,7 +693,7 @@ static CerverHandlerError cerver_client_packet_handler (
 		case CLIENT_PACKET_TYPE_CLOSE_CONNECTION: {
 			#ifdef HANDLER_DEBUG
 			cerver_log_debug (
-				"Client %ld requested to close the connection",
+				"Client %lu requested to close the connection",
 				packet->client->id
 			);
 			#endif

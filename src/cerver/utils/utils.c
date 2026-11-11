@@ -470,7 +470,7 @@ char *c_string_strip_quotes (char *str) {
 
 	if (*str == 0) return str;
 
-	char *end = str + strlen(str) - 1;
+	char *end = str + strlen (str) - 1;
 	while (end > str && is_quote (*end)) end--;
 
 	*(end + 1) = 0;
@@ -501,7 +501,7 @@ char *c_string_find_sub_in_len (
 	for (i = 0; i <= (int) (len - needle_len); i++) {
 		if (
 			(haystack[0] == needle[0]) &&
-			(0 == strncmp(haystack, needle, needle_len))
+			(0 == strncmp (haystack, needle, needle_len))
 		)
 			return (char *) haystack;
 
