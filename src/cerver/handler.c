@@ -1871,6 +1871,14 @@ static void cerver_receive_success (
 
 }
 
+// a receive that timed out, that had no data or that a signal interrupted
+// keeps the connection, the next receive tries again
+static inline bool cerver_receive_should_retry (const int error) {
+
+	return (error == EAGAIN) || (error == EWOULDBLOCK) || (error == EINTR);
+
+}
+
 void cerver_receive_internal (
 	CerverReceive *cr,
 	char *packet_buffer, const size_t packet_buffer_size
@@ -1885,7 +1893,7 @@ void cerver_receive_internal (
 	switch (rc) {
 		case -1: {
 			// no more data to read
-			if (errno != EWOULDBLOCK) {
+			if (!cerver_receive_should_retry (errno)) {
 				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_ERROR, LOG_TYPE_CERVER,
@@ -1944,7 +1952,7 @@ static inline u8 cerver_receive_threads_actual (
 	ssize_t rc = recv (cr->socket->sock_fd, buffer, buffer_size, 0);
 	switch (rc) {
 		case -1: {
-			if (errno == EAGAIN) {
+			if (cerver_receive_should_retry (errno)) {
 				#ifdef SOCKET_DEBUG
 				cerver_log_debug (
 					"cerver_receive_threads () - sock fd: %d timed out",
