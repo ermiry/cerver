@@ -6,6 +6,7 @@
 
 #include <pthread.h>
 
+#include <sys/types.h>
 #include <sys/uio.h>
 
 #include "cerver/types/types.h"
@@ -20,7 +21,14 @@
 #define SOCKET_RECYCLE_LIMIT			FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 
 #define SOCKET_MILLISECONDS_PER_SECOND			1000
+#define SOCKET_MICROSECONDS_PER_MILLISECOND		1000
 #define SOCKET_NANOSECONDS_PER_MILLISECOND		1000000
+#define SOCKET_NANOSECONDS_PER_SECOND			1000000000L
+
+// the least bytes and the part of the free space of the send buffer
+// that each sendfile () of a blocking socket sends
+#define SOCKET_SEND_FILE_MIN_ROOM				4096
+#define SOCKET_SEND_FILE_ROOM_DIVISOR			2
 
 #ifdef __cplusplus
 extern "C" {
@@ -92,6 +100,12 @@ CERVER_PUBLIC void socket_deadline_create (
 	struct timespec *deadline, const time_t timeout
 );
 
+// sets the deadline of a send to timeout milliseconds from now (CLOCK_MONOTONIC)
+// a timeout of 0 uses CERVER_DEFAULT_SEND_TIMEOUT
+CERVER_PUBLIC void socket_deadline_create_milliseconds (
+	struct timespec *deadline, const u32 timeout
+);
+
 // returns the milliseconds that are left until the deadline, 0 if it has expired
 CERVER_PUBLIC int socket_deadline_remaining (const struct timespec *deadline);
 
@@ -109,15 +123,34 @@ CERVER_PUBLIC bool socket_send_can_retry (
 );
 
 // sends all the parts with as few system calls as the socket takes,
-// like writev (), but with MSG_NOSIGNAL so a reset connection returns EPIPE instead of raising SIGPIPE
+// like writev (), but with MSG_NOSIGNAL so a reset connection returns EPIPE instead of raising SIGPIPE,
+// and with MSG_DONTWAIT so the deadline is the limit of every send, also in a blocking socket
+// several calls can share the same deadline, so it limits a whole response
 // the socket's write mutex must be held by the caller
 // the parts are modified to skip what was sent
-// sent (optional) is set to every byte that was sent, error (optional) to the errno of a failure
+// sent (optional) is set to every byte that was sent, error (optional) to the errno of a failure,
+// EAGAIN when the deadline expired
 // returns 0 on success, 1 on error
+CERVER_PUBLIC u8 socket_send_vector_until (
+	const Socket *socket,
+	struct iovec *parts, int n_parts,
+	int flags, const struct timespec *deadline,
+	size_t *sent, int *error
+);
+
+// works as socket_send_vector_until () with a deadline of timeout secs from now
 CERVER_PUBLIC u8 socket_send_vector (
 	const Socket *socket,
 	struct iovec *parts, int n_parts,
 	int flags, const time_t timeout,
+	size_t *sent, int *error
+);
+
+// works as socket_send_vector_until () with a single buffer
+CERVER_PUBLIC u8 socket_send_buffer_until (
+	const Socket *socket,
+	const void *buffer, const size_t size,
+	int flags, const struct timespec *deadline,
 	size_t *sent, int *error
 );
 
@@ -129,10 +162,22 @@ CERVER_PUBLIC u8 socket_send_buffer (
 	size_t *sent, int *error
 );
 
-// sends size bytes of a file with sendfile (), from its current offset,
-// until every byte was sent or the deadline expires
+// sends size bytes of a file with sendfile (), from offset (that it moves),
+// or from the current offset of the file when it is NULL,
+// until every byte was sent or the deadline expires,
+// in a blocking socket SO_SNDTIMEO is limited to the deadline while the file is sent
+// and restored after it
 // the socket's write mutex must be held by the caller
+// a file that ends before size bytes fails with an error of 0
 // returns 0 on success, 1 on error
+CERVER_PUBLIC u8 socket_send_file_until (
+	const Socket *socket,
+	const int file_fd, off_t *offset, const size_t size,
+	const struct timespec *deadline,
+	size_t *sent, int *error
+);
+
+// works as socket_send_file_until () with a deadline of timeout secs from now
 CERVER_PUBLIC u8 socket_send_file (
 	const Socket *socket,
 	const int file_fd, const size_t size,
