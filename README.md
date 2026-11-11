@@ -18,6 +18,13 @@
 
 **File Server:** You can set up a personal file storage server that you can use to backup your files or that can be used in a production environment.
 
+**Handler types:** a TCP cerver handles its connections in one of two ways, selected with `cerver_set_handler_type ()`:
+
+- **Poll** (`CERVER_HANDLER_TYPE_POLL`): a single thread accepts, receives and runs the direct handlers with `poll ()`. The sockets block when they send, up to `CERVER_DEFAULT_SEND_TIMEOUT` seconds, so a client that does not read, or a slow direct handler, delays every connection; the handlers with their own queues avoid it.
+- **Threads** (`CERVER_HANDLER_TYPE_THREADS`): each connection is received in its own thread, a thread of the thpool (`cerver_set_thpool_n_threads ()`) while the connection lives, or a detachable thread. With the thpool, the cerver handles at most as many connections as threads at the same time, and the others wait in the listen backlog or are rejected (`cerver_set_overload_policy ()`). Only this type creates the thpool.
+
+An UDP cerver ignores the handler type: a single thread receives every datagram.
+
 **Cerver** provides you with all the required methods to directly create one of these servers, but you can also take advantage of all the features and combine them to create your own custom server that best fits your needs. You can start without an existing template and then customize the cerver methods and hanlders to best fit your application's needs
 
 We use **Cerver** to power many of our core operations in Ermiry, so it is in constant development and new features are being added all the time. You can check the latest news in our [devblog](https://cerver.ermiry.com/devblog) here!
