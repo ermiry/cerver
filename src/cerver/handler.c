@@ -1224,7 +1224,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_client_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_client_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_client_packets, 1);
 			error = cerver_client_packet_handler (packet);
 			packet_delete (packet);
 		} break;
@@ -1238,7 +1238,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_error_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_error_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_error_packets, 1);
 			cerver_error_packet_handler (packet);
 			packet_delete (packet);
 		} break;
@@ -1252,7 +1252,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_request_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_request_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_request_packets, 1);
 			cerver_request_packet_handler (packet);
 			packet_delete (packet);
 		} break;
@@ -1266,7 +1266,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_auth_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_auth_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_auth_packets, 1);
 
 			// the connection is already authenticated, the packet is answered and discarded
 			(void) error_packet_generate_and_send (
@@ -1286,7 +1286,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_game_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_game_packets, 1);
 			game_packet_handler (packet);
 			// the game handlers only read it, it was leaked
 			packet_delete (packet);
@@ -1316,7 +1316,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_app_error_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_app_error_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_app_error_packets, 1);
 			cerver_app_error_packet_handler (packet);
 		} break;
 
@@ -1329,7 +1329,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_custom_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_custom_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_custom_packets, 1);
 			cerver_custom_packet_handler (packet);
 		} break;
 
@@ -1342,7 +1342,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_test_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_test_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_test_packets, 1);
 			cerver_test_packet_handler (packet);
 			packet_delete (packet);
 		} break;
@@ -1354,7 +1354,7 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_bad_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_bad_packets += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_bad_packets, 1);
 
 			error = cerver_bad_packet (packet, cerver_bad_packet_type);
 			packet_delete (packet);
@@ -1441,7 +1441,7 @@ static u8 cerver_packet_select_handler (
 			packet->connection->stats->n_packets_received += 1;
 			#endif
 
-			if (packet->lobby) packet->lobby->stats->n_packets_received += 1;
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->n_packets_received, 1);
 
 			retval = cerver_packet_handler (packet);
 		} break;
@@ -1778,8 +1778,8 @@ static void cerver_receive_success (
 	CERVER_STATS_ADD (cr->cerver->stats->total_bytes_received, received);
 
 	if (cr->lobby) {
-		cr->lobby->stats->n_receives_done += 1;
-		cr->lobby->stats->bytes_received += received;
+		CERVER_STATS_ADD (cr->lobby->stats->n_receives_done, 1);
+		CERVER_STATS_ADD (cr->lobby->stats->bytes_received, received);
 	}
 
 	switch (cr->type) {

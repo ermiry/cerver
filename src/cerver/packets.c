@@ -1656,8 +1656,8 @@ static void packet_send_update_stats (
 	#endif
 
 	if (lobby) {
-		lobby->stats->n_packets_sent += 1;
-		lobby->stats->bytes_sent += sent;
+		CERVER_STATS_ADD (lobby->stats->n_packets_sent, 1);
+		CERVER_STATS_ADD (lobby->stats->bytes_sent, sent);
 	}
 
 	switch (packet_type) {
@@ -1671,7 +1671,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_cerver_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_cerver_packets, 1);
 			break;
 
 		case PACKET_TYPE_CLIENT:
@@ -1682,7 +1682,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_client_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_client_packets, 1);
 			break;
 
 		case PACKET_TYPE_ERROR:
@@ -1693,7 +1693,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_error_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_error_packets, 1);
 			break;
 
 		case PACKET_TYPE_REQUEST:
@@ -1704,7 +1704,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_request_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_request_packets, 1);
 			break;
 
 		case PACKET_TYPE_AUTH:
@@ -1715,7 +1715,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_auth_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_auth_packets, 1);
 			break;
 
 		case PACKET_TYPE_GAME:
@@ -1726,7 +1726,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_game_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_game_packets, 1);
 			break;
 
 		case PACKET_TYPE_APP:
@@ -1737,7 +1737,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_app_packets, 1);
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
@@ -1748,7 +1748,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_error_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_app_error_packets, 1);
 			break;
 
 		case PACKET_TYPE_CUSTOM:
@@ -1759,7 +1759,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_custom_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_custom_packets, 1);
 			break;
 
 		case PACKET_TYPE_TEST:
@@ -1770,7 +1770,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_test_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_test_packets, 1);
 			break;
 
 		default:
@@ -1781,7 +1781,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_unknown_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_unknown_packets, 1);
 			break;
 	}
 
