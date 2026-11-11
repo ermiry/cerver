@@ -809,6 +809,55 @@ que más le sirve a HTTP:
 
 Cada test nuevo debe fallar contra la 2.0b-63.
 
+#### 4.3.9 El cliente que se desconecta (Beta 2.0b-65) — aprobado e implementado, sin commits
+
+**La decisión (2026-11-10):** el port de la 1.8b-7 y de las betas siguientes de la 1.8 espera hasta la beta que vaya
+a salir a producción. Esta beta prueba qué hace cerver cuando un cliente HTTP se va en cualquier punto, en cuatro
+formas (FIN, RST, half-close y desaparecer), también detrás de nginx con una y con dos instancias.
+
+**La librería:**
+
+- Las etapas (`HttpStage`: queued, request line, headers, body, upload, handler, response) se llevan en el
+  `HttpReceive` y cambian en los callbacks del parser, del multipart y del envío.
+- Los contadores separados de los errores del parser:
+  - `n_aborted_requests[stage][reason]`: el cliente se fue, `closed` (un EOF) o `reset`;
+  - `n_vanished_requests[stage]`: un timeout terminó la petición;
+  - `n_failed_responses`: un envío falló. La petición queda en `RESPONSE_FAILED` y se cuenta en la etapa donde se
+    notó: `handler` si no salió nada de la respuesta, `response` si ya había salido una parte.
+- Las métricas `cerver_http_aborted_requests_total{stage,reason}`, `cerver_http_vanished_requests_total{stage}` y
+  `cerver_http_failed_responses_total`. El JSON de admin y `http_cerver_all_stats_print ()` tienen todos los contadores.
+- Los timeouts en milisegundos: `http_cerver_set_{headers,request,idle}_timeout_milliseconds ()`. Los setters de
+  segundos se conservan. El de inactividad reemplaza los 5 s fijos del receive HTTP.
+- El estado del cliente para el handler: `http_receive_get_client_state ()` (un `poll` con `POLLRDHUP` y un `recv`
+  con `MSG_PEEK`, sin consumir datos) y `http_receive_is_client_gone ()`, con `http_cerver_set_half_close_is_gone ()`.
+- El stream que falla pasa a `HTTP_STREAM_STATE_FAILED` y no manda nada más.
+- Los uploads: una petición incompleta nunca deja archivos ni su directorio, y el directorio que queda vacío se
+  borra.
+- **Bugs de paso:**
+  - el discard borraba el archivo ajeno con el nombre que una parte no pudo abrir;
+  - un `recv` interrumpido por una señal terminaba la petición;
+  - un nombre de upload que no cabía se truncaba;
+  - un generador sin nombre guardaba en `uploads/`;
+  - el `multipart_parser_init` y el `mkdir` del directorio generado no se revisaban;
+  - el `100 Continue` que no salía se ignoraba.
+- **Al backlog:** cancelar el handler cuando su cliente se va, y el `TODO` de autenticación de los archivos estáticos.
+
+**Los tests:** la etapa J de `test/roadmap.md`:
+
+- `test/http/disconnect.c`, la matriz;
+- `test/disconnect.sh`, el nivel completo en las variantes;
+- `test/web/disconnect.c` y `test/client/web/disconnect.c` con tres configuraciones de `test/nginx/`;
+- tres tests de uploads en `test/http/receive.c`.
+
+**La verificación:**
+
+- la matriz completa en normal, ASan+UBSan y TSan, y la muestra con valgrind, en las dos familias;
+- nginx 1.31.6 y 1.30.6 × 3 configuraciones × 2 familias;
+- los mutantes de cada arreglo;
+- el gate habitual;
+- pycerver 1.1 contra la imagen devel;
+- artemis con gepp, payloads, tickets y balance.
+
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
 Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.
