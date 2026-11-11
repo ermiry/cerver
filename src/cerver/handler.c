@@ -1074,17 +1074,41 @@ static void cerver_multiple_app_packet_handler (Packet *packet) {
 
 }
 
+// passes the packet to the handler of its request type, set with cerver_set_request_handler ()
+// returns true if the request type has a handler, false to use the one of its packet type
+static bool cerver_request_type_packet_handler (Packet *packet, const bool delete_packet) {
+
+	Handler *handler = cerver_get_request_handler (
+		packet->cerver, packet->header.packet_type, packet->header.request_type
+	);
+
+	if (handler) {
+		handler_packet_dispatch (
+			handler, packet, delete_packet,
+			packet->cerver->info->name, "request_handler"
+		);
+	}
+
+	return (handler != NULL);
+
+}
+
 // handles an PACKET_TYPE_APP packet type
 static void cerver_app_packet_handler (Packet *packet) {
 
-	if (packet->cerver->multiple_handlers) {
+	const bool delete_packet = packet->cerver->app_packet_handler_delete_packet;
+
+	if (cerver_request_type_packet_handler (packet, delete_packet)) {
+		// the handler of its request type has the packet
+	}
+
+	else if (packet->cerver->multiple_handlers) {
 		cerver_multiple_app_packet_handler (packet);
 	}
 
 	else {
 		handler_packet_dispatch (
-			packet->cerver->app_packet_handler, packet,
-			packet->cerver->app_packet_handler_delete_packet,
+			packet->cerver->app_packet_handler, packet, delete_packet,
 			packet->cerver->info->name, "app_packet_handler"
 		);
 	}
@@ -1094,22 +1118,28 @@ static void cerver_app_packet_handler (Packet *packet) {
 // handles an PACKET_TYPE_APP_ERROR packet type
 static void cerver_app_error_packet_handler (Packet *packet) {
 
-	handler_packet_dispatch (
-		packet->cerver->app_error_packet_handler, packet,
-		packet->cerver->app_error_packet_handler_delete_packet,
-		packet->cerver->info->name, "app_error_packet_handler"
-	);
+	const bool delete_packet = packet->cerver->app_error_packet_handler_delete_packet;
+
+	if (!cerver_request_type_packet_handler (packet, delete_packet)) {
+		handler_packet_dispatch (
+			packet->cerver->app_error_packet_handler, packet, delete_packet,
+			packet->cerver->info->name, "app_error_packet_handler"
+		);
+	}
 
 }
 
 // handles a PACKET_TYPE_CUSTOM packet type
 static void cerver_custom_packet_handler (Packet *packet) {
 
-	handler_packet_dispatch (
-		packet->cerver->custom_packet_handler, packet,
-		packet->cerver->custom_packet_handler_delete_packet,
-		packet->cerver->info->name, "custom_packet_handler"
-	);
+	const bool delete_packet = packet->cerver->custom_packet_handler_delete_packet;
+
+	if (!cerver_request_type_packet_handler (packet, delete_packet)) {
+		handler_packet_dispatch (
+			packet->cerver->custom_packet_handler, packet, delete_packet,
+			packet->cerver->info->name, "custom_packet_handler"
+		);
+	}
 
 }
 

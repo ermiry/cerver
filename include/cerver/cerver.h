@@ -494,6 +494,11 @@ struct _Cerver {
 	// DoubleList *handlers;
 	struct _Handler **handlers;
 	unsigned int n_handlers;
+
+	// [packet type][request type], from cerver_set_request_handler ()
+	struct _Handler **request_handlers[CERVER_REQUEST_PACKET_TYPES];
+	u32 request_handlers_size[CERVER_REQUEST_PACKET_TYPES];
+
 	unsigned int num_handlers_alive;       // handlers currently alive
 	unsigned int num_handlers_working;     // handlers currently working
 	pthread_mutex_t *handlers_lock;
@@ -831,6 +836,24 @@ CERVER_EXPORT void cerver_set_custom_handler_delete (
 // returns 0 on success, 1 on error
 CERVER_EXPORT int cerver_set_multiple_handlers (
 	Cerver *cerver, unsigned int n_handlers
+);
+
+// sets, before the cerver starts, the handler of the packets of a request type
+// of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR or PACKET_TYPE_CUSTOM, below CERVER_REQUEST_HANDLERS_MAX;
+// the packets of the request types without one go to the handler of their packet type,
+// and they are released like the ones of that handler
+// the cerver deletes the handler in its teardown
+// returns 0 on success, 1 on error or if the request type already has a handler
+CERVER_EXPORT u8 cerver_set_request_handler (
+	Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	struct _Handler *handler
+);
+
+// returns the handler of the request type of a packet type, NULL if it does not have one
+CERVER_PRIVATE struct _Handler *cerver_get_request_handler (
+	const Cerver *cerver,
+	const PacketType packet_type, const u32 request_type
 );
 
 // set whether to check or not incoming packets

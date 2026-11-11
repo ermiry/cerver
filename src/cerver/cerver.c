@@ -547,6 +547,139 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
 #pragma endregion
 
+#pragma region requests
+
+static void cerver_request_handlers_delete (Cerver *cerver) {
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			handler_delete (cerver->request_handlers[type][request]);
+		}
+
+		free (cerver->request_handlers[type]);
+		cerver->request_handlers[type] = NULL;
+		cerver->request_handlers_size[type] = 0;
+	}
+
+}
+
+// grows the handlers of a packet type to have the request type, the new ones without a handler
+// returns 0 on success, 1 on error
+static u8 cerver_request_handlers_grow (
+	Cerver *cerver, const unsigned int type, const u32 request_type
+) {
+
+	u8 retval = 1;
+
+	const u32 size = request_type + 1;
+	Handler **handlers = (Handler **) realloc (
+		cerver->request_handlers[type], sizeof (Handler *) * size
+	);
+
+	if (handlers) {
+		for (u32 request = cerver->request_handlers_size[type]; request < size; request++) {
+			handlers[request] = NULL;
+		}
+
+		cerver->request_handlers[type] = handlers;
+		cerver->request_handlers_size[type] = size;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// sets, before the cerver starts, the handler of the packets of a request type
+// returns 0 on success, 1 on error or if the request type already has a handler
+u8 cerver_set_request_handler (
+	Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	Handler *handler
+) {
+
+	u8 retval = 1;
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (
+		cerver && handler && !cerver_is_running (cerver)
+		&& (type < CERVER_REQUEST_PACKET_TYPES) && (request_type < CERVER_REQUEST_HANDLERS_MAX)
+		&& !cerver_get_request_handler (cerver, packet_type, request_type)
+	) {
+		if (
+			(request_type < cerver->request_handlers_size[type])
+			|| !cerver_request_handlers_grow (cerver, type, request_type)
+		) {
+			handler->type = HANDLER_TYPE_CERVER;
+			handler->cerver = cerver;
+
+			cerver->request_handlers[type][request_type] = handler;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// returns the handler of the request type of a packet type, NULL if it does not have one
+Handler *cerver_get_request_handler (
+	const Cerver *cerver,
+	const PacketType packet_type, const u32 request_type
+) {
+
+	Handler *handler = NULL;
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (
+		cerver && (type < CERVER_REQUEST_PACKET_TYPES)
+		&& (request_type < cerver->request_handlers_size[type])
+	) {
+		handler = cerver->request_handlers[type][request_type];
+	}
+
+	return handler;
+
+}
+
+// the handlers that are not direct get their own threads
+// returns 0 on success, 1 on error
+static u8 cerver_request_handlers_start (Cerver *cerver) {
+
+	u8 errors = 0;
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			Handler *handler = cerver->request_handlers[type][request];
+			if (handler && !handler->direct_handle && handler_start (handler)) {
+				cerver_log_error (
+					"Failed to start cerver %s handler of the request %u!",
+					cerver->info->name, request
+				);
+
+				errors = 1;
+			}
+		}
+	}
+
+	return errors;
+
+}
+
+static void cerver_request_handlers_stop (Cerver *cerver) {
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			handler_stop (cerver->request_handlers[type][request]);
+		}
+	}
+
+}
+
+#pragma endregion
+
 #pragma region main
 
 Cerver *cerver_new (void) {
@@ -656,6 +789,12 @@ Cerver *cerver_new (void) {
 		cerver->multiple_handlers = CERVER_DEFAULT_MULTIPLE_HANDLERS;
 		cerver->handlers = NULL;
 		cerver->n_handlers = 0;
+
+		for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+			cerver->request_handlers[type] = NULL;
+			cerver->request_handlers_size[type] = 0;
+		}
+
 		cerver->num_handlers_alive = 0;
 		cerver->num_handlers_working = 0;
 		cerver->handlers_lock = NULL;
@@ -744,6 +883,8 @@ void cerver_delete (void *ptr) {
 
 			free (cerver->handlers);
 		}
+
+		cerver_request_handlers_delete (cerver);
 
 		if (cerver->handlers_lock) {
 			pthread_mutex_destroy (cerver->handlers_lock);
@@ -1542,6 +1683,8 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 		handler_stop (cerver->app_error_packet_handler);
 
 		handler_stop (cerver->custom_packet_handler);
+
+		cerver_request_handlers_stop (cerver);
 	}
 
 	return 0;
@@ -2396,6 +2539,8 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 		errors |= cerver_app_error_handler_start (cerver);
 
 		errors |= cerver_custom_handler_start (cerver);
+
+		errors |= cerver_request_handlers_start (cerver);
 
 		if (!errors) {
 			#ifdef CERVER_DEBUG
