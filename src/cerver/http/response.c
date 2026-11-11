@@ -556,7 +556,7 @@ HttpResponse *http_response_create (
 	const http_status status, const void *data, size_t data_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -585,7 +585,7 @@ static void http_response_compile_single_header (
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
 		"\r\n",
-		response->status, http_status_string (response->status),
+		(unsigned int) response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
 
@@ -608,7 +608,7 @@ static void http_response_compile_multiple_headers (
 		main_header, HTTP_RESPONSE_MAIN_HEADER_SIZE,
 		"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 		HTTP_RESPONSE_CONNECTION_CLOSE_HEADER,
-		response->status, http_status_string (response->status),
+		(unsigned int) response->status, http_status_string (response->status),
 		CERVER_VERSION
 	);
 
@@ -1849,7 +1849,7 @@ u8 http_response_send_file_internal (
 	http_response_compile_multiple_headers (response);
 
 	#ifdef HTTP_RESPONSE_DEBUG
-	cerver_log_msg ("\n%s\n", response->header);
+	cerver_log_msg ("\n%s\n", (const char *) response->header);
 	#endif
 
 	if (
@@ -1896,7 +1896,7 @@ u8 http_response_send_file (
 	u8 retval = 1;
 
 	// check if file exists
-	struct stat filestatus = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestatus)) {
 		retval = http_response_send_file_internal (
 			http_receive, status,
@@ -1978,8 +1978,8 @@ u8 http_response_render_text (
 			header, HTTP_RESPONSE_RENDER_TEXT_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %lu\r\n\r\n",
-			status,
+			"Content-Type: text/html; charset=UTF-8\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) status,
 			http_status_string (status),
 			CERVER_VERSION,
 			text_len
@@ -2018,8 +2018,8 @@ u8 http_response_render_json (
 			header, HTTP_RESPONSE_RENDER_JSON_HEADER_SIZE - 1,
 			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %lu\r\n\r\n",
-			status,
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) status,
 			http_status_string (status),
 			CERVER_VERSION,
 			json_len
@@ -2129,7 +2129,7 @@ u8 http_response_handle_video (
 	u8 retval = 1;
 
 	// check that video exists
-	struct stat filestats = { 0 };
+	struct stat filestats = CERVER_ZERO_INITIALIZER;
 	if (!stat (filename, &filestats)) {
 		// get range
 		BytesRange bytes_range = {
@@ -2221,7 +2221,7 @@ static HttpResponse *http_response_create_json_common (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2508,7 +2508,7 @@ static HttpResponse *http_response_json_internal (
 	const http_status status, const char *key, const char *value
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2527,10 +2527,10 @@ static HttpResponse *http_response_json_internal (
 		// http_response_add_header (res, RESPONSE_HEADER_CONTENT_LENGTH, json_len);
 
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);
@@ -2654,7 +2654,7 @@ static HttpResponse *http_response_json_custom_internal (
 	const http_status status, const char *json
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2664,10 +2664,10 @@ static HttpResponse *http_response_json_custom_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);
@@ -2725,7 +2725,7 @@ static HttpResponse *http_response_json_custom_reference_internal (
 	const char *json, const size_t json_len
 ) {
 
-	HttpResponse *response = http_response_new ();
+	HttpResponse *response = (HttpResponse *) http_response_new ();
 	if (response) {
 		response->status = status;
 
@@ -2736,10 +2736,10 @@ static HttpResponse *http_response_json_custom_reference_internal (
 
 		// header
 		response->header = c_string_create (
-			"HTTP/1.1 %d %s\r\nServer: Cerver/%s\r\n"
+			"HTTP/1.1 %u %s\r\nServer: Cerver/%s\r\n"
 			HTTP_RESPONSE_CONNECTION_CLOSE_HEADER
-			"Content-Type: application/json\r\nContent-Length: %ld\r\n\r\n",
-			response->status, http_status_string (response->status),
+			"Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
+			(unsigned int) response->status, http_status_string (response->status),
 			CERVER_VERSION,
 			response->data_len
 		);

@@ -444,7 +444,8 @@ const String *http_request_get_header (
 	const HttpRequest *http_request, const http_header header
 ) {
 
-	return ((header >= 0) && (header < HTTP_HEADERS_SIZE)) ?
+	// a negative value of a signed enum is a large unsigned one
+	return ((unsigned int) header < (unsigned int) HTTP_HEADERS_SIZE) ?
 		http_request->headers[header] : NULL;
 
 }

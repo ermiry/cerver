@@ -567,7 +567,7 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // a custom path on the fly using variable arguments
 CERVER_EXPORT void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // sets the mode_t to be used when creating uploads files
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE

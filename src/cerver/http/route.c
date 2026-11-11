@@ -677,7 +677,7 @@ void http_route_print (const HttpRoute *route) {
 		cerver_log_msg ("\tAuth: %s", http_route_auth_type_to_string (route->auth_type));
 
 		if (route->children->size) {
-			cerver_log_msg ("\tChildren (%ld):", route->children->size);
+			cerver_log_msg ("\tChildren (%zu):", route->children->size);
 			for (ListElement *le = dlist_start (route->children); le; le = le->next) {
 				http_route_print_child ((HttpRoute *) le->data);
 			}
