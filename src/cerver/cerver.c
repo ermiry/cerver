@@ -3845,6 +3845,21 @@ static void cerver_report_check_info_handle_auth (
 
 }
 
+// the names come from CERVER_TYPE_MAP, so a new type is never logged as unknown
+static void cerver_report_log_type (const CerverType type) {
+
+	const char *name = cerver_type_to_string (type);
+
+	if ((type != CERVER_TYPE_NONE) && (name != cerver_type_to_string (CERVER_TYPE_NONE))) {
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: %s", name);
+	}
+
+	else {
+		cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Cerver type: UNKNOWN");
+	}
+
+}
+
 u8 cerver_report_check_info (
 	CerverReport *cerver_report,
 	Client *client, Connection *connection
@@ -3887,27 +3902,7 @@ u8 cerver_report_check_info (
 			// #endif
 		}
 
-		// #ifdef CLIENT_DEBUG
-		switch (cerver_report->type) {
-			case CERVER_TYPE_CUSTOM:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: CUSTOM");
-				break;
-
-			case CERVER_TYPE_GAME:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: GAME");
-				break;
-			case CERVER_TYPE_WEB:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: WEB");
-				break;
-			 case CERVER_TYPE_FILES:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: FILES");
-				break;
-
-			default:
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Cerver type: UNKNOWN");
-				break;
-		}
-		// #endif
+		cerver_report_log_type (cerver_report->type);
 
 		cerver_report_check_info_handle_auth (cerver_report, client, connection);
 
