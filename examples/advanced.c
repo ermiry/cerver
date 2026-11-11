@@ -141,7 +141,7 @@ static void *on_client_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_CLIENT,
-			"Client %ld connected with sock fd %d to cerver %s!\n",
+			"Client %lu connected with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
@@ -262,11 +262,11 @@ int main (void) {
 		);
 
 		unsigned int fps = 5;
-		String *update = str_create ("Update fps: %d", fps);
+		String *update = str_create ("Update fps: %u", fps);
 		cerver_set_update (my_cerver, update_thread, update, str_delete, fps);
 
 		unsigned int interval_value = 1;
-		String *interval = str_create ("Update interval: %d", interval_value);
+		String *interval = str_create ("Update interval: %u", interval_value);
 		cerver_set_update_interval (my_cerver, update_interval_thread, interval, str_delete, interval_value);
 
 		app_cerver_events_register (my_cerver);

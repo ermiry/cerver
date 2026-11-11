@@ -277,7 +277,7 @@ static void *on_admin_connected (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
-			"Admin with client %ld authenticated connection with sock fd %d to cerver %s!\n",
+			"Admin with client %lu authenticated connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
@@ -298,7 +298,7 @@ static void *on_admin_new_connection (void *event_data_ptr) {
 		printf ("\n");
 		cerver_log (
 			LOG_TYPE_EVENT, LOG_TYPE_ADMIN,
-			"Admin with client %ld new connection with sock fd %d to cerver %s!\n",
+			"Admin with client %lu new connection with sock fd %d to cerver %s!\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
@@ -377,12 +377,16 @@ static void *on_admin_dropped (void *event_data_ptr) {
 
 void admin_update_thread (void *data) {
 
+	(void) data;
+
 	cerver_log_msg ("Updating multiple times x second!\n");
 
 }
 
 void admin_update_internal_thread (void *data) {
-	
+
+	(void) data;
+
 	cerver_log_msg ("Updating every second!\n");
 
 }
