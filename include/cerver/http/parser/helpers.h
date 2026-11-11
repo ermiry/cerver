@@ -1,3 +1,32 @@
+/*
+ * llhttp 9.4.3 (https://github.com/nodejs/llhttp), split and restyled for cerver
+ * the errors, the flags and the lenient flags of the parser,
+ * the methods are the ones of cerver/http/method.h and the statuses the ones of cerver/http/status.h
+ *
+ * This software is licensed under the MIT License.
+ *
+ * Copyright Fedor Indutny, 2018.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to permit
+ * persons to whom the Software is furnished to do so, subject to the
+ * following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 #ifndef _CERVER_HTTP_PARSER_HELPERS_H_
 #define _CERVER_HTTP_PARSER_HELPERS_H_
 
@@ -5,251 +34,118 @@
 extern "C" {
 #endif
 
+#define HTTP_ERRNO_MAP(XX)															\
+	XX(0, OK, OK)																	\
+	XX(1, INTERNAL, INTERNAL)														\
+	XX(2, STRICT, STRICT)															\
+	XX(3, LF_EXPECTED, LF_EXPECTED)													\
+	XX(4, UNEXPECTED_CONTENT_LENGTH, UNEXPECTED_CONTENT_LENGTH)						\
+	XX(5, CLOSED_CONNECTION, CLOSED_CONNECTION)										\
+	XX(6, INVALID_METHOD, INVALID_METHOD)											\
+	XX(7, INVALID_URL, INVALID_URL)													\
+	XX(8, INVALID_CONSTANT, INVALID_CONSTANT)										\
+	XX(9, INVALID_VERSION, INVALID_VERSION)											\
+	XX(10, INVALID_HEADER_TOKEN, INVALID_HEADER_TOKEN)								\
+	XX(11, INVALID_CONTENT_LENGTH, INVALID_CONTENT_LENGTH)							\
+	XX(12, INVALID_CHUNK_SIZE, INVALID_CHUNK_SIZE)									\
+	XX(13, INVALID_STATUS, INVALID_STATUS)											\
+	XX(14, INVALID_EOF_STATE, INVALID_EOF_STATE)									\
+	XX(15, INVALID_TRANSFER_ENCODING, INVALID_TRANSFER_ENCODING)					\
+	XX(16, CB_MESSAGE_BEGIN, CB_MESSAGE_BEGIN)										\
+	XX(17, CB_HEADERS_COMPLETE, CB_HEADERS_COMPLETE)								\
+	XX(18, CB_MESSAGE_COMPLETE, CB_MESSAGE_COMPLETE)								\
+	XX(19, CB_CHUNK_HEADER, CB_CHUNK_HEADER)										\
+	XX(20, CB_CHUNK_COMPLETE, CB_CHUNK_COMPLETE)									\
+	XX(21, PAUSED, PAUSED)															\
+	XX(22, PAUSED_UPGRADE, PAUSED_UPGRADE)											\
+	XX(23, PAUSED_H2_UPGRADE, PAUSED_H2_UPGRADE)									\
+	XX(24, USER, USER)																\
+	XX(25, CR_EXPECTED, CR_EXPECTED)												\
+	XX(26, CB_URL_COMPLETE, CB_URL_COMPLETE)										\
+	XX(27, CB_STATUS_COMPLETE, CB_STATUS_COMPLETE)									\
+	XX(28, CB_HEADER_FIELD_COMPLETE, CB_HEADER_FIELD_COMPLETE)						\
+	XX(29, CB_HEADER_VALUE_COMPLETE, CB_HEADER_VALUE_COMPLETE)						\
+	XX(30, UNEXPECTED_SPACE, UNEXPECTED_SPACE)										\
+	XX(31, CB_RESET, CB_RESET)														\
+	XX(32, CB_METHOD_COMPLETE, CB_METHOD_COMPLETE)									\
+	XX(33, CB_VERSION_COMPLETE, CB_VERSION_COMPLETE)								\
+	XX(34, CB_CHUNK_EXTENSION_NAME_COMPLETE, CB_CHUNK_EXTENSION_NAME_COMPLETE)		\
+	XX(35, CB_CHUNK_EXTENSION_VALUE_COMPLETE, CB_CHUNK_EXTENSION_VALUE_COMPLETE)	\
+	XX(38, CB_PROTOCOL_COMPLETE, CB_PROTOCOL_COMPLETE)
+
 enum llhttp_errno {
-	HPE_OK = 0,
-	HPE_INTERNAL = 1,
-	HPE_STRICT = 2,
-	HPE_LF_EXPECTED = 3,
-	HPE_UNEXPECTED_CONTENT_LENGTH = 4,
-	HPE_CLOSED_CONNECTION = 5,
-	HPE_INVALID_METHOD = 6,
-	HPE_INVALID_URL = 7,
-	HPE_INVALID_CONSTANT = 8,
-	HPE_INVALID_VERSION = 9,
-	HPE_INVALID_HEADER_TOKEN = 10,
-	HPE_INVALID_CONTENT_LENGTH = 11,
-	HPE_INVALID_CHUNK_SIZE = 12,
-	HPE_INVALID_STATUS = 13,
-	HPE_INVALID_EOF_STATE = 14,
-	HPE_INVALID_TRANSFER_ENCODING = 15,
-	HPE_CB_MESSAGE_BEGIN = 16,
-	HPE_CB_HEADERS_COMPLETE = 17,
-	HPE_CB_MESSAGE_COMPLETE = 18,
-	HPE_CB_CHUNK_HEADER = 19,
-	HPE_CB_CHUNK_COMPLETE = 20,
-	HPE_PAUSED = 21,
-	HPE_PAUSED_UPGRADE = 22,
-	HPE_PAUSED_H2_UPGRADE = 23,
-	HPE_USER = 24
+
+	#define XX(num, name, string) HPE_##name = num,
+	HTTP_ERRNO_MAP(XX)
+	#undef XX
+
 };
 
 typedef enum llhttp_errno llhttp_errno_t;
 
 enum llhttp_flags {
-	F_CONNECTION_KEEP_ALIVE = 0x1,
-	F_CONNECTION_CLOSE = 0x2,
-	F_CONNECTION_UPGRADE = 0x4,
-	F_CHUNKED = 0x8,
-	F_UPGRADE = 0x10,
-	F_CONTENT_LENGTH = 0x20,
-	F_SKIPBODY = 0x40,
-	F_TRAILING = 0x80,
-	F_TRANSFER_ENCODING = 0x200
+
+	F_CONNECTION_KEEP_ALIVE		= 0x1,
+	F_CONNECTION_CLOSE			= 0x2,
+	F_CONNECTION_UPGRADE		= 0x4,
+	F_CHUNKED					= 0x8,
+	F_UPGRADE					= 0x10,
+	F_CONTENT_LENGTH			= 0x20,
+	F_SKIPBODY					= 0x40,
+	F_TRAILING					= 0x80,
+	F_TRANSFER_ENCODING			= 0x200
+
 };
 
 typedef enum llhttp_flags llhttp_flags_t;
 
+// what each lenient flag accepts, all of them are disabled by default (strict mode)
+// the descriptions are stringified with #, they can not have commas
+// the flag 0x400 of llhttp (header value relaxed) is left out: in 9.4.3 a NUL byte in a header value
+// makes llhttp_execute () loop forever with it, so cerver never enables it
+#define LLHTTP_LENIENT_HEADER_VALUE_RELAXED		0x400
+
+#define LLHTTP_LENIENT_MAP(XX)																										\
+	XX(0x1,		HEADERS,					headers,					invalid header values without checks)						\
+	XX(0x2,		CHUNKED_LENGTH,				chunked_length,				Transfer-Encoding with Content-Length)						\
+	XX(0x4,		KEEP_ALIVE,					keep_alive,					the data after a request with Connection close)				\
+	XX(0x8,		TRANSFER_ENCODING,			transfer_encoding,			a value after chunked in Transfer-Encoding)					\
+	XX(0x10,	VERSION,					version,					any HTTP version)											\
+	XX(0x20,	DATA_AFTER_CLOSE,			data_after_close,			and discards the data after a request with Connection close)	\
+	XX(0x40,	OPTIONAL_LF_AFTER_CR,		optional_lf_after_cr,		a CR without LF at the end of a line)						\
+	XX(0x80,	OPTIONAL_CRLF_AFTER_CHUNK,	optional_crlf_after_chunk,	a chunk right after the previous one without CRLF)			\
+	XX(0x100,	OPTIONAL_CR_BEFORE_LF,		optional_cr_before_lf,		a LF without CR at the end of a line)						\
+	XX(0x200,	SPACES_AFTER_CHUNK_SIZE,	spaces_after_chunk_size,	spaces after the size of a chunk)
+
 enum llhttp_lenient_flags {
-	LENIENT_HEADERS = 0x1,
-	LENIENT_CHUNKED_LENGTH = 0x2,
-	LENIENT_KEEP_ALIVE = 0x4
+
+	#define XX(num, name, string, description) LENIENT_##name = num,
+	LLHTTP_LENIENT_MAP(XX)
+	#undef XX
+
 };
 
 typedef enum llhttp_lenient_flags llhttp_lenient_flags_t;
 
 enum llhttp_type {
-	HTTP_BOTH = 0,
-	HTTP_REQUEST = 1,
-	HTTP_RESPONSE = 2
+
+	HTTP_BOTH		= 0,
+	HTTP_REQUEST	= 1,
+	HTTP_RESPONSE	= 2
+
 };
 
 typedef enum llhttp_type llhttp_type_t;
 
 enum llhttp_finish {
-	HTTP_FINISH_SAFE = 0,
-	HTTP_FINISH_SAFE_WITH_CB = 1,
-	HTTP_FINISH_UNSAFE = 2
+
+	HTTP_FINISH_SAFE			= 0,
+	HTTP_FINISH_SAFE_WITH_CB	= 1,
+	HTTP_FINISH_UNSAFE			= 2
+
 };
 
 typedef enum llhttp_finish llhttp_finish_t;
-
-enum llhttp_method {
-	HTTP_DELETE = 0,
-	HTTP_GET = 1,
-	HTTP_HEAD = 2,
-	HTTP_POST = 3,
-	HTTP_PUT = 4,
-	HTTP_CONNECT = 5,
-	HTTP_OPTIONS = 6,
-	HTTP_TRACE = 7,
-	HTTP_COPY = 8,
-	HTTP_LOCK = 9,
-	HTTP_MKCOL = 10,
-	HTTP_MOVE = 11,
-	HTTP_PROPFIND = 12,
-	HTTP_PROPPATCH = 13,
-	HTTP_SEARCH = 14,
-	HTTP_UNLOCK = 15,
-	HTTP_BIND = 16,
-	HTTP_REBIND = 17,
-	HTTP_UNBIND = 18,
-	HTTP_ACL = 19,
-	HTTP_REPORT = 20,
-	HTTP_MKACTIVITY = 21,
-	HTTP_CHECKOUT = 22,
-	HTTP_MERGE = 23,
-	HTTP_MSEARCH = 24,
-	HTTP_NOTIFY = 25,
-	HTTP_SUBSCRIBE = 26,
-	HTTP_UNSUBSCRIBE = 27,
-	HTTP_PATCH = 28,
-	HTTP_PURGE = 29,
-	HTTP_MKCALENDAR = 30,
-	HTTP_LINK = 31,
-	HTTP_UNLINK = 32,
-	HTTP_SOURCE = 33,
-	HTTP_PRI = 34,
-	HTTP_DESCRIBE = 35,
-	HTTP_ANNOUNCE = 36,
-	HTTP_SETUP = 37,
-	HTTP_PLAY = 38,
-	HTTP_PAUSE = 39,
-	HTTP_TEARDOWN = 40,
-	HTTP_GET_PARAMETER = 41,
-	HTTP_SET_PARAMETER = 42,
-	HTTP_REDIRECT = 43,
-	HTTP_RECORD = 44,
-	HTTP_FLUSH = 45
-};
-
-typedef enum llhttp_method llhttp_method_t;
-
-#define HTTP_ERRNO_MAP(XX) \
-	XX(0, OK, OK) \
-	XX(1, INTERNAL, INTERNAL) \
-	XX(2, STRICT, STRICT) \
-	XX(3, LF_EXPECTED, LF_EXPECTED) \
-	XX(4, UNEXPECTED_CONTENT_LENGTH, UNEXPECTED_CONTENT_LENGTH) \
-	XX(5, CLOSED_CONNECTION, CLOSED_CONNECTION) \
-	XX(6, INVALID_METHOD, INVALID_METHOD) \
-	XX(7, INVALID_URL, INVALID_URL) \
-	XX(8, INVALID_CONSTANT, INVALID_CONSTANT) \
-	XX(9, INVALID_VERSION, INVALID_VERSION) \
-	XX(10, INVALID_HEADER_TOKEN, INVALID_HEADER_TOKEN) \
-	XX(11, INVALID_CONTENT_LENGTH, INVALID_CONTENT_LENGTH) \
-	XX(12, INVALID_CHUNK_SIZE, INVALID_CHUNK_SIZE) \
-	XX(13, INVALID_STATUS, INVALID_STATUS) \
-	XX(14, INVALID_EOF_STATE, INVALID_EOF_STATE) \
-	XX(15, INVALID_TRANSFER_ENCODING, INVALID_TRANSFER_ENCODING) \
-	XX(16, CB_MESSAGE_BEGIN, CB_MESSAGE_BEGIN) \
-	XX(17, CB_HEADERS_COMPLETE, CB_HEADERS_COMPLETE) \
-	XX(18, CB_MESSAGE_COMPLETE, CB_MESSAGE_COMPLETE) \
-	XX(19, CB_CHUNK_HEADER, CB_CHUNK_HEADER) \
-	XX(20, CB_CHUNK_COMPLETE, CB_CHUNK_COMPLETE) \
-	XX(21, PAUSED, PAUSED) \
-	XX(22, PAUSED_UPGRADE, PAUSED_UPGRADE) \
-	XX(23, PAUSED_H2_UPGRADE, PAUSED_H2_UPGRADE) \
-	XX(24, USER, USER) \
-
-#define HTTP_METHOD_MAP(XX) \
-	XX(0, DELETE, DELETE) \
-	XX(1, GET, GET) \
-	XX(2, HEAD, HEAD) \
-	XX(3, POST, POST) \
-	XX(4, PUT, PUT) \
-	XX(5, CONNECT, CONNECT) \
-	XX(6, OPTIONS, OPTIONS) \
-	XX(7, TRACE, TRACE) \
-	XX(8, COPY, COPY) \
-	XX(9, LOCK, LOCK) \
-	XX(10, MKCOL, MKCOL) \
-	XX(11, MOVE, MOVE) \
-	XX(12, PROPFIND, PROPFIND) \
-	XX(13, PROPPATCH, PROPPATCH) \
-	XX(14, SEARCH, SEARCH) \
-	XX(15, UNLOCK, UNLOCK) \
-	XX(16, BIND, BIND) \
-	XX(17, REBIND, REBIND) \
-	XX(18, UNBIND, UNBIND) \
-	XX(19, ACL, ACL) \
-	XX(20, REPORT, REPORT) \
-	XX(21, MKACTIVITY, MKACTIVITY) \
-	XX(22, CHECKOUT, CHECKOUT) \
-	XX(23, MERGE, MERGE) \
-	XX(24, MSEARCH, M-SEARCH) \
-	XX(25, NOTIFY, NOTIFY) \
-	XX(26, SUBSCRIBE, SUBSCRIBE) \
-	XX(27, UNSUBSCRIBE, UNSUBSCRIBE) \
-	XX(28, PATCH, PATCH) \
-	XX(29, PURGE, PURGE) \
-	XX(30, MKCALENDAR, MKCALENDAR) \
-	XX(31, LINK, LINK) \
-	XX(32, UNLINK, UNLINK) \
-	XX(33, SOURCE, SOURCE) \
-
-#define RTSP_METHOD_MAP(XX) \
-	XX(1, GET, GET) \
-	XX(3, POST, POST) \
-	XX(6, OPTIONS, OPTIONS) \
-	XX(35, DESCRIBE, DESCRIBE) \
-	XX(36, ANNOUNCE, ANNOUNCE) \
-	XX(37, SETUP, SETUP) \
-	XX(38, PLAY, PLAY) \
-	XX(39, PAUSE, PAUSE) \
-	XX(40, TEARDOWN, TEARDOWN) \
-	XX(41, GET_PARAMETER, GET_PARAMETER) \
-	XX(42, SET_PARAMETER, SET_PARAMETER) \
-	XX(43, REDIRECT, REDIRECT) \
-	XX(44, RECORD, RECORD) \
-	XX(45, FLUSH, FLUSH) \
-
-#define HTTP_ALL_METHOD_MAP(XX) \
-	XX(0, DELETE, DELETE) \
-	XX(1, GET, GET) \
-	XX(2, HEAD, HEAD) \
-	XX(3, POST, POST) \
-	XX(4, PUT, PUT) \
-	XX(5, CONNECT, CONNECT) \
-	XX(6, OPTIONS, OPTIONS) \
-	XX(7, TRACE, TRACE) \
-	XX(8, COPY, COPY) \
-	XX(9, LOCK, LOCK) \
-	XX(10, MKCOL, MKCOL) \
-	XX(11, MOVE, MOVE) \
-	XX(12, PROPFIND, PROPFIND) \
-	XX(13, PROPPATCH, PROPPATCH) \
-	XX(14, SEARCH, SEARCH) \
-	XX(15, UNLOCK, UNLOCK) \
-	XX(16, BIND, BIND) \
-	XX(17, REBIND, REBIND) \
-	XX(18, UNBIND, UNBIND) \
-	XX(19, ACL, ACL) \
-	XX(20, REPORT, REPORT) \
-	XX(21, MKACTIVITY, MKACTIVITY) \
-	XX(22, CHECKOUT, CHECKOUT) \
-	XX(23, MERGE, MERGE) \
-	XX(24, MSEARCH, M-SEARCH) \
-	XX(25, NOTIFY, NOTIFY) \
-	XX(26, SUBSCRIBE, SUBSCRIBE) \
-	XX(27, UNSUBSCRIBE, UNSUBSCRIBE) \
-	XX(28, PATCH, PATCH) \
-	XX(29, PURGE, PURGE) \
-	XX(30, MKCALENDAR, MKCALENDAR) \
-	XX(31, LINK, LINK) \
-	XX(32, UNLINK, UNLINK) \
-	XX(33, SOURCE, SOURCE) \
-	XX(34, PRI, PRI) \
-	XX(35, DESCRIBE, DESCRIBE) \
-	XX(36, ANNOUNCE, ANNOUNCE) \
-	XX(37, SETUP, SETUP) \
-	XX(38, PLAY, PLAY) \
-	XX(39, PAUSE, PAUSE) \
-	XX(40, TEARDOWN, TEARDOWN) \
-	XX(41, GET_PARAMETER, GET_PARAMETER) \
-	XX(42, SET_PARAMETER, SET_PARAMETER) \
-	XX(43, REDIRECT, REDIRECT) \
-	XX(44, RECORD, RECORD) \
-	XX(45, FLUSH, FLUSH) \
 
 #ifdef __cplusplus
 }
