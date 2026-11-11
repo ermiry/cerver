@@ -150,6 +150,9 @@ Balancer *balancer_new (void) {
 		balancer->name = NULL;
 		balancer->type = BALANCER_TYPE_NONE;
 
+		balancer->select_service = NULL;
+		balancer->select_service_args = NULL;
+
 		balancer->cerver = NULL;
 		balancer->client = NULL;
 
@@ -247,6 +250,19 @@ void balancer_set_on_unavailable_services (
 
 	if (balancer) {
 		balancer->on_unavailable_services = on_unavailable_services;
+	}
+
+}
+
+// sets, before the balancer starts, the method that selects the service of each packet
+// in a BALANCER_TYPE_CUSTOM balancer
+void balancer_set_select_service (
+	Balancer *balancer, const BalancerSelectService select_service, void *args
+) {
+
+	if (balancer) {
+		balancer->select_service = select_service;
+		balancer->select_service_args = args;
 	}
 
 }
@@ -1149,8 +1165,34 @@ static inline bool balancer_service_is_working (const Service *service) {
 
 }
 
+// the index of the method of the app is checked against the services,
+// the method runs without the lock, so it can use the balancer
+static int balancer_get_custom_service (
+	Balancer *balancer, const PacketHeader *header,
+	const char *body, const size_t body_size
+) {
+
+	int retval = -1;
+
+	if (balancer->select_service) {
+		const int selected = balancer->select_service (
+			header, body, body_size, balancer->select_service_args
+		);
+
+		if (
+			(selected >= 0) && (selected < balancer->n_services)
+			&& balancer_service_is_working (balancer->services[selected])
+		) {
+			retval = selected;
+		}
+	}
+
+	return retval;
+
+}
+
 // the handler id comes from the network, so it is checked against the services
-static int balancer_get_next_service (
+static int balancer_get_service_by_type (
 	Balancer *balancer, const PacketHeader *header
 ) {
 
@@ -1184,6 +1226,18 @@ static int balancer_get_next_service (
 	(void) pthread_mutex_unlock (balancer->mutex);
 
 	return retval;
+
+}
+
+// returns the index of the service that handles the packet, -1 if none can handle it
+static int balancer_get_next_service (
+	Balancer *balancer, const PacketHeader *header,
+	const char *body, const size_t body_size
+) {
+
+	return (balancer->type == BALANCER_TYPE_CUSTOM)
+		? balancer_get_custom_service (balancer, header, body, body_size)
+		: balancer_get_service_by_type (balancer, header);
 
 }
 
@@ -1254,7 +1308,7 @@ static void balancer_route_to_service (
 	PacketHeader *header, char *body, const size_t body_size
 ) {
 
-	int selected_service = balancer_get_next_service (balancer, header);
+	int selected_service = balancer_get_next_service (balancer, header, body, body_size);
 	if (selected_service >= 0) {
 		Service *service = balancer->services[selected_service];
 
