@@ -476,7 +476,7 @@ typedef struct PacketThreadCache {
 } PacketThreadCache;
 
 // 0 in the builds that do not recycle
-static const unsigned int packet_thread_cache_limit = (PACKET_RECYCLE_LIMIT) ? PACKET_THREAD_CACHE_SIZE : 0;
+static const unsigned int packet_thread_cache_limit = ((PACKET_RECYCLE_LIMIT) > 0) ? PACKET_THREAD_CACHE_SIZE : 0;
 
 // the key only releases the cache of a thread that ends, the thread reads its own from packet_thread_cache
 static pthread_key_t packet_cache_key;
@@ -581,7 +581,7 @@ static inline PacketThreadCache *packet_cache_get (void) {
 
 	PacketThreadCache *cache = packet_thread_cache;
 
-	if (!cache && packet_thread_cache_limit) {
+	if (!cache && (packet_thread_cache_limit > 0)) {
 		cache = packet_cache_create ();
 	}
 
