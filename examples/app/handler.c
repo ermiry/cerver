@@ -57,7 +57,10 @@ void send_test_message (const Packet *packet) {
 		.packet_ref = false,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	size_t sent = 0;
