@@ -61,7 +61,7 @@ typedef struct HttpMetricsRequests {
 
 static const HttpMetricsRequests http_metrics_requests[] = {
 	{
-		"cerver_http_requests_incompleted_total", "The requests that were not parsed completely.",
+		"cerver_http_requests_incompleted_total", "The requests that http_parser could not parse.",
 		offsetof (HttpCerver, n_incompleted_requests)
 	},
 	{
@@ -87,8 +87,18 @@ static const HttpMetricsRequests http_metrics_requests[] = {
 	{
 		"cerver_http_requests_unanswered_total", "The requests that were answered with 500 because their handler did not respond.",
 		offsetof (HttpCerver, n_unanswered_requests)
+	},
+	{
+		"cerver_http_failed_responses_total", "The responses that could not be sent completely.",
+		offsetof (HttpCerver, n_failed_responses)
 	}
 };
+
+#define HTTP_METRICS_ABORTED_NAME				"cerver_http_aborted_requests_total"
+#define HTTP_METRICS_ABORTED_FORMAT				HTTP_METRICS_ABORTED_NAME "{stage=\"%s\",reason=\"%s\"} %zu\n"
+
+#define HTTP_METRICS_VANISHED_NAME				"cerver_http_vanished_requests_total"
+#define HTTP_METRICS_VANISHED_FORMAT			HTTP_METRICS_VANISHED_NAME "{stage=\"%s\"} %zu\n"
 
 static const size_t http_metrics_n_requests = (
 	sizeof (http_metrics_requests) / sizeof (HttpMetricsRequests)
@@ -203,6 +213,56 @@ static void http_metrics_requests_counters (String *metrics, const HttpCerver *h
 
 		http_metrics_header (metrics, counter->name, counter->help, http_metrics_type_counter);
 		http_metrics_value (metrics, counter->name, CERVER_STATS_GET (*field));
+	}
+
+}
+
+// the requests whose client left, by the stage where cerver noticed it and how it left
+static void http_metrics_aborted (String *metrics, const HttpCerver *http_cerver) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_ABORTED_NAME,
+		"The requests whose client left, by the stage where it left and how it ended its connection.",
+		http_metrics_type_counter
+	);
+
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
+			http_metrics_append (
+				metrics, line,
+				snprintf (
+					line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_ABORTED_FORMAT,
+					http_stage_label ((HttpStage) stage), http_abort_reason_label ((HttpAbortReason) reason),
+					CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason])
+				)
+			);
+		}
+	}
+
+}
+
+// the requests whose client stopped sending or reading, by the stage where a timeout ended them
+static void http_metrics_vanished (String *metrics, const HttpCerver *http_cerver) {
+
+	char line[HTTP_METRICS_LINE_SIZE] = { 0 };
+
+	http_metrics_header (
+		metrics, HTTP_METRICS_VANISHED_NAME,
+		"The requests whose client stopped sending or reading, by the stage where a timeout ended them.",
+		http_metrics_type_counter
+	);
+
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		http_metrics_append (
+			metrics, line,
+			snprintf (
+				line, HTTP_METRICS_LINE_SIZE, HTTP_METRICS_VANISHED_FORMAT,
+				http_stage_label ((HttpStage) stage),
+				CERVER_STATS_GET (http_cerver->n_vanished_requests[stage])
+			)
+		);
 	}
 
 }
@@ -511,6 +571,10 @@ String *http_cerver_metrics_generate (const HttpCerver *http_cerver) {
 			http_metrics_responses (metrics, http_cerver);
 
 			http_metrics_requests_counters (metrics, http_cerver);
+
+			http_metrics_aborted (metrics, http_cerver);
+
+			http_metrics_vanished (metrics, http_cerver);
 
 			http_metrics_thpool (metrics, http_cerver);
 
