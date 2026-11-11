@@ -9,8 +9,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
 #include <pthread.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -113,7 +115,7 @@ static unsigned int http_multi_parts_init_pool (void);
 
 static void http_multi_parts_end_pool (void);
 
-static void http_receive_init_mpart_parser (
+static int http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
 	const char *boundary
 );
@@ -324,8 +326,9 @@ HttpCerver *http_cerver_new (void) {
 
 		http_cerver->n_limited_requests = 0;
 
-		http_cerver->headers_timeout = HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT;
-		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT;
+		http_cerver->headers_timeout = HTTP_CERVER_DEFAULT_HEADERS_TIMEOUT_MILLISECONDS;
+		http_cerver->request_timeout = HTTP_CERVER_DEFAULT_REQUEST_TIMEOUT_MILLISECONDS;
+		http_cerver->idle_timeout = HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
 
 		http_cerver->n_timeout_requests = 0;
 
@@ -348,6 +351,12 @@ HttpCerver *http_cerver_new (void) {
 			http_cerver->n_responses_by_status, 0,
 			HTTP_CERVER_RESPONSES_STATUS_SIZE * sizeof (size_t)
 		);
+
+		http_cerver->half_close_is_gone = HTTP_CERVER_DEFAULT_HALF_CLOSE_IS_GONE;
+
+		(void) memset (http_cerver->n_aborted_requests, 0, sizeof (http_cerver->n_aborted_requests));
+		(void) memset (http_cerver->n_vanished_requests, 0, sizeof (http_cerver->n_vanished_requests));
+		http_cerver->n_failed_responses = 0;
 	}
 
 	return http_cerver;
@@ -1436,14 +1445,31 @@ void http_cerver_set_max_file_size (
 
 }
 
+// the milliseconds of a timeout in secs, the most that fits in an unsigned int
+static unsigned int http_cerver_timeout_milliseconds (const unsigned int timeout) {
+
+	const unsigned int max_seconds = UINT_MAX / HTTP_MILLISECONDS_PER_SECOND;
+
+	return (timeout > max_seconds) ? UINT_MAX : timeout * HTTP_MILLISECONDS_PER_SECOND;
+
+}
+
 void http_cerver_set_headers_timeout (
 	HttpCerver *http_cerver, const unsigned int headers_timeout
 ) {
 
 	if (http_cerver) {
 		http_cerver_limit_check_power_of_two ("headers_timeout", headers_timeout);
-		http_cerver->headers_timeout = headers_timeout;
+		http_cerver->headers_timeout = http_cerver_timeout_milliseconds (headers_timeout);
 	}
+
+}
+
+void http_cerver_set_headers_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int headers_timeout
+) {
+
+	if (http_cerver) http_cerver->headers_timeout = headers_timeout;
 
 }
 
@@ -1453,8 +1479,35 @@ void http_cerver_set_request_timeout (
 
 	if (http_cerver) {
 		http_cerver_limit_check_power_of_two ("request_timeout", request_timeout);
-		http_cerver->request_timeout = request_timeout;
+		http_cerver->request_timeout = http_cerver_timeout_milliseconds (request_timeout);
 	}
+
+}
+
+void http_cerver_set_request_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int request_timeout
+) {
+
+	if (http_cerver) http_cerver->request_timeout = request_timeout;
+
+}
+
+void http_cerver_set_idle_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int idle_timeout
+) {
+
+	if (http_cerver) {
+		http_cerver->idle_timeout = idle_timeout ?
+			idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
+	}
+
+}
+
+void http_cerver_set_half_close_is_gone (
+	HttpCerver *http_cerver, const bool half_close_is_gone
+) {
+
+	if (http_cerver) http_cerver->half_close_is_gone = half_close_is_gone;
 
 }
 
@@ -1953,6 +2006,39 @@ void http_cerver_route_stats_print (const HttpRoute *route) {
 }
 
 // print all http cerver stats, general & by route
+// the responses sent by their status code, only the codes that were sent
+static void http_cerver_responses_stats_print (const HttpCerver *http_cerver) {
+
+	for (size_t status = 0; status < HTTP_CERVER_RESPONSES_STATUS_SIZE; status++) {
+		const size_t count = CERVER_STATS_GET (http_cerver->n_responses_by_status[status]);
+		if (count) cerver_log_msg ("Responses %zu: %zu", status, count);
+	}
+
+}
+
+// the requests whose client left and the ones that vanished, only the stages that have any
+static void http_cerver_gone_stats_print (const HttpCerver *http_cerver) {
+
+	for (unsigned int stage = 0; stage < HTTP_STAGES; stage++) {
+		for (unsigned int reason = 0; reason < HTTP_ABORT_REASONS; reason++) {
+			const size_t aborted = CERVER_STATS_GET (http_cerver->n_aborted_requests[stage][reason]);
+			if (aborted) {
+				cerver_log_msg (
+					"Aborted requests (%s, %s): %zu",
+					http_stage_string ((HttpStage) stage), http_abort_reason_string ((HttpAbortReason) reason),
+					aborted
+				);
+			}
+		}
+
+		const size_t vanished = CERVER_STATS_GET (http_cerver->n_vanished_requests[stage]);
+		if (vanished) {
+			cerver_log_msg ("Vanished requests (%s): %zu", http_stage_string ((HttpStage) stage), vanished);
+		}
+	}
+
+}
+
 void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 	if (http_cerver) {
@@ -1969,6 +2055,15 @@ void http_cerver_all_stats_print (const HttpCerver *http_cerver) {
 
 		cerver_log_msg ("Catch requests: %ld", CERVER_STATS_GET (http_cerver->n_catch_all_requests));
 		cerver_log_msg ("Failed auth requests: %ld", CERVER_STATS_GET (http_cerver->n_failed_auth_requests));
+
+		cerver_log_msg ("Limited requests: %zu", CERVER_STATS_GET (http_cerver->n_limited_requests));
+		cerver_log_msg ("Timeout requests: %zu", CERVER_STATS_GET (http_cerver->n_timeout_requests));
+		cerver_log_msg ("Unanswered requests: %zu", CERVER_STATS_GET (http_cerver->n_unanswered_requests));
+		cerver_log_msg ("Failed responses: %zu", CERVER_STATS_GET (http_cerver->n_failed_responses));
+
+		http_cerver_responses_stats_print (http_cerver);
+
+		http_cerver_gone_stats_print (http_cerver);
 	}
 
 }
@@ -2676,6 +2771,9 @@ static int http_receive_handle_header_field (
 	// the trailers of a chunked body are not used
 	if (http_receive_headers_are_complete (http_receive)) return 0;
 
+	// the first field ends the request line
+	http_receive->stage = HTTP_STAGE_HEADERS;
+
 	if (http_receive->token == HTTP_RECEIVE_TOKEN_VALUE) {
 		if (http_receive_close_header (http_receive)) return 1;
 	}
@@ -2870,6 +2968,10 @@ static int http_receive_mpart_file_failed (
 		strerror_r (error, error_description, sizeof (error_description)),
 		multi_part->total_wrote
 	);
+
+	// a file that was never opened is not this request's,
+	// it may be another one with the same name, so it is never discarded
+	if (multi_part->fd == -1) multi_part->saved_filename_len = 0;
 
 	return http_receive_reject (
 		http_receive, server_error, HTTP_RECEIVE_STATUS_UPLOAD_ERROR
@@ -3110,6 +3212,67 @@ static void http_receive_mpart_filename_fallback (MultiPart *multi_part) {
 
 }
 
+// the name of the saved file: the one of the uploads filename generator,
+// or the sanitized one of the part if there is no generator or it did not set one
+static const char *http_receive_mpart_saved_name (
+	HttpReceive *http_receive, MultiPart *multi_part
+) {
+
+	const char *name = multi_part->filename;
+
+	if (http_receive->http_cerver->uploads_filename_generator) {
+		multi_part->generated_filename_len = 0;
+		multi_part->generated_filename[0] = '\0';
+
+		http_receive->http_cerver->uploads_filename_generator (
+			http_receive, http_receive->request
+		);
+
+		if (multi_part->generated_filename_len > 0) {
+			name = multi_part->generated_filename;
+		}
+
+		else {
+			cerver_log_warning (
+				"The uploads filename generator did not set a name, using %s",
+				multi_part->filename
+			);
+		}
+	}
+
+	return name;
+
+}
+
+// sets the path where the part is saved, inside the uploads path and the request's directory
+// returns 0 on success, 1 if the path does not fit
+static int http_receive_mpart_saved_filename (
+	HttpReceive *http_receive, MultiPart *multi_part
+) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+	const HttpRequest *request = http_receive->request;
+
+	const char *name = http_receive_mpart_saved_name (http_receive, multi_part);
+
+	const int written = (request->dirname_len > 0) ?
+		snprintf (
+			multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
+			"%s/%s/%s", http_cerver->uploads_path, request->dirname, name
+		) :
+		snprintf (
+			multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
+			"%s/%s", http_cerver->uploads_path, name
+		);
+
+	const bool fits = (written > 0) && (written < HTTP_MULTI_PART_SAVED_FILENAME_SIZE);
+
+	multi_part->saved_filename_len = fits ? written : 0;
+
+	return fits ? 0 : 1;
+
+}
+
 static int http_receive_handle_mpart_headers_completed (multipart_parser *parser) {
 
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
@@ -3161,64 +3324,17 @@ static int http_receive_handle_mpart_headers_completed (multipart_parser *parser
 				http_receive->request->n_files += 1;
 
 				if (http_receive->http_cerver->uploads_path_len > 0) {
-					if (http_receive->request->dirname_len > 0) {
-						if (http_receive->http_cerver->uploads_filename_generator) {
-							// TODO: check for errors
-							http_receive->http_cerver->uploads_filename_generator (
-								http_receive, http_receive->request
-							);
-
-							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
-								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path,
-								http_receive->request->dirname,
-								multi_part->generated_filename
-							);
-						}
-
-						else {
-							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
-								"%s/%s/%s",
-								http_receive->http_cerver->uploads_path,
-								http_receive->request->dirname,
-								multi_part->filename
-							);
-						}
-					}
-
-					else {
-						if (http_receive->http_cerver->uploads_filename_generator) {
-							// TODO: check for errors
-							http_receive->http_cerver->uploads_filename_generator (
-								http_receive, http_receive->request
-							);
-
-							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename, HTTP_MULTI_PART_SAVED_FILENAME_SIZE,
-								"%s/%s",
-								http_receive->http_cerver->uploads_path,
-								multi_part->generated_filename
-							);
-						}
-
-						else {
-							multi_part->saved_filename_len = snprintf (
-								multi_part->saved_filename,
-								HTTP_MULTI_PART_SAVED_FILENAME_SIZE - 1,
-								"%s/%s",
-								http_receive->http_cerver->uploads_path,
-								multi_part->filename
-							);
-						}
+					if (http_receive_mpart_saved_filename (http_receive, multi_part)) {
+						return http_receive_mpart_file_failed (
+							http_receive, multi_part, "name", ENAMETOOLONG
+						);
 					}
 
 					if (http_receive_mpart_file_open (http_receive, multi_part)) {
 						return 1;
 					}
+
+					http_receive->stage = HTTP_STAGE_UPLOAD;
 				}
 
 				else {
@@ -3273,6 +3389,9 @@ static int http_receive_handle_mpart_data_end (multipart_parser *parser) {
 	if (multi_part->fd != -1) {
 		(void) close (multi_part->fd);
 		multi_part->fd = -1;
+
+		// the file is complete, the rest of the body follows
+		http_receive->stage = HTTP_STAGE_BODY;
 	}
 
 	if (multi_part->total_wrote < http_receive->file_stats->min_file_size)
@@ -3327,6 +3446,66 @@ const char *http_receive_status_str (
 
 }
 
+const char *http_stage_string (const HttpStage stage) {
+
+	switch (stage) {
+		#define XX(num, name, string, label) case HTTP_STAGE_##name: return #string;
+		HTTP_STAGE_MAP(XX)
+		#undef XX
+	}
+
+	return http_stage_string (HTTP_STAGE_QUEUED);
+
+}
+
+const char *http_stage_label (const HttpStage stage) {
+
+	switch (stage) {
+		#define XX(num, name, string, label) case HTTP_STAGE_##name: return #label;
+		HTTP_STAGE_MAP(XX)
+		#undef XX
+	}
+
+	return http_stage_label (HTTP_STAGE_QUEUED);
+
+}
+
+const char *http_abort_reason_string (const HttpAbortReason reason) {
+
+	switch (reason) {
+		#define XX(num, name, string, label) case HTTP_ABORT_REASON_##name: return #string;
+		HTTP_ABORT_REASON_MAP(XX)
+		#undef XX
+	}
+
+	return http_abort_reason_string (HTTP_ABORT_REASON_CLOSED);
+
+}
+
+const char *http_abort_reason_label (const HttpAbortReason reason) {
+
+	switch (reason) {
+		#define XX(num, name, string, label) case HTTP_ABORT_REASON_##name: return #label;
+		HTTP_ABORT_REASON_MAP(XX)
+		#undef XX
+	}
+
+	return http_abort_reason_label (HTTP_ABORT_REASON_CLOSED);
+
+}
+
+const char *http_client_state_string (const HttpClientState state) {
+
+	switch (state) {
+		#define XX(num, name, string) case HTTP_CLIENT_STATE_##name: return #string;
+		HTTP_CLIENT_STATE_MAP(XX)
+		#undef XX
+	}
+
+	return http_client_state_string (HTTP_CLIENT_STATE_CONNECTED);
+
+}
+
 static void http_receive_init (HttpReceive *http_receive);
 
 HttpReceive *http_receive_new (void) {
@@ -3378,6 +3557,7 @@ static void http_receive_init (HttpReceive *http_receive) {
 		http_receive->file_stats = NULL;
 
 		http_receive->upload_sequence = 0;
+		http_receive->upload_directory_created = false;
 
 		http_receive->token = HTTP_RECEIVE_TOKEN_NONE;
 		http_receive->url_buffer = NULL;
@@ -3396,6 +3576,14 @@ static void http_receive_init (HttpReceive *http_receive) {
 
 		http_receive->arena = NULL;
 		http_receive->borrowed_buffers = false;
+
+		http_receive->stage = HTTP_STAGE_QUEUED;
+		http_receive->abort_reason = HTTP_ABORT_REASON_CLOSED;
+
+		http_receive->response_failed = false;
+		http_receive->response_error = 0;
+
+		http_receive->client_state = HTTP_CLIENT_STATE_CONNECTED;
 	}
 
 }
@@ -3511,16 +3699,59 @@ static void http_receive_delete_buffers (HttpReceive *http_receive) {
 
 }
 
+// a request that was completed keeps its files unless the cerver deletes them when it is done,
+// the files of any other request are always discarded, its handler never got them
+static bool http_receive_keeps_uploads (const HttpReceive *http_receive) {
+
+	return (http_receive->receive_status == HTTP_RECEIVE_STATUS_COMPLETED)
+		|| (http_receive->receive_status == HTTP_RECEIVE_STATUS_RESPONSE_FAILED);
+
+}
+
+// removes the directory that the request created for its uploads,
+// rmdir () only removes it if it is empty (a kept file stays with its directory)
+static void http_receive_uploads_directory_remove (const HttpReceive *http_receive) {
+
+	const HttpCerver *http_cerver = http_receive->http_cerver;
+	const HttpRequest *request = http_receive->request;
+
+	if (http_receive->upload_directory_created && http_cerver && request && (request->dirname_len > 0)) {
+		char dirname[HTTP_MULTI_PART_DIRNAME_SIZE] = { 0 };
+		const int written = snprintf (
+			dirname, HTTP_MULTI_PART_DIRNAME_SIZE,
+			"%s/%s", http_cerver->uploads_path, request->dirname
+		);
+
+		if ((written > 0) && (written < HTTP_MULTI_PART_DIRNAME_SIZE)) (void) rmdir (dirname);
+	}
+
+}
+
+static void http_receive_uploads_release (HttpReceive *http_receive) {
+
+	HttpRequest *request = http_receive->request;
+
+	if (request) {
+		if (!http_receive_keeps_uploads (http_receive)) request->keep_files = false;
+
+		http_request_destroy (request);
+
+		http_receive_uploads_directory_remove (http_receive);
+	}
+
+}
+
 void http_receive_delete (HttpReceive *http_receive) {
 
 	if (http_receive) {
+		http_receive_uploads_release (http_receive);
+
 		http_receive->cr = NULL;
 
 		http_receive->http_cerver = NULL;
 
 		if (!http_receive->arena) free (http_receive->parser);
 
-		http_request_destroy (http_receive->request);
 		http_request_delete (http_receive->request);
 
 		http_receive->node = NULL;
@@ -3613,6 +3844,164 @@ const char *http_receive_get_allow (
 ) {
 
 	return (http_receive && http_receive->node) ? http_receive->node->allow : NULL;
+
+}
+
+HttpStage http_receive_get_stage (const HttpReceive *http_receive) {
+
+	return http_receive ? http_receive->stage : HTTP_STAGE_QUEUED;
+
+}
+
+// an EOF (error 0) is a close, any error of a recv () or a send () is a failed connection
+static inline HttpAbortReason http_receive_abort_reason (const int error) {
+
+	return error ? HTTP_ABORT_REASON_RESET : HTTP_ABORT_REASON_CLOSED;
+
+}
+
+// a send () that waited the whole send timeout, the client stopped reading
+static inline bool http_receive_error_is_timeout (const int error) {
+
+	return (error == EAGAIN) || (error == EWOULDBLOCK);
+
+}
+
+void http_receive_client_left (HttpReceive *http_receive, const int error) {
+
+	if (http_receive) {
+		switch (http_receive->receive_status) {
+			case HTTP_RECEIVE_STATUS_NONE:
+			case HTTP_RECEIVE_STATUS_HEADERS:
+			case HTTP_RECEIVE_STATUS_BODY:
+				http_receive->receive_status = HTTP_RECEIVE_STATUS_CLOSED;
+				http_receive->abort_reason = http_receive_abort_reason (error);
+				break;
+
+			default: break;
+		}
+
+		http_receive->client_state = error ? HTTP_CLIENT_STATE_RESET : HTTP_CLIENT_STATE_CLOSED;
+	}
+
+}
+
+// counts the request where its client left, once
+static void http_receive_count_gone (
+	const HttpReceive *http_receive, const int error
+) {
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	const HttpStage stage = http_receive->stage;
+
+	if (http_receive_error_is_timeout (error)) {
+		CERVER_STATS_ADD (http_cerver->n_vanished_requests[stage], 1);
+	}
+
+	else {
+		CERVER_STATS_ADD (http_cerver->n_aborted_requests[stage][http_receive_abort_reason (error)], 1);
+	}
+
+}
+
+void http_receive_response_failed (
+	const HttpReceive *http_receive, const int error
+) {
+
+	HttpReceive *receive = (HttpReceive *) http_receive;
+
+	if (receive && !receive->response_failed) {
+		receive->response_failed = true;
+		receive->response_error = error;
+
+		if (!http_receive_error_is_timeout (error)) {
+			receive->client_state = HTTP_CLIENT_STATE_RESET;
+		}
+
+		if (receive->http_cerver) {
+			CERVER_STATS_ADD (receive->http_cerver->n_failed_responses, 1);
+
+			http_receive_count_gone (receive, error);
+		}
+	}
+
+}
+
+// the state that the events of a poll () on the client's socket tell,
+// a peek at its data tells an EOF from a failed connection
+static HttpClientState http_receive_client_state_from_events (
+	const int sock_fd, const short events
+) {
+
+	HttpClientState state = HTTP_CLIENT_STATE_CONNECTED;
+
+	char byte = 0;
+	const ssize_t peeked = recv (sock_fd, &byte, sizeof (byte), MSG_PEEK | MSG_DONTWAIT);
+
+	if (peeked < 0) {
+		if (!http_receive_error_is_timeout (errno)) state = HTTP_CLIENT_STATE_RESET;
+		else if (events & (POLLRDHUP | POLLHUP)) state = HTTP_CLIENT_STATE_CLOSED;
+	}
+
+	else if (!peeked || (events & (POLLRDHUP | POLLHUP))) {
+		state = HTTP_CLIENT_STATE_CLOSED;
+	}
+
+	return state;
+
+}
+
+// a gone client never comes back, a closed one can still reset its connection
+static HttpClientState http_receive_client_state_check (const HttpReceive *http_receive) {
+
+	HttpClientState state = HTTP_CLIENT_STATE_RESET;
+
+	const Connection *connection = http_receive->cr ? http_receive->cr->connection : NULL;
+	const int sock_fd = (connection && connection->socket) ? connection->socket->sock_fd : -1;
+
+	if (sock_fd > -1) {
+		struct pollfd descriptor = { sock_fd, POLLIN | POLLRDHUP, 0 };
+
+		const int ready = poll (&descriptor, 1, 0);
+		if (!ready) state = HTTP_CLIENT_STATE_CONNECTED;
+		else if (ready > 0) state = http_receive_client_state_from_events (sock_fd, descriptor.revents);
+	}
+
+	return state;
+
+}
+
+HttpClientState http_receive_get_client_state (const HttpReceive *http_receive) {
+
+	HttpClientState state = HTTP_CLIENT_STATE_RESET;
+
+	HttpReceive *receive = (HttpReceive *) http_receive;
+	if (receive) {
+		if (receive->client_state != HTTP_CLIENT_STATE_RESET) {
+			const HttpClientState found = http_receive_client_state_check (receive);
+			if (found > receive->client_state) receive->client_state = found;
+		}
+
+		state = receive->client_state;
+	}
+
+	return state;
+
+}
+
+bool http_receive_is_client_gone (const HttpReceive *http_receive) {
+
+	bool gone = true;
+
+	if (http_receive) {
+		const HttpClientState state = http_receive_get_client_state (http_receive);
+
+		gone = (state == HTTP_CLIENT_STATE_RESET)
+			|| ((state == HTTP_CLIENT_STATE_CLOSED) && http_receive->http_cerver->half_close_is_gone)
+			|| http_receive->response_failed;
+	}
+
+	return gone;
 
 }
 
@@ -4031,7 +4420,76 @@ static bool http_receive_is_static_file (
 
 }
 
-static void http_receive_init_mpart_parser (
+// the directory of the request's uploads: it asks the dirname generator for its name
+// returns true if the request has a directory, its path is written in dirname
+static bool http_receive_uploads_directory_path (
+	HttpReceive *http_receive, char *dirname
+) {
+
+	bool has_directory = false;
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	HttpRequest *request = http_receive->request;
+
+	if (http_cerver->uploads_dirname_generator && (http_cerver->uploads_path_len > 0)) {
+		http_cerver->uploads_dirname_generator (http_receive, request);
+
+		// a name that did not fit is not used
+		if (request->dirname_len >= REQUEST_DIRNAME_SIZE) {
+			request->dirname_len = 0;
+			request->dirname[0] = '\0';
+		}
+
+		if (request->dirname_len > 0) {
+			const int written = snprintf (
+				dirname, HTTP_MULTI_PART_DIRNAME_SIZE,
+				"%s/%s", http_cerver->uploads_path, request->dirname
+			);
+
+			has_directory = (written > 0) && (written < HTTP_MULTI_PART_DIRNAME_SIZE);
+		}
+	}
+
+	return has_directory;
+
+}
+
+// creates the directory of the request's uploads if it does not exist yet,
+// one that the request creates is removed at the end if it is empty
+// returns 0 on success, 1 if it could not be created (the request is answered with 500)
+static int http_receive_uploads_directory_create (
+	HttpReceive *http_receive, const char *dirname
+) {
+
+	int retval = 0;
+
+	struct stat status = { 0 };
+	if (stat (dirname, &status)) {
+		if (files_create_recursive_dir (dirname, http_receive->http_cerver->uploads_dir_mode)) {
+			const int error = errno;
+
+			char error_description[CERVER_ERRNO_DESCRIPTION_SIZE] = { 0 };
+			cerver_log_error (
+				"Failed to create the uploads directory %s - errno %d (%s)",
+				dirname, error, strerror_r (error, error_description, sizeof (error_description))
+			);
+
+			retval = http_receive_reject (
+				http_receive, server_error, HTTP_RECEIVE_STATUS_UPLOAD_ERROR
+			);
+		}
+
+		else {
+			http_receive->upload_directory_created = true;
+		}
+	}
+
+	return retval;
+
+}
+
+// returns 0 on success, 1 if the request was rejected
+static int http_receive_init_mpart_parser (
 	HttpReceive *http_receive,
 	const char *boundary
 ) {
@@ -4048,45 +4506,42 @@ static void http_receive_init_mpart_parser (
 	http_receive->mpart_settings.on_body_end = NULL;
 
 	http_receive->mpart_parser = multipart_parser_init (boundary, &http_receive->mpart_settings);
-	http_receive->mpart_parser->data = http_receive;
-
 	http_receive->request->multi_parts = dlist_init (http_multi_parts_return, NULL);
 
-	// TODO: handler errors
-	if (http_receive->http_cerver->uploads_dirname_generator) {
-		if (http_receive->http_cerver->uploads_path_len > 0) {
-			http_receive->http_cerver->uploads_dirname_generator (
-				http_receive, http_receive->request
-			);
+	int retval = (http_receive->mpart_parser && http_receive->request->multi_parts) ? 0 : 1;
 
-			if (http_receive->request->dirname_len > 0) {
-				(void) snprintf (
-					dirname,
-					HTTP_MULTI_PART_DIRNAME_SIZE - 1,
-					"%s/%s",
-					http_receive->http_cerver->uploads_path,
-					http_receive->request->dirname
-				);
+	if (!retval) {
+		http_receive->mpart_parser->data = http_receive;
 
-				(void) files_create_recursive_dir (
-					dirname, http_receive->http_cerver->uploads_dir_mode
-				);
-			}
+		if (http_receive_uploads_directory_path (http_receive, dirname)) {
+			retval = http_receive_uploads_directory_create (http_receive, dirname);
 		}
 	}
+
+	return retval;
 
 }
 
 // answers "100 Continue" to a client that waits for it before sending the body
-static void http_receive_handle_expect_continue (HttpReceive *http_receive) {
+// returns 0 on success, 1 if the client is gone
+static int http_receive_handle_expect_continue (HttpReceive *http_receive) {
+
+	int retval = 0;
 
 	const String *expect = http_receive->request->headers[HTTP_HEADER_EXPECT];
 	if (expect && !strcasecmp (expect->str, expect_continue_value)) {
-		(void) send (
+		const ssize_t sent = send (
 			http_receive->cr->connection->socket->sock_fd,
 			continue_response, continue_response_len, MSG_NOSIGNAL
 		);
+
+		if (sent != (ssize_t) continue_response_len) {
+			http_receive_client_left (http_receive, (sent < 0) ? errno : EPIPE);
+			retval = 1;
+		}
 	}
+
+	return retval;
 
 }
 
@@ -4106,7 +4561,11 @@ static int http_receive_handle_headers_multi_part (HttpReceive *http_receive) {
 		)) {
 			http_receive->settings.on_body = http_receive_handle_mpart_body;
 
-			http_receive_init_mpart_parser (http_receive, boundary);
+			if (http_receive_init_mpart_parser (http_receive, boundary)) {
+				retval = http_receive->responded ? 1 : http_receive_reject (
+					http_receive, server_error, HTTP_RECEIVE_STATUS_UPLOAD_ERROR
+				);
+			}
 		}
 
 		// a multi-part request without a boundary can not be parsed
@@ -4161,6 +4620,9 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 	HttpRequest *request = http_receive->request;
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_HEADERS;
+
+	// the headers are complete, what follows is the body
+	http_receive->stage = HTTP_STAGE_BODY;
 
 	if (http_receive->token == HTTP_RECEIVE_TOKEN_VALUE) {
 		if (http_receive_close_header (http_receive)) return -1;
@@ -4229,9 +4691,8 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 		http_receive->settings.on_body = http_receive_handle_body_discard;
 	}
 
-	http_receive_handle_expect_continue (http_receive);
-
-	return 0;
+	// a client that is gone stops the parser, without a response
+	return http_receive_handle_expect_continue (http_receive) ? -1 : 0;
 
 }
 
@@ -4484,6 +4945,7 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	HttpReceive *http_receive = (HttpReceive *) parser->data;
 
 	http_receive->receive_status = HTTP_RECEIVE_STATUS_COMPLETED;
+	http_receive->stage = HTTP_STAGE_HANDLER;
 
 	switch (http_receive->type) {
 		case HTTP_RECEIVE_TYPE_FILE:
@@ -4496,6 +4958,11 @@ static int http_receive_handle_message_completed (http_parser *parser) {
 	}
 
 	http_receive_handle_unanswered (http_receive);
+
+	// the client left while its response was sent
+	if (http_receive->response_failed) {
+		http_receive->receive_status = HTTP_RECEIVE_STATUS_RESPONSE_FAILED;
+	}
 
 	// only one request is handled by connection,
 	// the parser stops here, so a pipelined request in the same buffer is never parsed
@@ -4565,12 +5032,13 @@ static void http_receive_close (
 
 // a request that http_parser could not parse is answered with 400,
 // unless a callback already answered it (a limit, a failed authentication, ...)
+// or it stopped the parser because the client is gone
 static void http_receive_handle_parser_error (
 	HttpReceive *http_receive,
 	const size_t n_parsed, const ssize_t received
 ) {
 
-	if (!http_receive->responded) {
+	if (!http_receive->responded && (http_receive->receive_status != HTTP_RECEIVE_STATUS_CLOSED)) {
 		const enum http_errno parser_errno = HTTP_PARSER_ERRNO (http_receive->parser);
 
 		cerver_log_with_date (
@@ -4608,13 +5076,13 @@ void http_receive_handle_timeout (
 ) {
 
 	if (received && !http_receive->responded) {
-		(void) http_receive_reject (
-			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT
-		);
-
 		(void) pthread_mutex_lock (http_receive->http_cerver->mutex);
 		http_receive->http_cerver->n_timeout_requests += 1;
 		(void) pthread_mutex_unlock (http_receive->http_cerver->mutex);
+
+		(void) http_receive_reject (
+			http_receive, request_timeout_error, HTTP_RECEIVE_STATUS_TIMEOUT
+		);
 	}
 
 	else if (!http_receive->responded) {
@@ -4629,6 +5097,11 @@ static void http_receive_handle (
 	HttpReceive *http_receive,
 	ssize_t rc, char *packet_buffer
 ) {
+
+	// the first bytes start the request line
+	if (http_receive->stage == HTTP_STAGE_QUEUED) {
+		http_receive->stage = HTTP_STAGE_REQUEST_LINE;
+	}
 
 	const size_t n_parsed = http_parser_execute (
 		http_receive->parser, &http_receive->settings, packet_buffer, (size_t) rc
