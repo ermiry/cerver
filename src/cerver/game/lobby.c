@@ -800,6 +800,19 @@ u8 lobby_join (Cerver *cerver, Client *client, Lobby *lobby) {
 
 }
 
+#ifdef CERVER_DEBUG
+
+#define LOBBY_PLAYER_WITHOUT_ID		"without id"
+
+// a player can be created without an id
+static const char *lobby_player_name (const Player *player) {
+
+	return player->id ? player->id->str : LOBBY_PLAYER_WITHOUT_ID;
+
+}
+
+#endif
+
 // called when a player requests to leave the lobby
 // returns 0 on success, 1 on error
 u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
@@ -829,7 +842,7 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 					cerver_log (
 						LOG_TYPE_DEBUG, LOG_TYPE_PLAYER,
 						"Player %s is the new owner of lobby %s.",
-						new_owner->id->str, lobby->id->str
+						lobby_player_name (new_owner), lobby->id->str
 					);
 					#endif
 				}
@@ -845,7 +858,7 @@ u8 lobby_leave (Cerver *cerver, Lobby *lobby, Player *player) {
 			cerver_log (
 				LOG_TYPE_WARNING, LOG_TYPE_PLAYER,
 				"Player %s does not seem to be in lobby %s.",
-				player->id->str, lobby->id->str
+				lobby_player_name (player), lobby->id->str
 			);
 			#endif
 		}
