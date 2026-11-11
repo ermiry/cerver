@@ -46,7 +46,7 @@ static void init_buf_state (
 	struct buffer_state *state, const void * input, size_t len
 ) {
 
-	state->p = input;
+	state->p = (const uint8_t *) input;
 	state->len = len;
 	state->total_len = len;
 	state->single_one_delivered = 0;

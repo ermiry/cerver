@@ -102,7 +102,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	CFLAGS += -std=c++11 -fpermissive
+	CFLAGS += -std=c++11
 else
 	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
 	# check for compiler version
@@ -179,7 +179,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	EXAFLAGS += -std=c++11 -fpermissive
+	EXAFLAGS += -std=c++11
 else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -212,7 +212,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	EXAPPFGS += -std=c++11 -fpermissive
+	EXAPPFGS += -std=c++11
 else
 	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -322,7 +322,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	TESTAPPFGS += -std=c++11 -fpermissive
+	TESTAPPFGS += -std=c++11
 else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif

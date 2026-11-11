@@ -829,7 +829,7 @@ Packet *packet_create_with_data (
 			packet->data = packet_data_take (packet, data_size);
 			if (packet->data) {
 				packet->data_size = data_size;
-				packet->data_end = packet->data;
+				packet->data_end = (char *) packet->data;
 				packet->remaining_data = data_size;
 			}
 
@@ -989,7 +989,7 @@ unsigned int packet_create_data (
 		packet->data = packet_data_take (packet, data_size);
 		if (packet->data) {
 			packet->data_size = data_size;
-			packet->data_end = packet->data;
+			packet->data_end = (char *) packet->data;
 			packet->remaining_data = data_size;
 
 			retval = 0;
