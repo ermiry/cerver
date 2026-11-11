@@ -10,6 +10,8 @@
 #include "cerver/serializer.h"
 #include "cerver/sessions.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/collections/arena.h"
 
 // the major types of CBOR that the serializer uses
@@ -1672,7 +1674,13 @@ static const SerializerSchema *const serializer_cerver_schemas[] = {
 	&cerver_summary_schema,
 	&error_message_schema,
 	&file_header_schema,
-	&session_token_schema
+	&session_token_schema,
+	&lobby_create_request_schema,
+	&lobby_join_request_schema,
+	&lobby_request_schema,
+	&lobby_player_summary_schema,
+	&lobby_settings_summary_schema,
+	&lobby_summary_schema
 };
 
 // returns the schemas of the objects that cerver sends, used by the fuzzer
