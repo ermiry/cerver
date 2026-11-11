@@ -12,6 +12,8 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -112,12 +114,13 @@ static void end (int dummy) {
 
 }
 
+// the app handler releases its data with app_data_delete () when it ends
 static void finish (void) {
 
 	cerver_stats_print (my_cerver, true, true);
 	(void) cerver_teardown (my_cerver);
 
-	app_data_delete (app_data);
+	app_data = NULL;
 
 }
 
@@ -246,6 +249,8 @@ int main (void) {
 
 		cerver_set_app_handlers (my_cerver, app_handler, NULL);
 		
+		app_cerver_events_register (my_cerver);
+
 		if (!cerver_start (my_cerver)) {
 			finish ();
 		}

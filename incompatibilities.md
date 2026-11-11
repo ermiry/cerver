@@ -3,6 +3,25 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-8 (from 1.8b-7)
+
+The wire does not change: a 1.8b-8 talks with a 1.8b-7.
+
+- Changed fields (ABI): `Cerver` (`current_n_fds` is `u32`, it was `u16`; new `poll_max_connections`, `request_stats`, `request_handlers` and `request_handlers_size`); `Handler` (new `stats`); `Packet` (new `data_class` and `recycle_next`); `Balancer` (new `select_service` and `select_service_args`)
+- `BALANCER_TYPE_MAP` has `XX(3, CUSTOM, Custom)`: a `BALANCER_TYPE_CUSTOM` balancer selects the service of each packet with the method of `balancer_set_select_service ()`, that gets the header and the body; without a method, or with an index that has no working service, the packet goes to the unavailable services
+- The packets and their buffers of data up to 4096 bytes are recycled (a cache in each thread and shared lists): a `Packet` and its `data` must be released with `packet_delete ()`, and the data of a packet must not be replaced or released by hand; the builds with sanitizers do not recycle them
+- `packet_set_data ()` makes the packet the owner of its new data, also when it had a reference before (`data_ref` is `false` after it)
+- `file_move_to ()` does not run `mv` with `system ()`: it uses `rename ()` and, between file systems, copies and removes; it returns 0 on success and 1 on error (it returned the result of `system ()`), and it moves inside `saved_path` only when that directory exists
+- A client that the main poll can not take (its max of `cerver_set_poll_fds ()`, or a failed realloc) is not dropped by `client_register_to_cerver ()` anymore: the caller releases it with its connections (`client_register_connections_to_cerver ()` and `client_register_connections_to_cerver_poll ()` do not drop it either)
+- `cerver_set_poll_fds ()` and `cerver_set_on_hold_poll_fds ()` take the sizes before the cerver starts; the on hold poll uses `max_on_hold_connections` (`CERVER_DEFAULT_ON_HOLD_POLL_FDS`), it was replaced by `CERVER_DEFAULT_POLL_FDS / 2` when the auth started
+- The handlers of the request types (`cerver_set_request_handler ()`) take the packets of their request type of `PACKET_TYPE_APP`, `PACKET_TYPE_APP_ERROR` and `PACKET_TYPE_CUSTOM` before the handler of the packet type and the multiple handlers by id
+- A `WorkerManager` does not remove an idle worker while jobs wait in its queue
+- Renamed defaults: `CERVER_DEFAULT_SOCKET_RECV_TIMEOUT` is `CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT` and moved from `handler.h` to `cerver.h`; `CERVER_DEFAULT_UPDATE_INTERVAL_SECS` and `ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS` end in `_SECONDS`; `DEFAULT_PLAYER_TIMEOUT`, `DEFAULT_FPS`, `DEFAULT_MIN_PLAYERS` and `DEFAULT_MAX_PLAYERS` start with `GAME_`; `DEFAULT_SCORE_SIZE` is `SCORE_DEFAULT_SIZE`
+- New: `include/cerver/utils/histogram.h`, `HandlerStats` (`handler_get_stats ()`, `handler_stats_print ()`), `RequestStats` (`cerver_get_request_stats ()`, `cerver_request_stats_print ()`, also in `cerver_stats_print ()`), the memory, load, cpu, host name and process values of `system.h`, `files_copy ()`, `files_copy_recursive ()` and `files_remove_recursive ()`
+- The client prints the type of a cerver with its name from `CERVER_TYPE_MAP` (`Cerver type: Balancer`); the names were in upper case
+- `test/allocations.sh` expects at most 4 allocations per connection in poll, 5 in threads and 0 per packet in handlers; `test/stress.sh` is new, and `load.sh` was removed
+- Every example uses the app library of the examples (`examples/app/events.{h,c}` registers the events that the example did not register)
+
 ## 1.8b-7 (from 1.8b-6)
 
 The wire changes: a 1.8b-7 does not talk with a 1.8b-6, clients, services and balancers are updated together.

@@ -10,6 +10,7 @@
 #include "cerver/serializer.h"
 
 #include "cerver/collections/arena.h"
+#include "cerver/collections/freelist.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -371,9 +372,26 @@ struct _Packet {
 	void (*release) (void *release_args);
 	void *release_args;
 
+	// the class of the recycled buffer of data, 0 if it was not taken from them
+	unsigned int data_class;
+
+	// the next packet while it is kept to be reused
+	struct _Packet *recycle_next;
+
 };
 
 typedef struct _Packet Packet;
+
+// the released packets and buffers of data that are kept to be reused, in each class
+#define PACKET_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
+// each thread keeps some of them, so they are taken and released without a lock
+#define PACKET_THREAD_CACHE_SIZE			16
+
+// the buffers of data are recycled in classes of 2^6 to 2^12 bytes
+#define PACKET_DATA_MIN_EXPONENT			6
+#define PACKET_DATA_MAX_EXPONENT			12
+#define PACKET_DATA_CLASSES					(PACKET_DATA_MAX_EXPONENT - PACKET_DATA_MIN_EXPONENT + 1)
 
 // allocates a new empty packet
 CERVER_PUBLIC Packet *packet_new (void);

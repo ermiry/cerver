@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y libssl-dev gdb && apt-get clean
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 && make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 test
+RUN make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 && make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} -j4 test && make TYPE=test SANITIZER=${SANITIZER} COVERAGE=${COVERAGE} examples
 
 ENV LD_LIBRARY_PATH=/opt/cerver/bin:/opt/cerver/test/bin/app
 

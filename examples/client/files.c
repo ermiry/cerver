@@ -15,6 +15,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -166,6 +168,7 @@ static void *cerver_client_connect_and_start (void *args) {
 	Client *client = client_create ();
 	if (client) {
 		client_set_name (client, "start-client");
+		app_client_events_register (client);
 
 		Handler *app_handler = handler_create (client_app_handler);
 		// handler_set_direct_handle (app_handler, true);
@@ -275,6 +278,8 @@ static void start (void) {
 
 		pthread_t client_thread = 0;
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
+
+		app_cerver_events_register (client_cerver);
 
 		if (!cerver_start (client_cerver)) {
 			finish ();

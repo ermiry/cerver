@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <pthread.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -1006,6 +1007,121 @@ static void test_packets_check (void) {
 
 #pragma endregion
 
+#pragma region recycle
+
+#define RECYCLE_SMALL_SIZE			100
+#define RECYCLE_CLASS_SIZE			128
+#define RECYCLE_SMALL_CLASS			2
+#define RECYCLE_BIG_SIZE			8192
+#define RECYCLE_APPENDS				64
+#define RECYCLE_BYTE				0x5A
+
+// #172 / #175: the packets and the buffers of data that fit a class are reused,
+// except in the builds with sanitizers, that do not recycle
+static void test_packets_recycle (void) {
+
+	Packet *packet = packet_create_with_data (RECYCLE_SMALL_SIZE);
+	test_check_ptr (packet);
+	test_check_unsigned_eq (packet->data_class, RECYCLE_SMALL_CLASS, "100 bytes are in the class of 128");
+
+	Packet *const first = packet;
+	void *const first_data = packet->data;
+	packet_delete (packet);
+
+	packet = packet_create_with_data (RECYCLE_CLASS_SIZE);
+	test_check_ptr (packet);
+
+	if (PACKET_RECYCLE_LIMIT) {
+		test_check_ptr_eq (packet, first);
+		test_check_ptr_eq (packet->data, first_data);
+	}
+
+	test_check_null_ptr (packet->recycle_next);
+	packet_delete (packet);
+
+	// a big buffer is not recycled
+	packet = packet_create_with_data (RECYCLE_BIG_SIZE);
+	test_check_ptr (packet);
+	test_check_unsigned_eq (packet->data_class, 0, NULL);
+	packet_delete (packet);
+
+}
+
+// the data grows from one class to the next ones and out of them without losing a byte
+static void test_packets_recycle_append (void) {
+
+	Packet *packet = packet_new ();
+	test_check_ptr (packet);
+
+	char chunk[RECYCLE_SMALL_SIZE];
+	(void) memset (chunk, RECYCLE_BYTE, RECYCLE_SMALL_SIZE);
+
+	for (unsigned int index = 0; index < RECYCLE_APPENDS; index++) {
+		test_check_unsigned_eq (packet_append_data (packet, chunk, RECYCLE_SMALL_SIZE), 0, NULL);
+	}
+
+	test_check_unsigned_eq (packet->data_size, RECYCLE_SMALL_SIZE * RECYCLE_APPENDS, NULL);
+	test_check_unsigned_eq (packet->data_class, 0, "6400 bytes do not fit a class");
+
+	const char *data = (const char *) packet->data;
+	for (size_t index = 0; index < packet->data_size; index++) {
+		test_check (data[index] == RECYCLE_BYTE, "a byte was lost when the data grew");
+	}
+
+	// replaced by data of its own, and then by a reference
+	test_check_unsigned_eq (packet_set_data (packet, chunk, RECYCLE_SMALL_SIZE), 0, NULL);
+	test_check_unsigned_ne (packet->data_class, 0);
+	test_check_unsigned_eq (packet_set_data_ref (packet, chunk, RECYCLE_SMALL_SIZE), 0, NULL);
+	test_check_unsigned_eq (packet->data_class, 0, NULL);
+
+	packet_delete (packet);
+
+}
+
+static void *packets_recycle_thread (void *packet_ptr) {
+
+	Packet **packet = (Packet **) packet_ptr;
+
+	*packet = packet_create_with_data (RECYCLE_SMALL_SIZE);
+	packet_delete (*packet);
+
+	return NULL;
+
+}
+
+// the packets that a thread kept go to the shared lists when it ends
+static void test_packets_recycle_thread (void) {
+
+	Packet *released = NULL;
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, packets_recycle_thread, &released), 0, NULL);
+	test_check_int_eq (pthread_join (thread, NULL), 0, NULL);
+
+	test_check_ptr (released);
+
+	// this thread takes its own first, so it takes from the shared list until it finds it
+	bool found = false;
+	Packet *taken[PACKET_THREAD_CACHE_SIZE + 1];
+	unsigned int count = 0;
+	while ((count <= PACKET_THREAD_CACHE_SIZE) && !found) {
+		taken[count] = packet_new ();
+		found = (taken[count] == released);
+		count += 1;
+	}
+
+	for (unsigned int index = 0; index < count; index++) {
+		packet_delete (taken[index]);
+	}
+
+	if (PACKET_RECYCLE_LIMIT) {
+		test_check (found, "the packet of the thread that ended was not reused");
+	}
+
+}
+
+#pragma endregion
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -1023,6 +1139,11 @@ int main (int argc, char **argv) {
 	test_packet_header_request_changes ();
 	test_packet_header_create_from ();
 	test_packet_header_copy ();
+
+	// recycle
+	test_packets_recycle ();
+	test_packets_recycle_append ();
+	test_packets_recycle_thread ();
 
 	// handler
 	test_packets_create_with_data ();

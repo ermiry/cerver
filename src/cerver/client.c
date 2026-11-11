@@ -875,8 +875,6 @@ u8 client_register_connections_to_cerver (
 				client->id, cerver->info->name
 			);
 			#endif
-
-			client_drop (cerver, client);       // drop the client ---> no active connections
 		}
 
 		else retval = 0;        // at least one connection is active
@@ -952,8 +950,6 @@ u8 client_register_connections_to_cerver_poll (
 				client->id, cerver->info->name
 			);
 			#endif
-
-			client_drop (cerver, client);       // drop the client ---> no active connections
 		}
 
 		else retval = 0;        // at least one connection is active
@@ -1093,6 +1089,11 @@ u8 client_register_to_cerver (
 						client_register_to_cerver_internal (cerver, client);
 
 						retval = 0;
+					}
+
+					// the caller releases the client and its connections
+					else {
+						(void) client_unregister_connections_from_cerver (cerver, client);
 					}
 				} break;
 

@@ -116,6 +116,17 @@ jobs:
       - name: Allocations
         run: bash test/allocations.sh
 
+  stress:
+    name: Cerver protocol stress with concurrent clients
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Stress
+        run: bash test/stress.sh
+
   fuzz:
     name: Cerver long fuzzing
     if: github.event_name == 'workflow_dispatch'

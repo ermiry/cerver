@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -484,25 +485,301 @@ unsigned int files_create_recursive_dir (
 
 }
 
-// moves one file from one location to another
-// returns 0 on success
+// the bytes that copy_file_range () copies in each call
+#define FILES_COPY_RANGE_SIZE			(1 << 20)
+
+// the buffer of a copy with read () and write ()
+#define FILES_COPY_BUFFER_SIZE			8192
+
+#define FILES_PERMISSIONS_MASK			07777
+
+// the directories that nftw () keeps open
+#define FILES_REMOVE_OPEN_DIRECTORIES	16
+
+// writes the path of an entry of a directory in path
+// returns 0 on success, 1 if it does not fit
+static unsigned int files_join_path (
+	char path[FILES_MOVE_SIZE], const char *directory, const char *name
+) {
+
+	const int length = snprintf (path, FILES_MOVE_SIZE, "%s/%s", directory, name);
+
+	return ((length > 0) && (length < FILES_MOVE_SIZE)) ? 0 : 1;
+
+}
+
+// writes every byte of the buffer
+// returns 0 on success, 1 on error
+static unsigned int files_write_all (
+	const int destination_fd, const char *buffer, const size_t size
+) {
+
+	unsigned int errors = 0;
+
+	size_t written = 0;
+	while ((written < size) && !errors) {
+		const ssize_t result = write (destination_fd, buffer + written, size - written);
+		if (result > 0) written += (size_t) result;
+		else if ((result == 0) || (errno != EINTR)) errors = 1;
+	}
+
+	return errors;
+
+}
+
+// copies until the end of the source with read () and write (), from their offsets
+// returns 0 on success, 1 on error
+static unsigned int files_copy_read_write (const int source_fd, const int destination_fd) {
+
+	unsigned int errors = 0;
+
+	char buffer[FILES_COPY_BUFFER_SIZE];
+
+	bool done = false;
+	while (!done && !errors) {
+		const ssize_t read_bytes = read (source_fd, buffer, FILES_COPY_BUFFER_SIZE);
+		if (read_bytes > 0) errors = files_write_all (destination_fd, buffer, (size_t) read_bytes);
+		else if (read_bytes == 0) done = true;
+		else if (errno != EINTR) errors = 1;
+	}
+
+	return errors;
+
+}
+
+// copies with copy_file_range () inside the kernel, the file systems that can not use it,
+// and a source that changed size, continue with read () and write () from the offsets
+// returns 0 on success, 1 on error
+static unsigned int files_copy_contents (
+	const int source_fd, const int destination_fd, const off_t size
+) {
+
+	off_t remaining = size;
+
+	ssize_t copied = 1;
+	while ((remaining > 0) && (copied > 0)) {
+		const size_t range = (remaining < FILES_COPY_RANGE_SIZE) ? (size_t) remaining : FILES_COPY_RANGE_SIZE;
+
+		copied = copy_file_range (source_fd, NULL, destination_fd, NULL, range, 0);
+		if (copied > 0) remaining -= copied;
+	}
+
+	return files_copy_read_write (source_fd, destination_fd);
+
+}
+
+// copies a regular file with its permissions, replacing the destination if it exists
+// returns 0 on success, 1 on error
+unsigned int files_copy (
+	const char *source, const char *destination
+) {
+
+	unsigned int errors = 1;
+
+	const int source_fd = (source && destination) ? open (source, O_RDONLY | O_CLOEXEC) : -1;
+	if (source_fd > -1) {
+		struct stat st;
+		if (!fstat (source_fd, &st) && S_ISREG (st.st_mode)) {
+			const mode_t mode = st.st_mode & FILES_PERMISSIONS_MASK;
+
+			const int destination_fd = open (destination, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+			if (destination_fd > -1) {
+				errors = files_copy_contents (source_fd, destination_fd, st.st_size);
+				errors |= (fchmod (destination_fd, mode) ? 1 : 0);
+				errors |= (close (destination_fd) ? 1 : 0);
+
+				if (errors) (void) unlink (destination);
+			}
+		}
+
+		(void) close (source_fd);
+	}
+
+	return errors;
+
+}
+
+// copies the link itself, a destination that exists and is not a directory is replaced
+// returns 0 on success, 1 on error
+static unsigned int files_copy_link (const char *source, const char *destination) {
+
+	unsigned int errors = 1;
+
+	char target[FILES_MOVE_SIZE];
+	const ssize_t length = readlink (source, target, FILES_MOVE_SIZE - 1);
+	if (length >= 0) {
+		target[length] = '\0';
+
+		struct stat st;
+		if (!lstat (destination, &st) && !S_ISDIR (st.st_mode)) {
+			(void) unlink (destination);
+		}
+
+		errors = symlink (target, destination) ? 1 : 0;
+	}
+
+	return errors;
+
+}
+
+// returns true if path is the directory or is inside it,
+// a directory that is copied inside itself never ends
+static bool files_path_inside (const char *path, const char *directory) {
+
+	const size_t length = strlen (directory);
+
+	return !strncmp (path, directory, length) && ((path[length] == '\0') || (path[length] == '/'));
+
+}
+
+// creates the destination, or uses it if it is a directory, and copies each entry of the source
+// returns 0 on success, 1 on error
+static unsigned int files_copy_directory (
+	const char *source, const char *destination, const mode_t mode
+) {
+
+	unsigned int errors = 1;
+
+	// mkdir () applies the umask, so the permissions are set again
+	struct stat st;
+	const bool created = !mkdir (destination, mode & FILES_PERMISSIONS_MASK)
+		&& !chmod (destination, mode & FILES_PERMISSIONS_MASK);
+
+	const bool exists = !created && (errno == EEXIST) && !stat (destination, &st) && S_ISDIR (st.st_mode);
+
+	DIR *directory = (created || exists) ? opendir (source) : NULL;
+	if (directory) {
+		errors = 0;
+
+		char source_path[FILES_MOVE_SIZE];
+		char destination_path[FILES_MOVE_SIZE];
+
+		const struct dirent *entry = NULL;
+		while (!errors && (entry = readdir (directory))) {
+			if (strcmp (entry->d_name, ".") && strcmp (entry->d_name, "..")) {
+				errors = files_join_path (source_path, source, entry->d_name)
+					|| files_join_path (destination_path, destination, entry->d_name)
+					|| files_copy_recursive (source_path, destination_path);
+			}
+		}
+
+		(void) closedir (directory);
+	}
+
+	return errors;
+
+}
+
+// copies a file, a symbolic link or a directory with everything in it
+// returns 0 on success, 1 on error
+unsigned int files_copy_recursive (
+	const char *source, const char *destination
+) {
+
+	unsigned int errors = 1;
+
+	struct stat st;
+	if (source && destination && !lstat (source, &st)) {
+		if (S_ISDIR (st.st_mode)) {
+			errors = files_path_inside (destination, source)
+				? 1 : files_copy_directory (source, destination, st.st_mode);
+		}
+
+		else if (S_ISLNK (st.st_mode)) {
+			errors = files_copy_link (source, destination);
+		}
+
+		else if (S_ISREG (st.st_mode)) {
+			errors = files_copy (source, destination);
+		}
+	}
+
+	return errors;
+
+}
+
+static int files_remove_entry (
+	const char *path, const struct stat *st, int flag, struct FTW *ftw
+) {
+
+	(void) st;
+	(void) flag;
+	(void) ftw;
+
+	return remove (path);
+
+}
+
+// removes a file, a symbolic link or a directory with everything in it
+// returns 0 on success, 1 on error
+unsigned int files_remove_recursive (const char *path) {
+
+	return (path && !nftw (path, files_remove_entry, FILES_REMOVE_OPEN_DIRECTORIES, FTW_DEPTH | FTW_PHYS)) ? 0 : 1;
+
+}
+
+// the destination is saved_path, or the name of the file inside it if it is a directory
+// returns 0 on success, 1 if the path does not fit
+static unsigned int files_move_destination (
+	const char *actual_path, const char *saved_path, char destination[FILES_MOVE_SIZE]
+) {
+
+	unsigned int errors = 0;
+
+	struct stat st;
+	if (!stat (saved_path, &st) && S_ISDIR (st.st_mode)) {
+		const char *name = strrchr (actual_path, '/');
+		errors = files_join_path (destination, saved_path, name ? (name + 1) : actual_path);
+	}
+
+	else {
+		const int length = snprintf (destination, FILES_MOVE_SIZE, "%s", saved_path);
+		errors = ((length >= 0) && (length < FILES_MOVE_SIZE)) ? 0 : 1;
+	}
+
+	return errors;
+
+}
+
+// rename () can not move between file systems, so the source is copied and then removed,
+// a copy that fails is removed
+// returns 0 on success, 1 on error
+static int files_move_between_file_systems (const char *actual_path, const char *destination) {
+
+	int retval = 1;
+
+	if (!files_copy_recursive (actual_path, destination)) {
+		retval = (int) files_remove_recursive (actual_path);
+	}
+
+	else {
+		(void) files_remove_recursive (destination);
+	}
+
+	return retval;
+
+}
+
+// moves a file or a directory to saved_path, or inside it if it is a directory that exists
+// returns 0 on success, 1 on error
 int file_move_to (
 	const char *actual_path, const char *saved_path
 ) {
 
-	char move_command[FILES_MOVE_SIZE] = { 0 };
+	int retval = 1;
 
-	(void) snprintf (
-		move_command, FILES_MOVE_SIZE - 1,
-		"mv \"%s\" \"%s\"",
-		actual_path, saved_path
-	);
+	char destination[FILES_MOVE_SIZE];
+	if (actual_path && saved_path && !files_move_destination (actual_path, saved_path, destination)) {
+		if (!rename (actual_path, destination)) {
+			retval = 0;
+		}
 
-	#ifdef FILES_DEBUG
-	(void) printf ("COMMAND: %s\n", move_command);
-	#endif
+		else if (errno == EXDEV) {
+			retval = files_move_between_file_systems (actual_path, destination);
+		}
+	}
 
-	return system (move_command);
+	return retval;
 
 }
 

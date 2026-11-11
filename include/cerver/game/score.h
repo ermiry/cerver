@@ -6,7 +6,8 @@
 #include "cerver/collections/avl.h"
 #include "cerver/collections/htab.h"
 
-#define DEFAULT_SCORE_SIZE      5   // default players inside the scoreboard
+// the players that a scoreboard has room for when it is created
+#define SCORE_DEFAULT_SIZE		5
 
 #ifdef __cplusplus
 extern "C" {

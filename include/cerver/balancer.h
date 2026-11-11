@@ -26,7 +26,8 @@ struct _Service;
 #define BALANCER_TYPE_MAP(XX)									\
 	XX(0, 	NONE, 				None)							\
 	XX(1, 	ROUND_ROBIN, 		Round-Robin)					\
-	XX(2, 	HANDLER_ID, 		Handler-ID)
+	XX(2, 	HANDLER_ID, 		Handler-ID)						\
+	XX(3, 	CUSTOM, 			Custom)
 
 typedef enum BalancerType {
 
@@ -136,10 +137,21 @@ CERVER_PUBLIC u16 balancer_route_id_generation (const u32 route_id);
 // returns the generation that comes after the one passed, without 0
 CERVER_PUBLIC u16 balancer_route_next_generation (const u16 generation);
 
+// selects the service of a packet in a BALANCER_TYPE_CUSTOM balancer, from its header and its body,
+// it runs in the thread of the client connection, without the lock of the balancer
+// returns the index of the service; a negative index, or one without a working service,
+// sends the packet to the on unavailable services method
+typedef int (*BalancerSelectService) (
+	const PacketHeader *header, const char *body, const size_t body_size, void *args
+);
+
 struct _Balancer {
 
 	String *name;
 	BalancerType type;
+
+	BalancerSelectService select_service;
+	void *select_service_args;
 
 	Cerver *cerver;
 	Client *client;
@@ -180,6 +192,12 @@ CERVER_EXPORT BalancerType balancer_get_type (const Balancer *balancer);
 // a reference to the received packet will be passed to the method
 CERVER_EXPORT void balancer_set_on_unavailable_services (
 	Balancer *balancer, const Action on_unavailable_services
+);
+
+// sets, before the balancer starts, the method that selects the service of each packet
+// in a BALANCER_TYPE_CUSTOM balancer, args are passed to it with each packet
+CERVER_EXPORT void balancer_set_select_service (
+	Balancer *balancer, const BalancerSelectService select_service, void *args
 );
 
 // create a new load balancer of the selected type

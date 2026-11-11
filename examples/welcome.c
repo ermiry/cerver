@@ -10,6 +10,8 @@
 #include <cerver/cerver.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
@@ -66,6 +68,8 @@ int main (void) {
 		/*** cerver configuration ***/
 		cerver_set_receive_buffer_size (my_cerver, 4096);
 		cerver_set_app_handlers (my_cerver, NULL, NULL);
+
+		app_cerver_events_register (my_cerver);
 
 		if (!cerver_start (my_cerver)) {
 			finish ();

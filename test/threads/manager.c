@@ -22,6 +22,8 @@
 #define MANAGER_TEST_SLOW_NANOSECONDS		16000000L
 #define MANAGER_TEST_BLOCKED_NANOSECONDS	128000000L
 #define MANAGER_TEST_END_MAX_SECONDS		1
+#define MANAGER_TEST_QUEUED_IDLE_TIMEOUT	0
+#define MANAGER_TEST_QUEUED_CHECK_INTERVAL	1
 
 static unsigned int manager_jobs = 0;
 
@@ -131,6 +133,46 @@ static void test_manager_scaling (void) {
 
 }
 
+// an idle worker is not removed while jobs wait in the queue, even with a timeout of 0,
+// so no worker is created again to take the jobs of one that was removed
+static void test_manager_scale_down_while_queued (void) {
+
+	manager_jobs = 0;
+
+	WorkerManager *manager = manager_test_create ();
+	worker_manager_set_scaling (manager, MANAGER_TEST_SCALE_UP_WAIT, MANAGER_TEST_QUEUED_IDLE_TIMEOUT);
+	manager->check_interval = MANAGER_TEST_QUEUED_CHECK_INTERVAL;
+
+	test_check_unsigned_eq (worker_manager_start (manager), 0, NULL);
+
+	for (unsigned int i = 0; i < MANAGER_TEST_JOBS; i++) {
+		test_check_unsigned_eq (worker_manager_push_job (manager, manager_test_slow, NULL), 0, NULL);
+	}
+
+	test_check_unsigned_eq (test_wait_counter (&manager_jobs, MANAGER_TEST_JOBS, TEST_WAIT_SECONDS), MANAGER_TEST_JOBS, NULL);
+
+	test_check_unsigned_eq (
+		manager_test_wait_workers (manager, MANAGER_TEST_MIN_WORKERS),
+		MANAGER_TEST_MIN_WORKERS, "the manager did not remove the idle workers"
+	);
+
+	WorkerManagerStats stats;
+	worker_manager_get_stats (manager, &stats);
+	test_check_unsigned_eq (
+		(unsigned int) stats.created_workers, stats.max_workers,
+		"the manager removed workers while jobs waited"
+	);
+
+	test_check_unsigned_eq (
+		(unsigned int) stats.removed_workers, stats.max_workers - MANAGER_TEST_MIN_WORKERS, NULL
+	);
+
+	test_check_unsigned_eq (worker_manager_end (manager), 0, NULL);
+
+	worker_manager_delete (manager);
+
+}
+
 // a stopped manager keeps its jobs until it is resumed
 static void test_manager_stop_resume (void) {
 
@@ -194,6 +236,7 @@ void threads_tests_manager (void) {
 	(void) printf ("Testing THREADS manager...\n");
 
 	test_manager_scaling ();
+	test_manager_scale_down_while_queued ();
 	test_manager_stop_resume ();
 	test_manager_end_running ();
 

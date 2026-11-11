@@ -14,6 +14,8 @@
 #include <cerver/utils/utils.h>
 #include <cerver/utils/log.h>
 
+#include <app/events.h>
+
 static Cerver *my_cerver = NULL;
 
 // correctly closes any on-going server and process when quitting the appplication
@@ -122,6 +124,8 @@ int main (void) {
 			game_type_add_lobby_config (arcade_game_type, true, NULL, 4);
 			game_type_set_on_lobby_join (arcade_game_type, arcade_game_join);
 			game_type_register (game_cerver->game_types, arcade_game_type);
+
+			app_cerver_events_register (my_cerver);
 
 			if (cerver_start (my_cerver)) {
 				char *s = c_string_create ("Failed to start %s!",

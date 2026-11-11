@@ -49,6 +49,11 @@
 // the first room for the sockets of a check that are shut down after the clients lock, it doubles
 #define CERVER_INACTIVE_SHUTDOWN_BATCH	256
 
+// the packet types in the request stats and handlers
+#define CERVER_REQUEST_APP				0
+#define CERVER_REQUEST_APP_ERROR		1
+#define CERVER_REQUEST_CUSTOM			2
+
 #pragma region global
 
 // initializes global cerver values
@@ -328,6 +333,137 @@ void cerver_stats_set_threshold_time (
 
 }
 
+static RequestStats (*cerver_request_stats_new (void))[CERVER_REQUEST_STATS_ENTRIES] {
+
+	RequestStats (*request_stats)[CERVER_REQUEST_STATS_ENTRIES] = (RequestStats (*)[CERVER_REQUEST_STATS_ENTRIES]) malloc (
+		sizeof (RequestStats) * CERVER_REQUEST_PACKET_TYPES * CERVER_REQUEST_STATS_ENTRIES
+	);
+
+	if (request_stats) {
+		for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+			for (unsigned int entry = 0; entry < CERVER_REQUEST_STATS_ENTRIES; entry++) {
+				histogram_init (&request_stats[type][entry].durations);
+				histogram_init (&request_stats[type][entry].sizes);
+			}
+		}
+	}
+
+	return request_stats;
+
+}
+
+// returns the index of the packet type in the request stats and handlers, or CERVER_REQUEST_PACKET_TYPES
+static unsigned int cerver_request_packet_type (const PacketType packet_type) {
+
+	unsigned int index = CERVER_REQUEST_PACKET_TYPES;
+
+	switch (packet_type) {
+		case PACKET_TYPE_APP: index = CERVER_REQUEST_APP; break;
+		case PACKET_TYPE_APP_ERROR: index = CERVER_REQUEST_APP_ERROR; break;
+		case PACKET_TYPE_CUSTOM: index = CERVER_REQUEST_CUSTOM; break;
+
+		default: break;
+	}
+
+	return index;
+
+}
+
+static const char *cerver_request_stats_packet_type_name (const unsigned int index) {
+
+	static const char *names[CERVER_REQUEST_PACKET_TYPES] = {
+		"App", "App error", "Custom"
+	};
+
+	return names[index];
+
+}
+
+static unsigned int cerver_request_stats_entry (const u32 request_type) {
+
+	return (request_type < CERVER_REQUEST_STATS_SIZE) ? request_type : CERVER_REQUEST_STATS_SIZE;
+
+}
+
+// adds a packet that a handler of the cerver handled to the stats of its request type
+void cerver_request_stats_add (
+	Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	const u64 size, const u64 microseconds
+) {
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (cerver && cerver->request_stats && (type < CERVER_REQUEST_PACKET_TYPES)) {
+		RequestStats *stats = &cerver->request_stats[type][cerver_request_stats_entry (request_type)];
+
+		histogram_add (&stats->durations, microseconds);
+		histogram_add (&stats->sizes, size);
+	}
+
+}
+
+// copies the stats of a request type of PACKET_TYPE_APP, PACKET_TYPE_APP_ERROR or PACKET_TYPE_CUSTOM
+// returns 0 on success, 1 on error
+u8 cerver_get_request_stats (
+	const Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	RequestStats *stats
+) {
+
+	u8 retval = 1;
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (cerver && cerver->request_stats && stats && (type < CERVER_REQUEST_PACKET_TYPES)) {
+		const RequestStats *source = &cerver->request_stats[type][cerver_request_stats_entry (request_type)];
+
+		histogram_copy (&stats->durations, &source->durations);
+		histogram_copy (&stats->sizes, &source->sizes);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void cerver_request_stats_print_entry (
+	const unsigned int type, const unsigned int entry, const RequestStats *source
+) {
+
+	RequestStats stats;
+	histogram_copy (&stats.durations, &source->durations);
+	histogram_copy (&stats.sizes, &source->sizes);
+
+	if (stats.durations.count) {
+		if (entry < CERVER_REQUEST_STATS_SIZE) {
+			cerver_log_msg ("\n%s request %u:", cerver_request_stats_packet_type_name (type), entry);
+		}
+
+		else {
+			cerver_log_msg (
+				"\n%s requests from %u:", cerver_request_stats_packet_type_name (type), entry
+			);
+		}
+
+		histogram_print ("Durations", "us", &stats.durations);
+		histogram_print ("Sizes", "bytes", &stats.sizes);
+	}
+
+}
+
+// prints the stats of the request types that have packets
+void cerver_request_stats_print (const Cerver *cerver) {
+
+	if (cerver && cerver->request_stats) {
+		for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+			for (unsigned int entry = 0; entry < CERVER_REQUEST_STATS_ENTRIES; entry++) {
+				cerver_request_stats_print_entry (type, entry, &cerver->request_stats[type][entry]);
+			}
+		}
+	}
+
+}
+
 static void cerver_stats_print_thpool (Cerver *cerver) {
 
 	if (cerver->thpool) {
@@ -376,6 +512,8 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 
 			cerver_stats_print_thpool (cerver);
 
+			cerver_request_stats_print (cerver);
+
 			if (received) {
 				cerver_log_msg ("\nReceived packets:");
 				packets_per_type_print (cerver->stats->received_packets);
@@ -403,6 +541,139 @@ void cerver_stats_print (Cerver *cerver, bool received, bool sent) {
 			LOG_TYPE_WARNING, LOG_TYPE_CERVER,
 			"Cant print stats of a NULL cerver!"
 		);
+	}
+
+}
+
+#pragma endregion
+
+#pragma region requests
+
+static void cerver_request_handlers_delete (Cerver *cerver) {
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			handler_delete (cerver->request_handlers[type][request]);
+		}
+
+		free (cerver->request_handlers[type]);
+		cerver->request_handlers[type] = NULL;
+		cerver->request_handlers_size[type] = 0;
+	}
+
+}
+
+// grows the handlers of a packet type to have the request type, the new ones without a handler
+// returns 0 on success, 1 on error
+static u8 cerver_request_handlers_grow (
+	Cerver *cerver, const unsigned int type, const u32 request_type
+) {
+
+	u8 retval = 1;
+
+	const u32 size = request_type + 1;
+	Handler **handlers = (Handler **) realloc (
+		cerver->request_handlers[type], sizeof (Handler *) * size
+	);
+
+	if (handlers) {
+		for (u32 request = cerver->request_handlers_size[type]; request < size; request++) {
+			handlers[request] = NULL;
+		}
+
+		cerver->request_handlers[type] = handlers;
+		cerver->request_handlers_size[type] = size;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+// sets, before the cerver starts, the handler of the packets of a request type
+// returns 0 on success, 1 on error or if the request type already has a handler
+u8 cerver_set_request_handler (
+	Cerver *cerver,
+	const PacketType packet_type, const u32 request_type,
+	Handler *handler
+) {
+
+	u8 retval = 1;
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (
+		cerver && handler && !cerver_is_running (cerver)
+		&& (type < CERVER_REQUEST_PACKET_TYPES) && (request_type < CERVER_REQUEST_HANDLERS_MAX)
+		&& !cerver_get_request_handler (cerver, packet_type, request_type)
+	) {
+		if (
+			(request_type < cerver->request_handlers_size[type])
+			|| !cerver_request_handlers_grow (cerver, type, request_type)
+		) {
+			handler->type = HANDLER_TYPE_CERVER;
+			handler->cerver = cerver;
+
+			cerver->request_handlers[type][request_type] = handler;
+
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
+
+// returns the handler of the request type of a packet type, NULL if it does not have one
+Handler *cerver_get_request_handler (
+	const Cerver *cerver,
+	const PacketType packet_type, const u32 request_type
+) {
+
+	Handler *handler = NULL;
+
+	const unsigned int type = cerver_request_packet_type (packet_type);
+	if (
+		cerver && (type < CERVER_REQUEST_PACKET_TYPES)
+		&& (request_type < cerver->request_handlers_size[type])
+	) {
+		handler = cerver->request_handlers[type][request_type];
+	}
+
+	return handler;
+
+}
+
+// the handlers that are not direct get their own threads
+// returns 0 on success, 1 on error
+static u8 cerver_request_handlers_start (Cerver *cerver) {
+
+	u8 errors = 0;
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			Handler *handler = cerver->request_handlers[type][request];
+			if (handler && !handler->direct_handle && handler_start (handler)) {
+				cerver_log_error (
+					"Failed to start cerver %s handler of the request %u!",
+					cerver->info->name, request
+				);
+
+				errors = 1;
+			}
+		}
+	}
+
+	return errors;
+
+}
+
+static void cerver_request_handlers_stop (Cerver *cerver) {
+
+	for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+		for (u32 request = 0; request < cerver->request_handlers_size[type]; request++) {
+			handler_stop (cerver->request_handlers[type][request]);
+		}
 	}
 
 }
@@ -476,6 +747,7 @@ Cerver *cerver_new (void) {
 		cerver->fds = NULL;
 		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
+		cerver->poll_max_connections = CERVER_DEFAULT_POLL_MAX_CONNECTIONS;
 		cerver->poll_timeout = CERVER_DEFAULT_POLL_TIMEOUT;
 		cerver->poll_lock = NULL;
 
@@ -517,6 +789,12 @@ Cerver *cerver_new (void) {
 		cerver->multiple_handlers = CERVER_DEFAULT_MULTIPLE_HANDLERS;
 		cerver->handlers = NULL;
 		cerver->n_handlers = 0;
+
+		for (unsigned int type = 0; type < CERVER_REQUEST_PACKET_TYPES; type++) {
+			cerver->request_handlers[type] = NULL;
+			cerver->request_handlers_size[type] = 0;
+		}
+
 		cerver->num_handlers_alive = 0;
 		cerver->num_handlers_working = 0;
 		cerver->handlers_lock = NULL;
@@ -535,7 +813,7 @@ Cerver *cerver_new (void) {
 		cerver->update_interval = NULL;
 		cerver->update_interval_args = NULL;
 		cerver->delete_update_interval_args = NULL;
-		cerver->update_interval_secs = CERVER_DEFAULT_UPDATE_INTERVAL_SECS;
+		cerver->update_interval_secs = CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS;
 
 		cerver->admin = NULL;
 		cerver->admin_thread_id = 0;
@@ -548,6 +826,7 @@ Cerver *cerver_new (void) {
 
 		cerver->info = NULL;
 		cerver->stats = NULL;
+		cerver->request_stats = NULL;
 
 		cerver->balancer = NULL;
 	}
@@ -605,6 +884,8 @@ void cerver_delete (void *ptr) {
 			free (cerver->handlers);
 		}
 
+		cerver_request_handlers_delete (cerver);
+
 		if (cerver->handlers_lock) {
 			pthread_mutex_destroy (cerver->handlers_lock);
 			free (cerver->handlers_lock);
@@ -622,6 +903,7 @@ void cerver_delete (void *ptr) {
 
 		cerver_info_delete (cerver->info);
 		cerver_stats_delete (cerver->stats);
+		free (cerver->request_stats);
 
 		thread_group_end (&cerver->connection_threads);
 		thread_group_end (&cerver->event_threads);
@@ -910,6 +1192,26 @@ void cerver_set_poll_time_out (
 
 }
 
+// sets, before the cerver starts, the initial size of the main poll array
+// and the max connections that it handles, 0 is no limit
+// returns 0 on success, 1 on error
+u8 cerver_set_poll_fds (
+	Cerver *cerver, const u32 initial, const u32 max_connections
+) {
+
+	u8 retval = 1;
+
+	if (cerver && !cerver->fds && (initial >= CERVER_POLL_MIN_FDS)) {
+		cerver->max_n_fds = initial;
+		cerver->poll_max_connections = max_connections;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
 // retuns 0 on success, 1 on error
@@ -969,6 +1271,24 @@ void cerver_set_on_hold_poll_timeout (
 ) {
 
 	if (cerver) cerver->on_hold_poll_timeout = on_hold_poll_timeout;
+
+}
+
+// sets, before the cerver starts, the connections that the on hold poll handles at the same time
+// returns 0 on success, 1 on error
+u8 cerver_set_on_hold_poll_fds (
+	Cerver *cerver, const u32 max_connections
+) {
+
+	u8 retval = 1;
+
+	if (cerver && !cerver->hold_fds && max_connections) {
+		cerver->max_on_hold_connections = max_connections;
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
@@ -1363,6 +1683,8 @@ static u8 cerver_handlers_destroy (Cerver *cerver) {
 		handler_stop (cerver->app_error_packet_handler);
 
 		handler_stop (cerver->custom_packet_handler);
+
+		cerver_request_handlers_stop (cerver);
 	}
 
 	return 0;
@@ -1414,6 +1736,7 @@ Cerver *cerver_create (
 			cerver_set_name (cerver, name);
 
 			cerver->stats = cerver_stats_new ();
+			cerver->request_stats = cerver_request_stats_new ();
 		}
 	}
 
@@ -1676,13 +1999,12 @@ static u8 cerver_init_poll_fds (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	cerver->fds = (struct pollfd *) calloc (CERVER_DEFAULT_POLL_FDS, sizeof (struct pollfd));
+	// max_n_fds is the initial size, from cerver_set_poll_fds ()
+	cerver->fds = (struct pollfd *) calloc (cerver->max_n_fds, sizeof (struct pollfd));
 	if (cerver->fds) {
-		memset (cerver->fds, 0, sizeof (struct pollfd) * CERVER_DEFAULT_POLL_FDS);
 		// set all fds as available spaces
-		for (u32 i = 0; i < CERVER_DEFAULT_POLL_FDS; i++) cerver->fds[i].fd = -1;
+		for (u32 i = 0; i < cerver->max_n_fds; i++) cerver->fds[i].fd = -1;
 
-		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
 
 		retval = 0;     // success!!
@@ -1712,7 +2034,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 		);
 
 		if (cerver->clients) {
-			cerver->client_sock_fd_map = htab_create (CERVER_DEFAULT_POLL_FDS, NULL, NULL);
+			cerver->client_sock_fd_map = htab_create (cerver->max_n_fds, NULL, NULL);
 			if (cerver->client_sock_fd_map) {
 				u8 errors = 0;
 
@@ -1968,9 +2290,8 @@ static u8 cerver_auth_start (Cerver *cerver) {
 	if (cerver) {
 		cerver->auth_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0);
 
-		cerver->max_on_hold_connections = CERVER_DEFAULT_POLL_FDS / 2;
 		cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
-		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
+		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections, NULL, NULL);
 		if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
 			cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
 			if (cerver->hold_fds) {
@@ -2218,6 +2539,8 @@ static u8 cerver_handlers_start (Cerver *cerver) {
 		errors |= cerver_app_error_handler_start (cerver);
 
 		errors |= cerver_custom_handler_start (cerver);
+
+		errors |= cerver_request_handlers_start (cerver);
 
 		if (!errors) {
 			#ifdef CERVER_DEBUG
@@ -3522,6 +3845,21 @@ static void cerver_report_check_info_handle_auth (
 
 }
 
+// the names come from CERVER_TYPE_MAP, so a new type is never logged as unknown
+static void cerver_report_log_type (const CerverType type) {
+
+	const char *name = cerver_type_to_string (type);
+
+	if ((type != CERVER_TYPE_NONE) && (name != cerver_type_to_string (CERVER_TYPE_NONE))) {
+		cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: %s", name);
+	}
+
+	else {
+		cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Cerver type: UNKNOWN");
+	}
+
+}
+
 u8 cerver_report_check_info (
 	CerverReport *cerver_report,
 	Client *client, Connection *connection
@@ -3564,27 +3902,7 @@ u8 cerver_report_check_info (
 			// #endif
 		}
 
-		// #ifdef CLIENT_DEBUG
-		switch (cerver_report->type) {
-			case CERVER_TYPE_CUSTOM:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: CUSTOM");
-				break;
-
-			case CERVER_TYPE_GAME:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: GAME");
-				break;
-			case CERVER_TYPE_WEB:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: WEB");
-				break;
-			 case CERVER_TYPE_FILES:
-				cerver_log (LOG_TYPE_DEBUG, LOG_TYPE_NONE, "Cerver type: FILES");
-				break;
-
-			default:
-				cerver_log (LOG_TYPE_ERROR, LOG_TYPE_NONE, "Cerver type: UNKNOWN");
-				break;
-		}
-		// #endif
+		cerver_report_log_type (cerver_report->type);
 
 		cerver_report_check_info_handle_auth (cerver_report, client, connection);
 

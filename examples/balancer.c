@@ -15,6 +15,7 @@
 #include <cerver/utils/utils.h>
 
 #include <app/app.h>
+#include <app/events.h>
 #include <app/handler.h>
 
 #define BALANCER_PORT				7000
@@ -269,6 +270,8 @@ static void start (const BalancerType type) {
 		start_services ();
 
 		start_events ();
+
+		app_cerver_events_register (load_balancer->cerver);
 
 		if (!balancer_start (load_balancer)) {
 			finish ();

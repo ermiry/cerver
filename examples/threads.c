@@ -12,6 +12,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0
@@ -99,6 +101,8 @@ static void *on_client_connected (void *event_data_ptr) {
 			event_data->connection->socket->sock_fd, 
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -116,6 +120,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"A client closed a connection to cerver %s!\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -185,6 +191,8 @@ int main (void) {
 			on_client_close_connection, NULL, NULL,
 			false, false
 		);
+
+		app_cerver_events_register (my_cerver);
 
 		if (!cerver_start (my_cerver)) {
 			finish ();

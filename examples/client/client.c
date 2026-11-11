@@ -13,6 +13,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0,
@@ -192,6 +194,7 @@ static void *cerver_client_request (void *args) {
 	Client *client = client_create ();
 	if (client) {
 		client_set_name (client, "test-client");
+		app_client_events_register (client);
 
 		Handler *app_handler = handler_create (client_app_handler_direct);
 		handler_set_direct_handle (app_handler, true);
@@ -258,6 +261,7 @@ static void *cerver_client_connect_and_start (void *args) {
 	Client *client = client_create ();
 	if (client) {
 		client_set_name (client, "start-client");
+		app_client_events_register (client);
 
 		Handler *app_handler = handler_create (client_app_handler);
 		// handler_set_direct_handle (app_handler, true);
@@ -268,6 +272,9 @@ static void *cerver_client_connect_and_start (void *args) {
 		Connection *connection = client_connection_create (client, "127.0.0.1", 7000, PROTOCOL_TCP, false);
 		if (connection) {
 			connection_set_max_sleep (connection, 30);
+
+			// if the cerver ends the connection, it connects again every 2 seconds
+			connection_set_attempt_reconnect (connection, 2);
 
 			if (!client_connect_and_start (client, connection)) {
 				cerver_log (LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
@@ -359,6 +366,8 @@ int main (void) {
 		pthread_t client_thread = 0;
 		// thread_create_detachable (&client_thread, cerver_client_request, NULL);
 		thread_create_detachable (&client_thread, cerver_client_connect_and_start, NULL);
+
+		app_cerver_events_register (client_cerver);
 
 		if (!cerver_start (client_cerver)) {
 			finish ();
