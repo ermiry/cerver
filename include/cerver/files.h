@@ -20,6 +20,7 @@
 #define DIRNAME_DEFAULT_SIZE			1024
 #define FILENAME_DEFAULT_SIZE			1024
 
+// the paths that the move, copy and remove methods build, with the NUL
 #define FILES_MOVE_SIZE					2048
 
 #ifdef __cplusplus
@@ -165,11 +166,30 @@ CERVER_EXPORT unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
 );
 
-// moves one file from one location to another
-// returns 0 on success
+// moves a file or a directory to saved_path, or inside it if it is a directory that exists,
+// with rename (), and between file systems with a copy that is removed after it
+// returns 0 on success, 1 on error
 CERVER_EXPORT int file_move_to (
 	const char *actual_path, const char *saved_path
 );
+
+// copies a regular file with its permissions, replacing the destination if it exists,
+// a copy that fails is removed
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_copy (
+	const char *source, const char *destination
+);
+
+// copies a file, a symbolic link (without following it) or a directory with everything in it,
+// the directories of the destination can exist
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_copy_recursive (
+	const char *source, const char *destination
+);
+
+// removes a file, a symbolic link (without following it) or a directory with everything in it
+// returns 0 on success, 1 on error
+CERVER_EXPORT unsigned int files_remove_recursive (const char *path);
 
 // returns an allocated string with the file extension
 // NULL if no file extension
