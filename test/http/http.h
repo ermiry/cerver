@@ -60,4 +60,6 @@ extern void http_tests_server (void);
 
 extern void http_tests_features (void);
 
+extern void http_tests_disconnect (void);
+
 #endif
