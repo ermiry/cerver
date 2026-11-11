@@ -142,7 +142,9 @@ CERVER_PRIVATE Packet *udp_datagram_packet_create (
 	const char *datagram, const PacketHeader *header
 );
 
-// receives the datagrams of the cerver until it is stopped
+// receives the datagrams of the cerver until it is stopped,
+// in a single thread whatever the handler type of the cerver (cerver_set_handler_type ()),
+// the handlers with their own queues take the packets out of it; an UDP cerver does not take admins
 // returns 0 when the cerver was stopped, 1 on error
 CERVER_PRIVATE u8 cerver_udp_start (struct _Cerver *cerver);
 
