@@ -1242,6 +1242,8 @@ static ClientEventData *client_event_data_new (void) {
 		event_data->response_data = NULL;
 		event_data->delete_response_data = NULL;
 
+		event_data->owns_response_data = false;
+
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
 	}
@@ -1252,7 +1254,14 @@ static ClientEventData *client_event_data_new (void) {
 
 void client_event_data_delete (ClientEventData *event_data) {
 
-	if (event_data) free (event_data);
+	if (event_data) {
+		if (event_data->owns_response_data && event_data->response_data) {
+			if (event_data->delete_response_data) event_data->delete_response_data (event_data->response_data);
+			else free (event_data->response_data);
+		}
+
+		free (event_data);
+	}
 
 }
 
@@ -1431,6 +1440,54 @@ void client_event_trigger (
 				}
 			}
 		}
+	}
+
+}
+
+static void client_event_response_delete (void *response, Action delete_response) {
+
+	if (response) {
+		if (delete_response) delete_response (response);
+		else free (response);
+	}
+
+}
+
+// triggers the event with a response that only this trigger owns,
+// the event data releases it, or it is released here without an action
+void client_event_trigger_with_response (
+	const ClientEventType event_type,
+	const Client *client, const Connection *connection,
+	void *response, Action delete_response
+) {
+
+	ClientEvent *event = client ? client->events[event_type] : NULL;
+	ClientEventData *event_data = (event && event->work) ?
+		client_event_data_create (client, connection, event) : NULL;
+
+	if (event_data) {
+		event_data->response_data = response;
+		event_data->delete_response_data = delete_response;
+		event_data->owns_response_data = true;
+
+		if (event->create_thread) {
+			(void) thread_group_create (
+				(ThreadGroup *) &client->event_threads,
+				event->work, event_data
+			);
+		}
+
+		else {
+			(void) event->work (event_data);
+		}
+
+		if (event->drop_after_trigger) {
+			(void) client_event_unregister ((Client *) client, event_type);
+		}
+	}
+
+	else {
+		client_event_response_delete (response, delete_response);
 	}
 
 }
