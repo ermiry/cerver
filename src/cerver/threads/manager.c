@@ -238,7 +238,7 @@ static void worker_manager_scale_up (WorkerManager *manager) {
 }
 
 // removes one worker that has been without a job longer than idle_timeout
-static void worker_manager_scale_down (WorkerManager *manager) {
+static void worker_manager_remove_idle_worker (WorkerManager *manager) {
 
 	bool removed = false;
 	for (
@@ -250,6 +250,16 @@ static void worker_manager_scale_down (WorkerManager *manager) {
 			worker_manager_remove_worker (manager, index);
 			removed = true;
 		}
+	}
+
+}
+
+// never removes a worker while jobs wait in the queue,
+// because another worker would be added again to take them
+static void worker_manager_scale_down (WorkerManager *manager) {
+
+	if (!job_queue_size (manager->job_queue)) {
+		worker_manager_remove_idle_worker (manager);
 	}
 
 }
