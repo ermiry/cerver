@@ -868,6 +868,11 @@ static HttpStaticPath *http_static_path_new (void) {
 	if (http_static_path) {
 		http_static_path->path = NULL;
 		http_static_path->auth_type = HTTP_ROUTE_AUTH_TYPE_NONE;
+
+		http_static_path->decode_data = NULL;
+		http_static_path->delete_decoded_data = NULL;
+
+		http_static_path->authentication_handler = NULL;
 	}
 
 	return http_static_path;
@@ -903,12 +908,34 @@ static HttpStaticPath *http_static_path_create (const char *path) {
 
 }
 
-// sets authentication requirenments for a whole static path
+// sets the authentication of the files of a whole static path
 void http_static_path_set_auth (
 	HttpStaticPath *static_path, HttpRouteAuthType auth_type
 ) {
 
 	if (static_path) static_path->auth_type = auth_type;
+
+}
+
+void http_static_path_set_decode_data (
+	HttpStaticPath *static_path,
+	void *(*decode_data)(void *),
+	void (*delete_decoded_data)(void *)
+) {
+
+	if (static_path) {
+		static_path->decode_data = decode_data;
+		static_path->delete_decoded_data = delete_decoded_data;
+	}
+
+}
+
+void http_static_path_set_authentication_handler (
+	HttpStaticPath *static_path,
+	HttpAuthenticationHandler authentication_handler
+) {
+
+	if (static_path) static_path->authentication_handler = authentication_handler;
 
 }
 
@@ -4623,6 +4650,10 @@ static void http_receive_identify (HttpReceive *http_receive) {
 
 }
 
+static bool http_receive_handle_static_authenticate (
+	HttpReceive *http_receive, HttpRequest *request
+);
+
 // the url and the headers are complete: the route is selected
 // and the request is authenticated before its body is received,
 // so the files of a rejected request are never saved
@@ -4700,6 +4731,8 @@ static int http_receive_handle_headers_completed (http_parser *parser) {
 		if (http_receive_is_static_file (http_receive, request)) {
 			http_receive->type = HTTP_RECEIVE_TYPE_FILE;
 			http_receive->head = (request->method == REQUEST_METHOD_HEAD);
+
+			if (!http_receive_handle_static_authenticate (http_receive, request)) return -1;
 		}
 
 		http_receive->settings.on_body = http_receive_handle_body_discard;
@@ -4737,42 +4770,102 @@ static bool http_static_path_resolve (
 
 }
 
-// TODO: handle authentication
-static void http_receive_handle_serve_file (HttpReceive *http_receive) {
+// the first static path that has the file of the url, with its real path and its status,
+// only regular files are served
+// returns NULL if none has it
+static const HttpStaticPath *http_static_path_find (
+	const HttpCerver *http_cerver, const char *url,
+	char *real_filename, struct stat *filestatus
+) {
 
-	bool found = false;
+	const HttpStaticPath *found = NULL;
 
-	char real_filename[PATH_MAX] = { 0 };
-	struct stat filestatus = { 0 };
-	HttpStaticPath *static_path = NULL;
+	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
+		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
 
-	for (
-		ListElement *le = dlist_start (http_receive->http_cerver->static_paths);
-		le; le = le->next
-	) {
-		static_path = (HttpStaticPath *) le->data;
-
-		if (!http_static_path_resolve (
-			static_path, http_receive->request->url->str, real_filename
-		)) continue;
-
-		// only regular files are served
-		(void) memset (&filestatus, 0, sizeof (struct stat));
-		if (!stat (real_filename, &filestatus) && S_ISREG (filestatus.st_mode)) {
-			http_receive->served_file = http_receive->request->url->str;
-
-			// serve the file
-			(void) http_response_send_file_internal (
-				http_receive, HTTP_STATUS_OK,
-				real_filename, &filestatus
-			);
-
-			found = true;
-			break;
+		(void) memset (filestatus, 0, sizeof (struct stat));
+		if (
+			http_static_path_resolve (static_path, url, real_filename)
+			&& !stat (real_filename, filestatus) && S_ISREG (filestatus->st_mode)
+		) {
+			found = static_path;
 		}
 	}
 
-	if (!found) {
+	return found;
+
+}
+
+// the first static path that has authentication, NULL if every one is public
+static const HttpStaticPath *http_static_path_first_protected (const HttpCerver *http_cerver) {
+
+	const HttpStaticPath *found = NULL;
+
+	for (ListElement *le = dlist_start (http_cerver->static_paths); le && !found; le = le->next) {
+		const HttpStaticPath *static_path = (const HttpStaticPath *) le->data;
+		if (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE) found = static_path;
+	}
+
+	return found;
+
+}
+
+// the request of a file is authenticated with the static path that has it,
+// or with the first protected one when none has it,
+// so a file that does not exist is answered like a protected one
+// returns true if the request continues, a failed authentication was already answered
+static bool http_receive_handle_static_authenticate (
+	HttpReceive *http_receive, HttpRequest *request
+) {
+
+	bool authenticated = true;
+
+	char real_filename[PATH_MAX] = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
+
+	const HttpStaticPath *static_path = http_static_path_find (
+		http_receive->http_cerver, request->url->str, real_filename, &filestatus
+	);
+
+	if (!static_path) static_path = http_static_path_first_protected (http_receive->http_cerver);
+
+	if (static_path && (static_path->auth_type != HTTP_ROUTE_AUTH_TYPE_NONE)) {
+		HttpRouteSettings settings;
+		(void) memset (&settings, 0, sizeof (HttpRouteSettings));
+		settings.auth_type = static_path->auth_type;
+		settings.decode_data = static_path->decode_data;
+		settings.delete_decoded_data = static_path->delete_decoded_data;
+		settings.authentication_handler = static_path->authentication_handler;
+
+		authenticated = http_receive_handle_authenticate (
+			http_receive->http_cerver, http_receive, &settings, request
+		);
+	}
+
+	return authenticated;
+
+}
+
+// the request was authenticated in on_headers_complete with its static path
+static void http_receive_handle_serve_file (HttpReceive *http_receive) {
+
+	char real_filename[PATH_MAX] = { 0 };
+	struct stat filestatus = CERVER_ZERO_INITIALIZER;
+
+	const bool found = http_static_path_find (
+		http_receive->http_cerver, http_receive->request->url->str, real_filename, &filestatus
+	) != NULL;
+
+	if (found) {
+		http_receive->served_file = http_receive->request->url->str;
+
+		(void) http_response_send_file_internal (
+			http_receive, HTTP_STATUS_OK,
+			real_filename, &filestatus
+		);
+	}
+
+	else {
 		#ifdef HTTP_RECEIVE_DEBUG
 		cerver_log_warning (
 			"Unable to find file %s",
