@@ -84,7 +84,7 @@ CERVER_PUBLIC size_t c_string_concat_safe (
 );
 
 // creates a new c string with the desired format, as in printf
-CERVER_PUBLIC char *c_string_create (const char *format, ...);
+CERVER_PUBLIC char *c_string_create (const char *format, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // removes all the spaces in the c string
 CERVER_PUBLIC void c_string_remove_spaces (char *s);

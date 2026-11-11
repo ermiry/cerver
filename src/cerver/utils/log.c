@@ -447,7 +447,7 @@ static void cerver_log_internal_with_time_actual (
 
 }
 
-static void cerver_log_internal (
+CERVER_PRINTF_FORMAT (4, 0) static void cerver_log_internal (
 	FILE *__restrict __stream,
 	const LogType first_type, const LogType second_type,
 	const char *format, va_list args,
@@ -480,7 +480,7 @@ static void cerver_log_internal (
 
 }
 
-static void cerver_log_internal_with_time (
+CERVER_PRINTF_FORMAT (4, 0) static void cerver_log_internal_with_time (
 	FILE *__restrict __stream,
 	const LogType first_type, const LogType second_type,
 	const char *format, va_list args,
@@ -503,7 +503,7 @@ static void cerver_log_internal_with_time (
 
 }
 
-static void cerver_log_internal_raw (
+CERVER_PRINTF_FORMAT (2, 0) static void cerver_log_internal_raw (
 	FILE *__restrict __stream,
 	const char *format, va_list args,
 	const LogOutputType log_output_type

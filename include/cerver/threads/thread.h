@@ -41,7 +41,7 @@ CERVER_PUBLIC pthread_t thread_create_detached (
 // sets thread name from inisde it
 CERVER_PUBLIC unsigned int thread_set_name (
 	const char *name, ...
-);
+) CERVER_PRINTF_FORMAT (1, 2);
 
 #pragma endregion
 

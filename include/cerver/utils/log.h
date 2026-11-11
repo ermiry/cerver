@@ -143,7 +143,7 @@ CERVER_EXPORT void cerver_log_set_quiet (const bool value);
 CERVER_PUBLIC void cerver_log (
 	const LogType first_type, const LogType second_type,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 // creates and prints a message of custom types
 // and adds the date & time
@@ -151,7 +151,7 @@ CERVER_PUBLIC void cerver_log (
 CERVER_PUBLIC void cerver_log_with_date (
 	const LogType first_type, const LogType second_type,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 // creates and prints a message of custom types
 // to stdout or stderr based on type
@@ -160,25 +160,25 @@ CERVER_PUBLIC void cerver_log_with_date (
 CERVER_PUBLIC void cerver_log_both (
 	const LogType first_type, const LogType second_type,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 // prints a message with no type, effectively making this a custom printf ()
-CERVER_PUBLIC void cerver_log_msg (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_msg (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a red error message to stderr
-CERVER_PUBLIC void cerver_log_error (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_error (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a yellow warning message to stderr
-CERVER_PUBLIC void cerver_log_warning (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_warning (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a green success message to stdout
-CERVER_PUBLIC void cerver_log_success (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_success (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a debug message to stdout
-CERVER_PUBLIC void cerver_log_debug (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_debug (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a message with no type or format
-CERVER_PUBLIC void cerver_log_raw (const char *msg, ...);
+CERVER_PUBLIC void cerver_log_raw (const char *msg, ...) CERVER_PRINTF_FORMAT (1, 2);
 
 // prints a line break, equivalent to printf ("\n")
 CERVER_PUBLIC void cerver_log_line_break (void);
