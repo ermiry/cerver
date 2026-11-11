@@ -698,24 +698,8 @@ static CerverHandlerError cerver_client_packet_handler (
 			);
 			#endif
 
-			// check if the client is inside a lobby
-			if (packet->lobby) {
-				#ifdef HANDLER_DEBUG
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Client %ld inside lobby %s wants to close the connection...",
-					packet->client->id, packet->lobby->id->str
-				);
-				#endif
-
-				// remove the player from the lobby
-				(void) player_unregister_from_lobby (
-					packet->lobby,
-					player_get_by_sock_fd_list (
-						packet->lobby, packet->connection->socket->sock_fd
-					)
-				);
-			}
+			// the player of the client leaves its lobby
+			game_connection_end (packet->cerver, packet->client, packet->connection);
 
 			switch (client_remove_connection_by_sock_fd (
 				packet->cerver,
@@ -733,24 +717,8 @@ static CerverHandlerError cerver_client_packet_handler (
 		// and will close all of its active connections
 		// so drop it from the server
 		case CLIENT_PACKET_TYPE_DISCONNECT: {
-			// check if the client is inside a lobby
-			if (packet->lobby) {
-				#ifdef HANDLER_DEBUG
-				cerver_log (
-					LOG_TYPE_DEBUG, LOG_TYPE_GAME,
-					"Client %ld inside lobby %s wants to close the connection...",
-					packet->client->id, packet->lobby->id->str
-				);
-				#endif
-
-				// remove the player from the lobby
-				(void) player_unregister_from_lobby (
-					packet->lobby,
-					player_get_by_sock_fd_list (
-						packet->lobby, packet->connection->socket->sock_fd
-					)
-				);
-			}
+			// the player of the client leaves its lobby
+			game_connection_end (packet->cerver, packet->client, packet->connection);
 
 			client_drop (packet->cerver, packet->client);
 
@@ -1333,8 +1301,10 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#ifdef CONNECTION_STATS
 			packet->connection->stats->received_packets->n_app_packets += 1;
 			#endif
-			if (packet->lobby) packet->lobby->stats->received_packets->n_app_packets += 1;
-			cerver_app_packet_handler (packet);
+			if (packet->lobby) CERVER_STATS_ADD (packet->lobby->stats->received_packets->n_app_packets, 1);
+
+			// the lobby of a player takes its app packets while it runs
+			if (!game_lobby_app_packet (packet)) cerver_app_packet_handler (packet);
 		} break;
 
 		// user set handler to handle app specific errors
@@ -1730,24 +1700,18 @@ void cerver_receive_handle_buffer (
 void cerver_receive_handle_failed (CerverReceive *cr) {
 
 	if (cr->socket) {
+		// the player of the client leaves its lobby before the socket is locked,
+		// a lobby that ends waits for its threads, that can receive from this socket
+		if (cr->type == RECEIVE_TYPE_NORMAL) {
+			game_connection_end (cr->cerver, cr->client, cr->connection);
+		}
+
 		(void) pthread_mutex_lock (cr->socket->read_mutex);
 
 		// 0 is a valid fd, a closed socket has -1
 		if (cr->socket->sock_fd > -1) {
 			switch (cr->type) {
 				case RECEIVE_TYPE_NORMAL: {
-					// check if the socket belongs to a player inside a lobby
-					if (cr->lobby) {
-						if (cr->lobby->players->size > 0) {
-							(void) player_unregister_from_lobby (
-								cr->lobby,
-								player_get_by_sock_fd_list (
-									cr->lobby, cr->socket->sock_fd
-								)
-							);
-						}
-					}
-
 					(void) client_remove_connection_by_sock_fd (
 						cr->cerver, cr->client, cr->socket->sock_fd
 					);

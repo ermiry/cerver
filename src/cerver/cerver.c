@@ -3615,6 +3615,9 @@ static void cerver_clean (Cerver *cerver) {
 		// stop accepting new connections
 		cerver_stop_request (cerver);
 
+		// the lobbies stop their threads and give their connections back
+		game_cerver_stop (cerver);
+
 		cerver_stop_threads (cerver);
 
 		cerver_drain (cerver);
@@ -3653,11 +3656,8 @@ static void cerver_clean_data (Cerver *cerver) {
 					if (game_cerver->final_game_action)
 						game_cerver->final_game_action (game_cerver->final_action_args);
 
-					Lobby *lobby = NULL;
-					for (ListElement *le = dlist_start (game_cerver->current_lobbys); le; le = le->next) {
-						lobby = (Lobby *) le->data;
-						lobby->running = false;
-					}
+					// the lobbies were torn down when the cerver stopped
+					game_cerver_stop (cerver);
 
 					game_delete (game_cerver);      // delete game cerver data
 					cerver->cerver_data = NULL;

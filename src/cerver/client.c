@@ -26,6 +26,8 @@
 #include "cerver/sessions.h"
 #include "cerver/udp.h"
 
+#include "cerver/game/game.h"
+
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
@@ -3461,6 +3463,7 @@ static ClientHandlerError client_packet_handler_actual (
 		case PACKET_TYPE_GAME:
 			CERVER_STATS_ADD (packet->client->stats->received_packets->n_game_packets, 1);
 			packet->connection->stats->received_packets->n_game_packets += 1;
+			game_client_packet_handler (packet);
 			packet_delete (packet);
 			break;
 
