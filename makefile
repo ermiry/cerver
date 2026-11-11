@@ -149,9 +149,7 @@ endif
 INC         := -I $(INCDIR) -I /usr/local/include
 INCDEP      := -I $(INCDIR)
 
-LLHTTPDIR	:= $(SRCDIR)/cerver/http/parser
-
-SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT) -not -path '$(LLHTTPDIR)/*')
+SOURCES     := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS     := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(OBJEXT)))
 
 SRCCOVS		:= $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.$(SRCEXT).$(COVEXT)))
