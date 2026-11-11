@@ -85,12 +85,12 @@ CERVER_PUBLIC void jsonp_error_set_source (
 CERVER_PUBLIC void jsonp_error_set (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, ...
-);
+) CERVER_PRINTF_FORMAT (6, 7);
 
 CERVER_PUBLIC void jsonp_error_vset (
 	json_error_t *error, int line, int column, size_t position,
 	enum json_error_code code, const char *msg, va_list ap
-);
+) CERVER_PRINTF_FORMAT (6, 0);
 
 #pragma endregion
 
