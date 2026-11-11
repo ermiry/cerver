@@ -813,7 +813,7 @@ Cerver *cerver_new (void) {
 		cerver->update_interval = NULL;
 		cerver->update_interval_args = NULL;
 		cerver->delete_update_interval_args = NULL;
-		cerver->update_interval_secs = CERVER_DEFAULT_UPDATE_INTERVAL_SECS;
+		cerver->update_interval_secs = CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS;
 
 		cerver->admin = NULL;
 		cerver->admin_thread_id = 0;

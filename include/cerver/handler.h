@@ -240,9 +240,6 @@ CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
 
 #pragma region receive
 
-// the default timeout when handling a connection in dedicated thread
-#define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
-
 // the deleted receives that are kept to be reused
 #define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
 

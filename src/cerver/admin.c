@@ -608,7 +608,7 @@ AdminCerver *admin_cerver_new (void) {
 		admin_cerver->update_interval = NULL;
 		admin_cerver->update_interval_args = NULL;
 		admin_cerver->delete_update_interval_args = NULL;
-		admin_cerver->update_interval_secs = ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECS;
+		admin_cerver->update_interval_secs = ADMIN_CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS;
 
 		admin_cerver->stats = NULL;
 	}

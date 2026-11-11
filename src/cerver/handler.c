@@ -2013,7 +2013,7 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 	#endif
 
 	// set the socket's timeout to prevent thread from getting stuck if no more data to read
-	(void) sock_set_timeout (sock_fd, CERVER_DEFAULT_SOCKET_RECV_TIMEOUT);
+	(void) sock_set_timeout (sock_fd, CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT);
 
 	const size_t buffer_size = cr->cerver->receive_buffer_size;
 	char *buffer = (char *) calloc (buffer_size, sizeof (char));

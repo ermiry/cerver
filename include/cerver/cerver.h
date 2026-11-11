@@ -97,7 +97,10 @@
 #define CERVER_DEFAULT_CHECK_PACKETS				false
 
 #define CERVER_DEFAULT_UPDATE_TICKS					30
-#define CERVER_DEFAULT_UPDATE_INTERVAL_SECS			1
+#define CERVER_DEFAULT_UPDATE_INTERVAL_SECONDS		1
+
+// SO_RCVTIMEO in secs of a connection that is handled in its own thread
+#define CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT		5
 
 #ifdef __cplusplus
 extern "C" {

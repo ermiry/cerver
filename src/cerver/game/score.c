@@ -85,7 +85,7 @@ ScoreBoard *game_score_new (void) {
 
 	ScoreBoard *sb = (ScoreBoard *) calloc (1, sizeof (ScoreBoard));
 	if (sb) {
-		sb->scores = htab_create (DEFAULT_SCORE_SIZE, NULL, game_score_player_delete);
+		sb->scores = htab_create (SCORE_DEFAULT_SIZE, NULL, game_score_player_delete);
 	}
 
 	return sb;

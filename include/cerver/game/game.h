@@ -15,10 +15,10 @@
 #include "cerver/game/player.h"
 #include "cerver/game/lobby.h"
 
-#define DEFAULT_PLAYER_TIMEOUT      30
-#define DEFAULT_FPS                 20
-#define DEFAULT_MIN_PLAYERS         2
-#define DEFAULT_MAX_PLAYERS         4
+#define GAME_DEFAULT_PLAYER_TIMEOUT		30
+#define GAME_DEFAULT_FPS				20
+#define GAME_DEFAULT_MIN_PLAYERS		2
+#define GAME_DEFAULT_MAX_PLAYERS		4
 
 #ifdef __cplusplus
 extern "C" {
