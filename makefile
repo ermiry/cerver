@@ -12,6 +12,8 @@ SANITIZER	:=
 # 1 compiles the gzip compression of the HTTP responses with zlib
 ZLIB		:= 0
 
+WERROR		?= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -67,7 +69,7 @@ DEVELOPMENT := $(BASE_DEBUG) $(HTTP_DEBUG)
 
 CC          := gcc
 
-GCCVGTEQ8 	:= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 8)
+GCCVGTEQ8 	:= $(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 8)
 
 SRCDIR      := src
 INCDIR      := include
@@ -87,9 +89,17 @@ COVEXT		:= gcov
 COMMON		:= -Wall -Wno-unknown-pragmas \
 				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
 				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
-				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
+				-Wuninitialized -Wempty-body \
 				-Wunused-parameter -Wunused-but-set-parameter -Wunused-result \
 				-Wformat -Wformat-nonliteral -Wformat-security -Wformat-overflow -Wformat-signedness -Wformat-truncation
+
+ifeq ($(findstring clang,$(CC)),)
+	COMMON += -Wmaybe-uninitialized
+endif
+
+ifeq ($(WERROR), 1)
+	COMMON += -Werror
+endif
 
 # main
 CFLAGS      := $(DEFINES)
@@ -108,8 +118,8 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
-	CFLAGS += -std=c++11 -fpermissive
+ifeq ($(CC), g++)
+	CFLAGS += -std=c++11
 else
 	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
 	# check for compiler version
@@ -127,7 +137,8 @@ endif
 # sanitizers are applied to the library, the examples and the tests
 ifneq ($(SANITIZER),)
 	SANITIZERFLAGS := -fsanitize=$(SANITIZER) -fno-omit-frame-pointer
-	CFLAGS += -D CERVER_RECYCLE_DISABLED
+	RECYCLEFLAGS := -D CERVER_RECYCLE_DISABLED
+	CFLAGS += $(RECYCLEFLAGS)
 endif
 
 # common flags
@@ -164,7 +175,7 @@ $(SLIB):
 # compile sources
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(INC) $(LIB) -c -o $@ $<
+	$(CC) $(CFLAGS) $(INC) -c -o $@ $<
 	@$(CC) $(CFLAGS) $(INCDEP) -MM $(SRCDIR)/$*.$(SRCEXT) > $(BUILDDIR)/$*.$(DEPEXT)
 	@cp -f $(BUILDDIR)/$*.$(DEPEXT) $(BUILDDIR)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(BUILDDIR)/$*.$(OBJEXT):|' < $(BUILDDIR)/$*.$(DEPEXT).tmp > $(BUILDDIR)/$*.$(DEPEXT)
@@ -189,8 +200,8 @@ else
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
-	EXAFLAGS += -std=c++11 -fpermissive
+ifeq ($(CC), g++)
+	EXAFLAGS += -std=c++11
 else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -200,7 +211,7 @@ ifeq ($(NATIVE), 1)
 endif
 
 # common flags
-EXAFLAGS += -Wall -Wno-unknown-pragmas $(SANITIZERFLAGS)
+EXAFLAGS += $(COMMON) $(SANITIZERFLAGS)
 
 EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
@@ -223,7 +234,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++)
-	EXAPPFGS += -std=c++11 -fpermissive
+	EXAPPFGS += -std=c++11
 else
 	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -288,8 +299,8 @@ examples: $(EXOBJS)
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(EXADEBUG) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
-	@$(CC) $(EXADEBUG) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
+	$(CC) $(EXADEBUG) $(EXAFLAGS) $(INC) $(EXAINC) -c -o $@ $<
+	@$(CC) $(EXADEBUG) $(EXAFLAGS) $(INCDEP) $(EXAINC) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
 	@cp -f $(EXABUILD)/$*.$(DEPEXT) $(EXABUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
@@ -301,7 +312,7 @@ TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
 TESTCOVDIR	:= $(COVDIR)/test
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS)
+TESTFLAGS	:= -g $(DEFINES) $(COMMON) $(SANITIZERFLAGS) $(RECYCLEFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -344,8 +355,8 @@ ifeq ($(DEBUG), 1)
 endif
 
 # check which compiler we are using
-ifeq ($(CC), g++) 
-	TESTAPPFGS += -std=c++11 -fpermissive
+ifeq ($(CC), g++)
+	TESTAPPFGS += -std=c++11
 else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -501,8 +512,8 @@ test: testout
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(TESTFLAGS) $(TESTINC) $(TESTLIBS) -c -o $@ $<
-	@$(CC) $(TESTFLAGS) $(INCDEP) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
+	$(CC) $(TESTFLAGS) $(TESTINC) -c -o $@ $<
+	@$(CC) $(TESTFLAGS) $(TESTINC) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
 	@cp -f $(TESTBUILD)/$*.$(DEPEXT) $(TESTBUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(TESTBUILD)/$*.$(OBJEXT):|' < $(TESTBUILD)/$*.$(DEPEXT).tmp > $(TESTBUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(TESTBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(TESTBUILD)/$*.$(DEPEXT)
@@ -526,19 +537,19 @@ coverage: coverage-init test-coverage
 $(BUILDDIR)/%.$(SRCEXT).$(COVEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p ./$(COVDIR)/$(dir $<)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(COVDIR)/$<.gcov
+	if [ -f $(notdir $@) ]; then mv $(notdir $@) ./$(COVDIR)/$<.gcov; fi
 
 # get tests coverage reports
 $(TESTBUILD)/%.$(SRCEXT).$(COVEXT): $(TESTDIR)/%.$(SRCEXT)
 	gcov -r $< --object-directory $(dir $@)
-	mv $(notdir $@) ./$(TESTCOVDIR)
+	if [ -f $(notdir $@) ]; then mv $(notdir $@) ./$(TESTCOVDIR); fi
 
 # benchmarks
 BENCHDIR	:= benchmarks
 BENCHBUILD	:= $(BENCHDIR)/objs
 BENCHTARGET	:= $(BENCHDIR)/bin
 
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
+BENCHFLAGS	:= $(DEFINES) $(COMMON) -O3
 
 ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
@@ -571,8 +582,8 @@ load: $(BENCHBUILD)/server.$(OBJEXT) $(BENCHBUILD)/load.$(OBJEXT)
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) $(BENCHLIBS) -c -o $@ $<
-	@$(CC) $(BENCHFLAGS) $(INCDEP) -MM $(BENCHDIR)/$*.$(SRCEXT) > $(BENCHBUILD)/$*.$(DEPEXT)
+	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) -c -o $@ $<
+	@$(CC) $(BENCHFLAGS) $(INCDEP) $(BENCHINC) -MM $(BENCHDIR)/$*.$(SRCEXT) > $(BENCHBUILD)/$*.$(DEPEXT)
 	@cp -f $(BENCHBUILD)/$*.$(DEPEXT) $(BENCHBUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(BENCHBUILD)/$*.$(OBJEXT):|' < $(BENCHBUILD)/$*.$(DEPEXT).tmp > $(BENCHBUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)
@@ -584,8 +595,8 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
-FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
+FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH) $(OPENSSL)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
 
