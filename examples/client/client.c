@@ -273,6 +273,9 @@ static void *cerver_client_connect_and_start (void *args) {
 		if (connection) {
 			connection_set_max_sleep (connection, 30);
 
+			// if the cerver ends the connection, it connects again every 2 seconds
+			connection_set_attempt_reconnect (connection, 2);
+
 			if (!client_connect_and_start (client, connection)) {
 				cerver_log (LOG_TYPE_SUCCESS, LOG_TYPE_NONE, "Connected to cerver!");
 			}
