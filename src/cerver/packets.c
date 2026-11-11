@@ -1297,6 +1297,11 @@ Packet *packet_create_request (
 			.data_end = NULL,
 			.data_ref = false,
 
+			.remaining_data = 0,
+
+			.header = CERVER_ZERO_INITIALIZER,
+			.encoded_header = { 0 },
+
 			.version = packet_version_local (),
 
 			.packet_size = PACKET_HEADER_SIZE,
@@ -1304,7 +1309,10 @@ Packet *packet_create_request (
 			.packet_ref = true,
 
 			.release = NULL,
-			.release_args = NULL
+			.release_args = NULL,
+
+			.data_class = 0,
+			.recycle_next = NULL
 		};
 
 		packet_request_init_header (packet, packet_type, request_type);
@@ -1344,6 +1352,11 @@ void packet_init_request (
 		.data_end = NULL,
 		.data_ref = false,
 
+		.remaining_data = 0,
+
+		.header = CERVER_ZERO_INITIALIZER,
+		.encoded_header = { 0 },
+
 		.version = packet_version_local (),
 
 		.packet_size = PACKET_HEADER_SIZE,
@@ -1351,7 +1364,10 @@ void packet_init_request (
 		.packet_ref = true,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	packet_request_init_header (packet, packet_type, request_type);
@@ -2144,6 +2160,11 @@ u8 packet_send_request (
 		.data_end = NULL,
 		.data_ref = false,
 
+		.remaining_data = 0,
+
+		.header = CERVER_ZERO_INITIALIZER,
+		.encoded_header = { 0 },
+
 		.version = packet_version_local (),
 
 		.packet_size = PACKET_HEADER_SIZE,
@@ -2151,7 +2172,10 @@ u8 packet_send_request (
 		.packet_ref = true,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	packet_request_init_header (&request, packet_type, request_type);

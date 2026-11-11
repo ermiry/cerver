@@ -253,7 +253,7 @@ ssize_t file_cerver_send_file (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (
@@ -392,7 +392,7 @@ unsigned int files_create_dir (
 	unsigned int retval = 1;
 
 	if (dir_path) {
-		struct stat st = { 0 };
+		struct stat st = CERVER_ZERO_INITIALIZER;
 		int ret = stat (dir_path, &st);
 		switch (ret) {
 			case -1: {
@@ -430,7 +430,7 @@ unsigned int files_create_recursive_dir (
 
 	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
 	char *p = NULL;
-	struct stat sb = { 0 };
+	struct stat sb = CERVER_ZERO_INITIALIZER;
 
 	// check if the path already exists
 	if (stat (dir_path, &sb)) {
@@ -927,7 +927,7 @@ bool file_exists (const char *filename) {
 	bool retval = false;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			retval = true;
 		}
@@ -1028,7 +1028,7 @@ char *file_read (const char *filename, size_t *file_size) {
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			*file_size = (size_t) filestatus.st_size;
 
@@ -1051,7 +1051,7 @@ char *file_n_read (
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			size_t file_size = (size_t) filestatus.st_size;
 
@@ -1469,7 +1469,7 @@ ssize_t file_send (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (

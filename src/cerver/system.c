@@ -48,7 +48,7 @@ bool system_get_available_space (
 
 	bool retval = false;
 
-	struct statvfs stat = { 0 };
+	struct statvfs stat = CERVER_ZERO_INITIALIZER;
 
 	if (!statvfs (path, &stat)) {
 		*available_space = stat.f_bsize * stat.f_bavail;
@@ -67,7 +67,7 @@ bool system_get_used_space (
 
 	bool retval = false;
 
-	struct statvfs stat = { 0 };
+	struct statvfs stat = CERVER_ZERO_INITIALIZER;
 
 	if (!statvfs (path, &stat)) {
 		unsigned long total = stat.f_blocks * stat.f_frsize;
@@ -89,7 +89,7 @@ bool system_get_stats (
 
 	bool retval = false;
 
-	struct statvfs buffer = { 0 };
+	struct statvfs buffer = CERVER_ZERO_INITIALIZER;
 
 	if (!statvfs (path, &buffer)) {
 		stats->total = (double) (buffer.f_blocks * buffer.f_frsize) / GB;

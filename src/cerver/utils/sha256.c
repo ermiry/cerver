@@ -148,7 +148,7 @@ void sha256_calc (
 	/* 512-bit chunks is what we will operate on. */
 	uint8_t chunk[64];
 
-	struct buffer_state state = { 0 };
+	struct buffer_state state = CERVER_ZERO_INITIALIZER;
 
 	init_buf_state (&state, input, len);
 

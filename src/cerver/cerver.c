@@ -2621,7 +2621,7 @@ static u8 cerver_update_interval_start (Cerver *cerver) {
 // sleeps the seconds or until the cerver is stopped
 void cerver_sleep (Cerver *cerver, u32 seconds) {
 
-	struct timespec deadline = { 0 };
+	struct timespec deadline = CERVER_ZERO_INITIALIZER;
 	(void) clock_gettime (CLOCK_REALTIME, &deadline);
 	deadline.tv_sec += seconds;
 
@@ -3152,7 +3152,7 @@ void cerver_sleep_microseconds (Cerver *cerver, i64 microseconds) {
 
 	const i64 nanoseconds_per_second = CERVER_MICROSECONDS_PER_SECOND * CERVER_NANOSECONDS_PER_MICROSECOND;
 
-	struct timespec deadline = { 0 };
+	struct timespec deadline = CERVER_ZERO_INITIALIZER;
 	(void) clock_gettime (CLOCK_REALTIME, &deadline);
 
 	i64 nanoseconds = (i64) deadline.tv_nsec + (microseconds * CERVER_NANOSECONDS_PER_MICROSECOND);
@@ -3189,7 +3189,7 @@ static void *cerver_update (void *args) {
 		const i64 time_per_frame = CERVER_MICROSECONDS_PER_SECOND / (cerver->update_ticks ? cerver->update_ticks : 1);
 		i64 sleep_time = 0;
 
-		struct timespec start = { 0 }, middle = { 0 };
+		struct timespec start = CERVER_ZERO_INITIALIZER, middle = CERVER_ZERO_INITIALIZER;
 
 		while (cerver_is_running (cerver)) {
 			(void) clock_gettime (CLOCK_MONOTONIC, &start);

@@ -1027,7 +1027,21 @@ void cerver_test_packet_handler (Packet *packet) {
 		.connection = packet->connection,
 		.lobby = packet->lobby,
 
+		.packet_type = PACKET_TYPE_NONE,
+		.req_type = 0,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.remaining_data = 0,
+
 		.header = packet->header,
+		.encoded_header = { 0 },
+
+		.version = CERVER_ZERO_INITIALIZER,
 
 		// the header of the test packet is encoded again from here when it is sent
 		.packet_size = PACKET_HEADER_SIZE,
@@ -1035,7 +1049,10 @@ void cerver_test_packet_handler (Packet *packet) {
 		.packet_ref = true,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	// only the header goes back, a test packet with data must not announce it

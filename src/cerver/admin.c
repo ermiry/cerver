@@ -1111,7 +1111,7 @@ static void *admin_cerver_update (void *args) {
 		const i64 time_per_frame = ADMIN_MICROSECONDS_PER_SECOND / (admin_cerver->update_ticks ? admin_cerver->update_ticks : 1);
 		i64 sleep_time = 0;
 
-		struct timespec start = { 0 }, middle = { 0 };
+		struct timespec start = CERVER_ZERO_INITIALIZER, middle = CERVER_ZERO_INITIALIZER;
 
 		while (cerver_is_running (admin_cerver->cerver)) {
 			(void) clock_gettime (CLOCK_MONOTONIC, &start);

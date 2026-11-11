@@ -2817,7 +2817,7 @@ u8 client_file_send (
 		const char *actual_filename = last ? last + 1 : NULL;
 		if (actual_filename) {
 			// try to open the file
-			struct stat filestatus = { 0 };
+			struct stat filestatus = CERVER_ZERO_INITIALIZER;
 			int file_fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
 			if (file_fd >= 0) {
 				size_t sent = file_send_by_fd (
