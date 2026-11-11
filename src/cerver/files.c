@@ -420,7 +420,46 @@ unsigned int files_create_dir (
 
 }
 
-// recursively creates all directories in dir path
+// a directory that exists is a success, even when another thread or process
+// creates it between the stat () and the mkdir ()
+// returns 0 on success, 1 on error
+static unsigned int files_create_recursive_dir_single (
+	const char *dir_path, mode_t mode
+) {
+
+	struct stat sb = CERVER_ZERO_INITIALIZER;
+
+	if (!stat (dir_path, &sb)) return S_ISDIR (sb.st_mode) ? 0 : 1;
+
+	if (!mkdir (dir_path, mode)) return 0;
+
+	return ((errno == EEXIST) && !stat (dir_path, &sb) && S_ISDIR (sb.st_mode)) ? 0 : 1;
+
+}
+
+// creates each directory of the path that does not exist yet,
+// stops in the first one that can not be created
+// returns 0 on success, 1 on error
+static unsigned int files_create_recursive_dir_path (
+	char *path, mode_t mode
+) {
+
+	unsigned int retval = 0;
+
+	for (char *p = path + 1; !retval && *p; p++) {
+		if (*p == '/') {
+			*p = '\0';
+			retval = files_create_recursive_dir_single (path, mode);
+			*p = '/';
+		}
+	}
+
+	return retval ? retval : files_create_recursive_dir_single (path, mode);
+
+}
+
+// recursively creates all directories in dir path,
+// a path that already is a directory is a success
 // returns 0 on success, 1 on error
 unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
@@ -428,55 +467,25 @@ unsigned int files_create_recursive_dir (
 
 	unsigned int retval = 1;
 
-	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
-	char *p = NULL;
-	struct stat sb = CERVER_ZERO_INITIALIZER;
+	char path[DIRNAME_DEFAULT_SIZE] = { 0 };
+	const size_t len = dir_path ? strlen (dir_path) : 0;
 
-	// check if the path already exists
-	if (stat (dir_path, &sb)) {
-		size_t len = strlen (dir_path);
-		(void) strncpy (tmp, dir_path, DIRNAME_DEFAULT_SIZE - 1);
+	// an empty path or one that does not fit is never truncated
+	if (len && (len < DIRNAME_DEFAULT_SIZE)) {
+		(void) memcpy (path, dir_path, len);
 
-		// remove trailing slash
-		if (tmp[len - 1] == '/') {
-			tmp[len - 1] = '\0';
-		}
+		// the trailing slash, except the one of the root
+		if ((len > 1) && (path[len - 1] == '/')) path[len - 1] = '\0';
 
-		// recursive mkdir
-		for (p = tmp + 1; *p; p++) {
-			if (*p == '/') {
-				*p = 0;
-
-				if (stat (tmp, &sb)) {
-					// create directory
-					if (mkdir (tmp, mode)) {
-						break;
-					}
-				}
-
-				else if (!S_ISDIR (sb.st_mode)) {
-					// not a directory
-					break;
-				}
-
-				*p = '/';
-			}
-		}
-
-		// create final dir
-		if (stat (tmp, &sb)) {
-			// create directory
-			if (!mkdir (tmp, mode)) {
-				retval = 0;
-			}
-		}
+		retval = files_create_recursive_dir_path (path, mode);
 	}
 
 	#ifdef FILES_DEBUG
-	else {
+	if (retval) {
 		cerver_log (
 			LOG_TYPE_WARNING, LOG_TYPE_FILE,
-			"files_create_recursive_dir () - dir %s exists!", dir_path
+			"files_create_recursive_dir () - failed to create %s",
+			dir_path ? dir_path : "(null)"
 		);
 	}
 	#endif

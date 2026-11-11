@@ -160,7 +160,9 @@ CERVER_EXPORT unsigned int files_create_dir (
 	const char *dir_path, mode_t mode
 );
 
-// recursively creates all directories in dir path
+// recursively creates all directories in dir path,
+// a path that already is a directory is a success,
+// an empty path or one that does not fit in DIRNAME_DEFAULT_SIZE is an error
 // returns 0 on success, 1 on error
 CERVER_EXPORT unsigned int files_create_recursive_dir (
 	const char *dir_path, mode_t mode
