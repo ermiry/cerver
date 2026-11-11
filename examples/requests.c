@@ -114,12 +114,13 @@ static void end (int dummy) {
 
 }
 
+// the app handler releases its data with app_data_delete () when it ends
 static void finish (void) {
 
 	cerver_stats_print (my_cerver, true, true);
 	(void) cerver_teardown (my_cerver);
 
-	app_data_delete (app_data);
+	app_data = NULL;
 
 }
 
