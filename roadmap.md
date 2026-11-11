@@ -5,10 +5,10 @@
 >
 > | | |
 > |---|---|
-> | **Fecha** | 2026-11-08 (F0) |
-> | **Rama base** | `http` en la 2.0b-61 |
+> | **Fecha** | 2026-11-08 (F0); 2026-11-11 (F2 adelantada, WebSocket sobre hilos) |
+> | **Rama base** | `http` en la 2.0b-61; mergeada hasta la 2.0b-65 |
 > | **Ramas** | `nightly` (desarrollo) y `nightly-beta` (las betas 2.1b-N) |
-> | **Estado** | F0 en curso: la línea, sus merges y su CI (§4.0) |
+> | **Estado** | F0 publicada (2.1b-7); F2, llhttp, implementada y validada como la 2.1b-8 (§4.2), sin publicar |
 
 **Las citas `archivo:línea`:**
 
@@ -27,7 +27,9 @@ pasa un gate más estricto (§5), y llega a la línea estable solo cuando se int
 
 Los principios de cerver se conservan: ligero, enfocado al rendimiento y personalizable. Se suman:
 
-1. **Sin romper la API.** Todo en 2.1 es aditivo:
+1. **El mejor framework antes que la compatibilidad.** `nightly` puede romper la API y la ABI cuando el cambio lleva
+   a un mejor diseño; cada ruptura va a `incompatibilities.md` con la beta que la trae, y los bindings se actualizan
+   en la misma fase. Lo que sí se conserva:
    - el modelo nuevo es un handler type nuevo (`CERVER_HANDLER_TYPE_EVENTS`), opt-in y solo para `CERVER_TYPE_WEB`;
    - se conservan THREADS, la API vieja (`http_route_*` y la capa de compatibilidad), la firma del handler
      `(const HttpReceive *, const HttpRequest *)` y el protocolo TCP;
@@ -93,7 +95,7 @@ Los principios de cerver se conservan: ligero, enfocado al rendimiento y persona
   (`cerver.c:2404`). El enum está en `include/cerver/cerver.h:130-141`.
 - **Lo que trajeron las ramas viejas (F0):**
   - de `http-optimizations`, llhttp (`src/cerver/http/parser/`), fuera del build hasta F2;
-  - de `ws`, solo la historia: su handshake y `http_web_sockets_send_compile_frame` sirven de referencia para F6
+  - de `ws`, solo la historia: su handshake y `http_web_sockets_send_compile_frame` sirven de referencia para F6a
     (`git show ws:src/cerver/http/websockets.c`). Su parser de frames lee un frame por `recv`, sin límites.
 
 ## 4. Fases
@@ -108,18 +110,23 @@ Los principios de cerver se conservan: ligero, enfocado al rendimiento y persona
 5. el commit dedicado «Updated version to Beta 2.1b-N» con su `CHANGELOG.md`;
 6. el estado al día en este roadmap.
 
+El orden de las betas no es el de los números de las fases: F2 (llhttp) se adelantó porque casi solo toca el parser y
+`src/cerver/http/`, y WebSocket entra en dos partes, primero sobre el modelo de hilos (F6a) y después sobre el loop
+(F6b).
+
 | Fase | Beta | Contenido | Prerrequisito |
 |---|---|---|---|
 | **F0** | 2.1b-7 | Ramas, merges de `ws` y `http-optimizations`, `.gitattributes`, CI por rama en `gcc:16.2`, este roadmap | 2.0b-61 publicada en `http` |
-| **F1** | 2.1b-8 | Preparación sin cambio de comportamiento | F0 |
-| **F2** | 2.1b-9 | llhttp | F1 |
-| **F3** | 2.1b-10 | Event loop, cerrando por petición | F2 + la beta de `http` con el port de la 1.8, ya mergeada en `nightly` |
-| **F4** | 2.1b-11 | Keep-alive real | F3 |
-| **F5** | 2.1b-12 | Pools nombrados, health / ready, métricas | F4 |
-| **F6** | 2.1b-13 | WebSocket sobre el loop | F4 |
-| **F7** | 2.1b-14 | Auth asíncrona | F5 |
-| **F8** | 2.1b-15 | TLS en proceso | F4 |
-| **F9** | 2.1b-16+ | HTTP/2 | F8 |
+| **F2** | 2.1b-8 | llhttp 9.4.3: modo estricto, todos los métodos HTTP, lenient por cerver | F0 |
+| **F6a** | 2.1b-9 | WebSocket sobre hilos: una conexión en un hilo propio, con tope | F2 |
+| **F1** | 2.1b-10 | Preparación sin cambio de comportamiento | F2 |
+| **F3** | 2.1b-11 | Event loop, cerrando por petición | F1, F2 + la beta de `http` con el port de la 1.8, ya mergeada en `nightly` |
+| **F4** | 2.1b-12 | Keep-alive real | F3 |
+| **F5** | 2.1b-13 | Pools nombrados, health / ready, métricas | F4 |
+| **F6b** | 2.1b-14 | WebSocket sobre el loop | F4, F6a |
+| **F7** | 2.1b-15 | Auth asíncrona | F5 |
+| **F8** | 2.1b-16 | TLS en proceso | F4 |
+| **F9** | 2.1b-17+ | HTTP/2 | F8 |
 | **Merge a `http`** | → 2.1 | Lo terminado, como mínimo F0–F5 (§4.11) | 2.0 en `master` |
 
 ### 4.0 F0 — La línea (2.1b-7)
@@ -151,9 +158,10 @@ petición en los nombres default de uploads.
 8. **«Updated version to Beta 2.1b-7»,** que continúa los tags `2.1b-1…6` de `ws`.
 9. **`nightly-beta`** nace de la 2.0b-61 de `http-beta`, y el PR `nightly` → `nightly-beta` crea `2.1b-7`
    («Nightly Beta 2.1b-7»).
-10. **Los tags `archive/ws`, `archive/ws-beta` y `archive/http-optimizations`.** Esas ramas ya no reciben trabajo.
+10. **Sin tags `archive/*`:** `2.1b-6` marca la punta de `ws`, y `ws`, `ws-beta` y `http-optimizations` quedan como
+    ancestros de `nightly`. Esas ramas ya no reciben trabajo.
 
-### 4.1 F1 — Preparación (2.1b-8)
+### 4.1 F1 — Preparación (2.1b-10)
 
 No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» de lo que es «por petición».
 
@@ -168,32 +176,92 @@ No cambia el comportamiento en THREADS. Separa lo que hoy es «por conexión» d
 - **El log y los stats por petición,** fuera de `cerver_receive_http`: `start_time` y las deadlines van por petición.
 - **La conexión web sin `ConnectionStats` / `PacketsPerType`:** menos asignaciones por conexión.
 
-### 4.2 F2 — llhttp (2.1b-9)
+### 4.2 F2 — llhttp (2.1b-8)
 
-- **El parser.** Se activan los archivos de `src/cerver/http/parser/` (se quita `LLHTTPDIR` del `makefile`),
-  actualizados a la versión estable de llhttp que se fije en F2, y se quita `http_parser.c`.
-- **Se migran los callbacks de la Fase 1:**
-  - la acumulación de tokens de `url`, `field` y `value`;
-  - los límites 413, 414 y 431;
-  - `on_headers_complete` con su rechazo temprano y `Expect: 100-continue`;
-  - la pausa: `llhttp_pause` / `llhttp_resume`, con `llhttp_get_error_pos` para saber dónde quedaron los bytes sin
-    parsear;
-  - `llhttp_should_keep_alive`;
-  - chunked con trailers;
-  - el rechazo de `Transfer-Encoding` + `Content-Length`.
-- **Modo estricto** (sin lenient). Es más estricto con cabeceras inválidas y con LF solo: cada diferencia con
-  http_parser se documenta en esta sección, caso por caso.
-- **El gate:**
-  - los cortes en cada byte de `test/http/receive.c` dan los mismos resultados;
-  - el fuzz pasa con su corpus actual;
-  - `benchmarks/http-parser.c` queda igual o mejor.
-- La pausa por petición de llhttp es lo que usan F3 (auth y dispatch) y F4 (pipelining).
+**El goal:** cambiar http_parser 2.x (Joyent, sin mantenimiento) por **llhttp 9.4.3**, el parser de Node.js, en modo
+estricto, con todos los métodos HTTP que reconoce. La pausa por petición y la posición de los bytes sin parsear son lo
+que usan F3 (auth y dispatch desde el loop) y F4 (pipelining). Se adelantó a F1 porque casi solo toca el parser y
+`src/cerver/http/`; corre sobre el handler de hoy (thpool).
 
-### 4.3 F3 — El event loop (2.1b-10)
+**Las decisiones:**
 
-**El prerrequisito.** `http` tiene que recibir el port de la 1.8 (connect async, estados, cola de envío, reconexión,
-el balancer), que cambia `cerver.c`, `handler.c`, `client.c` y `connection.c`. F3 empieza después de mergear a
-`nightly` la beta de `http` que lo trae, para resolver esos conflictos una sola vez.
+| Tema | Decisión |
+|---|---|
+| Versión | llhttp **v9.4.3** (`release/v9.4.3`, 2026-07-30), la última estable al implementar. Reemplaza los sembrados de 6.0.6 de F0 |
+| Integración | Un split de cerver en `include/cerver/http/parser/{llhttp,helpers,api}.h` y `src/cerver/http/parser/{llhttp,api,http}.c`, con el estilo de cerver. `llhttp_t` va **embebido** en `HttpReceive` (sin `malloc` / `arena_alloc` del parser) |
+| Licencia | llhttp es MIT: cada archivo conserva el aviso de copyright y de permiso, y `THIRD-PARTY.md` lista el código de terceros |
+| Restyle | `llhttp.c` es generado por llparse (~10 mil líneas): lo reformatea un script verificado fuera del repo (idempotente y el mismo `objdump -d` del `.o` sin `-g` antes y después). Los headers, los renombres y el diseño se hacen a mano; las tablas `XX(...)` no se tocan |
+| Choques de nombres | El `llhttp.h` de upstream define `HTTP_METHOD_MAP`, `HTTP_STATUS_MAP` y `HTTP_STATUS_*`, que chocan con cerver. En el split, `method.h` es la única fuente de los métodos; `HTTP_STATUS_MAP` / `llhttp_status` salen (cerver solo parsea peticiones); los mapas que el generado necesita llevan el prefijo `LLHTTP_` |
+| Métodos | **Una sola tabla:** `method.h` guarda `REQUEST_METHOD_MAP` con los números de llhttp, los 34 métodos HTTP (0–33) y `QUERY` (46), todos registrables. Se quitan `enum http_method`, `HTTP_METHOD_*`, `HTTP_METHOD_NONE` y `http_method_str ()`: queda `http_request_method_str ()`. `REQUEST_METHOD_SIZE` = 47, `REQUEST_METHOD_UNDEFINED` = 255 (34 es `PRI` en llhttp) |
+| Respuestas por método | RTSP y `PRI` (el preface de HTTP/2) los rechaza el parser: 400. Un método que el parser acepta y cerver no mapea: 501 (RFC 9110 §9.1). Uno válido que la ruta no registra: 405 |
+| Tokens | Los callbacks `*_complete` de llhttp 9 (`on_url_complete`, `on_header_field_complete`, `on_header_value_complete`) cierran cada pieza; se quita la máquina `HTTP_RECEIVE_TOKEN_*` |
+| Estricto | Default estricto: LF sin CR, espacio antes de `:`, `Transfer-Encoding` con `Content-Length`, chunk extensions inválidas y versiones inválidas → 400 |
+| Lenient | `HttpParserLenient`, un flag por cada lenient de llhttp 9.4.3 salvo `HEADER_VALUE_RELAXED` (abajo), y `http_cerver_set_parser_lenient ()` por cerver, default 0, con un warning por cada flag que se activa |
+| Límites | `max_header_size` y `max_url_size` **siempre activos:** 0 vuelve al default (ya no desactiva el límite). Con http_parser, el 0 seguía topado por sus 80 KiB internos; llhttp no tiene ese tope |
+| Etapas | Las de la 2.0b-65 no cambian: `REQUEST_LINE` con el primer byte, `HEADERS` con el primer byte de un field, `BODY` con `on_headers_complete`, `HANDLER` con `on_message_complete`. `test/http/disconnect.c` es el oráculo |
+| WebSocket | Fuera de F2: una ruta WebSocket y un `Upgrade` siguen respondiendo 501 hasta F6a |
+
+**Lo que cambia en `http.c`:**
+
+- `on_url`, `on_header_field` y `on_header_value` solo acumulan y cuentan los límites 414 y 431; la url se cierra en
+  `on_url_complete` y cada cabecera en `on_header_value_complete`. Un rechazo devuelve `HPE_USER`.
+- `on_headers_complete`: el método, el content length con `F_CONTENT_LENGTH` (en llhttp vale 0 sin la cabecera, ya no
+  `(uint64_t) -1`; también en la reserva del body), `F_CHUNKED`, el rechazo temprano (413), la auth antes del body y
+  `Expect: 100-continue`.
+- `on_message_complete` **devuelve `HPE_PAUSED`** (llhttp no permite llamar a `llhttp_pause` desde un callback). Un
+  CONNECT o un `Upgrade` llegan aquí antes que `HPE_PAUSED_UPGRADE`, que también es una pausa.
+- `llhttp_execute` devuelve el errno: los bytes parseados son `llhttp_get_error_pos ()` menos el buffer. En la pausa se
+  guardan cuántos bytes del último buffer quedaron sin parsear (`HttpReceive.unparsed`, una petición en pipeline) y
+  `llhttp_should_keep_alive ()` (`HttpReceive.keep_alive_requested`), sin cambiar el cierre: los usa F4.
+- Un método que llhttp acepta y cerver no conoce responde 501 desde `on_headers_complete`. Con la tabla única no
+  queda ninguno (llhttp en modo petición solo acepta los 35 de la tabla); es una defensa para una versión futura.
+- El log de un error usa `llhttp_errno_name ()` y `llhttp_get_error_reason ()`.
+
+**Las diferencias con http_parser,** caso por caso. Se midieron con los dos parsers sobre las mismas peticiones
+(36 casos; los iguales no se listan: header sin espacio después de `:`, nombre de header inválido, NUL o un carácter
+de control en un valor, `Content-Length` repetido o con signo, versiones 0.9 y 2.0, chunk extension válida, trailers,
+dos espacios en la línea, espacio en la url, método en minúsculas, PROPFIND, CONNECT, `Upgrade`, datos después de
+`Connection: close`, HTTP/1.0). `test/http/receive.c` prueba cada fila con la respuesta de cerver:
+
+| Caso | http_parser 2.x | llhttp 9.4.3 estricto | Con lenient |
+|---|---|---|---|
+| Líneas que terminan con LF sin CR | Aceptada | 400 (`HPE_INVALID_VERSION`, «Expected CRLF after version») | `OPTIONAL_CR_BEFORE_LF` **y** `OPTIONAL_LF_AFTER_CR` (uno solo no basta) |
+| CR sin LF | 400 (`HPE_LF_EXPECTED`) | 400 (`HPE_STRICT`) | 400 |
+| Espacio antes de `:` | 400 | 400 | 400 con cualquier flag |
+| Obsolete line folding (un valor que sigue en la línea siguiente) | Aceptada | 400 (`HPE_INVALID_HEADER_TOKEN`) | `HEADERS` |
+| `Transfer-Encoding` con `Content-Length` | 400 (`HPE_UNEXPECTED_CONTENT_LENGTH`) | 400 (`HPE_INVALID_CONTENT_LENGTH`) | `CHUNKED_LENGTH` |
+| `Transfer-Encoding` sin chunked al final (`gzip`, `chunked, gzip`) | 400 | 400 (`HPE_INVALID_TRANSFER_ENCODING`) | `TRANSFER_ENCODING`: el body se lee hasta el EOF, así que la petición nunca se completa |
+| Versión HTTP/1.5 | Aceptada | 400 (`HPE_INVALID_VERSION`) | `VERSION` |
+| Espacios después del tamaño de un chunk | Aceptada | 400 (`HPE_INVALID_CHUNK_SIZE`) | `SPACES_AFTER_CHUNK_SIZE` |
+| Un chunk sin CRLF después de sus datos | 400 (`HPE_STRICT`) | 400 (`HPE_STRICT`) | `OPTIONAL_CRLF_AFTER_CHUNK` |
+| Chunk extension con comillas sin cerrar | Aceptada | 400 (`HPE_STRICT`) | 400 con cualquier flag |
+| Un carácter de control en un valor | 400 | 400 | `HEADERS` |
+| `QUERY` | 400 (`HPE_INVALID_METHOD`) | Aceptada | — |
+| Un método RTSP (`DESCRIBE`) | 400 (`HPE_INVALID_METHOD`) | 400 (`HPE_INVALID_CONSTANT`, «Invalid method for HTTP/x.x request») | 400 |
+| El preface de HTTP/2 (`PRI * HTTP/2.0`) | 400 (`HPE_INVALID_METHOD`) | `HPE_PAUSED_H2_UPGRADE` → 400 de cerver | 400 |
+| Cabeceras de más de 80 KiB | 400 (`HPE_HEADER_OVERFLOW`) | Aceptada por el parser → 431 por el límite de cerver (64 KiB, siempre activo) | — |
+
+**El lenient que cerver no expone:** el flag `HEADER_VALUE_RELAXED` (0x400) de llhttp 9.4.3 deja a `llhttp_execute ()`
+en un bucle infinito con un NUL en el valor de un header (reproducido con los archivos de upstream sin cambios, en
+arm64 y amd64, con `-O2` y `-O0`). No está en `HttpParserLenient` ni en la API del split, y
+`http_cerver_set_parser_lenient ()` lo descarta. Se revisa en cada versión nueva de llhttp; el fuzzer `lenient`
+varía los flags.
+
+**El gate** (además del de §5):
+
+- los cortes en cada byte de `test/http/receive.c` y la matriz completa de `test/http/disconnect.c` dan los mismos
+  resultados;
+- el fuzz pasa con su corpus actual más las semillas nuevas;
+- `benchmarks/http-parser.c` queda igual o mejor que http_parser en la misma máquina: http_parser ≈ 1050 MB/s, llhttp
+  2233–2497 MB/s (arm64, gcc 16.2, `TYPE=production`);
+- `nm -D bin/libcerver.so` sin `http_parser_*` ni `http_method_str`.
+
+### 4.3 F3 — El event loop (2.1b-11)
+
+**El prerrequisito.** `http` tiene que recibir el port de la 1.8 completa (hasta la 1.8b-9: protocolo portable,
+serializador por esquema, game, el deadline total de envío), que cambia `cerver.c`, `handler.c`, `client.c` y
+`connection.c`. Llega con la 2.0b-66; F3 empieza después de mergear esa beta a `nightly`, para resolver esos
+conflictos una sola vez.
 
 **La arquitectura:**
 
@@ -204,7 +272,7 @@ el balancer), que cambia `cerver.c`, `handler.c`, `client.c` y `connection.c`. F
    │ loop de I/O (1..N hilos, epoll LT)     │  job   │ "default" (CERVER_POOL_THREADS)               │
    │  accept4 · leer · parsear · timers     ├───────►│  etapa auth · handler · estáticos             │
    │  respuestas cortas de cerver           │        │  el handler escribe al fd (poll en EAGAIN)    │
-   │  health / ready (F5) · WebSocket (F6)  │◄───────┤                                               │
+   │  health / ready (F5) · WebSocket (F6b) │◄───────┤                                               │
    └────────────────────────────────────────┘ done   └───────────────────────────────────────────────┘
           (cola MPSC + eventfd por loop)
 ```
@@ -290,7 +358,7 @@ typedef struct HttpConnection {
 	struct Arena *arena;                  // por conexión, de un pool del loop; arena_reset por petición
 	String *url_buffer, *field_buffer, *value_buffer;
 	char *pending; size_t pending_len;    // bytes sin parsear tras la pausa (auth / pipelining)
-	char *out; size_t out_len, out_sent;  // respuestas del loop (y frames de WebSocket en F6)
+	char *out; size_t out_len, out_sent;  // respuestas del loop (y frames de WebSocket en F6b)
 	unsigned int n_requests; struct HttpPool *pool;
 	struct TimerEntry timer; struct HttpConnection *next;   // lista intrusiva (estacionadas / completadas)
 } HttpConnection;
@@ -335,12 +403,12 @@ CERVER_EXPORT void cerver_set_io_threads (Cerver *cerver, unsigned int n_threads
 CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max);              // 2^14
 ```
 
-### 4.4 F4 — Keep-alive real (2.1b-11)
+### 4.4 F4 — Keep-alive real (2.1b-12)
 
 **`http_receive_reset`, entre peticiones de una conexión:**
 
 - reinicia `receive_status`, `type`, `dispatch`, `node`, `endpoint`, `route`, `served_file`, `head`,
-  `max_body_size`, `status`, `sent`, `is_multi_part`, `token`, `header_size`, `n_headers`, `body_size`, `n_parts`,
+  `max_body_size`, `status`, `sent`, `is_multi_part`, `header_size`, `n_headers`, `body_size`, `n_parts`,
   `responded`, `framed` y `stream`;
 - `settings.on_body` vuelve a `http_receive_handle_body`;
 - libera `mpart_parser` y `file_stats`;
@@ -353,7 +421,7 @@ CERVER_EXPORT void cerver_set_max_connections (Cerver *cerver, unsigned int max)
 static bool http_receive_keep_alive (const HttpConnection *connection, const HttpReceive *receive) {
 
 	return (receive->http_cerver->keep_alive)                                    // default: true en EVENTS
-		&& (llhttp_should_keep_alive (receive->parser))                           // 1.1 sin close, 1.0 con keep-alive
+		&& (receive->keep_alive_requested)                                        // llhttp: 1.1 sin close, 1.0 con keep-alive
 		&& (connection->n_requests < receive->http_cerver->keep_alive_requests)  // 2^10
 		&& (receive->responded) && (receive->framed)                             // Content-Length o chunked completo
 		&& (receive->receive_status == HTTP_RECEIVE_STATUS_COMPLETED)            // body completo (un rechazo cierra)
@@ -386,7 +454,7 @@ CERVER_EXPORT void http_cerver_set_keep_alive_timeout (HttpCerver *http_cerver, 
 CERVER_EXPORT void http_cerver_set_keep_alive_requests (HttpCerver *http_cerver, unsigned int max);      // 2^10
 ```
 
-### 4.5 F5 — Pools nombrados, health y métricas (2.1b-12)
+### 4.5 F5 — Pools nombrados, health y métricas (2.1b-13)
 
 **Los pools nombrados (decisión).**
 
@@ -426,11 +494,15 @@ CERVER_EXPORT void http_cerver_set_health_route (HttpCerver *http_cerver, const 
 CERVER_EXPORT void http_cerver_set_ready_route (HttpCerver *http_cerver, const char *path);
 ```
 
-### 4.6 F6 — WebSocket sobre el loop (2.1b-13)
+### 4.6 F6 — WebSocket
 
-**De `ws` se reusan:**
+En `nightly` no hay código de WebSocket: el merge de `ws` en F0 fue `-s ours`, así que `websockets.c` solo vive en la
+historia (`git show ws:src/cerver/http/websockets.c`). Hasta F6a, una ruta con el modifier
+`HTTP_ROUTE_MODIFIER_WEB_SOCKET` y una petición con `Upgrade` responden 501. WebSocket entra en dos partes.
 
-- el handshake (`Sec-WebSocket-Key` + GUID, SHA1, base64, 101);
+**De `ws` se reusan como referencia:**
+
+- el handshake (`Sec-WebSocket-Key` + GUID, SHA-1 con la API EVP de OpenSSL 3, base64, 101);
 - el encoder de frames (`http_web_sockets_send_compile_frame`).
 
 **Se reescriben:**
@@ -439,6 +511,22 @@ CERVER_EXPORT void http_cerver_set_ready_route (HttpCerver *http_cerver, const c
   `max_message` (cierre 1009), fragmentación y UTF-8 en los de texto;
 - ping/pong automáticos con timer;
 - close con código y su timeout.
+
+#### F6a — WebSocket sobre hilos (2.1b-9)
+
+Corre con el handler de hoy (thpool), sin el loop.
+
+- **El hilo:** el hilo del thpool hace el handshake (después de que llhttp pausa con el `Upgrade`) y entrega la
+  conexión a un hilo propio, registrado en el `ThreadGroup` del cerver y unido en el teardown. El thpool queda libre
+  para HTTP.
+- **El tope:** un máximo de conexiones WebSocket por cerver; arriba del tope el handshake responde 503.
+- **La API:** sobre los endpoints y los grupos (`http_endpoint_set_web_socket ()`, su equivalente en los grupos), con
+  los callbacks `on_open`, `on_message`, `on_close` y `on_error` y su custom data. Un `HttpWebSocket` con
+  `http_web_socket_send_text ()`, `_send_binary ()` y `_close ()`, que se pueden llamar desde otros hilos. Las
+  `HttpRoute` con el modifier se traducen en `compatibility.c`.
+- **El alcance** (RFC 6455 completo, permessage-deflate, autobahn-testsuite) se decide al planear la fase.
+
+#### F6b — WebSocket sobre el loop (2.1b-14)
 
 **La conexión vive en el loop** (estado `WEBSOCKET`). Los callbacks `on_open`, `on_message` y `on_close` corren en el
 pool de la ruta.
@@ -449,23 +537,23 @@ de la conexión y despierta al loop, que escribe con `EPOLLOUT`.
 - Con la cola llena: descartar, o cerrar con 1008, según la configuración.
 - Un registro de clientes por ruta permite el broadcast.
 
-El modifier `HTTP_ROUTE_MODIFIER_WEB_SOCKET` deja de responder 501 en EVENTS; en THREADS sigue en 501. Detrás de un
-proxy van `Upgrade` / `Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
+En EVENTS la conexión pasa al loop; en THREADS sigue en su hilo propio (F6a). Detrás de un proxy van `Upgrade` /
+`Connection "upgrade"` y un `proxy_read_timeout` mayor que el ping.
 
-### 4.7 F7 — Auth asíncrona (2.1b-14)
+### 4.7 F7 — Auth asíncrona (2.1b-15)
 
 - **Una auth custom que consulta otro servicio por HTTP** deja de ocupar un hilo: un cliente `curl_multi` integrado al
   loop, con `CURLMOPT_SOCKETFUNCTION` / `CURLMOPT_TIMERFUNCTION` sobre el `epoll` y la rueda de timers.
 - **La conexión espera en `AUTH` sin hilo,** con un pool de conexiones persistentes por loop.
 - **El fallback:** la etapa en el pool, para una auth custom que no usa ese cliente.
 
-### 4.8 F8 — TLS en proceso (2.1b-15)
+### 4.8 F8 — TLS en proceso (2.1b-16)
 
 - OpenSSL no bloqueante en la máquina de estados (`SSL_read` / `SSL_write`, `WANT_READ` / `WANT_WRITE` mapeados a
   epoll), SNI y recarga de certificados. OpenSSL ya se enlaza, hoy solo para JWT.
 - Lleva su propia fase de diseño antes de implementar.
 
-### 4.9 F9 — HTTP/2 (2.1b-16+)
+### 4.9 F9 — HTTP/2 (2.1b-17+)
 
 - Primero h2c (prior knowledge) detrás de un proxy, después ALPN con TLS.
 - Un stream = una petición al pool. El control de flujo vive en el loop.
@@ -491,7 +579,7 @@ proxy van `Upgrade` / `Connection "upgrade"` y un `proxy_read_timeout` mayor que
 1. `nightly` → `http`, con los archivos de versión y el roadmap resueltos a mano: este roadmap se integra al de `http`
    como la línea 2.1;
 2. el `.gitattributes` vuelve a su forma de `http` en ese commit;
-3. `http-beta` continúa la numeración (2.1b-N+1) y pasa a 2.1rc-N;
+3. `http-beta` continúa la numeración (2.1b-N+1), sin release candidates: cada línea publica solo betas;
 4. el PR `http` → `master` publica la 2.1 (un release nunca sale de la beta).
 
 Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
@@ -532,8 +620,9 @@ Las fases que sigan en `nightly` forman la 2.2 (`nightly-beta` → 2.2b-N).
   `ss`.
 - **`benchmarks/load.c`** con modo keep-alive y umbrales nuevos en `performance.sh`. La meta es GET ≤ 4 asignaciones
   (hoy 8), y keep-alive contra close por petición.
-- **F2:** las diferencias de llhttp documentadas caso por caso.
-- **F6:** autobahn-testsuite (fuzzingclient), frames partidos en cada byte, envío desde otros hilos con TSan, detrás
+- **F2:** las diferencias de llhttp documentadas caso por caso (§4.2), y la matriz completa de `test/http/disconnect.c`
+  con los mismos contadores por etapa.
+- **F6a y F6b:** autobahn-testsuite (fuzzingclient), frames partidos en cada byte, envío desde otros hilos con TSan, detrás
   de nginx.
 - **Un soak de 4 h** con una aplicación real, sin crecer memoria ni fds (§6).
 
@@ -597,7 +686,7 @@ producción.
 | Asignaciones por GET | 8 | meta ≤ 4 |
 | Slowloris / clientes lentos | un hilo hasta 16 s | un timer |
 | Handler sin respuesta | 500 + close (desde la 2.0b-61) | igual |
-| WebSocket | 501 | una conexión más del loop (F6) |
+| WebSocket | 501 hasta F6a; desde F6a, un hilo propio por conexión, con tope | una conexión más del loop (F6b) |
 | Observabilidad | stats por endpoint | + pools, cola, espera, conexiones y reusos |
 
 **Sin cambio esperado:** el CPU de los handlers. El ahorro de latencia por salto es ~0.1–0.3 ms en LAN. En C puro,
