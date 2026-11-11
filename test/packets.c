@@ -206,10 +206,13 @@ static void test_packet_header_create_from (void) {
 		.packet_size = packet_size,
 
 		.handler_id = handler_id,
+		.flags = 0,
 
 		.request_type = request_type,
 
-		.route_id = route_id
+		.route_id = route_id,
+
+		.version = CERVER_ZERO_INITIALIZER
 	};
 
 	PacketHeader *real_header = packet_header_create_from (&source);
@@ -237,10 +240,13 @@ static void test_packet_header_copy (void) {
 		.packet_size = packet_size,
 
 		.handler_id = handler_id,
+		.flags = 0,
 
 		.request_type = request_type,
 
-		.route_id = route_id
+		.route_id = route_id,
+
+		.version = CERVER_ZERO_INITIALIZER
 	};
 
 	PacketHeader destination = {
@@ -248,10 +254,13 @@ static void test_packet_header_copy (void) {
 		.packet_size = 0,
 
 		.handler_id = 0,
+		.flags = 0,
 
 		.request_type = 0,
 
-		.route_id = 0
+		.route_id = 0,
+
+		.version = CERVER_ZERO_INITIALIZER
 	};
 
 	test_check_unsigned_eq (packet_header_copy (&destination, &source), 0, NULL);
@@ -1031,7 +1040,7 @@ static void test_packets_recycle (void) {
 	packet = packet_create_with_data (RECYCLE_CLASS_SIZE);
 	test_check_ptr (packet);
 
-	if (PACKET_RECYCLE_LIMIT) {
+	if ((PACKET_RECYCLE_LIMIT) > 0) {
 		test_check_ptr_eq (packet, first);
 		test_check_ptr_eq (packet->data, first_data);
 	}
@@ -1114,7 +1123,7 @@ static void test_packets_recycle_thread (void) {
 		packet_delete (taken[index]);
 	}
 
-	if (PACKET_RECYCLE_LIMIT) {
+	if ((PACKET_RECYCLE_LIMIT) > 0) {
 		test_check (found, "the packet of the thread that ended was not reused");
 	}
 
@@ -1122,7 +1131,7 @@ static void test_packets_recycle_thread (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

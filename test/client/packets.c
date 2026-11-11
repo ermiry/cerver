@@ -199,7 +199,7 @@ static void single_app_message_manual (const char *msg) {
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT packets...\n");
 

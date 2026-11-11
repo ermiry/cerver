@@ -308,8 +308,8 @@ static bool stress_report (StressConnection *connections, const double seconds) 
 	(void) printf (
 		"stress: %.0f packets per second, p%u %lu us, p%u %lu us, max %lu us\n",
 		(seconds > 0) ? ((double) completed / seconds) : 0,
-		STRESS_MEDIAN, stress_percentile (latencies, completed, STRESS_MEDIAN),
-		STRESS_TAIL, stress_percentile (latencies, completed, STRESS_TAIL),
+		(unsigned int) STRESS_MEDIAN, stress_percentile (latencies, completed, STRESS_MEDIAN),
+		(unsigned int) STRESS_TAIL, stress_percentile (latencies, completed, STRESS_TAIL),
 		completed ? latencies[completed - 1] : 0
 	);
 

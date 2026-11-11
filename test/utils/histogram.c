@@ -40,9 +40,9 @@ static void utils_tests_histogram_values (void) {
 	// without values
 	test_check_unsigned_eq (histogram.count, 0, NULL);
 	test_check_unsigned_eq (histogram_min (&histogram), 0, NULL);
-	test_check (histogram_mean (&histogram) == 0, NULL);
+	test_check (test_double_equal (histogram_mean (&histogram), 0), NULL);
 	test_check_unsigned_eq (histogram_min (NULL), 0, NULL);
-	test_check (histogram_mean (NULL) == 0, NULL);
+	test_check (test_double_equal (histogram_mean (NULL), 0), NULL);
 
 	histogram_add (&histogram, HISTOGRAM_TEST_MEDIUM);
 	histogram_add (&histogram, HISTOGRAM_TEST_SMALL);
@@ -54,7 +54,10 @@ static void utils_tests_histogram_values (void) {
 	test_check_unsigned_eq (histogram_min (&histogram), HISTOGRAM_TEST_SMALL, NULL);
 	test_check_unsigned_eq (histogram.max, HISTOGRAM_TEST_LARGE, NULL);
 	test_check (
-		histogram_mean (&histogram) == ((double) (HISTOGRAM_TEST_SMALL + HISTOGRAM_TEST_MEDIUM + HISTOGRAM_TEST_LARGE) / 3),
+		test_double_equal (
+			histogram_mean (&histogram),
+			(double) (HISTOGRAM_TEST_SMALL + HISTOGRAM_TEST_MEDIUM + HISTOGRAM_TEST_LARGE) / 3
+		),
 		"the mean is not the total over the count"
 	);
 

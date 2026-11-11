@@ -39,7 +39,7 @@ static void test_system_get_used_space (void) {
 
 static void test_system_get_stats (void) {
 
-	FileSystemStats stats = { 0 };
+	FileSystemStats stats = CERVER_ZERO_INITIALIZER;
 	test_check_true (system_get_stats (SYSTEM_TEST_PATH, &stats));
 	test_check (stats.total > 0, "the file system has no space");
 	test_check (stats.available <= stats.total, "more space is available than the total");
@@ -51,7 +51,7 @@ static void test_system_get_stats (void) {
 
 static void test_system_get_memory (void) {
 
-	SystemMemory memory = { 0 };
+	SystemMemory memory = CERVER_ZERO_INITIALIZER;
 	test_check_true (system_get_memory (&memory));
 	test_check_unsigned_gt (memory.total, 0);
 	test_check (memory.free <= memory.total, "more memory is free than the total");
@@ -66,7 +66,7 @@ static void test_system_get_memory (void) {
 
 static void test_system_get_load (void) {
 
-	SystemLoad load = { 0 };
+	SystemLoad load = CERVER_ZERO_INITIALIZER;
 	test_check_true (system_get_load (&load));
 	test_check_unsigned_gt (load.cpus, 0);
 	test_check_unsigned_gt (load.processes, 0);
@@ -112,13 +112,13 @@ static void test_system_cpu_usage (void) {
 	test_check ((usage >= 0) && (usage <= SYSTEM_TEST_PERCENTAGE), "the usage is not a percentage");
 
 	// the same sample, or the samples in the wrong order
-	test_check (system_cpu_usage (&first, &first) == 0, NULL);
-	test_check (system_cpu_usage (&second, &first) == 0, NULL);
-	test_check (system_cpu_usage (NULL, &second) == 0, NULL);
+	test_check (test_double_equal (system_cpu_usage (&first, &first), 0), NULL);
+	test_check (test_double_equal (system_cpu_usage (&second, &first), 0), NULL);
+	test_check (test_double_equal (system_cpu_usage (NULL, &second), 0), NULL);
 
 	// every tick was busy
 	const SystemCpuSample busy = { first.busy + 1, first.total + 1 };
-	test_check (system_cpu_usage (&first, &busy) == SYSTEM_TEST_PERCENTAGE, NULL);
+	test_check (test_double_equal (system_cpu_usage (&first, &busy), SYSTEM_TEST_PERCENTAGE), NULL);
 
 	test_check_false (system_cpu_sample (NULL));
 
@@ -144,7 +144,7 @@ static void test_system_get_hostname (void) {
 
 static void test_system_get_process (void) {
 
-	SystemProcess process = { 0 };
+	SystemProcess process = CERVER_ZERO_INITIALIZER;
 	test_check_true (system_get_process (&process));
 	test_check_unsigned_gt (process.resident, 0);
 	test_check_unsigned_gt (process.threads, 0);
@@ -154,7 +154,7 @@ static void test_system_get_process (void) {
 	FILE *file = fopen (SYSTEM_TEST_FILE_PATH, "r");
 	test_check_ptr (file);
 
-	SystemProcess opened = { 0 };
+	SystemProcess opened = CERVER_ZERO_INITIALIZER;
 	test_check_true (system_get_process (&opened));
 	test_check_unsigned_eq (opened.open_files, process.open_files + 1, NULL);
 
@@ -166,7 +166,7 @@ static void test_system_get_process (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

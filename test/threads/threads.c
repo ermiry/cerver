@@ -145,7 +145,7 @@ static void threads_tests_main (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

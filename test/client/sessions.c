@@ -113,7 +113,7 @@ static void *connect_with_session (void *args) {
 
 #pragma GCC diagnostic pop
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT sessions...\n");
 

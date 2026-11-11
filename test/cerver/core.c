@@ -169,7 +169,7 @@ static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
 
 // written by the handler before it counts the request, read after the count
-static char client_ip[INET6_ADDRSTRLEN] = { 0 };
+static char client_ip[CONNECTION_IP_SIZE] = { 0 };
 static unsigned int address_requests = 0;
 
 // client side
