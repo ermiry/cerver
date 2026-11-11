@@ -21,6 +21,7 @@
 
 #include "cerver/admin.h"
 #include "cerver/auth.h"
+#include "cerver/balancer.h"
 #include "cerver/cerver.h"
 #include "cerver/client.h"
 #include "cerver/connection.h"
@@ -47,8 +48,6 @@
 
 #include "cerver/http/response.h"
 
-static const double HANDLER_NANOSECONDS_PER_SECOND = 1000000000.0;
-
 // the fd that is kept open to accept and close connections when the process runs out of fds
 static const char *HANDLER_RESERVE_FD_PATH = "/dev/null";
 
@@ -57,8 +56,14 @@ static const long HANDLER_ACCEPT_BACKOFF = 16777216L;
 
 static const u32 HANDLER_POLL_FDS_GROWTH_FACTOR = 2;
 
+// how long handler_stop () waits for the thread before waking it again (2^24 ns)
+static const long HANDLER_STOP_WAKE_NANOSECONDS = 16777216L;
+
+static const long HANDLER_NANOSECONDS_PER_SECOND = 1000000000L;
+
 #pragma region handler
 
+// handlers are created by every client and cerver, also from different threads at the same time
 static int unique_handler_id = 0;
 
 static HandlerData *handler_data_new (void) {
@@ -90,6 +95,7 @@ static Handler *handler_new (void) {
 
 		handler->id = -1;
 		handler->thread_id = 0;
+		handler->joinable = false;
 
 		handler->data = NULL;
 		handler->data_create = NULL;
@@ -114,6 +120,11 @@ void handler_delete (void *handler_ptr) {
 	if (handler_ptr) {
 		Handler *handler = (Handler *) handler_ptr;
 
+		// a handler that was never stopped does not keep its thread resources
+		if (handler->joinable) {
+			(void) pthread_detach (handler->thread_id);
+		}
+
 		job_queue_delete (handler->job_queue);
 
 		free (handler_ptr);
@@ -127,8 +138,7 @@ Handler *handler_create (Action handler_method) {
 
 	Handler *handler = handler_new ();
 	if (handler) {
-		handler->unique_id = unique_handler_id;
-		unique_handler_id += 1;
+		handler->unique_id = __atomic_fetch_add (&unique_handler_id, 1, __ATOMIC_RELAXED);
 
 		handler->handler = handler_method;
 
@@ -192,56 +202,88 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 
 }
 
+// the owner of the handler stopped, read with the lock of the handler's queue
+static bool handler_cerver_stopped (const void *handler_ptr) {
+
+	return !cerver_is_running (((const Handler *) handler_ptr)->cerver);
+
+}
+
+static bool handler_client_stopped (const void *handler_ptr) {
+
+	return !client_is_running (((const Handler *) handler_ptr)->client);
+
+}
+
+// a packet whose handler owns it is released after the handler returns
+static void handler_packet_release (
+	Packet *packet, const PacketType packet_type,
+	const bool app_delete, const bool app_error_delete, const bool custom_delete
+) {
+
+	switch (packet_type) {
+		case PACKET_TYPE_APP: if (app_delete) packet_delete (packet); break;
+		case PACKET_TYPE_APP_ERROR: if (app_error_delete) packet_delete (packet); break;
+		case PACKET_TYPE_CUSTOM: if (custom_delete) packet_delete (packet); break;
+
+		default: packet_delete (packet); break;
+	}
+
+}
+
+// runs the handler with the packet of the job, the job goes back to the pool of the queue
+// and the time it ran goes to the stats of the queue
+// working counts the handlers that are handling a packet
+// returns the type of the packet
+static PacketType handler_job_run (
+	Handler *handler, HandlerData *handler_data, Job *job,
+	unsigned int *working
+) {
+
+	Packet *packet = (Packet *) job->args;
+	const PacketType packet_type = packet->header.packet_type;
+
+	(void) __atomic_add_fetch (working, 1, __ATOMIC_SEQ_CST);
+
+	struct timespec start = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &start);
+
+	handler_data->handler_id = handler->id;
+	handler_data->data = handler->data;
+	handler_data->packet = packet;
+
+	handler->handler (handler_data);
+
+	job_queue_record_run (handler->job_queue, &start);
+	job_return (handler->job_queue, job);
+
+	(void) __atomic_sub_fetch (working, 1, __ATOMIC_SEQ_CST);
+
+	return packet_type;
+
+}
+
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_cerver (Handler *handler) {
 
-	Job *job = NULL;
-	Packet *packet = NULL;
-	PacketType packet_type = PACKET_TYPE_NONE;
 	HandlerData *handler_data = handler_data_new ();
 	while (cerver_is_running (handler->cerver)) {
-		bsem_wait (handler->job_queue->has_jobs);
+		Job *job = (Job *) job_queue_pull_interruptible (
+			handler->job_queue, handler_cerver_stopped, handler
+		);
 
-		if (cerver_is_running (handler->cerver)) {
-			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-			handler->cerver->num_handlers_working += 1;
-			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+		if (job) {
+			Packet *packet = (Packet *) job->args;
+			const PacketType packet_type = handler_job_run (
+				handler, handler_data, job, &handler->cerver->num_handlers_working
+			);
 
-			// read job from queue
-			job = job_queue_pull (handler->job_queue);
-			if (job) {
-				packet = (Packet *) job->args;
-				packet_type = packet->header.packet_type;
-
-				handler_data->handler_id = handler->id;
-				handler_data->data = handler->data;
-				handler_data->packet = packet;
-
-				handler->handler (handler_data);
-
-				job_delete (job);
-
-				switch (packet_type) {
-					case PACKET_TYPE_APP: {
-						if (handler->cerver->app_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-					case PACKET_TYPE_APP_ERROR: {
-						if (handler->cerver->app_error_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-					case PACKET_TYPE_CUSTOM: {
-						if (handler->cerver->custom_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-
-					default: packet_delete (packet); break;
-				}
-			}
-
-			(void) pthread_mutex_lock (handler->cerver->handlers_lock);
-			handler->cerver->num_handlers_working -= 1;
-			(void) pthread_mutex_unlock (handler->cerver->handlers_lock);
+			handler_packet_release (
+				packet, packet_type,
+				handler->cerver->app_packet_handler_delete_packet,
+				handler->cerver->app_error_packet_handler_delete_packet,
+				handler->cerver->custom_packet_handler_delete_packet
+			);
 		}
 	}
 
@@ -252,35 +294,19 @@ static void handler_do_while_cerver (Handler *handler) {
 // while client is running, check for new jobs and handle them
 static void handler_do_while_client (Handler *handler) {
 
-	Job *job = NULL;
-	Packet *packet = NULL;
 	HandlerData *handler_data = handler_data_new ();
 	while (client_is_running (handler->client)) {
-		bsem_wait (handler->job_queue->has_jobs);
+		Job *job = (Job *) job_queue_pull_interruptible (
+			handler->job_queue, handler_client_stopped, handler
+		);
 
-		if (client_is_running (handler->client)) {
-			(void) pthread_mutex_lock (handler->client->handlers_lock);
-			handler->client->num_handlers_working += 1;
-			(void) pthread_mutex_unlock (handler->client->handlers_lock);
+		if (job) {
+			Packet *packet = (Packet *) job->args;
+			(void) handler_job_run (
+				handler, handler_data, job, &handler->client->num_handlers_working
+			);
 
-			// read job from queue
-			job = job_queue_pull (handler->job_queue);
-			if (job) {
-				packet = (Packet *) job->args;
-
-				handler_data->handler_id = handler->id;
-				handler_data->data = handler->data;
-				handler_data->packet = packet;
-
-				handler->handler (handler_data);
-
-				job_delete (job);
-				packet_delete (packet);
-			}
-
-			(void) pthread_mutex_lock (handler->client->handlers_lock);
-			handler->client->num_handlers_working -= 1;
-			(void) pthread_mutex_unlock (handler->client->handlers_lock);
+			packet_delete (packet);
 		}
 	}
 
@@ -291,53 +317,24 @@ static void handler_do_while_client (Handler *handler) {
 // while cerver is running, check for new jobs and handle them
 static void handler_do_while_admin (Handler *handler) {
 
-	Job *job = NULL;
-	Packet *packet = NULL;
-	PacketType packet_type = PACKET_TYPE_NONE;
 	HandlerData *handler_data = handler_data_new ();
 	while (cerver_is_running (handler->cerver)) {
-		bsem_wait (handler->job_queue->has_jobs);
+		Job *job = (Job *) job_queue_pull_interruptible (
+			handler->job_queue, handler_cerver_stopped, handler
+		);
 
-		if (cerver_is_running (handler->cerver)) {
-			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-			handler->cerver->admin->num_handlers_working += 1;
-			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+		if (job) {
+			Packet *packet = (Packet *) job->args;
+			const PacketType packet_type = handler_job_run (
+				handler, handler_data, job, &handler->cerver->admin->num_handlers_working
+			);
 
-			// read job from queue
-			job = job_queue_pull (handler->job_queue);
-			if (job) {
-				packet = (Packet *) job->args;
-				packet_type = packet->header.packet_type;
-
-				handler_data->handler_id = handler->id;
-				handler_data->data = handler->data;
-				handler_data->packet = packet;
-
-				handler->handler (handler_data);
-
-				job_delete (job);
-
-				switch (packet_type) {
-					case PACKET_TYPE_APP: {
-						if (handler->cerver->admin->app_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-					case PACKET_TYPE_APP_ERROR: {
-						if (handler->cerver->admin->app_error_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-					case PACKET_TYPE_CUSTOM: {
-						if (handler->cerver->admin->custom_packet_handler_delete_packet)
-							packet_delete (packet);
-					} break;
-
-					default: packet_delete (packet); break;
-				}
-			}
-
-			(void) pthread_mutex_lock (handler->cerver->admin->handlers_lock);
-			handler->cerver->admin->num_handlers_working -= 1;
-			(void) pthread_mutex_unlock (handler->cerver->admin->handlers_lock);
+			handler_packet_release (
+				packet, packet_type,
+				handler->cerver->admin->app_packet_handler_delete_packet,
+				handler->cerver->admin->app_error_packet_handler_delete_packet,
+				handler->cerver->admin->custom_packet_handler_delete_packet
+			);
 		}
 	}
 
@@ -399,10 +396,15 @@ static void *handler_do (void *handler_ptr) {
 		if (handler->data_create)
 			handler->data = handler->data_create (handler->data_create_args);
 
-		// mark the handler as alive and ready
+		// mark the handler as alive and ready, the cerver waits for it in its condition
 		(void) pthread_mutex_lock (handlers_lock);
 		switch (handler->type) {
-			case HANDLER_TYPE_CERVER: handler->cerver->num_handlers_alive += 1; break;
+			case HANDLER_TYPE_CERVER:
+				handler->cerver->num_handlers_alive += 1;
+				if (handler->cerver->handlers_alive_cond) {
+					(void) pthread_cond_broadcast (handler->cerver->handlers_alive_cond);
+				}
+				break;
 			case HANDLER_TYPE_CLIENT: handler->client->num_handlers_alive += 1; break;
 			case HANDLER_TYPE_ADMIN: handler->cerver->admin->num_handlers_alive += 1; break;
 			default: break;
@@ -442,11 +444,13 @@ int handler_start (Handler *handler) {
 
 	if (handler) {
 		if (handler->type != HANDLER_TYPE_NONE) {
-			if (!thread_create_detachable (
+			if (!thread_create_joinable (
 				&handler->thread_id,
 				(void *(*)(void *)) handler_do,
 				(void *) handler
 			)) {
+				handler->joinable = true;
+
 				#ifdef HANDLER_DEBUG
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_HANDLER,
@@ -468,6 +472,91 @@ int handler_start (Handler *handler) {
 	}
 
 	return retval;
+
+}
+
+// the absolute time until handler_stop () waits for the thread to end
+static void handler_stop_deadline (struct timespec *deadline) {
+
+	(void) clock_gettime (CLOCK_REALTIME, deadline);
+
+	deadline->tv_nsec += HANDLER_STOP_WAKE_NANOSECONDS;
+	if (deadline->tv_nsec >= HANDLER_NANOSECONDS_PER_SECOND) {
+		deadline->tv_sec += 1;
+		deadline->tv_nsec -= HANDLER_NANOSECONDS_PER_SECOND;
+	}
+
+}
+
+// wakes the handler's thread until it sees that its owner stopped and joins it,
+// the thread checks its owner with the queue's lock, so a wake is never lost,
+// it is repeated in case the thread was handling a job
+void handler_stop (Handler *handler) {
+
+	if (handler && handler->joinable) {
+		struct timespec deadline = { 0, 0 };
+
+		int joined = 0;
+		do {
+			job_queue_signal (handler->job_queue);
+
+			handler_stop_deadline (&deadline);
+			joined = pthread_timedjoin_np (handler->thread_id, NULL, &deadline);
+		} while (joined == ETIMEDOUT);
+
+		handler->joinable = false;
+	}
+
+}
+
+// pushes the packet to the handler's queue in a job of the queue's pool,
+// the job goes back to the pool if it could not be pushed
+// returns 0 on success, 1 on error
+static unsigned int handler_push_packet (Handler *handler, Packet *packet) {
+
+	unsigned int retval = 1;
+
+	Job *job = job_get (handler->job_queue);
+	if (job) {
+		job->args = packet;
+
+		retval = job_queue_push (handler->job_queue, job);
+		if (retval) job_return (handler->job_queue, job);
+	}
+
+	return retval;
+
+}
+
+// passes the packet to the handler of its type, directly or by its job queue,
+// a direct handler releases it after it returns only if delete_packet is set,
+// and the packet is always released when there is no handler or it can not be queued
+void handler_packet_dispatch (
+	Handler *handler, Packet *packet, const bool delete_packet,
+	const char *owner_name, const char *handler_name
+) {
+
+	if (handler) {
+		if (handler->direct_handle) {
+			handler->handler (packet);
+			if (delete_packet) packet_delete (packet);
+		}
+
+		// added to the handler's job queue to be handled as soon as the handler is available
+		else if (handler_push_packet (handler, packet)) {
+			cerver_log_error (
+				"Failed to push a new job to %s %s!", owner_name, handler_name
+			);
+
+			packet_delete (packet);
+		}
+	}
+
+	else {
+		cerver_log_warning ("%s does not have a %s!", owner_name, handler_name);
+
+		packet_delete (packet);
+	}
 
 }
 
@@ -600,6 +689,14 @@ static CerverHandlerError cerver_client_packet_handler (
 
 }
 
+// handles a packet of type PACKET_TYPE_CLIENT that was received outside the packet handler,
+// like the ones that the load balancer receives
+CerverHandlerError cerver_client_packet_handle (Packet *packet) {
+
+	return packet ? cerver_client_packet_handler (packet) : CERVER_HANDLER_ERROR_PACKET;
+
+}
+
 static inline void cerver_request_get_file_actual (Packet *packet) {
 
 	FileCerver *file_cerver = (FileCerver *) packet->cerver->cerver_data;
@@ -607,9 +704,9 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 	file_cerver->stats->n_files_requests += 1;
 
 	// get the necessary information to fulfil the request
-	if (packet->data_size >= sizeof (FileHeader)) {
-		char *end = (char *) packet->data;
-		FileHeader *file_header = (FileHeader *) end;
+	FileHeader requested = { { 0 }, 0 };
+	if (file_header_get (packet->data, packet->data_size, &requested)) {
+		const FileHeader *file_header = &requested;
 
 		// search for the requested file in the configured paths
 		String *actual_filename = file_cerver_search_file (
@@ -677,7 +774,7 @@ static inline void cerver_request_get_file_actual (Packet *packet) {
 
 		// return a bad request error packet
 		(void) error_packet_generate_and_send (
-			CERVER_ERROR_GET_FILE, "Missing file header",
+			CERVER_ERROR_GET_FILE, "Missing or invalid file header",
 			packet->cerver, packet->client, packet->connection
 		);
 
@@ -719,9 +816,10 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 	file_cerver->stats->n_files_upload_requests += 1;
 
 	// get the necessary information to fulfil the request
-	if (packet->data_size >= sizeof (FileHeader)) {
+	FileHeader received = { { 0 }, 0 };
+	if (file_header_get (packet->data, packet->data_size, &received)) {
 		char *end = (char *) packet->data;
-		FileHeader *file_header = (FileHeader *) end;
+		FileHeader *file_header = &received;
 
 		const char *file_data = NULL;
 		size_t file_data_len = 0;
@@ -732,6 +830,13 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 		if (packet->data_size > sizeof (FileHeader)) {
 			file_data = end += sizeof (FileHeader);
 			file_data_len = packet->data_size - sizeof (FileHeader);
+		}
+
+		// the file is sent after its packet, so its first bytes can be in the same buffer
+		else if (packet->connection) {
+			file_data_len = receive_handle_take_trailing (
+				&packet->connection->receive_handle, &file_data, file_header->len
+			);
 		}
 
 		char *saved_filename = NULL;
@@ -765,7 +870,7 @@ static inline void cerver_request_send_file_actual (Packet *packet) {
 	else {
 		// return a bad request error packet
 		(void) error_packet_generate_and_send (
-			CERVER_ERROR_SEND_FILE, "Missing file header",
+			CERVER_ERROR_SEND_FILE, "Missing or invalid file header",
 			packet->cerver, packet->client, packet->connection
 		);
 
@@ -846,7 +951,10 @@ void cerver_test_packet_handler (Packet *packet) {
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &packet->header,
-		.packet_ref = true
+		.packet_ref = true,
+
+		.release = NULL,
+		.release_args = NULL
 	};
 
 	(void) packet_send (&request, 0, NULL, false);
@@ -871,7 +979,7 @@ static void cerver_multiple_app_packet_handler (Packet *packet) {
 		packet_delete (packet);
 	}
 
-	else if (job_queue_push (handler->job_queue, job_create (NULL, packet))) {
+	else if (handler_push_packet (handler, packet)) {
 		cerver_log_error (
 			"Failed to push a new job to cerver's %s <%u> handler!",
 			packet->cerver->info->name, (unsigned int) handler_id
@@ -890,35 +998,11 @@ static void cerver_app_packet_handler (Packet *packet) {
 	}
 
 	else {
-		if (packet->cerver->app_packet_handler) {
-			if (packet->cerver->app_packet_handler->direct_handle) {
-				// printf ("app_packet_handler - direct handle!\n");
-				packet->cerver->app_packet_handler->handler (packet);
-				if (packet->cerver->app_packet_handler_delete_packet)
-					packet_delete (packet);
-			}
-
-			else {
-				// add the packet to the handler's job queueu to be handled
-				// as soon as the handler is available
-				if (job_queue_push (
-					packet->cerver->app_packet_handler->job_queue,
-					job_create (NULL, packet)
-				)) {
-					cerver_log_error (
-						"Failed to push a new job to cerver's %s app_packet_handler!",
-						packet->cerver->info->name
-					);
-				}
-			}
-		}
-
-		else {
-			cerver_log_warning (
-				"Cerver %s does not have an app_packet_handler!",
-				packet->cerver->info->name
-			);
-		}
+		handler_packet_dispatch (
+			packet->cerver->app_packet_handler, packet,
+			packet->cerver->app_packet_handler_delete_packet,
+			packet->cerver->info->name, "app_packet_handler"
+		);
 	}
 
 }
@@ -926,70 +1010,22 @@ static void cerver_app_packet_handler (Packet *packet) {
 // handles an PACKET_TYPE_APP_ERROR packet type
 static void cerver_app_error_packet_handler (Packet *packet) {
 
-	if (packet->cerver->app_error_packet_handler) {
-		if (packet->cerver->app_error_packet_handler->direct_handle) {
-			// printf ("app_error_packet_handler - direct handle!\n");
-			packet->cerver->app_error_packet_handler->handler (packet);
-			if (packet->cerver->app_error_packet_handler_delete_packet)
-				packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->cerver->app_error_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to cerver's %s app_error_packet_handler!",
-					packet->cerver->info->name
-				);
-			}
-		}
-	}
-
-	else {
-		cerver_log_warning (
-			"Cerver %s does not have an app_error_packet_handler!",
-			packet->cerver->info->name
-		);
-	}
+	handler_packet_dispatch (
+		packet->cerver->app_error_packet_handler, packet,
+		packet->cerver->app_error_packet_handler_delete_packet,
+		packet->cerver->info->name, "app_error_packet_handler"
+	);
 
 }
 
 // handles a PACKET_TYPE_CUSTOM packet type
 static void cerver_custom_packet_handler (Packet *packet) {
 
-	if (packet->cerver->custom_packet_handler) {
-		if (packet->cerver->custom_packet_handler->direct_handle) {
-			// printf ("custom_packet_handler - direct handle!\n");
-			packet->cerver->custom_packet_handler->handler (packet);
-			if (packet->cerver->custom_packet_handler_delete_packet)
-				packet_delete (packet);
-		}
-
-		else {
-			// add the packet to the handler's job queueu to be handled
-			// as soon as the handler is available
-			if (job_queue_push (
-				packet->cerver->custom_packet_handler->job_queue,
-				job_create (NULL, packet)
-			)) {
-				cerver_log_error (
-					"Failed to push a new job to cerver's %s custom_packet_handler!",
-					packet->cerver->info->name
-				);
-			}
-		}
-	}
-
-	else {
-		cerver_log_warning (
-			"Cerver %s does not have a custom_packet_handler!",
-			packet->cerver->info->name
-		);
-	}
+	handler_packet_dispatch (
+		packet->cerver->custom_packet_handler, packet,
+		packet->cerver->custom_packet_handler_delete_packet,
+		packet->cerver->info->name, "custom_packet_handler"
+	);
 
 }
 
@@ -999,14 +1035,49 @@ static const char *cerver_bad_packet_type = { "The packet has an unknown type" }
 // a bad packet of an authenticated connection: its sender gets an error,
 // and the connection is dropped when it reaches the cerver limit
 // returns CERVER_HANDLER_ERROR_DROPPED when the connection is being dropped
+// the address of an UDP peer that did not authenticate can be forged,
+// so it is not answered, the answer could flood someone else
+static bool cerver_bad_packet_answer_allowed (const Connection *connection) {
+
+	return (connection->protocol != PROTOCOL_UDP) || connection_has_datagram_token (connection);
+
+}
+
+// an UDP peer does not have a socket, its peers remove it (udp.c)
+static void cerver_bad_packet_drop (const Packet *packet) {
+
+	if (packet->connection->protocol == PROTOCOL_UDP) {
+		cerver_log_warning (
+			"Cerver %s UDP peer %s:%u sent %u bad packets - dropping...",
+			packet->cerver->info->name,
+			packet->connection->ip, (unsigned int) packet->connection->port,
+			(unsigned int) packet->connection->bad_packets
+		);
+	}
+
+	else {
+		cerver_log_warning (
+			"Cerver %s connection <%d> sent %u bad packets - dropping...",
+			packet->cerver->info->name, packet->connection->socket->sock_fd,
+			(unsigned int) packet->connection->bad_packets
+		);
+
+		// the receive loop removes it, like when the client closes it
+		(void) connection_drop_request (packet->connection);
+	}
+
+}
+
 static CerverHandlerError cerver_bad_packet (const Packet *packet, const char *reason) {
 
 	CERVER_STATS_ADD (packet->cerver->stats->received_packets->n_bad_packets, 1);
 
-	(void) error_packet_generate_and_send (
-		CERVER_ERROR_PACKET_ERROR, reason,
-		packet->cerver, packet->client, packet->connection
-	);
+	if (cerver_bad_packet_answer_allowed (packet->connection)) {
+		(void) error_packet_generate_and_send (
+			CERVER_ERROR_PACKET_ERROR, reason,
+			packet->cerver, packet->client, packet->connection
+		);
+	}
 
 	packet->connection->bad_packets += 1;
 
@@ -1015,14 +1086,7 @@ static CerverHandlerError cerver_bad_packet (const Packet *packet, const char *r
 		return CERVER_HANDLER_ERROR_NONE;
 	}
 
-	cerver_log_warning (
-		"Cerver %s connection <%d> sent %u bad packets - dropping...",
-		packet->cerver->info->name, packet->connection->socket->sock_fd,
-		(unsigned int) packet->connection->bad_packets
-	);
-
-	// the receive loop removes it, like when the client closes it
-	(void) connection_drop_request (packet->connection);
+	cerver_bad_packet_drop (packet);
 
 	return CERVER_HANDLER_ERROR_DROPPED;
 
@@ -1046,9 +1110,11 @@ static CerverHandlerError cerver_packet_handler_actual (
 	CerverHandlerError error = CERVER_HANDLER_ERROR_NONE;
 
 	switch (packet->header.packet_type) {
-		case PACKET_TYPE_NONE: break;
-
-		case PACKET_TYPE_CERVER: break;
+		// a cerver does not handle these packets from a client, they were leaked
+		case PACKET_TYPE_NONE:
+		case PACKET_TYPE_CERVER:
+			packet_delete (packet);
+			break;
 
 		case PACKET_TYPE_CLIENT: {
 			CERVER_STATS_ADD (packet->cerver->stats->received_packets->n_client_packets, 1);
@@ -1116,6 +1182,8 @@ static CerverHandlerError cerver_packet_handler_actual (
 			#endif
 			if (packet->lobby) packet->lobby->stats->received_packets->n_game_packets += 1;
 			game_packet_handler (packet);
+			// the game handlers only read it, it was leaked
+			packet_delete (packet);
 		} break;
 
 		// user set handler to handle app specific packets
@@ -1223,6 +1291,24 @@ static u8 cerver_packet_handler (Packet *packet) {
 
 }
 
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+u8 cerver_udp_packet_handle (Packet *packet) {
+
+	CERVER_STATS_ADD (packet->cerver->stats->client_n_packets_received, 1);
+	CERVER_STATS_ADD (packet->cerver->stats->total_n_packets_received, 1);
+
+	#ifdef CLIENT_STATS
+	packet->client->stats->n_packets_received += 1;
+	#endif
+	#ifdef CONNECTION_STATS
+	packet->connection->stats->n_packets_received += 1;
+	#endif
+
+	return cerver_packet_handler (packet);
+
+}
+
 static u8 cerver_packet_select_handler (
 	ReceiveHandle *receive_handle, Packet *packet
 ) {
@@ -1289,9 +1375,22 @@ static u8 cerver_packet_select_handler (
 
 u8 cerver_poll_unregister_sock_fd (Cerver *cerver, const i32 sock_fd);
 
+static FreeList cerver_receive_recycled = FREELIST_INITIALIZER (
+	CerverReceive, recycle_next, CERVER_RECEIVE_RECYCLE_LIMIT
+);
+
+// the recycled receives are released when the library is unloaded
+__attribute__ ((destructor)) static void cerver_receive_recycled_drain (void) {
+
+	freelist_drain (&cerver_receive_recycled, free);
+
+}
+
 CerverReceive *cerver_receive_new (void) {
 
-	CerverReceive *cr = (CerverReceive *) malloc (sizeof (CerverReceive));
+	CerverReceive *cr = (CerverReceive *) freelist_pop (&cerver_receive_recycled);
+	if (!cr) cr = (CerverReceive *) malloc (sizeof (CerverReceive));
+
 	if (cr) {
 		cr->type = RECEIVE_TYPE_NONE;
 
@@ -1303,6 +1402,8 @@ CerverReceive *cerver_receive_new (void) {
 		cr->admin = NULL;
 
 		cr->lobby = NULL;
+
+		cr->recycle_next = NULL;
 	}
 
 	return cr;
@@ -1310,6 +1411,7 @@ CerverReceive *cerver_receive_new (void) {
 }
 
 // releases the reference that the receive holds to its socket
+// and keeps the receive to be reused
 void cerver_receive_delete (void *ptr) {
 
 	if (ptr) {
@@ -1317,7 +1419,7 @@ void cerver_receive_delete (void *ptr) {
 
 		socket_delete (cr->socket);
 
-		free (cr);
+		if (freelist_push (&cerver_receive_recycled, cr)) free (cr);
 	}
 
 }
@@ -1492,7 +1594,8 @@ void cerver_receive_handle_failed (CerverReceive *cr) {
 	if (cr->socket) {
 		(void) pthread_mutex_lock (cr->socket->read_mutex);
 
-		if (cr->socket->sock_fd > 0) {
+		// 0 is a valid fd, a closed socket has -1
+		if (cr->socket->sock_fd > -1) {
 			switch (cr->type) {
 				case RECEIVE_TYPE_NORMAL: {
 					// check if the socket belongs to a player inside a lobby
@@ -1753,6 +1856,26 @@ static inline u8 cerver_receive_threads_actual (
 
 }
 
+// the load balancer receives complete packets and routes them to its services,
+// the route of the connection lives while it is received
+static void cerver_receive_threads_balancer (
+	CerverReceive *cr, const i32 sock_fd
+) {
+
+	Balancer *balancer = cr->cerver->balancer;
+
+	balancer_connection_start (balancer, sock_fd, cr->socket);
+
+	while (
+		(cr->socket->sock_fd > -1)
+		&& cerver_is_running (cr->cerver)
+		&& !balancer_receive (cr)
+	);
+
+	balancer_connection_end (balancer, sock_fd);
+
+}
+
 static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 	CerverReceive *cr = (CerverReceive *) cerver_receive_ptr;
@@ -1772,7 +1895,12 @@ static void *cerver_receive_threads (void *cerver_receive_ptr) {
 
 	const size_t buffer_size = cr->cerver->receive_buffer_size;
 	char *buffer = (char *) calloc (buffer_size, sizeof (char));
-	if (buffer) {
+	if (cr->cerver->type == CERVER_TYPE_BALANCER) {
+		free (buffer);
+		cerver_receive_threads_balancer (cr, sock_fd);
+	}
+
+	else if (buffer) {
 		while (
 			(cr->socket->sock_fd > -1)
 			&& cerver_is_running (cr->cerver)
@@ -1857,17 +1985,34 @@ typedef struct HttpReceiveDeadlines {
 	double headers;
 	double request;
 
-	// the SO_RCVTIMEO that the socket currently has
-	time_t applied_timeout;
+	// the most milliseconds that a recv () waits, the idle timeout of the cerver
+	unsigned int idle_timeout;
+
+	// the SO_RCVTIMEO in milliseconds that the socket currently has
+	unsigned int applied_timeout;
 
 } HttpReceiveDeadlines;
+
+#define HANDLER_MILLISECONDS_PER_SECOND				1000
+#define HANDLER_MICROSECONDS_PER_MILLISECOND		1000
+
+// sets the socket's recv timeout in milliseconds
+static void cerver_receive_http_set_timeout (const int sock_fd, const unsigned int timeout) {
+
+	struct timeval tv = { 0, 0 };
+	tv.tv_sec = (time_t) (timeout / HANDLER_MILLISECONDS_PER_SECOND);
+	tv.tv_usec = (suseconds_t) ((timeout % HANDLER_MILLISECONDS_PER_SECOND) * HANDLER_MICROSECONDS_PER_MILLISECOND);
+
+	(void) setsockopt (sock_fd, SOL_SOCKET, SO_RCVTIMEO, (const char *) &tv, sizeof (struct timeval));
+
+}
 
 static double cerver_receive_monotonic_time (void) {
 
 	struct timespec now = { 0, 0 };
 	(void) clock_gettime (CLOCK_MONOTONIC, &now);
 
-	return (double) now.tv_sec + ((double) now.tv_nsec / HANDLER_NANOSECONDS_PER_SECOND);
+	return (double) now.tv_sec + ((double) now.tv_nsec / (double) HANDLER_NANOSECONDS_PER_SECOND);
 
 }
 
@@ -1876,14 +2021,18 @@ static void cerver_receive_http_deadlines_init (
 ) {
 
 	const double now = cerver_receive_monotonic_time ();
+	const double milliseconds = (double) HANDLER_MILLISECONDS_PER_SECOND;
 
 	deadlines->headers = http_cerver->headers_timeout ?
-		now + (double) http_cerver->headers_timeout : 0;
+		now + ((double) http_cerver->headers_timeout / milliseconds) : 0;
 
 	deadlines->request = http_cerver->request_timeout ?
-		now + (double) http_cerver->request_timeout : 0;
+		now + ((double) http_cerver->request_timeout / milliseconds) : 0;
 
-	deadlines->applied_timeout = CERVER_DEFAULT_SOCKET_RECV_TIMEOUT;
+	deadlines->idle_timeout = http_cerver->idle_timeout ?
+		http_cerver->idle_timeout : HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS;
+
+	deadlines->applied_timeout = 0;
 
 }
 
@@ -1911,40 +2060,23 @@ static bool cerver_receive_http_deadline_check (
 
 	bool retval = true;
 
-	time_t timeout = CERVER_DEFAULT_SOCKET_RECV_TIMEOUT;
+	unsigned int timeout = deadlines->idle_timeout;
 
 	const double deadline = cerver_receive_http_deadline_current (http_receive, deadlines);
 	if (deadline > 0) {
-		const double remaining = deadline - cerver_receive_monotonic_time ();
+		const double remaining = (deadline - cerver_receive_monotonic_time ()) * (double) HANDLER_MILLISECONDS_PER_SECOND;
 		if (remaining <= 0) retval = false;
 
 		// rounded up, so the last recv () ends after the deadline
-		else if (remaining < (double) timeout) timeout = (time_t) remaining + 1;
+		else if (remaining < (double) timeout) timeout = (unsigned int) remaining + 1;
 	}
 
 	if (retval && (timeout != deadlines->applied_timeout)) {
-		(void) sock_set_timeout (cr->socket->sock_fd, timeout);
+		cerver_receive_http_set_timeout (cr->socket->sock_fd, timeout);
 		deadlines->applied_timeout = timeout;
 	}
 
 	return retval;
-
-}
-
-// explains why a request that was still being received has ended
-static inline void cerver_receive_http_set_ended_status (
-	HttpReceive *http_receive, const HttpReceiveStatus status
-) {
-
-	switch (http_receive->receive_status) {
-		case HTTP_RECEIVE_STATUS_NONE:
-		case HTTP_RECEIVE_STATUS_HEADERS:
-		case HTTP_RECEIVE_STATUS_BODY:
-			http_receive->receive_status = status;
-			break;
-
-		default: break;
-	}
 
 }
 
@@ -1963,7 +2095,7 @@ static void cerver_receive_http_failed (
 		total_received, diagnostics->n_recvs
 	);
 
-	cerver_receive_http_set_ended_status (http_receive, HTTP_RECEIVE_STATUS_CLOSED);
+	http_receive_client_left (http_receive, diagnostics->last_errno);
 
 }
 
@@ -1996,6 +2128,11 @@ static inline u8 cerver_receive_http_actual (
 				else diagnostics->timed_out = true;
 			}
 
+			// a signal interrupted the recv (), the client is still there
+			else if (errno == EINTR) {
+				retval = 0;
+			}
+
 			else {
 				cerver_receive_http_failed (
 					cr, http_receive, *total_received, diagnostics
@@ -2004,7 +2141,7 @@ static inline u8 cerver_receive_http_actual (
 		} break;
 
 		case 0: {
-			cerver_receive_http_set_ended_status (http_receive, HTTP_RECEIVE_STATUS_CLOSED);
+			http_receive_client_left (http_receive, 0);
 
 			#ifdef HANDLER_DEBUG
 			cerver_log (
@@ -2168,6 +2305,31 @@ static void cerver_receive_http_log_rejected (
 
 }
 
+// a request that did not complete: the client left (aborted), it stopped sending
+// until a timeout ended it (vanished), or http_parser could not parse it (incompleted)
+// a request whose response failed was already counted where its client left
+static void cerver_receive_http_count_incomplete (const HttpReceive *http_receive) {
+
+	HttpCerver *http_cerver = http_receive->http_cerver;
+	const HttpStage stage = http_receive->stage;
+	const bool counted = http_receive->response_failed;
+
+	switch (http_receive->receive_status) {
+		case HTTP_RECEIVE_STATUS_CLOSED:
+			if (!counted) CERVER_STATS_ADD (http_cerver->n_aborted_requests[stage][http_receive->abort_reason], 1);
+			break;
+
+		case HTTP_RECEIVE_STATUS_TIMEOUT:
+			if (!counted) CERVER_STATS_ADD (http_cerver->n_vanished_requests[stage], 1);
+			break;
+
+		default:
+			CERVER_STATS_ADD (http_cerver->n_incompleted_requests, 1);
+			break;
+	}
+
+}
+
 // we expect only one request to be sent,
 // so keep reading the socket until no more data is left,
 // and then handle the complete buffer
@@ -2224,11 +2386,9 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 	}
 	#endif
 
-	// set the socket's timeout
-	// to prevent thread from getting stuck if no more data to read
-	(void) sock_set_timeout (sock_fd, CERVER_DEFAULT_SOCKET_RECV_TIMEOUT);
-
-	HttpReceiveDeadlines deadlines = { 0, 0, CERVER_DEFAULT_SOCKET_RECV_TIMEOUT };
+	// the socket's timeout is set by the first deadline check,
+	// so the thread never waits for data longer than the idle timeout
+	HttpReceiveDeadlines deadlines = { 0, 0, 0, 0 };
 	cerver_receive_http_deadlines_init (http_receive->http_cerver, &deadlines);
 
 	// a request in progress is completed even if the cerver is being drained
@@ -2279,7 +2439,10 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 
 	// log request summary
 	switch (http_receive->receive_status) {
-		case HTTP_RECEIVE_STATUS_COMPLETED: {
+		// a response that failed is logged and counted in its route
+		// with the status that it tried to send
+		case HTTP_RECEIVE_STATUS_COMPLETED:
+		case HTTP_RECEIVE_STATUS_RESPONSE_FAILED: {
 			if (http_receive->type == HTTP_RECEIVE_TYPE_FILE) {
 				cerver_log_with_date (
 					LOG_TYPE_NONE, LOG_TYPE_NONE,
@@ -2325,22 +2488,22 @@ static void *cerver_receive_http (void *cerver_receive_ptr) {
 			cerver_receive_http_log_rejected (cr, http_receive, total_received, process_time);
 			break;
 
-		// unable to process the request
+		// the request was not completed
 		default: {
 			cerver_log_with_date (
 				LOG_TYPE_NONE, LOG_TYPE_NONE,
-				"%s -> Bad request - fd %d - status %s - received %zu - recvs %u"
+				"%s -> Bad request - fd %d - status %s - stage %s - received %zu - recvs %u"
 				" - last rc %zd - errno %d - parser %s - running %d - %fs",
 				cr->connection->ip, sock_fd,
 				http_receive_status_str (http_receive->receive_status),
+				http_stage_string (http_receive->stage),
 				total_received, diagnostics.n_recvs,
 				diagnostics.last_rc, diagnostics.last_errno,
 				http_errno_name (HTTP_PARSER_ERRNO (http_receive->parser)),
 				cerver_is_running (cr->cerver), process_time
 			);
 
-			// update stats
-			CERVER_STATS_ADD (http_receive->http_cerver->n_incompleted_requests, 1);
+			cerver_receive_http_count_incomplete (http_receive);
 		} break;
 	}
 
@@ -2508,9 +2671,13 @@ static Connection *cerver_connection_create (
 	const i32 new_fd, const struct sockaddr_storage *client_address
 ) {
 
-	return connection_create (
+	Connection *connection = connection_create (
 		new_fd, client_address, cerver->protocol
 	);
+
+	connection_set_send_timeout (connection, cerver->send_timeout);
+
+	return connection;
 
 }
 
@@ -2620,9 +2787,9 @@ static u8 cerver_register_new_connection_normal_default_create_detachable (
 
 	u8 retval = 1;
 
-	pthread_t thread_id = 0;
-	if (!thread_create_detachable (
-		&thread_id,
+	// counted in the cerver, so its drain waits for the thread
+	if (!thread_group_create (
+		&cr->cerver->connection_threads,
 		cerver_receive_threads,
 		cr
 	)) {
@@ -2753,16 +2920,18 @@ static u8 cerver_register_new_connection_normal_default (
 
 			(void) cerver_info_send_info_packet (cerver, client, connection);
 
+			// the event runs before the handler owns the connection,
+			// the receive thread can delete it as soon as it starts
+			cerver_event_trigger (
+				CERVER_EVENT_CLIENT_CONNECTED,
+				cerver,
+				client, connection
+			);
+
 			// TODO: better error handling
 			if (!cerver_register_new_connection_normal_default_select_handler (
 				cerver, client, connection
 			)) {
-				cerver_event_trigger (
-					CERVER_EVENT_CLIENT_CONNECTED,
-					cerver,
-					client, connection
-				);
-
 				retval = 0;
 			}
 		}
@@ -3125,6 +3294,20 @@ u8 cerver_handler_register_connection (
 
 #pragma region poll
 
+// the address with its zone and the port where the cerver accepts connections
+static void cerver_log_ready (const Cerver *cerver) {
+
+	char ip[NETWORK_ADDRESS_STRING_SIZE] = { 0 };
+	(void) sock_ip_to_string_actual ((const struct sockaddr *) &cerver->address, ip);
+
+	cerver_log (
+		LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
+		"Cerver %s is ready in %s port %d!",
+		cerver->info->name, ip, cerver->port
+	);
+
+}
+
 // reallocs main cerver poll fds
 // returns 0 on success, 1 on error
 u8 cerver_realloc_main_poll_fds (Cerver *cerver) {
@@ -3481,11 +3664,7 @@ u8 cerver_poll (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver_log (
-			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s is ready in port %d!",
-			cerver->info->name, cerver->port
-		);
+		cerver_log_ready (cerver);
 
 		#ifdef CERVER_DEBUG
 		cerver_log (
@@ -3576,11 +3755,7 @@ u8 cerver_threads (Cerver *cerver) {
 	u8 retval = 1;
 
 	if (cerver) {
-		cerver_log (
-			LOG_TYPE_SUCCESS, LOG_TYPE_CERVER,
-			"Cerver %s ready in port %d!",
-			cerver->info->name, cerver->port
-		);
+		cerver_log_ready (cerver);
 
 		#ifdef CERVER_DEBUG
 		cerver_log (

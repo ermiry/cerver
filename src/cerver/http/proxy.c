@@ -6,6 +6,9 @@
 #include <pthread.h>
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
+
+#include "cerver/network.h"
 
 #include "cerver/http/headers.h"
 #include "cerver/http/http.h"
@@ -18,12 +21,6 @@
 #define HTTP_PROXY_BYTE_BITS				8
 #define HTTP_PROXY_BYTE_MASK				0xffu
 #define HTTP_PROXY_DECIMAL_BASE				10
-
-// an IPv4 inside an IPv6 address, "::ffff:192.168.0.1"
-#define HTTP_PROXY_MAPPED_PREFIX_SIZE		12
-static const unsigned char http_proxy_mapped_prefix[HTTP_PROXY_MAPPED_PREFIX_SIZE] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff
-};
 
 static const char http_proxy_prefix_separator = '/';
 static const char http_proxy_list_separator = ',';
@@ -73,22 +70,26 @@ const char *http_trusted_proxies_description (
 
 }
 
-// an IPv4 inside an IPv6 is kept as an IPv4,
+// an IPv4 inside an IPv6 is kept as an IPv4, like the connections of the core do,
 // so "::ffff:10.0.0.1" is inside "10.0.0.0/8"
+// the bytes are copied to an aligned address before they are checked
 static void http_proxy_address_unmap (int *family, unsigned char *address) {
 
-	if (
-		(*family == AF_INET6)
-		&& !memcmp (address, http_proxy_mapped_prefix, HTTP_PROXY_MAPPED_PREFIX_SIZE)
-	) {
-		(void) memmove (address, address + HTTP_PROXY_MAPPED_PREFIX_SIZE, HTTP_PROXY_IPV4_SIZE);
-		(void) memset (address + HTTP_PROXY_IPV4_SIZE, 0, HTTP_PROXY_ADDRESS_SIZE - HTTP_PROXY_IPV4_SIZE);
-		*family = AF_INET;
+	if (*family == AF_INET6) {
+		struct in6_addr ipv6;
+		(void) memcpy (&ipv6, address, sizeof (struct in6_addr));
+
+		if (IN6_IS_ADDR_V4MAPPED (&ipv6)) {
+			(void) memmove (address, address + NETWORK_IPV4_MAPPED_OFFSET, HTTP_PROXY_IPV4_SIZE);
+			(void) memset (address + HTTP_PROXY_IPV4_SIZE, 0, HTTP_PROXY_ADDRESS_SIZE - HTTP_PROXY_IPV4_SIZE);
+			*family = AF_INET;
+		}
 	}
 
 }
 
 // parses an IPv4 or an IPv6 address of length bytes (it does not need a '\0')
+// the zone of a link local address (fe80::1%eth0) is not part of a network, it is ignored
 // returns true on success
 static bool http_proxy_address_parse (
 	const char *ip, const size_t ip_length,
@@ -100,6 +101,9 @@ static bool http_proxy_address_parse (
 	if (ip && ip_length && (ip_length < HTTP_CLIENT_IP_SIZE)) {
 		char value[HTTP_CLIENT_IP_SIZE] = { 0 };
 		(void) memcpy (value, ip, ip_length);
+
+		char *zone = strchr (value, NETWORK_ZONE_SEPARATOR);
+		if (zone) *zone = '\0';
 
 		(void) memset (address, 0, HTTP_PROXY_ADDRESS_SIZE);
 		if (inet_pton (AF_INET, value, address) == 1) {

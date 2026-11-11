@@ -11,6 +11,8 @@
 #include "cerver/packets.h"
 #include "cerver/receive.h"
 
+#include "cerver/collections/freelist.h"
+
 #include "cerver/threads/jobs.h"
 
 #include "cerver/game/lobby.h"
@@ -60,6 +62,9 @@ struct _Handler {
 
 	int id;
 	pthread_t thread_id;
+
+	// set when its thread was started and has not been joined yet
+	bool joinable;
 
 	// unique handler data
 	// will be passed to jobs alongside any job specific data as the args
@@ -147,6 +152,19 @@ CERVER_EXPORT void handler_set_direct_handle (
 // called by internal cerver methods
 CERVER_PRIVATE int handler_start (Handler *handler);
 
+// wakes the handler's thread until it sees that its owner stopped and joins it,
+// it is called after the cerver / client stopped running
+CERVER_PRIVATE void handler_stop (Handler *handler);
+
+// passes the packet to the handler of its type, directly or by its job queue,
+// a direct handler releases it after it returns only if delete_packet is set,
+// and the packet is always released when there is no handler or it can not be queued
+// owner_name and handler_name are only used in the logs
+CERVER_PRIVATE void handler_packet_dispatch (
+	Handler *handler, struct _Packet *packet, const bool delete_packet,
+	const char *owner_name, const char *handler_name
+);
+
 #pragma endregion
 
 #pragma region handlers
@@ -187,6 +205,17 @@ CERVER_PRIVATE void cerver_test_packet_handler (
 	struct _Packet *packet
 );
 
+// handles a packet of type PACKET_TYPE_CLIENT that was received outside the packet handler,
+// like the ones that the load balancer receives
+CERVER_PRIVATE CerverHandlerError cerver_client_packet_handle (
+	struct _Packet *packet
+);
+
+// handles the packet of a datagram of an UDP cerver, like the packets of a TCP connection,
+// the client, request and cerver packets of a peer are handled by its peers (udp.c)
+// returns 0 on success, 1 if the packet was bad or its peer must be removed
+CERVER_PRIVATE u8 cerver_udp_packet_handle (struct _Packet *packet);
+
 #pragma endregion
 
 #pragma region context
@@ -220,6 +249,9 @@ CERVER_PRIVATE HandlerThreadContext *handler_context_get (const size_t buffer_si
 // the default timeout when handling a connection in dedicated thread
 #define CERVER_DEFAULT_SOCKET_RECV_TIMEOUT         5
 
+// the deleted receives that are kept to be reused
+#define CERVER_RECEIVE_RECYCLE_LIMIT				FREELIST_RECYCLE_LIMIT (FREELIST_DEFAULT_LIMIT)
+
 // default cerver receive handler
 CERVER_PRIVATE void cerver_receive_handle_buffer (
 	void *receive_handle_ptr
@@ -237,6 +269,9 @@ typedef struct CerverReceive {
 	struct _Admin *admin;
 
 	struct _Lobby *lobby;
+
+	// the next deleted receive that waits to be reused
+	struct CerverReceive *recycle_next;
 
 } CerverReceive;
 

@@ -11,6 +11,8 @@ extern int collections_tests_dlist (void);
 
 extern void collections_tests_dlist_invariants (void);
 
+extern void collections_tests_freelist (void);
+
 extern void collections_tests_htab (void);
 
 extern void collections_tests_htab_hashing (void);

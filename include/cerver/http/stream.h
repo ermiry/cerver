@@ -31,7 +31,10 @@ typedef enum HttpStreamState {
 
 	HTTP_STREAM_STATE_NONE			= 0,
 	HTTP_STREAM_STATE_STARTED		= 1,
-	HTTP_STREAM_STATE_ENDED			= 2
+	HTTP_STREAM_STATE_ENDED			= 2,
+
+	// a piece could not be sent, the client is gone and nothing else is sent
+	HTTP_STREAM_STATE_FAILED		= 3
 
 } HttpStreamState;
 
@@ -54,6 +57,8 @@ CERVER_EXPORT u8 http_response_stream_begin (
 
 // sends a piece of the body of a response started with http_response_stream_begin (),
 // an empty piece is not sent, because it would end a chunked body
+// a piece that fails ends the stream (HTTP_STREAM_STATE_FAILED): the client is gone,
+// so the next pieces fail without being sent and the handler should stop producing them
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 http_response_stream_write (
 	const struct _HttpReceive *http_receive,

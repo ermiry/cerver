@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <time.h>
+#include <dirent.h>
 #include <pthread.h>
 
 #include <cerver/admin.h>
@@ -24,7 +25,9 @@
 // - authentication that succeeds, and one that fails until the connection is dropped
 // - an on hold connection that never authenticates expires, unless the timeout is 0
 // - a handler drops its connection with connection_drop_request (), with POLL and THREADS
-// - inactive clients are closed by the cerver
+// - inactive clients are closed by the cerver, also while other clients connect and leave
+// - a connection without synchronization can stop its connect backoff,
+//   and the sockets of failed or unused client connections are closed
 // - the update and interval threads run and stop with the cerver
 // - the teardown with connected clients, that see the remote close
 // - a stop requested before or while cerver_start () runs ends with the cerver stopped
@@ -44,6 +47,9 @@
 #define CORE_PACKETS					32
 #define CORE_CLIENTS					4
 
+#define CORE_HANDLERS					3
+#define CORE_HANDLERS_TEARDOWN_MAX_SECONDS	0.25
+
 #define CORE_MULTIPLE_HANDLERS			2
 #define CORE_MISSING_HANDLER_ID			7
 
@@ -55,6 +61,18 @@
 
 #define CORE_INACTIVE_SECONDS			1
 #define CORE_INACTIVE_INTERVAL			1
+
+#define CORE_CHURN_IDLE_CLIENTS			16
+#define CORE_CHURN_THREADS				2
+#define CORE_CHURN_SECONDS				3
+#define CORE_CHURN_MIN_ROUNDS			8
+
+#define CORE_UNSYNCHRONIZED_MAX_SLEEP			64
+#define CORE_UNSYNCHRONIZED_BACKOFF_NANOSECONDS	(1L << 27)
+#define CORE_UNSYNCHRONIZED_CANCEL_SECONDS		1
+
+#define CORE_UNUSED_CONNECTIONS			8
+#define CORE_FD_DIRECTORY				"/proc/self/fd"
 
 #define CORE_UPDATE_FPS					32
 #define CORE_UPDATE_INTERVAL			1
@@ -72,6 +90,30 @@
 #define CORE_MAX_PACKET_SIZE			256
 #define CORE_BIG_PACKET_SIZE			1024
 #define CORE_REQUEST_DROP				2
+#define CORE_REQUEST_ADDRESS			3
+#define CORE_REQUEST_SLOW				4
+
+#define CORE_SLOW_EVENT_NANOSECONDS		(1L << 29)
+#define CORE_SLOW_HANDLER_SECONDS		2
+#define CORE_SLOW_UPDATE_FPS			1
+#define CORE_DRAIN_TIMEOUT				1
+
+#define CORE_IPV4_LOOPBACK				"127.0.0.1"
+#define CORE_IPV6_LOOPBACK				"::1"
+#define CORE_IPV6_ANY					"::"
+#define CORE_LOCALHOST					"localhost"
+#define CORE_INVALID_ADDRESS			"127.0.0.256"
+#define CORE_LINK_LOCAL_ZONE			"fe80::1%lo"
+#define CORE_UNKNOWN_ZONE				"fe80::1%cerver0"
+#define CORE_CONNECT_SINGLE_ATTEMPT		1
+
+// a connect () to each address can take up to 2^9 ms
+#define CORE_CONNECT_TIMEOUT				512
+#define CORE_CONNECT_TIMEOUT_MIN_SECONDS	0.5
+#define CORE_CONNECT_TIMEOUT_MAX_SECONDS	4
+
+// a listener that only takes one connection in its accept queue
+#define CORE_BLACKHOLE_BACKLOG			0
 
 #define CORE_ON_HOLD_SECONDS			1
 #define CORE_ON_HOLD_POLL_TIMEOUT		200
@@ -103,9 +145,17 @@ static unsigned int app_packets = 0;
 static unsigned int app_error_packets = 0;
 static unsigned int custom_packets = 0;
 static unsigned int handler_packets[CORE_MULTIPLE_HANDLERS] = { 0 };
+static unsigned int queued_packets = 0;
+static unsigned int slow_events = 0;
+static unsigned int slow_started = 0;
+static unsigned int slow_finished = 0;
 static unsigned int update_ticks = 0;
 static unsigned int interval_ticks = 0;
 static unsigned int events[CORE_EVENTS] = { 0 };
+
+// written by the handler before it counts the request, read after the count
+static char client_ip[INET6_ADDRSTRLEN] = { 0 };
+static unsigned int address_requests = 0;
 
 // client side
 static unsigned int echoes = 0;
@@ -117,9 +167,15 @@ static void core_counters_reset (void) {
 	app_error_packets = 0;
 	custom_packets = 0;
 	(void) memset (handler_packets, 0, sizeof (handler_packets));
+	queued_packets = 0;
+	slow_events = 0;
+	slow_started = 0;
+	slow_finished = 0;
 	update_ticks = 0;
 	interval_ticks = 0;
 	(void) memset (events, 0, sizeof (events));
+	(void) memset (client_ip, 0, sizeof (client_ip));
+	address_requests = 0;
 	echoes = 0;
 	packet_errors = 0;
 
@@ -156,10 +212,23 @@ static void core_app_handler (void *packet_ptr) {
 			core_echo (packet);
 			break;
 
+		// the address that the cerver sees for the client
+		case CORE_REQUEST_ADDRESS:
+			(void) snprintf (client_ip, sizeof (client_ip), "%s", packet->connection->ip);
+			test_counter_add (&address_requests);
+			break;
+
 		// the echo is sent before the drop, so it still arrives
 		case CORE_REQUEST_DROP:
 			core_echo (packet);
 			test_check_unsigned_eq (connection_drop_request (packet->connection), 0, NULL);
+			break;
+
+		// a handler that is still working when the drain times out
+		case CORE_REQUEST_SLOW:
+			test_counter_add (&slow_started);
+			(void) sleep (CORE_SLOW_HANDLER_SECONDS);
+			test_counter_add (&slow_finished);
 			break;
 
 		default: break;
@@ -195,6 +264,17 @@ static void core_multiple_handler (void *handler_data_ptr) {
 
 }
 
+// a handler with its own thread gets the packet inside a HandlerData
+static void core_queued_handler (void *handler_data_ptr) {
+
+	const HandlerData *handler_data = (const HandlerData *) handler_data_ptr;
+
+	test_check_ptr (handler_data->packet);
+
+	test_counter_add (&queued_packets);
+
+}
+
 static void core_update (void *update_ptr) {
 
 	(void) update_ptr;
@@ -225,6 +305,20 @@ static void *core_event (void *event_data_ptr) {
 
 }
 
+// an event action in its own thread that is still running when the cerver stops
+static void *core_slow_event (void *event_data_ptr) {
+
+	const struct timespec interval = { 0, CORE_SLOW_EVENT_NANOSECONDS };
+	(void) nanosleep (&interval, NULL);
+
+	test_counter_add (&slow_events);
+
+	cerver_event_data_delete ((CerverEventData *) event_data_ptr);
+
+	return NULL;
+
+}
+
 static void core_events_register (Cerver *cerver) {
 
 	for (unsigned int type = CERVER_EVENT_STARTED; type < CERVER_EVENT_LOBBY_CREATE; type++) {
@@ -237,7 +331,7 @@ static void core_events_register (Cerver *cerver) {
 
 }
 
-static Cerver *core_cerver_create (
+static Cerver *core_cerver_create_base (
 	const u16 port, const CerverHandlerType handler_type
 ) {
 
@@ -253,6 +347,19 @@ static Cerver *core_cerver_create (
 	cerver_set_handler_type (cerver, handler_type);
 	cerver_set_poll_time_out (cerver, CORE_POLL_TIMEOUT);
 
+	core_events_register (cerver);
+
+	return cerver;
+
+}
+
+// the app, app error and custom handlers run in each packet's thread
+static Cerver *core_cerver_create (
+	const u16 port, const CerverHandlerType handler_type
+) {
+
+	Cerver *cerver = core_cerver_create_base (port, handler_type);
+
 	Handler *app_handler = handler_create (core_app_handler);
 	handler_set_direct_handle (app_handler, true);
 
@@ -265,7 +372,24 @@ static Cerver *core_cerver_create (
 	handler_set_direct_handle (custom_handler, true);
 	cerver_set_custom_handler (cerver, custom_handler);
 
-	core_events_register (cerver);
+	return cerver;
+
+}
+
+// the app, app error and custom handlers have their own threads and queues
+static Cerver *core_queued_cerver_create (
+	const u16 port, const CerverHandlerType handler_type
+) {
+
+	Cerver *cerver = core_cerver_create_base (port, handler_type);
+
+	cerver_set_app_handlers (
+		cerver,
+		handler_create (core_queued_handler),
+		handler_create (core_queued_handler)
+	);
+
+	cerver_set_custom_handler (cerver, handler_create (core_queued_handler));
 
 	return cerver;
 
@@ -334,6 +458,26 @@ static void core_cerver_stop (CoreCerver *core) {
 
 }
 
+// the teardown joins the handlers threads at once, without polling them
+static void core_cerver_stop_quickly (CoreCerver *core) {
+
+	test_check_unsigned_eq (cerver_shutdown (core->cerver), 0, NULL);
+
+	core_cerver_join (core);
+
+	const double start = test_wait_now ();
+
+	test_check_unsigned_eq (cerver_teardown (core->cerver), 0, NULL);
+
+	test_check (
+		(test_wait_now () - start) < CORE_HANDLERS_TEARDOWN_MAX_SECONDS,
+		"the handlers took too long to stop"
+	);
+
+	test_check_unsigned_eq (events[CERVER_EVENT_TEARDOWN], 1, NULL);
+
+}
+
 #pragma endregion
 
 #pragma region client
@@ -359,7 +503,9 @@ static void *core_client_packet_error (void *error_data_ptr) {
 
 }
 
-static CoreClient core_client_create (const u16 port, Credentials *credentials, const bool admin) {
+static CoreClient core_client_create_at (
+	const char *address, const u16 port, Credentials *credentials, const bool admin
+) {
 
 	CoreClient core = { NULL, NULL };
 
@@ -379,7 +525,7 @@ static CoreClient core_client_create (const u16 port, Credentials *credentials, 
 	client_set_app_handlers (core.client, app_handler, NULL);
 
 	core.connection = client_connection_create (
-		core.client, CORE_ADDRESS, port, PROTOCOL_TCP, false
+		core.client, address, port, PROTOCOL_TCP, false
 	);
 
 	test_check_ptr (core.connection);
@@ -393,6 +539,12 @@ static CoreClient core_client_create (const u16 port, Credentials *credentials, 
 	}
 
 	return core;
+
+}
+
+static CoreClient core_client_create (const u16 port, Credentials *credentials, const bool admin) {
+
+	return core_client_create_at (CORE_ADDRESS, port, credentials, admin);
 
 }
 
@@ -475,6 +627,39 @@ static bool core_client_stopped (const CoreClient *core) {
 #pragma endregion
 
 #pragma region tests
+
+// the packets of a cerver without app, app error and custom handlers are released,
+// and the ones without a handler in a cerver (none, cerver and game) too (LSan checks it)
+static void test_core_without_handlers (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create_base (port, CERVER_HANDLER_TYPE_POLL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	// the packets of one connection are handled in order, so the custom ones are the last
+	core_client_send (&client, PACKET_TYPE_NONE, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CERVER, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_GAME, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, 0, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter_64 (&cerver->stats->received_packets->n_custom_packets, CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_PACKETS, NULL
+	);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+}
 
 // app, app error and custom packets reach their handlers
 static void test_core_dispatch (const CerverHandlerType handler_type) {
@@ -559,11 +744,50 @@ static void test_core_multiple_handlers (void) {
 
 	core_client_end (&client);
 
-	core_cerver_stop (&core);
+	core_cerver_stop_quickly (&core);
 
 	test_check_unsigned_eq (handler_packets[0], CORE_PACKETS, NULL);
 	test_check_unsigned_eq (handler_packets[1], CORE_PACKETS / 2, NULL);
 	test_check_unsigned_eq (app_packets, 0, NULL);
+
+}
+
+// the app, app error and custom handlers threads handle their packets,
+// and the teardown stops them without waiting a second for each
+static void test_core_handlers_teardown (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_queued_cerver_create (port, handler_type), port);
+
+	CoreClient client = core_client_connect (port, NULL);
+
+	core_client_send (&client, PACKET_TYPE_APP, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_APP_ERROR, 0, 0, CORE_PACKETS);
+	core_client_send (&client, PACKET_TYPE_CUSTOM, 0, 0, CORE_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&queued_packets, CORE_HANDLERS * CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_HANDLERS * CORE_PACKETS, NULL
+	);
+
+	core_client_end (&client);
+
+	core_cerver_stop_quickly (&core);
+
+}
+
+static void test_core_handlers_teardown_poll (void) {
+
+	test_core_handlers_teardown (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_handlers_teardown_threads (void) {
+
+	test_core_handlers_teardown (CERVER_HANDLER_TYPE_THREADS);
 
 }
 
@@ -1136,6 +1360,116 @@ static void test_core_teardown_connected (void) {
 
 }
 
+// the teardown waits for an event action that runs in its own thread
+static void test_core_event_thread_teardown (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (
+		cerver_event_register (
+			cerver, CERVER_EVENT_CLIENT_CONNECTED,
+			core_slow_event, NULL, NULL,
+			true, false
+		), 0, NULL
+	);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (
+		__atomic_load_n (&slow_events, __ATOMIC_SEQ_CST), 1,
+		"the teardown did not wait for the event thread"
+	);
+
+}
+
+// the detachable connection threads are drained before the clients are released
+static void test_core_detachable_threads (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_handle_detachable_threads (cerver, true);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient clients[CORE_CLIENTS];
+	for (unsigned int i = 0; i < CORE_CLIENTS; i++) {
+		clients[i] = core_client_connect (port, NULL);
+		core_client_send (&clients[i], PACKET_TYPE_APP, CORE_REQUEST_ECHO, 0, CORE_PACKETS);
+	}
+
+	test_check_unsigned_eq (
+		test_wait_counter (&echoes, CORE_CLIENTS * CORE_PACKETS, TEST_WAIT_SECONDS),
+		CORE_CLIENTS * CORE_PACKETS, NULL
+	);
+
+	core_cerver_stop (&core);
+
+	for (unsigned int i = 0; i < CORE_CLIENTS; i++) {
+		test_check (core_client_stopped (&clients[i]), "a client did not see the cerver close");
+		core_client_end (&clients[i]);
+	}
+
+}
+
+// an update with a low fps stops with the cerver, it does not wait for its frame
+static void test_core_slow_update_teardown (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+	cerver_set_update (cerver, core_update, NULL, NULL, CORE_SLOW_UPDATE_FPS);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	test_check (test_wait_counter (&update_ticks, 1, TEST_WAIT_SECONDS) >= 1, NULL);
+
+	core_cerver_stop_quickly (&core);
+
+}
+
+// a connection that is still working when the drain times out finishes in the grace,
+// so the cerver is released (LSan checks it)
+static void test_core_drain_grace (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_THREADS);
+	cerver_set_drain_timeout (cerver, CORE_DRAIN_TIMEOUT);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_connect (port, NULL);
+	core_client_send (&client, PACKET_TYPE_APP, CORE_REQUEST_SLOW, 0, 1);
+
+	test_check_unsigned_eq (test_wait_counter (&slow_started, 1, TEST_WAIT_SECONDS), 1, NULL);
+
+	core_cerver_stop (&core);
+
+	test_check_unsigned_eq (
+		__atomic_load_n (&slow_finished, __ATOMIC_SEQ_CST), 1,
+		"the teardown did not wait for the connection in the grace"
+	);
+
+	core_client_end (&client);
+
+}
+
 // a stop requested before cerver_start () cancels it, the cerver never listens
 static void test_core_stop_before_start (const CerverHandlerType handler_type) {
 
@@ -1195,6 +1529,467 @@ static void test_core_stop_while_starting (void) {
 
 #pragma endregion
 
+#pragma region address
+
+// a cerver that binds bind_address (NULL for every address)
+static Cerver *core_address_cerver_create (
+	const u16 port, const char *bind_address, const bool ipv6_only
+) {
+
+	Cerver *cerver = core_cerver_create (port, CERVER_HANDLER_TYPE_POLL);
+
+	if (bind_address) {
+		test_check_unsigned_eq (cerver_set_bind_address (cerver, bind_address), 0, NULL);
+	}
+
+	cerver_set_ipv6_only (cerver, ipv6_only);
+
+	return cerver;
+
+}
+
+// the client asks for the ip that the cerver sees
+static void core_address_expect (CoreClient *client, const char *expected_ip) {
+
+	core_client_send (client, PACKET_TYPE_APP, CORE_REQUEST_ADDRESS, 0, 1);
+	test_check_unsigned_eq (test_wait_counter (&address_requests, 1, TEST_WAIT_SECONDS), 1, NULL);
+	test_check_str_eq (client_ip, expected_ip, NULL);
+
+}
+
+// the client connects to client_address preferring a family, and the cerver sees it as expected_ip
+static void core_address_check_preferring (
+	const char *bind_address, const bool ipv6_only,
+	const char *client_address, const bool prefer_ipv6,
+	const char *expected_ip
+) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, bind_address, ipv6_only), port);
+
+	CoreClient client = core_client_create_at (client_address, port, NULL, false);
+	client.connection->use_ipv6 = prefer_ipv6;
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+
+	client = core_client_start (client);
+
+	core_address_expect (&client, expected_ip);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+}
+
+// the client connects to client_address and the cerver sees it as expected_ip
+static void core_address_check (
+	const char *bind_address, const bool ipv6_only,
+	const char *client_address, const char *expected_ip
+) {
+
+	core_address_check_preferring (bind_address, ipv6_only, client_address, false, expected_ip);
+
+}
+
+// a cerver that only listens in the loopback of one family
+static void test_core_address_loopback (void) {
+
+	core_address_check (CORE_IPV4_LOOPBACK, false, CORE_IPV4_LOOPBACK, CORE_IPV4_LOOPBACK);
+	core_address_check (CORE_IPV6_LOOPBACK, false, CORE_IPV6_LOOPBACK, CORE_IPV6_LOOPBACK);
+
+}
+
+// a dual stack cerver sees an IPv4 client as IPv4, not as ::ffff:127.0.0.1
+static void test_core_address_dual_stack (void) {
+
+	core_address_check (CORE_IPV6_ANY, false, CORE_IPV4_LOOPBACK, CORE_IPV4_LOOPBACK);
+	core_address_check (CORE_IPV6_ANY, false, CORE_IPV6_LOOPBACK, CORE_IPV6_LOOPBACK);
+
+}
+
+// the client resolves a host name
+static void test_core_address_host_name (void) {
+
+	core_address_check (CORE_IPV4_LOOPBACK, false, CORE_LOCALHOST, CORE_IPV4_LOOPBACK);
+
+}
+
+// a client fails to connect to a cerver that does not listen in its family
+static void core_address_check_refused (
+	const char *bind_address, const bool ipv6_only, const char *client_address
+) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, bind_address, ipv6_only), port);
+
+	CoreClient client = core_client_create_at (client_address, port, NULL, false);
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+
+	test_check_unsigned_ne (client_connect (client.client, client.connection), 0);
+	test_check_unsigned_eq (client_teardown (client.client), 0, NULL);
+
+	core_cerver_stop (&core);
+
+}
+
+static void test_core_address_refused (void) {
+
+	// IPV6_V6ONLY does not take IPv4 connections
+	core_address_check_refused (CORE_IPV6_ANY, true, CORE_IPV4_LOOPBACK);
+
+	// a cerver in the IPv4 loopback does not take IPv6 connections
+	core_address_check_refused (CORE_IPV4_LOOPBACK, false, CORE_IPV6_LOOPBACK);
+
+}
+
+static void test_core_address_invalid (void) {
+
+	Cerver *cerver = core_cerver_create (core_port++, CERVER_HANDLER_TYPE_POLL);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_INVALID_ADDRESS), 1, NULL);
+	test_check_str_empty (cerver->bind_address);
+	test_check_false (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_IPV6_LOOPBACK), 0, NULL);
+	test_check_true (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, NULL), 0, NULL);
+	test_check_str_empty (cerver->bind_address);
+
+	// a link local address with its zone, and a zone without an interface
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_LINK_LOCAL_ZONE), 0, NULL);
+	test_check_str_eq (cerver->bind_address, CORE_LINK_LOCAL_ZONE, NULL);
+	test_check_true (cerver->use_ipv6);
+
+	test_check_unsigned_eq (cerver_set_bind_address (cerver, CORE_UNKNOWN_ZONE), 1, NULL);
+
+	test_check_unsigned_eq (cerver_teardown (cerver), 0, NULL);
+
+}
+
+// localhost resolves to 127.0.0.1 and ::1, the cerver only listens in one of them:
+// the client is refused by the first address and connects to the other one,
+// before it only tried the first address of its preferred family
+static void test_core_address_fallback (void) {
+
+	core_address_check_preferring (CORE_IPV6_LOOPBACK, false, CORE_LOCALHOST, false, CORE_IPV6_LOOPBACK);
+	core_address_check_preferring (CORE_IPV4_LOOPBACK, false, CORE_LOCALHOST, true, CORE_IPV4_LOOPBACK);
+
+}
+
+// a listener whose accept queue is full drops new connections without an answer,
+// so a connect () to it never ends by itself
+static int core_blackhole_create (const char *ip, const u16 port, int *queued) {
+
+	struct sockaddr_storage address;
+	test_check_unsigned_eq (network_parse_address (ip, port, &address), 0, NULL);
+
+	const int listener = socket (address.ss_family, SOCK_STREAM, 0);
+	test_check (listener >= 0, NULL);
+	test_check_int_eq (sock_set_reusable (listener), 0, NULL);
+	test_check_int_eq (bind (listener, (const struct sockaddr *) &address, sock_address_size (&address)), 0, NULL);
+	test_check_int_eq (listen (listener, CORE_BLACKHOLE_BACKLOG), 0, NULL);
+
+	*queued = socket (address.ss_family, SOCK_STREAM, 0);
+	test_check (*queued >= 0, NULL);
+	test_check_int_eq (connect (*queued, (const struct sockaddr *) &address, sock_address_size (&address)), 0, NULL);
+
+	return listener;
+
+}
+
+// the first address never answers: the client waits its connect timeout and tries the next one,
+// before the connect () blocked until the kernel gave up on the first address
+static void test_core_address_connect_timeout (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+
+	int queued = -1;
+	const int blackhole = core_blackhole_create (CORE_IPV4_LOOPBACK, port, &queued);
+
+	CoreCerver core;
+	core_cerver_start (&core, core_address_cerver_create (port, CORE_IPV6_LOOPBACK, false), port);
+
+	CoreClient client = core_client_create_at (CORE_LOCALHOST, port, NULL, false);
+	connection_set_connect_timeout (client.connection, CORE_CONNECT_TIMEOUT);
+	test_check_unsigned_eq (client.connection->connect_timeout, CORE_CONNECT_TIMEOUT, NULL);
+	connection_set_max_sleep (client.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+
+	const double start = test_wait_now ();
+	client = core_client_start (client);
+	const double elapsed = test_wait_now () - start;
+
+	test_check (elapsed >= CORE_CONNECT_TIMEOUT_MIN_SECONDS, "the client did not wait for the first address");
+	test_check (elapsed < CORE_CONNECT_TIMEOUT_MAX_SECONDS, "the client waited too long for the first address");
+
+	core_address_expect (&client, CORE_IPV6_LOOPBACK);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+	(void) close (queued);
+	(void) close (blackhole);
+
+}
+
+// cerver_set_network_values () after cerver_set_bind_address () changed use_ipv6,
+// and the IPv4 socket could not bind the IPv6 address
+static void test_core_address_network_values (void) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+
+	Cerver *cerver = core_address_cerver_create (port, CORE_IPV6_LOOPBACK, false);
+	cerver_set_network_values (cerver, port, PROTOCOL_TCP, false, CERVER_DEFAULT_CONNECTION_QUEUE);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient client = core_client_start (core_client_create_at (CORE_IPV6_LOOPBACK, port, NULL, false));
+
+	core_address_expect (&client, CORE_IPV6_LOOPBACK);
+
+	core_client_end (&client);
+
+	core_cerver_stop (&core);
+
+}
+
+#pragma endregion
+
+#pragma region sockets
+
+typedef struct CoreChurn {
+
+	u16 port;
+	bool running;
+	unsigned int rounds;
+
+} CoreChurn;
+
+// clients that connect, send a packet and leave while the cerver drops the inactive ones,
+// so the fds of the inactive connections are closed and reused while they are shut down
+static void *core_churn_thread (void *churn_ptr) {
+
+	CoreChurn *churn = (CoreChurn *) churn_ptr;
+
+	while (__atomic_load_n (&churn->running, __ATOMIC_SEQ_CST)) {
+		CoreClient client = core_client_connect (churn->port, NULL);
+		core_client_send (&client, PACKET_TYPE_APP, 0, 0, 1);
+		core_client_end (&client);
+
+		test_counter_add (&churn->rounds);
+	}
+
+	return NULL;
+
+}
+
+// the sockets of the inactive clients are shut down after the clients lock is released,
+// while other clients connect and leave (TSan checks the shutdown against the close)
+static void test_core_inactive_churn (const CerverHandlerType handler_type) {
+
+	core_counters_reset ();
+
+	const u16 port = core_port++;
+	Cerver *cerver = core_cerver_create (port, handler_type);
+	cerver_set_inactive_clients (cerver, CORE_INACTIVE_SECONDS, CORE_INACTIVE_INTERVAL);
+
+	CoreCerver core;
+	core_cerver_start (&core, cerver, port);
+
+	CoreClient idle[CORE_CHURN_IDLE_CLIENTS];
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		idle[index] = core_client_connect (port, NULL);
+	}
+
+	CoreChurn churn = { port, true, 0 };
+	pthread_t threads[CORE_CHURN_THREADS];
+	for (unsigned int index = 0; index < CORE_CHURN_THREADS; index++) {
+		test_check_int_eq (pthread_create (&threads[index], NULL, core_churn_thread, &churn), 0, NULL);
+	}
+
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		test_check (core_client_stopped (&idle[index]), "an inactive client was not closed");
+	}
+
+	test_check (
+		test_wait_counter (&events[CERVER_EVENT_CLIENT_DROPPED], CORE_CHURN_IDLE_CLIENTS, TEST_WAIT_SECONDS)
+			>= CORE_CHURN_IDLE_CLIENTS,
+		"the cerver did not drop the inactive clients"
+	);
+
+	// the clients keep connecting while the cerver checks for inactive clients again
+	const struct timespec churn_time = { CORE_CHURN_SECONDS, 0 };
+	(void) nanosleep (&churn_time, NULL);
+
+	__atomic_store_n (&churn.running, false, __ATOMIC_SEQ_CST);
+	for (unsigned int index = 0; index < CORE_CHURN_THREADS; index++) {
+		test_check_int_eq (pthread_join (threads[index], NULL), 0, NULL);
+	}
+
+	test_check (
+		__atomic_load_n (&churn.rounds, __ATOMIC_SEQ_CST) >= CORE_CHURN_MIN_ROUNDS,
+		"the clients did not connect while the inactive ones were dropped"
+	);
+
+	for (unsigned int index = 0; index < CORE_CHURN_IDLE_CLIENTS; index++) {
+		core_client_end (&idle[index]);
+	}
+
+	core_cerver_stop (&core);
+
+}
+
+static void test_core_inactive_churn_poll (void) {
+
+	test_core_inactive_churn (CERVER_HANDLER_TYPE_POLL);
+
+}
+
+static void test_core_inactive_churn_threads (void) {
+
+	test_core_inactive_churn (CERVER_HANDLER_TYPE_THREADS);
+
+}
+
+static void *core_unsynchronized_connect (void *connection_ptr) {
+
+	(void) connection_connect ((Connection *) connection_ptr);
+
+	return NULL;
+
+}
+
+// waits until the connection started to connect
+static bool core_connection_connecting (Connection *connection) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + TEST_WAIT_SECONDS;
+
+	while (
+		(connection_get_state (connection) != CONNECTION_STATE_CONNECTING)
+		&& (test_wait_now () < deadline)
+	) {
+		(void) nanosleep (&interval, NULL);
+	}
+
+	return connection_get_state (connection) == CONNECTION_STATE_CONNECTING;
+
+}
+
+// a connection without its mutex and its condition gets them when it connects,
+// so its end interrupts the backoff to a cerver that is down,
+// before it slept each backoff step and only stopped after its max sleep
+static void test_core_connect_unsynchronized (void) {
+
+	Connection *connection = connection_create_empty ();
+	test_check_ptr (connection);
+
+	// nothing listens in this port
+	connection_set_values (connection, CORE_IPV4_LOOPBACK, core_port++, PROTOCOL_TCP, false);
+	test_check_unsigned_eq (connection_init (connection), 0, NULL);
+	connection_set_max_sleep (connection, CORE_UNSYNCHRONIZED_MAX_SLEEP);
+
+	test_check (!connection->mutex && !connection->cond, "the connection already has synchronization");
+
+	pthread_t thread;
+	test_check_int_eq (pthread_create (&thread, NULL, core_unsynchronized_connect, connection), 0, NULL);
+
+	test_check (core_connection_connecting (connection), "the connection did not start to connect");
+	test_check (connection->mutex && connection->cond, "the connection has no synchronization");
+
+	// the first attempt is refused at once, so the connection waits in its backoff
+	const struct timespec backoff = { 0, CORE_UNSYNCHRONIZED_BACKOFF_NANOSECONDS };
+	(void) nanosleep (&backoff, NULL);
+
+	const double start = test_wait_now ();
+
+	(void) pthread_mutex_lock (connection->mutex);
+	connection->ending = true;
+	(void) pthread_mutex_unlock (connection->mutex);
+
+	connection_wake_connect (connection);
+
+	struct timespec deadline = { 0, 0 };
+	(void) clock_gettime (CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += CORE_JOIN_SECONDS;
+
+	test_check_int_eq (pthread_timedjoin_np (thread, NULL, &deadline), 0, "the connect did not stop");
+	test_check (
+		(test_wait_now () - start) < CORE_UNSYNCHRONIZED_CANCEL_SECONDS,
+		"the connect did not stop its backoff"
+	);
+
+	test_check (connection->socket->sock_fd < 0, "the socket of the failed connect is still open");
+
+	connection_delete (connection);
+
+}
+
+static unsigned int core_open_fds (void) {
+
+	unsigned int count = 0;
+
+	DIR *directory = opendir (CORE_FD_DIRECTORY);
+	test_check_ptr (directory);
+
+	const struct dirent *entry = NULL;
+	while ((entry = readdir (directory))) {
+		if (entry->d_name[0] != '.') count += 1;
+	}
+
+	(void) closedir (directory);
+
+	return count;
+
+}
+
+// one client whose connect fails and one that never connects
+static void core_unused_connections_round (const u16 port) {
+
+	CoreClient failed = core_client_create_at (CORE_IPV4_LOOPBACK, port, NULL, false);
+	connection_set_max_sleep (failed.connection, CORE_CONNECT_SINGLE_ATTEMPT);
+	test_check_unsigned_ne (client_connect (failed.client, failed.connection), 0);
+	test_check_unsigned_eq (client_teardown (failed.client), 0, NULL);
+
+	CoreClient unused = core_client_create_at (CORE_IPV4_LOOPBACK, port, NULL, false);
+	test_check_unsigned_eq (client_teardown (unused.client), 0, NULL);
+
+}
+
+// the clients whose connect failed, and the ones that never connected, close their sockets,
+// before each one kept an open fd after its teardown
+static void test_core_unused_connections (void) {
+
+	// nothing listens in this port
+	const u16 port = core_port++;
+
+	// the first round opens what the library keeps for the whole process
+	core_unused_connections_round (port);
+
+	const unsigned int before = core_open_fds ();
+
+	for (unsigned int index = 0; index < CORE_UNUSED_CONNECTIONS; index++) {
+		core_unused_connections_round (port);
+	}
+
+	test_check_unsigned_eq (core_open_fds (), before, "the client connections left open fds");
+
+}
+
+#pragma endregion
+
 int main (int argc, char **argv) {
 
 	test_output_init ();
@@ -1208,7 +2003,10 @@ int main (int argc, char **argv) {
 
 	test_core_dispatch_poll ();
 	test_core_dispatch_threads ();
+	test_core_without_handlers ();
 	test_core_multiple_handlers ();
+	test_core_handlers_teardown_poll ();
+	test_core_handlers_teardown_threads ();
 	test_core_auth_success ();
 	test_core_auth_failed ();
 	test_core_auth_retry ();
@@ -1224,11 +2022,27 @@ int main (int argc, char **argv) {
 	test_core_bad_packet_size ();
 	test_core_on_hold_bad_packets ();
 	test_core_inactive_clients ();
+	test_core_inactive_churn_poll ();
+	test_core_inactive_churn_threads ();
+	test_core_connect_unsynchronized ();
+	test_core_unused_connections ();
 	test_core_update ();
 	test_core_teardown_connected ();
+	test_core_event_thread_teardown ();
+	test_core_detachable_threads ();
+	test_core_slow_update_teardown ();
+	test_core_drain_grace ();
 	test_core_stop_before_start_poll ();
 	test_core_stop_before_start_threads ();
 	test_core_stop_while_starting ();
+	test_core_address_loopback ();
+	test_core_address_dual_stack ();
+	test_core_address_host_name ();
+	test_core_address_refused ();
+	test_core_address_invalid ();
+	test_core_address_fallback ();
+	test_core_address_connect_timeout ();
+	test_core_address_network_values ();
 
 	(void) printf ("\nDone with CERVER core tests!\n\n");
 

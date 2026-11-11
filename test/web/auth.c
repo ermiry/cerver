@@ -20,6 +20,8 @@
 
 #include <app/users.h>
 
+#include "../address.h"
+
 static Cerver *auth_cerver = NULL;
 
 #pragma region end
@@ -156,6 +158,7 @@ int main (int argc, char **argv) {
 
 	if (auth_cerver) {
 		/*** cerver configuration ***/
+		(void) cerver_set_bind_address (auth_cerver, test_address ());
 		cerver_set_receive_buffer_size (auth_cerver, 4096);
 		cerver_set_thpool_n_threads (auth_cerver, 4);
 		cerver_set_handler_type (auth_cerver, CERVER_HANDLER_TYPE_THREADS);

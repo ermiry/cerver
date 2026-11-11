@@ -177,7 +177,8 @@ u8 player_unregister_from_lobby (Lobby *lobby, Player *player) {
 				player_unregister_from_lobby_poll (lobby, player);
 			}
 
-			if (!dlist_remove (lobby->players, player, NULL)) {
+			// dlist_remove () returns the removed player, the check was inverted
+			if (dlist_remove (lobby->players, player, NULL)) {
 				lobby->n_current_players--;
 
 				#ifdef CERVER_DEBUG
@@ -258,6 +259,9 @@ Player *player_get_by_sock_fd_list (Lobby *lobby, i32 sock_fd) {
 // broadcasts a packet to all the players in the lobby
 void player_broadcast_to_all (Cerver *cerver, const Lobby *lobby, Packet *packet,
 	Protocol protocol, int flags) {
+
+	// the protocol is taken from each player's connection
+	(void) protocol;
 
 	if (lobby && packet) {
 		Player *player = NULL;

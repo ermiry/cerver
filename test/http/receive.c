@@ -1542,7 +1542,8 @@ static void test_receive_dirname_without_uploads_path (Cerver *cerver) {
 
 }
 
-// with an uploads path the files of the request are saved inside its generated directory
+// with an uploads path the files of the request are saved inside its generated directory,
+// the cerver deletes the files when the request is done, so the empty directory is removed too
 static void test_receive_dirname_with_uploads_path (Cerver *cerver) {
 
 	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
@@ -1552,14 +1553,14 @@ static void test_receive_dirname_with_uploads_path (Cerver *cerver) {
 
 	test_receive_whole_case (cerver, "a dirname generator with an uploads path", multipart_request);
 
-	const bool created_in_uploads = (access (TEST_RECEIVE_UPLOADS_DIRNAME, F_OK) == 0);
-	if (created_in_uploads) (void) rmdir (TEST_RECEIVE_UPLOADS_DIRNAME);
+	const bool left_in_uploads = (access (TEST_RECEIVE_UPLOADS_DIRNAME, F_OK) == 0);
+	if (left_in_uploads) (void) rmdir (TEST_RECEIVE_UPLOADS_DIRNAME);
 
 	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (n_generated_dirnames == 1);
-	test_receive_expect (created_in_uploads);
+	test_receive_expect (!left_in_uploads);
 	test_receive_expect (observed.n_files == 2);
 	test_receive_expect (!strncmp (
 		observed.files[0].saved_filename,
@@ -1747,6 +1748,120 @@ static void test_receive_upload_error (Cerver *cerver) {
 	test_receive_expect (observed.n_handled == 0);
 
 	test_receive_limits_reset ((HttpCerver *) cerver->cerver_data);
+
+}
+
+static const char *foreign_content = { "foreign-content" };
+
+// the name of a file that another request already saved: fixed.jpg or fixed-<number>.jpg
+static void test_receive_foreign_filename (const unsigned int number, char *filename) {
+
+	if (number) {
+		(void) snprintf (filename, TEST_RECEIVE_PATH_SIZE, "%s/fixed-%u.jpg", TEST_RECEIVE_UPLOADS_PATH, number);
+	}
+
+	else {
+		(void) snprintf (filename, TEST_RECEIVE_PATH_SIZE, "%s/%s", TEST_RECEIVE_UPLOADS_PATH, fixed_generated_filename);
+	}
+
+}
+
+// a part that could not open its file because every numbered name was taken
+// removed the file of another request with the last name that it tried
+static void test_receive_foreign_files (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	char filename[TEST_RECEIVE_PATH_SIZE] = { 0 };
+	for (unsigned int number = 0; number <= HTTP_MULTI_PART_FILENAME_NUMBERS; number++) {
+		test_receive_foreign_filename (number, filename);
+		test_receive_write_file (filename, foreign_content);
+	}
+
+	http_cerver_set_uploads_filename_generator (http_cerver, test_receive_fixed_filename_generator);
+
+	test_receive_whole_case (cerver, "every numbered filename is taken", multipart_request);
+
+	http_cerver_set_default_uploads_filename_generator (http_cerver);
+
+	unsigned int kept = 0;
+	for (unsigned int number = 0; number <= HTTP_MULTI_PART_FILENAME_NUMBERS; number++) {
+		test_receive_foreign_filename (number, filename);
+		if (!access (filename, F_OK)) kept += 1;
+		(void) remove (filename);
+	}
+
+	test_receive_expect (test_receive_status_is ("500"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_UPLOAD_ERROR);
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect (kept == (HTTP_MULTI_PART_FILENAME_NUMBERS + 1));
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+}
+
+static void test_receive_empty_filename_generator (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+	(void) request;
+
+}
+
+// a generator that did not set a name saved the files as the uploads path itself ("uploads/"),
+// now they are saved with their sanitized filenames
+static void test_receive_empty_generated_filename (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_set_uploads_filename_generator (http_cerver, test_receive_empty_filename_generator);
+
+	test_receive_whole_case (cerver, "a generator that does not set a filename", multipart_request);
+
+	http_cerver_set_default_uploads_filename_generator (http_cerver);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_files == 2);
+	test_receive_expect (strstr (observed.files[0].saved_filename, "/photo.jpg") != NULL);
+	test_receive_expect (!strcmp (observed.files[1].content, "second-file-content"));
+	test_receive_expect (test_receive_uploads_count () == 0);
+
+}
+
+#define TEST_RECEIVE_BLOCKER_NAME			"blocker"
+#define TEST_RECEIVE_BLOCKER_FILE			TEST_RECEIVE_UPLOADS_PATH "/" TEST_RECEIVE_BLOCKER_NAME
+
+static void test_receive_blocked_dirname_generator (
+	const HttpReceive *http_receive, const HttpRequest *request
+) {
+
+	(void) http_receive;
+
+	http_request_set_dirname (request, "%s/inside", TEST_RECEIVE_BLOCKER_NAME);
+
+}
+
+// a directory that can not be created rejects the request before its files
+static void test_receive_directory_error (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_write_file (TEST_RECEIVE_BLOCKER_FILE, foreign_content);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, test_receive_blocked_dirname_generator);
+
+	test_receive_whole_case (cerver, "a directory that can not be created", multipart_request);
+
+	http_cerver_set_uploads_dirname_generator (http_cerver, NULL);
+
+	const bool blocker_kept = !access (TEST_RECEIVE_BLOCKER_FILE, F_OK);
+	(void) remove (TEST_RECEIVE_BLOCKER_FILE);
+
+	test_receive_expect (test_receive_status_is ("500"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_UPLOAD_ERROR);
+	test_receive_expect (observed.n_handled == 0);
+	test_receive_expect (blocker_kept);
+	test_receive_expect (test_receive_uploads_count () == 0);
 
 }
 
@@ -2019,6 +2134,9 @@ void http_tests_receive (void) {
 	test_receive_default_dirnames (cerver);
 	test_receive_attribute_without_value (cerver);
 	test_receive_upload_error (cerver);
+	test_receive_foreign_files (cerver);
+	test_receive_empty_generated_filename (cerver);
+	test_receive_directory_error (cerver);
 
 	test_receive_groups (cerver);
 	test_receive_method_not_allowed (cerver);

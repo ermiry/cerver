@@ -72,7 +72,7 @@ u8 http_response_stream_begin (
 				);
 
 				// a stream whose header was not sent can not continue
-				if (retval) receive->stream.state = HTTP_STREAM_STATE_ENDED;
+				if (retval) receive->stream.state = HTTP_STREAM_STATE_FAILED;
 			}
 		}
 	}
@@ -126,9 +126,12 @@ u8 http_response_stream_write (
 
 			retval = http_response_send_pieces (http_receive, &part, 1);
 		}
+
+		if (retval) ((HttpReceive *) http_receive)->stream.state = HTTP_STREAM_STATE_FAILED;
 	}
 
-	else {
+	// the client of a failed stream is gone, it is not an error of the handler
+	else if (!http_receive || (http_receive->stream.state != HTTP_STREAM_STATE_FAILED)) {
 		cerver_log_error ("http_response_stream_write () - The stream was not started");
 	}
 
@@ -154,6 +157,8 @@ u8 http_response_stream_end (
 				part.iov_len = http_stream_last_chunk_length;
 
 				retval = http_response_send_pieces (receive, &part, 1);
+
+				if (retval) receive->stream.state = HTTP_STREAM_STATE_FAILED;
 			}
 		}
 

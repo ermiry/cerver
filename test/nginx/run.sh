@@ -5,6 +5,7 @@ IMAGE=${IMAGE:-ermiry/cerver:test}
 BUILD=${BUILD:-1}
 
 NGINX_IMAGES=(${NGINX_IMAGES:-nginx:1.31.6-alpine nginx:1.30.6-alpine})
+CONFIGS=(${CONFIGS:-direct services pair})
 
 PROJECT=cerver-nginx
 COMPOSE="$DOCKER compose -p $PROJECT -f test/nginx/docker-compose.yml"
@@ -38,12 +39,17 @@ nginx_wait () {
 	run_in_nginx
 }
 
-nginx_features () {
+nginx_features_at () {
 	COMMAND="./test/bin/client/web/features"
 	run_in_nginx \
-		-e FEATURES_ADDRESS="http://127.0.0.1:$NGINX_PORT" \
+		-e CERVER_TEST_ADDRESS="$1" \
+		-e FEATURES_ADDRESS="http://$2:$NGINX_PORT" \
 		-e FEATURES_PROXY=1 \
 		-e FEATURES_UNBUFFERED_PREFIX="$UNBUFFERED_PREFIX"
+}
+
+nginx_features () {
+	nginx_features_at 127.0.0.1 127.0.0.1 && nginx_features_at ::1 "[::1]"
 }
 
 nginx_load () {
@@ -67,16 +73,42 @@ nginx_load () {
 	return $failed
 }
 
-nginx_run () {
+nginx_config_file () {
+	case "$1" in
+		services) echo "services.conf" ;;
+		pair) echo "pair.conf" ;;
+		*) echo "nginx.conf" ;;
+	esac
+}
+
+nginx_config_instances () {
+	case "$1" in
+		pair) echo "cerver-disconnect,cerver-disconnect-2" ;;
+		*) echo "cerver-disconnect" ;;
+	esac
+}
+
+nginx_config_profiles () {
+	case "$1" in
+		pair) echo "pair" ;;
+		*) echo "" ;;
+	esac
+}
+
+nginx_disconnect_at () {
+	COMMAND="./test/bin/client/web/disconnect"
+	run_in_nginx \
+		-e CERVER_TEST_ADDRESS="$1" \
+		-e DISCONNECT_CONFIG="$CONFIG" \
+		-e DISCONNECT_INSTANCES="$(nginx_config_instances "$CONFIG")"
+}
+
+nginx_disconnect () {
+	nginx_disconnect_at 127.0.0.1 && nginx_disconnect_at ::1
+}
+
+nginx_direct () {
 	local failed=0
-
-	echo "---- $NGINX_IMAGE ----"
-
-	IMAGE="$IMAGE" NGINX_IMAGE="$NGINX_IMAGE" $COMPOSE up -d || return 1
-
-	NGINX=$($COMPOSE ps -q nginx)
-
-	nginx_wait || { echo "nginx is not listening"; $COMPOSE logs; return 1; }
 
 	nginx_features || { echo "$NGINX_IMAGE: the features client failed"; failed=1; }
 
@@ -85,6 +117,30 @@ nginx_run () {
 	resets=$($COMPOSE logs nginx 2>&1 | grep -c -E "Connection reset by peer|upstream prematurely closed")
 	echo "$NGINX_IMAGE: upstream errors: $resets"
 	[ "$resets" -eq 0 ] || failed=1
+
+	return $failed
+}
+
+nginx_run () {
+	local failed=0
+
+	echo "---- $NGINX_IMAGE - $CONFIG ----"
+
+	export IMAGE NGINX_IMAGE
+	export NGINX_CONF="$(nginx_config_file "$CONFIG")"
+	export COMPOSE_PROFILES="$(nginx_config_profiles "$CONFIG")"
+
+	$COMPOSE up -d || return 1
+
+	NGINX=$($COMPOSE ps -q nginx)
+
+	nginx_wait || { echo "nginx is not listening"; $COMPOSE logs; cleanup; return 1; }
+
+	if [ "$CONFIG" = "direct" ]; then
+		nginx_direct || failed=1
+	fi
+
+	nginx_disconnect || { echo "$NGINX_IMAGE - $CONFIG: the disconnect client failed"; failed=1; }
 
 	[ $failed -eq 0 ] || $COMPOSE logs --tail 64
 
@@ -95,7 +151,9 @@ nginx_run () {
 
 FAILED=0
 for NGINX_IMAGE in "${NGINX_IMAGES[@]}"; do
-	nginx_run || { echo "$NGINX_IMAGE: failed"; FAILED=1; }
+	for CONFIG in "${CONFIGS[@]}"; do
+		nginx_run || { echo "$NGINX_IMAGE - $CONFIG: failed"; FAILED=1; }
+	done
 done
 
 if [ $FAILED -ne 0 ]; then

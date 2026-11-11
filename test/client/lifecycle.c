@@ -37,6 +37,15 @@
 
 #define LIFECYCLE_UPDATE_TIMEOUT			1
 
+// bigger than MAX_UDP_PACKET_SIZE, the old limit of client_connection_get_next_packet ()
+#define LIFECYCLE_SPLIT_BIG_SIZE			(1 << 17)
+#define LIFECYCLE_SPLIT_SMALL_SIZE			(1 << 4)
+#define LIFECYCLE_SPLIT_PIECE_SIZE			7
+#define LIFECYCLE_SPLIT_MAX_PACKET_SIZE		(1 << 18)
+#define LIFECYCLE_SPLIT_SMALL_MAX_SIZE		(1 << 12)
+#define LIFECYCLE_SPLIT_BIG_REQUEST			5
+#define LIFECYCLE_SPLIT_SMALL_REQUEST		6
+
 typedef enum LifecycleBehavior {
 
 	LIFECYCLE_BEHAVIOR_NONE			= 0,
@@ -45,8 +54,9 @@ typedef enum LifecycleBehavior {
 	LIFECYCLE_BEHAVIOR_PACKET		= 3,	// sends CLOSE_CONNECTION and waits for the client
 	LIFECYCLE_BEHAVIOR_ECHO			= 4,	// sends back what it receives until the client closes it
 	LIFECYCLE_BEHAVIOR_BAD			= 5,	// sends packets of an unknown type and waits for the client
+	LIFECYCLE_BEHAVIOR_SPLIT		= 6,	// sends a big and a small packet in pieces and waits for the client
 
-	LIFECYCLE_BEHAVIOR_MAX			= 6
+	LIFECYCLE_BEHAVIOR_MAX			= 7
 
 } LifecycleBehavior;
 
@@ -73,6 +83,9 @@ typedef struct LifecycleConnection {
 #define LIFECYCLE_EVENTS					(CLIENT_EVENT_UNKNOWN + 1)
 
 #define LIFECYCLE_FAILED_MAX_SLEEP			2
+#define LIFECYCLE_CANCELLED_MAX_SLEEP		(1 << 5)
+
+#define LIFECYCLE_HANDLERS_TEARDOWN_MAX_SECONDS	0.25
 
 #define LIFECYCLE_CLIENTS					8
 #define LIFECYCLE_CLIENTS_REPEATS			16
@@ -138,6 +151,44 @@ static void lifecycle_server_send_bad (const int sock_fd) {
 
 }
 
+// sends the packet in pieces of a few bytes, so every token crosses a recv ()
+static void lifecycle_server_send_pieces (
+	const int sock_fd, const u32 request_type, const size_t data_size
+) {
+
+	char *data = (char *) calloc (data_size, sizeof (char));
+	test_check_ptr (data);
+
+	Packet *packet = packet_create (PACKET_TYPE_APP, request_type, data, data_size);
+	test_check_ptr (packet);
+	test_check_unsigned_eq (packet_generate (packet), 0, NULL);
+
+	const char *bytes = (const char *) packet->packet;
+	for (size_t sent = 0; sent < packet->packet_size; sent += LIFECYCLE_SPLIT_PIECE_SIZE) {
+		const size_t left = packet->packet_size - sent;
+		const size_t piece = (left < LIFECYCLE_SPLIT_PIECE_SIZE) ? left : LIFECYCLE_SPLIT_PIECE_SIZE;
+
+		// the big body goes in a single send after its first pieces
+		if (sent > sizeof (PacketHeader)) {
+			(void) send (sock_fd, bytes + sent, left, MSG_NOSIGNAL);
+			break;
+		}
+
+		(void) send (sock_fd, bytes + sent, piece, MSG_NOSIGNAL);
+	}
+
+	packet_delete (packet);
+	free (data);
+
+}
+
+static void lifecycle_server_send_split (const int sock_fd) {
+
+	lifecycle_server_send_pieces (sock_fd, LIFECYCLE_SPLIT_BIG_REQUEST, LIFECYCLE_SPLIT_BIG_SIZE);
+	lifecycle_server_send_pieces (sock_fd, LIFECYCLE_SPLIT_SMALL_REQUEST, LIFECYCLE_SPLIT_SMALL_SIZE);
+
+}
+
 static void lifecycle_server_echo (const int sock_fd) {
 
 	char buffer[LIFECYCLE_BUFFER_SIZE];
@@ -169,6 +220,11 @@ static void *lifecycle_server_connection (void *connection_ptr) {
 
 		case LIFECYCLE_BEHAVIOR_BAD:
 			lifecycle_server_send_bad (connection->sock_fd);
+			lifecycle_server_wait_close (connection->sock_fd);
+			break;
+
+		case LIFECYCLE_BEHAVIOR_SPLIT:
+			lifecycle_server_send_split (connection->sock_fd);
 			lifecycle_server_wait_close (connection->sock_fd);
 			break;
 
@@ -562,6 +618,59 @@ static void test_lifecycle_connect_async_failed (void) {
 
 }
 
+// client_teardown () during the backoff of an async connect does not wait for it
+static void test_lifecycle_connect_async_teardown (void) {
+
+	Client *client = lifecycle_client_create ();
+
+	Connection *connection = lifecycle_connection_create (client, lifecycle_closed_port ());
+	connection_set_max_sleep (connection, LIFECYCLE_CANCELLED_MAX_SLEEP);
+
+	test_check_unsigned_eq (client_connect_async (client, connection), 0, NULL);
+
+	const double start = lifecycle_now ();
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	test_check (
+		(lifecycle_now () - start) < LIFECYCLE_TEARDOWN_MAX_SECONDS,
+		"client_teardown () waited for the connect backoff"
+	);
+
+}
+
+static void lifecycle_queued_handler (void *handler_data_ptr) {
+
+	(void) handler_data_ptr;
+
+}
+
+// the handlers with their own threads are joined without waiting a second for each
+static void test_lifecycle_handlers_teardown (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_HOLD);
+
+	Client *client = lifecycle_client_create ();
+
+	client_set_app_handlers (
+		client,
+		handler_create (lifecycle_queued_handler),
+		handler_create (lifecycle_queued_handler)
+	);
+
+	client_set_custom_handler (client, handler_create (lifecycle_queued_handler));
+
+	(void) lifecycle_connect (client, server);
+
+	const double start = lifecycle_now ();
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	test_check (
+		(lifecycle_now () - start) < LIFECYCLE_HANDLERS_TEARDOWN_MAX_SECONDS,
+		"the client handlers took too long to stop"
+	);
+
+	lifecycle_server_stop (server);
+
+}
+
 // client_connect_and_start_async () connects and starts the update thread,
 // that ends the connection when the cerver closes it
 static void test_lifecycle_connect_and_start_async (void) {
@@ -587,6 +696,80 @@ static void test_lifecycle_connect_and_start_async (void) {
 	test_check (lifecycle_wait_connections (client, 0), "the closed connection was not removed");
 
 	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+	lifecycle_server_stop (server);
+
+}
+
+static unsigned int lifecycle_split_packets = 0;
+static size_t lifecycle_split_sizes[2] = { 0 };
+
+static void lifecycle_split_handler (void *packet_ptr) {
+
+	const Packet *packet = (const Packet *) packet_ptr;
+
+	const unsigned int index = __atomic_load_n (&lifecycle_split_packets, __ATOMIC_SEQ_CST);
+	if (index < 2) lifecycle_split_sizes[index] = packet->data_size;
+
+	test_counter_add (&lifecycle_split_packets);
+
+}
+
+static Client *lifecycle_split_client_create (const size_t max_packet_size) {
+
+	lifecycle_split_packets = 0;
+	(void) memset (lifecycle_split_sizes, 0, sizeof (lifecycle_split_sizes));
+
+	Client *client = lifecycle_client_create ();
+	client_set_max_received_packet_size (client, max_packet_size);
+
+	Handler *app_handler = handler_create (lifecycle_split_handler);
+	handler_set_direct_handle (app_handler, true);
+	client_set_app_handlers (client, app_handler, NULL);
+
+	return client;
+
+}
+
+// client_connection_get_next_packet () assembles packets sent in pieces,
+// up to the max packet size of the client (bigger than a udp packet)
+static void test_lifecycle_next_packet (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_SPLIT);
+
+	Client *client = lifecycle_split_client_create (LIFECYCLE_SPLIT_MAX_PACKET_SIZE);
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (client_connect (client, connection), 0, NULL);
+
+	test_check_unsigned_eq (client_connection_get_next_packet (client, connection), 0, "the big packet was not handled");
+	test_check_unsigned_eq (lifecycle_split_packets, 1, NULL);
+	test_check_unsigned_eq (lifecycle_split_sizes[0], LIFECYCLE_SPLIT_BIG_SIZE, NULL);
+
+	test_check_unsigned_eq (client_connection_get_next_packet (client, connection), 0, "the small packet was not handled");
+	test_check_unsigned_eq (lifecycle_split_packets, 2, NULL);
+	test_check_unsigned_eq (lifecycle_split_sizes[1], LIFECYCLE_SPLIT_SMALL_SIZE, NULL);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
+	lifecycle_server_stop (server);
+
+}
+
+// a packet bigger than the max packet size of the client is not handled
+static void test_lifecycle_next_packet_too_big (void) {
+
+	LifecycleServer *server = lifecycle_server_start (LIFECYCLE_BEHAVIOR_SPLIT);
+
+	Client *client = lifecycle_split_client_create (LIFECYCLE_SPLIT_SMALL_MAX_SIZE);
+
+	Connection *connection = lifecycle_connection_create (client, server->port);
+	test_check_unsigned_eq (client_connect (client, connection), 0, NULL);
+
+	test_check_unsigned_eq (client_connection_get_next_packet (client, connection), 1, NULL);
+	test_check_unsigned_eq (lifecycle_split_packets, 0, NULL);
+
+	test_check_unsigned_eq (client_teardown (client), 0, NULL);
+
 	lifecycle_server_stop (server);
 
 }
@@ -786,6 +969,10 @@ int main (int argc, char **argv) {
 	test_lifecycle_teardown ();
 	test_lifecycle_connect_async ();
 	test_lifecycle_connect_async_failed ();
+	test_lifecycle_connect_async_teardown ();
+	test_lifecycle_handlers_teardown ();
+	test_lifecycle_next_packet ();
+	test_lifecycle_next_packet_too_big ();
 	test_lifecycle_connect_and_start_async ();
 	test_lifecycle_reconnect ();
 	test_lifecycle_request_async ();

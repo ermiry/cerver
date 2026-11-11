@@ -27,6 +27,8 @@
 #include <app/routes.h>
 #include <app/users.h>
 
+#include "../address.h"
+
 static Cerver *api_cerver = NULL;
 
 #pragma region end
@@ -105,6 +107,7 @@ int main (int argc, char **argv) {
 	
 	if (api_cerver) {
 		/*** cerver configuration ***/
+		(void) cerver_set_bind_address (api_cerver, test_address ());
 		cerver_set_receive_buffer_size (api_cerver, 4096);
 		cerver_set_thpool_n_threads (api_cerver, 4);
 		cerver_set_handler_type (api_cerver, CERVER_HANDLER_TYPE_THREADS);

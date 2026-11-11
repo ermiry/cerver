@@ -21,6 +21,7 @@
 #include "cerver/packets.h"
 
 #include "cerver/threads/thpool.h"
+#include "cerver/threads/thread.h"
 
 #include "cerver/game/game.h"
 
@@ -29,7 +30,11 @@
 #define CERVER_DEFAULT_PORT							7000
 #define CERVER_DEFAULT_PROTOCOL						PROTOCOL_TCP
 #define CERVER_DEFAULT_USE_IPV6						false
+#define CERVER_DEFAULT_IPV6_ONLY					false
 #define CERVER_DEFAULT_CONNECTION_QUEUE				SOMAXCONN
+
+// a literal IPv4 or IPv6 address with its zone, without the port
+#define CERVER_BIND_ADDRESS_SIZE					NETWORK_ADDRESS_STRING_SIZE
 
 #define CERVER_DEFAULT_RECEIVE_BUFFER_SIZE			4096
 #define CERVER_DEFAULT_MAX_RECEIVED_PACKET_SIZE		MAX_UDP_PACKET_SIZE
@@ -51,6 +56,9 @@
 
 #define CERVER_DEFAULT_DRAIN_POLICY					CERVER_DRAIN_POLICY_RUN
 #define CERVER_DEFAULT_DRAIN_TIMEOUT				32
+
+// the extra secs that a drain that timed out waits before reporting what is still alive
+#define CERVER_DRAIN_GRACE_TIMEOUT					4U
 
 // SO_SNDTIMEO in secs for the accepted connections, 0 to disable it
 #define CERVER_DEFAULT_SEND_TIMEOUT					32
@@ -88,6 +96,7 @@
 extern "C" {
 #endif
 
+struct _Balancer;
 struct _Cerver;
 struct _AdminCerver;
 struct _Client;
@@ -115,7 +124,8 @@ CERVER_EXPORT void cerver_end (void);
 	XX(1,	CUSTOM, 	Custom)				\
 	XX(2,	GAME, 		Game)				\
 	XX(3,	WEB, 		Web)				\
-	XX(4,	FILES, 		Files)
+	XX(4,	FILES, 		Files)				\
+	XX(5,	BALANCER, 	Balancer)
 
 typedef enum CerverType {
 
@@ -315,6 +325,11 @@ struct _Cerver {
 	bool use_ipv6;
 	u16 connection_queue;               // each server can handle connection differently
 
+	// the address that the cerver binds, empty for every address of its family
+	char bind_address[CERVER_BIND_ADDRESS_SIZE];
+	// an IPv6 cerver accepts IPv4 connections when it is false (dual stack)
+	bool ipv6_only;
+
 	// read and written with __atomic, use cerver_is_running ()
 	bool isRunning;                     // the server is recieving and/or sending packetss
 	// read and written with __atomic, a stop requested before cerver_start () cancels it
@@ -363,6 +378,19 @@ struct _Cerver {
 	// a detachable thread will be created anyway
 	// web cervers always use the thpool
 	bool handle_detachable_threads;
+
+	// the detachable connection threads, the teardown waits for them while it drains
+	ThreadGroup connection_threads;
+
+	// the events and errors actions that run in their own threads,
+	// the teardown waits for them before the cerver is released
+	ThreadGroup event_threads;
+
+	// the peers of an UDP cerver (udp.c), created when it starts
+	struct CerverUdp *udp;
+	u32 udp_peer_timeout;
+	u32 udp_max_peers;
+	u32 udp_peers_count;                // read with __atomic by cerver_udp_peers_count ()
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
@@ -419,8 +447,9 @@ struct _Cerver {
 	unsigned int num_handlers_alive;       // handlers currently alive
 	unsigned int num_handlers_working;     // handlers currently working
 	pthread_mutex_t *handlers_lock;
-	// TODO: add ability to control handler execution
-	// pthread_cond_t *handlers_wait;
+
+	// signaled with the handlers lock when a handler marks itself alive
+	pthread_cond_t *handlers_alive_cond;
 
 	bool check_packets;                     // enable / disbale packet checking
 	u8 max_bad_packets;                     // bad packets of a connection before it is dropped, 0 disables it
@@ -446,6 +475,9 @@ struct _Cerver {
 
 	CerverInfo *info;
 	CerverStats *stats;
+
+	// reference to the parent load balancer
+	struct _Balancer *balancer;
 
 };
 
@@ -485,6 +517,21 @@ CERVER_EXPORT void cerver_set_reusable_address_flags (
 // the default value is CERVER_DEFAULT_REUSABLE_PORT
 CERVER_EXPORT void cerver_set_reusable_port (
 	Cerver *cerver, bool value
+);
+
+// sets the literal IPv4 or IPv6 address that the cerver binds, like "127.0.0.1" or "::1",
+// its family sets if the cerver uses IPv6, NULL binds every address again
+// must be called before cerver_start ()
+// returns 0 on success, 1 if it is not a valid ip
+CERVER_EXPORT unsigned int cerver_set_bind_address (
+	Cerver *cerver, const char *address
+);
+
+// sets IPV6_V6ONLY in the socket of an IPv6 cerver
+// false (the default) also accepts IPv4 connections, as ::ffff:a.b.c.d addresses
+// the default value is CERVER_DEFAULT_IPV6_ONLY
+CERVER_EXPORT void cerver_set_ipv6_only (
+	Cerver *cerver, bool ipv6_only
 );
 
 // returns true while the cerver is accepting connections
@@ -841,6 +888,9 @@ CERVER_EXPORT u8 cerver_shutdown (Cerver *cerver);
 // sleeps the seconds or until the cerver is stopped
 CERVER_PRIVATE void cerver_sleep (Cerver *cerver, u32 seconds);
 
+// sleeps the microseconds or until the cerver is stopped, used to limit the fps of an update
+CERVER_PRIVATE void cerver_sleep_microseconds (Cerver *cerver, i64 microseconds);
+
 // teardown a server -> stop the server, drain the connections
 // using the drain policy and timeout, and clean all of its data
 // if some connections did not finish before the drain timeout,
@@ -902,8 +952,10 @@ typedef struct SCerver {
 
 } SCerver;
 
+// the scerver comes from the network: its strings may not be NUL terminated
+// and its flags may have any value, so they are read up to their sizes and as bytes
 CERVER_PRIVATE CerverReport *cerver_deserialize (
-	SCerver *scerver
+	const SCerver *scerver
 );
 
 // creates a cerver info packet ready to be sent

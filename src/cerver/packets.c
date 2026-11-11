@@ -2,9 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#ifdef PACKETS_DEBUG
 #include <errno.h>
-#endif
 
 #include "cerver/config.h"
 
@@ -12,6 +10,7 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 #include "cerver/types/types.h"
 
@@ -19,6 +18,7 @@
 #include "cerver/client.h"
 #include "cerver/network.h"
 #include "cerver/packets.h"
+#include "cerver/socket.h"
 
 #include "cerver/game/lobby.h"
 
@@ -27,6 +27,12 @@
 #endif
 
 #define PACKET_ROUTE_BUFFER_SIZE			4096
+
+// a split packet is sent as its header and its data
+#define PACKET_SPLIT_PARTS					2
+
+// a datagram has the header and the data of the packet, and the token of the connection
+#define PACKET_DATAGRAM_MAX_PARTS			3
 
 #pragma region protocol
 
@@ -341,6 +347,9 @@ Packet *packet_new (void) {
 		packet->packet_size = 0;
 		packet->packet = NULL;
 		packet->packet_ref = false;
+
+		packet->release = NULL;
+		packet->release_args = NULL;
 	}
 
 	return packet;
@@ -351,6 +360,8 @@ void packet_delete (void *packet_ptr) {
 
 	if (packet_ptr) {
 		Packet *packet = (Packet *) packet_ptr;
+
+		if (packet->release) packet->release (packet->release_args);
 
 		packet->cerver = NULL;
 		packet->client = NULL;
@@ -789,7 +800,10 @@ Packet *packet_create_request (
 
 			.packet_size = sizeof (PacketHeader),
 			.packet = (void *) &packet->header,
-			.packet_ref = true
+			.packet_ref = true,
+
+			.release = NULL,
+			.release_args = NULL
 		};
 
 		// the header is sent from the packet itself, the literal does not zero its padding
@@ -805,6 +819,50 @@ Packet *packet_create_request (
 Packet *packet_create_ping (void) {
 
 	return packet_create_request (PACKET_TYPE_TEST, 0);
+
+}
+
+// initializes an already allocated packet with request related values
+void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+) {
+
+	*packet = (Packet) {
+		.cerver = NULL,
+		.client = NULL,
+		.connection = NULL,
+		.lobby = NULL,
+
+		.packet_type = packet_type,
+		.req_type = request_type,
+
+		.data_size = 0,
+		.data = NULL,
+		.data_ptr = NULL,
+		.data_end = NULL,
+		.data_ref = false,
+
+		.version = packet_version_local (),
+
+		.packet_size = sizeof (PacketHeader),
+		.packet = (void *) &packet->header,
+		.packet_ref = true,
+
+		.release = NULL,
+		.release_args = NULL
+	};
+
+	// the header is sent from the packet itself, the literal does not zero its padding
+	packet_header_init (&packet->header, packet_type, sizeof (PacketHeader), request_type);
+
+}
+
+// initializes an already allocated packet as a ping request
+void packet_init_ping (Packet *packet) {
+
+	packet_init_request (packet, PACKET_TYPE_TEST, 0);
 
 }
 
@@ -846,23 +904,14 @@ static inline u8 packet_send_tcp_actual (
 	int flags, size_t *total_sent, bool raw
 ) {
 
-	ssize_t sent = 0;
-	char *p = raw ? (char *) packet->data : (char *) packet->packet;
-	size_t packet_size = raw ? packet->data_size : packet->packet_size;
-
-	while (packet_size > 0) {
-		sent = send (connection->socket->sock_fd, p, packet_size, flags);
-		if (sent < 0) {
-			return 1;
-		}
-
-		p += sent;
-		packet_size -= (size_t) sent;
-	}
-
-	if (total_sent) *total_sent = (size_t) sent;
-
-	return 0;
+	// every byte that was sent, send () can send the packet in many parts
+	return socket_send_buffer (
+		connection->socket,
+		raw ? packet->data : packet->packet,
+		raw ? packet->data_size : packet->packet_size,
+		flags, (time_t) connection->send_timeout,
+		total_sent, NULL
+	);
 
 }
 
@@ -899,47 +948,20 @@ static u8 packet_send_split_tcp (
 	u8 retval = 1;
 
 	if (packet && connection) {
+		// the header and the data in a single call when the socket takes them
+		struct iovec parts[PACKET_SPLIT_PARTS] = {
+			{ .iov_base = (void *) &packet->header, .iov_len = sizeof (PacketHeader) },
+			{ .iov_base = packet->data, .iov_len = packet->data_size }
+		};
+
 		(void) pthread_mutex_lock (connection->socket->write_mutex);
 
-		size_t actual_sent = 0;
-
-		// first send the header
-		bool fail = false;
-		ssize_t sent = 0;
-		char *p = (char *) &packet->header;
-		size_t packet_size = sizeof (PacketHeader);
-
-		while (packet_size > 0) {
-			sent = send (connection->socket->sock_fd, p, packet_size, flags);
-			if (sent < 0) {
-				fail = true;
-				break;
-			}
-
-			p += sent;
-			actual_sent += (size_t) sent;
-			packet_size -= (size_t) sent;
-			fail = false;
-		}
-
-		// now send the data
-		if (!fail) {
-			sent = 0;
-			p = (char *) packet->data;
-			packet_size = packet->data_size;
-
-			while (packet_size > 0) {
-				sent = send (connection->socket->sock_fd, p, packet_size, flags);
-				if (sent < 0) break;
-				p += sent;
-				actual_sent += (size_t) sent;
-				packet_size -= (size_t) sent;
-			}
-
-			if (total_sent) *total_sent = actual_sent;
-
-			retval = 0;
-		}
+		retval = socket_send_vector (
+			connection->socket,
+			parts, (packet->data && packet->data_size) ? PACKET_SPLIT_PARTS : 1,
+			flags, (time_t) connection->send_timeout,
+			total_sent, NULL
+		);
 
 		(void) pthread_mutex_unlock (connection->socket->write_mutex);
 	}
@@ -948,16 +970,117 @@ static u8 packet_send_split_tcp (
 
 }
 
-// #pragma GCC diagnostic push
-// #pragma GCC diagnostic ignored "-Wunused-function"
-// static u8 packet_send_udp (const void *packet, size_t packet_size) {
+// the connection of a peer of an UDP cerver has no socket of its own,
+// its packets are sent with the cerver's socket to the address of the peer
+static i32 packet_send_udp_sock_fd (const Cerver *cerver, const Connection *connection) {
 
-// 	// TODO:
+	i32 sock_fd = connection->socket ? connection->socket->sock_fd : -1;
+	if ((sock_fd < 0) && cerver) sock_fd = cerver->sock;
 
-// 	return 0;
+	return sock_fd;
 
-// }
-// #pragma GCC diagnostic pop
+}
+
+// the connection of a client has its own socket, that is connected to the cerver
+static bool packet_send_udp_is_connected (const Connection *connection) {
+
+	return connection->socket && (connection->socket->sock_fd > -1);
+
+}
+
+// the parts of the packet that go in the datagram:
+// only its data (raw), its header and its data (split), or the generated packet
+// returns the number of parts
+static int packet_send_udp_parts (
+	const Packet *packet, bool raw, bool split, struct iovec *parts
+) {
+
+	int count = 0;
+
+	if (raw) {
+		parts[count++] = (struct iovec) { .iov_base = packet->data, .iov_len = packet->data_size };
+	}
+
+	else if (split) {
+		parts[count++] = (struct iovec) { .iov_base = (void *) &packet->header, .iov_len = sizeof (PacketHeader) };
+
+		if (packet->data && packet->data_size) {
+			parts[count++] = (struct iovec) { .iov_base = packet->data, .iov_len = packet->data_size };
+		}
+	}
+
+	else {
+		parts[count++] = (struct iovec) { .iov_base = packet->packet, .iov_len = packet->packet_size };
+	}
+
+	return count;
+
+}
+
+static size_t packet_send_udp_size (const struct iovec *parts, const int count) {
+
+	size_t size = 0;
+	for (int i = 0; i < count; i++) size += parts[i].iov_len;
+
+	return size;
+
+}
+
+// sends the packet in a single datagram to the address of the connection,
+// followed by the token of the connection when it has one and with_token is set
+// a packet that does not fit in a datagram is not sent
+// returns 0 on success, 1 on error
+static u8 packet_send_udp (
+	const Packet *packet,
+	const Cerver *cerver, const Connection *connection,
+	int flags, size_t *total_sent,
+	bool raw, bool split, bool with_token
+) {
+
+	u8 retval = 1;
+
+	struct iovec parts[PACKET_DATAGRAM_MAX_PARTS];
+	int count = packet_send_udp_parts (packet, raw, split, parts);
+
+	u8 token[CONNECTION_DATAGRAM_TOKEN_SIZE];
+	if (with_token && connection_get_datagram_token (connection, token)) {
+		parts[count++] = (struct iovec) { .iov_base = token, .iov_len = CONNECTION_DATAGRAM_TOKEN_SIZE };
+	}
+
+	const size_t size = packet_send_udp_size (parts, count);
+	const i32 sock_fd = packet_send_udp_sock_fd (cerver, connection);
+
+	if (
+		connection->socket && parts[0].iov_base && size
+		&& (size <= MAX_UDP_PACKET_SIZE) && (sock_fd > -1)
+	) {
+		struct msghdr message;
+		(void) memset (&message, 0, sizeof (struct msghdr));
+		message.msg_iov = parts;
+		message.msg_iovlen = (size_t) count;
+
+		// the address of a peer changes when it migrates, the write mutex protects it
+		(void) pthread_mutex_lock (connection->socket->write_mutex);
+
+		// a connected socket does not take an address, macOS fails with EISCONN
+		if (!packet_send_udp_is_connected (connection)) {
+			message.msg_name = (void *) &connection->address;
+			message.msg_namelen = sock_address_size (&connection->address);
+		}
+
+		const ssize_t sent = sendmsg (sock_fd, &message, flags | MSG_NOSIGNAL);
+
+		(void) pthread_mutex_unlock (connection->socket->write_mutex);
+
+		if (sent == (ssize_t) size) {
+			if (total_sent) *total_sent = size;
+			retval = 0;
+		}
+	}
+
+	return retval;
+
+}
 
 static void packet_send_update_stats (
 	PacketType packet_type, size_t sent,
@@ -965,6 +1088,10 @@ static void packet_send_update_stats (
 	Client *client, Connection *connection,
 	Lobby *lobby
 ) {
+
+	// they are only used with CLIENT_STATS and CONNECTION_STATS
+	(void) client;
+	(void) connection;
 
 	if (cerver) {
 		CERVER_STATS_ADD (cerver->stats->n_packets_sent, 1);
@@ -1115,6 +1242,66 @@ static void packet_send_update_stats (
 
 }
 
+// sends a packet of a connection's send queue,
+// the socket's write mutex is held so the packet is not mixed with others
+// returns 0 on success, 1 on error
+u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	Client *client, Connection *connection
+) {
+
+	u8 retval = 1;
+
+	size_t sent = 0;
+	const u8 failed = (connection->protocol == PROTOCOL_UDP)
+		? packet_send_udp (packet, NULL, connection, flags, &sent, false, false, true)
+		: packet_send_tcp (packet, connection, flags, &sent, false);
+
+	if (!failed) {
+		if (total_sent) *total_sent = sent;
+
+		packet_send_update_stats (
+			packet->packet_type, sent,
+			NULL, client, connection, NULL
+		);
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
+static void packet_send_failed_stats (
+	Cerver *cerver, Client *client, Connection *connection,
+	size_t *total_sent
+) {
+
+	// they are only used with CLIENT_STATS and CONNECTION_STATS
+	(void) client;
+	(void) connection;
+
+	#ifdef PACKETS_DEBUG
+	printf ("\n");
+	perror ("packet_send_internal () - Error");
+	printf ("\n");
+	#endif
+
+	if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_bad_packets, 1);
+
+	#ifdef CLIENT_STATS
+	if (client) client->stats->sent_packets->n_bad_packets += 1;
+	#endif
+
+	#ifdef CONNECTION_STATS
+	if (connection) connection->stats->sent_packets->n_bad_packets += 1;
+	#endif
+
+	if (total_sent) *total_sent = 0;
+
+}
+
 static inline u8 packet_send_internal (
 	const Packet *packet,
 	int flags, size_t *total_sent,
@@ -1146,28 +1333,28 @@ static inline u8 packet_send_internal (
 				}
 
 				else {
-					#ifdef PACKETS_DEBUG
-					printf ("\n");
-					perror ("packet_send_internal () - Error");
-					printf ("\n");
-					#endif
-
-					if (cerver) CERVER_STATS_ADD (cerver->stats->sent_packets->n_bad_packets, 1);
-
-					#ifdef CLIENT_STATS
-					if (client) client->stats->sent_packets->n_bad_packets += 1;
-					#endif
-
-					#ifdef CONNECTION_STATS
-					if (connection) connection->stats->sent_packets->n_bad_packets += 1;
-					#endif
-
-					if (total_sent) *total_sent = 0;
+					packet_send_failed_stats (cerver, client, connection, total_sent);
 				}
 			} break;
 
-			case PROTOCOL_UDP:
-				break;
+			case PROTOCOL_UDP: {
+				size_t sent = 0;
+
+				if (!packet_send_udp (packet, cerver, connection, flags, &sent, raw, split, true)) {
+					if (total_sent) *total_sent = sent;
+
+					packet_send_update_stats (
+						packet->packet_type, sent,
+						cerver, client, connection, lobby
+					);
+
+					retval = 0;
+				}
+
+				else {
+					packet_send_failed_stats (cerver, client, connection, total_sent);
+				}
+			} break;
 
 			default: break;
 		}
@@ -1189,6 +1376,36 @@ u8 packet_send (
 		raw, false, false,
 		packet->cerver, packet->client, packet->connection, packet->lobby
 	);
+
+}
+
+// sends the packet in a datagram without the token of its UDP connection,
+// like the answers to an authentication, that the peer reads before it has the token
+// returns 0 on success, 1 on error
+u8 packet_send_without_datagram_token (const Packet *packet) {
+
+	u8 retval = 1;
+
+	if (packet && packet->connection) {
+		size_t sent = 0;
+		if (!packet_send_udp (
+			packet, packet->cerver, packet->connection,
+			0, &sent, false, false, false
+		)) {
+			packet_send_update_stats (
+				packet->packet_type, sent,
+				packet->cerver, packet->client, packet->connection, packet->lobby
+			);
+
+			retval = 0;
+		}
+
+		else {
+			packet_send_failed_stats (packet->cerver, packet->client, packet->connection, NULL);
+		}
+	}
+
+	return retval;
 
 }
 
@@ -1266,27 +1483,21 @@ u8 packet_send_to_split (
 }
 
 static u8 packet_send_pieces_actual (
-	Socket *socket,
+	Connection *connection,
 	char *data, size_t data_size,
 	int flags,
 	size_t *actual_sent
 ) {
 
-	u8 retval = 0;
+	size_t sent = 0;
 
-	ssize_t sent = 0;
-	char *p = data;
-	while (data_size > 0) {
-		sent = send (socket->sock_fd, p, data_size, flags);
-		if (sent < 0) {
-			retval = 1;
-			break;
-		}
+	const u8 retval = socket_send_buffer (
+		connection->socket, data, data_size,
+		flags, (time_t) connection->send_timeout,
+		&sent, NULL
+	);
 
-		p += sent;
-		*actual_sent += (size_t) sent;
-		data_size -= (size_t) sent;
-	}
+	*actual_sent += sent;
 
 	return retval;
 
@@ -1312,7 +1523,7 @@ u8 packet_send_pieces (
 
 		// first send the header
 		if (!packet_send_pieces_actual (
-			packet->connection->socket,
+			packet->connection,
 			(char *) &packet->header, sizeof (PacketHeader),
 			flags,
 			&actual_sent
@@ -1321,7 +1532,7 @@ u8 packet_send_pieces (
 			retval = 0;
 			for (u32 i = 0; (i < n_pieces) && !retval; i++) {
 				retval = packet_send_pieces_actual (
-					packet->connection->socket,
+					packet->connection,
 					(char *) pieces[i], sizes[i],
 					flags,
 					&actual_sent
@@ -1353,25 +1564,17 @@ u8 packet_send_to_socket (
 
 	u8 retval = 0;
 
-	if (packet) {
-		ssize_t sent = 0;
-		const char *p = raw ? (char *) packet->data : (char *) packet->packet;
-		size_t packet_size = raw ? packet->data_size : packet->packet_size;
-
+	if (packet && socket) {
 		(void) pthread_mutex_lock (socket->write_mutex);
 
-		while (packet_size > 0) {
-			sent = send (socket->sock_fd, p, packet_size, flags);
-			if (sent < 0) {
-				retval = 1;
-				break;
-			};
-
-			p += sent;
-			packet_size -= sent;
-		}
-
-		if (total_sent) *total_sent = (size_t) sent;
+		// a socket without its connection waits the default send timeout
+		retval = socket_send_buffer (
+			socket,
+			raw ? packet->data : packet->packet,
+			raw ? packet->data_size : packet->packet_size,
+			flags, (time_t) CERVER_DEFAULT_SEND_TIMEOUT,
+			total_sent, NULL
+		);
 
 		(void) pthread_mutex_unlock (socket->write_mutex);
 	}
@@ -1424,7 +1627,10 @@ u8 packet_send_request (
 
 		.packet_size = sizeof (PacketHeader),
 		.packet = (void *) &request.header,
-		.packet_ref = true
+		.packet_ref = true,
+
+		.release = NULL,
+		.release_args = NULL
 	};
 
 	// the header is sent from the packet itself, the literal does not zero its padding

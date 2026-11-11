@@ -111,7 +111,7 @@ CERVER_PRIVATE void http_multi_part_reset (
 	MultiPart *multi_part
 );
 
-CERVER_PRIVATE bool http_multi_part_is_not_empty (
+CERVER_EXPORT bool http_multi_part_is_not_empty (
 	const MultiPart *multi_part
 );
 

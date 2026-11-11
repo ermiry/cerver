@@ -301,6 +301,11 @@ struct _Packet {
 	void *packet;
 	bool packet_ref;
 
+	// called by packet_delete () before the packet is released,
+	// like a received packet that holds a reference to its UDP peer
+	void (*release) (void *release_args);
+	void *release_args;
+
 };
 
 typedef struct _Packet Packet;
@@ -420,6 +425,16 @@ CERVER_EXPORT Packet *packet_create_request (
 // returns a newly allocated packet
 CERVER_EXPORT Packet *packet_create_ping (void);
 
+// initializes an already allocated packet with request related values
+CERVER_EXPORT void packet_init_request (
+	Packet *packet,
+	const PacketType packet_type,
+	const u32 request_type
+);
+
+// initializes an already allocated packet as a ping request
+CERVER_EXPORT void packet_init_ping (Packet *packet);
+
 // generates a simple request packet of the requested type reday to be sent,
 // and with option to pass some data
 // returns a newly allocated packet that should be deleted after use
@@ -433,6 +448,19 @@ CERVER_EXPORT Packet *packet_generate_request (
 // returns 0 on success, 1 on error
 CERVER_EXPORT u8 packet_send (
 	const Packet *packet, int flags, size_t *total_sent, bool raw
+);
+
+// sends the packet in a datagram without the token of its UDP connection,
+// like the answers to an authentication, that the peer reads before it has the token
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_without_datagram_token (const Packet *packet);
+
+// sends a packet of a connection's send queue
+// returns 0 on success, 1 on error
+CERVER_PRIVATE u8 packet_send_actual (
+	const Packet *packet,
+	int flags, size_t *total_sent,
+	struct _Client *client, struct _Connection *connection
 );
 
 // works just as packet_send () but the socket's write mutex won't be locked

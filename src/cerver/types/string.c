@@ -59,10 +59,18 @@ String *str_create (const char *format, ...) {
 		va_start (args, format);
 
 		str = (String *) malloc (sizeof (String));
-		(void) vasprintf (&str->str, format, args);
-		str->len = strlen (str->str);
+		if (str) {
+			// the string is undefined when vasprintf () fails
+			if (vasprintf (&str->str, format, args) < 0) {
+				free (str);
+				str = NULL;
+			}
 
-		str->max_len = 0;
+			else {
+				str->len = strlen (str->str);
+				str->max_len = 0;
+			}
+		}
 
 		va_end (args);
 	}
@@ -174,8 +182,15 @@ void str_replace (String *str, const char *format, ...) {
 		if (str->str) free (str->str);
 		str->max_len = 0;
 
-		(void) vasprintf (&str->str, format, args);
-		str->len = strlen (str->str);
+		// the string is undefined when vasprintf () fails
+		if (vasprintf (&str->str, format, args) < 0) {
+			str->str = NULL;
+			str->len = 0;
+		}
+
+		else {
+			str->len = strlen (str->str);
+		}
 
 		va_end (args);
 	}
@@ -189,7 +204,8 @@ void str_replace_with (String *str, const char *c_str) {
 		str->max_len = 0;
 		str->len = strlen (c_str);
 		str->str = (char *) calloc (str->len + 1, sizeof (char));
-		(void) strncpy (str->str, c_str, str->len);
+		if (str->str) (void) memcpy (str->str, c_str, str->len);
+		else str->len = 0;
 	}
 
 }
