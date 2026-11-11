@@ -1,10 +1,12 @@
-FROM ubuntu:24.04
+FROM debian:trixie
 
-RUN apt-get update && apt-get install -y clang libclang-rt-18-dev libssl-dev zlib1g-dev make && apt-get clean
+RUN apt-get update && apt-get install -y clang libclang-rt-dev libssl-dev zlib1g-dev make && apt-get clean
+
+ARG WERROR=1
 
 WORKDIR /opt/cerver
 
 COPY . .
-RUN make TYPE=test CC=clang ZLIB=1 -j4 fuzz
+RUN make TYPE=test CC=clang ZLIB=1 WERROR=${WERROR} -j4 fuzz
 
 CMD ["bash", "test/fuzz.sh"]

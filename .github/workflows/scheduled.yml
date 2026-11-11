@@ -3,6 +3,9 @@ name: Cerver Scheduled
 on:
   workflow_dispatch:
 
+env:
+  WERROR: 1
+
 jobs:
   integration-thread:
     name: Cerver integration tests with thread sanitizer

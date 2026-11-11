@@ -10,6 +10,9 @@ on:
       - '*beta'
       - 'master'
 
+env:
+  WERROR: 1
+
 jobs:
   build:
     name: Cerver build
