@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 
+#include <pthread.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -70,6 +71,96 @@ static void test_files_create_dir (void) {
 
 }
 
+#define FILES_RECURSIVE_DIR_THREADS			8
+#define FILES_RECURSIVE_DIR_ROUNDS			64
+#define FILES_RECURSIVE_DIR_RACE_PATH		"hola/race/one/two/three"
+#define FILES_RECURSIVE_DIR_LONG_SIZE		(DIRNAME_DEFAULT_SIZE * 2)
+#define FILES_RECURSIVE_DIR_COMPONENT		200
+#define FILES_RECURSIVE_DIR_LONG_ROOT		"/tmp/cerver-recursive"
+
+static pthread_barrier_t files_recursive_dir_barrier;
+
+static void *files_recursive_dir_race (void *result) {
+
+	(void) pthread_barrier_wait (&files_recursive_dir_barrier);
+
+	*(unsigned int *) result = files_create_recursive_dir (
+		FILES_RECURSIVE_DIR_RACE_PATH, 0777
+	);
+
+	return NULL;
+
+}
+
+// the threads create the same path at the same time,
+// a directory that another thread created first is not an error
+static void test_files_create_recursive_dir_race (void) {
+
+	pthread_t threads[FILES_RECURSIVE_DIR_THREADS] = { 0 };
+	unsigned int results[FILES_RECURSIVE_DIR_THREADS] = { 0 };
+
+	for (unsigned int round = 0; round < FILES_RECURSIVE_DIR_ROUNDS; round++) {
+		(void) files_remove_recursive ("hola");
+
+		test_check_int_eq (
+			pthread_barrier_init (&files_recursive_dir_barrier, NULL, FILES_RECURSIVE_DIR_THREADS),
+			0, NULL
+		);
+
+		for (unsigned int i = 0; i < FILES_RECURSIVE_DIR_THREADS; i++) {
+			results[i] = 1;
+			test_check_int_eq (
+				pthread_create (&threads[i], NULL, files_recursive_dir_race, &results[i]), 0, NULL
+			);
+		}
+
+		for (unsigned int i = 0; i < FILES_RECURSIVE_DIR_THREADS; i++) {
+			(void) pthread_join (threads[i], NULL);
+			test_check_unsigned_eq (results[i], 0, NULL);
+		}
+
+		(void) pthread_barrier_destroy (&files_recursive_dir_barrier);
+
+		test_check_true (file_exists (FILES_RECURSIVE_DIR_RACE_PATH));
+	}
+
+	test_check_unsigned_eq (files_remove_recursive ("hola"), 0, NULL);
+
+}
+
+// a path that does not fit is an error and nothing is created,
+// neither its truncated prefix
+static void test_files_create_recursive_dir_long (void) {
+
+	char path[FILES_RECURSIVE_DIR_LONG_SIZE] = { 0 };
+
+	// in /tmp, so the absolute path is not longer than the one of the file system of the tree
+	(void) files_remove_recursive (FILES_RECURSIVE_DIR_LONG_ROOT);
+
+	// components shorter than NAME_MAX, the path ends with a slash
+	for (size_t i = 0; i < (sizeof (path) - 1); i++) {
+		path[i] = ((i % FILES_RECURSIVE_DIR_COMPONENT) == (FILES_RECURSIVE_DIR_COMPONENT - 1)) ? '/' : 'a';
+	}
+
+	(void) memcpy (path, FILES_RECURSIVE_DIR_LONG_ROOT "/", strlen (FILES_RECURSIVE_DIR_LONG_ROOT "/"));
+	path[sizeof (path) - 2] = '/';
+
+	test_check_unsigned_eq (files_create_recursive_dir (path, 0777), 1, NULL);
+	test_check_false (file_exists (FILES_RECURSIVE_DIR_LONG_ROOT));
+
+	// a path of DIRNAME_DEFAULT_SIZE does not fit with its NUL
+	path[DIRNAME_DEFAULT_SIZE] = '\0';
+	test_check_unsigned_eq (files_create_recursive_dir (path, 0777), 1, NULL);
+	test_check_false (file_exists (FILES_RECURSIVE_DIR_LONG_ROOT));
+
+	path[DIRNAME_DEFAULT_SIZE - 1] = '\0';
+	test_check_unsigned_eq (files_create_recursive_dir (path, 0777), 0, NULL);
+	test_check_true (file_exists (path));
+
+	test_check_unsigned_eq (files_remove_recursive (FILES_RECURSIVE_DIR_LONG_ROOT), 0, NULL);
+
+}
+
 static void test_files_create_recursive_dir (void) {
 
 	(void) files_remove_recursive ("hola");
@@ -80,21 +171,32 @@ static void test_files_create_recursive_dir (void) {
 	test_check_unsigned_eq (files_create_recursive_dir ("hola/adios/hola", 0777), 0, NULL);
 	test_check_true (file_exists ("hola/adios/hola"));
 
+	// a directory that exists, with and without its trailing slash
+	test_check_unsigned_eq (files_create_recursive_dir ("hola/adios", 0777), 0, NULL);
+	test_check_unsigned_eq (files_create_recursive_dir ("hola/adios/", 0777), 0, NULL);
+	test_check_unsigned_eq (files_create_recursive_dir ("hola//adios///nueva/", 0777), 0, NULL);
+	test_check_true (file_exists ("hola/adios/nueva"));
+
+	// a file in the path is not a directory
+	FILE *file = fopen ("hola/archivo", "w");
+	test_check_ptr (file);
+	test_check_int_gt (fputs (test_string, file), -1);
+	const int closed = fclose (file);
+	test_check_int_eq (closed, 0, NULL);
+
+	test_check_unsigned_eq (files_create_recursive_dir ("hola/archivo", 0777), 1, NULL);
+	test_check_unsigned_eq (files_create_recursive_dir ("hola/archivo/dentro", 0777), 1, NULL);
+	test_check_false (file_exists ("hola/archivo/dentro"));
+
 	test_check_unsigned_eq (files_remove_recursive ("hola"), 0, NULL);
 	test_check_false (file_exists ("hola"));
 
-	test_check_unsigned_eq (files_create_recursive_dir ("test/client", 0777), 1, NULL);
-	test_check_true (file_exists ("test/client"));
+	test_check_unsigned_eq (files_create_recursive_dir (NULL, 0777), 1, NULL);
+	test_check_unsigned_eq (files_create_recursive_dir ("", 0777), 1, NULL);
+	test_check_unsigned_eq (files_create_recursive_dir ("/", 0777), 0, NULL);
 
-	(void) rmdir ("test/client/hola");
-
-	test_check_unsigned_eq (files_create_recursive_dir ("test/client/hola", 0777), 0, NULL);
-	test_check_true (file_exists ("test/client/hola"));
-
-	test_check_unsigned_eq (files_create_recursive_dir ("test/client/client.c", 0777), 1, NULL);
-	test_check_true (file_exists ("test/client/client.c"));
-
-	test_check_unsigned_eq (files_remove_recursive ("test/client/hola"), 0, NULL);
+	test_files_create_recursive_dir_long ();
+	test_files_create_recursive_dir_race ();
 
 }
 
