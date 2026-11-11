@@ -49,6 +49,8 @@ static void app_handler_test (const Packet *packet) {
 			.version = packet_version_local ()
 		},
 
+		.encoded_header = { 0 },
+
 		.version = (PacketVersion) {
 			.protocol_id = 0,
 			.protocol_version = {
@@ -60,7 +62,13 @@ static void app_handler_test (const Packet *packet) {
 		// the header is encoded from the packet when it is sent
 		.packet_size = PACKET_HEADER_SIZE,
 		.packet = response.encoded_header,
-		.packet_ref = false
+		.packet_ref = false,
+
+		.release = NULL,
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	size_t sent = 0;

@@ -166,7 +166,7 @@ static void handle_msg_request (Packet *packet, String *msg) {
 				cerver_log_error ("Failed to send handler's message to client");
 
 			else {
-				printf ("Response packet sent: %ld\n", sent);
+				printf ("Response packet sent: %zu\n", sent);
 			}
 			
 			packet_delete (msg_packet);

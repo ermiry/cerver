@@ -253,7 +253,7 @@ ssize_t file_cerver_send_file (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (
@@ -311,18 +311,18 @@ static u8 file_cerver_receive (
 void file_cerver_stats_print (FileCerver *file_cerver) {
 
 	if (file_cerver) {
-		cerver_log_msg ("Files requests:                %ld", file_cerver->stats->n_files_requests);
-		cerver_log_msg ("Success requests:              %ld", file_cerver->stats->n_success_files_requests);
-		cerver_log_msg ("Bad requests:                  %ld", file_cerver->stats->n_bad_files_requests);
-		cerver_log_msg ("Files sent:                    %ld", file_cerver->stats->n_files_sent);
-		cerver_log_msg ("Failed files sent:             %ld", file_cerver->stats->n_bad_files_sent);
-		cerver_log_msg ("Files bytes sent:              %ld\n", file_cerver->stats->n_bytes_sent);
+		cerver_log_msg ("Files requests:                %lu", file_cerver->stats->n_files_requests);
+		cerver_log_msg ("Success requests:              %lu", file_cerver->stats->n_success_files_requests);
+		cerver_log_msg ("Bad requests:                  %lu", file_cerver->stats->n_bad_files_requests);
+		cerver_log_msg ("Files sent:                    %lu", file_cerver->stats->n_files_sent);
+		cerver_log_msg ("Failed files sent:             %lu", file_cerver->stats->n_bad_files_sent);
+		cerver_log_msg ("Files bytes sent:              %lu\n", file_cerver->stats->n_bytes_sent);
 
-		cerver_log_msg ("Files upload requests:         %ld", file_cerver->stats->n_files_upload_requests);
-		cerver_log_msg ("Success uploads:               %ld", file_cerver->stats->n_success_files_uploaded);
-		cerver_log_msg ("Bad uploads:                   %ld", file_cerver->stats->n_bad_files_upload_requests);
-		cerver_log_msg ("Bad files received:            %ld", file_cerver->stats->n_bad_files_received);
-		cerver_log_msg ("Files bytes received:          %ld\n", file_cerver->stats->n_bytes_received);
+		cerver_log_msg ("Files upload requests:         %lu", file_cerver->stats->n_files_upload_requests);
+		cerver_log_msg ("Success uploads:               %lu", file_cerver->stats->n_success_files_uploaded);
+		cerver_log_msg ("Bad uploads:                   %lu", file_cerver->stats->n_bad_files_upload_requests);
+		cerver_log_msg ("Bad files received:            %lu", file_cerver->stats->n_bad_files_received);
+		cerver_log_msg ("Files bytes received:          %lu\n", file_cerver->stats->n_bytes_received);
 	}
 
 }
@@ -392,7 +392,7 @@ unsigned int files_create_dir (
 	unsigned int retval = 1;
 
 	if (dir_path) {
-		struct stat st = { 0 };
+		struct stat st = CERVER_ZERO_INITIALIZER;
 		int ret = stat (dir_path, &st);
 		switch (ret) {
 			case -1: {
@@ -430,7 +430,7 @@ unsigned int files_create_recursive_dir (
 
 	char tmp[DIRNAME_DEFAULT_SIZE] = { 0 };
 	char *p = NULL;
-	struct stat sb = { 0 };
+	struct stat sb = CERVER_ZERO_INITIALIZER;
 
 	// check if the path already exists
 	if (stat (dir_path, &sb)) {
@@ -927,7 +927,7 @@ bool file_exists (const char *filename) {
 	bool retval = false;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			retval = true;
 		}
@@ -1028,7 +1028,7 @@ char *file_read (const char *filename, size_t *file_size) {
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			*file_size = (size_t) filestatus.st_size;
 
@@ -1051,7 +1051,7 @@ char *file_n_read (
 	char *file_contents = NULL;
 
 	if (filename) {
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		if (!stat (filename, &filestatus)) {
 			size_t file_size = (size_t) filestatus.st_size;
 
@@ -1469,7 +1469,7 @@ ssize_t file_send (
 
 	if (filename && connection) {
 		const char *actual_filename = NULL;
-		struct stat filestatus = { 0 };
+		struct stat filestatus = CERVER_ZERO_INITIALIZER;
 		int file_fd = file_send_open (filename, &filestatus, &actual_filename);
 		if (file_fd > -1) {
 			retval = file_send_actual (
@@ -1738,7 +1738,7 @@ u8 file_receive_actual (
 			size_t real_filelen = file_header->len - file_data_len;
 			#ifdef FILES_DEBUG
 			cerver_log_debug (
-				"\nfilelen: %ld - file data len %ld = %ld\n\n",
+				"\nfilelen: %lu - file data len %zu = %zu\n\n",
 				file_header->len, file_data_len, real_filelen
 			);
 			#endif

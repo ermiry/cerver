@@ -218,7 +218,7 @@ static int client_test_app_msg_send (Client *client, Connection *connection) {
 			}
 
 			else {
-				printf ("PACKET_TYPE_APP sent to cerver: %ld\n", sent);
+				printf ("PACKET_TYPE_APP sent to cerver: %zu\n", sent);
 				retval = 0;
 			}
 
@@ -297,7 +297,7 @@ static void *on_client_connected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		printf (
-			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+			"\nClient %lu connected with sock fd %d to cerver %s!\n\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
@@ -332,6 +332,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 #pragma region main
 
 static void *cerver_client_connect_and_start (void *args) {
+
+	(void) args;
 
 	// wait 1 second and then try to connect
 	sleep (1);

@@ -389,7 +389,7 @@ static void test_features_states (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -441,7 +441,7 @@ static void test_features_connect_to_cerver_async (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -473,7 +473,7 @@ static void test_features_send_queue (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -528,7 +528,7 @@ static void test_features_reconnect (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -575,7 +575,7 @@ static void test_features_reconnect_address (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features.bind_address = FEATURES_ADDRESS;
 	features_cerver_start (&features, port);
 
@@ -620,7 +620,7 @@ static void test_features_reconnect_request (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -653,7 +653,7 @@ static void test_features_reconnect_end (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -708,7 +708,7 @@ static void test_features_packet_init_send (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -748,7 +748,7 @@ static void test_features_ping_with_data (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -790,7 +790,7 @@ static void test_features_large_packet (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start (&features, port);
 
 	Client *client = features_client_create ();
@@ -847,7 +847,7 @@ static void test_features_sessions (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start_with (&features, port, true);
 
 	// the first connection authenticates with the credentials
@@ -907,7 +907,7 @@ static void test_features_auth_schema (void) {
 
 	const u16 port = features_port++;
 
-	FeaturesCerver features = { 0 };
+	FeaturesCerver features = CERVER_ZERO_INITIALIZER;
 	features_cerver_start_with (&features, port, true);
 	cerver_set_auth_schema (features.cerver, &credentials_schema);
 

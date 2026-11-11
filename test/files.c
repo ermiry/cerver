@@ -615,7 +615,7 @@ static void test_files_copy_all (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

@@ -170,18 +170,18 @@ void packets_per_type_print (
 ) {
 
 	if (packets_per_type) {
-		cerver_log_msg ("Cerver:            %ld", CERVER_STATS_GET (packets_per_type->n_cerver_packets));
-		cerver_log_msg ("Client:            %ld", CERVER_STATS_GET (packets_per_type->n_client_packets));
-		cerver_log_msg ("Error:             %ld", CERVER_STATS_GET (packets_per_type->n_error_packets));
-		cerver_log_msg ("Request:           %ld", CERVER_STATS_GET (packets_per_type->n_request_packets));
-		cerver_log_msg ("Auth:              %ld", CERVER_STATS_GET (packets_per_type->n_auth_packets));
-		cerver_log_msg ("Game:              %ld", CERVER_STATS_GET (packets_per_type->n_game_packets));
-		cerver_log_msg ("App:               %ld", CERVER_STATS_GET (packets_per_type->n_app_packets));
-		cerver_log_msg ("App Error:         %ld", CERVER_STATS_GET (packets_per_type->n_app_error_packets));
-		cerver_log_msg ("Custom:            %ld", CERVER_STATS_GET (packets_per_type->n_custom_packets));
-		cerver_log_msg ("Test:              %ld", CERVER_STATS_GET (packets_per_type->n_test_packets));
-		cerver_log_msg ("Unknown:           %ld", CERVER_STATS_GET (packets_per_type->n_unknown_packets));
-		cerver_log_msg ("Bad:               %ld", CERVER_STATS_GET (packets_per_type->n_bad_packets));
+		cerver_log_msg ("Cerver:            %lu", CERVER_STATS_GET (packets_per_type->n_cerver_packets));
+		cerver_log_msg ("Client:            %lu", CERVER_STATS_GET (packets_per_type->n_client_packets));
+		cerver_log_msg ("Error:             %lu", CERVER_STATS_GET (packets_per_type->n_error_packets));
+		cerver_log_msg ("Request:           %lu", CERVER_STATS_GET (packets_per_type->n_request_packets));
+		cerver_log_msg ("Auth:              %lu", CERVER_STATS_GET (packets_per_type->n_auth_packets));
+		cerver_log_msg ("Game:              %lu", CERVER_STATS_GET (packets_per_type->n_game_packets));
+		cerver_log_msg ("App:               %lu", CERVER_STATS_GET (packets_per_type->n_app_packets));
+		cerver_log_msg ("App Error:         %lu", CERVER_STATS_GET (packets_per_type->n_app_error_packets));
+		cerver_log_msg ("Custom:            %lu", CERVER_STATS_GET (packets_per_type->n_custom_packets));
+		cerver_log_msg ("Test:              %lu", CERVER_STATS_GET (packets_per_type->n_test_packets));
+		cerver_log_msg ("Unknown:           %lu", CERVER_STATS_GET (packets_per_type->n_unknown_packets));
+		cerver_log_msg ("Bad:               %lu", CERVER_STATS_GET (packets_per_type->n_bad_packets));
 	}
 
 }
@@ -190,17 +190,17 @@ void packets_per_type_array_print (
 	const u64 packets[PACKETS_MAX_TYPES]
 ) {
 
-	cerver_log_msg ("\tCerver:              %ld", packets[PACKET_TYPE_CERVER]);
-	cerver_log_msg ("\tClient:              %ld", packets[PACKET_TYPE_CLIENT]);
-	cerver_log_msg ("\tError:               %ld", packets[PACKET_TYPE_ERROR]);
-	cerver_log_msg ("\tRequest:             %ld", packets[PACKET_TYPE_REQUEST]);
-	cerver_log_msg ("\tAuth:                %ld", packets[PACKET_TYPE_AUTH]);
-	cerver_log_msg ("\tGame:                %ld", packets[PACKET_TYPE_GAME]);
-	cerver_log_msg ("\tApp:                 %ld", packets[PACKET_TYPE_APP]);
-	cerver_log_msg ("\tApp Error:           %ld", packets[PACKET_TYPE_APP_ERROR]);
-	cerver_log_msg ("\tCustom:              %ld", packets[PACKET_TYPE_CUSTOM]);
-	cerver_log_msg ("\tTest:                %ld", packets[PACKET_TYPE_TEST]);
-	cerver_log_msg ("\tBad:                 %ld", packets[PACKET_TYPE_BAD]);
+	cerver_log_msg ("\tCerver:              %lu", packets[PACKET_TYPE_CERVER]);
+	cerver_log_msg ("\tClient:              %lu", packets[PACKET_TYPE_CLIENT]);
+	cerver_log_msg ("\tError:               %lu", packets[PACKET_TYPE_ERROR]);
+	cerver_log_msg ("\tRequest:             %lu", packets[PACKET_TYPE_REQUEST]);
+	cerver_log_msg ("\tAuth:                %lu", packets[PACKET_TYPE_AUTH]);
+	cerver_log_msg ("\tGame:                %lu", packets[PACKET_TYPE_GAME]);
+	cerver_log_msg ("\tApp:                 %lu", packets[PACKET_TYPE_APP]);
+	cerver_log_msg ("\tApp Error:           %lu", packets[PACKET_TYPE_APP_ERROR]);
+	cerver_log_msg ("\tCustom:              %lu", packets[PACKET_TYPE_CUSTOM]);
+	cerver_log_msg ("\tTest:                %lu", packets[PACKET_TYPE_TEST]);
+	cerver_log_msg ("\tBad:                 %lu", packets[PACKET_TYPE_BAD]);
 
 }
 
@@ -476,7 +476,7 @@ typedef struct PacketThreadCache {
 } PacketThreadCache;
 
 // 0 in the builds that do not recycle
-static const unsigned int packet_thread_cache_limit = (PACKET_RECYCLE_LIMIT) ? PACKET_THREAD_CACHE_SIZE : 0;
+static const unsigned int packet_thread_cache_limit = ((PACKET_RECYCLE_LIMIT) > 0) ? PACKET_THREAD_CACHE_SIZE : 0;
 
 // the key only releases the cache of a thread that ends, the thread reads its own from packet_thread_cache
 static pthread_key_t packet_cache_key;
@@ -581,7 +581,7 @@ static inline PacketThreadCache *packet_cache_get (void) {
 
 	PacketThreadCache *cache = packet_thread_cache;
 
-	if (!cache && packet_thread_cache_limit) {
+	if (!cache && (packet_thread_cache_limit > 0)) {
 		cache = packet_cache_create ();
 	}
 
@@ -829,7 +829,7 @@ Packet *packet_create_with_data (
 			packet->data = packet_data_take (packet, data_size);
 			if (packet->data) {
 				packet->data_size = data_size;
-				packet->data_end = packet->data;
+				packet->data_end = (char *) packet->data;
 				packet->remaining_data = data_size;
 			}
 
@@ -989,7 +989,7 @@ unsigned int packet_create_data (
 		packet->data = packet_data_take (packet, data_size);
 		if (packet->data) {
 			packet->data_size = data_size;
-			packet->data_end = packet->data;
+			packet->data_end = (char *) packet->data;
 			packet->remaining_data = data_size;
 
 			retval = 0;
@@ -1297,6 +1297,11 @@ Packet *packet_create_request (
 			.data_end = NULL,
 			.data_ref = false,
 
+			.remaining_data = 0,
+
+			.header = CERVER_ZERO_INITIALIZER,
+			.encoded_header = { 0 },
+
 			.version = packet_version_local (),
 
 			.packet_size = PACKET_HEADER_SIZE,
@@ -1304,7 +1309,10 @@ Packet *packet_create_request (
 			.packet_ref = true,
 
 			.release = NULL,
-			.release_args = NULL
+			.release_args = NULL,
+
+			.data_class = 0,
+			.recycle_next = NULL
 		};
 
 		packet_request_init_header (packet, packet_type, request_type);
@@ -1344,6 +1352,11 @@ void packet_init_request (
 		.data_end = NULL,
 		.data_ref = false,
 
+		.remaining_data = 0,
+
+		.header = CERVER_ZERO_INITIALIZER,
+		.encoded_header = { 0 },
+
 		.version = packet_version_local (),
 
 		.packet_size = PACKET_HEADER_SIZE,
@@ -1351,7 +1364,10 @@ void packet_init_request (
 		.packet_ref = true,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	packet_request_init_header (packet, packet_type, request_type);
@@ -1640,8 +1656,8 @@ static void packet_send_update_stats (
 	#endif
 
 	if (lobby) {
-		lobby->stats->n_packets_sent += 1;
-		lobby->stats->bytes_sent += sent;
+		CERVER_STATS_ADD (lobby->stats->n_packets_sent, 1);
+		CERVER_STATS_ADD (lobby->stats->bytes_sent, sent);
 	}
 
 	switch (packet_type) {
@@ -1655,7 +1671,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_cerver_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_cerver_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_cerver_packets, 1);
 			break;
 
 		case PACKET_TYPE_CLIENT:
@@ -1666,7 +1682,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_client_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_client_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_client_packets, 1);
 			break;
 
 		case PACKET_TYPE_ERROR:
@@ -1677,7 +1693,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_error_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_error_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_error_packets, 1);
 			break;
 
 		case PACKET_TYPE_REQUEST:
@@ -1688,7 +1704,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_request_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_request_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_request_packets, 1);
 			break;
 
 		case PACKET_TYPE_AUTH:
@@ -1699,7 +1715,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_auth_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_auth_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_auth_packets, 1);
 			break;
 
 		case PACKET_TYPE_GAME:
@@ -1710,7 +1726,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_game_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_game_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_game_packets, 1);
 			break;
 
 		case PACKET_TYPE_APP:
@@ -1721,7 +1737,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_app_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_app_packets, 1);
 			break;
 
 		case PACKET_TYPE_APP_ERROR:
@@ -1732,7 +1748,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_app_error_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_app_error_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_app_error_packets, 1);
 			break;
 
 		case PACKET_TYPE_CUSTOM:
@@ -1743,7 +1759,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_custom_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_custom_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_custom_packets, 1);
 			break;
 
 		case PACKET_TYPE_TEST:
@@ -1754,7 +1770,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_test_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_test_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_test_packets, 1);
 			break;
 
 		default:
@@ -1765,7 +1781,7 @@ static void packet_send_update_stats (
 			#ifdef CONNECTION_STATS
 			connection->stats->sent_packets->n_unknown_packets += 1;
 			#endif
-			if (lobby) lobby->stats->sent_packets->n_unknown_packets += 1;
+			if (lobby) CERVER_STATS_ADD (lobby->stats->sent_packets->n_unknown_packets, 1);
 			break;
 	}
 
@@ -2144,6 +2160,11 @@ u8 packet_send_request (
 		.data_end = NULL,
 		.data_ref = false,
 
+		.remaining_data = 0,
+
+		.header = CERVER_ZERO_INITIALIZER,
+		.encoded_header = { 0 },
+
 		.version = packet_version_local (),
 
 		.packet_size = PACKET_HEADER_SIZE,
@@ -2151,7 +2172,10 @@ u8 packet_send_request (
 		.packet_ref = true,
 
 		.release = NULL,
-		.release_args = NULL
+		.release_args = NULL,
+
+		.data_class = 0,
+		.recycle_next = NULL
 	};
 
 	packet_request_init_header (&request, packet_type, request_type);

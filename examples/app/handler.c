@@ -43,6 +43,8 @@ void send_test_message (const Packet *packet) {
 			.version = packet_version_local ()
 		},
 
+		.encoded_header = { 0 },
+
 		.version = (PacketVersion) {
 			.protocol_id = 0,
 			.protocol_version = {

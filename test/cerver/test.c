@@ -111,7 +111,7 @@ static void test_cerver_deserialize (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

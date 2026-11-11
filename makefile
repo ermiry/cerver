@@ -9,6 +9,8 @@ DEBUG		:= 0
 # address, thread or undefined
 SANITIZER	:=
 
+WERROR		?= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -50,7 +52,7 @@ DEVELOPMENT := $(BASE_DEBUG)
 
 CC          := gcc
 
-GCCVGTEQ8 	:= $(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 8)
+GCCVGTEQ8 	:= $(shell expr `$(CC) -dumpversion | cut -f1 -d.` \>= 8)
 
 SRCDIR      := src
 INCDIR      := include
@@ -70,9 +72,17 @@ COVEXT		:= gcov
 COMMON		:= -Wall -Wno-unknown-pragmas \
 				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
 				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
-				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
+				-Wuninitialized -Wempty-body \
 				-Wunused-parameter -Wunused-but-set-parameter -Wunused-result \
 				-Wformat -Wformat-nonliteral -Wformat-security -Wformat-overflow -Wformat-signedness -Wformat-truncation
+
+ifeq ($(findstring clang,$(CC)),)
+	COMMON += -Wmaybe-uninitialized
+endif
+
+ifeq ($(WERROR), 1)
+	COMMON += -Werror
+endif
 
 # main
 CFLAGS      := $(DEFINES)
@@ -92,7 +102,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	CFLAGS += -std=c++11 -fpermissive
+	CFLAGS += -std=c++11
 else
 	CFLAGS += -std=c11 -Wpedantic -pedantic-errors
 	# check for compiler version
@@ -143,7 +153,7 @@ $(SLIB):
 # compile sources
 $(BUILDDIR)/%.$(OBJEXT): $(SRCDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(INC) $(LIB) -c -o $@ $<
+	$(CC) $(CFLAGS) $(INC) -c -o $@ $<
 	@$(CC) $(CFLAGS) $(INCDEP) -MM $(SRCDIR)/$*.$(SRCEXT) > $(BUILDDIR)/$*.$(DEPEXT)
 	@cp -f $(BUILDDIR)/$*.$(DEPEXT) $(BUILDDIR)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(BUILDDIR)/$*.$(OBJEXT):|' < $(BUILDDIR)/$*.$(DEPEXT).tmp > $(BUILDDIR)/$*.$(DEPEXT)
@@ -169,7 +179,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	EXAFLAGS += -std=c++11 -fpermissive
+	EXAFLAGS += -std=c++11
 else
 	EXAFLAGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -179,7 +189,7 @@ ifeq ($(NATIVE), 1)
 endif
 
 # common flags
-EXAFLAGS += -Wall -Wno-unknown-pragmas $(SANITIZERFLAGS)
+EXAFLAGS += $(COMMON) $(SANITIZERFLAGS)
 
 EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
@@ -202,7 +212,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	EXAPPFGS += -std=c++11 -fpermissive
+	EXAPPFGS += -std=c++11
 else
 	EXAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -243,6 +253,7 @@ client: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS) $(EXAPPLINK)
+	$(CC) $(EXAINC) ./$(EXABUILD)/client/game.o -o ./$(EXATARGET)/client/game $(EXALIBS) $(EXAPPLINK)
 
 examples:
 	@mkdir -p ./$(EXATARGET)
@@ -255,8 +266,8 @@ examples:
 # compile examples
 $(EXABUILD)/%.$(OBJEXT): $(EXAMDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(EXAFLAGS) $(INC) $(EXAINC) $(EXALIBS) -c -o $@ $<
-	@$(CC) $(EXAFLAGS) $(INCDEP) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
+	$(CC) $(EXAFLAGS) $(INC) $(EXAINC) -c -o $@ $<
+	@$(CC) $(EXAFLAGS) $(INCDEP) $(EXAINC) -MM $(EXAMDIR)/$*.$(SRCEXT) > $(EXABUILD)/$*.$(DEPEXT)
 	@cp -f $(EXABUILD)/$*.$(DEPEXT) $(EXABUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(EXABUILD)/$*.$(OBJEXT):|' < $(EXABUILD)/$*.$(DEPEXT).tmp > $(EXABUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(EXABUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(EXABUILD)/$*.$(DEPEXT)
@@ -268,7 +279,7 @@ TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
 TESTCOVDIR	:= $(COVDIR)/test
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS) $(RECYCLEFLAGS)
+TESTFLAGS	:= -g $(DEFINES) $(COMMON) $(SANITIZERFLAGS) $(RECYCLEFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -312,7 +323,7 @@ endif
 
 # check which compiler we are using
 ifeq ($(CC), g++) 
-	TESTAPPFGS += -std=c++11 -fpermissive
+	TESTAPPFGS += -std=c++11
 else
 	TESTAPPFGS += -std=c11 -Wpedantic -pedantic-errors
 endif
@@ -360,6 +371,7 @@ INTCERVERLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/auth.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/auth $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/connections.o -o $(INTCERVEROUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/game.o -o $(INTCERVEROUT)/game $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/load.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/load $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/packets.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/packets $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/ping.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/ping $(INTCERVERLIBS)
@@ -380,6 +392,7 @@ INTCLIENTLIBS	:= $(TESTLIBS) -Wl,-rpath=./$(TESTTARGET)/app -L ./$(TESTTARGET)/a
 integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/auth.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/auth $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/connections.o -o $(INTCLIENTOUT)/connections $(TESTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/game.o -o $(INTCLIENTOUT)/game $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/abandon.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/abandon $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/concurrent.o $(INTCLIENTIN)/load/balancer.o -o $(INTCLIENTOUT)/load/concurrent $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/load/id.o -o $(INTCLIENTOUT)/load/id $(INTCLIENTLIBS)
@@ -427,8 +440,8 @@ test: testout
 # compile tests
 $(TESTBUILD)/%.$(OBJEXT): $(TESTDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(TESTFLAGS) $(TESTINC) $(TESTLIBS) -c -o $@ $<
-	@$(CC) $(TESTFLAGS) $(INCDEP) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
+	$(CC) $(TESTFLAGS) $(TESTINC) -c -o $@ $<
+	@$(CC) $(TESTFLAGS) $(TESTINC) -MM $(TESTDIR)/$*.$(SRCEXT) > $(TESTBUILD)/$*.$(DEPEXT)
 	@cp -f $(TESTBUILD)/$*.$(DEPEXT) $(TESTBUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(TESTBUILD)/$*.$(OBJEXT):|' < $(TESTBUILD)/$*.$(DEPEXT).tmp > $(TESTBUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(TESTBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(TESTBUILD)/$*.$(DEPEXT)
@@ -443,8 +456,8 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
-FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
+FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
 
@@ -486,7 +499,7 @@ BENCHDIR	:= benchmarks
 BENCHBUILD	:= $(BENCHDIR)/objs
 BENCHTARGET	:= $(BENCHDIR)/bin
 
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
+BENCHFLAGS	:= $(DEFINES) $(COMMON) -O3
 
 ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
@@ -506,8 +519,8 @@ bench: $(BENCHOBJS)
 # compile benchmarks
 $(BENCHBUILD)/%.$(OBJEXT): $(BENCHDIR)/%.$(SRCEXT)
 	@mkdir -p $(dir $@)
-	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) $(BENCHLIBS) -c -o $@ $<
-	@$(CC) $(BENCHFLAGS) $(INCDEP) -MM $(BENCHDIR)/$*.$(SRCEXT) > $(BENCHBUILD)/$*.$(DEPEXT)
+	$(CC) $(BENCHFLAGS) $(INC) $(BENCHINC) -c -o $@ $<
+	@$(CC) $(BENCHFLAGS) $(INCDEP) $(BENCHINC) -MM $(BENCHDIR)/$*.$(SRCEXT) > $(BENCHBUILD)/$*.$(DEPEXT)
 	@cp -f $(BENCHBUILD)/$*.$(DEPEXT) $(BENCHBUILD)/$*.$(DEPEXT).tmp
 	@sed -e 's|.*:|$(BENCHBUILD)/$*.$(OBJEXT):|' < $(BENCHBUILD)/$*.$(DEPEXT).tmp > $(BENCHBUILD)/$*.$(DEPEXT)
 	@sed -e 's/.*://' -e 's/\\$$//' < $(BENCHBUILD)/$*.$(DEPEXT).tmp | fmt -1 | sed -e 's/^ *//' -e 's/$$/:/' >> $(BENCHBUILD)/$*.$(DEPEXT)

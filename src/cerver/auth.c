@@ -240,7 +240,7 @@ u8 auth_session_create (
 			#ifdef AUTH_DEBUG
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
-				"Generated client <%ld> session id: <%s>",
+				"Generated client <%lu> session id: <%s>",
 				client->id, session_id
 			);
 			#endif
@@ -256,7 +256,7 @@ u8 auth_session_create (
 
 	if (retval) {
 		cerver_log_error (
-			"auth_session_create () - failed to generate client's <%ld> session id!",
+			"auth_session_create () - failed to generate client's <%lu> session id!",
 			client->id
 		);
 	}
@@ -1315,7 +1315,7 @@ static u8 on_hold_poll_register_connection (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_CERVER,
-				"Cerver %s current ON HOLD connections: %ld",
+				"Cerver %s current ON HOLD connections: %lu",
 				cerver->info->name, cerver->stats->current_n_hold_connections
 			);
 			#endif
@@ -1371,7 +1371,7 @@ u8 on_hold_poll_unregister_sock_fd (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_CERVER, LOG_TYPE_CERVER,
-				"Cerver %s current ON HOLD connections: %ld",
+				"Cerver %s current ON HOLD connections: %lu",
 				cerver->info->name,
 				cerver->stats->current_n_hold_connections
 			);

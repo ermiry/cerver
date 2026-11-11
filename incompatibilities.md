@@ -3,6 +3,35 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 1.8b-9 (from 1.8b-8)
+
+The wire of the game packets changes: their requests and answers are serializer objects, a 1.8b-9 game cerver does not talk with 1.8b-8 game clients. The other packets do not change.
+
+- The game requests are the objects `LobbyCreate`, `LobbyJoin` (without a lobby id it searches a lobby of the game type with a place, and creates one when none has it) and `LobbyRequest` (init, start, leave, update and destroy), and every answer is a `LobbySummary` with the players (`LobbyPlayerSummary`) and the settings (`LobbySettingsSummary`) of the lobby; `game_request_send ()` sends a request
+- Removed: `SLobby`, `SGameSettings`, `lobby_serialize ()`, the raw `LobbyJoin` with `SStringS`, `SStringSize`, `SStringS`, `SStringM`, `SStringL`, `SStringXL` and `str_selialize ()`, `checkPlayerTimeouts ()` and `lobby_init ()` (it is static); `Lobby` lost `sock_fd_player_map`
+- Changed fields (ABI): `Lobby` (new `references`, `poll_connections`, `wake_fds`, `initialized`, `ended`, `handler_started`, `update_started`, `stop_mutex` and `stop_cond`; `max_players_fds` and `current_players_fds` are `u32`), `GameCerver` (new `lock`, `lobby_threads`, `lobby_threads_mutex` and `lobby_threads_cond`), `GameType` (new `init`, `player_timeout` and `fps`), `Player` (new `last_activity`), `Connection` (new `lobby`), `CerverEventData` (new `lobby`), `ClientEventData` (new `owns_response_data`)
+- A lobby is released by its references: the game cerver, its threads and each packet and event of the lobby keep one, so `lobby_teardown ()` releases the one of its creator and the lobby is deleted when the last one is released (`lobby_reference ()`, `lobby_release ()`); `lobby_delete ()` releases it at once
+- The lobbies, their players, their owner and the lobby of each connection are read and written with the recursive lock of the game cerver (`game_cerver_lock ()`), and the callbacks of the game types run with it
+- `lobby_join ()` fails for a full lobby, a lobby in game, a lobby that ended, and a client that is already a player of a lobby; `lobby_create ()` takes `LOBBY_DEFAULT_MAX_PLAYERS` with 0 max players
+- `lobby_leave ()` gives the owner to the next player in every case (also when a connection ends), releases the player and tears down the empty lobby; `player_unregister_from_lobby ()` no longer tears down an empty lobby
+- The packets of a player carry its lobby (`packet->lobby`, it was always `NULL`), and its app packets go to the packet handler of the lobby (`lobby_set_packet_handler ()`) while the lobby runs
+- The lobby poll receives the players with the receive of the cerver, only with `CERVER_HANDLER_TYPE_POLL`; with `CERVER_HANDLER_TYPE_THREADS` the lobby does not take the connections
+- The update of a lobby (`lobby_set_update ()`) is called every frame (`game_type_set_fps ()`, `GAME_TYPE_DEFAULT_FPS`) while the lobby runs, it used to be called once; a player that does not send in `game_type_set_player_timeout ()` seconds leaves the lobby
+- Only the owner inits (`GameType.init`), starts and destroys a game, a game is not started twice, and `start` and `end` can be `NULL`; `start` runs before the lobby threads start, and `end` only for a game that started
+- A game cerver tears down its lobbies when it stops, before it ends its connections, and waits for their threads
+- A cerver that is not a game cerver answers the game packets with a `CERVER_ERROR_PACKET_ERROR` (it crashed)
+- The lobby ids of `lobby_default_id_generator ()` have a counter, the lobbies of the same second have different ids
+- New map values: `CERVER_EVENT_LOBBY_DESTROY` (24, `UNKNOWN` is 25), `CERVER_ERROR_DESTROY_LOBBY` and `CLIENT_ERROR_DESTROY_LOBBY` (13, `UNKNOWN` is 14), `CLIENT_EVENT_LOBBY_UPDATE`, `CLIENT_EVENT_LOBBY_DESTROY` and `CLIENT_EVENT_GAME_INIT` (17 to 19, `UNKNOWN` is 20); the lobby events of the cerver and of the client are triggered now, the client ones with the `LobbySummary` as their response data
+- The `action_args` of the `ClientErrorData` are the arguments of `client_error_register ()`, they were the `ClientError`
+- `game_score_create ()` takes `unsigned int` counts (a `u8` before the variable arguments is undefined behaviour), and `game_score_add_lobby_players ()` takes the lobby and adds its players with an id
+- The headers of game declare their functions with `CERVER_EXPORT`, `CERVER_PUBLIC` or `CERVER_PRIVATE`; the guard of `gametype.h` is `_CERVER_GAME_GAMETYPE_H_`
+- Only a cerver with `CERVER_HANDLER_TYPE_THREADS` creates its thpool; with the other types, a cerver configured with threads still shuts its clients down when it drains
+- A signal that interrupts the receive of a connection (`EINTR`) does not end it, with the threads and the poll handler types
+- `thread_set_name ()`, `cerver_log* ()`, `str_create ()`, `str_set* ()`, `str_replace ()` and `c_string_create ()` are checked by the compiler as `printf` formats (`CERVER_PRINTF_FORMAT`), a call with arguments that do not match its format is a warning
+- `CERVER_ZERO_INITIALIZER` (`config.h`) initializes a struct to zero both in C and in C++
+- The makefile builds with g++ without `-fpermissive`, and with `WERROR=1` every warning is an error (the CI uses it); the tests, the examples, the fuzzers and the benchmarks build with the warnings of the library
+- New: `include/cerver/game` lobby objects, `lobby_is_running ()`, `lobby_player_of_client ()`, `lobby_summary_set ()`, `lobby_send_to_players ()`, `game_type_set_init ()`, `game_type_set_player_timeout ()`, `game_type_set_fps ()`, `player_activity_now ()`, the `examples/client/game` example, the `cerver/game` and `examples/game` pairs and the `game` fuzzer
+
 ## 1.8b-8 (from 1.8b-7)
 
 The wire does not change: a 1.8b-8 talks with a 1.8b-7.

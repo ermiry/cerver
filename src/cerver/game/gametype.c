@@ -12,11 +12,13 @@ GameType *game_type_new (void) {
 
 	GameType *type = (GameType *) malloc (sizeof (GameType));
 	if (type) {
-		memset (type, 0, sizeof (GameType));
+		(void) memset (type, 0, sizeof (GameType));
 		type->name = NULL;
 		type->data = NULL;
 		type->delete_data = NULL;
 		type->start = type->end = NULL;
+		type->player_timeout = GAME_TYPE_DEFAULT_PLAYER_TIMEOUT;
+		type->fps = GAME_TYPE_DEFAULT_FPS;
 	}
 
 	return type;
@@ -43,6 +45,13 @@ GameType *game_type_create (const char *name, void *data, void (*delete_data)(vo
 			type->use_default_handler = true;
 			type->custom_handler = NULL;
 			type->max_players = 0;
+
+			type->on_lobby_join = NULL;
+			type->on_lobby_leave = NULL;
+
+			type->init = NULL;
+			type->player_timeout = GAME_TYPE_DEFAULT_PLAYER_TIMEOUT;
+			type->fps = GAME_TYPE_DEFAULT_FPS;
 		}
 	}
 
@@ -93,6 +102,27 @@ void game_type_set_on_lobby_join (GameType *game_type, Action on_lobby_join) {
 void game_type_set_on_lobby_leave (GameType *game_type, Action on_lobby_leave) {
 
 	if (game_type) game_type->on_lobby_leave = on_lobby_leave;
+
+}
+
+// sets an action to be called when the owner of a lobby requests GAME_INIT
+void game_type_set_init (GameType *game_type, Action init) {
+
+	if (game_type) game_type->init = init;
+
+}
+
+// sets the seconds without packets after which a player leaves its lobby, 0 never
+void game_type_set_player_timeout (GameType *game_type, const u32 player_timeout) {
+
+	if (game_type) game_type->player_timeout = player_timeout;
+
+}
+
+// sets the frames per second of the update of the lobbies of the game type, 0 is ignored
+void game_type_set_fps (GameType *game_type, const u32 fps) {
+
+	if (game_type && (fps > 0)) game_type->fps = fps;
 
 }
 

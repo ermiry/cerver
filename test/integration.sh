@@ -22,6 +22,7 @@ PAIRS=(
 	cerver/threads
 	cerver/queue
 	cerver/udp
+	cerver/game
 	handler
 	balancer/round_robin
 	balancer/handler_id
@@ -39,6 +40,7 @@ EXAMPLE_PAIRS=(
 	examples/handlers
 	examples/requests
 	examples/threads
+	examples/game
 )
 
 EXAMPLES_ADDRESS=127.0.0.1

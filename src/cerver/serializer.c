@@ -10,6 +10,8 @@
 #include "cerver/serializer.h"
 #include "cerver/sessions.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/collections/arena.h"
 
 // the major types of CBOR that the serializer uses
@@ -1103,7 +1105,7 @@ static SerializerResult serializer_skip_simple (const SerializerHead *head) {
 // the value of a field that the schema does not know, its structure is validated
 static SerializerResult serializer_skip_item (SerializerReader *reader, const u32 depth) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = (depth > reader->schema->max_depth)
 		? SERIALIZER_RESULT_DEPTH : serializer_read_head (reader, &head);
 
@@ -1138,7 +1140,7 @@ static SerializerResult serializer_decode_unsigned (
 	SerializerReader *reader, const size_t size, char *member
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head_major (reader, SERIALIZER_MAJOR_UNSIGNED, &head);
 
 	if ((result == SERIALIZER_RESULT_NONE) && (head.value > serializer_unsigned_max (size))) {
@@ -1179,7 +1181,7 @@ static SerializerResult serializer_decode_signed (
 	const SerializerType type, char *member
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	i64 value = 0;
 
 	SerializerResult result = serializer_read_head (reader, &head);
@@ -1204,7 +1206,7 @@ static SerializerResult serializer_decode_signed (
 
 static SerializerResult serializer_decode_bool (SerializerReader *reader, char *member) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head_major (reader, SERIALIZER_MAJOR_SIMPLE, &head);
 
 	if (
@@ -1246,7 +1248,7 @@ static SerializerResult serializer_decode_float (
 	SerializerReader *reader, const SerializerType type, char *member
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	double value = 0;
 
 	SerializerResult result = serializer_read_head_major (reader, SERIALIZER_MAJOR_SIMPLE, &head);
@@ -1296,7 +1298,7 @@ static SerializerResult serializer_decode_string_payload (
 	const u8 **payload, size_t *length
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head_major (reader, major, &head);
 
 	if ((result == SERIALIZER_RESULT_NONE) && (head.value > maximum)) result = SERIALIZER_RESULT_LENGTH;
@@ -1418,7 +1420,7 @@ static SerializerResult serializer_decode_array (
 	char *object, char *member, const u32 depth
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head_major (reader, SERIALIZER_MAJOR_ARRAY, &head);
 
 	if ((result == SERIALIZER_RESULT_NONE) && (head.value > field->capacity)) result = SERIALIZER_RESULT_LENGTH;
@@ -1494,7 +1496,7 @@ static SerializerResult serializer_decode_version (
 	SerializerReader *reader, const SerializerSchema *schema
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head_major (reader, SERIALIZER_MAJOR_UNSIGNED, &head);
 
 	if ((result == SERIALIZER_RESULT_NONE) && (head.value != schema->version)) {
@@ -1518,7 +1520,7 @@ static SerializerResult serializer_decode_entry (
 	char *object, const u32 depth, SerializerPresence *presence
 ) {
 
-	SerializerHead key = { 0 };
+	SerializerHead key = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = serializer_read_head (reader, &key);
 
 	size_t index = 0;
@@ -1567,7 +1569,7 @@ static SerializerResult serializer_decode_object (
 	char *object, const u32 depth
 ) {
 
-	SerializerHead head = { 0 };
+	SerializerHead head = CERVER_ZERO_INITIALIZER;
 	SerializerResult result = SERIALIZER_RESULT_NONE;
 
 	if (depth > reader->schema->max_depth) result = SERIALIZER_RESULT_DEPTH;
@@ -1672,7 +1674,13 @@ static const SerializerSchema *const serializer_cerver_schemas[] = {
 	&cerver_summary_schema,
 	&error_message_schema,
 	&file_header_schema,
-	&session_token_schema
+	&session_token_schema,
+	&lobby_create_request_schema,
+	&lobby_join_request_schema,
+	&lobby_request_schema,
+	&lobby_player_summary_schema,
+	&lobby_settings_summary_schema,
+	&lobby_summary_schema
 };
 
 // returns the schemas of the objects that cerver sends, used by the fuzzer

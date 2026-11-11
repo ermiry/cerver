@@ -26,6 +26,8 @@
 #include "cerver/sessions.h"
 #include "cerver/udp.h"
 
+#include "cerver/game/game.h"
+
 #include "cerver/threads/thread.h"
 
 #include "cerver/utils/log.h"
@@ -107,13 +109,13 @@ void client_stats_print (Client *client) {
 			cerver_log_msg ("\nClient's stats:\n");
 			cerver_log_msg ("Threshold time:            %ld", client->stats->threshold_time);
 
-			cerver_log_msg ("N receives done:           %ld", client->stats->n_receives_done);
+			cerver_log_msg ("N receives done:           %lu", client->stats->n_receives_done);
 
-			cerver_log_msg ("Total bytes received:      %ld", client->stats->total_bytes_received);
-			cerver_log_msg ("Total bytes sent:          %ld", client->stats->total_bytes_sent);
+			cerver_log_msg ("Total bytes received:      %lu", client->stats->total_bytes_received);
+			cerver_log_msg ("Total bytes sent:          %lu", client->stats->total_bytes_sent);
 
-			cerver_log_msg ("N packets received:        %ld", client->stats->n_packets_received);
-			cerver_log_msg ("N packets sent:            %ld", client->stats->n_packets_sent);
+			cerver_log_msg ("N packets received:        %lu", client->stats->n_packets_received);
+			cerver_log_msg ("N packets sent:            %lu", client->stats->n_packets_sent);
 
 			cerver_log_msg ("\nReceived packets:");
 			packets_per_type_print (client->stats->received_packets);
@@ -150,18 +152,18 @@ void client_file_stats_print (Client *client) {
 
 	if (client) {
 		if (client->file_stats) {
-			cerver_log_msg ("Files requests:                %ld", client->file_stats->n_files_requests);
-			cerver_log_msg ("Success requests:              %ld", client->file_stats->n_success_files_requests);
-			cerver_log_msg ("Bad requests:                  %ld", client->file_stats->n_bad_files_requests);
-			cerver_log_msg ("Files sent:                    %ld", client->file_stats->n_files_sent);
-			cerver_log_msg ("Failed files sent:             %ld", client->file_stats->n_bad_files_sent);
-			cerver_log_msg ("Files bytes sent:              %ld\n", client->file_stats->n_bytes_sent);
+			cerver_log_msg ("Files requests:                %lu", client->file_stats->n_files_requests);
+			cerver_log_msg ("Success requests:              %lu", client->file_stats->n_success_files_requests);
+			cerver_log_msg ("Bad requests:                  %lu", client->file_stats->n_bad_files_requests);
+			cerver_log_msg ("Files sent:                    %lu", client->file_stats->n_files_sent);
+			cerver_log_msg ("Failed files sent:             %lu", client->file_stats->n_bad_files_sent);
+			cerver_log_msg ("Files bytes sent:              %lu\n", client->file_stats->n_bytes_sent);
 
-			cerver_log_msg ("Files upload requests:         %ld", client->file_stats->n_files_upload_requests);
-			cerver_log_msg ("Success uploads:               %ld", client->file_stats->n_success_files_uploaded);
-			cerver_log_msg ("Bad uploads:                   %ld", client->file_stats->n_bad_files_upload_requests);
-			cerver_log_msg ("Bad files received:            %ld", client->file_stats->n_bad_files_received);
-			cerver_log_msg ("Files bytes received:          %ld\n", client->file_stats->n_bytes_received);
+			cerver_log_msg ("Files upload requests:         %lu", client->file_stats->n_files_upload_requests);
+			cerver_log_msg ("Success uploads:               %lu", client->file_stats->n_success_files_uploaded);
+			cerver_log_msg ("Bad uploads:                   %lu", client->file_stats->n_bad_files_upload_requests);
+			cerver_log_msg ("Bad files received:            %lu", client->file_stats->n_bad_files_received);
+			cerver_log_msg ("Files bytes received:          %lu\n", client->file_stats->n_bytes_received);
 		}
 	}
 
@@ -743,7 +745,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%ld> does not have ANY connection - removing him from cerver...",
+					"Client <%lu> does not have ANY connection - removing him from cerver...",
 					client->id
 				);
 				#endif
@@ -759,7 +761,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%d> has only 1 connection left!",
+					"Client <%lu> has only 1 connection left!",
 					client->id
 				);
 				#endif
@@ -800,7 +802,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 				cerver_log (
 					LOG_TYPE_DEBUG, LOG_TYPE_CLIENT,
 					"client_remove_connection_by_sock_fd () - "
-					"Client <%d> has %ld connections left!",
+					"Client <%lu> has %zu connections left!",
 					client->id, dlist_size (client->connections)
 				);
 				#endif
@@ -835,7 +837,7 @@ ClientConnectionsStatus client_remove_connection_by_sock_fd (
 					cerver_log (
 						LOG_TYPE_WARNING, LOG_TYPE_CLIENT,
 						"client_remove_connection_by_sock_fd () - Client with id "
-						"%ld does not have a connection related to sock fd %d",
+						"%lu does not have a connection related to sock fd %d",
 						client->id, sock_fd
 					);
 					#endif
@@ -871,7 +873,7 @@ u8 client_register_connections_to_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to register all the connections for client %ld (id) to cerver %s",
+				"Failed to register all the connections for client %lu (id) to cerver %s",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -907,7 +909,7 @@ u8 client_unregister_connections_from_cerver (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to unregister all the connections for client %ld (id) from cerver %s",
+				"Failed to unregister all the connections for client %lu (id) from cerver %s",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -946,7 +948,7 @@ u8 client_register_connections_to_cerver_poll (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to register all the connections for client %ld (id) to cerver %s poll",
+				"Failed to register all the connections for client %lu (id) to cerver %s poll",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -983,7 +985,7 @@ u8 client_unregister_connections_from_cerver_poll (
 			#ifdef CLIENT_DEBUG
 			cerver_log (
 				LOG_TYPE_ERROR, LOG_TYPE_CLIENT,
-				"Failed to unregister all the connections for client %ld (id) from cerver %s poll",
+				"Failed to unregister all the connections for client %lu (id) from cerver %s poll",
 				client->id, cerver->info->name
 			);
 			#endif
@@ -1021,7 +1023,7 @@ Client *client_remove_from_cerver (
 			#ifdef CERVER_STATS
 			cerver_log (
 				LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-				"Connected clients to cerver %s: %i.",
+				"Connected clients to cerver %s: %lu.",
 				cerver->info->name, cerver->stats->current_n_connected_clients
 			);
 			#endif
@@ -1062,7 +1064,7 @@ static void client_register_to_cerver_internal (
 	#ifdef CERVER_STATS
 	cerver_log (
 		LOG_TYPE_DEBUG, LOG_TYPE_CERVER,
-		"Connected clients to cerver %s: %i.",
+		"Connected clients to cerver %s: %lu.",
 		cerver->info->name,
 		cerver->stats->current_n_connected_clients
 	);
@@ -1242,6 +1244,8 @@ static ClientEventData *client_event_data_new (void) {
 		event_data->response_data = NULL;
 		event_data->delete_response_data = NULL;
 
+		event_data->owns_response_data = false;
+
 		event_data->action_args = NULL;
 		event_data->delete_action_args = NULL;
 	}
@@ -1252,7 +1256,14 @@ static ClientEventData *client_event_data_new (void) {
 
 void client_event_data_delete (ClientEventData *event_data) {
 
-	if (event_data) free (event_data);
+	if (event_data) {
+		if (event_data->owns_response_data && event_data->response_data) {
+			if (event_data->delete_response_data) event_data->delete_response_data (event_data->response_data);
+			else free (event_data->response_data);
+		}
+
+		free (event_data);
+	}
 
 }
 
@@ -1431,6 +1442,54 @@ void client_event_trigger (
 				}
 			}
 		}
+	}
+
+}
+
+static void client_event_response_delete (void *response, Action delete_response) {
+
+	if (response) {
+		if (delete_response) delete_response (response);
+		else free (response);
+	}
+
+}
+
+// triggers the event with a response that only this trigger owns,
+// the event data releases it, or it is released here without an action
+void client_event_trigger_with_response (
+	const ClientEventType event_type,
+	const Client *client, const Connection *connection,
+	void *response, Action delete_response
+) {
+
+	ClientEvent *event = client ? client->events[event_type] : NULL;
+	ClientEventData *event_data = (event && event->work) ?
+		client_event_data_create (client, connection, event) : NULL;
+
+	if (event_data) {
+		event_data->response_data = response;
+		event_data->delete_response_data = delete_response;
+		event_data->owns_response_data = true;
+
+		if (event->create_thread) {
+			(void) thread_group_create (
+				(ThreadGroup *) &client->event_threads,
+				event->work, event_data
+			);
+		}
+
+		else {
+			(void) event->work (event_data);
+		}
+
+		if (event->drop_after_trigger) {
+			(void) client_event_unregister ((Client *) client, event_type);
+		}
+	}
+
+	else {
+		client_event_response_delete (response, delete_response);
 	}
 
 }
@@ -1614,7 +1673,7 @@ u8 client_error_trigger (
 						error->work,
 						client_error_data_create (
 							client, connection,
-							error,
+							error->work_args,
 							error_message
 						)
 					);
@@ -1623,7 +1682,7 @@ u8 client_error_trigger (
 				else {
 					(void) error->work (client_error_data_create (
 						client, connection,
-						error,
+						error->work_args,
 						error_message
 					));
 
@@ -1738,6 +1797,13 @@ static void client_error_packet_handler (Packet *packet) {
 			case CLIENT_ERROR_GAME_START:
 				client_error_trigger (
 					CLIENT_ERROR_GAME_START,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
+			case CLIENT_ERROR_DESTROY_LOBBY:
+				client_error_trigger (
+					CLIENT_ERROR_DESTROY_LOBBY,
 					packet->client, packet->connection,
 					s_error->msg
 				);
@@ -2817,7 +2883,7 @@ u8 client_file_send (
 		const char *actual_filename = last ? last + 1 : NULL;
 		if (actual_filename) {
 			// try to open the file
-			struct stat filestatus = { 0 };
+			struct stat filestatus = CERVER_ZERO_INITIALIZER;
 			int file_fd = file_open_as_fd (filename, &filestatus, O_RDONLY);
 			if (file_fd >= 0) {
 				size_t sent = file_send_by_fd (
@@ -3397,6 +3463,7 @@ static ClientHandlerError client_packet_handler_actual (
 		case PACKET_TYPE_GAME:
 			CERVER_STATS_ADD (packet->client->stats->received_packets->n_game_packets, 1);
 			packet->connection->stats->received_packets->n_game_packets += 1;
+			game_client_packet_handler (packet);
 			packet_delete (packet);
 			break;
 
@@ -4178,7 +4245,7 @@ static void client_handlers_destroy (Client *client) {
 	if (client) {
 		#ifdef CLIENT_DEBUG
 		cerver_log_debug (
-			"Client %s num_handlers_alive: %d",
+			"Client %s num_handlers_alive: %u",
 			client->name, client->num_handlers_alive
 		);
 		#endif

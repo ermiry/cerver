@@ -131,7 +131,7 @@ static void send_app_message (
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) signal (SIGPIPE, SIG_IGN);
 
@@ -169,7 +169,7 @@ int main (int argc, const char **argv) {
 	/*** send **/
 	unsigned int n_sent_packets = 0;
 
-	register size_t i = 0;
+	size_t i = 0;
 	for (; i < REQUESTS; i++) {
 		// (void) printf ("Sending: %lu...\n", i);
 

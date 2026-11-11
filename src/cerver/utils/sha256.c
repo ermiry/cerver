@@ -46,7 +46,7 @@ static void init_buf_state (
 	struct buffer_state *state, const void * input, size_t len
 ) {
 
-	state->p = input;
+	state->p = (const uint8_t *) input;
 	state->len = len;
 	state->total_len = len;
 	state->single_one_delivered = 0;
@@ -148,7 +148,7 @@ void sha256_calc (
 	/* 512-bit chunks is what we will operate on. */
 	uint8_t chunk[64];
 
-	struct buffer_state state = { 0 };
+	struct buffer_state state = CERVER_ZERO_INITIALIZER;
 
 	init_buf_state (&state, input, len);
 

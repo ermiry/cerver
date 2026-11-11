@@ -1,48 +1,47 @@
 ## General
-- Moving only the reports that gcov writes in make coverage
-- Not removing the idle workers while jobs wait in the queue
-- Added histograms of values with atomic counts in the utils
-- Added the memory, load, cpu & process values of the host
-- Copying, removing & moving files without calling system ()
-- Recycling packets & their data with a cache in each thread
-- Added the stats of each request type that cervers handled
-- Adding the stats of the packets that each handler handles
-- Handling the packets of each request type with its handler
-- Logging the type of the cerver with the name from its map
-- Renamed the defaults with full words & their module prefix
-- Added the Beta 1.8b-8 changes to the incompatibilities file
+- Building tests & examples with every warning of the library
+- Compiling every source without the libraries that it links to
+- Added a zero initializer & a printf format checker to config
+- Initializing the structs to zero both in the C & in C++ builds
+- Casting the void pointers that g++ does not convert for us
+- Comparing the recycle limits & the floats with no warnings
+- Fixed the formats of the stats & the logs of the cerver core
+- Checking the formats of the logs & the strings like in printf
+- Added a final newline to the headers & sources of the core
+- Running the CI with every warning as an error & with clang
+- Not ending the connections that a signal interrupts in recv
+- Creating the thpool only in the cervers of the threads type
+- Documented the handler types, their limits & UDP cervers
+- Removed the serialized strings that none of the code used
+- Fixed the benchmark warnings with the flags of the library
+- Added the Beta 1.8b-9 changes to the incompatibilities file
 
 ## Connection
-- Releasing only once a client that the main poll can not take
-- Setting the initial sizes & the max connections of the polls
-
-## Balancer
-- Selecting the services of a custom balancer with a method
+- Passing the user arguments to the error actions of a client
+- Triggering the client events with a response that they own
+- Added a destroy lobby error & the new lobby client events
 
 ## Game
-- Logging the lobby players without an id in the debug build
+- Added the init, the player timeout & the fps of game types
+- Rewrote the lobbies & the game requests with the objects
+- Taking the lobby of a received packet from the connection
+- Counting the stats of the lobbies with the atomic additions
+- Adding the players of a lobby to a score board by their ids
 
 ## Examples
-- Added events to the example app & linking every example
-- Registering & releasing all the events in all of the examples
-- Releasing the app data of the requests example only once
-- Reconnecting the client example when the cerver closes it
-- Initializing each field of the test packet of the example app
+- Fixed the formats & the unused arguments of all examples
+- Rewrote the game example with the objects of the lobbies
+- Added a game client example that joins & plays in its lobby
 
 ## Tests
-- Added a manager test of idle workers while the jobs queue
-- Added histogram unit tests with values from many threads
-- Registering the histogram unit tests in the main of the utils
-- Checking the ranges of the values in the system unit tests
-- Added files tests of copies, removals & the moves of trees
-- Added packets tests of recycling in threads & data classes
-- Added core tests of the poll max, request stats & handlers
-- Added a balancer test of the custom type & of the method
-- Added routing tests of the custom balancer & the info type
-- Added a balancer pair that selects services by message id
-- Added a stress cerver that sends every request body back
-- Added a stress client of concurrent connections & latency
-- Running the protocol stress in Docker & in scheduled runs
-- Running five of the examples as integration pairs with IPv4
-- Lowering the max allocations per connection & per packet
-- Removed the load script that killed every docker container
+- Fuzzing the lobby objects with the serializer schemas now
+- Evaluating only once the values of the checks in each test
+- Fixed the formats, unused arguments & mains of the tests
+- Added core tests of the interrupted receive & of the thpool
+- Added in memory game tests of the lobbies & their players
+- Added game tests of requests with both the poll & threads
+- Registering the lobby & requests tests in the main of game
+- Added a game pair of two players in another process each
+- Running the game example as an integration pair with IPv4
+- Added a fuzzer of the game requests with its seed corpus
+- Running the game tests with thread sanitizer in schedules

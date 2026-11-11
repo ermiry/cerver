@@ -48,9 +48,11 @@ float lerp (
 
 }
 
+#define UTILS_FLOAT_COMPARE_TOLERANCE		0.00001f
+
 bool float_compare (const float f1, const float f2) {
 
-	return fabs (f1 - f2) < 0.00001;
+	return fabsf (f1 - f2) < UTILS_FLOAT_COMPARE_TOLERANCE;
 
 }
 

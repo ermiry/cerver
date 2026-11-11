@@ -610,12 +610,13 @@ CERVER_EXPORT void cerver_set_cerver_data (
 	Cerver *cerver, void *data, Action delete_data
 );
 
-// sets the cerver's thpool number of threads
-// this will enable the cerver's ability to handle received packets using multiple threads
-// usefull if you want the best concurrency and effiency
-// but we aware that you need to make your structures and data thread safe, as they might be accessed
-// from multiple threads at the same time
-// by default, all received packets will be handle only in one thread
+// sets the number of threads of the cerver's thpool,
+// that only a cerver with CERVER_HANDLER_TYPE_THREADS creates:
+// each connection takes a thread of the thpool while it is connected,
+// so it handles at most this number of connections at the same time,
+// and the others wait in the listen backlog (CERVER_OVERLOAD_POLICY_WAIT) or are rejected
+// with the other handler types, the thpool is not created
+// the data of the handlers must be thread safe, as it is accessed from many threads
 CERVER_EXPORT void cerver_set_thpool_n_threads (
 	Cerver *cerver, u16 n_threads
 );
@@ -680,9 +681,13 @@ CERVER_EXPORT void cerver_set_inactive_clients (
 	u32 max_inactive_time, u32 check_inactive_interval
 );
 
-// sets the cerver handler type
-// the default type is to handle connections using the poll () which requires only one thread
-// if threads type is selected, a new thread will be created for each new connection
+// sets how the cerver handles its TCP connections, the default type is CERVER_HANDLER_TYPE_NONE
+// CERVER_HANDLER_TYPE_POLL accepts, receives and runs the direct handlers in a single thread with poll (),
+// and the accepted sockets block with CERVER_DEFAULT_SEND_TIMEOUT, so a client that does not read,
+// or a slow direct handler, delays every connection; handlers with their own queues avoid it
+// CERVER_HANDLER_TYPE_THREADS receives each connection in its own thread,
+// a thread of the thpool or a detachable one (cerver_set_handle_detachable_threads ())
+// a UDP cerver ignores the handler type: a single thread receives every datagram (udp.h)
 CERVER_EXPORT void cerver_set_handler_type (
 	Cerver *cerver, CerverHandlerType handler_type
 );

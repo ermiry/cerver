@@ -13,6 +13,8 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/utils/log.h"
 
 static const char *receive_bad_packet_size = { "The packet is bigger than the maximum size" };
@@ -330,7 +332,10 @@ static void receive_packet_set_values (
 	packet->cerver = receive_handle->cerver;
 	packet->client = receive_handle->client;
 	packet->connection = receive_handle->connection;
-	packet->lobby = receive_handle->lobby;
+
+	// the packet of a player keeps a reference to the lobby of its connection
+	packet->lobby = NULL;
+	lobby_packet_attach (packet);
 
 	packet->packet_size = packet->header.packet_size;
 

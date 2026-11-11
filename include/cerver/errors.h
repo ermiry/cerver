@@ -40,7 +40,8 @@ struct _Connection;
 	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
 	XX(11,	GAME_INIT, 			The game failed to init)						\
 	XX(12,	GAME_START, 		The game failed to start)						\
-	XX(13,	UNKNOWN, 			Unknown error)
+	XX(13,	DESTROY_LOBBY, 		The lobby could not be destroyed)				\
+	XX(14,	UNKNOWN, 			Unknown error)
 
 typedef enum CerverErrorType {
 

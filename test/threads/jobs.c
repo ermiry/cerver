@@ -16,11 +16,15 @@
 
 static void work_method (void *args) {
 
+	(void) args;
+
 	(void) printf ("Some work that needs to be done!");
 
 }
 
 static void handler_method (void *job_handler) {
+
+	(void) job_handler;
 
 	(void) printf ("Custom job queue handler method!");
 

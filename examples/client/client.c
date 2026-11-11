@@ -110,7 +110,7 @@ static void client_app_handler_direct (void *packet_ptr) {
 					char *end = (char *) packet->data;
 
 					AppMessage *app_message = (AppMessage *) end;
-					printf ("%s - %d\n", app_message->message, app_message->len);
+					printf ("%s - %u\n", app_message->message, app_message->len);
 				} break;
 
 				default:
@@ -191,6 +191,8 @@ static int request_message (Client *client, Connection *connection) {
 // create a new client that will connect to a cerver & make a test request
 static void *cerver_client_request (void *args) {
 
+	(void) args;
+
 	Client *client = client_create ();
 	if (client) {
 		client_set_name (client, "test-client");
@@ -241,7 +243,7 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 			}
 
 			else {
-				printf ("PACKET_TYPE_APP sent to cerver: %ld\n", sent);
+				printf ("PACKET_TYPE_APP sent to cerver: %zu\n", sent);
 				retval = 0;
 			}
 
@@ -257,6 +259,8 @@ static int test_app_msg_send (Client *client, Connection *connection) {
 #pragma GCC diagnostic ignored "-Wunused-function"
 
 static void *cerver_client_connect_and_start (void *args) {
+
+	(void) args;
 
 	Client *client = client_create ();
 	if (client) {

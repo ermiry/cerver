@@ -132,7 +132,7 @@ static Balancer *test_balancer_create (const BalancerType type) {
 	test_check_ptr (balancer->cerver);
 	test_check_ptr (balancer->client);
 	test_check_int_eq (balancer->next_service, 0, NULL);
-	test_check_int_eq (balancer->n_services, n_services, NULL);
+	test_check_int_eq (balancer->n_services, (int) n_services, NULL);
 	test_check_ptr (balancer->services);
 	test_check_null_ptr (balancer->on_unavailable_services);
 	test_check_null_ptr (balancer->select_service);
@@ -362,7 +362,7 @@ static void test_balancer_route_limit (void) {
 
 #pragma endregion
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand ((unsigned) time (NULL));
 

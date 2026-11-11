@@ -9,6 +9,9 @@ permissions:
   actions: write
   contents: read
 
+env:
+  WERROR: 1
+
 jobs:
   dispatch:
     name: Dispatch the scheduled tests of each line
@@ -74,6 +77,18 @@ jobs:
           BUILD: 0
         run: bash test/repeat.sh test/bin/cerver/lobby 20
 
+      - name: Game
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 20
+
+      - name: Game pair
+        env:
+          SANITIZER: thread
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 20
+
   repeat:
     name: Cerver flaky hunter
     if: github.event_name == 'workflow_dispatch'
@@ -104,6 +119,27 @@ jobs:
         env:
           BUILD: 0
         run: bash test/repeat.sh test/bin/cerver/core 100
+
+      - name: Cerver UDP peers
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/cerver/peers 100
+
+      - name: Game
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh test/bin/game 50
+
+      - name: Game pair
+        env:
+          BUILD: 0
+        run: bash test/repeat.sh cerver/game 50
+
+      - name: Balancer reconnect pair in IPv6
+        env:
+          BUILD: 0
+          CERVER_TEST_ADDRESS: '::1'
+        run: bash test/repeat.sh balancer/reconnect 50
 
   performance:
     name: Cerver allocations per connection and per packet

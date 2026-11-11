@@ -84,7 +84,7 @@ static void app_data_print (AppData *app_data) {
 			str_delete (date);
 		}
 
-		printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+		printf ("Message (%zu): %s\n", app_data->message_len, app_data->message);
 	}
 
 }
@@ -161,7 +161,7 @@ static void handle_multi_message (Packet *packet) {
 		AppData *app_data = NULL;
 		for (u32 i = 0; i < 5; i++) {
 			app_data = (AppData *) end;
-			printf ("Message (%ld): %s\n", app_data->message_len, app_data->message);
+			printf ("Message (%zu): %s\n", app_data->message_len, app_data->message);
 			printf ("\n");
 
 			end += sizeof (AppData);
@@ -200,7 +200,7 @@ static void *on_client_connected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		printf (
-			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+			"\nClient %lu connected with sock fd %d to cerver %s!\n\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name

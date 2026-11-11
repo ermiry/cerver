@@ -97,7 +97,7 @@ static void test_connection_recycle (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

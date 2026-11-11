@@ -444,7 +444,10 @@ CERVER_PUBLIC void client_broadcast_to_all_avl (
 	XX(14,	LOBBY_JOIN, 		Correctly joined a new lobby)																					\
 	XX(15,	LOBBY_LEAVE, 		Successfully exited a lobby)																					\
 	XX(16,	LOBBY_START, 		The game in the lobby has started)																				\
-	XX(17,	UNKNOWN, 			Unknown event)
+	XX(17,	LOBBY_UPDATE, 		Received the current state of a lobby)																			\
+	XX(18,	LOBBY_DESTROY, 		The lobby was destroyed)																						\
+	XX(19,	GAME_INIT, 			The game of the lobby was initialized)																			\
+	XX(20,	UNKNOWN, 			Unknown event)
 
 typedef enum ClientEventType {
 
@@ -510,6 +513,15 @@ CERVER_PRIVATE void client_event_trigger (
 	const struct _Client *client, const struct _Connection *connection
 );
 
+// triggers the event with a response that only this trigger owns:
+// client_event_data_delete () releases it with delete_response (free () if NULL),
+// and it is released right away when the event has no action
+CERVER_PRIVATE void client_event_trigger_with_response (
+	const ClientEventType event_type,
+	const struct _Client *client, const struct _Connection *connection,
+	void *response, Action delete_response
+);
+
 // structure that is passed to the user registered method
 typedef struct ClientEventData {
 
@@ -518,6 +530,10 @@ typedef struct ClientEventData {
 
 	void *response_data;                // data that came with the response
 	Action delete_response_data;
+
+	// client_event_data_delete () releases the response of this event only,
+	// like the LobbySummary of the lobby events
+	bool owns_response_data;
 
 	void *action_args;                  // the action arguments
 	Action delete_action_args;
@@ -546,7 +562,8 @@ CERVER_PUBLIC void client_event_data_delete (
 	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
 	XX(11,	GAME_INIT, 			The game failed to init)						\
 	XX(12,	GAME_START, 		The game failed to start)						\
-	XX(13,	UNKNOWN, 			Unknown error)
+	XX(13,	DESTROY_LOBBY, 		The lobby could not be destroyed)				\
+	XX(14,	UNKNOWN, 			Unknown error)
 
 typedef enum ClientErrorType {
 

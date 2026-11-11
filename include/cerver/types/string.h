@@ -33,7 +33,7 @@ CERVER_PUBLIC void str_delete (void *str_ptr);
 
 CERVER_PUBLIC String *str_create (
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (1, 2);
 
 CERVER_PUBLIC String *str_allocate (
 	const unsigned int max_len
@@ -41,11 +41,11 @@ CERVER_PUBLIC String *str_allocate (
 
 CERVER_PUBLIC void str_set (
 	String *str, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 CERVER_PUBLIC void str_set_with_args (
 	String *str, const char *format, va_list args
-);
+) CERVER_PRINTF_FORMAT (2, 0);
 
 CERVER_PUBLIC int str_compare (
 	const String *s1, const String *s2
@@ -69,7 +69,7 @@ CERVER_PUBLIC String *str_clone (
 
 CERVER_PUBLIC void str_replace (
 	String *str, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 CERVER_PUBLIC void str_replace_with (
 	String *str, const char *c_str
@@ -155,54 +155,6 @@ CERVER_PUBLIC void str_remove_last_char (
 // returns -1 if no match
 CERVER_PUBLIC int str_contains (
 	const String *str, const char *to_find
-);
-
-/*** serialization ***/
-
-typedef enum SStringSize {
-
-	SS_SMALL = 64,
-	SS_MEDIUM = 128,
-	SS_LARGE = 256,
-	SS_EXTRA_LARGE = 512
-
-} SStringSize;
-
-// serialized str (small)
-typedef struct SStringS {
-
-	u16 len;
-	char str[SS_SMALL];
-
-} SStringS;
-
-// serialized str (medium)
-typedef struct SStringM {
-
-	u16 len;
-	char str[SS_MEDIUM];
-
-} SStringM;
-
-// serialized str (large)
-typedef struct SStringL {
-
-	u16 len;
-	char str[SS_LARGE];
-
-} SStringL;
-
-// serialized str (extra large)
-typedef struct SStringXL {
-
-	u16 len;
-	char str[SS_EXTRA_LARGE];
-
-} SStringXL;
-
-// returns a ptr to a serialized str
-CERVER_PUBLIC void *str_selialize (
-	const String *str, const SStringSize size
 );
 
 #ifdef __cplusplus
