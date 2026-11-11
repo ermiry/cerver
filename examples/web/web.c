@@ -51,6 +51,8 @@ void main_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	if (http_response_send_file (
 		http_receive, HTTP_STATUS_OK, "./examples/web/public/index.html"
 	)) {
@@ -66,6 +68,8 @@ void test_handler (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Test route works!"
@@ -86,6 +90,8 @@ void text_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	char const *text = "<!DOCTYPE html><html><head><meta charset=\"utf-8\" /><title>Cerver</title></head><body><h2>text_handler () works!</h2></body></html>";
 	size_t text_len = strlen (text);
 
@@ -101,6 +107,8 @@ void json_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	char const *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
@@ -115,6 +123,8 @@ void hola_handler (
 	const struct _HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Hola route works!"
@@ -135,6 +145,8 @@ void adios_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Adios route works!"
 	);
@@ -152,7 +164,7 @@ void adios_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 

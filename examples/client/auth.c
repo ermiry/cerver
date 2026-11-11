@@ -12,6 +12,8 @@
 #include <cerver/utils/log.h>
 #include <cerver/utils/utils.h>
 
+#include <app/events.h>
+
 typedef enum AppRequest {
 
 	TEST_MSG		= 0
@@ -216,7 +218,7 @@ static int client_test_app_msg_send (Client *client, Connection *connection) {
 			}
 
 			else {
-				printf ("PACKET_TYPE_APP sent to cerver: %ld\n", sent);
+				printf ("PACKET_TYPE_APP sent to cerver: %zu\n", sent);
 				retval = 0;
 			}
 
@@ -281,6 +283,8 @@ static void *on_cever_teardown (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		printf ("\nCerver %s is going to be destroyed!\n\n", event_data->cerver->info->name);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -293,11 +297,13 @@ static void *on_client_connected (void *event_data_ptr) {
 		CerverEventData *event_data = (CerverEventData *) event_data_ptr;
 
 		printf (
-			"\nClient %ld connected with sock fd %d to cerver %s!\n\n",
+			"\nClient %lu connected with sock fd %d to cerver %s!\n\n",
 			event_data->client->id,
 			event_data->connection->socket->sock_fd,
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -313,6 +319,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 			"\nA client closed a connection to cerver %s!\n\n",
 			event_data->cerver->info->name
 		);
+
+		cerver_event_data_delete (event_data);
 	}
 
 	return NULL;
@@ -324,6 +332,8 @@ static void *on_client_close_connection (void *event_data_ptr) {
 #pragma region main
 
 static void *cerver_client_connect_and_start (void *args) {
+
+	(void) args;
 
 	// wait 1 second and then try to connect
 	sleep (1);
@@ -363,6 +373,8 @@ static void *cerver_client_connect_and_start (void *args) {
 			client_event_success_auth, NULL, NULL,
 			false, false
 		);
+
+		app_client_events_register (client);
 
 		Connection *connection = NULL;
 		if (!cerver_client_connect (client, &connection)) {
@@ -463,6 +475,8 @@ int main (void) {
 		(void) thread_create_detachable (
 			&client_thread, cerver_client_connect_and_start, NULL
 		);
+
+		app_cerver_events_register (client_cerver);
 
 		if (!cerver_start (client_cerver)) {
 			finish ();

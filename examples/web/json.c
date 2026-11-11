@@ -53,6 +53,8 @@ void json_fetch_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
@@ -68,7 +70,7 @@ static unsigned int json_load_from_body (
 
 	unsigned int retval = 1;
 
-	json_error_t json_error =  { 0 };
+	json_error_t json_error = CERVER_ZERO_INITIALIZER;
 	json_t *json_body = json_loads (request_body->str, 0, &json_error);
 	if (json_body) {
 		json_decref (json_body);
@@ -129,6 +131,8 @@ void json_int_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const int value = 18;
 
 	(void) http_response_json_int_value_send (
@@ -143,6 +147,8 @@ void json_large_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const long value = 1800000;
 
@@ -159,6 +165,8 @@ void json_real_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const double value = 18.123;
 
 	(void) http_response_json_real_value_send (
@@ -173,6 +181,8 @@ void json_bool_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const bool value = true;
 
@@ -189,6 +199,8 @@ void msg_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_msg_send (
 		http_receive, HTTP_STATUS_OK, "oki"
 	);
@@ -201,6 +213,8 @@ void error_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_error_send (
 		http_receive, HTTP_STATUS_BAD_REQUEST, "bad"
 	);
@@ -212,6 +226,8 @@ void key_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	(void) http_response_json_key_value_send (
 		http_receive,
@@ -226,6 +242,8 @@ void custom_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_custom_send (
 		http_receive,
 		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
@@ -238,6 +256,8 @@ void reference_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
@@ -257,7 +277,7 @@ void reference_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 
