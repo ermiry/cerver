@@ -39,14 +39,14 @@ static char *udp_test_datagram (const size_t data_size, const size_t trailing, s
 	Packet *packet = packet_generate_request (PACKET_TYPE_APP, 0, NULL, 0);
 	test_check_ptr (packet);
 
-	*size = sizeof (PacketHeader) + data_size + trailing;
+	*size = PACKET_HEADER_SIZE + data_size + trailing;
 
 	char *datagram = (char *) calloc (*size, sizeof (char));
 	test_check_ptr (datagram);
 
-	packet->header.packet_size = sizeof (PacketHeader) + data_size;
-	(void) memcpy (datagram, &packet->header, sizeof (PacketHeader));
-	(void) memset (datagram + sizeof (PacketHeader), UDP_TEST_DATA_BYTE, data_size);
+	packet->header.packet_size = PACKET_HEADER_SIZE + data_size;
+	packet_header_encode (&packet->header, (u8 *) datagram);
+	(void) memset (datagram + PACKET_HEADER_SIZE, UDP_TEST_DATA_BYTE, data_size);
 
 	packet_delete (packet);
 
@@ -84,7 +84,7 @@ static void test_udp_datagram_check (void) {
 	);
 
 	// shorter than a header, and without a datagram
-	const char short_datagram[sizeof (PacketHeader) - UDP_TEST_EXTRA_BYTE] = { 0 };
+	const char short_datagram[PACKET_HEADER_SIZE - UDP_TEST_EXTRA_BYTE] = { 0 };
 	test_check_int_eq (
 		udp_datagram_check (short_datagram, sizeof (short_datagram), MAX_UDP_PACKET_SIZE, &header),
 		UDP_DATAGRAM_INVALID, NULL
@@ -96,17 +96,25 @@ static void test_udp_datagram_check (void) {
 	size_t size = 0;
 	char *datagram = udp_test_datagram (UDP_TEST_DATA_SIZE, 0, &size);
 
-	PacketHeader *packet_header = (PacketHeader *) datagram;
+	PacketHeader packet_header;
+	test_check_unsigned_eq (packet_header_decode ((const u8 *) datagram, &packet_header), PACKET_HEADER_RESULT_NONE, NULL);
 
-	packet_header->packet_size = size + UDP_TEST_EXTRA_BYTE;
+	packet_header.packet_size = size + UDP_TEST_EXTRA_BYTE;
+	packet_header_encode (&packet_header, (u8 *) datagram);
 	test_check_int_eq (udp_datagram_check (datagram, size, MAX_UDP_PACKET_SIZE, &header), UDP_DATAGRAM_INVALID, NULL);
 
-	packet_header->packet_size = sizeof (PacketHeader) - UDP_TEST_EXTRA_BYTE;
+	packet_header.packet_size = PACKET_HEADER_SIZE - UDP_TEST_EXTRA_BYTE;
+	packet_header_encode (&packet_header, (u8 *) datagram);
 	test_check_int_eq (udp_datagram_check (datagram, size, MAX_UDP_PACKET_SIZE, &header), UDP_DATAGRAM_INVALID, NULL);
 
-	packet_header->packet_size = size;
+	packet_header.packet_size = size;
+	packet_header_encode (&packet_header, (u8 *) datagram);
 	test_check_int_eq (udp_datagram_check (datagram, size, size - UDP_TEST_EXTRA_BYTE, &header), UDP_DATAGRAM_INVALID, NULL);
 	test_check_int_eq (udp_datagram_check (datagram, size, size, &header), UDP_DATAGRAM_PLAIN, NULL);
+
+	// a header with another format is invalid
+	datagram[PACKET_HEADER_FORMAT_OFFSET] = PACKET_HEADER_FORMAT + 1;
+	test_check_int_eq (udp_datagram_check (datagram, size, size, &header), UDP_DATAGRAM_INVALID, NULL);
 
 	free (datagram);
 
@@ -148,7 +156,7 @@ static void test_udp_packet_create (void) {
 	test_check_unsigned_eq (packet->packet_size, size, NULL);
 	test_check_unsigned_eq (packet->data_size, UDP_TEST_DATA_SIZE, NULL);
 	test_check_int_eq (packet->packet_type, PACKET_TYPE_APP, NULL);
-	test_check_int_eq (memcmp (packet->data, datagram + sizeof (PacketHeader), UDP_TEST_DATA_SIZE), 0, NULL);
+	test_check_int_eq (memcmp (packet->data, datagram + PACKET_HEADER_SIZE, UDP_TEST_DATA_SIZE), 0, NULL);
 
 	packet_delete (packet);
 	free (datagram);
@@ -216,28 +224,38 @@ static void test_udp_connection_token (void) {
 
 }
 
-// a token without its NUL is taken as credentials, it was read past the packet
+// a session token comes with its own request type, as a serialized object,
+// the credentials of the same bytes are only credentials
 static void test_udp_auth_data (void) {
 
-	SToken session = { { 0 } };
+	SessionToken session = { { 0 } };
 	(void) memset (session.token, UDP_TEST_DATA_BYTE, TOKEN_SIZE - UDP_TEST_EXTRA_BYTE);
 
-	Packet *packet = packet_create (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_CLIENT_AUTH, &session, sizeof (SToken));
+	Packet *packet = packet_create_serialized (
+		PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_CLIENT_TOKEN, &session_token_schema, &session
+	);
+
+	test_check_ptr (packet);
+
 	AuthData *auth_data = auth_data_get (packet);
 	test_check_ptr (auth_data);
 	test_check_ptr (auth_data->token);
 	test_check_unsigned_eq (auth_data->token->len, TOKEN_SIZE - UDP_TEST_EXTRA_BYTE, NULL);
 	auth_data_release (auth_data);
-	packet_delete (packet);
 
-	(void) memset (session.token, UDP_TEST_DATA_BYTE, TOKEN_SIZE);
-
-	packet = packet_create (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_CLIENT_AUTH, &session, sizeof (SToken));
+	// the same object with the request type of the credentials is taken as their bytes
+	packet->header.request_type = AUTH_PACKET_TYPE_CLIENT_AUTH;
 	auth_data = auth_data_get (packet);
 	test_check_ptr (auth_data);
 	test_check_null_ptr (auth_data->token);
-	test_check_unsigned_eq (auth_data->auth_data_size, sizeof (SToken), NULL);
+	test_check_unsigned_eq (auth_data->auth_data_size, packet->data_size, NULL);
 	auth_data_release (auth_data);
+
+	// a token that is not a session token object is not auth data
+	packet->header.request_type = AUTH_PACKET_TYPE_CLIENT_TOKEN;
+	packet->header.flags = 0;
+	test_check_null_ptr (auth_data_get (packet));
+
 	packet_delete (packet);
 
 }
@@ -325,19 +343,19 @@ static void test_udp_send (void) {
 	char *buffer = (char *) malloc (MAX_UDP_PACKET_SIZE);
 	test_check_ptr (buffer);
 
-	const size_t biggest = MAX_UDP_PACKET_SIZE - sizeof (PacketHeader);
+	const size_t biggest = MAX_UDP_PACKET_SIZE - PACKET_HEADER_SIZE;
 
-	test_check_int_eq ((int) udp_test_send (&pair, UDP_TEST_DATA_SIZE, false, buffer), (int) (sizeof (PacketHeader) + UDP_TEST_DATA_SIZE), NULL);
-	test_check_int_eq ((int) udp_test_send (&pair, UDP_TEST_DATA_SIZE, true, buffer), (int) (sizeof (PacketHeader) + UDP_TEST_DATA_SIZE), NULL);
+	test_check_int_eq ((int) udp_test_send (&pair, UDP_TEST_DATA_SIZE, false, buffer), (int) (PACKET_HEADER_SIZE + UDP_TEST_DATA_SIZE), NULL);
+	test_check_int_eq ((int) udp_test_send (&pair, UDP_TEST_DATA_SIZE, true, buffer), (int) (PACKET_HEADER_SIZE + UDP_TEST_DATA_SIZE), NULL);
 	test_check_int_eq ((int) udp_test_send (&pair, biggest, false, buffer), MAX_UDP_PACKET_SIZE, NULL);
 	test_check_int_eq ((int) udp_test_send (&pair, biggest + UDP_TEST_EXTRA_BYTE, false, buffer), -1, NULL);
 
 	connection_set_datagram_token (pair.connection, udp_test_token);
 
 	const ssize_t received = udp_test_send (&pair, UDP_TEST_DATA_SIZE, false, buffer);
-	test_check_int_eq ((int) received, (int) (sizeof (PacketHeader) + UDP_TEST_DATA_SIZE + CONNECTION_DATAGRAM_TOKEN_SIZE), NULL);
+	test_check_int_eq ((int) received, (int) (PACKET_HEADER_SIZE + UDP_TEST_DATA_SIZE + CONNECTION_DATAGRAM_TOKEN_SIZE), NULL);
 	test_check_int_eq (
-		memcmp (buffer + sizeof (PacketHeader) + UDP_TEST_DATA_SIZE, udp_test_token, CONNECTION_DATAGRAM_TOKEN_SIZE),
+		memcmp (buffer + PACKET_HEADER_SIZE + UDP_TEST_DATA_SIZE, udp_test_token, CONNECTION_DATAGRAM_TOKEN_SIZE),
 		0, NULL
 	);
 

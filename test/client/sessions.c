@@ -66,15 +66,7 @@ static void *connect_with_session (void *args) {
 	const char *session_id = (const char *) args;
 	test_check (session_id[0] != '\0', "No session id was received!");
 
-	SToken *s_token = (SToken *) calloc (1, sizeof (SToken));
-	(void) strncpy (s_token->token, session_id, TOKEN_SIZE - 1);
-
-	connection_set_auth_data (
-		connection,
-		s_token, sizeof (SToken),
-		free,
-		false
-	);
+	test_check_unsigned_eq (connection_set_auth_token (connection, session_id, false), 0, NULL);
 
 	/*** start ***/
 	test_check_int_eq (
@@ -121,7 +113,7 @@ static void *connect_with_session (void *args) {
 
 #pragma GCC diagnostic pop
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT sessions...\n");
 
