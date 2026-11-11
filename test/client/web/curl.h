@@ -13,6 +13,9 @@
 // the host, the port and the path of a request to the web cerver of a pair
 #define WEB_TEST_ADDRESS_SIZE			128
 
+// an address of WEB_TEST_ADDRESS_SIZE with the path of a route after it
+#define WEB_TEST_URL_SIZE				(WEB_TEST_ADDRESS_SIZE * 2)
+
 // writes the host (CERVER_TEST_ADDRESS, an IPv6 address between brackets),
 // the port and the path (NULL for none) of the web cerver of a pair
 extern void web_test_address (char *buffer, const char *path);

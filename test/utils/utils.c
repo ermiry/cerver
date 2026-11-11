@@ -5,7 +5,7 @@
 
 #include "../test.h"
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 
@@ -24,6 +24,8 @@ int main (int argc, char **argv) {
 	utils_tests_serializer ();
 
 	utils_tests_log ();
+
+	utils_tests_histogram ();
 
 	(void) printf ("\nDone with UTILS tests!\n\n");
 

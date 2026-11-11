@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read version file
         id: get_version
@@ -21,15 +21,15 @@ jobs:
 
       # docker setup
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # buildev
       # build cerver development builder image
       # used to build projects with development cerver libraries
       - name: Build buildev image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.buildev
@@ -39,7 +39,7 @@ jobs:
       # build cerver production builder image
       # used to build projects with production cerver libraries
       - name: Build builder image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.builder

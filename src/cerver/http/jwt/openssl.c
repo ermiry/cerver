@@ -256,18 +256,14 @@ int jwt_sign_sha_pem (jwt_t *jwt, char **out, unsigned int *len,
 	} else {
 		unsigned int degree, bn_len, r_len, s_len, buf_len;
 		unsigned char *raw_buf;
-		EC_KEY *ec_key;
 
 		/* For EC we need to convert to a raw format of R/S. */
 
-		/* Get the actual ec_key */
-		ec_key = EVP_PKEY_get1_EC_KEY (pkey);
-		if (ec_key == NULL)
-			SIGN_ERROR (ENOMEM);
+		/* The bits of an EC key are the degree of its curve (EVP_PKEY_bits, without the EC_KEY of OpenSSL 1) */
+		if (EVP_PKEY_bits (pkey) <= 0)
+			SIGN_ERROR (EINVAL);
 
-		degree = EC_GROUP_get_degree (EC_KEY_get0_group (ec_key));
-
-		EC_KEY_free (ec_key);
+		degree = (unsigned int) EVP_PKEY_bits (pkey);
 
 		/* Get the sig from the DER encoded version. */
 		ec_sig = d2i_ECDSA_SIG (NULL, (const unsigned char **)&sig, slen);
@@ -384,20 +380,16 @@ int jwt_verify_sha_pem (jwt_t *jwt, const char *head, const char *sig_b64)
 	if (pkey_type == EVP_PKEY_EC) {
 		unsigned int degree, bn_len;
 		unsigned char *p;
-		EC_KEY *ec_key;
 
 		ec_sig = ECDSA_SIG_new ();
 		if (ec_sig == NULL)
 			VERIFY_ERROR (ENOMEM);
 
-		/* Get the actual ec_key */
-		ec_key = EVP_PKEY_get1_EC_KEY (pkey);
-		if (ec_key == NULL)
-			VERIFY_ERROR (ENOMEM);
+		/* The bits of an EC key are the degree of its curve (EVP_PKEY_bits, without the EC_KEY of OpenSSL 1) */
+		if (EVP_PKEY_bits (pkey) <= 0)
+			VERIFY_ERROR (EINVAL);
 
-		degree = EC_GROUP_get_degree (EC_KEY_get0_group (ec_key));
-
-		EC_KEY_free (ec_key);
+		degree = (unsigned int) EVP_PKEY_bits (pkey);
 
 		bn_len = (degree + 7) / 8;
 		if ((bn_len * 2) != (unsigned int) slen)

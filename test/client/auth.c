@@ -40,7 +40,7 @@ static void app_handler (void *packet_ptr) {
 
 }
 
-int main (int argc, const char **argv) {
+int main (void) {
 
 	(void) printf ("Testing CLIENT auth...\n");
 

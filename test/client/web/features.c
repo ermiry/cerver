@@ -35,6 +35,9 @@
 #define FEATURES_CLIENT_HEADERS				4
 #define FEATURES_CLIENT_VALUE_SIZE			256
 
+// a value of FEATURES_CLIENT_VALUE_SIZE inside its JSON key
+#define FEATURES_CLIENT_EXPECTED_SIZE		(FEATURES_CLIENT_VALUE_SIZE * 2)
+
 // nginx's $request_id has 32 hex characters
 #define FEATURES_CLIENT_NGINX_ID_LENGTH		32
 
@@ -274,8 +277,8 @@ static unsigned int features_client_request_id (CURL *curl) {
 		errors = 1;
 	}
 
-	char expected[FEATURES_CLIENT_VALUE_SIZE] = { 0 };
-	(void) snprintf (expected, FEATURES_CLIENT_VALUE_SIZE, "\"id\": \"%s\"", id);
+	char expected[FEATURES_CLIENT_EXPECTED_SIZE] = { 0 };
+	(void) snprintf (expected, FEATURES_CLIENT_EXPECTED_SIZE, "\"id\": \"%s\"", id);
 	errors |= features_client_expect_body ("request id", expected);
 
 	return errors;

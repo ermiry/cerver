@@ -968,7 +968,7 @@ typedef struct {
 
 /*** error reporting ***/
 
-static void error_set (
+CERVER_PRINTF_FORMAT (4, 5) static void error_set (
 	json_error_t *error, const lex_t *lex, enum json_error_code code,
 	const char *msg, ...
 ) {
@@ -1245,7 +1245,7 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 				error_set (error, lex, json_error_invalid_syntax, "unexpected newline");
 			else
 				error_set (error, lex, json_error_invalid_syntax, "control character 0x%x",
-						  c);
+						  (unsigned int) c);
 			goto out;
 		}
 
@@ -1322,18 +1322,18 @@ static void lex_scan_string (lex_t *lex, json_error_t *error) {
 						} else {
 							/* invalid second surrogate */
 							error_set (error, lex, json_error_invalid_syntax,
-									  "invalid Unicode '\\u%04X\\u%04X'", value, value2);
+									  "invalid Unicode '\\u%04X\\u%04X'", (unsigned int) value, (unsigned int) value2);
 							goto out;
 						}
 					} else {
 						/* no second surrogate */
 						error_set (error, lex, json_error_invalid_syntax,
-								  "invalid Unicode '\\u%04X'", value);
+								  "invalid Unicode '\\u%04X'", (unsigned int) value);
 						goto out;
 					}
 				} else if (0xDC00 <= value && value <= 0xDFFF) {
 					error_set (error, lex, json_error_invalid_syntax,
-							  "invalid Unicode '\\u%04X'", value);
+							  "invalid Unicode '\\u%04X'", (unsigned int) value);
 					goto out;
 				}
 
@@ -1944,6 +1944,12 @@ json_t *json_loadb (
 
 }
 
+static int file_get_func (void *data) {
+
+	return fgetc ((FILE *) data);
+
+}
+
 json_t *json_loadf (
 	FILE *input, size_t flags, json_error_t *error
 ) {
@@ -1964,7 +1970,7 @@ json_t *json_loadf (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)fgetc, flags, input))
+	if (lex_init (&lex, file_get_func, flags, input))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -1974,10 +1980,10 @@ json_t *json_loadf (
 
 }
 
-static int fd_get_func (int *fd) {
+static int fd_get_func (void *data) {
 
 	uint8_t c = 0;
-	if (read (*fd, &c, 1) == 1)
+	if (read (*(int *) data, &c, 1) == 1)
 		return (int) c;
 	
 	return EOF;
@@ -1988,7 +1994,7 @@ json_t *json_loadfd (
 	int input, size_t flags, json_error_t *error
 ) {
 
-	lex_t lex = { 0 };
+	lex_t lex = CERVER_ZERO_INITIALIZER;
 	const char *source;
 	json_t *result;
 
@@ -2006,7 +2012,7 @@ json_t *json_loadfd (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)fd_get_func, flags, &input))
+	if (lex_init (&lex, fd_get_func, flags, &input))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -2079,7 +2085,7 @@ json_t *json_load_callback (
 	json_error_t *error
 ) {
 
-	lex_t lex = { 0 };
+	lex_t lex = CERVER_ZERO_INITIALIZER;
 	json_t *result = NULL;
 
 	callback_data_t stream_data;
@@ -2095,7 +2101,7 @@ json_t *json_load_callback (
 		return NULL;
 	}
 
-	if (lex_init (&lex, (get_func)callback_get, flags, &stream_data))
+	if (lex_init (&lex, callback_get, flags, &stream_data))
 		return NULL;
 
 	result = parse_json (&lex, flags, error);
@@ -2211,7 +2217,7 @@ static void prev_token (scanner_t *s) {
 
 }
 
-static void set_error (
+CERVER_PRINTF_FORMAT (4, 5) static void set_error (
 	scanner_t *s, const char *source, enum json_error_code code,
 	const char *fmt, ...
 ) {
@@ -2959,7 +2965,7 @@ json_t *json_vpack_ex (
 	const char *fmt, va_list ap
 ) {
 
-	scanner_t s = { 0 };
+	scanner_t s = CERVER_ZERO_INITIALIZER;
 	va_list ap_copy;
 	json_t *value = NULL;
 
@@ -3026,7 +3032,7 @@ int json_vunpack_ex (
 	const char *fmt, va_list ap
 ) {
 
-	scanner_t s = { 0 };
+	scanner_t s = CERVER_ZERO_INITIALIZER;
 	va_list ap_copy;
 
 	if (!root) {
@@ -3215,7 +3221,7 @@ static void print_json_aux (
 
 		default: {
 			(void) fprintf (
-				stderr, "unrecognized JSON type %u\n", json_typeof (element)
+				stderr, "unrecognized JSON type %u\n", (unsigned int) json_typeof (element)
 			);
 		} break;
 	}

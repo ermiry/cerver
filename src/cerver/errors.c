@@ -234,13 +234,13 @@ void cerver_error_event_trigger (
 
 #pragma region handler
 
-// TODO: differentiate local errors from the ones coming from the clients
-// handles error packets
+// handles the error packets that come from the clients,
+// the errors of the cerver itself are not packets, they trigger their events where they happen
 void cerver_error_packet_handler (Packet *packet) {
 
-	if (packet->data_size >= sizeof (SError)) {
-		char *end = (char *) packet->data;
-		SError *s_error = (SError *) end;
+	ErrorMessage message;
+	if (packet_get_object (packet, &error_message_schema, NULL, &message) == SERIALIZER_RESULT_NONE) {
+		const ErrorMessage *s_error = &message;
 
 		switch (s_error->error_type) {
 			case CERVER_ERROR_NONE: break;
@@ -291,34 +291,51 @@ void cerver_error_packet_handler (Packet *packet) {
 
 #pragma region packets
 
+SERIALIZER_DEFINE (ErrorMessage, error_message, ERROR_MESSAGE_VERSION, ERROR_MESSAGE_FIELDS)
+
+// a byte that continues a UTF-8 character
+#define ERROR_MESSAGE_CONTINUATION_MASK		0xc0
+#define ERROR_MESSAGE_CONTINUATION			0x80
+
+// the message is cut to its field before a character that does not fit
+static void error_message_set_text (ErrorMessage *message, const char *msg) {
+
+	size_t length = strnlen (msg, ERROR_MESSAGE_LENGTH);
+
+	if (length == ERROR_MESSAGE_LENGTH) {
+		length -= 1;
+		while (length && ((msg[length] & ERROR_MESSAGE_CONTINUATION_MASK) == ERROR_MESSAGE_CONTINUATION)) {
+			length -= 1;
+		}
+	}
+
+	(void) memcpy (message->msg, msg, length);
+	message->msg[length] = '\0';
+
+}
+
+// creates an error packet ready to be sent with the type and the message,
+// a message longer than ERROR_MESSAGE_LENGTH is cut without splitting a character
+Packet *error_message_packet_create (const u32 error_type, const char *msg) {
+
+	ErrorMessage message;
+	serializer_object_init (&error_message_schema, &message);
+
+	message.timestamp = (i64) time (NULL);
+	message.error_type = error_type;
+	if (msg) error_message_set_text (&message, msg);
+
+	return packet_create_serialized (
+		PACKET_TYPE_ERROR, REQUEST_PACKET_TYPE_NONE,
+		&error_message_schema, &message
+	);
+
+}
+
 // creates an error packet ready to be sent
 Packet *error_packet_generate (const CerverErrorType type, const char *msg) {
 
-	Packet *packet = packet_new ();
-	if (packet) {
-		size_t packet_len = sizeof (PacketHeader) + sizeof (SError);
-
-		// zeroed, the header fields that are not set and the padding are sent too
-		packet->packet = calloc (1, packet_len);
-		packet->packet_size = packet_len;
-
-		char *end = (char *) packet->packet;
-		PacketHeader *header = (PacketHeader *) end;
-		header->packet_type = PACKET_TYPE_ERROR;
-		header->packet_size = packet_len;
-
-		header->request_type = REQUEST_PACKET_TYPE_NONE;
-		header->version = packet_version_local ();
-
-		end += sizeof (PacketHeader);
-
-		SError *s_error = (SError *) end;
-		s_error->error_type = type;
-		s_error->timestamp = time (NULL);
-		if (msg) (void) strncpy (s_error->msg, msg, ERROR_MESSAGE_LENGTH - 1);
-	}
-
-	return packet;
+	return error_message_packet_create ((u32) type, msg);
 
 }
 

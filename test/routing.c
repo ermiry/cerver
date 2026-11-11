@@ -52,6 +52,7 @@
 #define ROUTING_SLOW_MICROSECONDS		250000
 
 #define ROUTING_MISSING_HANDLER_ID		7
+#define ROUTING_INVALID_SERVICE			-1
 #define ROUTING_UNKNOWN_PACKET_TYPE		200
 #define ROUTING_BAD_PACKET_SIZE			4
 
@@ -130,7 +131,7 @@ static bool routing_body_check (const char *body, const size_t size) {
 
 #pragma region services
 
-// the response is sent with the sock fd of the request, so the balancer routes it back
+// the response is sent with the route id of the request, so the balancer routes it back
 static void routing_service_echo (const Packet *packet) {
 
 	Packet *response = packet_generate_request (
@@ -140,7 +141,7 @@ static void routing_service_echo (const Packet *packet) {
 
 	test_check_ptr (response);
 
-	((PacketHeader *) response->packet)->sock_fd = packet->header.sock_fd;
+	packet_set_route_id (response, packet->header.route_id);
 
 	packet_set_network_values (
 		response, packet->cerver, packet->client, packet->connection, NULL
@@ -475,10 +476,14 @@ static void routing_client_send (
 	char *body = body_size ? (char *) malloc (body_size) : NULL;
 	if (body) routing_body_fill (body, body_size);
 
-	Packet *packet = packet_generate_request (packet_type, request_type, body, body_size);
+	Packet *packet = packet_new ();
 	test_check_ptr (packet);
 
-	((PacketHeader *) packet->packet)->handler_id = handler_id;
+	packet->packet_type = packet_type;
+	packet->req_type = request_type;
+	packet->header.handler_id = handler_id;
+	if (body) test_check_unsigned_eq (packet_append_data (packet, body, body_size), 0, NULL);
+	test_check_unsigned_eq (packet_generate (packet), 0, NULL);
 
 	packet_set_network_values (packet, NULL, routing->client, routing->connection, NULL);
 	test_check_unsigned_eq (packet_send (packet, 0, NULL, false), 0, NULL);
@@ -521,6 +526,22 @@ static bool routing_client_stopped (const RoutingClient *routing) {
 
 }
 
+// the info of the cerver arrives after the connection starts
+static const CerverReport *routing_client_wait_report (const RoutingClient *routing) {
+
+	const struct timespec interval = { 0, TEST_WAIT_POLL_NANOSECONDS };
+	const double deadline = test_wait_now () + TEST_WAIT_SECONDS;
+
+	const CerverReport *report = __atomic_load_n (&routing->connection->cerver_report, __ATOMIC_ACQUIRE);
+	while (!report && (test_wait_now () < deadline)) {
+		(void) nanosleep (&interval, NULL);
+		report = __atomic_load_n (&routing->connection->cerver_report, __ATOMIC_ACQUIRE);
+	}
+
+	return report;
+
+}
+
 static void routing_check_echoes (const unsigned int expected) {
 
 	test_check_unsigned_eq (
@@ -544,6 +565,11 @@ static void test_routing_round_robin (void) {
 	routing_start (&routing, BALANCER_TYPE_ROUND_ROBIN);
 
 	RoutingClient client = routing_client_connect (routing.port);
+
+	// the info of the balancer reaches its clients with its type
+	const CerverReport *report = routing_client_wait_report (&client);
+	test_check_ptr (report);
+	test_check_int_eq (report->type, CERVER_TYPE_BALANCER, NULL);
 
 	routing_client_send_many (&client, 0, ROUTING_PACKETS);
 	routing_check_echoes (ROUTING_PACKETS);
@@ -613,6 +639,93 @@ static void test_routing_missing_handler_id (void) {
 
 }
 
+// #299: selects the service with a value of the packet, the handler id here,
+// and only when the body that it gets is the one that the client sent
+static int routing_select_service (
+	const PacketHeader *header, const char *body, const size_t body_size, void *args
+) {
+
+	test_counter_add ((unsigned int *) args);
+
+	const bool valid = (body_size == ROUTING_BODY_SIZE) && routing_body_check (body, body_size);
+
+	return valid ? (int) header->handler_id : ROUTING_INVALID_SERVICE;
+
+}
+
+// the method of the app selects the service of each packet,
+// and its indexes that do not have a working service are unavailable services
+static void test_routing_custom (void) {
+
+	routing_counters_reset ();
+
+	unsigned int selections = 0;
+
+	RoutingBalancer routing;
+	routing_balancer_create (&routing, BALANCER_TYPE_CUSTOM);
+	test_check_int_eq (balancer_get_type (routing.balancer), BALANCER_TYPE_CUSTOM, NULL);
+	test_check_str_eq (balancer_type_to_string (BALANCER_TYPE_CUSTOM), "Custom", NULL);
+
+	balancer_set_select_service (routing.balancer, routing_select_service, &selections);
+
+	for (unsigned int i = 0; i < ROUTING_SERVICES; i++) {
+		routing_service_start (&routing.services[i]);
+	}
+
+	routing_balancer_start (&routing);
+
+	RoutingClient client = routing_client_connect (routing.port);
+
+	for (unsigned int i = 0; i < ROUTING_SERVICES; i++) {
+		routing_client_send_many (&client, (u8) i, ROUTING_PACKETS / ROUTING_SERVICES);
+	}
+
+	routing_check_echoes (ROUTING_PACKETS);
+
+	for (unsigned int i = 0; i < ROUTING_SERVICES; i++) {
+		test_check_unsigned_eq (routing.services[i].packets, ROUTING_PACKETS / ROUTING_SERVICES, NULL);
+	}
+
+	// an index without a service
+	routing_client_send_many (&client, ROUTING_MISSING_HANDLER_ID, ROUTING_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&packet_errors, ROUTING_PACKETS, TEST_WAIT_SECONDS),
+		ROUTING_PACKETS, NULL
+	);
+
+	test_check_unsigned_eq (CERVER_STATS_GET (routing.balancer->stats->unhandled_packets), ROUTING_PACKETS, NULL);
+	test_check_unsigned_eq (selections, ROUTING_PACKETS * 2, NULL);
+
+	routing_client_end (&client);
+	routing_stop (&routing);
+
+}
+
+// a custom balancer without a method does not route any packet
+static void test_routing_custom_without_method (void) {
+
+	routing_counters_reset ();
+
+	RoutingBalancer routing;
+	routing_start (&routing, BALANCER_TYPE_CUSTOM);
+
+	RoutingClient client = routing_client_connect (routing.port);
+
+	routing_client_send_many (&client, 0, ROUTING_PACKETS);
+
+	test_check_unsigned_eq (
+		test_wait_counter (&packet_errors, ROUTING_PACKETS, TEST_WAIT_SECONDS),
+		ROUTING_PACKETS, NULL
+	);
+
+	test_check_unsigned_eq (echoes, 0, NULL);
+
+	routing_client_end (&client);
+	routing_stop (&routing);
+
+}
+
 // a packet type out of the stats arrays is counted as a bad packet
 static void test_routing_unknown_packet_type (void) {
 
@@ -655,8 +768,11 @@ static void test_routing_bad_packet_size (void) {
 	header.packet_size = ROUTING_BAD_PACKET_SIZE;
 	header.version = packet_version_local ();
 
+	u8 encoded[PACKET_HEADER_SIZE];
+	packet_header_encode (&header, encoded);
+
 	test_check (
-		send (bad.connection->socket->sock_fd, &header, sizeof (PacketHeader), 0) == (ssize_t) sizeof (PacketHeader),
+		send (bad.connection->socket->sock_fd, encoded, PACKET_HEADER_SIZE, 0) == (ssize_t) PACKET_HEADER_SIZE,
 		"failed to send the bad header"
 	);
 
@@ -880,6 +996,8 @@ int main (int argc, char **argv) {
 	test_routing_round_robin ();
 	test_routing_handler_id ();
 	test_routing_missing_handler_id ();
+	test_routing_custom ();
+	test_routing_custom_without_method ();
 	test_routing_unknown_packet_type ();
 	test_routing_bad_packet_size ();
 	test_routing_big_packet ();

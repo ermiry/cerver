@@ -446,6 +446,8 @@ static unsigned int custom_authentication_handler (
 	const HttpRequest *request
 ) {
 
+	(void) http_receive;
+
 	unsigned int retval = 1;
 
 	http_request_multi_parts_print (request);
@@ -677,7 +679,7 @@ static void http_tests_main (void) {
 // the full matrix of test/disconnect.sh runs alone, without the other suites
 #define DISCONNECT_ONLY_VARIABLE			"DISCONNECT_ONLY"
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	test_output_init ();
 

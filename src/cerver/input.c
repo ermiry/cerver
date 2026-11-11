@@ -58,7 +58,7 @@ unsigned int input_password (char *password) {
 
 	unsigned int retval = 1;
 
-	struct termios old_term = { 0 }, new_term = { 0 };
+	struct termios old_term = CERVER_ZERO_INITIALIZER, new_term = CERVER_ZERO_INITIALIZER;
 
 	/* Turn echoing off and fail if we can't. */
 	if (!tcgetattr (fileno (stdin), &old_term)) {

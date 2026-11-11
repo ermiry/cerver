@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include <sys/socket.h>
 
@@ -12,9 +13,14 @@
 #include "cerver/receive.h"
 #include "cerver/socket.h"
 
+#include "cerver/game/lobby.h"
+
 #include "cerver/utils/log.h"
 
 static const char *receive_bad_packet_size = { "The packet is bigger than the maximum size" };
+
+#define RECEIVE_BAD_HEADER_MESSAGE_SIZE			128
+#define RECEIVE_BAD_HEADER_MESSAGE				"%s, the cerver expects the header format %d"
 
 const char *receive_error_to_string (
 	const ReceiveError error
@@ -80,7 +86,7 @@ ReceiveHandle *receive_handle_new (void) {
 
 		receive_handle->state = RECEIVE_HANDLE_STATE_NONE;
 
-		(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
+		(void) memset (receive_handle->header, 0, PACKET_HEADER_SIZE);
 		receive_handle->header_end = NULL;
 		receive_handle->remaining_header = 0;
 
@@ -134,11 +140,13 @@ static int receive_handle_sock_fd (const ReceiveHandle *receive_handle) {
 
 }
 
-// a packet with an invalid size means that the stream is corrupted,
-// so the rest of the connection can not be parsed and it is closed:
-// recv () returns 0 and the receive loop drops it as usual
-// a packet with an invalid size is a bad packet, the cerver tells its sender why
-static void receive_handle_lost_report (ReceiveHandle *receive_handle) {
+// a packet with an invalid size or header means that the stream is corrupted,
+// or that the peer speaks another protocol, so the rest of the connection
+// can not be parsed and it is closed: recv () returns 0 and the receive loop drops it as usual
+// it is a bad packet, the cerver tells its sender why
+static void receive_handle_lost_report (
+	ReceiveHandle *receive_handle, const char *message
+) {
 
 	if (receive_handle->connection) receive_handle->connection->bad_packets += 1;
 
@@ -146,7 +154,7 @@ static void receive_handle_lost_report (ReceiveHandle *receive_handle) {
 		CERVER_STATS_ADD (receive_handle->cerver->stats->received_packets->n_bad_packets, 1);
 
 		(void) error_packet_generate_and_send (
-			CERVER_ERROR_PACKET_ERROR, receive_bad_packet_size,
+			CERVER_ERROR_PACKET_ERROR, message,
 			receive_handle->cerver, receive_handle->client, receive_handle->connection
 		);
 	}
@@ -157,11 +165,21 @@ static void receive_handle_lost_report (ReceiveHandle *receive_handle) {
 
 }
 
+static u8 receive_handle_close (ReceiveHandle *receive_handle, const int sock_fd) {
+
+	receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
+
+	if (sock_fd > -1) (void) shutdown (sock_fd, SHUT_RDWR);
+
+	return 1;
+
+}
+
 static u8 receive_handle_lost (
 	ReceiveHandle *receive_handle, const size_t packet_size
 ) {
 
-	receive_handle_lost_report (receive_handle);
+	receive_handle_lost_report (receive_handle, receive_bad_packet_size);
 
 	const int sock_fd = receive_handle_sock_fd (receive_handle);
 
@@ -171,11 +189,34 @@ static u8 receive_handle_lost (
 		packet_size, sock_fd
 	);
 
-	receive_handle->state = RECEIVE_HANDLE_STATE_LOST;
+	return receive_handle_close (receive_handle, sock_fd);
 
-	if (sock_fd > -1) (void) shutdown (sock_fd, SHUT_RDWR);
+}
 
-	return 1;
+// a header with another format, unknown flags or reserved bytes closes the connection,
+// the error tells the peer the format that the cerver expects
+static u8 receive_handle_bad_header (
+	ReceiveHandle *receive_handle, const PacketHeaderResult result
+) {
+
+	char message[RECEIVE_BAD_HEADER_MESSAGE_SIZE] = { 0 };
+	(void) snprintf (
+		message, RECEIVE_BAD_HEADER_MESSAGE_SIZE,
+		RECEIVE_BAD_HEADER_MESSAGE,
+		packet_header_result_string (result), PACKET_HEADER_FORMAT
+	);
+
+	receive_handle_lost_report (receive_handle, message);
+
+	const int sock_fd = receive_handle_sock_fd (receive_handle);
+
+	cerver_log_with_date (
+		LOG_TYPE_WARNING, LOG_TYPE_PACKET,
+		"receive_handle_buffer () - %s from sock fd <%d> - closing the connection",
+		packet_header_result_string (result), sock_fd
+	);
+
+	return receive_handle_close (receive_handle, sock_fd);
 
 }
 
@@ -227,12 +268,12 @@ size_t receive_handle_take_trailing (
 }
 
 static bool receive_packet_size_is_valid (
-	const ReceiveCursor *cursor, const size_t packet_size
+	const ReceiveCursor *cursor, const u64 packet_size
 ) {
 
 	return (
-		(packet_size >= sizeof (PacketHeader))
-		&& (packet_size <= cursor->max_packet_size)
+		(packet_size >= PACKET_HEADER_SIZE)
+		&& (packet_size <= (u64) cursor->max_packet_size)
 	);
 
 }
@@ -291,7 +332,10 @@ static void receive_packet_set_values (
 	packet->cerver = receive_handle->cerver;
 	packet->client = receive_handle->client;
 	packet->connection = receive_handle->connection;
-	packet->lobby = receive_handle->lobby;
+
+	// the packet of a player keeps a reference to the lobby of its connection
+	packet->lobby = NULL;
+	lobby_packet_attach (packet);
 
 	packet->packet_size = packet->header.packet_size;
 
@@ -306,10 +350,10 @@ static u8 receive_handle_packet_start (
 
 	u8 stop = 0;
 
-	const size_t packet_size = header->packet_size;
+	const u64 packet_size = header->packet_size;
 
 	Packet *packet = receive_packet_size_is_valid (cursor, packet_size) ?
-		packet_create_with_data (packet_size - sizeof (PacketHeader)) : NULL;
+		packet_create_with_data ((size_t) packet_size - PACKET_HEADER_SIZE) : NULL;
 
 	if (packet) {
 		receive_packet_set_values (receive_handle, packet, header);
@@ -326,10 +370,25 @@ static u8 receive_handle_packet_start (
 	}
 
 	else {
-		stop = receive_handle_lost (receive_handle, packet_size);
+		stop = receive_handle_lost (receive_handle, (size_t) packet_size);
 	}
 
 	return stop;
+
+}
+
+// decodes a complete header and starts its packet
+static u8 receive_handle_encoded_header (
+	ReceiveHandle *receive_handle, const u8 *encoded,
+	ReceiveCursor *cursor
+) {
+
+	PacketHeader header;
+	const PacketHeaderResult result = packet_header_decode (encoded, &header);
+
+	return (result == PACKET_HEADER_RESULT_NONE)
+		? receive_handle_packet_start (receive_handle, &header, cursor)
+		: receive_handle_bad_header (receive_handle, result);
 
 }
 
@@ -341,20 +400,18 @@ static u8 receive_handle_header (
 
 	u8 stop = 0;
 
-	if (cursor->remaining >= sizeof (PacketHeader)) {
-		// the cursor may not be aligned for a PacketHeader
-		PacketHeader header;
-		(void) memcpy (&header, cursor->data, sizeof (PacketHeader));
-		receive_cursor_advance (cursor, sizeof (PacketHeader));
+	if (cursor->remaining >= PACKET_HEADER_SIZE) {
+		const u8 *encoded = (const u8 *) cursor->data;
+		receive_cursor_advance (cursor, PACKET_HEADER_SIZE);
 
-		stop = receive_handle_packet_start (receive_handle, &header, cursor);
+		stop = receive_handle_encoded_header (receive_handle, encoded, cursor);
 	}
 
 	else {
-		(void) memset (&receive_handle->header, 0, sizeof (PacketHeader));
-		(void) memcpy (&receive_handle->header, cursor->data, cursor->remaining);
+		(void) memset (receive_handle->header, 0, PACKET_HEADER_SIZE);
+		(void) memcpy (receive_handle->header, cursor->data, cursor->remaining);
 
-		receive_handle->remaining_header = (unsigned int) (sizeof (PacketHeader) - cursor->remaining);
+		receive_handle->remaining_header = (unsigned int) (PACKET_HEADER_SIZE - cursor->remaining);
 		receive_handle->state = RECEIVE_HANDLE_STATE_SPLIT_HEADER;
 
 		receive_cursor_advance (cursor, cursor->remaining);
@@ -372,22 +429,22 @@ static u8 receive_handle_split_header (
 
 	u8 stop = 0;
 
-	const size_t received_header = sizeof (PacketHeader) - receive_handle->remaining_header;
+	const size_t received_header = PACKET_HEADER_SIZE - receive_handle->remaining_header;
 	const size_t length = (receive_handle->remaining_header < cursor->remaining) ?
 		receive_handle->remaining_header : cursor->remaining;
 
-	(void) memcpy (((char *) &receive_handle->header) + received_header, cursor->data, length);
+	(void) memcpy (receive_handle->header + received_header, cursor->data, length);
 	receive_cursor_advance (cursor, length);
 
 	receive_handle->remaining_header -= (unsigned int) length;
 
 	if (!receive_handle->remaining_header) {
-		PacketHeader header;
-		(void) memcpy (&header, &receive_handle->header, sizeof (PacketHeader));
+		u8 encoded[PACKET_HEADER_SIZE];
+		(void) memcpy (encoded, receive_handle->header, PACKET_HEADER_SIZE);
 
 		receive_handle->state = RECEIVE_HANDLE_STATE_NORMAL;
 
-		stop = receive_handle_packet_start (receive_handle, &header, cursor);
+		stop = receive_handle_encoded_header (receive_handle, encoded, cursor);
 	}
 
 	return stop;

@@ -17,6 +17,9 @@
 #include "../test.h"
 
 #define TEST_TREE_PATH_SIZE					512
+
+// a path of TEST_TREE_PATH_SIZE with its first slash
+#define TEST_TREE_URL_SIZE					(TEST_TREE_PATH_SIZE * 2)
 #define TEST_TREE_LONG_SEGMENTS				20
 #define TEST_TREE_MANY_PARAMS				(HTTP_TREE_DEFAULT_MAX_PARAMS + 1)
 #define TEST_TREE_MORE_PARAMS				(HTTP_TREE_DEFAULT_MAX_PARAMS << 1)
@@ -283,8 +286,8 @@ static void test_tree_depth (void) {
 
 	test_check_unsigned_eq (http_cerver_routes_compile (http_cerver), 0, NULL);
 
-	char url[TEST_TREE_PATH_SIZE] = { 0 };
-	(void) snprintf (url, TEST_TREE_PATH_SIZE, "/%s", path);
+	char url[TEST_TREE_URL_SIZE] = { 0 };
+	(void) snprintf (url, TEST_TREE_URL_SIZE, "/%s", path);
 	test_tree_expect_path (http_cerver, REQUEST_METHOD_GET, url, url);
 
 	test_tree_expect_path (http_cerver, REQUEST_METHOD_GET, "/acme/info", "/:tenant/info");
@@ -886,7 +889,7 @@ static void test_tree_json (void) {
 	char *json_string = http_cerver_routes_generate_json (http_cerver);
 	test_check_ptr (json_string);
 
-	json_error_t error = { 0 };
+	json_error_t error = CERVER_ZERO_INITIALIZER;
 	json_t *json = json_loads (json_string, 0, &error);
 	test_check_ptr (json);
 

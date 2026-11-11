@@ -3,6 +3,99 @@
 The changes of each version that can break code, binaries or peers built with the version before it, the newest first.
 Unlike `CHANGELOG.md`, which only has the current version, every entry stays here.
 
+## 2.0b-66 (from 2.0b-65)
+
+The port of the core of the 1.8 (the 1.8b-7, 1.8b-8 and 1.8b-9 betas and the fixes of the release): the core of
+`http` is the one of `core`. The wire of the protocol of cerver changes: a 2.0b-66 does not talk with a 2.0b-65
+through TCP or UDP packets, its clients, services and balancers are updated together. HTTP does not change in the
+wire.
+
+**The protocol (1.8b-7):**
+
+- The `PacketHeader` travels in `PACKET_HEADER_SIZE` (32) bytes in network byte order (`packet_header_encode ()`,
+  `packet_header_decode ()`), it was sent as it is in memory (40 bytes in LP64); a header with another
+  `PACKET_HEADER_FORMAT`, unknown flags or reserved bytes that are not zero closes the connection (a datagram is
+  dropped)
+- Changed fields (ABI): `PacketHeader` (`packet_size` is `u64`, `sock_fd` is the `u32` `route_id`, new `flags`),
+  `Packet` (new `encoded_header`, `data_class` and `recycle_next`), `ReceiveHandle` (`header` is the bytes of a split
+  header); `sizeof (PacketHeader)` is not the size of the header in the wire
+- The balancer routes with a `route_id` of a slot and a generation (`packet_set_route_id ()`,
+  `balancer_connection_start ()` returns it, `balancer_connection_end ()` takes it), the response for a connection
+  that ended is discarded; `packet_set_header_values ()` takes a `u32 route_id`
+- `serializer.h` replaces `SRelativePtr`, `SArray` and the `s_*` functions: `CerverSummary` replaces `SCerver`,
+  `SessionToken` replaces `SToken` (sent with `AUTH_PACKET_TYPE_CLIENT_TOKEN` and `AUTH_PACKET_TYPE_ADMIN_TOKEN`),
+  `ErrorMessage` replaces `SError`, `FileHeader` is an object (`len` is `u64`), `SStringSize`, `SStringS/M/L/XL` and
+  `str_selialize ()` were removed; new `cerver_set_auth_schema ()`, `connection_set_auth_object ()`,
+  `connection_set_auth_token ()`
+- `Cerver.isRunning` is `running`; an auth packet in an authenticated connection is answered with an error; a
+  connection that no handler could take is dropped with its client
+
+**The issues of the 1.x (1.8b-8):**
+
+- Changed fields (ABI): `Cerver` (`current_n_fds` is `u32`; new `poll_max_connections`, `request_stats`,
+  `request_handlers`, `request_handlers_size`), `Handler` (new `stats`), `Balancer` (new `select_service`,
+  `select_service_args`)
+- The packets and their buffers of up to 4096 bytes are recycled: a `Packet` and its `data` are released only with
+  `packet_delete ()`; `packet_set_data ()` makes the packet the owner of its new data
+- `file_move_to ()` uses `rename ()` (or copies and removes between file systems) and returns 0 or 1; a client that
+  the main poll can not take is released by the caller; `cerver_set_poll_fds ()`, `cerver_set_on_hold_poll_fds ()`
+  and `cerver_set_request_handler ()` are new; a `WorkerManager` keeps its idle workers while jobs wait
+- `BALANCER_TYPE_MAP` has `CUSTOM` (`balancer_set_select_service ()`)
+- Renamed defaults: `CERVER_DEFAULT_SOCKET_RECV_TIMEOUT` is `CERVER_DEFAULT_SOCKET_RECEIVE_TIMEOUT` (in `cerver.h`),
+  `*_UPDATE_INTERVAL_SECS` end in `_SECONDS`, the defaults of game start with `GAME_`, `DEFAULT_SCORE_SIZE` is
+  `SCORE_DEFAULT_SIZE`
+- New: `utils/histogram.h`, `HandlerStats`, `RequestStats`, the values of `system.h`, `files_copy ()`,
+  `files_copy_recursive ()`, `files_remove_recursive ()`
+
+**Game, zero warnings and the handler types (1.8b-9):**
+
+- The game requests and answers are serializer objects (`LobbyCreate`, `LobbyJoin`, `LobbyRequest`, `LobbySummary`);
+  `SLobby`, `SGameSettings` and `lobby_serialize ()` were removed; a lobby is released by its references and its data
+  is read with the recursive lock of the game cerver
+- Changed fields (ABI): `Lobby`, `GameCerver`, `GameType`, `Player`, `Connection` (new `lobby`), `CerverEventData`
+  (new `lobby`), `ClientEventData` (new `owns_response_data`); new map values in the events and errors of the cerver
+  and of the client (`*_DESTROY_LOBBY`, `*_LOBBY_UPDATE`, `*_LOBBY_DESTROY`, `*_GAME_INIT`), so their `UNKNOWN` values
+  moved
+- The `action_args` of a `ClientErrorData` are the arguments of `client_error_register ()`
+- A signal that interrupts the receive of a connection (`EINTR`) does not end it
+- A cerver of the protocol of cerver creates its thpool only with `CERVER_HANDLER_TYPE_THREADS`; a web cerver creates
+  it with any handler type, because it handles each request in it
+- `cerver_log* ()`, `str_create ()`, `str_set* ()`, `str_replace ()`, `c_string_create ()`, `thread_set_name ()` and
+  the HTTP functions with a format (`http_cerver_generate_uploads_path ()`, `http_multi_part_set_generated_filename ()`,
+  `http_multi_part_move_file_generate_destination ()`, `http_request_set_dirname ()`,
+  `http_response_send_file_generate ()`, `http_response_handle_video_generate ()`,
+  `http_response_add_custom_header ()`, `jsonp_error_set ()` and `jsonp_error_vset ()`) are checked by the compiler as
+  `printf` formats (`CERVER_PRINTF_FORMAT`)
+- `CERVER_ZERO_INITIALIZER` initializes a struct to zero both in C and in C++; the makefile builds with g++ without
+  `-fpermissive`, `WERROR=1` makes every warning an error (the CI uses it), and the tests, the examples, the fuzzers and
+  the benchmarks build with the warnings of the library
+- `jwt/openssl.c` reads the degree of an EC key with `EVP_PKEY_bits ()`, without the `EC_KEY` API that OpenSSL 3
+  deprecated
+
+**The sends (release 1.8 and this beta):**
+
+- The sends of the core end with their deadline also in a blocking socket (`MSG_DONTWAIT` and `poll ()`, and
+  `sendfile ()` waits in `poll ()` and sends only what fits in the send buffer, with its `SO_SNDTIMEO` limited to
+  the deadline); new `socket_deadline_create_milliseconds ()`,
+  `socket_send_vector_until ()`, `socket_send_buffer_until ()` and `socket_send_file_until ()`
+- All the sends of an HTTP response share one deadline (`HttpReceive.send_deadline`, set by its first send): a client
+  that stops reading costs the send timeout in total, it used to cost it in each `sendmsg ()` and `sendfile ()`; each
+  piece of a stream has its own deadline. `http_cerver_set_send_timeout_milliseconds ()` sets it in milliseconds
+  (new `HttpCerver.send_timeout`), 0 uses the send timeout of the cerver in secs
+- `files_create_recursive_dir ()` returns 0 for a path that already is a directory (also when another thread creates
+  it at the same time), and 1 for an empty path, `NULL` or one that does not fit in `DIRNAME_DEFAULT_SIZE`
+
+**HTTP:**
+
+- The files of a static path with authentication (`http_static_path_set_auth ()`) are authenticated before they are
+  looked for, with the static path that has the file or the first protected one when none has it, so a missing file
+  is answered with 401 like a protected one; the authentication of a static path was never applied, its files were
+  served to anyone. New fields (ABI): `HttpStaticPath` (`decode_data`, `delete_decoded_data`,
+  `authentication_handler`), set with `http_static_path_set_decode_data ()` and
+  `http_static_path_set_authentication_handler ()`
+- New fields (ABI): `HttpReceive` (`send_deadline`, `send_deadline_set`)
+- The logs of the requests write the status with `%u` and the sizes with `%zu`
+
 ## 2.0b-65 (from 2.0b-64)
 
 The clients that leave in every part of the HTTP process. The port of the 1.8b-7 waits for a later beta.

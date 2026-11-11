@@ -12,11 +12,15 @@
 
 static void work_method (void *data_ptr) {
 
+	(void) data_ptr;
+
 	(void) printf ("Some work that needs to be done!");
 
 }
 
 static void worker_remove_reference (const void *worker_ptr) {
+
+	(void) worker_ptr;
 
 	(void) printf ("Removing reference...");
 

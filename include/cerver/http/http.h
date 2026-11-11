@@ -346,6 +346,10 @@ struct _HttpCerver {
 	// the most milliseconds without receiving anything, it is never disabled
 	unsigned int idle_timeout;
 
+	// the most milliseconds that all the sends of a response take together,
+	// 0 uses the send timeout of the cerver (secs)
+	unsigned int send_timeout;
+
 	size_t n_timeout_requests;		// answered with 408
 
 	size_t n_unanswered_requests;	// answered with 500 because the handler did not respond
@@ -416,11 +420,37 @@ typedef struct HttpStaticPath {
 
 	HttpRouteAuthType auth_type;
 
+	// the data of a bearer JWT, for the request of a file
+	void *(*decode_data)(void *);
+	void (*delete_decoded_data)(void *);
+
+	// the method of HTTP_ROUTE_AUTH_TYPE_CUSTOM
+	HttpAuthenticationHandler authentication_handler;
+
 } HttpStaticPath;
 
-// sets authentication requirenments for a whole static path
+// sets the authentication of the files of a whole static path,
+// a request is authenticated with the static path that has its file,
+// or with the first one that has authentication when none has it,
+// so a file that does not exist is answered like a protected one
+// a request that fails it is answered with 401, before its file is looked for
 CERVER_EXPORT void http_static_path_set_auth (
 	HttpStaticPath *static_path, HttpRouteAuthType auth_type
+);
+
+// sets the method that decodes the data of the bearer JWT of a static path
+// (HTTP_ROUTE_AUTH_TYPE_BEARER), and the one that deletes it after the request
+CERVER_EXPORT void http_static_path_set_decode_data (
+	HttpStaticPath *static_path,
+	void *(*decode_data)(void *),
+	void (*delete_decoded_data)(void *)
+);
+
+// sets the method that authenticates the requests of a static path
+// with HTTP_ROUTE_AUTH_TYPE_CUSTOM, it returns 0 on success and 1 on error
+CERVER_EXPORT void http_static_path_set_authentication_handler (
+	HttpStaticPath *static_path,
+	HttpAuthenticationHandler authentication_handler
 );
 
 // adds a new static path where static files can be served upon request
@@ -567,7 +597,7 @@ CERVER_EXPORT void http_cerver_set_uploads_path (
 // a custom path on the fly using variable arguments
 CERVER_EXPORT void http_cerver_generate_uploads_path (
 	HttpCerver *http_cerver, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 // sets the mode_t to be used when creating uploads files
 // the default value is HTTP_CERVER_DEFAULT_UPLOADS_FILE_MODE
@@ -718,6 +748,15 @@ CERVER_EXPORT void http_cerver_set_request_timeout_milliseconds (
 // the default value is HTTP_CERVER_DEFAULT_IDLE_TIMEOUT_MILLISECONDS, 0 keeps the default
 CERVER_EXPORT void http_cerver_set_idle_timeout_milliseconds (
 	HttpCerver *http_cerver, const unsigned int idle_timeout
+);
+
+// sets the most milliseconds that all the sends of a response take together,
+// headers, body and files, also in a blocking socket with a longer SO_SNDTIMEO,
+// so a client that stops reading costs that time in total and not in each send,
+// each piece of a stream has its own deadline
+// the default value is 0, the send timeout of the cerver (cerver_set_send_timeout (), in secs)
+CERVER_EXPORT void http_cerver_set_send_timeout_milliseconds (
+	HttpCerver *http_cerver, const unsigned int send_timeout
 );
 
 // sets if http_receive_is_client_gone () takes a client that closed its side
@@ -1131,6 +1170,11 @@ struct _HttpReceive {
 	// a send () of the response failed, with its errno
 	bool response_failed;
 	int response_error;
+
+	// the deadline of all the sends of the response, set by its first send,
+	// each piece of a stream sets its own
+	struct timespec send_deadline;
+	bool send_deadline_set;
 
 	// the last state of the client that was found, a gone client never comes back
 	HttpClientState client_state;

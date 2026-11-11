@@ -54,6 +54,8 @@ static void json_fetch_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
@@ -69,7 +71,7 @@ static unsigned int json_load_from_body (
 
 	unsigned int retval = 1;
 
-	json_error_t json_error =  { 0 };
+	json_error_t json_error = CERVER_ZERO_INITIALIZER;
 	json_t *json_body = json_loads (request_body->str, 0, &json_error);
 	if (json_body) {
 		json_decref (json_body);
@@ -131,6 +133,8 @@ static void json_create_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	const char *json = "{\"msg\": \"okay\"}";
 	size_t json_len = strlen (json);
 
@@ -155,6 +159,8 @@ static void json_int_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const int value = 18;
 
 	(void) http_response_json_int_value_send (
@@ -169,6 +175,8 @@ static void json_int_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const int value = 18;
 
@@ -193,6 +201,8 @@ static void json_large_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const long value = 1800000;
 
 	(void) http_response_json_large_int_value_send (
@@ -207,6 +217,8 @@ static void json_large_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const long value = 1800000;
 
@@ -231,6 +243,8 @@ static void json_real_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const double value = 18.123;
 
 	(void) http_response_json_real_value_send (
@@ -245,6 +259,8 @@ static void json_real_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const double value = 18.123;
 
@@ -269,6 +285,8 @@ static void json_bool_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	static const bool value = true;
 
 	(void) http_response_json_bool_value_send (
@@ -283,6 +301,8 @@ static void json_bool_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	static const bool value = true;
 
@@ -307,6 +327,8 @@ static void msg_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_msg_send (
 		http_receive, HTTP_STATUS_OK, "oki"
 	);
@@ -319,6 +341,8 @@ static void msg_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "okay"
@@ -341,6 +365,8 @@ static void error_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_error_send (
 		http_receive, HTTP_STATUS_BAD_REQUEST, "bad"
 	);
@@ -353,6 +379,8 @@ static void error_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_error (
 		HTTP_STATUS_BAD_REQUEST, "bad request"
@@ -375,6 +403,8 @@ static void key_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	(void) http_response_json_key_value_send (
 		http_receive,
 		HTTP_STATUS_OK, "key", "value"
@@ -387,6 +417,8 @@ static void custom_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	(void) http_response_json_custom_send (
 		http_receive,
@@ -401,6 +433,8 @@ static void custom_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	HttpResponse *res = http_response_json_custom (
 		HTTP_STATUS_OK, "{\"oki\": \"doki\"}"
@@ -423,6 +457,8 @@ static void reference_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
 		(void) strncpy (json, "{\"oki\": \"doki\"}", 256);
@@ -443,6 +479,8 @@ static void reference_create_handler (
 	const HttpReceive *http_receive,
 	const HttpRequest *request
 ) {
+
+	(void) request;
 
 	char *json = (char *) calloc (256, sizeof (char));
 	if (json) {
@@ -470,7 +508,7 @@ static void reference_create_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 

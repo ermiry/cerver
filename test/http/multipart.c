@@ -162,7 +162,7 @@ static void test_http_multi_part_get_filename (void) {
 
 	test_check_str_eq (http_multi_part_get_filename (mpart), filename, NULL);
 
-	test_check_int_eq (http_multi_part_get_filename_len (mpart), strlen (filename), NULL);
+	test_check_int_eq (http_multi_part_get_filename_len (mpart), (int) strlen (filename), NULL);
 
 	test_check_true (http_multi_part_is_not_empty (mpart));
 
@@ -237,7 +237,7 @@ static void test_http_multi_part_get_value (void) {
 
 	test_check_str_eq (http_multi_part_get_value (mpart), value, NULL);
 
-	test_check_int_eq (http_multi_part_get_value_len (mpart), strlen (value), NULL);
+	test_check_int_eq (http_multi_part_get_value_len (mpart), (int) strlen (value), NULL);
 
 	test_check_true (http_multi_part_is_not_empty (mpart));
 

@@ -35,22 +35,24 @@ int clamp_int (
 }
 
 int abs_int (const int value) {
-	
+
 	return value > 0 ? value : (value * -1);
-	
+
 }
 
 float lerp (
 	const float first, const float second, const float by
 ) {
-	
+
 	return first * (1 - by) + second * by;
-	
+
 }
+
+#define UTILS_FLOAT_COMPARE_TOLERANCE		0.00001f
 
 bool float_compare (const float f1, const float f2) {
 
-	return fabs (f1 - f2) < 0.00001;
+	return fabsf (f1 - f2) < UTILS_FLOAT_COMPARE_TOLERANCE;
 
 }
 

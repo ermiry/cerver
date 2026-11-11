@@ -137,7 +137,7 @@ CERVER_EXPORT u8 http_response_add_header (
 CERVER_EXPORT u8 http_response_add_custom_header (
 	HttpResponse *response,
 	const http_header type, const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 // adds a "Content-Type" header to the response
 // returns 0 on success, 1 on error
@@ -333,7 +333,7 @@ CERVER_EXPORT u8 http_response_send_file_generate (
 	const struct _HttpReceive *http_receive,
 	const http_status status,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (3, 4);
 
 #pragma endregion
 
@@ -373,7 +373,7 @@ CERVER_EXPORT u8 http_response_handle_video (
 CERVER_EXPORT u8 http_response_handle_video_generate (
 	const struct _HttpReceive *http_receive,
 	const char *format, ...
-);
+) CERVER_PRINTF_FORMAT (2, 3);
 
 #pragma endregion
 

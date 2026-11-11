@@ -98,7 +98,7 @@ static void start () {
 
 	/* real */
 	value = json_pack ("f", 1.0);
-	if (!json_is_real (value) || json_real_value (value) != 1.0)
+	if (!json_is_real (value) || !test_double_equal (json_real_value (value), 1.0))
 		fail ("json_pack real failed");
 	if (value->refcount != (size_t)1)
 		fail ("json_pack real refcount failed");

@@ -200,14 +200,14 @@ static void start () {
 		fail ("json_integer failed");
 	if (json_integer_value (value) != 123)
 		fail ("invalid integer value");
-	if (json_number_value (value) != 123.0)
+	if (!test_double_equal (json_number_value (value), 123.0))
 		fail ("invalid number value");
 
 	if (json_integer_set (value, 321))
 		fail ("json_integer_set failed");
 	if (json_integer_value (value) != 321)
 		fail ("invalid integer value");
-	if (json_number_value (value) != 321.0)
+	if (!test_double_equal (json_number_value (value), 321.0))
 		fail ("invalid number value");
 
 	json_decref (value);
@@ -215,16 +215,16 @@ static void start () {
 	value = json_real (123.123);
 	if (!value)
 		fail ("json_real failed");
-	if (json_real_value (value) != 123.123)
+	if (!test_double_equal (json_real_value (value), 123.123))
 		fail ("invalid integer value");
-	if (json_number_value (value) != 123.123)
+	if (!test_double_equal (json_number_value (value), 123.123))
 		fail ("invalid number value");
 
 	if (json_real_set (value, 321.321))
 		fail ("json_real_set failed");
-	if (json_real_value (value) != 321.321)
+	if (!test_double_equal (json_real_value (value), 321.321))
 		fail ("invalid real value");
-	if (json_number_value (value) != 321.321)
+	if (!test_double_equal (json_number_value (value), 321.321))
 		fail ("invalid number value");
 
 	json_decref (value);

@@ -10,9 +10,12 @@
 
 #include <pthread.h>
 
+#include <sys/ioctl.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+
+#include <linux/sockios.h>
 
 #include "cerver/socket.h"
 #include "cerver/cerver.h"
@@ -232,6 +235,30 @@ void socket_deadline_create (
 
 }
 
+// sets the deadline of a send to timeout milliseconds from now (CLOCK_MONOTONIC)
+void socket_deadline_create_milliseconds (
+	struct timespec *deadline, const u32 timeout
+) {
+
+	if (!timeout) {
+		socket_deadline_create (deadline, 0);
+	}
+
+	else {
+		(void) clock_gettime (CLOCK_MONOTONIC, deadline);
+
+		deadline->tv_sec += (time_t) (timeout / SOCKET_MILLISECONDS_PER_SECOND);
+		deadline->tv_nsec += (long) (timeout % SOCKET_MILLISECONDS_PER_SECOND)
+			* SOCKET_NANOSECONDS_PER_MILLISECOND;
+
+		if (deadline->tv_nsec >= SOCKET_NANOSECONDS_PER_SECOND) {
+			deadline->tv_sec += 1;
+			deadline->tv_nsec -= SOCKET_NANOSECONDS_PER_SECOND;
+		}
+	}
+
+}
+
 // returns the milliseconds that are left until the deadline, 0 if it has expired
 int socket_deadline_remaining (const struct timespec *deadline) {
 
@@ -331,12 +358,33 @@ static void socket_send_result (
 
 }
 
-// sends all the parts with as few system calls as the socket takes
+// a send with MSG_DONTWAIT never blocks, so a full socket (EAGAIN) waits for space
+// until the deadline in poll (), in blocking and in non blocking sockets
+static bool socket_send_until_can_retry (
+	const int sock_fd, const int error, const struct timespec *deadline
+) {
+
+	bool retry = false;
+
+	if (error == EINTR) {
+		retry = true;
+	}
+
+	else if ((error == EAGAIN) || (error == EWOULDBLOCK)) {
+		retry = socket_wait_writable (sock_fd, deadline);
+	}
+
+	return retry;
+
+}
+
+// sends all the parts with as few system calls as the socket takes,
+// sharing the deadline with any other send of the caller
 // returns 0 on success, 1 on error
-u8 socket_send_vector (
+u8 socket_send_vector_until (
 	const Socket *socket,
 	struct iovec *parts, int n_parts,
-	int flags, const time_t timeout,
+	int flags, const struct timespec *deadline,
 	size_t *sent, int *error
 ) {
 
@@ -345,19 +393,19 @@ u8 socket_send_vector (
 	size_t total = 0;
 	int failure = 0;
 
-	struct timespec deadline = { 0, 0 };
-	socket_deadline_create (&deadline, timeout);
-
 	while (n_parts > 0) {
 		struct msghdr message;
 		(void) memset (&message, 0, sizeof (struct msghdr));
 		message.msg_iov = parts;
 		message.msg_iovlen = (size_t) n_parts;
 
-		const ssize_t result = sendmsg (socket->sock_fd, &message, flags | MSG_NOSIGNAL);
+		const ssize_t result = sendmsg (
+			socket->sock_fd, &message, flags | MSG_NOSIGNAL | MSG_DONTWAIT
+		);
+
 		if (result < 0) {
 			failure = errno;
-			if (socket_send_can_retry (socket->sock_fd, failure, &deadline)) continue;
+			if (socket_send_until_can_retry (socket->sock_fd, failure, deadline)) continue;
 
 			retval = 1;
 			break;
@@ -373,6 +421,40 @@ u8 socket_send_vector (
 
 }
 
+// sends all the parts with as few system calls as the socket takes
+// returns 0 on success, 1 on error
+u8 socket_send_vector (
+	const Socket *socket,
+	struct iovec *parts, int n_parts,
+	int flags, const time_t timeout,
+	size_t *sent, int *error
+) {
+
+	struct timespec deadline = { 0, 0 };
+	socket_deadline_create (&deadline, timeout);
+
+	return socket_send_vector_until (
+		socket, parts, n_parts, flags, &deadline, sent, error
+	);
+
+}
+
+// works as socket_send_vector_until () with a single buffer
+u8 socket_send_buffer_until (
+	const Socket *socket,
+	const void *buffer, const size_t size,
+	int flags, const struct timespec *deadline,
+	size_t *sent, int *error
+) {
+
+	struct iovec part = { .iov_base = (void *) buffer, .iov_len = size };
+
+	return socket_send_vector_until (
+		socket, &part, size ? 1 : 0, flags, deadline, sent, error
+	);
+
+}
+
 // works as socket_send_vector () with a single buffer
 u8 socket_send_buffer (
 	const Socket *socket,
@@ -381,20 +463,86 @@ u8 socket_send_buffer (
 	size_t *sent, int *error
 ) {
 
-	struct iovec part = { .iov_base = (void *) buffer, .iov_len = size };
+	struct timespec deadline = { 0, 0 };
+	socket_deadline_create (&deadline, timeout);
 
-	return socket_send_vector (
-		socket, &part, size ? 1 : 0, flags, timeout, sent, error
+	return socket_send_buffer_until (
+		socket, buffer, size, flags, &deadline, sent, error
 	);
 
 }
 
-// sends size bytes of a file with sendfile (), from its current offset
+// sendfile () has no MSG_DONTWAIT, so in a blocking socket
+// SO_SNDTIMEO is limited to what is left of the deadline before each call
+// returns false if the deadline has expired
+static bool socket_send_file_limit (
+	const int sock_fd, const bool blocking, const struct timespec *deadline
+) {
+
+	const int remaining = socket_deadline_remaining (deadline);
+
+	if (blocking && (remaining > 0)) {
+		struct timeval limit = CERVER_ZERO_INITIALIZER;
+		limit.tv_sec = remaining / SOCKET_MILLISECONDS_PER_SECOND;
+		limit.tv_usec = (remaining % SOCKET_MILLISECONDS_PER_SECOND) * SOCKET_MICROSECONDS_PER_MILLISECOND;
+
+		(void) setsockopt (sock_fd, SOL_SOCKET, SO_SNDTIMEO, &limit, sizeof (struct timeval));
+	}
+
+	return remaining > 0;
+
+}
+
+// the bytes of the pending ones that fit in the send buffer of the socket,
+// half of its free space because the buffer also counts the overhead of the kernel,
+// and at least SOCKET_SEND_FILE_MIN_ROOM when the space is unknown or almost full
+static size_t socket_send_file_room (const int sock_fd, const size_t pending) {
+
+	size_t room = SOCKET_SEND_FILE_MIN_ROOM;
+
+	int buffer = 0;
+	socklen_t buffer_size = sizeof (int);
+	int queued = 0;
+	if (
+		!getsockopt (sock_fd, SOL_SOCKET, SO_SNDBUF, &buffer, &buffer_size)
+		&& !ioctl (sock_fd, SIOCOUTQ, &queued)
+		&& (buffer > queued)
+	) {
+		const size_t free_space = (size_t) (buffer - queued) / SOCKET_SEND_FILE_ROOM_DIVISOR;
+		if (free_space > room) room = free_space;
+	}
+
+	return (pending < room) ? pending : room;
+
+}
+
+// in a blocking socket the SO_SNDTIMEO of sendfile () applies to each piece that the kernel sends,
+// so sendfile () can block longer than what is left of the deadline:
+// it waits until the socket can be written before the deadline, and sends only what fits in its buffer
+// returns the bytes to send, 0 if the deadline expired
+static size_t socket_send_file_ready (
+	const int sock_fd, const bool blocking,
+	const struct timespec *deadline, const size_t pending
+) {
+
+	size_t count = 0;
+
+	if (socket_send_file_limit (sock_fd, blocking, deadline)) {
+		if (!blocking) count = pending;
+		else if (socket_wait_writable (sock_fd, deadline)) count = socket_send_file_room (sock_fd, pending);
+	}
+
+	return count;
+
+}
+
+// sends size bytes of a file with sendfile (), from offset (NULL for its current offset),
+// sharing the deadline with any other send of the caller
 // returns 0 on success, 1 on error
-u8 socket_send_file (
+u8 socket_send_file_until (
 	const Socket *socket,
-	const int file_fd, const size_t size,
-	const time_t timeout,
+	const int file_fd, off_t *offset, const size_t size,
+	const struct timespec *deadline,
 	size_t *sent, int *error
 ) {
 
@@ -403,14 +551,28 @@ u8 socket_send_file (
 	size_t total = 0;
 	int failure = 0;
 
-	struct timespec deadline = { 0, 0 };
-	socket_deadline_create (&deadline, timeout);
+	const int sock_fd = socket->sock_fd;
+	const bool blocking = socket_is_blocking (sock_fd);
+
+	// the send timeout of the socket is restored after the file
+	struct timeval original = CERVER_ZERO_INITIALIZER;
+	socklen_t original_size = sizeof (struct timeval);
+	const bool restore = blocking && !getsockopt (
+		sock_fd, SOL_SOCKET, SO_SNDTIMEO, &original, &original_size
+	);
 
 	while (total < size) {
-		const ssize_t result = sendfile (socket->sock_fd, file_fd, NULL, size - total);
+		const size_t count = socket_send_file_ready (sock_fd, blocking, deadline, size - total);
+		if (!count) {
+			failure = EAGAIN;
+			retval = 1;
+			break;
+		}
+
+		const ssize_t result = sendfile (sock_fd, file_fd, offset, count);
 		if (result < 0) {
 			failure = errno;
-			if (socket_send_can_retry (socket->sock_fd, failure, &deadline)) continue;
+			if (socket_send_until_can_retry (sock_fd, failure, deadline)) continue;
 
 			retval = 1;
 			break;
@@ -425,9 +587,31 @@ u8 socket_send_file (
 		total += (size_t) result;
 	}
 
+	if (restore) {
+		(void) setsockopt (sock_fd, SOL_SOCKET, SO_SNDTIMEO, &original, sizeof (struct timeval));
+	}
+
 	socket_send_result (sent, total, error, retval ? failure : 0);
 
 	return retval;
+
+}
+
+// sends size bytes of a file with sendfile (), from its current offset
+// returns 0 on success, 1 on error
+u8 socket_send_file (
+	const Socket *socket,
+	const int file_fd, const size_t size,
+	const time_t timeout,
+	size_t *sent, int *error
+) {
+
+	struct timespec deadline = { 0, 0 };
+	socket_deadline_create (&deadline, timeout);
+
+	return socket_send_file_until (
+		socket, file_fd, NULL, size, &deadline, sent, error
+	);
 
 }
 

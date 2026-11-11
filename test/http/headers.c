@@ -192,7 +192,7 @@ static void test_http_header_set (void) {
 
 	test_check_str_eq (header.value, content_length_header, NULL);
 	test_check_str_len (header.value, strlen (content_length_header), NULL);
-	test_check_int_eq (header.len, strlen (content_length_header), NULL);
+	test_check_int_eq (header.len, (int) strlen (content_length_header), NULL);
 
 }
 
@@ -208,7 +208,7 @@ static void test_http_response_header_set_with_type (void) {
 
 	test_check_str_eq (header.value, content_type_header, NULL);
 	test_check_str_len (header.value, strlen (content_type_header), NULL);
-	test_check_int_eq (header.len, strlen (content_type_header), NULL);
+	test_check_int_eq (header.len, (int) strlen (content_type_header), NULL);
 
 
 	// "Content-Length: 128\r\n"
@@ -216,7 +216,7 @@ static void test_http_response_header_set_with_type (void) {
 
 	test_check_str_eq (header.value, content_length_header, NULL);
 	test_check_str_len (header.value, strlen (content_length_header), NULL);
-	test_check_int_eq (header.len, strlen (content_length_header), NULL);
+	test_check_int_eq (header.len, (int) strlen (content_length_header), NULL);
 
 }
 

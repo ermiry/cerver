@@ -8,7 +8,7 @@
 
 #include "curl.h"
 
-#define ADDRESS_SIZE			128
+#define ADDRESS_SIZE			WEB_TEST_URL_SIZE
 
 static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
 
@@ -87,7 +87,7 @@ static unsigned int web_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

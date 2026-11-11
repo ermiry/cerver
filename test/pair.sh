@@ -43,6 +43,13 @@ upstream_servers () {
 	CLIENT="test/bin/client/load/$2"
 }
 
+example_servers () {
+	SERVERS=("examples/bin/$1")
+	PORTS=($TCP_PORT)
+	CLIENT="test/bin/client/ping"
+	export LD_LIBRARY_PATH="$ROOT/bin:$ROOT/examples/bin/app"
+}
+
 case "$PAIR" in
 	cerver/*)
 		SERVERS=("test/bin/cerver/${PAIR#cerver/}")
@@ -54,6 +61,12 @@ case "$PAIR" in
 		PORTS=($TCP_PORT)
 		CLIENT="test/bin/handler/client"
 		;;
+	examples/handlers)
+		example_servers "handlers -t q"
+		;;
+	examples/*)
+		example_servers "${PAIR#examples/}"
+		;;
 	balancer/round_robin)
 		balancer_servers round_robin
 		CLIENT="test/bin/client/load/simple"
@@ -61,6 +74,10 @@ case "$PAIR" in
 	balancer/handler_id)
 		balancer_servers handler_id
 		CLIENT="test/bin/client/load/id"
+		;;
+	balancer/custom)
+		balancer_servers custom
+		CLIENT="test/bin/client/load/simple"
 		;;
 	balancer/reconnect)
 		upstream_servers $SERVICE_RESTART_SECONDS reconnect

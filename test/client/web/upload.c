@@ -27,10 +27,10 @@ static unsigned int upload_request_all_actual (
 	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	// GET /test
-	(void) snprintf (actual_address, 128, "%s/test", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/test", address);
 	errors |= curl_simple_handle_data (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -38,7 +38,7 @@ static unsigned int upload_request_all_actual (
 	);
 
 	// POST /upload
-	(void) snprintf (actual_address, 128, "%s/upload", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/upload", address);
 	errors |= curl_upload_file (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -47,7 +47,7 @@ static unsigned int upload_request_all_actual (
 	);
 
 	// POST /multiple
-	(void) snprintf (actual_address, 128, "%s/multiple", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/multiple", address);
 	errors |= curl_upload_two_files (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -57,7 +57,7 @@ static unsigned int upload_request_all_actual (
 	);
 
 	// POST /iter/good
-	(void) snprintf (actual_address, 128, "%s/iter/good", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/iter/good", address);
 	errors |= curl_upload_file_with_extra_value (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -69,7 +69,7 @@ static unsigned int upload_request_all_actual (
 	static const char *json = { "{ \"key\": \"value\" }" };
 	const size_t json_len = strlen (json);
 
-	(void) snprintf (actual_address, 128, "%s/iter/empty", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/iter/empty", address);
 	errors |= curl_simple_post (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -77,7 +77,7 @@ static unsigned int upload_request_all_actual (
 	);
 
 	// POST /discard - keep
-	(void) snprintf (actual_address, 128, "%s/discard", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/discard", address);
 	errors |= curl_upload_file_with_extra_value (
 		curl, actual_address,
 		HTTP_STATUS_OK,
@@ -125,7 +125,7 @@ static unsigned int upload_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

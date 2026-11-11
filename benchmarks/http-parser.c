@@ -32,37 +32,46 @@ static const size_t data_len = sizeof (data) - 1;
 
 static int on_info (http_parser *p) {
 
-	return 0;
-}
+	(void) p;
 
+	return 0;
+
+}
 
 static int on_data (
 	http_parser* p, const char *at, size_t length
 ) {
 
+	(void) p;
+	(void) at;
+	(void) length;
+
 	return 0;
 
 }
 
+// in the order of their declaration, that C++ requires
 static http_parser_settings settings = {
 
 	.on_message_begin = on_info,
-	.on_headers_complete = on_info,
-	.on_message_complete = on_info,
-	.on_header_field = on_data,
-	.on_header_value = on_data,
 	.on_url = on_data,
 	.on_status = on_data,
-	.on_body = on_data
+	.on_header_field = on_data,
+	.on_header_value = on_data,
+	.on_headers_complete = on_info,
+	.on_body = on_data,
+	.on_message_complete = on_info,
+	.on_chunk_header = NULL,
+	.on_chunk_complete = NULL
 
 };
 
 int bench (int iter_count, int silent) {
 
-	struct http_parser parser = { 0 };
+	struct http_parser parser = CERVER_ZERO_INITIALIZER;
 	int err = 0;
-	struct timeval start = { 0 };
-	struct timeval end = { 0 };
+	struct timeval start = CERVER_ZERO_INITIALIZER;
+	struct timeval end = CERVER_ZERO_INITIALIZER;
 
 	if (!silent) {
 		err = gettimeofday (&start, NULL);
@@ -71,7 +80,7 @@ int bench (int iter_count, int silent) {
 
 	(void) fprintf (stderr, "req_len=%d\n", (int) data_len);
 	size_t parsed = 0;
-	register int i = 0;
+	int i = 0;
 	for (i = 0; i < iter_count; i++) {
 		http_parser_init (&parser, HTTP_REQUEST);
 
@@ -90,7 +99,7 @@ int bench (int iter_count, int silent) {
 		(void) fprintf (stdout, "Benchmark result:\n");
 
 		elapsed = (double) (end.tv_sec - start.tv_sec) +
-			(end.tv_usec - start.tv_usec) * 1e-6f;
+			(double) (end.tv_usec - start.tv_usec) * 1e-6;
 
 		total = (double) iter_count * data_len;
 		bw = (double) total / elapsed;

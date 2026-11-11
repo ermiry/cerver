@@ -49,7 +49,7 @@ static unsigned int jobs_request_all_actual (
 	unsigned int errors = 0;
 
 	char data_buffer[4096] = { 0 };
-	char actual_address[128] = { 0 };
+	char actual_address[WEB_TEST_URL_SIZE] = { 0 };
 
 	// GET /
 	errors |= curl_simple_handle_data (
@@ -59,7 +59,7 @@ static unsigned int jobs_request_all_actual (
 	);
 
 	// POST /jobs
-	(void) snprintf (actual_address, 128, "%s/jobs", address);
+	(void) snprintf (actual_address, WEB_TEST_URL_SIZE,"%s/jobs", address);
 	errors |= jobs_request_register (curl, actual_address, data_buffer);
 
 	return errors;
@@ -94,7 +94,7 @@ static unsigned int jobs_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	int code = 0;
 

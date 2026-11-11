@@ -5,10 +5,11 @@
 #include <stdbool.h>
 
 #include <cerver/files.h>
+#include <cerver/packets.h>
 
 #include <cerver/types/string.h>
 
-// a FileHeader from the network: the copy from the data of a packet, its validation,
+// a FileHeader from the network: the decode from the data of a packet, its validation,
 // and the search of its filename in the paths of a files cerver
 // a valid filename is a single NUL terminated name, so the search never leaves the paths
 
@@ -30,8 +31,14 @@ int LLVMFuzzerTestOneInput (const uint8_t *data, size_t size) {
 
 	(void) memcpy (packet_data, data, size);
 
+	Packet packet;
+	(void) memset (&packet, 0, sizeof (Packet));
+	packet.header.flags = PACKET_FLAG_SERIALIZED;
+	packet.data = packet_data;
+	packet.data_size = size;
+
 	FileHeader file_header;
-	if (file_header_get (packet_data, size, &file_header)) {
+	if (file_header_get (&packet, &file_header)) {
 		const size_t length = strnlen (file_header.filename, FILENAME_DEFAULT_SIZE);
 		if ((length == 0) || (length == FILENAME_DEFAULT_SIZE)) abort ();
 		if (strchr (file_header.filename, '/')) abort ();
