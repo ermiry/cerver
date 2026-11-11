@@ -253,6 +253,7 @@ client: $(EXOBJS)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/client.o -o ./$(EXATARGET)/client/client $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/auth.o -o ./$(EXATARGET)/client/auth $(EXALIBS) $(EXAPPLINK)
 	$(CC) $(EXAINC) ./$(EXABUILD)/client/files.o -o ./$(EXATARGET)/client/files $(EXALIBS) $(EXAPPLINK)
+	$(CC) $(EXAINC) ./$(EXABUILD)/client/game.o -o ./$(EXATARGET)/client/game $(EXALIBS) $(EXAPPLINK)
 
 examples:
 	@mkdir -p ./$(EXATARGET)
