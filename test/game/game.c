@@ -15,6 +15,8 @@
 
 #include "../test.h"
 
+#include "game.h"
+
 // the game module without network: scores, game types, players and lobbies
 // bugs this suite fixed:
 // - the scores used the size of a pointer as the length of every key, and pointers to stack values
@@ -259,8 +261,16 @@ int main (int argc, char **argv) {
 	test_game_players ();
 	test_game_lobbies ();
 
+	cerver_init ();
+
+	game_tests_lobbies ();
+	game_tests_requests ();
+
+	cerver_end ();
+
 	(void) printf ("\nDone with GAME tests!\n\n");
 
 	return 0;
 
 }
+
