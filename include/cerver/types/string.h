@@ -157,54 +157,6 @@ CERVER_PUBLIC int str_contains (
 	const String *str, const char *to_find
 );
 
-/*** serialization ***/
-
-typedef enum SStringSize {
-
-	SS_SMALL = 64,
-	SS_MEDIUM = 128,
-	SS_LARGE = 256,
-	SS_EXTRA_LARGE = 512
-
-} SStringSize;
-
-// serialized str (small)
-typedef struct SStringS {
-
-	u16 len;
-	char str[SS_SMALL];
-
-} SStringS;
-
-// serialized str (medium)
-typedef struct SStringM {
-
-	u16 len;
-	char str[SS_MEDIUM];
-
-} SStringM;
-
-// serialized str (large)
-typedef struct SStringL {
-
-	u16 len;
-	char str[SS_LARGE];
-
-} SStringL;
-
-// serialized str (extra large)
-typedef struct SStringXL {
-
-	u16 len;
-	char str[SS_EXTRA_LARGE];
-
-} SStringXL;
-
-// returns a ptr to a serialized str
-CERVER_PUBLIC void *str_selialize (
-	const String *str, const SStringSize size
-);
-
 #ifdef __cplusplus
 }
 #endif
