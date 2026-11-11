@@ -86,6 +86,16 @@ static const char *secret_file_content = { "secret-content" };
 
 static const char *valid_authorization = { "Bearer test-token" };
 
+// the request that follows another one in the same buffer
+#define PIPELINED_SECOND_REQUEST			\
+	"POST /test/echo HTTP/1.1\r\n"			\
+	"Host: localhost:8080\r\n"				\
+	"Content-Length: 6\r\n"					\
+	"\r\n"									\
+	"second"
+
+static const char *pipelined_second_request = { PIPELINED_SECOND_REQUEST };
+
 static const char *catch_all_message = { "HTTP Cerver!" };
 static const char *continue_response = { "HTTP/1.1 100 Continue\r\n\r\n" };
 static const char *response_status_prefix = { "HTTP/1.1 " };
@@ -137,6 +147,10 @@ static TestReceiveObserved observed;
 typedef struct TestReceiveResult {
 
 	HttpReceiveStatus status;
+
+	// what the parser found when the request was completed
+	bool keep_alive_requested;
+	size_t unparsed;
 
 	size_t response_len;
 	char response[TEST_RECEIVE_RESPONSE_SIZE];
@@ -522,6 +536,10 @@ static void test_receive_groups_create (HttpCerver *http_cerver) {
 	HttpEndpoint *socket = http_group_get (v2, "socket", test_receive_echo_handler);
 	http_endpoint_set_modifier (socket, HTTP_ROUTE_MODIFIER_WEB_SOCKET);
 
+	// the methods that the parser accepts since llhttp
+	test_check_ptr (http_group_route_add (v2, REQUEST_METHOD_PROPFIND, "dav", test_receive_echo_handler));
+	test_check_ptr (http_group_route_add (v2, REQUEST_METHOD_QUERY, "search", test_receive_echo_handler));
+
 	HttpGroup *cors = http_group_create (v2, "cors");
 	http_group_set_cors (cors, true);
 	test_check_ptr (http_group_get (cors, "resource", test_receive_echo_handler));
@@ -676,6 +694,8 @@ static void test_receive_feed (
 	}
 
 	result.status = http_receive->receive_status;
+	result.keep_alive_requested = http_receive->keep_alive_requested;
+	result.unparsed = http_receive->unparsed;
 
 	// a request that was not completed is closed like the receive loop does
 	if (connection->socket->sock_fd != -1) connection_end (connection);
@@ -1222,17 +1242,17 @@ static void test_receive_bad_requests (Cerver *cerver) {
 		"Content-Length: 5\r\n"
 		"\r\n"
 		"first"
-		"POST /test/echo HTTP/1.1\r\n"
-		"Host: localhost:8080\r\n"
-		"Content-Length: 6\r\n"
-		"\r\n"
-		"second"
+		PIPELINED_SECOND_REQUEST
 	);
 
 	test_receive_expect (test_receive_status_is ("200"));
 	test_receive_expect (observed.n_handled == 1);
 	test_receive_expect (!strcmp (observed.body, "first"));
 	test_receive_expect (test_receive_count_responses () == 1);
+
+	// the parser stopped after the first request, the second one was not parsed
+	test_receive_expect (result.keep_alive_requested);
+	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
 
 }
 
@@ -2109,6 +2129,302 @@ static void test_receive_cors_preflight (Cerver *cerver) {
 
 #pragma endregion
 
+#pragma region parser
+
+// a header value bigger than the default limit of the headers
+#define TEST_RECEIVE_BIG_HEADER_VALUE		(HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE + (1 << 10))
+#define TEST_RECEIVE_BIG_REQUEST_SIZE		(TEST_RECEIVE_BIG_HEADER_VALUE + (1 << 8))
+
+static const char *query_request = {
+	"QUERY /v2/search?key=value HTTP/1.1\r\n"
+	"Host: localhost:8080\r\n"
+	"Content-Type: application/json\r\n"
+	"Content-Length: 26\r\n"
+	"\r\n"
+	"{\"select\": [\"name\", \"id\"]}"
+};
+
+static const char *query_body = { "{\"select\": [\"name\", \"id\"]}" };
+
+static void test_receive_check_query (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, query_body));
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+}
+
+// a request that only the lenient flag makes valid, it is answered by the echo route
+typedef struct TestReceiveStrictCase {
+
+	const char *name;
+	const char *request;
+	unsigned int lenient;
+	const char *body;
+
+} TestReceiveStrictCase;
+
+// llhttp needs both flags to accept a line that ends with LF
+#define TEST_RECEIVE_LENIENT_LF				(HTTP_PARSER_LENIENT_OPTIONAL_CR_BEFORE_LF | HTTP_PARSER_LENIENT_OPTIONAL_LF_AFTER_CR)
+
+static const TestReceiveStrictCase strict_cases[] = {
+	{
+		"LF without CR",
+		"POST /test/echo HTTP/1.1\nHost: localhost:8080\nContent-Length: 5\n\nfirst",
+		TEST_RECEIVE_LENIENT_LF, "first"
+	},
+	{
+		"obsolete line folding",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: first\r\n second\r\nContent-Length: 5\r\n\r\nfirst",
+		HTTP_PARSER_LENIENT_HEADERS, "first"
+	},
+	{
+		"an unknown version",
+		"POST /test/echo HTTP/1.5\r\nHost: localhost:8080\r\nContent-Length: 5\r\n\r\nfirst",
+		HTTP_PARSER_LENIENT_VERSION, "first"
+	},
+	{
+		"Transfer-Encoding with Content-Length",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n"
+		"5\r\nfirst\r\n0\r\n\r\n",
+		HTTP_PARSER_LENIENT_CHUNKED_LENGTH, "first"
+	},
+	{
+		"spaces after a chunk size",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"5  \r\nfirst\r\n0\r\n\r\n",
+		HTTP_PARSER_LENIENT_SPACES_AFTER_CHUNK_SIZE, "first"
+	},
+	{
+		"a chunk without CRLF after its data",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nTransfer-Encoding: chunked\r\n\r\n"
+		"5\r\nfirst0\r\n\r\n",
+		HTTP_PARSER_LENIENT_OPTIONAL_CRLF_AFTER_CHUNK, "first"
+	},
+	{
+		"a control character in a header value",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\x01" "b\r\nContent-Length: 5\r\n\r\nfirst",
+		HTTP_PARSER_LENIENT_HEADERS, "first"
+	}
+};
+
+#define TEST_RECEIVE_STRICT_CASES		(sizeof (strict_cases) / sizeof (strict_cases[0]))
+
+static const char nul_value_request[] = {
+	"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Custom: a\0b\r\nContent-Length: 5\r\n\r\nfirst"
+};
+
+static const char *lf_request = {
+	"POST /test/echo?key=value HTTP/1.1\n"
+	"Host: localhost:8080\n"
+	"Content-Type: application/json\n"
+	"X-Custom: custom-value\n"
+	"Content-Length: 5\n"
+	"\n"
+	"first"
+};
+
+static void test_receive_check_lf (void) {
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+	test_receive_expect (!strcmp (observed.content_type, "application/json"));
+	test_receive_expect (!strcmp (observed.custom, "custom-value"));
+	test_receive_expect (!strcmp (observed.query_key, "value"));
+
+}
+
+static void test_receive_parser_rejected (void) {
+
+	test_receive_expect (test_receive_status_is ("400"));
+	test_receive_expect (result.status == HTTP_RECEIVE_STATUS_PARSER_ERROR);
+	test_receive_expect (observed.n_handled == 0);
+
+}
+
+// the methods of llhttp: WebDAV and QUERY can be registered,
+// the RTSP methods and the preface of HTTP/2 are rejected by the parser
+static void test_receive_parser_methods (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	test_receive_every_split (
+		cerver, "QUERY with a body", query_request, strlen (query_request), test_receive_check_query
+	);
+
+	test_receive_whole_case (cerver, "a WebDAV method", "PROPFIND /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	http_cerver_set_method_not_allowed (http_cerver, true);
+
+	test_receive_whole_case (cerver, "a method that the path does not have", "MKCOL /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_expect (test_receive_status_is ("405"));
+	test_receive_expect (test_receive_has_header ("Allow: OPTIONS, PROPFIND\r\n"));
+	test_receive_expect (observed.n_handled == 0);
+
+	http_cerver_set_method_not_allowed (http_cerver, false);
+
+	test_receive_whole_case (cerver, "an RTSP method", "DESCRIBE /v2/dav HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (cerver, "the preface of HTTP/2", "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (cerver, "a lower case method", "post /test/echo HTTP/1.1\r\nHost: localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+}
+
+// each request is rejected in the strict mode and accepted with its lenient flag
+static void test_receive_parser_strict (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	for (size_t i = 0; i < TEST_RECEIVE_STRICT_CASES; i++) {
+		const TestReceiveStrictCase *strict = &strict_cases[i];
+
+		test_receive_whole_case (cerver, strict->name, strict->request);
+		test_receive_parser_rejected ();
+
+		http_cerver_set_parser_lenient (http_cerver, strict->lenient);
+		test_check_unsigned_eq (http_cerver->parser_lenient, strict->lenient, NULL);
+
+		test_receive_whole_case (cerver, strict->name, strict->request);
+		test_receive_expect (test_receive_status_is ("200"));
+		test_receive_expect (observed.n_handled == 1);
+		test_receive_expect (!strcmp (observed.body, strict->body));
+
+		http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+	}
+
+	// the lenient flags are applied to the parser of every request, also in pieces
+	http_cerver_set_parser_lenient (http_cerver, TEST_RECEIVE_LENIENT_LF);
+	test_receive_every_split (cerver, "lenient LF without CR", lf_request, strlen (lf_request), test_receive_check_lf);
+
+	// a value outside the flags is ignored, also the header value relaxed of llhttp (0x400),
+	// that loops forever with a NUL in a header value
+	http_cerver_set_parser_lenient (http_cerver, ~0u);
+	test_check_unsigned_eq (http_cerver->parser_lenient, HTTP_PARSER_LENIENT_ALL, NULL);
+	test_check_false (http_cerver->parser_lenient & LLHTTP_LENIENT_HEADER_VALUE_RELAXED);
+
+	// the headers lenient flag accepts it, without looping
+	current_case = "a NUL in a header value with every flag";
+	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+
+	http_cerver_set_parser_lenient (http_cerver, HTTP_PARSER_LENIENT_NONE);
+
+	current_case = "a NUL in a header value";
+	test_receive_feed_whole (cerver, nul_value_request, sizeof (nul_value_request) - 1);
+	test_receive_parser_rejected ();
+
+	// some requests are rejected even with every flag
+	test_receive_whole_case (cerver, "a space before a colon", "POST /test/echo HTTP/1.1\r\nHost : localhost:8080\r\n\r\n");
+	test_receive_parser_rejected ();
+
+	test_receive_whole_case (
+		cerver, "two Content-Length",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_parser_rejected ();
+
+}
+
+// an Upgrade or a CONNECT is answered and closed without waiting for another protocol
+static void test_receive_parser_upgrade (Cerver *cerver) {
+
+	test_receive_whole_case (
+		cerver, "an upgrade to a route without websocket",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: h2c\r\nConnection: Upgrade\r\nContent-Length: 5\r\n\r\nfirst"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (observed.n_handled == 1);
+	test_receive_expect (!strcmp (observed.body, "first"));
+
+	test_receive_whole_case (
+		cerver, "an upgrade to a websocket route",
+		"GET /v2/socket HTTP/1.1\r\nHost: localhost:8080\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("501"));
+	test_receive_expect (observed.n_handled == 0);
+
+	test_receive_whole_case (cerver, "a CONNECT", "CONNECT localhost:443 HTTP/1.1\r\nHost: localhost:443\r\n\r\n");
+	test_receive_expect (test_receive_count_responses () == 1);
+	test_receive_expect (result.status != HTTP_RECEIVE_STATUS_NONE);
+
+}
+
+// what the client asked is kept for the keep-alive, the connection is still closed
+static void test_receive_parser_keep_alive (Cerver *cerver) {
+
+	test_receive_whole_case (cerver, "HTTP/1.1", "POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n");
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (result.keep_alive_requested);
+	test_receive_expect (result.unparsed == 0);
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.1 with Connection close",
+		"POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nConnection: close\r\nContent-Length: 5\r\n\r\nfirst"
+		PIPELINED_SECOND_REQUEST
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!result.keep_alive_requested);
+	test_receive_expect (result.unparsed == strlen (pipelined_second_request));
+	test_receive_expect (test_receive_count_responses () == 1);
+
+	test_receive_whole_case (cerver, "HTTP/1.0", "POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nContent-Length: 0\r\n\r\n");
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (!result.keep_alive_requested);
+
+	test_receive_whole_case (
+		cerver, "HTTP/1.0 with keep-alive",
+		"POST /test/echo HTTP/1.0\r\nHost: localhost:8080\r\nConnection: keep-alive\r\nContent-Length: 0\r\n\r\n"
+	);
+
+	test_receive_expect (test_receive_status_is ("200"));
+	test_receive_expect (result.keep_alive_requested);
+
+}
+
+// llhttp does not limit the headers (http_parser stopped at 80 KiB),
+// the limit of the cerver is always active, 0 sets its default value
+static void test_receive_parser_header_limit (Cerver *cerver) {
+
+	HttpCerver *http_cerver = (HttpCerver *) cerver->cerver_data;
+
+	http_cerver_set_max_header_size (http_cerver, 0);
+	test_check_unsigned_eq (http_cerver->max_header_size, HTTP_CERVER_DEFAULT_MAX_HEADER_SIZE, NULL);
+
+	http_cerver_set_max_url_size (http_cerver, 0);
+	test_check_unsigned_eq (http_cerver->max_url_size, HTTP_CERVER_DEFAULT_MAX_URL_SIZE, NULL);
+
+	char *request = (char *) malloc (TEST_RECEIVE_BIG_REQUEST_SIZE);
+	test_check_ptr (request);
+
+	size_t length = (size_t) snprintf (
+		request, TEST_RECEIVE_BIG_REQUEST_SIZE, "POST /test/echo HTTP/1.1\r\nHost: localhost:8080\r\nX-Big: "
+	);
+
+	(void) memset (request + length, 'a', TEST_RECEIVE_BIG_HEADER_VALUE);
+	length += TEST_RECEIVE_BIG_HEADER_VALUE;
+	(void) snprintf (request + length, TEST_RECEIVE_BIG_REQUEST_SIZE - length, "\r\nContent-Length: 0\r\n\r\n");
+
+	test_receive_limit_case (cerver, "headers bigger than the default limit", request, "431");
+
+	free (request);
+
+}
+
+#pragma endregion
+
 void http_tests_receive (void) {
 
 	(void) printf ("Testing HTTP receive...\n");
@@ -2142,6 +2458,12 @@ void http_tests_receive (void) {
 	test_receive_method_not_allowed (cerver);
 	test_receive_trailing_slash (cerver);
 	test_receive_cors_preflight (cerver);
+
+	test_receive_parser_methods (cerver);
+	test_receive_parser_strict (cerver);
+	test_receive_parser_upgrade (cerver);
+	test_receive_parser_keep_alive (cerver);
+	test_receive_parser_header_limit (cerver);
 
 	(void) cerver_teardown (cerver);
 
