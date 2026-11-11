@@ -419,6 +419,7 @@ integration-cerver:
 	$(CC) $(TESTINC) $(INTCERVERIN)/schemas.o -o $(INTCERVEROUT)/schemas $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/service.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/service $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/sessions.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/sessions $(INTCERVERLIBS)
+	$(CC) $(TESTINC) $(INTCERVERIN)/stress.o -o $(INTCERVEROUT)/stress $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/threads.o $(INTCERVERIN)/cerver.o -o $(INTCERVEROUT)/threads $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/udp.o -o $(INTCERVEROUT)/udp $(INTCERVERLIBS)
 	$(CC) $(TESTINC) $(INTCERVERIN)/upstream.o -o $(INTCERVEROUT)/upstream $(TESTLIBS)
@@ -444,6 +445,7 @@ integration-client:
 	$(CC) $(TESTINC) $(INTCLIENTIN)/requests.o -o $(INTCLIENTOUT)/requests $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/schemas.o -o $(INTCLIENTOUT)/schemas $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/sessions.o $(INTCLIENTIN)/client.o -o $(INTCLIENTOUT)/sessions $(INTCLIENTLIBS)
+	$(CC) $(TESTINC) $(INTCLIENTIN)/stress.o -o $(INTCLIENTOUT)/stress $(TESTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/threads.o -o $(INTCLIENTOUT)/threads $(INTCLIENTLIBS)
 	$(CC) $(TESTINC) $(INTCLIENTIN)/udp.o -o $(INTCLIENTOUT)/udp $(INTCLIENTLIBS)
 

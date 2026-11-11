@@ -83,6 +83,16 @@ jobs:
       - name: Core allocations
         run: bash test/allocations.sh
 
+  stress:
+    name: Cerver protocol stress with concurrent clients
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Stress
+        run: bash test/stress.sh
+
   nginx:
     name: Cerver behind nginx
     runs-on: ubuntu-latest
