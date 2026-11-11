@@ -17,6 +17,8 @@
 
 #include "cerver/game/lobby.h"
 
+#include "cerver/utils/histogram.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,6 +54,14 @@ typedef struct HandlerData {
 	struct _Packet *packet;         // the packet to handle
 
 } HandlerData;
+
+// the packets that a handler handled, added from the threads that run it
+typedef struct HandlerStats {
+
+	Histogram durations;			// microseconds that the handler took with each packet
+	Histogram sizes;				// bytes of each packet, with its header
+
+} HandlerStats;
 
 struct _Handler {
 
@@ -97,6 +107,8 @@ struct _Handler {
 
 	struct _Cerver *cerver;     // the cerver this handler belongs to
 	struct _Client *client;     // the client this handler belongs to
+
+	HandlerStats stats;
 
 };
 
@@ -147,6 +159,14 @@ CERVER_EXPORT void handler_set_data_delete (
 CERVER_EXPORT void handler_set_direct_handle (
 	Handler *handler, bool direct_handle
 );
+
+// copies the stats of the packets that the handler handled
+CERVER_EXPORT void handler_get_stats (
+	const Handler *handler, HandlerStats *stats
+);
+
+// prints the stats of the handler with the cerver log
+CERVER_EXPORT void handler_stats_print (const Handler *handler);
 
 // starts the new handler by creating a dedicated thread for it
 // called by internal cerver methods

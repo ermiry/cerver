@@ -56,6 +56,9 @@ static const long HANDLER_STOP_WAKE_NANOSECONDS = 16777216L;
 
 static const long HANDLER_NANOSECONDS_PER_SECOND = 1000000000L;
 
+static const long long HANDLER_MICROSECONDS_PER_SECOND = 1000000LL;
+static const long long HANDLER_NANOSECONDS_PER_MICROSECOND = 1000LL;
+
 #pragma region handler
 
 // handlers are created by every client and cerver, also from different threads at the same time
@@ -104,6 +107,9 @@ static Handler *handler_new (void) {
 
 		handler->cerver = NULL;
 		handler->client = NULL;
+
+		histogram_init (&handler->stats.durations);
+		histogram_init (&handler->stats.sizes);
 	}
 
 	return handler;
@@ -197,6 +203,30 @@ void handler_set_direct_handle (Handler *handler, bool direct_handle) {
 
 }
 
+// copies the stats of the packets that the handler handled
+void handler_get_stats (const Handler *handler, HandlerStats *stats) {
+
+	if (handler && stats) {
+		histogram_copy (&stats->durations, &handler->stats.durations);
+		histogram_copy (&stats->sizes, &handler->stats.sizes);
+	}
+
+}
+
+// prints the stats of the handler with the cerver log
+void handler_stats_print (const Handler *handler) {
+
+	if (handler) {
+		HandlerStats stats;
+		handler_get_stats (handler, &stats);
+
+		cerver_log_msg ("Handler %d stats:", handler->id);
+		histogram_print ("Durations", "us", &stats.durations);
+		histogram_print ("Sizes", "bytes", &stats.sizes);
+	}
+
+}
+
 // the owner of the handler stopped, read with the lock of the handler's queue
 static bool handler_cerver_stopped (const void *handler_ptr) {
 
@@ -226,8 +256,64 @@ static void handler_packet_release (
 
 }
 
+// the values of a packet for the stats, taken before its handler runs,
+// because the handler can release the packet
+typedef struct HandlerPacketValues {
+
+	PacketType packet_type;
+	u32 request_type;
+	u64 size;
+
+	struct timespec start;
+
+} HandlerPacketValues;
+
+static void handler_packet_values_start (
+	HandlerPacketValues *values, const Packet *packet
+) {
+
+	values->packet_type = packet->header.packet_type;
+	values->request_type = packet->header.request_type;
+	values->size = packet->header.packet_size;
+
+	(void) clock_gettime (CLOCK_MONOTONIC, &values->start);
+
+}
+
+static u64 handler_elapsed_microseconds (const struct timespec *start) {
+
+	struct timespec now = { 0, 0 };
+	(void) clock_gettime (CLOCK_MONOTONIC, &now);
+
+	const long long elapsed =
+		((long long) (now.tv_sec - start->tv_sec) * HANDLER_MICROSECONDS_PER_SECOND)
+		+ ((long long) (now.tv_nsec - start->tv_nsec) / HANDLER_NANOSECONDS_PER_MICROSECOND);
+
+	return (elapsed > 0) ? (u64) elapsed : 0;
+
+}
+
+// adds the packet to the stats of the handler,
+// and to the stats of its request type when the handler is of a cerver
+static void handler_stats_add (Handler *handler, const HandlerPacketValues *values) {
+
+	const u64 elapsed = handler_elapsed_microseconds (&values->start);
+
+	histogram_add (&handler->stats.durations, elapsed);
+	histogram_add (&handler->stats.sizes, values->size);
+
+	if ((handler->type == HANDLER_TYPE_CERVER) && handler->cerver) {
+		cerver_request_stats_add (
+			handler->cerver,
+			values->packet_type, values->request_type,
+			values->size, elapsed
+		);
+	}
+
+}
+
 // runs the handler with the packet of the job, the job goes back to the pool of the queue
-// and the time it ran goes to the stats of the queue
+// and the time it ran goes to the stats of the queue and of the handler
 // working counts the handlers that are handling a packet
 // returns the type of the packet
 static PacketType handler_job_run (
@@ -236,12 +322,11 @@ static PacketType handler_job_run (
 ) {
 
 	Packet *packet = (Packet *) job->args;
-	const PacketType packet_type = packet->header.packet_type;
 
 	(void) __atomic_add_fetch (working, 1, __ATOMIC_SEQ_CST);
 
-	struct timespec start = { 0, 0 };
-	(void) clock_gettime (CLOCK_MONOTONIC, &start);
+	HandlerPacketValues values;
+	handler_packet_values_start (&values, packet);
 
 	handler_data->handler_id = handler->id;
 	handler_data->data = handler->data;
@@ -249,12 +334,14 @@ static PacketType handler_job_run (
 
 	handler->handler (handler_data);
 
-	job_queue_record_run (handler->job_queue, &start);
+	job_queue_record_run (handler->job_queue, &values.start);
+	handler_stats_add (handler, &values);
+
 	job_return (handler->job_queue, job);
 
 	(void) __atomic_sub_fetch (working, 1, __ATOMIC_SEQ_CST);
 
-	return packet_type;
+	return values.packet_type;
 
 }
 
@@ -532,7 +619,13 @@ void handler_packet_dispatch (
 
 	if (handler) {
 		if (handler->direct_handle) {
+			HandlerPacketValues values;
+			handler_packet_values_start (&values, packet);
+
 			handler->handler (packet);
+
+			handler_stats_add (handler, &values);
+
 			if (delete_packet) packet_delete (packet);
 		}
 
