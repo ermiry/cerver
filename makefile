@@ -9,6 +9,8 @@ DEBUG		:= 0
 # address, thread or undefined
 SANITIZER	:=
 
+WERROR		?= 0
+
 SLIB		:= libcerver.so
 
 all: directories $(SLIB)
@@ -70,9 +72,17 @@ COVEXT		:= gcov
 COMMON		:= -Wall -Wno-unknown-pragmas \
 				-Wfloat-equal -Wdouble-promotion -Wint-to-pointer-cast -Wwrite-strings \
 				-Wtype-limits -Wsign-compare -Wmissing-field-initializers \
-				-Wuninitialized -Wmaybe-uninitialized -Wempty-body \
+				-Wuninitialized -Wempty-body \
 				-Wunused-parameter -Wunused-but-set-parameter -Wunused-result \
 				-Wformat -Wformat-nonliteral -Wformat-security -Wformat-overflow -Wformat-signedness -Wformat-truncation
+
+ifeq ($(findstring clang,$(CC)),)
+	COMMON += -Wmaybe-uninitialized
+endif
+
+ifeq ($(WERROR), 1)
+	COMMON += -Werror
+endif
 
 # main
 CFLAGS      := $(DEFINES)
@@ -179,7 +189,7 @@ ifeq ($(NATIVE), 1)
 endif
 
 # common flags
-EXAFLAGS += -Wall -Wno-unknown-pragmas $(SANITIZERFLAGS)
+EXAFLAGS += $(COMMON) $(SANITIZERFLAGS)
 
 EXALIBS		:= -Wl,-rpath=./$(TARGETDIR) -L ./$(TARGETDIR) -l cerver $(SANITIZERFLAGS)
 EXAINC		:= -I ./$(INCDIR) -I ./$(EXAMDIR)
@@ -268,7 +278,7 @@ TESTBUILD	:= $(TESTDIR)/objs
 TESTTARGET	:= $(TESTDIR)/bin
 TESTCOVDIR	:= $(COVDIR)/test
 
-TESTFLAGS	:= -g $(DEFINES) -Wall -Wno-unknown-pragmas -Wno-format $(SANITIZERFLAGS) $(RECYCLEFLAGS)
+TESTFLAGS	:= -g $(DEFINES) $(COMMON) $(SANITIZERFLAGS) $(RECYCLEFLAGS)
 
 ifeq ($(TYPE), test)
 	ifeq ($(COVERAGE), 1)
@@ -443,8 +453,8 @@ FUZZBUILD		:= $(BUILDDIR)/fuzz
 FUZZTARGET		:= $(TESTTARGET)/fuzz
 
 FUZZSANITIZERS	:= address,undefined
-FUZZLIBFLAGS	:= -g -O1 $(DEFINES) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
-FUZZFLAGS		:= -g -O1 $(DEFINES) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
+FUZZLIBFLAGS	:= -g -O1 $(DEFINES) $(COMMON) -D CERVER_RECYCLE_DISABLED -fno-omit-frame-pointer -fsanitize=fuzzer-no-link,$(FUZZSANITIZERS)
+FUZZFLAGS		:= -g -O1 $(DEFINES) $(COMMON) -fno-omit-frame-pointer -fsanitize=fuzzer,$(FUZZSANITIZERS)
 FUZZLIBS		:= $(PTHREAD) $(MATH)
 FUZZINC			:= -I $(INCDIR) -I ./$(TESTDIR)
 
@@ -486,7 +496,7 @@ BENCHDIR	:= benchmarks
 BENCHBUILD	:= $(BENCHDIR)/objs
 BENCHTARGET	:= $(BENCHDIR)/bin
 
-BENCHFLAGS	:= $(DEFINES) -Wall -Wno-unknown-pragmas -O3
+BENCHFLAGS	:= $(DEFINES) $(COMMON) -O3
 
 ifeq ($(NATIVE), 1)
 	BENCHFLAGS += -march=native -mavx2
