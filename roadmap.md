@@ -858,6 +858,43 @@ formas (FIN, RST, half-close y desaparecer), también detrás de nginx con una y
 - pycerver 1.1 contra la imagen devel;
 - artemis con gepp, payloads, tickets y balance.
 
+#### 4.3.10 El port de la 1.8 completa y los pendientes de la 2.0b-65 (Beta 2.0b-66) — implementado, sin commits
+
+**La decisión (2026-11-11):** el port de la 1.8b-7, la 1.8b-8 y la 1.8b-9 (y los arreglos del release 1.8) se adelanta
+a esta beta, que todavía no es la de producción. El core de `http` queda idéntico al de `core` salvo la parte web de
+`cerver.{h,c}` y `handler.{h,c}`.
+
+**El port:**
+
+- El protocolo de 32 bytes en orden de red, el `route_id` con generación del balancer (cierra B9 en `http`), el
+  serializador por esquema y sus objetos (`CerverSummary`, `SessionToken`, `ErrorMessage`, `FileHeader`).
+- Los issues de la 1.8b-8: histogramas, `HandlerStats`, `RequestStats`, los handlers por request type, el balancer
+  custom, `system.h`, los pools de paquetes por hilo, `files_copy*`.
+- Game de la 1.8b-9, el `EINTR` en el receive, el thpool solo en THREADS para los cervers del protocolo (un cerver web
+  lo crea con cualquier tipo de handler).
+- **Cero warnings** con gcc, g++ (sin `-fpermissive`) y clang, en `test` y `development`, la librería, los tests, los
+  examples, los fuzzers y los benchmarks, los vendorizados incluidos; `WERROR=1` en el CI, el job de clang, y
+  `jwt/openssl.c` sin la API de `EC_KEY`.
+- Los workflows con las actions de Node 24.
+
+**Los pendientes de la 2.0b-65:**
+
+- El valgrind del CI en `test_disconnect_responses`: las esperas del lote ×4 bajo valgrind.
+- `test_disconnect_interrupted` bajo emulación amd64: el número de la llamada de `recv ()` se mide en tiempo de
+  ejecución con un hilo que la espera.
+- El send timeout por respuesta, en milisegundos: `http_cerver_set_send_timeout_milliseconds ()`; todos los envíos de
+  una respuesta comparten un deadline, también en un socket bloqueante con un `SO_SNDTIMEO` más largo, y cada pieza de
+  un stream tiene el suyo.
+- La autenticación de los archivos estáticos: antes de buscar el archivo, con la ruta estática que lo tiene o con la
+  primera protegida si ninguna lo tiene; `http_static_path_set_decode_data ()` y
+  `http_static_path_set_authentication_handler ()`.
+- `files_create_recursive_dir ()` (del core): un directorio que existe es éxito y una ruta que no cabe es error.
+
+**Los tests:** `test_receive_static_*_authentication`, `test_server_response_send_timeout`, el thpool en
+`test_server_poll`, `test/socket.c` y `test/files.c` del core, y todo lo de las tres betas de la 1.8 (game, schemas,
+stress, histogram, system, los fuzzers `serializer` y `game`, los pares `cerver/game`, `cerver/schemas`,
+`balancer/custom` y `examples/*`).
+
 ### 4.4 Fase 4 — Núcleo event loop (versión mayor 3.0, para después)
 
 Es la implementación mayor. Llega cuando las Fases 0–3 estén estables en producción.
