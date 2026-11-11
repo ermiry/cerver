@@ -155,7 +155,7 @@ static void custom_uploads_filename_generator (
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 

@@ -169,7 +169,7 @@ static void lifecycle_server_send_pieces (
 		const size_t piece = (left < LIFECYCLE_SPLIT_PIECE_SIZE) ? left : LIFECYCLE_SPLIT_PIECE_SIZE;
 
 		// the big body goes in a single send after its first pieces
-		if (sent > sizeof (PacketHeader)) {
+		if (sent > PACKET_HEADER_SIZE) {
 			(void) send (sock_fd, bytes + sent, left, MSG_NOSIGNAL);
 			break;
 		}

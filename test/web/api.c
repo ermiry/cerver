@@ -64,6 +64,8 @@ static void catch_all_handler (
 	const HttpRequest *request
 ) {
 
+	(void) request;
+
 	HttpResponse *res = http_response_json_msg (
 		HTTP_STATUS_OK, "Cerver API implementation!"
 	);
@@ -82,7 +84,7 @@ static void catch_all_handler (
 
 #pragma region start
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	srand (time (NULL));
 

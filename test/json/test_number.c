@@ -25,15 +25,15 @@
 #pragma warning (disable : 4756)
 #endif
 static void test_inifity () {
-	json_t *real = json_real (INFINITY);
+	json_t *real = json_real ((double) INFINITY);
 	if (real != NULL)
 		fail ("could construct a real from Inf");
 
 	real = json_real (1.0);
-	if (json_real_set (real, INFINITY) != -1)
+	if (json_real_set (real, (double) INFINITY) != -1)
 		fail ("could set a real to Inf");
 
-	if (json_real_value (real) != 1.0)
+	if (!test_double_equal (json_real_value (real), 1.0))
 		fail ("real value changed unexpectedly");
 
 	json_decref (real);
@@ -56,9 +56,9 @@ static void test_bad_args (void) {
 	if (!json_integer_set (txt, 0))
 		fail ("json_integer_set did not return error for non-integer");
 
-	if (json_real_value (NULL) != 0.0)
+	if (!test_double_equal (json_real_value (NULL), 0.0))
 		fail ("json_real_value did not return 0.0 for non-real");
-	if (json_real_value (txt) != 0.0)
+	if (!test_double_equal (json_real_value (txt), 0.0))
 		fail ("json_real_value did not return 0.0 for non-real");
 
 	if (!json_real_set (NULL, 0.0))
@@ -66,9 +66,9 @@ static void test_bad_args (void) {
 	if (!json_real_set (txt, 0.0))
 		fail ("json_real_set did not return error for non-real");
 
-	if (json_number_value (NULL) != 0.0)
+	if (!test_double_equal (json_number_value (NULL), 0.0))
 		fail ("json_number_value did not return 0.0 for non-numeric");
-	if (json_number_value (txt) != 0.0)
+	if (!test_double_equal (json_number_value (txt), 0.0))
 		fail ("json_number_value did not return 0.0 for non-numeric");
 
 	if (txt->refcount != 1)
@@ -95,29 +95,29 @@ static void start () {
 		fail ("wrong integer value");
 
 	d = json_real_value (real);
-	if (d != 100.1)
+	if (!test_double_equal (d, 100.1))
 		fail ("wrong real value");
 
 	d = json_number_value (integer);
-	if (d != 5.0)
+	if (!test_double_equal (d, 5.0))
 		fail ("wrong number value");
 	d = json_number_value (real);
-	if (d != 100.1)
+	if (!test_double_equal (d, 100.1))
 		fail ("wrong number value");
 
 	json_decref (integer);
 	json_decref (real);
 
 #ifdef NAN
-	real = json_real (NAN);
+	real = json_real ((double) NAN);
 	if (real != NULL)
 		fail ("could construct a real from NaN");
 
 	real = json_real (1.0);
-	if (json_real_set (real, NAN) != -1)
+	if (json_real_set (real, (double) NAN) != -1)
 		fail ("could set a real to NaN");
 
-	if (json_real_value (real) != 1.0)
+	if (!test_double_equal (json_real_value (real), 1.0))
 		fail ("real value changed unexpectedly");
 
 	json_decref (real);

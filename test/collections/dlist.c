@@ -141,7 +141,7 @@ static int dlist_test_reset (void) {
 
 	dlist_reset (dlist);
 
-	cerver_log_raw ("\ndlist size after reset: %ld\n", dlist->size);
+	cerver_log_raw ("\ndlist size after reset: %zu\n", dlist->size);
 	if (dlist->size) errors = 1;
 
 	if (!dlist->start && !dlist->end) {
@@ -571,7 +571,7 @@ static int dlist_test_remove (void) {
 		integer_delete (dlist_remove (dlist, &query, NULL));
 	}
 
-	cerver_log_raw ("dlist_remove () dlist size after removed all: %ld", dlist->size);
+	cerver_log_raw ("dlist_remove () dlist size after removed all: %zu", dlist->size);
 
 	dlist_delete (dlist);
 
@@ -601,7 +601,7 @@ static int dlist_test_remove_start (void) {
 		integer_delete (dlist_remove_start (dlist));
 	}
 
-	cerver_log_raw ("dlist_remove_start () dlist size after removed all: %ld", dlist->size);
+	cerver_log_raw ("dlist_remove_start () dlist size after removed all: %zu", dlist->size);
 
 	dlist_delete (dlist);
 
@@ -631,7 +631,7 @@ static int dlist_test_remove_start_unsafe (void) {
 		integer_delete (dlist_remove_start_unsafe (dlist));
 	}
 
-	cerver_log_raw ("dlist_remove_start_unsafe () dlist size after removed all: %ld", dlist->size);
+	cerver_log_raw ("dlist_remove_start_unsafe () dlist size after removed all: %zu", dlist->size);
 
 	dlist_delete (dlist);
 
@@ -661,7 +661,7 @@ static int dlist_test_remove_end (void) {
 		integer_delete (dlist_remove_end (dlist));
 	}
 
-	cerver_log_raw ("dlist_remove_end () dlist size after removed all: %ld", dlist->size);
+	cerver_log_raw ("dlist_remove_end () dlist size after removed all: %zu", dlist->size);
 
 	dlist_delete (dlist);
 
@@ -691,7 +691,7 @@ static int dlist_test_remove_end_unsafe (void) {
 		integer_delete (dlist_remove_end_unsafe (dlist));
 	}
 
-	cerver_log_raw ("dlist_remove_end_unsafe () dlist size after removed all: %ld", dlist->size);
+	cerver_log_raw ("dlist_remove_end_unsafe () dlist size after removed all: %zu", dlist->size);
 
 	dlist_delete (dlist);
 
@@ -753,7 +753,7 @@ static int dlist_test_remove_by_condition (void) {
 		list, dlist_test_remove_by_condition_less_than_condition, &match, true
 	);
 
-	cerver_log_raw ("\n\nRemoved %d elements smaller than 4:\n", matches);
+	cerver_log_raw ("\n\nRemoved %u elements smaller than 4:\n", matches);
 	dlist_for_each (list, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -761,7 +761,7 @@ static int dlist_test_remove_by_condition (void) {
 	matches = dlist_remove_by_condition (
 		list, dlist_test_remove_by_condition_greater_than_condition, &match, true
 	);
-	cerver_log_raw ("\n\nRemoved %d elements greater than 4:\n", matches);
+	cerver_log_raw ("\n\nRemoved %u elements greater than 4:\n", matches);
 	dlist_for_each (list, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -791,7 +791,7 @@ static int dlist_test_remove_at (void) {
 	Integer *seven = (Integer *) dlist_remove_at (dlist, 7);
 	integer_delete (seven);
 
-	cerver_log_raw ("Removed at 2 & 7 -> dlist size: %ld\n", dlist->size);
+	cerver_log_raw ("Removed at 2 & 7 -> dlist size: %zu\n", dlist->size);
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -828,7 +828,7 @@ static int dlist_test_remove_at (void) {
 // 		}
 // 	}
 
-// 	cerver_log_raw ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
+// 	cerver_log_raw ("\nRemaining list item: %d -- size: %zu\n", ((Integer *) list->start->data)->value, list->size);
 
 // 	dlist_delete (list);
 
@@ -851,7 +851,7 @@ static int dlist_test_remove_at (void) {
 // 		free (dlist_remove_element (list, list->end));
 // 	}
 
-// 	cerver_log_raw ("\nRemaining list item: %d -- size: %ld\n", ((Integer *) list->start->data)->value, list->size);
+// 	cerver_log_raw ("\nRemaining list item: %d -- size: %zu\n", ((Integer *) list->start->data)->value, list->size);
 
 // 	dlist_delete (list);
 
@@ -1010,6 +1010,8 @@ static int dlist_test_get_at (void) {
 
 static void test_traverse_method (void *list_element_data, void *method_args) {
 
+	(void) method_args;
+
 	cerver_log_raw ("%4d", ((Integer *) list_element_data)->value);
 
 }
@@ -1165,7 +1167,7 @@ static int dlist_test_insert_threads (void) {
  	(void) pthread_join (threads[2], NULL);
  	(void) pthread_join (threads[3], NULL);
 
-	cerver_log_raw ("Elements in dlist after 4 x 10 inserted: %ld\n\n", dlist->size);
+	cerver_log_raw ("Elements in dlist after 4 x 10 inserted: %zu\n\n", dlist->size);
 
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
@@ -1204,7 +1206,7 @@ static int dlist_test_remove_threads (void) {
  	(void) pthread_join (threads[2], NULL);
  	(void) pthread_join (threads[3], NULL);
 
-	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %ld\n\n", dlist->size);
+	cerver_log_raw ("Elements in dlist after 4 x 10 removed: %zu\n\n", dlist->size);
 
 	test_check_int_eq ((int) dlist->size, 10, NULL);
 
@@ -1250,7 +1252,7 @@ static int dlist_test_to_array (void) {
 			cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 		}
 
-		cerver_log_raw ("\n\nElements in array %ld\n", count);
+		cerver_log_raw ("\n\nElements in array %zu\n", count);
 		for (size_t idx = 0; idx < count; idx++) {
 			cerver_log_raw ("%4d", ((Integer *) array[idx])->value);
 		}
@@ -1360,12 +1362,12 @@ static int dlist_test_split_half (void) {
 
 	DoubleList *split = dlist_split_half (dlist);
 
-	cerver_log_raw ("\nFIRST half: %ld\n", dlist->size);
+	cerver_log_raw ("\nFIRST half: %zu\n", dlist->size);
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nSECOND half: %ld\n", split->size);
+	cerver_log_raw ("\n\nSECOND half: %zu\n", split->size);
 	for (ListElement *le = dlist_start (split); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -1376,7 +1378,7 @@ static int dlist_test_split_half (void) {
 		dlist_insert_after_unsafe (dlist, dlist_end (dlist), integer);
 	}
 
-	cerver_log_raw ("FIRST half: %ld\n", dlist->size);
+	cerver_log_raw ("FIRST half: %zu\n", dlist->size);
 	for (ListElement *le = dlist_start (dlist); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -1387,7 +1389,7 @@ static int dlist_test_split_half (void) {
 		dlist_insert_before_unsafe (split, NULL, integer);
 	}
 
-	cerver_log_raw ("SECOND half: %ld", split->size);
+	cerver_log_raw ("SECOND half: %zu", split->size);
 	for (ListElement *le = dlist_start (split); le; le = le->next) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -1438,12 +1440,12 @@ static int dlist_test_split_by_condition (void) {
 		dlist, test_split_by_condition_condition, &match
 	);
 
-	cerver_log_raw ("\n\nAFTER split (size %ld):\n", dlist->size);
+	cerver_log_raw ("\n\nAFTER split (size %zu):\n", dlist->size);
 	dlist_for_each (dlist, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nMatches (size: %ld):\n", matches->size);
+	cerver_log_raw ("\n\nMatches (size: %zu):\n", matches->size);
 	dlist_for_each (matches, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -1490,13 +1492,13 @@ static int dlist_test_merge_two (void) {
 	}
 
 	dlist_merge_two (one, two);
-	cerver_log_raw ("\n\nMerge both lists (%ld):\n", one->size);
+	cerver_log_raw ("\n\nMerge both lists (%zu):\n", one->size);
 	dlist_for_each (one, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nOne (%ld)\n", one->size);
-	cerver_log_raw ("Two (%ld)\n", two->size);
+	cerver_log_raw ("\n\nOne (%zu)\n", one->size);
+	cerver_log_raw ("Two (%zu)\n", two->size);
 
 	dlist_delete (two);
 	dlist_delete (one);
@@ -1559,17 +1561,17 @@ static int dlist_test_merge_two_by_condition (void) {
 		test_merge_by_condition_condition, &match
 	);
 
-	cerver_log_raw ("One (%ld):\n", one->size);
+	cerver_log_raw ("One (%zu):\n", one->size);
 	dlist_for_each (one, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nTwo (%ld):\n", two->size);
+	cerver_log_raw ("\n\nTwo (%zu):\n", two->size);
 	dlist_for_each (two, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nMerge (%ld):\n", merge->size);
+	cerver_log_raw ("\n\nMerge (%zu):\n", merge->size);
 	dlist_for_each (merge, le) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
@@ -1660,11 +1662,11 @@ static int dlist_test_merge_many (void) {
 		cerver_log_raw ("%4d", ((Integer *) le->data)->value);
 	}
 
-	cerver_log_raw ("\n\nMerge (%ld)\n", merge->size);
-	cerver_log_raw ("One (%ld)\n", one->size);
-	cerver_log_raw ("Two (%ld)\n", two->size);
-	cerver_log_raw ("Three (%ld)\n", three->size);
-	cerver_log_raw ("Four (%ld)\n", four->size);
+	cerver_log_raw ("\n\nMerge (%zu)\n", merge->size);
+	cerver_log_raw ("One (%zu)\n", one->size);
+	cerver_log_raw ("Two (%zu)\n", two->size);
+	cerver_log_raw ("Three (%zu)\n", three->size);
+	cerver_log_raw ("Four (%zu)\n", four->size);
 
 	dlist_delete (merge);
 	dlist_delete (many);

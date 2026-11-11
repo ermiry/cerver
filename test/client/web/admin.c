@@ -10,7 +10,7 @@
 
 #include "curl.h"
 
-#define ADDRESS_SIZE			128
+#define ADDRESS_SIZE			WEB_TEST_URL_SIZE
 #define STATS_BUFFER_SIZE		(1 << 16)
 
 static char address[WEB_TEST_ADDRESS_SIZE] = { 0 };
@@ -178,7 +178,7 @@ static unsigned int admin_request_all (void) {
 
 }
 
-int main (int argc, char **argv) {
+int main (void) {
 
 	cerver_log_init ();
 

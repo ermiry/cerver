@@ -98,7 +98,7 @@ static void test_jwt_validate_rs256 (void) {
 	test_check_int_eq (ret, 0, NULL);
 
 	test_check_int_eq (
-		JWT_VALIDATION_SUCCESS, jwt_validate (jwt, jwt_valid), NULL
+		jwt_validate (jwt, jwt_valid), JWT_VALIDATION_SUCCESS, NULL
 	);
 
 	jwt_valid_free (jwt_valid);
