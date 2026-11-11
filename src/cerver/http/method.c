@@ -1,23 +1,38 @@
+#include <stdbool.h>
+
 #include "cerver/http/method.h"
 
-static const char *http_method_none = { "NONE" };
+static const char *request_method_undefined = { "Undefined" };
 
-const char *method_strings[] = {
+const char *http_request_method_str (
+	const RequestMethod request_method
+) {
 
-	#define XX(num, name, string) #string,
-	HTTP_METHOD_MAP(XX)
-	#undef XX
-
-};
-
-const char *http_method_str (const enum http_method m) {
-
-	switch (m) {
-		#define XX(num, name, string) case HTTP_METHOD_##name: return #string;
-		HTTP_METHOD_MAP(XX)
+	switch (request_method) {
+		#define XX(num, name, string) case REQUEST_METHOD_##name: return #string;
+		REQUEST_METHOD_MAP(XX)
 		#undef XX
+
+		default: break;
 	}
 
-	return http_method_none;
+	return request_method_undefined;
+
+}
+
+// returns true if the method is one of REQUEST_METHOD_MAP
+bool http_request_method_is_valid (
+	const RequestMethod request_method
+) {
+
+	switch (request_method) {
+		#define XX(num, name, string) case REQUEST_METHOD_##name: return true;
+		REQUEST_METHOD_MAP(XX)
+		#undef XX
+
+		default: break;
+	}
+
+	return false;
 
 }
