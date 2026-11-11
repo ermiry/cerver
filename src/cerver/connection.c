@@ -321,6 +321,8 @@ Connection *connection_new (void) {
 
 		connection->route_id = 0;
 
+		connection->lobby = NULL;
+
 		connection->attempt_reconnect = CONNECTION_DEFAULT_ATTEMPT_RECONNECT;
 		connection->reconnect_wait_time = CONNECTION_DEFAULT_RECONNECT_WAIT_TIME;
 		connection->reconnect_attempts = 0;

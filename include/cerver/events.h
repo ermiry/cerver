@@ -14,6 +14,7 @@ extern "C" {
 struct _Cerver;
 struct _Client;
 struct _Connection;
+struct _Lobby;
 
 #pragma region types
 
@@ -105,6 +106,15 @@ CERVER_PRIVATE void cerver_event_trigger (
 	const struct _Connection *connection
 );
 
+// triggers the actions of a lobby event, the event data keeps a reference to the lobby
+CERVER_PRIVATE void cerver_event_trigger_lobby (
+	const CerverEventType event_type,
+	const struct _Cerver *cerver,
+	const struct _Client *client,
+	const struct _Connection *connection,
+	struct _Lobby *lobby
+);
+
 #pragma endregion
 
 #pragma region data
@@ -116,6 +126,10 @@ typedef struct CerverEventData {
 
 	const struct _Client *client;
 	const struct _Connection *connection;
+
+	// the lobby of the lobby events, NULL in the others;
+	// it stays valid until cerver_event_data_delete () releases its reference
+	struct _Lobby *lobby;
 
 	void *action_args;                  // the action arguments
 	Action delete_action_args;

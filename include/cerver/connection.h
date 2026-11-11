@@ -69,6 +69,7 @@ struct _Client;
 struct _Connection;
 struct _PacketsPerType;
 struct _AdminCerver;
+struct _Lobby;
 
 #define CONNECTION_STATE_MAP(XX)														\
 	XX(0,	NONE,			None, 			(Undefined))								\
@@ -223,6 +224,10 @@ struct _Connection {
 
 	// the route that a load balancer gave to the connection of a client, 0 without one
 	u32 route_id;
+
+	// the lobby of the player of the client, NULL outside a lobby,
+	// written with the lock of the game cerver (lobby.h)
+	struct _Lobby *lobby;
 
 	// the update thread reconnects when the cerver ends the connection,
 	// it waits reconnect_wait_time secs between each attempt
