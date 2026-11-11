@@ -476,6 +476,7 @@ Cerver *cerver_new (void) {
 		cerver->fds = NULL;
 		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
+		cerver->poll_max_connections = CERVER_DEFAULT_POLL_MAX_CONNECTIONS;
 		cerver->poll_timeout = CERVER_DEFAULT_POLL_TIMEOUT;
 		cerver->poll_lock = NULL;
 
@@ -910,6 +911,26 @@ void cerver_set_poll_time_out (
 
 }
 
+// sets, before the cerver starts, the initial size of the main poll array
+// and the max connections that it handles, 0 is no limit
+// returns 0 on success, 1 on error
+u8 cerver_set_poll_fds (
+	Cerver *cerver, const u32 initial, const u32 max_connections
+) {
+
+	u8 retval = 1;
+
+	if (cerver && !cerver->fds && (initial >= CERVER_POLL_MIN_FDS)) {
+		cerver->max_n_fds = initial;
+		cerver->poll_max_connections = max_connections;
+
+		retval = 0;
+	}
+
+	return retval;
+
+}
+
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
 // retuns 0 on success, 1 on error
@@ -969,6 +990,24 @@ void cerver_set_on_hold_poll_timeout (
 ) {
 
 	if (cerver) cerver->on_hold_poll_timeout = on_hold_poll_timeout;
+
+}
+
+// sets, before the cerver starts, the connections that the on hold poll handles at the same time
+// returns 0 on success, 1 on error
+u8 cerver_set_on_hold_poll_fds (
+	Cerver *cerver, const u32 max_connections
+) {
+
+	u8 retval = 1;
+
+	if (cerver && !cerver->hold_fds && max_connections) {
+		cerver->max_on_hold_connections = max_connections;
+
+		retval = 0;
+	}
+
+	return retval;
 
 }
 
@@ -1676,13 +1715,12 @@ static u8 cerver_init_poll_fds (Cerver *cerver) {
 
 	u8 retval = 1;
 
-	cerver->fds = (struct pollfd *) calloc (CERVER_DEFAULT_POLL_FDS, sizeof (struct pollfd));
+	// max_n_fds is the initial size, from cerver_set_poll_fds ()
+	cerver->fds = (struct pollfd *) calloc (cerver->max_n_fds, sizeof (struct pollfd));
 	if (cerver->fds) {
-		memset (cerver->fds, 0, sizeof (struct pollfd) * CERVER_DEFAULT_POLL_FDS);
 		// set all fds as available spaces
-		for (u32 i = 0; i < CERVER_DEFAULT_POLL_FDS; i++) cerver->fds[i].fd = -1;
+		for (u32 i = 0; i < cerver->max_n_fds; i++) cerver->fds[i].fd = -1;
 
-		cerver->max_n_fds = CERVER_DEFAULT_POLL_FDS;
 		cerver->current_n_fds = 0;
 
 		retval = 0;     // success!!
@@ -1712,7 +1750,7 @@ static u8 cerver_init_data_structures (Cerver *cerver) {
 		);
 
 		if (cerver->clients) {
-			cerver->client_sock_fd_map = htab_create (CERVER_DEFAULT_POLL_FDS, NULL, NULL);
+			cerver->client_sock_fd_map = htab_create (cerver->max_n_fds, NULL, NULL);
 			if (cerver->client_sock_fd_map) {
 				u8 errors = 0;
 
@@ -1968,9 +2006,8 @@ static u8 cerver_auth_start (Cerver *cerver) {
 	if (cerver) {
 		cerver->auth_packet = packet_generate_request (PACKET_TYPE_AUTH, AUTH_PACKET_TYPE_REQUEST_AUTH, NULL, 0);
 
-		cerver->max_on_hold_connections = CERVER_DEFAULT_POLL_FDS / 2;
 		cerver->on_hold_connections = avl_init (connection_comparator, connection_delete);
-		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections / 4, NULL, NULL);
+		cerver->on_hold_connection_sock_fd_map = htab_create (cerver->max_on_hold_connections, NULL, NULL);
 		if (cerver->on_hold_connections && cerver->on_hold_connection_sock_fd_map) {
 			cerver->hold_fds = (struct pollfd *) calloc (cerver->max_on_hold_connections, sizeof (struct pollfd));
 			if (cerver->hold_fds) {

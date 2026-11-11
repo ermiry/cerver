@@ -2677,6 +2677,30 @@ static u8 cerver_poll_register_connection_internal (
 
 }
 
+// a connection beyond the max of cerver_set_poll_fds () is rejected,
+// called with the poll lock
+static bool cerver_poll_reached_max (Cerver *cerver) {
+
+	bool reached = false;
+
+	if (
+		cerver->poll_max_connections
+		&& (CERVER_STATS_GET (cerver->stats->current_active_client_connections) >= cerver->poll_max_connections)
+	) {
+		CERVER_STATS_ADD (cerver->stats->total_rejected_connections, 1);
+
+		cerver_log_warning (
+			"Cerver %s main poll has its max of %u connections - rejected a connection",
+			cerver->info->name, cerver->poll_max_connections
+		);
+
+		reached = true;
+	}
+
+	return reached;
+
+}
+
 // regsiters a client connection to the cerver's mains poll structure
 // and maps the sock fd to the client
 // returns 0 on success, 1 on error
@@ -2689,7 +2713,11 @@ u8 cerver_poll_register_connection (
 	if (cerver && connection) {
 		pthread_mutex_lock (cerver->poll_lock);
 
-		if (!cerver_poll_register_connection_internal (
+		if (cerver_poll_reached_max (cerver)) {
+			retval = 1;
+		}
+
+		else if (!cerver_poll_register_connection_internal (
 			cerver, connection
 		)) {
 			retval = 0;

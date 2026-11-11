@@ -68,6 +68,10 @@
 
 #define CERVER_DEFAULT_POLL_FDS						128
 #define CERVER_DEFAULT_POLL_TIMEOUT					2000
+#define CERVER_DEFAULT_POLL_MAX_CONNECTIONS			0
+
+// the main poll has the socket of the cerver and at least one connection
+#define CERVER_POLL_MIN_FDS							2
 
 #define CERVER_DEFAULT_MAX_INACTIVE_TIME			60
 #define CERVER_DEFAULT_CHECK_INACTIVE_INTERVAL		30
@@ -292,7 +296,7 @@ typedef struct CerverStats {
 	u64 total_n_clients;                            // the total amount of clients that were registered to the cerver (no auth required)
 	u64 unique_clients;                             // n unique clients connected in a threshold time (check used authentication)
 	u64 total_client_connections;                   // the total amount of client connections that have been done to the cerver
-	u64 total_rejected_connections;                 // connections rejected because the thpool was full or the cerver was draining
+	u64 total_rejected_connections;                 // connections rejected because the thpool was full, the cerver was draining or its poll had its max
 
 	struct _PacketsPerType *received_packets;
 	struct _PacketsPerType *sent_packets;
@@ -395,7 +399,8 @@ struct _Cerver {
 
 	struct pollfd *fds;
 	u32 max_n_fds;                      // current max n fds in pollfd
-	u16 current_n_fds;                  // n of active fds in the pollfd array
+	u32 current_n_fds;                  // n of active fds in the pollfd array
+	u32 poll_max_connections;           // the connections that the poll handles, 0 is no limit
 	u32 poll_timeout;
 	pthread_mutex_t *poll_lock;
 
@@ -644,6 +649,14 @@ CERVER_EXPORT void cerver_set_poll_time_out (
 	Cerver *cerver, const u32 poll_timeout
 );
 
+// sets, before the cerver starts, the initial size of the main poll array (CERVER_DEFAULT_POLL_FDS),
+// that grows when it is full, and the max connections that it handles, 0 (the default) is no limit,
+// a new connection beyond the max is closed and counted in total_rejected_connections
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_set_poll_fds (
+	Cerver *cerver, const u32 initial, const u32 max_connections
+);
+
 // enables cerver's built in authentication methods
 // cerver requires client authentication upon new client connections
 // max_auth_tries is the number of failed auth allowed for each new client connection
@@ -677,6 +690,13 @@ CERVER_EXPORT void cerver_set_auth_schema (
 // sets the cerver on poll timeout in ms
 CERVER_EXPORT void cerver_set_on_hold_poll_timeout (
 	Cerver *cerver, u32 on_hold_poll_timeout
+);
+
+// sets, before the cerver starts, the connections that the on hold poll handles at the same time
+// (CERVER_DEFAULT_ON_HOLD_POLL_FDS), a new connection when it is full is closed
+// returns 0 on success, 1 on error
+CERVER_EXPORT u8 cerver_set_on_hold_poll_fds (
+	Cerver *cerver, const u32 max_connections
 );
 
 // sets the secs that a new connection has to authenticate,
