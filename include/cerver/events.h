@@ -43,7 +43,8 @@ struct _Connection;
 	XX(21,	LOBBY_JOIN, 				Someone has joined a lobby)									\
 	XX(22,	LOBBY_LEAVE, 				Someone has exited the lobby)								\
 	XX(23,	LOBBY_START, 				The game in the lobby has started)							\
-	XX(24,	UNKNOWN, 					Unknown event)
+	XX(24,	LOBBY_DESTROY, 				A lobby was destroyed)										\
+	XX(25,	UNKNOWN, 					Unknown event)
 
 typedef enum CerverEventType {
 

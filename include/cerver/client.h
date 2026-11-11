@@ -444,7 +444,10 @@ CERVER_PUBLIC void client_broadcast_to_all_avl (
 	XX(14,	LOBBY_JOIN, 		Correctly joined a new lobby)																					\
 	XX(15,	LOBBY_LEAVE, 		Successfully exited a lobby)																					\
 	XX(16,	LOBBY_START, 		The game in the lobby has started)																				\
-	XX(17,	UNKNOWN, 			Unknown event)
+	XX(17,	LOBBY_UPDATE, 		Received the current state of a lobby)																			\
+	XX(18,	LOBBY_DESTROY, 		The lobby was destroyed)																						\
+	XX(19,	GAME_INIT, 			The game of the lobby was initialized)																			\
+	XX(20,	UNKNOWN, 			Unknown event)
 
 typedef enum ClientEventType {
 
@@ -559,7 +562,8 @@ CERVER_PUBLIC void client_event_data_delete (
 	XX(10,	FIND_LOBBY, 		Failed to find a suitable game lobby)			\
 	XX(11,	GAME_INIT, 			The game failed to init)						\
 	XX(12,	GAME_START, 		The game failed to start)						\
-	XX(13,	UNKNOWN, 			Unknown error)
+	XX(13,	DESTROY_LOBBY, 		The lobby could not be destroyed)				\
+	XX(14,	UNKNOWN, 			Unknown error)
 
 typedef enum ClientErrorType {
 

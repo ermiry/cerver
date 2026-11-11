@@ -1799,6 +1799,13 @@ static void client_error_packet_handler (Packet *packet) {
 					s_error->msg
 				);
 				break;
+			case CLIENT_ERROR_DESTROY_LOBBY:
+				client_error_trigger (
+					CLIENT_ERROR_DESTROY_LOBBY,
+					packet->client, packet->connection,
+					s_error->msg
+				);
+				break;
 
 			default: {
 				client_error_trigger (
