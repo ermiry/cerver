@@ -60,6 +60,10 @@ case "$PAIR" in
 		balancer_servers handler_id
 		CLIENT="test/bin/client/load/id"
 		;;
+	balancer/custom)
+		balancer_servers custom
+		CLIENT="test/bin/client/load/simple"
+		;;
 	balancer/reconnect)
 		upstream_servers $SERVICE_RESTART_SECONDS reconnect
 		;;
