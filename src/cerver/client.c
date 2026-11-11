@@ -1614,7 +1614,7 @@ u8 client_error_trigger (
 						error->work,
 						client_error_data_create (
 							client, connection,
-							error,
+							error->work_args,
 							error_message
 						)
 					);
@@ -1623,7 +1623,7 @@ u8 client_error_trigger (
 				else {
 					(void) error->work (client_error_data_create (
 						client, connection,
-						error,
+						error->work_args,
 						error_message
 					));
 
